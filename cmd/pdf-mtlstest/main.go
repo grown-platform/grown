@@ -1,3 +1,5 @@
+//go:build pkcs11
+
 // Command mtlstest tests mTLS client certificate authentication with a YubiKey.
 //
 // Usage:

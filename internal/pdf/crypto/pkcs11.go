@@ -1,3 +1,9 @@
+//go:build pkcs11
+
+// PKCS#11 / HSM-backed signing (YubiKey, SoftHSM, etc.). Requires cgo + a
+// PKCS#11 shared library, so it is excluded from the default static
+// (CGO_ENABLED=0) build; build with `-tags pkcs11` (and CGO enabled) to use it.
+// The default build uses the software self-signed CA (ca.go) instead.
 package crypto
 
 import (

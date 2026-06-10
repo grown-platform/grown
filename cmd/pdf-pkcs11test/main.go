@@ -1,3 +1,5 @@
+//go:build pkcs11
+
 // Command pkcs11test tests PKCS#11 signing with a YubiKey.
 //
 // Usage:
