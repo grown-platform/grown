@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// TasksService manages per-org task lists and tasks (a Google Tasks clone).
+service TasksService {
+  // Task list management
+  rpc ListLists(ListTaskListsRequest) returns (ListTaskListsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/tasks/lists"
+    };
+  }
+
+  rpc CreateList(CreateTaskListRequest) returns (TaskList) {
+    option (google.api.http) = {
+      post: "/api/v1/tasks/lists"
+      body: "*"
+    };
+  }
+
+  rpc UpdateList(UpdateTaskListRequest) returns (TaskList) {
+    option (google.api.http) = {
+      patch: "/api/v1/tasks/lists/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteList(DeleteTaskListRequest) returns (DeleteTaskListResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/tasks/lists/{id}"
+    };
+  }
+
+  // Task management
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/tasks/lists/{list_id}/tasks"
+    };
+  }
+
+  rpc CreateTask(CreateTaskRequest) returns (Task) {
+    option (google.api.http) = {
+      post: "/api/v1/tasks/lists/{list_id}/tasks"
+      body: "*"
+    };
+  }
+
+  rpc UpdateTask(UpdateTaskRequest) returns (Task) {
+    option (google.api.http) = {
+      patch: "/api/v1/tasks/lists/{list_id}/tasks/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/tasks/lists/{list_id}/tasks/{id}"
+    };
+  }
+
+  rpc ToggleTask(ToggleTaskRequest) returns (Task) {
+    option (google.api.http) = {
+      post: "/api/v1/tasks/lists/{list_id}/tasks/{id}/toggle"
+      body: "*"
+    };
+  }
+
+  rpc ReorderTask(ReorderTaskRequest) returns (Task) {
+    option (google.api.http) = {
+      post: "/api/v1/tasks/lists/{list_id}/tasks/{id}/reorder"
+      body: "*"
+    };
+  }
+}
+
+message TaskList {
+  string id = 1;
+  string org_id = 2;
+  string owner_user_id = 3;
+  string name = 4;
+  int32 position = 5;
+  string created_at = 6;
+}
+
+message Task {
+  string id = 1;
+  string org_id = 2;
+  string list_id = 3;
+  string owner_user_id = 4;
+  string title = 5;
+  string notes = 6;
+  // due_at is an RFC-3339 timestamp or empty string.
+  string due_at = 7;
+  bool completed = 8;
+  string completed_at = 9;
+  // parent_task_id is set for subtasks (one level deep).
+  string parent_task_id = 10;
+  int32 position = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+message ListTaskListsRequest {}
+
+message ListTaskListsResponse {
+  repeated TaskList lists = 1;
+}
+
+message CreateTaskListRequest {
+  string name = 1;
+}
+
+message UpdateTaskListRequest {
+  string id = 1;
+  string name = 2;
+}
+
+message DeleteTaskListRequest {
+  string id = 1;
+}
+
+message DeleteTaskListResponse {}
+
+message ListTasksRequest {
+  string list_id = 1;
+}
+
+message ListTasksResponse {
+  repeated Task tasks = 1;
+}
+
+message CreateTaskRequest {
+  string list_id = 1;
+  string title = 2;
+  string notes = 3;
+  string due_at = 4;
+  string parent_task_id = 5;
+}
+
+message UpdateTaskRequest {
+  string list_id = 1;
+  string id = 2;
+  string title = 3;
+  string notes = 4;
+  string due_at = 5;
+  string parent_task_id = 6;
+}
+
+message DeleteTaskRequest {
+  string list_id = 1;
+  string id = 2;
+}
+
+message DeleteTaskResponse {}
+
+message ToggleTaskRequest {
+  string list_id = 1;
+  string id = 2;
+}
+
+message ReorderTaskRequest {
+  string list_id = 1;
+  string id = 2;
+  // position is the new 0-based position within the list.
+  int32 position = 3;
+}

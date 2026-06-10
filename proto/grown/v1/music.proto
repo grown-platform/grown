@@ -1,0 +1,238 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// MusicService manages a per-org internal music library. Audio bytes live in
+// the blob store (shared with Drive); metadata lives in Postgres. Upload and
+// stream/download of the raw bytes happen over plain HTTP (not gRPC), like the
+// Drive and Video blob endpoints; the RPCs below cover track + playlist CRUD.
+service MusicService {
+  rpc ListTracks(ListTracksRequest) returns (ListTracksResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/music/tracks"
+    };
+  }
+
+  rpc GetTrack(GetTrackRequest) returns (Track) {
+    option (google.api.http) = {
+      get: "/api/v1/music/tracks/{id}"
+    };
+  }
+
+  rpc UpdateTrack(UpdateTrackRequest) returns (Track) {
+    option (google.api.http) = {
+      patch: "/api/v1/music/tracks/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteTrack(DeleteTrackRequest) returns (DeleteTrackResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/music/tracks/{id}"
+    };
+  }
+
+  rpc ListPlaylists(ListPlaylistsRequest) returns (ListPlaylistsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/music/playlists"
+    };
+  }
+
+  rpc GetPlaylist(GetPlaylistRequest) returns (Playlist) {
+    option (google.api.http) = {
+      get: "/api/v1/music/playlists/{id}"
+    };
+  }
+
+  rpc CreatePlaylist(CreatePlaylistRequest) returns (Playlist) {
+    option (google.api.http) = {
+      post: "/api/v1/music/playlists"
+      body: "*"
+    };
+  }
+
+  rpc UpdatePlaylist(UpdatePlaylistRequest) returns (Playlist) {
+    option (google.api.http) = {
+      patch: "/api/v1/music/playlists/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeletePlaylist(DeletePlaylistRequest) returns (DeletePlaylistResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/music/playlists/{id}"
+    };
+  }
+
+  rpc AddTrackToPlaylist(AddTrackToPlaylistRequest) returns (Playlist) {
+    option (google.api.http) = {
+      post: "/api/v1/music/playlists/{playlist_id}/tracks"
+      body: "*"
+    };
+  }
+
+  rpc RemoveTrackFromPlaylist(RemoveTrackFromPlaylistRequest) returns (Playlist) {
+    option (google.api.http) = {
+      delete: "/api/v1/music/playlists/{playlist_id}/tracks/{track_id}"
+    };
+  }
+
+  rpc ReorderPlaylistTrack(ReorderPlaylistTrackRequest) returns (Playlist) {
+    option (google.api.http) = {
+      patch: "/api/v1/music/playlists/{playlist_id}/tracks/{track_id}/position"
+      body: "*"
+    };
+  }
+
+  rpc LikeTrack(LikeTrackRequest) returns (LikeTrackResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/music/tracks/{track_id}/like"
+      body: "*"
+    };
+  }
+
+  rpc UnlikeTrack(UnlikeTrackRequest) returns (UnlikeTrackResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/music/tracks/{track_id}/like"
+    };
+  }
+
+  rpc ListLikedTracks(ListLikedTracksRequest) returns (ListLikedTracksResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/music/liked"
+    };
+  }
+}
+
+// Track is one audio item in the library. Audio bytes live in the blob store;
+// this carries the metadata plus a range-capable stream_url.
+message Track {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string title = 4;
+  string artist = 5;
+  string album = 6;
+  // content_type of the stored audio blob, e.g. "audio/mpeg".
+  string content_type = 7;
+  // size of the audio blob in bytes.
+  int64 size = 8;
+  // duration_seconds is the playback length; 0 when unknown.
+  double duration_seconds = 9;
+  // artwork_data_url is an optional inline data: URL for album art.
+  string artwork_data_url = 10;
+  // stream_url is the relative HTTP path to fetch the raw bytes (range-capable).
+  string stream_url = 11;
+  string created_at = 12;
+  string updated_at = 13;
+  // liked is true when the calling user has liked this track.
+  bool liked = 14;
+}
+
+// Playlist is an ordered, named collection of tracks within an org.
+message Playlist {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string name = 4;
+  string description = 5;
+  // tracks are the playlist's tracks in playlist order. Populated on Get and
+  // the mutation RPCs; List returns playlists without their tracks (track_count
+  // only) to stay lightweight.
+  repeated Track tracks = 6;
+  // track_count is the number of tracks in the playlist.
+  int32 track_count = 7;
+  string created_at = 8;
+  string updated_at = 9;
+}
+
+message ListTracksRequest {}
+
+message ListTracksResponse {
+  repeated Track tracks = 1;
+}
+
+message GetTrackRequest {
+  string id = 1;
+}
+
+// UpdateTrackRequest replaces the editable metadata of a track.
+message UpdateTrackRequest {
+  string id = 1;
+  string title = 2;
+  string artist = 3;
+  string album = 4;
+  string artwork_data_url = 5;
+}
+
+message DeleteTrackRequest {
+  string id = 1;
+}
+
+message DeleteTrackResponse {}
+
+message ListPlaylistsRequest {}
+
+message ListPlaylistsResponse {
+  repeated Playlist playlists = 1;
+}
+
+message GetPlaylistRequest {
+  string id = 1;
+}
+
+message CreatePlaylistRequest {
+  string name = 1;
+  string description = 2;
+}
+
+message UpdatePlaylistRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+}
+
+message DeletePlaylistRequest {
+  string id = 1;
+}
+
+message DeletePlaylistResponse {}
+
+message AddTrackToPlaylistRequest {
+  string playlist_id = 1;
+  string track_id = 2;
+}
+
+message RemoveTrackFromPlaylistRequest {
+  string playlist_id = 1;
+  string track_id = 2;
+}
+
+message ReorderPlaylistTrackRequest {
+  string playlist_id = 1;
+  string track_id = 2;
+  // new_position is the zero-based target position in the playlist.
+  int32 new_position = 3;
+}
+
+message LikeTrackRequest {
+  string track_id = 1;
+}
+
+message LikeTrackResponse {}
+
+message UnlikeTrackRequest {
+  string track_id = 1;
+}
+
+message UnlikeTrackResponse {}
+
+message ListLikedTracksRequest {}
+
+message ListLikedTracksResponse {
+  repeated Track tracks = 1;
+}

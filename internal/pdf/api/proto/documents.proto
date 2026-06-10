@@ -1,0 +1,536 @@
+syntax = "proto3";
+
+package pdf.documents;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "code.pick.haus/grown/pdf/pkg/proto/documents";
+
+// Document status enum
+enum DocumentStatus {
+  DOCUMENT_STATUS_UNSPECIFIED = 0;
+  DOCUMENT_STATUS_DRAFT = 1;
+  DOCUMENT_STATUS_PENDING = 2;
+  DOCUMENT_STATUS_IN_PROGRESS = 3;
+  DOCUMENT_STATUS_COMPLETED = 4;
+  DOCUMENT_STATUS_DECLINED = 5;
+  DOCUMENT_STATUS_EXPIRED = 6;
+  DOCUMENT_STATUS_VOIDED = 7;
+}
+
+// Signer status enum
+enum SignerStatus {
+  SIGNER_STATUS_UNSPECIFIED = 0;
+  SIGNER_STATUS_PENDING = 1;
+  SIGNER_STATUS_SENT = 6;
+  SIGNER_STATUS_VIEWED = 2;
+  SIGNER_STATUS_SIGNED = 3;
+  SIGNER_STATUS_DECLINED = 4;
+  SIGNER_STATUS_EXPIRED = 5;
+}
+
+// Signer type enum
+enum SignerType {
+  SIGNER_TYPE_UNSPECIFIED = 0;
+  SIGNER_TYPE_SIGNER = 1;
+  SIGNER_TYPE_APPROVER = 2;
+  SIGNER_TYPE_CC = 3;
+}
+
+// Field type enum
+enum FieldType {
+  FIELD_TYPE_UNSPECIFIED = 0;
+  FIELD_TYPE_SIGNATURE = 1;
+  FIELD_TYPE_INITIALS = 2;
+  FIELD_TYPE_DATE = 3;
+  FIELD_TYPE_TEXT = 4;
+  FIELD_TYPE_CHECKBOX = 5;
+}
+
+// Document message
+message Document {
+  string id = 1;
+  string organization_id = 2;
+  string name = 3;
+  string description = 4;
+  DocumentStatus status = 5;
+  string storage_key = 6;
+  string signed_storage_key = 7;
+  int32 total_pages = 8;
+  int64 file_size_bytes = 9;
+  bool signing_order = 10;
+  google.protobuf.Timestamp expires_at = 11;
+  int32 reminder_frequency_days = 12;
+  string created_by = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+  google.protobuf.Timestamp completed_at = 16;
+  repeated Signer signers = 17;
+}
+
+// Signer message
+message Signer {
+  string id = 1;
+  string document_id = 2;
+  string email = 3;
+  string name = 4;
+  string user_id = 5;
+  SignerType signer_type = 6;
+  int32 signing_order = 7;
+  SignerStatus status = 8;
+  google.protobuf.Timestamp viewed_at = 9;
+  google.protobuf.Timestamp signed_at = 10;
+  string decline_reason = 11;
+  repeated SignatureField fields = 12;
+}
+
+// Signature field message
+message SignatureField {
+  string id = 1;
+  string document_id = 2;
+  string signer_id = 3;
+  FieldType field_type = 4;
+  int32 page_number = 5;
+  double x = 6;
+  double y = 7;
+  double width = 8;
+  double height = 9;
+  bool required = 10;
+  string label = 11;
+  string placeholder = 12;
+  string value = 13;
+  bool is_filled = 14;
+  int32 font_size = 15; // Font size in points for text/date fields (default 12)
+}
+
+// Create document
+message CreateDocumentRequest {
+  string name = 1;
+  string description = 2;
+  string filename = 3;
+  bool signing_order = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  int32 reminder_frequency_days = 6;
+}
+
+message CreateDocumentResponse {
+  Document document = 1;
+  string upload_url = 2;
+}
+
+// Get document
+message GetDocumentRequest {
+  string id = 1;
+}
+
+message GetDocumentResponse {
+  Document document = 1;
+  string download_url = 2;
+  string signed_download_url = 3; // URL for signed PDF (only available when completed)
+}
+
+// Update document
+message UpdateDocumentRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  bool signing_order = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+message UpdateDocumentResponse {
+  Document document = 1;
+}
+
+// Delete document
+message DeleteDocumentRequest {
+  string id = 1;
+}
+
+message DeleteDocumentResponse {
+  bool success = 1;
+}
+
+// List documents
+message ListDocumentsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  DocumentStatus status = 3;
+}
+
+message ListDocumentsResponse {
+  repeated Document documents = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+// Send document for signing
+message SendDocumentRequest {
+  string id = 1;
+  string message = 2;
+}
+
+message SendDocumentResponse {
+  Document document = 1;
+}
+
+// Void document
+message VoidDocumentRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+message VoidDocumentResponse {
+  bool success = 1;
+}
+
+// Add signer
+message AddSignerRequest {
+  string document_id = 1;
+  string email = 2;
+  string name = 3;
+  SignerType signer_type = 4;
+  int32 signing_order = 5;
+}
+
+message AddSignerResponse {
+  Signer signer = 1;
+}
+
+// Remove signer
+message RemoveSignerRequest {
+  string document_id = 1;
+  string signer_id = 2;
+}
+
+message RemoveSignerResponse {
+  bool success = 1;
+}
+
+// Add signature field
+message AddSignatureFieldRequest {
+  string document_id = 1;
+  string signer_id = 2;
+  FieldType field_type = 3;
+  int32 page_number = 4;
+  double x = 5;
+  double y = 6;
+  double width = 7;
+  double height = 8;
+  bool required = 9;
+  string label = 10;
+  int32 font_size = 11; // Font size in points for text/date fields (default 12)
+}
+
+message AddSignatureFieldResponse {
+  SignatureField field = 1;
+}
+
+// Update signature field
+message UpdateSignatureFieldRequest {
+  string document_id = 1;
+  string field_id = 2;
+  int32 page_number = 3;
+  double x = 4;
+  double y = 5;
+  double width = 6;
+  double height = 7;
+  string label = 8;
+  int32 font_size = 9; // Font size in points for text/date fields
+}
+
+message UpdateSignatureFieldResponse {
+  SignatureField field = 1;
+}
+
+// Remove signature field
+message RemoveSignatureFieldRequest {
+  string document_id = 1;
+  string field_id = 2;
+}
+
+message RemoveSignatureFieldResponse {
+  bool success = 1;
+}
+
+// Get completed document
+message GetCompletedDocumentRequest {
+  string id = 1;
+}
+
+message GetCompletedDocumentResponse {
+  string download_url = 1;
+}
+
+// Resend signer invitation
+message ResendSignerInvitationRequest {
+  string document_id = 1;
+  string signer_id = 2;
+}
+
+message ResendSignerInvitationResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Get document signatures (cryptographic signature details)
+message GetDocumentSignaturesRequest {
+  string document_id = 1;
+}
+
+message DocumentSignature {
+  string id = 1;
+  string signer_id = 2;
+  string signer_name = 3;
+  string signer_email = 4;
+  string signature_algorithm = 5;
+  string document_hash = 6;
+  string hash_algorithm = 7;
+  google.protobuf.Timestamp signing_timestamp = 8;
+  // Certificate details
+  string certificate_issuer = 9;
+  string certificate_serial = 10;
+  google.protobuf.Timestamp certificate_valid_from = 11;
+  google.protobuf.Timestamp certificate_valid_to = 12;
+}
+
+message GetDocumentSignaturesResponse {
+  repeated DocumentSignature signatures = 1;
+}
+
+// Verify document signatures
+message VerifyDocumentRequest {
+  string id = 1;
+}
+
+// Signature verification result
+message SignatureVerification {
+  string signer_name = 1;
+  string signer_email = 2;
+  bool is_valid = 3;
+  string status = 4; // "valid", "invalid", "unknown", "expired"
+  string message = 5; // Detailed status message
+  // Certificate info
+  string certificate_subject = 6;
+  string certificate_issuer = 7;
+  string certificate_serial = 8;
+  google.protobuf.Timestamp certificate_valid_from = 9;
+  google.protobuf.Timestamp certificate_valid_to = 10;
+  bool certificate_expired = 11;
+  // Timestamp info
+  bool has_timestamp = 12;
+  google.protobuf.Timestamp timestamp = 13;
+  string timestamp_authority = 14;
+  // Hash verification
+  string document_hash = 15;
+  string hash_algorithm = 16;
+  bool hash_matches = 17;
+}
+
+message VerifyDocumentResponse {
+  bool document_valid = 1;
+  bool all_signatures_valid = 2;
+  string status = 3; // "valid", "invalid", "tampered", "incomplete"
+  string message = 4;
+  repeated SignatureVerification signatures = 5;
+  // Document integrity
+  bool document_modified = 6;
+  string original_hash = 7;
+  string current_hash = 8;
+}
+
+// ----- Templates -----
+
+message TemplateField {
+  string id = 1;
+  string template_id = 2;
+  int32 signer_slot = 3;
+  string field_type = 4;
+  int32 page_number = 5;
+  double x = 6;
+  double y = 7;
+  double width = 8;
+  double height = 9;
+  bool required = 10;
+  string label = 11;
+  int32 font_size = 12;
+}
+
+message DocumentTemplateProto {
+  string id = 1;
+  string organization_id = 2;
+  string name = 3;
+  string description = 4;
+  int32 signer_slots = 5;
+  bool signing_order = 6;
+  string created_by = 7;
+  google.protobuf.Timestamp created_at = 8;
+  repeated TemplateField fields = 9;
+}
+
+message SaveAsTemplateRequest {
+  string document_id = 1;
+  string name = 2;
+  string description = 3;
+}
+
+message SaveAsTemplateResponse {
+  DocumentTemplateProto template = 1;
+}
+
+message ListTemplatesRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListTemplatesResponse {
+  repeated DocumentTemplateProto templates = 1;
+  int32 total_count = 2;
+}
+
+message GetTemplateRequest {
+  string id = 1;
+}
+
+message GetTemplateResponse {
+  DocumentTemplateProto template = 1;
+}
+
+message DeleteTemplateRequest {
+  string id = 1;
+}
+
+message DeleteTemplateResponse {
+  bool success = 1;
+}
+
+message CreateDocumentFromTemplateRequest {
+  string template_id = 1;
+  string name = 2;
+  string description = 3;
+}
+
+message CreateDocumentFromTemplateResponse {
+  Document document = 1;
+  string upload_url = 2;
+}
+
+// List documents to sign (for current user)
+message ListDocumentsToSignRequest {
+  // Deprecated: email is no longer read from the request. The trusted reverse
+  // proxy asserts the caller's email via the X-User-Email header. Field is
+  // kept for ABI compatibility but ignored by the server.
+  string email = 1 [deprecated = true];
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message DocumentToSign {
+  Document document = 1;
+  Signer signer = 2; // The current user's signer record
+  string signing_url = 3;
+}
+
+message ListDocumentsToSignResponse {
+  repeated DocumentToSign documents = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+// Documents service
+service DocumentsService {
+  rpc CreateDocument(CreateDocumentRequest) returns (CreateDocumentResponse) {
+    option (google.api.http) = {
+      post: "/api/documents"
+      body: "*"
+    };
+  }
+
+  rpc GetDocument(GetDocumentRequest) returns (GetDocumentResponse) {
+    option (google.api.http) = {get: "/api/documents/{id}"};
+  }
+
+  rpc UpdateDocument(UpdateDocumentRequest) returns (UpdateDocumentResponse) {
+    option (google.api.http) = {
+      patch: "/api/documents/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteDocument(DeleteDocumentRequest) returns (DeleteDocumentResponse) {
+    option (google.api.http) = {delete: "/api/documents/{id}"};
+  }
+
+  rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse) {
+    option (google.api.http) = {get: "/api/documents"};
+  }
+
+  rpc SendDocument(SendDocumentRequest) returns (SendDocumentResponse) {
+    option (google.api.http) = {
+      post: "/api/documents/{id}/send"
+      body: "*"
+    };
+  }
+
+  rpc VoidDocument(VoidDocumentRequest) returns (VoidDocumentResponse) {
+    option (google.api.http) = {
+      post: "/api/documents/{id}/void"
+      body: "*"
+    };
+  }
+
+  rpc AddSigner(AddSignerRequest) returns (AddSignerResponse) {
+    option (google.api.http) = {
+      post: "/api/documents/{document_id}/signers"
+      body: "*"
+    };
+  }
+
+  rpc RemoveSigner(RemoveSignerRequest) returns (RemoveSignerResponse) {
+    option (google.api.http) = {delete: "/api/documents/{document_id}/signers/{signer_id}"};
+  }
+
+  rpc AddSignatureField(AddSignatureFieldRequest) returns (AddSignatureFieldResponse) {
+    option (google.api.http) = {
+      post: "/api/documents/{document_id}/fields"
+      body: "*"
+    };
+  }
+
+  rpc UpdateSignatureField(UpdateSignatureFieldRequest) returns (UpdateSignatureFieldResponse) {
+    option (google.api.http) = {
+      patch: "/api/documents/{document_id}/fields/{field_id}"
+      body: "*"
+    };
+  }
+
+  rpc RemoveSignatureField(RemoveSignatureFieldRequest) returns (RemoveSignatureFieldResponse) {
+    option (google.api.http) = {delete: "/api/documents/{document_id}/fields/{field_id}"};
+  }
+
+  rpc GetCompletedDocument(GetCompletedDocumentRequest) returns (GetCompletedDocumentResponse) {
+    option (google.api.http) = {get: "/api/documents/{id}/completed"};
+  }
+
+  rpc GetDocumentSignatures(GetDocumentSignaturesRequest) returns (GetDocumentSignaturesResponse) {
+    option (google.api.http) = {get: "/api/documents/{document_id}/signatures"};
+  }
+
+  rpc ResendSignerInvitation(ResendSignerInvitationRequest) returns (ResendSignerInvitationResponse) {
+    option (google.api.http) = {
+      post: "/api/documents/{document_id}/signers/{signer_id}/resend"
+      body: "*"
+    };
+  }
+
+  rpc ListDocumentsToSign(ListDocumentsToSignRequest) returns (ListDocumentsToSignResponse) {
+    option (google.api.http) = {get: "/api/to-sign"};
+  }
+
+  // Verify document signatures
+  rpc VerifyDocument(VerifyDocumentRequest) returns (VerifyDocumentResponse) {
+    option (google.api.http) = {get: "/api/documents/{id}/verify"};
+  }
+
+}

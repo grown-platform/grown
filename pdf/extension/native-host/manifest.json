@@ -1,0 +1,7 @@
+{
+  "name": "dev.pick.pdf.signer",
+  "description": "Pdf Native Signing Helper - signs document hashes using CAC/PIV smart cards via PKCS#11",
+  "path": "/usr/local/bin/pdf-signer",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://EXTENSION_ID_HERE/"]
+}

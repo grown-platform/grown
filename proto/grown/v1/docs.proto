@@ -1,0 +1,443 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+import "grown/v1/drive.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// DocsService manages collaborative rich-text documents. Document *content* is
+// synced out-of-band over a WebSocket (Yjs CRDT) at
+// /api/v1/docs/d/{id}/connect; this service covers metadata + lifecycle.
+service DocsService {
+  // ListDocs returns the caller's org's non-trashed documents.
+  rpc ListDocs(ListDocsRequest) returns (ListDocsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/docs"
+    };
+  }
+
+  // CreateDoc creates a new empty document owned by the caller.
+  rpc CreateDoc(CreateDocRequest) returns (Doc) {
+    option (google.api.http) = {
+      post: "/api/v1/docs"
+      body: "*"
+    };
+  }
+
+  // GetDoc returns a single document's metadata.
+  rpc GetDoc(GetDocRequest) returns (Doc) {
+    option (google.api.http) = {
+      get: "/api/v1/docs/d/{id}"
+    };
+  }
+
+  // RenameDoc changes a document's title.
+  rpc RenameDoc(RenameDocRequest) returns (Doc) {
+    option (google.api.http) = {
+      patch: "/api/v1/docs/d/{id}"
+      body: "*"
+    };
+  }
+
+  // TrashDoc soft-deletes a document (sets trashed_at).
+  rpc TrashDoc(TrashDocRequest) returns (TrashDocResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/docs/d/{id}"
+    };
+  }
+
+  // CreateShare issues a share-link token for a document at a role.
+  rpc CreateShare(CreateDocShareRequest) returns (DocShare) {
+    option (google.api.http) = {
+      post: "/api/v1/docs/d/{doc_id}/shares"
+      body: "*"
+    };
+  }
+
+  // ListShares returns active share tokens for a document.
+  rpc ListShares(ListDocSharesRequest) returns (ListDocSharesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/docs/d/{doc_id}/shares"
+    };
+  }
+
+  // RevokeShare revokes a share token.
+  rpc RevokeShare(RevokeDocShareRequest) returns (RevokeDocShareResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/docs/shares/{token}"
+    };
+  }
+
+  // GetShare resolves a share token to its document. Public: no session needed,
+  // so an anonymous "anyone with the link" recipient can open the doc.
+  rpc GetShare(GetDocShareRequest) returns (DocShareInfo) {
+    option (google.api.http) = {
+      get: "/api/v1/docs/share/{token}"
+    };
+  }
+
+  // ListSharedWithMe returns documents this caller has been granted access to by
+  // a per-user ACL grant (object_grants), including documents in other orgs.
+  rpc ListSharedWithMe(ListDocsSharedWithMeRequest) returns (ListDocsSharedWithMeResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/docs/shared-with-me"
+    };
+  }
+
+  // GrantAccess grants a grown user (by id) a role on a document. role ∈
+  // {viewer, commenter, editor}. Idempotent.
+  rpc GrantAccess(GrantDocAccessRequest) returns (GrantDocAccessResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/docs/d/{doc_id}/grants"
+      body: "*"
+    };
+  }
+
+  // ListGrants returns the per-user ACL grants on a document.
+  rpc ListGrants(ListDocGrantsRequest) returns (ListDocGrantsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/docs/d/{doc_id}/grants"
+    };
+  }
+
+  // RevokeAccess removes a user's per-user grant on a document.
+  rpc RevokeAccess(RevokeDocAccessRequest) returns (RevokeDocAccessResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/docs/d/{doc_id}/grants/{grantee_user_id}"
+    };
+  }
+
+  // UpdatePreview stores a rendered-HTML thumbnail for the Docs home grid.
+  rpc UpdatePreview(UpdatePreviewRequest) returns (UpdatePreviewResponse) {
+    option (google.api.http) = {
+      put: "/api/v1/docs/d/{id}/preview"
+      body: "*"
+    };
+  }
+
+  // SetTemplate flags/unflags a document as a gallery template.
+  rpc SetTemplate(SetTemplateRequest) returns (Doc) {
+    option (google.api.http) = {
+      patch: "/api/v1/docs/d/{id}/template"
+      body: "*"
+    };
+  }
+
+  // SnapshotNow captures the current rendered document as a new version. The
+  // client supplies the HTML (it owns the live CRDT/editor state).
+  rpc SnapshotNow(SnapshotNowRequest) returns (DocVersion) {
+    option (google.api.http) = {
+      post: "/api/v1/docs/d/{doc_id}/versions"
+      body: "*"
+    };
+  }
+
+  // ListVersions returns a document's saved versions, newest first (metadata
+  // only — no content_html — for the history panel).
+  rpc ListVersions(ListVersionsRequest) returns (ListVersionsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/docs/d/{doc_id}/versions"
+    };
+  }
+
+  // GetVersion returns a single version including its content_html, for preview.
+  rpc GetVersion(GetVersionRequest) returns (DocVersion) {
+    option (google.api.http) = {
+      get: "/api/v1/docs/d/{doc_id}/versions/{version_id}"
+    };
+  }
+
+  // RestoreVersion records a new version that is a copy of an older one (so the
+  // restore itself is auditable) and returns it; the client then loads its
+  // content into the live document.
+  rpc RestoreVersion(RestoreVersionRequest) returns (DocVersion) {
+    option (google.api.http) = {
+      post: "/api/v1/docs/d/{doc_id}/versions/{version_id}/restore"
+      body: "*"
+    };
+  }
+
+  // ListComments returns a document's comments (open + resolved), oldest first.
+  // Top-level comments are returned with their replies nested in the replies
+  // field. Resolved threads are included; clients may filter them client-side.
+  rpc ListComments(ListCommentsRequest) returns (ListCommentsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/docs/d/{doc_id}/comments"
+    };
+  }
+
+  // AddComment anchors a new comment to a text selection.
+  rpc AddComment(AddCommentRequest) returns (DocComment) {
+    option (google.api.http) = {
+      post: "/api/v1/docs/d/{doc_id}/comments"
+      body: "*"
+    };
+  }
+
+  // ReplyToComment posts a reply under an existing top-level comment.
+  rpc ReplyToComment(ReplyToCommentRequest) returns (DocComment) {
+    option (google.api.http) = {
+      post: "/api/v1/docs/d/{doc_id}/comments/{comment_id}/replies"
+      body: "*"
+    };
+  }
+
+  // ResolveComment marks a comment thread resolved.
+  rpc ResolveComment(ResolveCommentRequest) returns (DocComment) {
+    option (google.api.http) = {
+      patch: "/api/v1/docs/d/{doc_id}/comments/{comment_id}/resolve"
+      body: "*"
+    };
+  }
+
+  // ReopenComment reopens a previously resolved comment thread.
+  rpc ReopenComment(ReopenCommentRequest) returns (DocComment) {
+    option (google.api.http) = {
+      patch: "/api/v1/docs/d/{doc_id}/comments/{comment_id}/reopen"
+      body: "*"
+    };
+  }
+
+  // DeleteComment removes a comment (and all its replies).
+  rpc DeleteComment(DeleteCommentRequest) returns (DeleteCommentResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/docs/d/{doc_id}/comments/{comment_id}"
+    };
+  }
+}
+
+// DocVersion is a point-in-time snapshot of a document's rendered content.
+message DocVersion {
+  string id = 1;
+  string doc_id = 2;
+  string author_id = 3;
+  // Display name of the author, resolved for the history panel.
+  string author_name = 4;
+  // Optional human label ("Name current version"); empty for auto snapshots.
+  string label = 5;
+  // Rendered HTML; only populated by GetVersion (empty in list responses).
+  string content_html = 6;
+  // True when produced by a periodic/auto snapshot.
+  bool is_auto = 7;
+  string created_at = 8;
+}
+
+message SnapshotNowRequest {
+  string doc_id = 1;
+  string content_html = 2;
+  // Optional name for the version.
+  string label = 3;
+  // True for periodic/auto snapshots (the editor's debounced save).
+  bool is_auto = 4;
+}
+
+message ListVersionsRequest {
+  string doc_id = 1;
+}
+
+message ListVersionsResponse {
+  repeated DocVersion versions = 1;
+}
+
+message GetVersionRequest {
+  string doc_id = 1;
+  string version_id = 2;
+}
+
+message RestoreVersionRequest {
+  string doc_id = 1;
+  string version_id = 2;
+}
+
+// DocComment is an anchored comment on a text selection. Top-level comments
+// may carry replies; replies themselves have parent_comment_id set.
+message DocComment {
+  string id = 1;
+  string doc_id = 2;
+  string author_id = 3;
+  string author_name = 4;
+  string body = 5;
+  // The quoted text the comment anchors to.
+  string quote = 6;
+  // Best-effort ProseMirror positions of the anchored range.
+  int32 anchor_from = 7;
+  int32 anchor_to = 8;
+  // True once resolved.
+  bool resolved = 9;
+  string created_at = 10;
+  string resolved_at = 11;
+  // Non-empty for reply comments; references the top-level comment's id.
+  string parent_comment_id = 12;
+  // Replies nested under this top-level comment (only populated by ListComments
+  // for root comments; empty for reply rows themselves).
+  repeated DocComment replies = 13;
+  string updated_at = 14;
+}
+
+message ListCommentsRequest {
+  string doc_id = 1;
+}
+
+message ListCommentsResponse {
+  repeated DocComment comments = 1;
+}
+
+message AddCommentRequest {
+  string doc_id = 1;
+  string body = 2;
+  string quote = 3;
+  int32 anchor_from = 4;
+  int32 anchor_to = 5;
+}
+
+message ResolveCommentRequest {
+  string doc_id = 1;
+  string comment_id = 2;
+  // Kept for backward compatibility; the ResolveComment RPC always marks
+  // resolved=true. Use ReopenComment to reopen.
+  bool resolved = 3;
+}
+
+message ReopenCommentRequest {
+  string doc_id = 1;
+  string comment_id = 2;
+}
+
+message ReplyToCommentRequest {
+  string doc_id = 1;
+  // The id of the top-level comment this reply is attached to.
+  string comment_id = 2;
+  string body = 3;
+}
+
+message DeleteCommentRequest {
+  string doc_id = 1;
+  string comment_id = 2;
+}
+
+message DeleteCommentResponse {}
+
+// DocShare is a document share-link grant. (Named DocShare to avoid a clash with
+// drive.proto's Share in the shared grown.v1 package.)
+message DocShare {
+  string token = 1;
+  string doc_id = 2;
+  // "viewer" (read-only) or "editor" (full edit).
+  string role = 3;
+  string created_at = 4;
+  // Email this link was invited for; empty = anyone with the link.
+  string audience = 5;
+}
+
+message CreateDocShareRequest {
+  string doc_id = 1;
+  string role = 2;
+  // Optional invitee email. Empty = anyone-with-the-link.
+  string audience = 3;
+}
+
+message ListDocSharesRequest {
+  string doc_id = 1;
+}
+
+message ListDocSharesResponse {
+  repeated DocShare shares = 1;
+}
+
+message RevokeDocShareRequest {
+  string token = 1;
+}
+
+message RevokeDocShareResponse {}
+
+message GetDocShareRequest {
+  string token = 1;
+}
+
+// DocShareInfo is the public resolution of a token: which doc, at what role.
+message DocShareInfo {
+  string doc_id = 1;
+  string role = 2;
+  string title = 3;
+}
+
+message UpdatePreviewRequest {
+  string id = 1;
+  string html = 2;
+}
+
+message UpdatePreviewResponse {}
+
+message SetTemplateRequest {
+  string id = 1;
+  bool is_template = 2;
+}
+
+// Doc is a document's metadata. Content is synced via the collab WebSocket.
+message Doc {
+  // UUID, stable for the lifetime of the document.
+  string id = 1;
+  // Owning org UUID.
+  string org_id = 2;
+  // Owner user UUID.
+  string owner_id = 3;
+  // Human title (defaults to "Untitled document").
+  string title = 4;
+  // RFC3339 creation timestamp.
+  string created_at = 5;
+  // RFC3339 last-update timestamp.
+  string updated_at = 6;
+  // Cached rendered-HTML preview for the home-grid thumbnail (may be empty).
+  string preview_html = 7;
+  // True when this document is a reusable template in the gallery.
+  bool is_template = 8;
+}
+
+message ListDocsRequest {}
+
+message ListDocsResponse {
+  repeated Doc docs = 1;
+}
+
+message CreateDocRequest {
+  // Optional initial title. Empty → "Untitled document".
+  string title = 1;
+}
+
+message GetDocRequest {
+  string id = 1;
+}
+
+message RenameDocRequest {
+  string id = 1;
+  string title = 2;
+}
+
+message TrashDocRequest {
+  string id = 1;
+}
+
+message TrashDocResponse {}
+
+// Per-user ACL grants for Docs. ObjectGrant is defined in drive.proto (same
+// grown.v1 package) and reused here.
+message ListDocsSharedWithMeRequest {}
+message ListDocsSharedWithMeResponse { repeated Doc docs = 1; }
+
+message GrantDocAccessRequest {
+  string doc_id = 1;
+  string grantee_user_id = 2;
+  string role = 3;
+}
+message GrantDocAccessResponse { ObjectGrant grant = 1; }
+
+message ListDocGrantsRequest { string doc_id = 1; }
+message ListDocGrantsResponse { repeated ObjectGrant grants = 1; }
+
+message RevokeDocAccessRequest {
+  string doc_id = 1;
+  string grantee_user_id = 2;
+}
+message RevokeDocAccessResponse {}

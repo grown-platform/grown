@@ -1,0 +1,20 @@
+# Build context excludes — keep it lean and reproducible.
+.git
+.claude
+.direnv
+node_modules
+web/app/node_modules
+web/app/dist
+# gen/ is regenerated inside the build via `buf generate` (remote plugins).
+gen
+# The PDF (pdf) app ships as its own image (pdf/*/Dockerfile).
+pdf
+# Local capture material + process-compose runtime data.
+research
+deploy/process-compose/data
+# Docs / specs / archives not needed at build.
+**/*.md
+!web/app/**
+https://code.pick.haus/grown/grown-workspace
+https://code.pick.haus/pick/spacelight
+https://code.pick.haus/pick/assemble

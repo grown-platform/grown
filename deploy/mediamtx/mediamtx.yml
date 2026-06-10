@@ -1,0 +1,107 @@
+# MediaMTX configuration for grown live streaming.
+#
+# MediaMTX is the media server: it ingests RTMP (OBS/streaming software) and
+# WebRTC/WHIP (browser Go Live), and serves playback over HLS and WebRTC/WHEP.
+# grown owns the stream metadata and authorizes every publish/read via an HTTP
+# auth webhook, and tracks live/offline via runOnReady/runOnNotReady hooks.
+#
+# Run with host networking so 127.0.0.1 reaches grown's backend (:8080):
+#   docker run --network host -v <this file>:/mediamtx.yml bluenviron/mediamtx:latest
+#
+# Use the `latest-ffmpeg` image tag instead if you later enable recording or
+# transcoding (the plain image has no ffmpeg).
+
+###############################################
+# Global / API
+###############################################
+
+# Log to stdout so process-compose captures it.
+logLevel: info
+logDestinations: [stdout]
+
+# Control API (grown can poll GET /v3/paths/list as a fallback to the hooks).
+api: yes
+apiAddress: 127.0.0.1:9997
+
+# Disable the metrics/pprof/playback servers we don't use.
+metrics: no
+pprof: no
+playback: no
+
+###############################################
+# Authentication — delegate to grown over HTTP
+###############################################
+# On every publish/read MediaMTX POSTs JSON {user,password,ip,action,path,
+# protocol,id,query} to authHTTPAddress and expects 2xx to allow, 401 to deny.
+# grown's handler (internal/live/webhooks.go) authorizes publish by stream_key
+# and allows read for known paths (org gating happens at grown's reverse proxy).
+authMethod: http
+authHTTPAddress: http://127.0.0.1:8080/api/v1/live/auth
+# Exclude the control API from the external auth so localhost API polling works
+# without round-tripping to grown.
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+###############################################
+# Ingest / playback protocols
+###############################################
+
+# RTMP ingest (OBS/streaming software) on 1935.
+rtmp: yes
+rtmpAddress: :1935
+
+# HLS playback on 8888. grown reverse-proxies /live-hls/* → here.
+hls: yes
+hlsAddress: :8888
+# Low-latency HLS for faster start; falls back to standard HLS where unsupported.
+hlsVariant: lowLatency
+hlsAlwaysRemux: no
+# CORS: allow grown's origins to fetch playlists/segments. The browser actually
+# talks to grown's same-origin proxy, but set this permissively so direct access
+# and preflights from grown's dev origins succeed.
+hlsAllowOrigin: "*"
+
+# WebRTC (WHIP publish / WHEP read) on 8889. grown reverse-proxies
+# /live-webrtc/* → here.
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigin: "*"
+# Local-only ICE: in the homelab/dev setup MediaMTX and the browser are reached
+# via grown on the same host/LAN. Add a public IP / TURN here for remote
+# publishers behind NAT.
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcIPsFromInterfaces: yes
+webrtcAdditionalHosts: []
+
+# SRT ingest on 8890 (optional low-latency contribution path).
+srt: yes
+srtAddress: :8890
+
+# RTSP off by default (not used by grown's browser flows). Enable if you want
+# to pull from IP cameras.
+rtsp: no
+
+###############################################
+# Path defaults — live/offline hooks
+###############################################
+# all_others applies to every path (each stream's MediaMTX path == its grown
+# stream id). On ready/notready, curl grown's server-to-server webhooks. These
+# are unauthenticated (like the auth webhook) and flip the stream's status.
+#
+# MediaMTX substitutes $MTX_PATH with the current path (== the stream id).
+pathDefaults:
+  runOnReady: >
+    curl -fsS -m 5 -X POST
+    http://127.0.0.1:8080/api/v1/live/$MTX_PATH/_ready || true
+  runOnReadyRestart: no
+  runOnNotReady: >
+    curl -fsS -m 5 -X POST
+    http://127.0.0.1:8080/api/v1/live/$MTX_PATH/_notready || true
+
+# Accept any path name (streams are created dynamically; grown's auth webhook is
+# the gate). The default already permits dynamic paths via all_others.
+paths:
+  all_others:

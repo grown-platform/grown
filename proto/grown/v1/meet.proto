@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// MeetService manages video-call rooms.
+service MeetService {
+  rpc ListMeetRooms(ListMeetRoomsRequest) returns (ListMeetRoomsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/meet/rooms"
+    };
+  }
+
+  rpc CreateMeetRoom(CreateMeetRoomRequest) returns (MeetRoom) {
+    option (google.api.http) = {
+      post: "/api/v1/meet/rooms"
+      body: "*"
+    };
+  }
+
+  rpc GetMeetRoom(GetMeetRoomRequest) returns (MeetRoom) {
+    option (google.api.http) = {
+      get: "/api/v1/meet/rooms/{id}"
+    };
+  }
+
+  rpc DeleteMeetRoom(DeleteMeetRoomRequest) returns (DeleteMeetRoomResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/meet/rooms/{id}"
+    };
+  }
+}
+
+message MeetRoom {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string name = 4;
+  string created_at = 5;
+}
+
+message ListMeetRoomsRequest {}
+
+message ListMeetRoomsResponse {
+  repeated MeetRoom rooms = 1;
+}
+
+message CreateMeetRoomRequest {
+  string name = 1;
+}
+
+message GetMeetRoomRequest {
+  string id = 1;
+}
+
+message DeleteMeetRoomRequest {
+  string id = 1;
+}
+
+message DeleteMeetRoomResponse {}

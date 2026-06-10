@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// GroupsService is a Google Groups clone: per-org mailing lists / forums. A
+// group has a name, an email (e.g. team@org), a description and a set of
+// members. Within a group, topics (conversations) carry an ordered list of
+// posts (author, body, created_at).
+//
+// NOTE on naming: the flat grown.v1 package already defines `Member`,
+// `ListMembersRequest` and `ListMembersResponse` (projects.proto). To avoid
+// collisions every Groups message is prefixed — `Group`, `GroupTopic`,
+// `GroupPost`, `GroupMember`, `ListGroupMembersRequest`, etc.
+service GroupsService {
+  // ── Member picker ──────────────────────────────────────────────────────────
+  // ListMembers lists the org's users for the group member picker. The RPC name
+  // is reused but every message it touches is Group-prefixed to stay unique.
+  rpc ListMembers(ListGroupMembersRequest) returns (ListGroupMembersResponse) {
+    option (google.api.http) = { get: "/api/v1/groups/members" };
+  }
+
+  // ── Groups ───────────────────────────────────────────────────────────────
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {
+    option (google.api.http) = { get: "/api/v1/groups" };
+  }
+  rpc CreateGroup(CreateGroupRequest) returns (Group) {
+    option (google.api.http) = { post: "/api/v1/groups" body: "*" };
+  }
+  rpc GetGroup(GetGroupRequest) returns (Group) {
+    option (google.api.http) = { get: "/api/v1/groups/{id}" };
+  }
+  rpc UpdateGroup(UpdateGroupRequest) returns (Group) {
+    option (google.api.http) = { patch: "/api/v1/groups/{id}" body: "*" };
+  }
+  rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse) {
+    option (google.api.http) = { delete: "/api/v1/groups/{id}" };
+  }
+
+  // ── Topics (conversations within a group) ──────────────────────────────────
+  rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse) {
+    option (google.api.http) = { get: "/api/v1/groups/{group_id}/topics" };
+  }
+  rpc CreateTopic(CreateTopicRequest) returns (GroupTopic) {
+    option (google.api.http) = { post: "/api/v1/groups/{group_id}/topics" body: "*" };
+  }
+
+  // ── Posts (messages within a topic) ─────────────────────────────────────────
+  rpc ListPosts(ListPostsRequest) returns (ListPostsResponse) {
+    option (google.api.http) = { get: "/api/v1/groups/topics/{topic_id}/posts" };
+  }
+  rpc CreatePost(CreatePostRequest) returns (GroupPost) {
+    option (google.api.http) = { post: "/api/v1/groups/topics/{topic_id}/posts" body: "*" };
+  }
+}
+
+// Group is a per-org mailing list / forum.
+message Group {
+  string id = 1;
+  string org_id = 2;
+  string name = 3;
+  // Group email address, e.g. "team@org".
+  string email = 4;
+  string description = 5;
+  // Member user IDs (org users).
+  repeated string member_ids = 6;
+  // Denormalized counts for list/about display.
+  int32 member_count = 7;
+  int32 topic_count = 8;
+  int32 post_count = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+// GroupTopic is a conversation thread within a group.
+message GroupTopic {
+  string id = 1;
+  string group_id = 2;
+  string org_id = 3;
+  string subject = 4;
+  string author_id = 5;
+  // Denormalized author display name.
+  string author_name = 6;
+  int32 post_count = 7;
+  // Timestamp of the most recent post (for ordering / display).
+  string last_post_at = 8;
+  string created_at = 9;
+}
+
+// GroupPost is a single message within a topic.
+message GroupPost {
+  string id = 1;
+  string topic_id = 2;
+  string group_id = 3;
+  string org_id = 4;
+  string author_id = 5;
+  // Denormalized author display name.
+  string author_name = 6;
+  string body = 7;
+  string created_at = 8;
+}
+
+// GroupMember is an org user that can be added to a group.
+message GroupMember {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+}
+
+// ── Request/response messages ────────────────────────────────────────────────
+
+message ListGroupMembersRequest {}
+message ListGroupMembersResponse {
+  repeated GroupMember members = 1;
+}
+
+message ListGroupsRequest {}
+message ListGroupsResponse {
+  repeated Group groups = 1;
+}
+
+message CreateGroupRequest {
+  string name = 1;
+  string email = 2;
+  string description = 3;
+  repeated string member_ids = 4;
+}
+
+message GetGroupRequest {
+  string id = 1;
+}
+
+// UpdateGroup replaces the editable fields of a group, including its members.
+message UpdateGroupRequest {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+  string description = 4;
+  repeated string member_ids = 5;
+}
+
+message DeleteGroupRequest {
+  string id = 1;
+}
+message DeleteGroupResponse {}
+
+message ListTopicsRequest {
+  string group_id = 1;
+}
+message ListTopicsResponse {
+  repeated GroupTopic topics = 1;
+}
+
+message CreateTopicRequest {
+  string group_id = 1;
+  string subject = 2;
+  // Optional first post body. When set, an initial post is created with the topic.
+  string body = 3;
+}
+
+message ListPostsRequest {
+  string topic_id = 1;
+}
+message ListPostsResponse {
+  repeated GroupPost posts = 1;
+}
+
+message CreatePostRequest {
+  string topic_id = 1;
+  string body = 2;
+}

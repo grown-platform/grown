@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// PreferencesService manages per-user preferences (language, density, default
+// app, date/time format, week start, email notifications, and a generic extra
+// bag for future keys).
+service PreferencesService {
+  // GetPreferences returns the calling user's preferences, falling back to
+  // sane defaults when no row has been saved yet.
+  rpc GetPreferences(GetPreferencesRequest) returns (UserPreferences) {
+    option (google.api.http) = {
+      get: "/api/v1/me/preferences"
+    };
+  }
+
+  // UpdatePreferences does a partial upsert: only fields present in the
+  // update_mask are written; absent fields keep their current value.
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (UserPreferences) {
+    option (google.api.http) = {
+      patch: "/api/v1/me/preferences"
+      body: "*"
+    };
+  }
+}
+
+// UserPreferences carries all per-user preference fields.
+message UserPreferences {
+  string user_id              = 1;
+  string org_id               = 2;
+  // language is a BCP-47 tag, e.g. "en", "es", "fr".
+  string language             = 3;
+  // density controls UI density: "comfortable" or "compact".
+  string density              = 4;
+  // default_app is the app tile that opens on login (e.g. "drive", "mail",
+  // "dashboard").
+  string default_app          = 5;
+  // date_format is a display-only hint, e.g. "MMM D, YYYY" or "D/M/YYYY".
+  string date_format          = 6;
+  // time_format is "12h" or "24h".
+  string time_format          = 7;
+  // week_start is "sunday" or "monday".
+  string week_start           = 8;
+  // email_notifications controls whether the user receives email digests.
+  bool   email_notifications  = 9;
+  // extra is a free-form JSON bag for future preference keys.
+  string extra                = 10;
+  string updated_at           = 11;
+}
+
+message GetPreferencesRequest {}
+
+// UpdatePreferencesRequest carries the fields to upsert.  Only fields listed
+// in update_mask are applied; use "*" to replace all fields.
+message UpdatePreferencesRequest {
+  string language             = 1;
+  string density              = 2;
+  string default_app          = 3;
+  string date_format          = 4;
+  string time_format          = 5;
+  string week_start           = 6;
+  bool   email_notifications  = 7;
+  string extra                = 8;
+  // update_mask lists which field names to apply.  Omit or send "*" to update
+  // all provided fields.
+  repeated string update_mask = 9;
+}

@@ -1,0 +1,604 @@
+version: "0.5"
+
+processes:
+  postgres-init:
+    command: |
+      set -e
+      if [ ! -f "$PGDATA/PG_VERSION" ]; then
+        initdb --auth=trust --username=$PGUSER -D "$PGDATA" --encoding=UTF8 --locale=C
+      fi
+    availability:
+      restart: "no"
+
+  postgres:
+    command: |
+      exec postgres \
+        -D "$PGDATA" \
+        -k "$PGHOST" \
+        -h 127.0.0.1 \
+        -p "$PGPORT"
+    depends_on:
+      postgres-init:
+        condition: process_completed_successfully
+    readiness_probe:
+      exec:
+        command: pg_isready -h 127.0.0.1 -p $PGPORT -U $PGUSER
+      initial_delay_seconds: 1
+      period_seconds: 1
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 30
+    availability:
+      restart: on_failure
+
+  postgres-createdb:
+    command: |
+      set -e
+      psql -h 127.0.0.1 -p $PGPORT -U $PGUSER -d postgres -tc \
+        "SELECT 1 FROM pg_database WHERE datname = '$PGDATABASE'" \
+      | grep -q 1 || \
+      createdb -h 127.0.0.1 -p $PGPORT -U $PGUSER "$PGDATABASE"
+    depends_on:
+      postgres:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  zitadel-createdb:
+    command: |
+      set -e
+      psql -h 127.0.0.1 -p $PGPORT -U $PGUSER -d postgres -tc \
+        "SELECT 1 FROM pg_database WHERE datname = 'zitadel'" \
+      | grep -q 1 || \
+      createdb -h 127.0.0.1 -p $PGPORT -U $PGUSER zitadel
+    depends_on:
+      postgres:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  zitadel-init-db:
+    command: |
+      set -e
+      # Creates the eventstore/projections/system schemas inside the zitadel
+      # database. Must run before `zitadel setup`. Safe to re-run (idempotent).
+      zitadel init \
+        --config "$PROJECT_ROOT/deploy/zitadel/zitadel.yaml"
+    depends_on:
+      zitadel-createdb:
+        condition: process_completed_successfully
+    availability:
+      restart: "no"
+
+  zitadel-init:
+    command: |
+      set -e
+      # First-boot setup: creates instance, default org, admin user, and
+      # bootstrap service account. The setup command exits 0 even if the
+      # instance already exists, so this is safe to re-run.
+      #
+      # All FirstInstance fields are set via env vars because viper's merge of
+      # pointer-type fields from steps.yaml is unreliable — env vars win.
+      # PATPATH is written only on first boot; subsequent boots skip FirstInstance.
+      mkdir -p "$PROJECT_ROOT/deploy/zitadel/data"
+      export ZITADEL_FIRSTINSTANCE_PATPATH="$PROJECT_ROOT/deploy/zitadel/data/bootstrap-pat.txt"
+      # Human admin user (local-dev only).
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME="admin"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME="Grown"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME="Admin"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS="admin@grown.localtest.me"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED="true"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD="DevPassword!1"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED="false"
+      # Machine (service account) user + PAT.
+      export ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME="bootstrap"
+      export ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME="Bootstrap SA"
+      export ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE="2099-01-01T00:00:00Z"
+      zitadel setup \
+        --config "$PROJECT_ROOT/deploy/zitadel/zitadel.yaml" \
+        --steps "$PROJECT_ROOT/deploy/zitadel/steps.yaml" \
+        --masterkey "MasterkeyNeedsToHave32Characters"
+    depends_on:
+      zitadel-init-db:
+        condition: process_completed_successfully
+    availability:
+      restart: "no"
+
+  zitadel:
+    command: |
+      exec zitadel start \
+        --config "$PROJECT_ROOT/deploy/zitadel/zitadel.yaml" \
+        --masterkey "MasterkeyNeedsToHave32Characters"
+    depends_on:
+      zitadel-init:
+        condition: process_completed_successfully
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 8081
+        path: /debug/ready
+      initial_delay_seconds: 2
+      period_seconds: 2
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 60
+    availability:
+      restart: on_failure
+
+  zitadel-create-app:
+    command: |
+      set -e
+      bash "$PROJECT_ROOT/deploy/zitadel/create-oidc-app.sh"
+    environment:
+      - ZITADEL_URL=http://localhost:8081
+      - GROWN_OIDC_CLIENT_ID=grown-dev-client
+      - GROWN_OIDC_CLIENT_SECRET=grown-dev-secret
+      - GROWN_OIDC_REDIRECT_URL=http://workspace.localtest.me:8080/api/v1/auth/callback
+    depends_on:
+      zitadel:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  rustfs-pull:
+    command: docker pull rustfs/rustfs:1.0.0-beta.7
+    availability:
+      restart: "no"
+
+  rustfs:
+    command: |
+      mkdir -p "$PROJECT_ROOT/deploy/process-compose/data/rustfs"
+      # Clean up any zombie container from a prior non-graceful exit (SIGKILL,
+      # OOM, host reboot). Without this, `docker run --name` fails with
+      # "name already in use" and the stack won't restart cleanly.
+      docker rm -f grown-rustfs-dev >/dev/null 2>&1 || true
+      exec docker run --rm \
+        --name grown-rustfs-dev \
+        --network host \
+        --user "$(id -u):$(id -g)" \
+        -e RUSTFS_ACCESS_KEY=grown \
+        -e RUSTFS_SECRET_KEY=DevPassword!1 \
+        -e RUSTFS_VOLUMES=/data \
+        -e RUSTFS_ADDRESS=:9100 \
+        -e RUSTFS_CONSOLE_ENABLE=true \
+        -e RUSTFS_CONSOLE_ADDRESS=:9101 \
+        -e RUSTFS_OBS_LOG_DIRECTORY="" \
+        -v "$PROJECT_ROOT/deploy/process-compose/data/rustfs:/data" \
+        rustfs/rustfs:1.0.0-beta.7
+    depends_on:
+      rustfs-pull:
+        condition: process_completed_successfully
+    shutdown:
+      command: "docker stop -t 5 grown-rustfs-dev >/dev/null 2>&1 || true"
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 9100
+        path: /health
+      initial_delay_seconds: 3
+      period_seconds: 2
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 60
+    availability:
+      restart: on_failure
+
+  rustfs-init:
+    command: |
+      set -e
+      bash "$PROJECT_ROOT/deploy/rustfs/init-bucket.sh"
+    environment:
+      - RUSTFS_ENDPOINT=http://127.0.0.1:9100
+      - RUSTFS_ACCESS_KEY=grown
+      - RUSTFS_SECRET_KEY=DevPassword!1
+      - RUSTFS_BUCKET=grown-default
+    depends_on:
+      rustfs:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  web-build:
+    command: |
+      set -e
+      cd "$PROJECT_ROOT/web/app"
+      if [ ! -d node_modules ]; then
+        npm install --no-fund --no-audit
+      fi
+      npm run build
+    availability:
+      restart: "no"
+
+  backend:
+    command: |
+      # Load the OIDC credentials written by zitadel-create-app. The file is a
+      # simple KEY=VALUE dotenv written by create-oidc-app.sh and contains the
+      # Zitadel-assigned clientId/clientSecret (generated at app creation time).
+      CREDS_FILE="$PROJECT_ROOT/deploy/zitadel/data/oidc-client.env"
+      if [ -s "$CREDS_FILE" ]; then
+        set -a; . "$CREDS_FILE"; set +a
+      fi
+      exec go run ./cmd/server \
+        --http-addr=:8080 \
+        --grpc-addr=:9000 \
+        --static-dir="$PROJECT_ROOT/web/app/dist"
+    environment:
+      - GROWN_POSTGRES_DSN=postgres://${PGUSER}@127.0.0.1:${PGPORT}/${PGDATABASE}?sslmode=disable
+      # OIDC issuer + redirect are stable; client_id and client_secret are
+      # loaded at runtime from deploy/zitadel/data/oidc-client.env (written by
+      # the zitadel-create-app process). The values below are fallbacks only.
+      - GROWN_OIDC_ISSUER=http://localhost:8081
+      - GROWN_OIDC_REDIRECT_URL=http://workspace.localtest.me:8080/api/v1/auth/callback
+      - GROWN_SESSION_COOKIE_NAME=grown_session
+      - GROWN_SESSION_COOKIE_SECURE=false
+      # Share the session + OIDC-state cookies across grown subdomains (e.g. the
+      # CRM subdomain crm.workspace.localtest.me), so login on any subdomain is
+      # seen on the others and the OIDC callback (on the apex host) finds the
+      # state cookie set during a subdomain-initiated login.
+      - GROWN_SESSION_COOKIE_DOMAIN=workspace.localtest.me
+      - GROWN_SESSION_LIFETIME=168h
+      - GROWN_DEFAULT_ORG_SLUG=default
+      - GROWN_RUSTFS_ENDPOINT=http://127.0.0.1:9100
+      - GROWN_RUSTFS_ACCESS_KEY=grown
+      - GROWN_RUSTFS_SECRET_KEY=DevPassword!1
+      - GROWN_RUSTFS_BUCKET=grown-default
+      # Integrated PDF (editor & sign) app — reverse-proxy targets. The proxy
+      # tolerates these being down (502 until pdf-backend/frontend are up).
+      - GROWN_PDF_FRONTEND_URL=http://127.0.0.1:5173
+      - GROWN_PDF_BACKEND_URL=http://127.0.0.1:8085
+      # Integrated Twenty CRM — Host-based reverse proxy. GROWN_CRM_URL is
+      # Twenty's internal origin; GROWN_CRM_HOST is the public subdomain whose
+      # requests get proxied whole to Twenty at root. The proxy tolerates Twenty
+      # being down (502 until twenty-server is up).
+      - GROWN_CRM_URL=http://127.0.0.1:3000
+      - GROWN_CRM_HOST=crm.workspace.localtest.me:8080
+      # Live streaming (MediaMTX). The HLS/WebRTC URLs are the MediaMTX listeners
+      # grown reverse-proxies under /live-hls and /live-webrtc. RTMP host is what
+      # OBS dials for ingest. The proxy tolerates MediaMTX being down (502 until
+      # live-mediamtx is up).
+      - GROWN_LIVE_HLS_URL=http://127.0.0.1:8888
+      - GROWN_LIVE_WEBRTC_URL=http://127.0.0.1:8889
+      - GROWN_LIVE_API_URL=http://127.0.0.1:9997
+      - GROWN_LIVE_RTMP_HOST=localhost:1935
+      - GROWN_LIVE_HLS_BASE=/live-hls
+      - GROWN_LIVE_WEBRTC_BASE=/live-webrtc
+      # In-app account security: proxy /api/zitadel/* to the Zitadel User API v2.
+      # API URL defaults to GROWN_OIDC_ISSUER when blank. The service token is a
+      # Zitadel service-account PAT (user.write) supplied from the host env / a
+      # secret — NOT committed. Without it the proxy returns 503 and the security
+      # panel shows a load error (rest of the app is unaffected).
+      - GROWN_ZITADEL_API_URL=http://localhost:8081
+      - GROWN_ZITADEL_SERVICE_TOKEN=${GROWN_ZITADEL_SERVICE_TOKEN}
+      # Admin: comma-separated emails allowed to mutate per-org service toggles.
+      # Empty ⇒ any org member may write (dev fallback; see internal/admin TODO).
+      - GROWN_ADMIN_EMAILS=${GROWN_ADMIN_EMAILS}
+    depends_on:
+      postgres-createdb:
+        condition: process_completed_successfully
+      zitadel-create-app:
+        condition: process_completed_successfully
+      web-build:
+        condition: process_completed_successfully
+      rustfs-init:
+        condition: process_completed_successfully
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 8080
+        path: /healthz
+      initial_delay_seconds: 2
+      period_seconds: 2
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 30
+    availability:
+      restart: on_failure
+
+  # ---------------------------------------------------------------------------
+  # Integrated PDF (editor & sign) app — the pdf service, sharing grown's
+  # Postgres (own db `pdf`), RustFS (own bucket `pdf-docs`), and
+  # Zitadel (own OIDC app). Reverse-proxied under grown's origin at /pdf/.
+  # ---------------------------------------------------------------------------
+  pdf-createdb:
+    command: |
+      set -e
+      psql -h 127.0.0.1 -p $PGPORT -U $PGUSER -d postgres -tc \
+        "SELECT 1 FROM pg_database WHERE datname = 'pdf'" \
+      | grep -q 1 || createdb -h 127.0.0.1 -p $PGPORT -U $PGUSER pdf
+    depends_on:
+      postgres:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  pdf-bucket-init:
+    command: |
+      set -e
+      bash "$PROJECT_ROOT/deploy/rustfs/init-bucket.sh"
+    environment:
+      - RUSTFS_ENDPOINT=http://127.0.0.1:9100
+      - RUSTFS_ACCESS_KEY=grown
+      - RUSTFS_SECRET_KEY=DevPassword!1
+      - RUSTFS_BUCKET=pdf-docs
+    depends_on:
+      rustfs:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  pdf-zitadel-app:
+    command: |
+      set -e
+      bash "$PROJECT_ROOT/deploy/zitadel/create-pdf-oidc-app.sh"
+    environment:
+      - ZITADEL_URL=http://localhost:8081
+    depends_on:
+      zitadel-create-app:
+        condition: process_completed_successfully
+    availability:
+      restart: "no"
+
+  pdf-backend:
+    command: |
+      set -e
+      # Load the pdf OIDC client credentials written by pdf-zitadel-app.
+      CREDS_FILE="$PROJECT_ROOT/deploy/zitadel/data/pdf-oidc.env"
+      if [ -s "$CREDS_FILE" ]; then set -a; . "$CREDS_FILE"; set +a; fi
+      cd "$PROJECT_ROOT/pdf/backend" && exec go run ./cmd/server
+    environment:
+      # Shared Postgres (own db), shared RustFS (own bucket).
+      - PDF_DATABASE_URL=postgres://grown@127.0.0.1:5533/pdf?sslmode=disable
+      - PDF_STORAGE_ENDPOINT=http://127.0.0.1:9100
+      - PDF_STORAGE_REGION=us-east-1
+      - PDF_STORAGE_BUCKET=pdf-docs
+      - PDF_STORAGE_ACCESS_KEY=grown
+      - PDF_STORAGE_SECRET_KEY=DevPassword!1
+      - PDF_SERVER_HTTP_ADDR=:8085
+      - PDF_SERVER_GRPC_ADDR=:50053
+      # Auth via grown's shared Zitadel; callback + frontend come back through
+      # grown's origin (reverse-proxied). client_id/secret sourced above.
+      - PDF_AUTH_ISSUER_URL=http://localhost:8081
+      - PDF_AUTH_REDIRECT_URL=http://workspace.localtest.me:8080/pdf-api/auth/callback
+      - PDF_SERVER_FRONTEND_URL=http://workspace.localtest.me:8080/pdf/
+      # Key-encryption-key for signing certs (local-dev default).
+      - PDF_CRYPTO_KEY_ENCRYPTION_KEY=wWwDxAaMbc6w7gpizZI+mFi7vhL/U+HYhxjDyQyl598=
+      # mTLS (cert-based signing) is a production feature behind an mTLS-terminating
+      # nginx; dev runs without it. proxy_mode=true would require a shared secret.
+      - PDF_MTLS_PROXY_MODE=false
+    depends_on:
+      postgres-createdb:
+        condition: process_completed_successfully
+      pdf-createdb:
+        condition: process_completed_successfully
+      pdf-bucket-init:
+        condition: process_completed_successfully
+      pdf-zitadel-app:
+        condition: process_completed_successfully
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 8085
+        path: /health
+      initial_delay_seconds: 5
+      period_seconds: 2
+      timeout_seconds: 5
+      failure_threshold: 45
+    availability:
+      restart: on_failure
+
+  pdf-frontend:
+    command: |
+      set -e
+      cd "$PROJECT_ROOT/pdf/frontend"
+      if [ ! -d node_modules ]; then npm install --no-fund --no-audit; fi
+      exec npm run dev
+    environment:
+      # Served under /pdf/, API + auth proxied via grown at /pdf-api/*.
+      - GROWN_PDF_BASE=/pdf/
+      - VITE_API_BASE=/pdf-api/api
+      - VITE_LOGIN_URL=/pdf-api/auth/login
+      - VITE_LOGOUT_URL=/pdf-api/auth/logout
+    depends_on:
+      pdf-backend:
+        condition: process_healthy
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 5173
+        path: /pdf/
+      initial_delay_seconds: 5
+      period_seconds: 2
+      timeout_seconds: 5
+      failure_threshold: 60
+    availability:
+      restart: on_failure
+
+  # ---------------------------------------------------------------------------
+  # Live streaming: MediaMTX (RTMP ingest + HLS/WebRTC playback). grown's auth
+  # webhook (127.0.0.1:8080/api/v1/live/auth) gates publishing; runOnReady/
+  # runOnNotReady flip a stream live/offline. --network host so the in-container
+  # curls + auth webhook reach grown at 127.0.0.1:8080 (see deploy/mediamtx/
+  # mediamtx.yml). On macOS Docker Desktop, if host networking can't reach
+  # 127.0.0.1:8080, switch mediamtx.yml to host.docker.internal and use -p port
+  # mappings instead of --network host.
+  # ---------------------------------------------------------------------------
+  live-mediamtx-pull:
+    command: docker pull bluenviron/mediamtx:latest
+    availability:
+      restart: "no"
+
+  live-mediamtx:
+    command: |
+      # Clean up any zombie container from a prior non-graceful exit so
+      # `docker run --name` doesn't fail with "name already in use".
+      docker rm -f grown-mediamtx-dev >/dev/null 2>&1 || true
+      exec docker run --rm \
+        --name grown-mediamtx-dev \
+        --network host \
+        -v "$PROJECT_ROOT/deploy/mediamtx/mediamtx.yml:/mediamtx.yml:ro" \
+        bluenviron/mediamtx:latest
+    depends_on:
+      live-mediamtx-pull:
+        condition: process_completed_successfully
+      backend:
+        condition: process_started
+    shutdown:
+      command: "docker stop -t 5 grown-mediamtx-dev >/dev/null 2>&1 || true"
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 9997
+        path: /v3/config/global/get
+      initial_delay_seconds: 3
+      period_seconds: 2
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 60
+    availability:
+      restart: on_failure
+
+  # ---------------------------------------------------------------------------
+  # Integrated Twenty CRM (twentyhq/twenty) — Docker containers (own Postgres +
+  # Dragonfly), reached at crm.workspace.localtest.me:8080, which grown reverse-
+  # proxies (by Host) straight to the Twenty server at :3000. SSO is via the
+  # shared Zitadel OIDC app (twenty-zitadel-app); the OIDC provider itself is
+  # added once in Twenty's Settings -> Security UI (see WIRING.md / docs).
+  # ---------------------------------------------------------------------------
+  twenty-db:
+    command: |
+      docker rm -f grown-twenty-db >/dev/null 2>&1 || true
+      mkdir -p "$PROJECT_ROOT/deploy/process-compose/data/twenty-db"
+      exec docker run --rm \
+        --name grown-twenty-db \
+        --network host \
+        -e POSTGRES_DB=default \
+        -e POSTGRES_USER=twenty \
+        -e POSTGRES_PASSWORD=DevPassword!1 \
+        -e PGPORT=5544 \
+        -v "$PROJECT_ROOT/deploy/process-compose/data/twenty-db:/var/lib/postgresql/data" \
+        postgres:16
+    shutdown:
+      command: "docker stop -t 5 grown-twenty-db >/dev/null 2>&1 || true"
+    readiness_probe:
+      exec:
+        command: docker exec grown-twenty-db pg_isready -U twenty -h localhost -p 5544 -d default
+      initial_delay_seconds: 3
+      period_seconds: 2
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 60
+    availability:
+      restart: on_failure
+
+  twenty-redis:
+    command: |
+      docker rm -f grown-twenty-redis >/dev/null 2>&1 || true
+      # Dragonfly — a Redis-protocol-compatible in-memory store (drop-in for
+      # Twenty's BullMQ queues + cache). It speaks RESP on 6379 so Twenty's
+      # REDIS_URL=redis://127.0.0.1:6379 is unchanged; it also serves Prometheus
+      # /metrics over HTTP on the same port (used by the readiness probe).
+      # --ulimit memlock=-1 per Dragonfly's recommendation; it does not evict by
+      # default, which BullMQ requires. Pin/bump the tag at bring-up if needed.
+      exec docker run --rm \
+        --name grown-twenty-redis \
+        --network host \
+        --ulimit memlock=-1 \
+        docker.dragonflydb.io/dragonflydb/dragonfly:v1.21.2 \
+        --port 6379
+    shutdown:
+      command: "docker stop -t 5 grown-twenty-redis >/dev/null 2>&1 || true"
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 6379
+        path: /metrics
+      initial_delay_seconds: 2
+      period_seconds: 2
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 30
+    availability:
+      restart: on_failure
+
+  twenty-zitadel-app:
+    command: |
+      set -e
+      bash "$PROJECT_ROOT/deploy/zitadel/create-twenty-oidc-app.sh"
+    environment:
+      - ZITADEL_URL=http://localhost:8081
+    depends_on:
+      zitadel-create-app:
+        condition: process_completed_successfully
+    availability:
+      restart: "no"
+
+  twenty-server:
+    command: |
+      docker rm -f grown-twenty-server >/dev/null 2>&1 || true
+      # SERVER_URL is the PUBLIC subdomain so Twenty emits correct absolute URLs
+      # (login + /auth/oidc/callback) that route back through grown's proxy.
+      # Migrations auto-run on first boot (entrypoint, gated by
+      # DISABLE_DB_MIGRATIONS). ENCRYPTION_KEY/APP_SECRET are stable local-dev
+      # secrets (regenerate for non-local use).
+      exec docker run --rm \
+        --name grown-twenty-server \
+        --network host \
+        -e NODE_PORT=3000 \
+        -e SERVER_URL=http://crm.workspace.localtest.me:8080 \
+        -e PG_DATABASE_URL='postgres://twenty:DevPassword!1@127.0.0.1:5544/default' \
+        -e REDIS_URL=redis://127.0.0.1:6379 \
+        -e STORAGE_TYPE=local \
+        -e DISABLE_DB_MIGRATIONS=false \
+        -e DISABLE_CRON_JOBS_REGISTRATION=false \
+        -e AUTH_SSO_ENABLED=true \
+        -e ENCRYPTION_KEY=0gxiT3CtLWXQ9QHnZRPHz4aS3g8q3A3j1CDOzhdMIoc= \
+        -e APP_SECRET=fXK5h72ZcT6PtKLqLFfqyt7V9ITt0yXzeDvIWLD1W2U= \
+        -v "$PROJECT_ROOT/deploy/process-compose/data/twenty-storage:/app/packages/twenty-server/.local-storage" \
+        twentycrm/twenty:v2.9.0
+    shutdown:
+      command: "docker stop -t 10 grown-twenty-server >/dev/null 2>&1 || true"
+    depends_on:
+      twenty-db:
+        condition: process_healthy
+      twenty-redis:
+        condition: process_healthy
+      twenty-zitadel-app:
+        condition: process_completed_successfully
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 3000
+        path: /healthz
+      initial_delay_seconds: 15
+      period_seconds: 3
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 80
+    availability:
+      restart: on_failure
+
+  twenty-worker:
+    command: |
+      docker rm -f grown-twenty-worker >/dev/null 2>&1 || true
+      # Shares the server image but runs the queue processor; never migrates or
+      # registers cron (the server already did).
+      exec docker run --rm \
+        --name grown-twenty-worker \
+        --network host \
+        -e SERVER_URL=http://crm.workspace.localtest.me:8080 \
+        -e PG_DATABASE_URL='postgres://twenty:DevPassword!1@127.0.0.1:5544/default' \
+        -e REDIS_URL=redis://127.0.0.1:6379 \
+        -e STORAGE_TYPE=local \
+        -e DISABLE_DB_MIGRATIONS=true \
+        -e DISABLE_CRON_JOBS_REGISTRATION=true \
+        -e ENCRYPTION_KEY=0gxiT3CtLWXQ9QHnZRPHz4aS3g8q3A3j1CDOzhdMIoc= \
+        -e APP_SECRET=fXK5h72ZcT6PtKLqLFfqyt7V9ITt0yXzeDvIWLD1W2U= \
+        -v "$PROJECT_ROOT/deploy/process-compose/data/twenty-storage:/app/packages/twenty-server/.local-storage" \
+        twentycrm/twenty:v2.9.0 yarn worker:prod
+    shutdown:
+      command: "docker stop -t 10 grown-twenty-worker >/dev/null 2>&1 || true"
+    depends_on:
+      twenty-server:
+        condition: process_healthy
+    availability:
+      restart: on_failure

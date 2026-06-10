@@ -1,0 +1,46 @@
+# Zitadel runtime config for local dev. Production deployments override via env.
+Log:
+  Level: info
+
+ExternalDomain: localhost
+ExternalPort: 8081
+ExternalSecure: false
+TLS:
+  Enabled: false
+
+Port: 8081
+
+Database:
+  postgres:
+    Host: 127.0.0.1
+    Port: 5533
+    Database: zitadel
+    User:
+      Username: grown
+      SSL:
+        Mode: disable
+    Admin:
+      Username: grown
+      SSL:
+        Mode: disable
+
+# Local-dev defaults. NEVER use these values in production.
+#
+# The masterkey is NOT in this file -- it's passed at startup via the
+# `--masterkey` CLI flag in deploy/process-compose/process-compose.yaml.
+# This keeps the secret out of the YAML while staying deterministic for
+# local dev so a stack restart doesn't invalidate stored secrets.
+DefaultInstance:
+  InstanceName: grown-dev
+  CustomDomain: localhost
+  Org:
+    Name: grown-dev
+    Human:
+      UserName: admin
+      FirstName: Grown
+      LastName: Admin
+      Email:
+        Address: admin@grown.localtest.me
+        Verified: true
+      Password: DevPassword!1
+      PasswordChangeRequired: false

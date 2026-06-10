@@ -1,0 +1,404 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// VideoService manages a per-org internal video library. Video bytes live in
+// the blob store (shared with Drive); metadata lives in Postgres. Upload and
+// stream/download of the raw bytes happen over plain HTTP (not gRPC), like the
+// Drive and Mail blob endpoints; the RPCs below cover metadata CRUD and sharing.
+service VideoService {
+  rpc ListVideos(ListVideosRequest) returns (ListVideosResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/videos"
+    };
+  }
+
+  rpc GetVideo(GetVideoRequest) returns (Video) {
+    option (google.api.http) = {
+      get: "/api/v1/videos/{id}"
+    };
+  }
+
+  rpc UpdateVideo(UpdateVideoRequest) returns (Video) {
+    option (google.api.http) = {
+      patch: "/api/v1/videos/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteVideo(DeleteVideoRequest) returns (DeleteVideoResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/videos/{id}"
+    };
+  }
+
+  // ShareVideo grants specific org users access to watch the video.
+  rpc ShareVideo(ShareVideoRequest) returns (ShareVideoResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/videos/{video_id}/shares"
+      body: "*"
+    };
+  }
+
+  // ListVideoShares returns the org users a video has been shared with.
+  rpc ListVideoShares(ListVideoSharesRequest) returns (ListVideoSharesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/videos/{video_id}/shares"
+    };
+  }
+
+  // UnshareVideo removes a targeted share grant for one user.
+  rpc UnshareVideo(UnshareVideoRequest) returns (UnshareVideoResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/videos/{video_id}/shares/{user_id}"
+    };
+  }
+
+  // CreateVideoShareLink creates a public (unauthenticated) watch link.
+  rpc CreateVideoShareLink(CreateVideoShareLinkRequest) returns (VideoShareLink) {
+    option (google.api.http) = {
+      post: "/api/v1/videos/{video_id}/share-links"
+      body: "*"
+    };
+  }
+
+  // ListVideoShareLinks returns the active public links for a video.
+  rpc ListVideoShareLinks(ListVideoShareLinksRequest) returns (ListVideoShareLinksResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/videos/{video_id}/share-links"
+    };
+  }
+
+  // RevokeVideoShareLink revokes a public share link by token.
+  rpc RevokeVideoShareLink(RevokeVideoShareLinkRequest) returns (RevokeVideoShareLinkResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/videos/share-links/{token}"
+    };
+  }
+
+  // --- Video Playlists ---
+  rpc CreateVideoPlaylist(CreateVideoPlaylistRequest) returns (VideoPlaylist) {
+    option (google.api.http) = {
+      post: "/api/v1/video/playlists"
+      body: "*"
+    };
+  }
+  rpc ListVideoPlaylists(ListVideoPlaylistsRequest) returns (ListVideoPlaylistsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/video/playlists"
+    };
+  }
+  rpc UpdateVideoPlaylist(UpdateVideoPlaylistRequest) returns (VideoPlaylist) {
+    option (google.api.http) = {
+      patch: "/api/v1/video/playlists/{id}"
+      body: "*"
+    };
+  }
+  rpc DeleteVideoPlaylist(DeleteVideoPlaylistRequest) returns (DeleteVideoPlaylistResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/video/playlists/{id}"
+    };
+  }
+  rpc AddToVideoPlaylist(AddToVideoPlaylistRequest) returns (AddToVideoPlaylistResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/video/playlists/{playlist_id}/items"
+      body: "*"
+    };
+  }
+  rpc RemoveFromVideoPlaylist(RemoveFromVideoPlaylistRequest) returns (RemoveFromVideoPlaylistResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/video/playlists/{playlist_id}/items/{video_id}"
+    };
+  }
+  rpc ReorderVideoPlaylist(ReorderVideoPlaylistRequest) returns (ReorderVideoPlaylistResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/video/playlists/{playlist_id}/reorder"
+      body: "*"
+    };
+  }
+  rpc ListVideoPlaylistVideos(ListVideoPlaylistVideosRequest) returns (ListVideoPlaylistVideosResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/video/playlists/{playlist_id}/items"
+    };
+  }
+
+  // --- Progress ---
+  rpc SetVideoProgress(SetVideoProgressRequest) returns (SetVideoProgressResponse) {
+    option (google.api.http) = {
+      put: "/api/v1/videos/{video_id}/progress"
+      body: "*"
+    };
+  }
+  rpc GetVideoProgress(GetVideoProgressRequest) returns (VideoProgress) {
+    option (google.api.http) = {
+      get: "/api/v1/videos/{video_id}/progress"
+    };
+  }
+
+  // --- Captions ---
+  rpc ListVideoCaptions(ListVideoCaptionsRequest) returns (ListVideoCaptionsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/videos/{video_id}/captions"
+    };
+  }
+  rpc DeleteVideoCaption(DeleteVideoCaptionRequest) returns (DeleteVideoCaptionResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/videos/{video_id}/captions/{id}"
+    };
+  }
+}
+
+// Video is one item in the library. Field names are prefixed-safe within the
+// shared grown.v1 namespace by the Video* request/response wrappers.
+message Video {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string title = 4;
+  string description = 5;
+  // content_type of the stored video blob, e.g. "video/mp4".
+  string content_type = 6;
+  // size of the video blob in bytes.
+  int64 size = 7;
+  // duration_seconds is the playback length; 0 when unknown.
+  double duration_seconds = 8;
+  // thumbnail_data_url is an optional inline data: URL for the poster image.
+  string thumbnail_data_url = 9;
+  // stream_url is the relative HTTP path to fetch the raw bytes (range-capable).
+  string stream_url = 10;
+  string created_at = 11;
+  string updated_at = 12;
+  // progress fields — populated when the requesting user has watch history.
+  double progress_seconds = 13;
+  double progress_percent = 14;
+  bool   watched = 15;
+}
+
+message ListVideosRequest {}
+
+message ListVideosResponse {
+  repeated Video videos = 1;
+}
+
+message GetVideoRequest {
+  string id = 1;
+}
+
+// UpdateVideoRequest replaces the editable metadata of a video.
+message UpdateVideoRequest {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string thumbnail_data_url = 4;
+}
+
+message DeleteVideoRequest {
+  string id = 1;
+}
+
+message DeleteVideoResponse {}
+
+// VideoUserShare records that a video has been shared with a specific org user.
+message VideoUserShare {
+  string video_id = 1;
+  string user_id = 2;
+  string user_name = 3;
+  string user_email = 4;
+  string created_at = 5;
+}
+
+// VideoShareLink is a public link token granting unauthenticated watch access.
+message VideoShareLink {
+  string token = 1;
+  string video_id = 2;
+  string org_id = 3;
+  string created_by = 4;
+  // expires_at is ISO-8601; empty means the link never expires.
+  string expires_at = 5;
+  string created_at = 6;
+  // url is the full public watch URL, e.g. https://host/video/watch/{token}.
+  // Populated server-side in responses for convenience; ignored on input.
+  string url = 7;
+}
+
+message ShareVideoRequest {
+  string video_id = 1;
+  repeated string user_ids = 2;
+}
+
+message ShareVideoResponse {
+  repeated VideoUserShare shares = 1;
+}
+
+message ListVideoSharesRequest {
+  string video_id = 1;
+}
+
+message ListVideoSharesResponse {
+  repeated VideoUserShare shares = 1;
+}
+
+message UnshareVideoRequest {
+  string video_id = 1;
+  string user_id = 2;
+}
+
+message UnshareVideoResponse {}
+
+message CreateVideoShareLinkRequest {
+  string video_id = 1;
+  // expires_at is an optional ISO-8601 timestamp. Empty = never expires.
+  string expires_at = 2;
+}
+
+message ListVideoShareLinksRequest {
+  string video_id = 1;
+}
+
+message ListVideoShareLinksResponse {
+  repeated VideoShareLink links = 1;
+}
+
+message RevokeVideoShareLinkRequest {
+  string token = 1;
+}
+
+message RevokeVideoShareLinkResponse {}
+
+// VideoPublicInfo is returned by the unauthenticated token-resolution endpoint.
+message VideoPublicInfo {
+  string title = 1;
+  string description = 2;
+  string content_type = 3;
+  double duration_seconds = 4;
+  string thumbnail_data_url = 5;
+  // content_url is the unauthenticated stream path for this token.
+  string content_url = 6;
+}
+
+// --- Video Playlist messages ---
+
+// VideoPlaylist is a named ordered collection of videos within an org.
+message VideoPlaylist {
+  string id = 1;
+  string org_id = 2;
+  string owner_user_id = 3;
+  string name = 4;
+  string created_at = 5;
+  int32 item_count = 6;
+}
+
+message VideoPlaylistItem {
+  string playlist_id = 1;
+  string video_id = 2;
+  int32  position = 3;
+}
+
+message CreateVideoPlaylistRequest {
+  string name = 1;
+}
+
+message ListVideoPlaylistsRequest {}
+
+message ListVideoPlaylistsResponse {
+  repeated VideoPlaylist playlists = 1;
+}
+
+message UpdateVideoPlaylistRequest {
+  string id = 1;
+  string name = 2;
+}
+
+message DeleteVideoPlaylistRequest {
+  string id = 1;
+}
+
+message DeleteVideoPlaylistResponse {}
+
+message AddToVideoPlaylistRequest {
+  string playlist_id = 1;
+  string video_id = 2;
+}
+
+message AddToVideoPlaylistResponse {
+  VideoPlaylistItem item = 1;
+}
+
+message RemoveFromVideoPlaylistRequest {
+  string playlist_id = 1;
+  string video_id = 2;
+}
+
+message RemoveFromVideoPlaylistResponse {}
+
+message ReorderVideoPlaylistRequest {
+  string playlist_id = 1;
+  // video_ids in the desired order (must be all current items).
+  repeated string video_ids = 2;
+}
+
+message ReorderVideoPlaylistResponse {}
+
+message ListVideoPlaylistVideosRequest {
+  string playlist_id = 1;
+}
+
+message ListVideoPlaylistVideosResponse {
+  repeated Video videos = 1;
+}
+
+// --- Progress messages ---
+
+message VideoProgress {
+  string video_id = 1;
+  double position_seconds = 2;
+  double percent = 3;
+  bool   watched = 4;
+  string updated_at = 5;
+}
+
+message SetVideoProgressRequest {
+  string video_id = 1;
+  double position_seconds = 2;
+  double percent = 3;
+}
+
+message SetVideoProgressResponse {
+  VideoProgress progress = 1;
+}
+
+message GetVideoProgressRequest {
+  string video_id = 1;
+}
+
+// --- Caption messages ---
+
+message VideoCaption {
+  string id = 1;
+  string org_id = 2;
+  string video_id = 3;
+  string lang = 4;
+  string label = 5;
+  // stream_url is the relative HTTP path to fetch the .vtt bytes.
+  string stream_url = 6;
+  string created_at = 7;
+}
+
+message ListVideoCaptionsRequest {
+  string video_id = 1;
+}
+
+message ListVideoCaptionsResponse {
+  repeated VideoCaption captions = 1;
+}
+
+message DeleteVideoCaptionRequest {
+  string video_id = 1;
+  string id = 2;
+}
+
+message DeleteVideoCaptionResponse {}

@@ -1,0 +1,304 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// ProjectsService is a Linear-style issue tracker: per-org teams own issues
+// (identified KEY-N), issues carry status / priority / assignee / labels /
+// project / estimate, and projects group issues toward a goal. Modeled on the
+// Linear UI surface (issues, projects, labels, command palette, pickers).
+service ProjectsService {
+  // Members lists the org's users for assignee / lead pickers.
+  rpc ListMembers(ListMembersRequest) returns (ListMembersResponse) {
+    option (google.api.http) = { get: "/api/v1/projects/members" };
+  }
+
+  // ── Teams ────────────────────────────────────────────────────────────────
+  rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse) {
+    option (google.api.http) = { get: "/api/v1/projects/teams" };
+  }
+  rpc CreateTeam(CreateTeamRequest) returns (Team) {
+    option (google.api.http) = { post: "/api/v1/projects/teams" body: "*" };
+  }
+  rpc UpdateTeam(UpdateTeamRequest) returns (Team) {
+    option (google.api.http) = { patch: "/api/v1/projects/teams/{id}" body: "*" };
+  }
+  rpc DeleteTeam(DeleteTeamRequest) returns (DeleteTeamResponse) {
+    option (google.api.http) = { delete: "/api/v1/projects/teams/{id}" };
+  }
+
+  // ── Team members ─────────────────────────────────────────────────────────
+  rpc ListTeamMembers(ListTeamMembersRequest) returns (ListTeamMembersResponse) {
+    option (google.api.http) = { get: "/api/v1/projects/teams/{team_id}/members" };
+  }
+  rpc AddTeamMember(AddTeamMemberRequest) returns (AddTeamMemberResponse) {
+    option (google.api.http) = { post: "/api/v1/projects/teams/{team_id}/members" body: "*" };
+  }
+  rpc RemoveTeamMember(RemoveTeamMemberRequest) returns (RemoveTeamMemberResponse) {
+    option (google.api.http) = { delete: "/api/v1/projects/teams/{team_id}/members/{user_id}" };
+  }
+
+  // ListAssignable returns members eligible as issue assignees: if team_id is
+  // provided it returns only that team's members; otherwise all org members.
+  rpc ListAssignable(ListAssignableRequest) returns (ListMembersResponse) {
+    option (google.api.http) = { get: "/api/v1/projects/assignable" };
+  }
+
+  // ── Issues ───────────────────────────────────────────────────────────────
+  rpc ListIssues(ListIssuesRequest) returns (ListIssuesResponse) {
+    option (google.api.http) = { get: "/api/v1/projects/issues" };
+  }
+  rpc GetIssue(GetIssueRequest) returns (Issue) {
+    option (google.api.http) = { get: "/api/v1/projects/issues/{id}" };
+  }
+  rpc CreateIssue(CreateIssueRequest) returns (Issue) {
+    option (google.api.http) = { post: "/api/v1/projects/issues" body: "*" };
+  }
+  rpc UpdateIssue(UpdateIssueRequest) returns (Issue) {
+    option (google.api.http) = { patch: "/api/v1/projects/issues/{id}" body: "*" };
+  }
+  rpc DeleteIssue(DeleteIssueRequest) returns (DeleteIssueResponse) {
+    option (google.api.http) = { delete: "/api/v1/projects/issues/{id}" };
+  }
+
+  // ── Projects ─────────────────────────────────────────────────────────────
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
+    option (google.api.http) = { get: "/api/v1/projects/projects" };
+  }
+  rpc CreateProject(CreateProjectRequest) returns (Project) {
+    option (google.api.http) = { post: "/api/v1/projects/projects" body: "*" };
+  }
+  rpc UpdateProject(UpdateProjectRequest) returns (Project) {
+    option (google.api.http) = { patch: "/api/v1/projects/projects/{id}" body: "*" };
+  }
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse) {
+    option (google.api.http) = { delete: "/api/v1/projects/projects/{id}" };
+  }
+
+  // ── Labels ───────────────────────────────────────────────────────────────
+  rpc ListLabels(ListProjectLabelsRequest) returns (ListProjectLabelsResponse) {
+    option (google.api.http) = { get: "/api/v1/projects/labels" };
+  }
+  rpc CreateLabel(CreateLabelRequest) returns (Label) {
+    option (google.api.http) = { post: "/api/v1/projects/labels" body: "*" };
+  }
+  rpc DeleteLabel(DeleteLabelRequest) returns (DeleteLabelResponse) {
+    option (google.api.http) = { delete: "/api/v1/projects/labels/{id}" };
+  }
+
+  // ── Comments ─────────────────────────────────────────────────────────────
+  rpc ListComments(ListIssueCommentsRequest) returns (ListIssueCommentsResponse) {
+    option (google.api.http) = { get: "/api/v1/projects/issues/{issue_id}/comments" };
+  }
+  rpc CreateComment(CreateCommentRequest) returns (Comment) {
+    option (google.api.http) = { post: "/api/v1/projects/issues/{issue_id}/comments" body: "*" };
+  }
+}
+
+// Team owns a set of issues and supplies the identifier prefix (KEY-N).
+message Team {
+  string id = 1;
+  string org_id = 2;
+  string name = 3;
+  string key = 4;     // short prefix, e.g. "ENG" → issues ENG-1, ENG-2, …
+  string color = 5;
+  string icon = 6;
+  int32 issue_count = 7; // last-assigned issue number (for KEY-N generation)
+  string created_at = 8;
+}
+
+// Issue is the core work item.
+message Issue {
+  string id = 1;
+  string org_id = 2;
+  string team_id = 3;
+  string identifier = 4;     // KEY-N, e.g. "ENG-42"
+  int32 number = 5;          // per-team sequence number
+  string title = 6;
+  string description = 7;
+  // status: backlog | todo | in_progress | done | canceled
+  string status = 8;
+  // priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low
+  int32 priority = 9;
+  string assignee_id = 10;
+  string assignee_name = 11; // denormalized for display
+  repeated string label_ids = 12;
+  string project_id = 13;
+  int32 estimate = 14;       // story points (0 = unset)
+  double sort_order = 15;    // manual ordering within a status column
+  string creator_id = 16;
+  string created_at = 17;
+  string updated_at = 18;
+  // Sub-issue support (Linear-style nesting).
+  string parent_issue_id = 19;  // empty = top-level issue
+  int32 sub_issue_count = 20;   // total direct children (non-trashed)
+  int32 sub_issue_done_count = 21; // children with status "done" or "canceled"
+}
+
+// Project groups issues toward a goal.
+message Project {
+  string id = 1;
+  string org_id = 2;
+  string name = 3;
+  string description = 4;
+  string color = 5;
+  string icon = 6;
+  // state: backlog | planned | started | paused | completed | canceled
+  string state = 7;
+  string lead_id = 8;
+  string lead_name = 9;
+  string target_date = 10;   // YYYY-MM-DD or empty
+  string created_at = 11;
+  string updated_at = 12;
+}
+
+// Label is a per-org tag applied to issues.
+message Label {
+  string id = 1;
+  string org_id = 2;
+  string name = 3;
+  string color = 4;
+  string created_at = 5;
+}
+
+// Comment on an issue.
+message Comment {
+  string id = 1;
+  string issue_id = 2;
+  string author_id = 3;
+  string author_name = 4;
+  string body = 5;
+  string created_at = 6;
+}
+
+// ── Request/response messages ────────────────────────────────────────────────
+
+// Member is an org user that can be assigned to issues / lead projects.
+message Member {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+}
+message ListMembersRequest {}
+message ListMembersResponse { repeated Member members = 1; }
+
+message ListTeamsRequest {}
+message ListTeamsResponse { repeated Team teams = 1; }
+message CreateTeamRequest {
+  string name = 1;
+  string key = 2;
+  string color = 3;
+  string icon = 4;
+}
+message UpdateTeamRequest {
+  string id = 1;
+  string name = 2;
+  string color = 3;
+  string icon = 4;
+}
+message DeleteTeamRequest { string id = 1; }
+message DeleteTeamResponse {}
+
+message TeamMember {
+  string user_id = 1;
+  string name = 2;
+  string email = 3;
+}
+message ListTeamMembersRequest  { string team_id = 1; }
+message ListTeamMembersResponse { repeated TeamMember members = 1; }
+message AddTeamMemberRequest    { string team_id = 1; string user_id = 2; }
+message AddTeamMemberResponse   {}
+message RemoveTeamMemberRequest { string team_id = 1; string user_id = 2; }
+message RemoveTeamMemberResponse {}
+
+message ListAssignableRequest {
+  // Optional: if set, returns only that team's members.
+  string team_id = 1;
+}
+
+message ListIssuesRequest {
+  // All optional filters. Empty = no constraint on that dimension.
+  string team_id = 1;
+  string project_id = 2;
+  string assignee_id = 3;
+  string status = 4;
+  // Filter by parent: pass an issue ID to list sub-issues of that parent;
+  // pass "none" to list only top-level issues (no parent).
+  string parent_issue_id = 5;
+}
+message ListIssuesResponse { repeated Issue issues = 1; }
+message GetIssueRequest { string id = 1; }
+message CreateIssueRequest {
+  string team_id = 1;
+  string title = 2;
+  string description = 3;
+  string status = 4;
+  int32 priority = 5;
+  string assignee_id = 6;
+  repeated string label_ids = 7;
+  string project_id = 8;
+  int32 estimate = 9;
+  // Optional: set to make this a sub-issue of an existing issue.
+  string parent_issue_id = 10;
+}
+message UpdateIssueRequest {
+  string id = 1;
+  // Pointer-style optional updates: a field is only changed when its matching
+  // *_set flag is true. Lets clients PATCH a single property (status, etc.).
+  string title = 2;        bool title_set = 3;
+  string description = 4;  bool description_set = 5;
+  string status = 6;       bool status_set = 7;
+  int32 priority = 8;      bool priority_set = 9;
+  string assignee_id = 10; bool assignee_set = 11;
+  repeated string label_ids = 12; bool labels_set = 13;
+  string project_id = 14;  bool project_set = 15;
+  int32 estimate = 16;     bool estimate_set = 17;
+  double sort_order = 18;  bool sort_order_set = 19;
+  // Set parent_issue_id to reparent; set to empty string + parent_set=true to clear parent.
+  string parent_issue_id = 20; bool parent_set = 21;
+}
+message DeleteIssueRequest { string id = 1; }
+message DeleteIssueResponse {}
+
+message ListProjectsRequest {}
+message ListProjectsResponse { repeated Project projects = 1; }
+message CreateProjectRequest {
+  string name = 1;
+  string description = 2;
+  string color = 3;
+  string icon = 4;
+  string state = 5;
+  string lead_id = 6;
+  string target_date = 7;
+}
+message UpdateProjectRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string color = 4;
+  string icon = 5;
+  string state = 6;
+  string lead_id = 7;
+  string target_date = 8;
+}
+message DeleteProjectRequest { string id = 1; }
+message DeleteProjectResponse {}
+
+message ListProjectLabelsRequest {}
+message ListProjectLabelsResponse { repeated Label labels = 1; }
+message CreateLabelRequest {
+  string name = 1;
+  string color = 2;
+}
+message DeleteLabelRequest { string id = 1; }
+message DeleteLabelResponse {}
+
+message ListIssueCommentsRequest { string issue_id = 1; }
+message ListIssueCommentsResponse { repeated Comment comments = 1; }
+message CreateCommentRequest {
+  string issue_id = 1;
+  string body = 2;
+}

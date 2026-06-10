@@ -1,0 +1,254 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// ContactsService manages a per-org address book with groups, starred contacts,
+// and vCard import/export.
+service ContactsService {
+  rpc ListContacts(ListContactsRequest) returns (ListContactsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/contacts"
+    };
+  }
+
+  rpc CreateContact(CreateContactRequest) returns (Contact) {
+    option (google.api.http) = {
+      post: "/api/v1/contacts"
+      body: "*"
+    };
+  }
+
+  rpc GetContact(GetContactRequest) returns (Contact) {
+    option (google.api.http) = {
+      get: "/api/v1/contacts/{id}"
+    };
+  }
+
+  rpc UpdateContact(UpdateContactRequest) returns (Contact) {
+    option (google.api.http) = {
+      patch: "/api/v1/contacts/{id}"
+      body: "*"
+    };
+  }
+
+  rpc TrashContact(TrashContactRequest) returns (TrashContactResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/contacts/{id}"
+    };
+  }
+
+  // StarContact sets or clears the starred flag on a contact.
+  rpc StarContact(StarContactRequest) returns (Contact) {
+    option (google.api.http) = {
+      post: "/api/v1/contacts/{id}/star"
+      body: "*"
+    };
+  }
+
+  // --- Contact groups ---
+
+  rpc CreateContactGroup(CreateContactGroupRequest) returns (ContactGroup) {
+    option (google.api.http) = {
+      post: "/api/v1/contacts/groups"
+      body: "*"
+    };
+  }
+
+  rpc ListContactGroups(ListContactGroupsRequest) returns (ListContactGroupsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/contacts/groups"
+    };
+  }
+
+  rpc UpdateContactGroup(UpdateContactGroupRequest) returns (ContactGroup) {
+    option (google.api.http) = {
+      patch: "/api/v1/contacts/groups/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteContactGroup(DeleteContactGroupRequest) returns (DeleteContactGroupResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/contacts/groups/{id}"
+    };
+  }
+
+  rpc AddContactToGroup(AddContactToGroupRequest) returns (AddContactToGroupResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/contacts/groups/{group_id}/members"
+      body: "*"
+    };
+  }
+
+  rpc RemoveContactFromGroup(RemoveContactFromGroupRequest) returns (RemoveContactFromGroupResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/contacts/groups/{group_id}/members/{contact_id}"
+    };
+  }
+
+  // --- vCard import/export ---
+
+  // ImportVCard parses vCard 3.0/4.0 text, creates contacts, returns count created.
+  rpc ImportVCard(ImportVCardRequest) returns (ImportVCardResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/contacts/import"
+      body: "*"
+    };
+  }
+
+  // ExportVCard returns vCard 3.0 text for the given contacts / group / all.
+  rpc ExportVCard(ExportVCardRequest) returns (ExportVCardResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/contacts/export"
+      body: "*"
+    };
+  }
+}
+
+message Contact {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string display_name = 4;
+  string first_name = 5;
+  string last_name = 6;
+  string company = 7;
+  string job_title = 8;
+  repeated string emails = 9;
+  repeated string phones = 10;
+  repeated string labels = 11;
+  string notes = 12;
+  bool starred = 13;
+  string created_at = 14;
+  string updated_at = 15;
+}
+
+message ContactGroup {
+  string id = 1;
+  string org_id = 2;
+  string owner_user_id = 3;
+  string name = 4;
+  string created_at = 5;
+}
+
+// ListContactsRequest optionally filters by group_id or starred.
+message ListContactsRequest {
+  // When set, only contacts that are members of this group are returned.
+  string group_id = 1;
+  // When true, only starred contacts are returned.
+  bool starred_only = 2;
+}
+
+message ListContactsResponse {
+  repeated Contact contacts = 1;
+}
+
+message CreateContactRequest {
+  string display_name = 1;
+  string first_name = 2;
+  string last_name = 3;
+  string company = 4;
+  string job_title = 5;
+  repeated string emails = 6;
+  repeated string phones = 7;
+  repeated string labels = 8;
+  string notes = 9;
+  bool starred = 10;
+}
+
+message GetContactRequest {
+  string id = 1;
+}
+
+// UpdateContact replaces the editable fields of an existing contact.
+message UpdateContactRequest {
+  string id = 1;
+  string display_name = 2;
+  string first_name = 3;
+  string last_name = 4;
+  string company = 5;
+  string job_title = 6;
+  repeated string emails = 7;
+  repeated string phones = 8;
+  repeated string labels = 9;
+  string notes = 10;
+  bool starred = 11;
+}
+
+message TrashContactRequest {
+  string id = 1;
+}
+
+message TrashContactResponse {}
+
+message StarContactRequest {
+  string id = 1;
+  bool starred = 2;
+}
+
+// --- Contact group messages ---
+
+message CreateContactGroupRequest {
+  string name = 1;
+}
+
+message ListContactGroupsRequest {}
+
+message ListContactGroupsResponse {
+  repeated ContactGroup groups = 1;
+}
+
+message UpdateContactGroupRequest {
+  string id = 1;
+  string name = 2;
+}
+
+message DeleteContactGroupRequest {
+  string id = 1;
+}
+
+message DeleteContactGroupResponse {}
+
+message AddContactToGroupRequest {
+  string group_id = 1;
+  // contact_ids to add to the group.
+  repeated string contact_ids = 2;
+}
+
+message AddContactToGroupResponse {}
+
+message RemoveContactFromGroupRequest {
+  string group_id = 1;
+  string contact_id = 2;
+}
+
+message RemoveContactFromGroupResponse {}
+
+// --- vCard messages ---
+
+message ImportVCardRequest {
+  // Raw vCard 3.0/4.0 text (contents of a .vcf file).
+  string vcf_text = 1;
+}
+
+message ImportVCardResponse {
+  // Number of contacts successfully created.
+  int32 created = 1;
+}
+
+message ExportVCardRequest {
+  // Specific contact ids to export. If empty and group_id is also empty,
+  // all contacts in the org are exported.
+  repeated string contact_ids = 1;
+  // Export all contacts in this group (ignored when contact_ids is non-empty).
+  string group_id = 2;
+}
+
+message ExportVCardResponse {
+  // vCard 3.0 text suitable for saving as a .vcf file.
+  string vcf_text = 1;
+}

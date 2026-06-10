@@ -1,0 +1,343 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// DriveService provides file storage with folders, sharing, and previews.
+// Upload and Download are NOT defined here — they're streaming binary, served
+// by raw HTTP handlers registered alongside the gateway (Task 10).
+service DriveService {
+  // ListFiles returns immediate children of `parent`. Empty parent = org root.
+  // Trashed files are excluded unless `include_trashed = true`.
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse) {
+    option (google.api.http) = { get: "/api/v1/drive/files" };
+  }
+
+  // GetFile returns the metadata for one file or folder.
+  rpc GetFile(GetFileRequest) returns (GetFileResponse) {
+    option (google.api.http) = { get: "/api/v1/drive/files/{id}" };
+  }
+
+  // CreateFolder creates an empty folder under `parent`. Empty parent = org root.
+  rpc CreateFolder(CreateFolderRequest) returns (CreateFolderResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/drive/folders"
+      body: "*"
+    };
+  }
+
+  // UpdateFile renames, moves, or restores from trash. Only non-empty fields
+  // (and the explicit `restore_from_trash` flag) are applied — patch semantics.
+  rpc UpdateFile(UpdateFileRequest) returns (UpdateFileResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/drive/files/{id}"
+      body: "*"
+    };
+  }
+
+  // CopyFile duplicates a file (metadata + blob) into the same folder, with a
+  // " (copy)" suffix on the name. Folders are not copyable in V1 — copying a
+  // folder returns InvalidArgument.
+  rpc CopyFile(CopyFileRequest) returns (CopyFileResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/drive/files/{id}:copy"
+      body: "*"
+    };
+  }
+
+  // TrashFile soft-deletes by setting `trashed = true`. Reversible via
+  // UpdateFile with `restore_from_trash = true`.
+  rpc TrashFile(TrashFileRequest) returns (TrashFileResponse) {
+    option (google.api.http) = { delete: "/api/v1/drive/files/{id}" };
+  }
+
+  // DeleteForever hard-deletes the row AND removes the blob from rustfs.
+  // Cannot be undone; intended for trash purging only.
+  rpc DeleteForever(DeleteForeverRequest) returns (DeleteForeverResponse) {
+    option (google.api.http) = { delete: "/api/v1/drive/files/{id}:forever" };
+  }
+
+  // CreateShare issues a share link. `role` is one of "viewer", "commenter",
+  // "editor". `expires_at = 0` means no expiry.
+  rpc CreateShare(CreateShareRequest) returns (CreateShareResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/drive/files/{file_id}/shares"
+      body: "*"
+    };
+  }
+
+  // ListShares returns active (non-revoked) shares for a file.
+  rpc ListShares(ListSharesRequest) returns (ListSharesResponse) {
+    option (google.api.http) = { get: "/api/v1/drive/files/{file_id}/shares" };
+  }
+
+  // RevokeShare marks a share token revoked. Subsequent OpenShare requests
+  // return PermissionDenied.
+  rpc RevokeShare(RevokeShareRequest) returns (RevokeShareResponse) {
+    option (google.api.http) = { delete: "/api/v1/drive/shares/{token}" };
+  }
+
+  // ListSharedWithMe returns files this caller has been granted access to by a
+  // per-user ACL grant (object_grants) — including files in other orgs. This is
+  // the "Shared with me" view; it does NOT include the caller's own org files.
+  rpc ListSharedWithMe(ListSharedWithMeRequest) returns (ListSharedWithMeResponse) {
+    option (google.api.http) = { get: "/api/v1/drive/shared-with-me" };
+  }
+
+  // GrantAccess grants a grown user (by id) a role on a file the caller owns or
+  // can administer. role ∈ {viewer, commenter, editor}. Idempotent (re-grant
+  // updates the role).
+  rpc GrantAccess(GrantAccessRequest) returns (GrantAccessResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/drive/files/{file_id}/grants"
+      body: "*"
+    };
+  }
+
+  // ListGrants returns the per-user ACL grants on a file (the people it's shared
+  // with directly), each with the grantee's name/email.
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse) {
+    option (google.api.http) = { get: "/api/v1/drive/files/{file_id}/grants" };
+  }
+
+  // RevokeAccess removes a user's per-user grant on a file.
+  rpc RevokeAccess(RevokeAccessRequest) returns (RevokeAccessResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/drive/files/{file_id}/grants/{grantee_user_id}"
+    };
+  }
+
+  // StarFile marks a file as starred for the calling user.
+  rpc StarFile(StarFileRequest) returns (StarFileResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/drive/files/{file_id}/star"
+      body: "*"
+    };
+  }
+
+  // UnstarFile removes the star from a file for the calling user.
+  rpc UnstarFile(UnstarFileRequest) returns (UnstarFileResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/drive/files/{file_id}/star"
+    };
+  }
+
+  // ListStarred returns all files the calling user has starred, across all
+  // folders in their org, excluding trashed items.
+  rpc ListStarred(ListStarredRequest) returns (ListStarredResponse) {
+    option (google.api.http) = { get: "/api/v1/drive/starred" };
+  }
+
+  // ListRecent returns the caller's files (in their org) ordered by last
+  // modification time, across all folders, excluding trashed items.
+  rpc ListRecent(ListRecentRequest) returns (ListRecentResponse) {
+    option (google.api.http) = { get: "/api/v1/drive/recent" };
+  }
+
+  // ListTrash returns trashed files in the caller's org.
+  rpc ListTrash(ListTrashRequest) returns (ListTrashResponse) {
+    option (google.api.http) = { get: "/api/v1/drive/trash" };
+  }
+  // ListFileVersions returns the version history for a file, most-recent first.
+  rpc ListFileVersions(ListFileVersionsRequest) returns (ListFileVersionsResponse) {
+    option (google.api.http) = { get: "/api/v1/drive/files/{file_id}/versions" };
+  }
+
+  // RestoreFileVersion makes a prior version the current content of the file,
+  // snapshotting the current blob as a new version first (so no history is lost).
+  rpc RestoreFileVersion(RestoreFileVersionRequest) returns (RestoreFileVersionResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/drive/files/{file_id}/versions/{version_id}:restore"
+      body: "*"
+    };
+  }
+}
+
+// ObjectGrant is a per-user ACL grant on one object (file/doc). The grantee's
+// display name + email are resolved for listing.
+message ObjectGrant {
+  string grantee_user_id = 1;
+  string grantee_name = 2;
+  string grantee_email = 3;
+  // viewer | commenter | editor
+  string role = 4;
+  string granted_by = 5;
+}
+
+message ListSharedWithMeRequest {}
+message ListSharedWithMeResponse { repeated File files = 1; }
+
+message GrantAccessRequest {
+  string file_id = 1;
+  string grantee_user_id = 2;
+  string role = 3;
+}
+message GrantAccessResponse { ObjectGrant grant = 1; }
+
+message ListGrantsRequest { string file_id = 1; }
+message ListGrantsResponse { repeated ObjectGrant grants = 1; }
+
+message RevokeAccessRequest {
+  string file_id = 1;
+  string grantee_user_id = 2;
+}
+message RevokeAccessResponse {}
+
+// File represents a folder or a stored file. Folders have `size_bytes = 0`
+// and a `mime_type` of "folder". The internal blob storage key is not surfaced.
+message File {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  // Empty for root-level files.
+  string parent_id = 4;
+  string name = 5;
+  // "folder" for folders; an IANA MIME type for files.
+  string mime_type = 6;
+  int64 size_bytes = 7;
+  bool trashed = 8;
+  // Unix millis.
+  int64 created_at = 9;
+  int64 updated_at = 10;
+  // True if the calling user has starred this file (context-dependent; only
+  // populated when the response was built with the caller's star state).
+  bool starred = 11;
+}
+
+// Share is a token-based access grant on one file. Revocation state is not
+// surfaced — `ListShares` filters revoked tokens server-side; callers needing
+// to detect revocation should re-query rather than cache `Share` instances.
+message Share {
+  string token = 1;
+  string file_id = 2;
+  // viewer | commenter | editor
+  string role = 3;
+  string created_by = 4;
+  int64 created_at = 5;
+  // 0 means no expiry.
+  int64 expires_at = 6;
+}
+
+message ListFilesRequest {
+  // Empty = org root.
+  string parent = 1;
+  bool include_trashed = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+message ListFilesResponse {
+  repeated File files = 1;
+  string next_page_token = 2;
+}
+
+message GetFileRequest { string id = 1; }
+// GetFileResponse wraps the returned file metadata.
+message GetFileResponse { File file = 1; }
+
+message CreateFolderRequest {
+  string name = 1;
+  // Empty = org root.
+  string parent = 2;
+}
+// CreateFolderResponse returns the newly created folder.
+message CreateFolderResponse { File file = 1; }
+
+message UpdateFileRequest {
+  string id = 1;
+  // Patch semantics: empty string leaves the field unchanged.
+  string name = 2;
+  string parent = 3;
+  // false is a no-op; UpdateFile never trashes — use TrashFile for that.
+  bool restore_from_trash = 4;
+}
+// UpdateFileResponse returns the file after applying the patch.
+message UpdateFileResponse { File file = 1; }
+
+message CopyFileRequest {
+  string id = 1;
+  // Optional override for the new copy's name. Empty = source name + " (copy)".
+  string name = 2;
+}
+// CopyFileResponse returns the newly created copy.
+message CopyFileResponse { File file = 1; }
+
+message TrashFileRequest { string id = 1; }
+message TrashFileResponse {}
+
+message DeleteForeverRequest { string id = 1; }
+message DeleteForeverResponse {}
+
+message CreateShareRequest {
+  string file_id = 1;
+  string role = 2;
+  int64 expires_at = 3;
+}
+// CreateShareResponse returns the newly issued share token.
+message CreateShareResponse { Share share = 1; }
+
+message ListSharesRequest { string file_id = 1; }
+message ListSharesResponse { repeated Share shares = 1; }
+
+message RevokeShareRequest { string token = 1; }
+message RevokeShareResponse {}
+
+message StarFileRequest { string file_id = 1; }
+message StarFileResponse {}
+
+message UnstarFileRequest { string file_id = 1; }
+message UnstarFileResponse {}
+
+message ListStarredRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+message ListStarredResponse {
+  repeated File files = 1;
+  string next_page_token = 2;
+}
+
+message ListRecentRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+message ListRecentResponse {
+  repeated File files = 1;
+  string next_page_token = 2;
+}
+
+message ListTrashRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+message ListTrashResponse {
+  repeated File files = 1;
+  string next_page_token = 2;
+}
+
+// FileVersion is a historical snapshot of a file's content.
+message FileVersion {
+  string id = 1;
+  string file_id = 2;
+  string blob_key = 3;
+  int64 size_bytes = 4;
+  string content_type = 5;
+  // The user id who uploaded this version.
+  string uploaded_by = 6;
+  // Unix seconds.
+  int64 created_at = 7;
+}
+
+message ListFileVersionsRequest { string file_id = 1; }
+message ListFileVersionsResponse { repeated FileVersion versions = 1; }
+
+message RestoreFileVersionRequest {
+  string file_id = 1;
+  string version_id = 2;
+}
+message RestoreFileVersionResponse {
+  // The file metadata after restoring the version.
+  File file = 1;
+}

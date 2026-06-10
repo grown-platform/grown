@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  /* Pdf light theme colors */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-secondary: #64748b;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #1e293b;
+  --color-text-muted: #64748b;
+
+  /* tibui compatibility - light theme mappings */
+  --color-black: #000000;
+  --color-white: #ffffff;
+  --color-dark-navy: #f1f5f9;
+  --color-panel: #e2e8f0;
+  --color-target-gray: #cbd5e1;
+  --color-primary-background: #ffffff;
+  --color-primary-foreground: #f8fafc;
+  --color-secondary-foreground: #f1f5f9;
+  --color-active-background: #e2e8f0;
+  --color-primary-border: #e2e8f0;
+  --color-primary-text: #1e293b;
+  --color-secondary-text: #64748b;
+  --color-secondary-button: #e2e8f0;
+  --color-tactical-blue: #2563eb;
+  --color-cyan-bright: #0ea5e9;
+  --color-cyan-light: #38bdf8;
+  --color-combat-red: #ef4444;
+  --color-combat-green: #22c55e;
+}
+
+body {
+  @apply bg-background text-text antialiased;
+}

@@ -1,0 +1,392 @@
+{
+  "system-security-plan": {
+    "uuid": "b2c3d4e5-0001-4000-8000-000000000001",
+    "metadata": {
+      "title": "grown-workspace - System Security Plan (SKELETON)",
+      "published": "2026-06-09T00:00:00Z",
+      "last-modified": "2026-06-09T00:00:00Z",
+      "version": "0.1.0",
+      "oscal-version": "1.1.3",
+      "roles": [
+        { "id": "system-owner", "title": "System Owner" },
+        {
+          "id": "authorizing-official",
+          "title": "Authorizing Official (NONE — system is not authorized)"
+        },
+        { "id": "developer", "title": "System Developer" }
+      ],
+      "parties": [
+        {
+          "uuid": "b2c3d4e5-0002-4000-8000-000000000001",
+          "type": "organization",
+          "name": "grown-workspace (homelab / development)"
+        }
+      ],
+      "responsible-parties": [
+        {
+          "role-id": "system-owner",
+          "party-uuids": ["b2c3d4e5-0002-4000-8000-000000000001"]
+        },
+        {
+          "role-id": "developer",
+          "party-uuids": ["b2c3d4e5-0002-4000-8000-000000000001"]
+        }
+      ],
+      "remarks": "STRONG SKELETON, not exhaustive. Covers the controls grown actually addresses; the full FedRAMP Moderate baseline (~325 controls) is NOT fully enumerated here. UNVALIDATED against an OSCAL validator. The system has NO authorizing official and NO ATO."
+    },
+    "import-profile": {
+      "href": "./profiles/fedramp-moderate.json",
+      "remarks": "Resolves to the GSA FedRAMP Rev 5 Moderate baseline profile (which in turn imports the NIST SP 800-53 Rev 5 catalog). A second profile, ./profiles/nist-800-171.json, covers CMMC L2 / 800-171; only one import-profile is allowed per SSP, so the 171 mapping is documented in compliance/cmmc-l2-mapping.md and via control-171 props in the component-definition."
+    },
+    "system-characteristics": {
+      "system-ids": [
+        {
+          "identifier-type": "https://ietf.org/rfc/rfc4122",
+          "id": "b2c3d4e5-0003-4000-8000-000000000001"
+        }
+      ],
+      "system-name": "grown-workspace",
+      "description": "grown-workspace is a self-hosted, multi-tenant productivity suite (drive, docs, sheets, slides, mail, chat, meet, calendar, contacts, photos, books, music, video, projects, forms, sites, keep, groups, whiteboards) plus a document-signing app (PDF/pdf). It is a single Go gRPC + grpc-gateway backend that also serves a React SPA, fronted by a Zitadel OIDC identity provider, backed by PostgreSQL and an S3-compatible blob store, deployed via GitOps (Flux) on a Talos/Kubernetes cluster with TLS terminated by cert-manager at a Gateway API edge.",
+      "security-sensitivity-level": "moderate",
+      "system-information": {
+        "information-types": [
+          {
+            "uuid": "b2c3d4e5-0010-4000-8000-000000000001",
+            "title": "User-generated productivity content",
+            "description": "Documents, spreadsheets, slides, files, photos, media, and notes created/uploaded by org members. Stored in Postgres + the blob store, scoped by org_id.",
+            "categorizations": [
+              {
+                "system": "https://doi.org/10.6028/NIST.SP.800-60v2r1",
+                "information-type-ids": ["C.3.5.1"]
+              }
+            ],
+            "confidentiality-impact": { "base": "fips-199-moderate" },
+            "integrity-impact": { "base": "fips-199-moderate" },
+            "availability-impact": { "base": "fips-199-low" }
+          },
+          {
+            "uuid": "b2c3d4e5-0011-4000-8000-000000000001",
+            "title": "Identity & authentication data",
+            "description": "User identifiers (OIDC subject/issuer, email, display name) in grown.users and opaque session tokens in grown.sessions. Passwords/MFA secrets live in Zitadel, NOT grown.",
+            "categorizations": [
+              {
+                "system": "https://doi.org/10.6028/NIST.SP.800-60v2r1",
+                "information-type-ids": ["C.2.8.1"]
+              }
+            ],
+            "confidentiality-impact": { "base": "fips-199-moderate" },
+            "integrity-impact": { "base": "fips-199-moderate" },
+            "availability-impact": { "base": "fips-199-low" }
+          },
+          {
+            "uuid": "b2c3d4e5-0012-4000-8000-000000000001",
+            "title": "Audit & accountability records",
+            "description": "grown.audit_events: append-only activity trail of every mutating action across all services, with actor/IP/method/status.",
+            "categorizations": [
+              {
+                "system": "https://doi.org/10.6028/NIST.SP.800-60v2r1",
+                "information-type-ids": ["C.3.5.8"]
+              }
+            ],
+            "confidentiality-impact": { "base": "fips-199-moderate" },
+            "integrity-impact": { "base": "fips-199-moderate" },
+            "availability-impact": { "base": "fips-199-low" }
+          }
+        ]
+      },
+      "security-impact-level": {
+        "security-objective-confidentiality": "fips-199-moderate",
+        "security-objective-integrity": "fips-199-moderate",
+        "security-objective-availability": "fips-199-low"
+      },
+      "status": {
+        "state": "other",
+        "remarks": "NOT operational under any authorization. Homelab/development system with no ATO, no FedRAMP authorization, and no CMMC certification. No federal data (FCI/CUI) is processed."
+      },
+      "authorization-boundary": {
+        "description": "The authorization boundary comprises: (1) the grown-workspace container (Go backend + embedded React SPA + migrations), (2) the PostgreSQL instance holding all per-tenant data, sessions, and audit records, (3) the RustFS/S3 blob store for user binaries, (4) the Zitadel OIDC provider (external identity authority, a trusted upstream within the same cluster), and (5) the Gateway API / cert-manager TLS edge. Build and deploy are governed by a GitOps (Flux) pipeline with SOPS+age-encrypted secrets. Excluded/inherited: the Talos/Kubernetes cluster, host OS, physical/network infrastructure, and Cloudflare edge are INHERITED from the pick-gitops platform and not re-documented here. Multi-tenant isolation is logical (org_id scoping in a shared Postgres/blob store), not physical; in practice the system runs single-org today (multi-org request routing is stubbed in internal/tenancy)."
+      }
+    },
+    "system-implementation": {
+      "users": [
+        {
+          "uuid": "b2c3d4e5-0020-4000-8000-000000000001",
+          "title": "Org member",
+          "role-ids": ["system-owner"],
+          "remarks": "Authenticated end user. grown has no formal role model; 'admin' authority is conferred by membership in the GROWN_ADMIN_EMAILS env allowlist, not a stored role."
+        },
+        {
+          "uuid": "b2c3d4e5-0021-4000-8000-000000000001",
+          "title": "Org admin (allowlist)",
+          "role-ids": ["system-owner"],
+          "remarks": "An org member whose email is in GROWN_ADMIN_EMAILS. Can write per-org service settings, view the audit log, and manage users. When the allowlist is empty, admin writes fall open to any member — see POA&M poam-rbac."
+        }
+      ],
+      "components": [
+        {
+          "uuid": "a1b2c3d4-1000-4000-8000-000000000001",
+          "type": "software",
+          "title": "Auth / Zitadel OIDC Integration",
+          "description": "See component-definition.json (same UUID). Authentication, sessions, in-app MFA proxy.",
+          "status": { "state": "operational" }
+        },
+        {
+          "uuid": "a1b2c3d4-2000-4000-8000-000000000001",
+          "type": "software",
+          "title": "Audit Subsystem",
+          "description": "See component-definition.json (same UUID). Cross-cutting audit trail.",
+          "status": { "state": "operational" }
+        },
+        {
+          "uuid": "a1b2c3d4-3000-4000-8000-000000000001",
+          "type": "software",
+          "title": "API Gateway (gRPC + grpc-gateway REST)",
+          "description": "See component-definition.json (same UUID). Policy-enforcement point.",
+          "status": { "state": "operational" }
+        },
+        {
+          "uuid": "a1b2c3d4-4000-4000-8000-000000000001",
+          "type": "software",
+          "title": "PostgreSQL (per-tenant data store)",
+          "description": "See component-definition.json (same UUID). Org-scoped data store.",
+          "status": { "state": "operational" }
+        },
+        {
+          "uuid": "a1b2c3d4-5000-4000-8000-000000000001",
+          "type": "service",
+          "title": "Blob Store (RustFS / S3-compatible)",
+          "description": "See component-definition.json (same UUID). User binary storage.",
+          "status": { "state": "operational" }
+        },
+        {
+          "uuid": "a1b2c3d4-6000-4000-8000-000000000001",
+          "type": "service",
+          "title": "Gateway / TLS Termination (cert-manager + Gateway API)",
+          "description": "See component-definition.json (same UUID). TLS edge, inherited.",
+          "status": { "state": "operational" }
+        },
+        {
+          "uuid": "a1b2c3d4-7000-4000-8000-000000000001",
+          "type": "service",
+          "title": "GitOps / Flux Deployment & Config Management",
+          "description": "See component-definition.json (same UUID). Build/deploy/config baseline.",
+          "status": { "state": "operational" }
+        }
+      ]
+    },
+    "control-implementation": {
+      "description": "Per-control implementation statements for the FedRAMP Moderate (800-53 Rev 5) controls grown addresses. Each requirement points at the implementing component (by-component) defined in component-definition.json. This is a representative, NON-exhaustive set; controls not listed here are either inherited, not-applicable, or unmet (see poam.json).",
+      "implemented-requirements": [
+        {
+          "uuid": "b2c3d4e5-1a01-4000-8000-000000000001",
+          "control-id": "ia-2",
+          "statements": [
+            {
+              "statement-id": "ia-2_smt",
+              "uuid": "b2c3d4e5-1a01-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-1000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a01-0002-8000-000000000001",
+                  "description": "Auth/Zitadel: all requests authenticated via OIDC session before any state mutation (auth.HTTPMiddleware)."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a02-4000-8000-000000000001",
+          "control-id": "ia-2.1",
+          "props": [{ "name": "implementation-status", "value": "partial" }],
+          "statements": [
+            {
+              "statement-id": "ia-2.1_smt",
+              "uuid": "b2c3d4e5-1a02-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-1000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a02-0002-8000-000000000001",
+                  "description": "MFA (TOTP/passkeys) is available via the Zitadel proxy but NOT enforced org-wide. Gap tracked in poam-mfa."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a03-4000-8000-000000000001",
+          "control-id": "ia-5",
+          "statements": [
+            {
+              "statement-id": "ia-5_smt",
+              "uuid": "b2c3d4e5-1a03-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-1000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a03-0002-8000-000000000001",
+                  "description": "Authenticator management delegated to Zitadel via the self-scoped User API v2 proxy; users manage only their own authenticators."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a04-4000-8000-000000000001",
+          "control-id": "ac-3",
+          "statements": [
+            {
+              "statement-id": "ac-3_smt",
+              "uuid": "b2c3d4e5-1a04-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-4000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a04-0002-8000-000000000001",
+                  "description": "Postgres: every table org_id-scoped; repositories filter by caller org. Logical multi-tenant isolation."
+                },
+                {
+                  "component-uuid": "a1b2c3d4-1000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a04-0003-8000-000000000001",
+                  "description": "Auth resolves user+org into context for every request; admin-gated surfaces enforce the allowlist."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a05-4000-8000-000000000001",
+          "control-id": "ac-12",
+          "statements": [
+            {
+              "statement-id": "ac-12_smt",
+              "uuid": "b2c3d4e5-1a05-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-1000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a05-0002-8000-000000000001",
+                  "description": "Opaque sessions with expires_at/revoked_at; Lookup rejects expired/revoked; Logout revokes. (session.go, service.go)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a06-4000-8000-000000000001",
+          "control-id": "au-2",
+          "statements": [
+            {
+              "statement-id": "au-2_smt",
+              "uuid": "b2c3d4e5-1a06-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-2000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a06-0002-8000-000000000001",
+                  "description": "Audit interceptor + HTTP middleware capture every mutating RPC and binary route across all services."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a07-4000-8000-000000000001",
+          "control-id": "au-3",
+          "statements": [
+            {
+              "statement-id": "au-3_smt",
+              "uuid": "b2c3d4e5-1a07-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-2000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a07-0002-8000-000000000001",
+                  "description": "Each event records when/who/what/where/outcome (timestamp, actor, service+action+method, ip/ua, status). (migration 0037, repository.go)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a08-4000-8000-000000000001",
+          "control-id": "au-12",
+          "statements": [
+            {
+              "statement-id": "au-12_smt",
+              "uuid": "b2c3d4e5-1a08-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-2000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a08-0002-8000-000000000001",
+                  "description": "Single central audit-generation capability wired in server.go covers all services; cannot drift per-service."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a09-4000-8000-000000000001",
+          "control-id": "sc-8",
+          "props": [{ "name": "implementation-status", "value": "partial" }],
+          "statements": [
+            {
+              "statement-id": "sc-8_smt",
+              "uuid": "b2c3d4e5-1a09-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-6000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a09-0002-8000-000000000001",
+                  "description": "TLS terminated at the Gateway (cert-manager + Let's Encrypt); cookies flagged Secure. Intra-cluster hop unverified; see poam-boundary."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a0a-4000-8000-000000000001",
+          "control-id": "sc-13",
+          "props": [{ "name": "implementation-status", "value": "partial" }],
+          "statements": [
+            {
+              "statement-id": "sc-13_smt",
+              "uuid": "b2c3d4e5-1a0a-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-5000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a0a-0002-8000-000000000001",
+                  "description": "AES-256-GCM KEK for PDF signing keys + TLS; NONE FIPS 140-validated. Gap tracked in poam-fips."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "uuid": "b2c3d4e5-1a0b-4000-8000-000000000001",
+          "control-id": "cm-2",
+          "statements": [
+            {
+              "statement-id": "cm-2_smt",
+              "uuid": "b2c3d4e5-1a0b-0001-8000-000000000001",
+              "by-components": [
+                {
+                  "component-uuid": "a1b2c3d4-7000-4000-8000-000000000001",
+                  "uuid": "b2c3d4e5-1a0b-0002-8000-000000000001",
+                  "description": "Declarative baseline in git + pinned image, reconciled by Flux; schema baseline is the ordered migration set."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "back-matter": {
+      "resources": [
+        {
+          "uuid": "b2c3d4e5-f001-4000-8000-000000000001",
+          "title": "grown-workspace component definition",
+          "rlinks": [{ "href": "./component-definition.json" }]
+        },
+        {
+          "uuid": "b2c3d4e5-f002-4000-8000-000000000001",
+          "title": "grown-workspace POA&M",
+          "rlinks": [{ "href": "./poam.json" }]
+        }
+      ]
+    }
+  }
+}

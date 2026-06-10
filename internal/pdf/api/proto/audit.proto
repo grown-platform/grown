@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package pdf.audit;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "code.pick.haus/grown/pdf/pkg/proto/audit";
+
+// Audit action enum
+enum AuditAction {
+  AUDIT_ACTION_UNSPECIFIED = 0;
+  AUDIT_ACTION_DOCUMENT_CREATED = 1;
+  AUDIT_ACTION_DOCUMENT_UPDATED = 2;
+  AUDIT_ACTION_DOCUMENT_SENT = 3;
+  AUDIT_ACTION_DOCUMENT_VIEWED = 4;
+  AUDIT_ACTION_DOCUMENT_COMPLETED = 5;
+  AUDIT_ACTION_DOCUMENT_DECLINED = 6;
+  AUDIT_ACTION_DOCUMENT_VOIDED = 7;
+  AUDIT_ACTION_DOCUMENT_EXPIRED = 8;
+  AUDIT_ACTION_SIGNER_ADDED = 9;
+  AUDIT_ACTION_SIGNER_REMOVED = 10;
+  AUDIT_ACTION_SIGNER_NOTIFIED = 11;
+  AUDIT_ACTION_SIGNER_REMINDED = 12;
+  AUDIT_ACTION_FIELD_ADDED = 13;
+  AUDIT_ACTION_FIELD_UPDATED = 14;
+  AUDIT_ACTION_FIELD_REMOVED = 15;
+  AUDIT_ACTION_FIELD_FILLED = 16;
+  AUDIT_ACTION_SIGNATURE_CAPTURED = 17;
+  AUDIT_ACTION_SIGNATURE_VALIDATED = 18;
+  AUDIT_ACTION_CERTIFICATE_ISSUED = 19;
+  AUDIT_ACTION_CERTIFICATE_VALIDATED = 20;
+}
+
+// Audit entry message
+message AuditEntry {
+  string id = 1;
+  string document_id = 2;
+  string signer_id = 3;
+  string user_id = 4;
+  AuditAction action = 5;
+  string action_details = 6;  // JSON string
+  string ip_address = 7;
+  string user_agent = 8;
+  string geo_location = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+// Get audit trail
+message GetAuditTrailRequest {
+  string document_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message GetAuditTrailResponse {
+  repeated AuditEntry entries = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+// Audit service
+service AuditService {
+  rpc GetAuditTrail(GetAuditTrailRequest) returns (GetAuditTrailResponse) {
+    option (google.api.http) = {get: "/api/documents/{document_id}/audit"};
+  }
+}

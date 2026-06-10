@@ -1,0 +1,186 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// PhotosService is a per-org Google Photos-style media library. Image bytes
+// live in the blob store (shared with Drive); metadata lives in Postgres.
+// Upload + raw image download are served over plain HTTP (multipart / blob
+// stream), not gRPC; the RPCs below cover metadata, albums, and listing.
+service PhotosService {
+  // ListPhotos returns the org's photos (newest first), optionally scoped to an
+  // album or filtered to favorites.
+  rpc ListPhotos(ListPhotosRequest) returns (ListPhotosResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/photos"
+    };
+  }
+
+  rpc GetPhoto(GetPhotoRequest) returns (Photo) {
+    option (google.api.http) = {
+      get: "/api/v1/photos/{id}"
+    };
+  }
+
+  // UpdatePhoto edits photo metadata (description, favorite flag).
+  rpc UpdatePhoto(UpdatePhotoRequest) returns (Photo) {
+    option (google.api.http) = {
+      patch: "/api/v1/photos/{id}"
+      body: "*"
+    };
+  }
+
+  // DeletePhoto removes a photo (and its blob) from the library.
+  rpc DeletePhoto(DeletePhotoRequest) returns (DeletePhotoResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/photos/{id}"
+    };
+  }
+
+  // --- Albums ---
+  rpc ListAlbums(ListAlbumsRequest) returns (ListAlbumsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/photos/albums"
+    };
+  }
+
+  rpc GetAlbum(GetAlbumRequest) returns (Album) {
+    option (google.api.http) = {
+      get: "/api/v1/photos/albums/{id}"
+    };
+  }
+
+  rpc CreateAlbum(CreateAlbumRequest) returns (Album) {
+    option (google.api.http) = {
+      post: "/api/v1/photos/albums"
+      body: "*"
+    };
+  }
+
+  rpc UpdateAlbum(UpdateAlbumRequest) returns (Album) {
+    option (google.api.http) = {
+      patch: "/api/v1/photos/albums/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteAlbum(DeleteAlbumRequest) returns (DeleteAlbumResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/photos/albums/{id}"
+    };
+  }
+
+  // AddToAlbum adds one or more photos to an album (idempotent per photo).
+  rpc AddToAlbum(AddToAlbumRequest) returns (Album) {
+    option (google.api.http) = {
+      post: "/api/v1/photos/albums/{album_id}/photos"
+      body: "*"
+    };
+  }
+
+  // RemoveFromAlbum removes a photo from an album.
+  rpc RemoveFromAlbum(RemoveFromAlbumRequest) returns (Album) {
+    option (google.api.http) = {
+      delete: "/api/v1/photos/albums/{album_id}/photos/{photo_id}"
+    };
+  }
+}
+
+// Photo is one image in the library. content_url is the raw HTTP endpoint that
+// streams the original bytes; it goes through the auth middleware.
+message Photo {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string filename = 4;
+  string content_type = 5;
+  int64 size = 6;
+  int32 width = 7;
+  int32 height = 8;
+  string description = 9;
+  bool favorite = 10;
+  string content_url = 11; // GET /api/v1/photos/{id}/content
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+// Album is a named collection of photos. cover_photo_id is the photo used as the
+// album thumbnail (defaults to the most recently added).
+message Album {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string title = 4;
+  string cover_photo_id = 5;
+  string cover_url = 6; // GET /api/v1/photos/{cover}/content (empty if no cover)
+  int32 photo_count = 7;
+  string created_at = 8;
+  string updated_at = 9;
+  // Populated only by GetAlbum: the album's photos (newest-added first).
+  repeated Photo photos = 10;
+}
+
+message ListPhotosRequest {
+  string album_id = 1;     // optional: only photos in this album
+  bool favorites = 2;      // when true, only favorites
+}
+
+message ListPhotosResponse {
+  repeated Photo photos = 1;
+}
+
+message GetPhotoRequest {
+  string id = 1;
+}
+
+message UpdatePhotoRequest {
+  string id = 1;
+  string description = 2;
+  bool favorite = 3;
+}
+
+message DeletePhotoRequest {
+  string id = 1;
+}
+
+message DeletePhotoResponse {}
+
+message ListAlbumsRequest {}
+
+message ListAlbumsResponse {
+  repeated Album albums = 1;
+}
+
+message GetAlbumRequest {
+  string id = 1;
+}
+
+message CreateAlbumRequest {
+  string title = 1;
+  repeated string photo_ids = 2; // optional initial photos
+}
+
+message UpdateAlbumRequest {
+  string id = 1;
+  string title = 2;
+  string cover_photo_id = 3;
+}
+
+message DeleteAlbumRequest {
+  string id = 1;
+}
+
+message DeleteAlbumResponse {}
+
+message AddToAlbumRequest {
+  string album_id = 1;
+  repeated string photo_ids = 2;
+}
+
+message RemoveFromAlbumRequest {
+  string album_id = 1;
+  string photo_id = 2;
+}

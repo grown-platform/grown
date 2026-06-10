@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// NotificationsService manages the per-user in-app notification feed.
+service NotificationsService {
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/notifications"
+    };
+  }
+
+  rpc UnreadCount(UnreadCountRequest) returns (UnreadCountResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/notifications/unread-count"
+    };
+  }
+
+  rpc MarkRead(MarkReadRequest) returns (MarkReadResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/notifications/{id}/read"
+      body: "*"
+    };
+  }
+
+  rpc MarkAllRead(MarkAllReadRequest) returns (MarkAllReadResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/notifications/read-all"
+      body: "*"
+    };
+  }
+
+  rpc DeleteNotification(DeleteNotificationRequest) returns (DeleteNotificationResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/notifications/{id}"
+    };
+  }
+}
+
+message Notification {
+  string id = 1;
+  string org_id = 2;
+  string user_id = 3;
+  string type = 4;
+  string actor_user_id = 5;
+  string title = 6;
+  string body = 7;
+  string target_url = 8;
+  bool read = 9;
+  string created_at = 10;
+}
+
+message ListNotificationsRequest {
+  // page_token is the created_at cursor for pagination (opaque; use next_page_token).
+  string page_token = 1;
+  // page_size defaults to 50.
+  int32 page_size = 2;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  string next_page_token = 2;
+}
+
+message UnreadCountRequest {}
+
+message UnreadCountResponse {
+  int64 count = 1;
+}
+
+message MarkReadRequest {
+  string id = 1;
+}
+
+message MarkReadResponse {}
+
+message MarkAllReadRequest {}
+
+message MarkAllReadResponse {}
+
+message DeleteNotificationRequest {
+  string id = 1;
+}
+
+message DeleteNotificationResponse {}

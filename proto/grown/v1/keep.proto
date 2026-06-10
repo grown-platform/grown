@@ -1,0 +1,319 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+import "grown/v1/drive.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// KeepService manages per-org quick notes (a Google Keep clone).
+service KeepService {
+  rpc ListNotes(ListKeepNotesRequest) returns (ListKeepNotesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/keep/notes"
+    };
+  }
+
+  rpc CreateNote(CreateKeepNoteRequest) returns (KeepNote) {
+    option (google.api.http) = {
+      post: "/api/v1/keep/notes"
+      body: "*"
+    };
+  }
+
+  rpc GetNote(GetKeepNoteRequest) returns (KeepNote) {
+    option (google.api.http) = {
+      get: "/api/v1/keep/notes/{id}"
+    };
+  }
+
+  rpc UpdateNote(UpdateKeepNoteRequest) returns (KeepNote) {
+    option (google.api.http) = {
+      patch: "/api/v1/keep/notes/{id}"
+      body: "*"
+    };
+  }
+
+  rpc TrashNote(TrashKeepNoteRequest) returns (TrashKeepNoteResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/keep/notes/{id}"
+    };
+  }
+
+  // SetReminder sets (or updates) a time-based reminder on a note.
+  // remind_at is an RFC3339 timestamp; empty string clears the reminder.
+  rpc SetReminder(SetKeepReminderRequest) returns (KeepNote) {
+    option (google.api.http) = {
+      patch: "/api/v1/keep/notes/{id}/reminder"
+      body: "*"
+    };
+  }
+
+  // ClearReminder removes the reminder from a note.
+  rpc ClearReminder(ClearKeepReminderRequest) returns (KeepNote) {
+    option (google.api.http) = {
+      delete: "/api/v1/keep/notes/{id}/reminder"
+    };
+  }
+
+  // ListNoteReminders returns all non-trashed notes that have a reminder set,
+  // ordered by remind_at ascending. Backs the "Reminders" sidebar view.
+  rpc ListNoteReminders(ListKeepNoteRemindersRequest) returns (ListKeepNoteRemindersResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/keep/reminders"
+    };
+  }
+
+  // GrantNoteAccess grants a grown user a role on a note in the caller's org.
+  // role ∈ {viewer, commenter, editor}. Idempotent.
+  rpc GrantNoteAccess(GrantKeepNoteAccessRequest) returns (GrantKeepNoteAccessResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/keep/notes/{note_id}/grants"
+      body: "*"
+    };
+  }
+
+  // ListNoteGrants returns the per-user ACL grants on a note.
+  rpc ListNoteGrants(ListKeepNoteGrantsRequest) returns (ListKeepNoteGrantsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/keep/notes/{note_id}/grants"
+    };
+  }
+
+  // RevokeNoteAccess removes a user's per-user grant on a note.
+  rpc RevokeNoteAccess(RevokeKeepNoteAccessRequest) returns (RevokeKeepNoteAccessResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/keep/notes/{note_id}/grants/{grantee_user_id}"
+    };
+  }
+
+  // ListNotesSharedWithMe returns notes granted to the caller by a per-user ACL
+  // grant (possibly cross-org), excluding the caller's own org notes.
+  rpc ListNotesSharedWithMe(ListKeepNotesSharedWithMeRequest) returns (ListKeepNotesSharedWithMeResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/keep/shared-with-me"
+    };
+  }
+
+  // CreateLabel creates a new named label for the calling user within their org.
+  rpc CreateLabel(CreateKeepLabelRequest) returns (KeepLabel) {
+    option (google.api.http) = {
+      post: "/api/v1/keep/labels"
+      body: "*"
+    };
+  }
+
+  // ListLabels returns all labels owned by the calling user within their org.
+  rpc ListLabels(ListKeepLabelsRequest) returns (ListKeepLabelsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/keep/labels"
+    };
+  }
+
+  // DeleteLabel removes a label and detaches it from all notes.
+  rpc DeleteLabel(DeleteKeepLabelRequest) returns (DeleteKeepLabelResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/keep/labels/{id}"
+    };
+  }
+
+  // ApplyLabel attaches a label to a note (idempotent).
+  rpc ApplyLabel(ApplyKeepLabelRequest) returns (ApplyKeepLabelResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/keep/notes/{note_id}/labels/{label_id}"
+      body: "*"
+    };
+  }
+
+  // RemoveLabel detaches a label from a note.
+  rpc RemoveLabel(RemoveKeepLabelRequest) returns (RemoveKeepLabelResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/keep/notes/{note_id}/labels/{label_id}"
+    };
+  }
+
+  // ArchiveNote moves a note to the Archive view (sets archived=true).
+  rpc ArchiveNote(ArchiveKeepNoteRequest) returns (KeepNote) {
+    option (google.api.http) = {
+      post: "/api/v1/keep/notes/{id}/archive"
+      body: "*"
+    };
+  }
+
+  // UnarchiveNote restores a note from the Archive view (sets archived=false).
+  rpc UnarchiveNote(UnarchiveKeepNoteRequest) returns (KeepNote) {
+    option (google.api.http) = {
+      post: "/api/v1/keep/notes/{id}/unarchive"
+      body: "*"
+    };
+  }
+}
+
+// KeepChecklistItem is a single line of an optional note checklist.
+message KeepChecklistItem {
+  string text = 1;
+  bool checked = 2;
+}
+
+message KeepNote {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string title = 4;
+  string body = 5;
+  // color is a swatch name (e.g. "default", "coral", "mint"); empty == default.
+  string color = 6;
+  bool pinned = 7;
+  bool archived = 8;
+  repeated string labels = 9;
+  repeated KeepChecklistItem checklist = 10;
+  string created_at = 11;
+  string updated_at = 12;
+  // remind_at is an RFC3339 timestamp for the note's reminder; empty = no reminder.
+  string remind_at = 13;
+}
+
+// ListKeepNotesRequest supports optional filters.
+// By default (all fields zero/empty) only non-archived, non-trashed notes are
+// returned. Set archived=true to retrieve the Archive view instead.
+message ListKeepNotesRequest {
+  // archived: when true, return archived notes; when false (default), return
+  // non-archived notes.
+  bool archived = 1;
+  // label_id: when non-empty, restrict to notes that have this label attached.
+  string label_id = 2;
+}
+
+message ListKeepNotesResponse {
+  repeated KeepNote notes = 1;
+}
+
+message GetKeepNoteRequest {
+  string id = 1;
+}
+
+message CreateKeepNoteRequest {
+  string title = 1;
+  string body = 2;
+  string color = 3;
+  bool pinned = 4;
+  bool archived = 5;
+  repeated string labels = 6;
+  repeated KeepChecklistItem checklist = 7;
+}
+
+// UpdateKeepNoteRequest replaces the editable fields of an existing note.
+message UpdateKeepNoteRequest {
+  string id = 1;
+  string title = 2;
+  string body = 3;
+  string color = 4;
+  bool pinned = 5;
+  bool archived = 6;
+  repeated string labels = 7;
+  repeated KeepChecklistItem checklist = 8;
+}
+
+message TrashKeepNoteRequest {
+  string id = 1;
+}
+
+message TrashKeepNoteResponse {}
+
+// SetKeepReminderRequest sets a time-based reminder on a note.
+message SetKeepReminderRequest {
+  string id = 1;
+  // remind_at is an RFC3339 timestamp.
+  string remind_at = 2;
+}
+
+// ClearKeepReminderRequest removes the reminder from a note.
+message ClearKeepReminderRequest {
+  string id = 1;
+}
+
+message ListKeepNoteRemindersRequest {}
+
+message ListKeepNoteRemindersResponse {
+  repeated KeepNote notes = 1;
+}
+
+// GrantKeepNoteAccessRequest grants a grown user a role on a note.
+message GrantKeepNoteAccessRequest {
+  string note_id = 1;
+  string grantee_user_id = 2;
+  string role = 3;
+}
+
+message GrantKeepNoteAccessResponse {
+  ObjectGrant grant = 1;
+}
+
+message ListKeepNoteGrantsRequest {
+  string note_id = 1;
+}
+
+message ListKeepNoteGrantsResponse {
+  repeated ObjectGrant grants = 1;
+}
+
+message RevokeKeepNoteAccessRequest {
+  string note_id = 1;
+  string grantee_user_id = 2;
+}
+
+message RevokeKeepNoteAccessResponse {}
+
+message ListKeepNotesSharedWithMeRequest {}
+
+message ListKeepNotesSharedWithMeResponse {
+  repeated KeepNote notes = 1;
+}
+
+// KeepLabel is a named label owned by a user within their org.
+message KeepLabel {
+  string id = 1;
+  string org_id = 2;
+  string user_id = 3;
+  string name = 4;
+  string created_at = 5;
+}
+
+message CreateKeepLabelRequest {
+  string name = 1;
+}
+
+message ListKeepLabelsRequest {}
+
+message ListKeepLabelsResponse {
+  repeated KeepLabel labels = 1;
+}
+
+message DeleteKeepLabelRequest {
+  string id = 1;
+}
+
+message DeleteKeepLabelResponse {}
+
+message ApplyKeepLabelRequest {
+  string note_id = 1;
+  string label_id = 2;
+}
+
+message ApplyKeepLabelResponse {}
+
+message RemoveKeepLabelRequest {
+  string note_id = 1;
+  string label_id = 2;
+}
+
+message RemoveKeepLabelResponse {}
+
+message ArchiveKeepNoteRequest {
+  string id = 1;
+}
+
+message UnarchiveKeepNoteRequest {
+  string id = 1;
+}

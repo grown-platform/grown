@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.direnv/
+
+# Build outputs
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test
+coverage/
+*.test
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+backend/vendor/
+backend/server
+backend/pkcs11test
+backend/mtlstest
+
+# Generated (keep proto and sqlc for nix builds)
+# backend/pkg/proto/
+# backend/internal/sqlc/
+
+# Frontend test artifacts
+frontend/playwright-report/
+frontend/test-results/
+frontend/tsconfig.tsbuildinfo
+
+# Logs
+*.log
+
+# Nix
+result
+result-*
+
+# Local development data
+.data/
+.zitadel/
+backend/certs/server-ca-key.pem

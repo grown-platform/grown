@@ -1,0 +1,83 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 400 >>
+stream
+BT
+/F1 24 Tf
+120 700 Td
+(Multi-Party Service Agreement) Tj
+0 -50 Td
+/F1 12 Tf
+(This Agreement is made between multiple parties.) Tj
+0 -30 Td
+(TERMS AND CONDITIONS:) Tj
+0 -20 Td
+(1. All parties agree to cooperate in good faith) Tj
+0 -20 Td
+(2. Each party shall maintain insurance coverage) Tj
+0 -20 Td
+(3. Disputes shall be resolved through arbitration) Tj
+0 -20 Td
+(4. This agreement shall be governed by local law) Tj
+0 -60 Td
+(PARTY A - SERVICE PROVIDER:) Tj
+0 -30 Td
+(Signature: ____________________________) Tj
+0 -20 Td
+(Name: ________________________________) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+7 0 obj
+<< /Length 300 >>
+stream
+BT
+/F1 14 Tf
+100 700 Td
+(Page 2 - Additional Signatures) Tj
+0 -50 Td
+/F1 12 Tf
+(PARTY B - CLIENT:) Tj
+0 -30 Td
+(Signature: ____________________________) Tj
+0 -20 Td
+(Name: ________________________________) Tj
+0 -60 Td
+(PARTY C - WITNESS:) Tj
+0 -30 Td
+(Signature: ____________________________) Tj
+0 -20 Td
+(Name: ________________________________) Tj
+ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000117 00000 n
+0000000268 00000 n
+0000000720 00000 n
+0000000793 00000 n
+0000000944 00000 n
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1296
+%%EOF

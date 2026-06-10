@@ -1,0 +1,208 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// ChatService manages channels (DM + group) and messages.
+service ChatService {
+  // Channels
+  rpc ListChatChannels(ListChatChannelsRequest) returns (ListChatChannelsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/chat/channels"
+    };
+  }
+
+  rpc CreateChatChannel(CreateChatChannelRequest) returns (ChatChannel) {
+    option (google.api.http) = {
+      post: "/api/v1/chat/channels"
+      body: "*"
+    };
+  }
+
+  rpc GetChatChannel(GetChatChannelRequest) returns (ChatChannel) {
+    option (google.api.http) = {
+      get: "/api/v1/chat/channels/{id}"
+    };
+  }
+
+  // Messages
+  rpc ListChatMessages(ListChatMessagesRequest) returns (ListChatMessagesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/chat/channels/{channel_id}/messages"
+    };
+  }
+
+  rpc PostChatMessage(PostChatMessageRequest) returns (ChatMessage) {
+    option (google.api.http) = {
+      post: "/api/v1/chat/channels/{channel_id}/messages"
+      body: "*"
+    };
+  }
+
+  rpc DeleteChatMessage(DeleteChatMessageRequest) returns (DeleteChatMessageResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/chat/channels/{channel_id}/messages/{id}"
+    };
+  }
+
+  // Reactions: toggle an emoji reaction on a message.
+  rpc ReactToChatMessage(ReactToChatMessageRequest) returns (ReactToChatMessageResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/chat/channels/{channel_id}/messages/{message_id}/react"
+      body: "*"
+    };
+  }
+
+  // Threads: post a reply inside a message's thread.
+  rpc PostThreadReply(PostThreadReplyRequest) returns (ChatMessage) {
+    option (google.api.http) = {
+      post: "/api/v1/chat/channels/{channel_id}/messages/{parent_id}/replies"
+      body: "*"
+    };
+  }
+
+  // Threads: list replies to a message.
+  rpc ListThreadReplies(ListThreadRepliesRequest) returns (ListThreadRepliesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/chat/channels/{channel_id}/messages/{parent_id}/replies"
+    };
+  }
+}
+
+// ChatChannel is a DM or group channel.
+message ChatChannel {
+  string id = 1;
+  string org_id = 2;
+  // "dm" or "group"
+  string kind = 3;
+  // Group channel display name; empty for DMs.
+  string name = 4;
+  // Member user IDs.
+  repeated string member_ids = 5;
+  string created_at = 6;
+  string updated_at = 7;
+  // Last message snippet for list display.
+  string last_message_at = 8;
+  // Unread message count for the requesting user (populated in list).
+  int32 unread_count = 9;
+}
+
+// ChatAttachment is a file or image attached to a chat message.
+message ChatAttachment {
+  string id = 1;
+  string name = 2;
+  string mime_type = 3;
+  int64 size = 4;
+  // URL to download the attachment (e.g. /api/v1/chat/attachments/{id}/content).
+  string url = 5;
+}
+
+// ChatReaction is a single emoji reaction with aggregate count and caller-reacted flag.
+message ChatReaction {
+  string emoji = 1;
+  int32 count = 2;
+  // True if the requesting user has reacted with this emoji.
+  bool me = 3;
+}
+
+// ChatMessage is a single message in a channel.
+message ChatMessage {
+  string id = 1;
+  string channel_id = 2;
+  string org_id = 3;
+  string sender_id = 4;
+  string sender_name = 5;
+  string body = 6;
+  // Deprecated: emoji reactions as JSON {"emoji": count}. Use reaction_details.
+  string reactions = 7;
+  string sent_at = 8;
+  // Attachments uploaded with this message (images, files, GIFs).
+  repeated ChatAttachment attachments = 9;
+  // Structured reaction aggregates (replaces the reactions JSON string).
+  repeated ChatReaction reaction_details = 10;
+  // ID of the parent message this is a reply to (empty for top-level messages).
+  string parent_id = 11;
+  // Number of replies in this message's thread (populated for top-level messages).
+  int32 reply_count = 12;
+  // Client-supplied nonce echoed back so the sender can deduplicate the
+  // optimistic message against the confirmed one.
+  string client_nonce = 13;
+}
+
+message ListChatChannelsRequest {}
+
+message ListChatChannelsResponse {
+  repeated ChatChannel channels = 1;
+}
+
+message CreateChatChannelRequest {
+  // "dm" or "group"
+  string kind = 1;
+  // Required for group channels.
+  string name = 2;
+  // Initial member user IDs (excluding the creator).
+  repeated string member_ids = 3;
+}
+
+message GetChatChannelRequest {
+  string id = 1;
+}
+
+message ListChatMessagesRequest {
+  string channel_id = 1;
+  // Optional: fetch messages before this message id (pagination).
+  string before_id = 2;
+  int32 limit = 3;
+}
+
+message ListChatMessagesResponse {
+  repeated ChatMessage messages = 1;
+}
+
+message PostChatMessageRequest {
+  string channel_id = 1;
+  string body = 2;
+  // IDs of attachments previously uploaded via /api/v1/chat/attachments/upload.
+  repeated string attachment_ids = 3;
+  // Optional client nonce for optimistic-UI deduplication (echoed back in
+  // the response and in the WebSocket broadcast).
+  string client_nonce = 4;
+}
+
+message DeleteChatMessageRequest {
+  string channel_id = 1;
+  string id = 2;
+}
+
+message DeleteChatMessageResponse {}
+
+message ReactToChatMessageRequest {
+  string channel_id = 1;
+  string message_id = 2;
+  string emoji = 3;
+}
+
+message ReactToChatMessageResponse {
+  // Updated reaction aggregates for the message after the toggle.
+  repeated ChatReaction reaction_details = 1;
+}
+
+message PostThreadReplyRequest {
+  string channel_id = 1;
+  string parent_id = 2;
+  string body = 3;
+  repeated string attachment_ids = 4;
+}
+
+message ListThreadRepliesRequest {
+  string channel_id = 1;
+  string parent_id = 2;
+  int32 limit = 3;
+}
+
+message ListThreadRepliesResponse {
+  repeated ChatMessage messages = 1;
+}

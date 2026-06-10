@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+import "grown/v1/drive.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// WhiteboardsService manages Excalidraw whiteboards. The scene contents are
+// stored as an opaque JSON blob saved via SaveWhiteboard.
+service WhiteboardsService {
+  rpc ListWhiteboards(ListWhiteboardsRequest) returns (ListWhiteboardsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/whiteboards"
+    };
+  }
+
+  rpc CreateWhiteboard(CreateWhiteboardRequest) returns (Whiteboard) {
+    option (google.api.http) = {
+      post: "/api/v1/whiteboards"
+      body: "*"
+    };
+  }
+
+  rpc GetWhiteboard(GetWhiteboardRequest) returns (Whiteboard) {
+    option (google.api.http) = {
+      get: "/api/v1/whiteboards/d/{id}"
+    };
+  }
+
+  rpc RenameWhiteboard(RenameWhiteboardRequest) returns (Whiteboard) {
+    option (google.api.http) = {
+      patch: "/api/v1/whiteboards/d/{id}"
+      body: "*"
+    };
+  }
+
+  rpc TrashWhiteboard(TrashWhiteboardRequest) returns (TrashWhiteboardResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/whiteboards/d/{id}"
+    };
+  }
+
+  rpc SaveWhiteboard(SaveWhiteboardRequest) returns (SaveWhiteboardResponse) {
+    option (google.api.http) = {
+      put: "/api/v1/whiteboards/d/{id}/data"
+      body: "*"
+    };
+  }
+
+  // ListSharedWithMe returns whiteboards this caller has been granted access to
+  // by a per-user ACL grant (object_grants), including boards in other orgs.
+  rpc ListSharedWithMe(ListWhiteboardsSharedWithMeRequest) returns (ListWhiteboardsSharedWithMeResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/whiteboards/shared-with-me"
+    };
+  }
+
+  // GrantBoardAccess grants a grown user (by id) a role on a whiteboard.
+  // role ∈ {viewer, commenter, editor}. Idempotent.
+  rpc GrantBoardAccess(GrantBoardAccessRequest) returns (GrantBoardAccessResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/whiteboards/d/{board_id}/grants"
+      body: "*"
+    };
+  }
+
+  // ListBoardGrants returns the per-user ACL grants on a whiteboard.
+  rpc ListBoardGrants(ListBoardGrantsRequest) returns (ListBoardGrantsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/whiteboards/d/{board_id}/grants"
+    };
+  }
+
+  // RevokeBoardAccess removes a user's per-user grant on a whiteboard.
+  rpc RevokeBoardAccess(RevokeBoardAccessRequest) returns (RevokeBoardAccessResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/whiteboards/d/{board_id}/grants/{grantee_user_id}"
+    };
+  }
+}
+
+message Whiteboard {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string title = 4;
+  string created_at = 5;
+  string updated_at = 6;
+  // Scene JSON (Excalidraw model). Empty in List responses.
+  string data = 7;
+}
+
+message ListWhiteboardsRequest {}
+
+message ListWhiteboardsResponse {
+  repeated Whiteboard whiteboards = 1;
+}
+
+message CreateWhiteboardRequest {
+  string title = 1;
+}
+
+message GetWhiteboardRequest {
+  string id = 1;
+}
+
+message RenameWhiteboardRequest {
+  string id = 1;
+  string title = 2;
+}
+
+message TrashWhiteboardRequest {
+  string id = 1;
+}
+
+message TrashWhiteboardResponse {}
+
+message SaveWhiteboardRequest {
+  string id = 1;
+  string data = 2;
+}
+
+message SaveWhiteboardResponse {}
+
+// Per-user ACL grants for Whiteboards. ObjectGrant is defined in drive.proto
+// (same grown.v1 package) and reused here.
+message ListWhiteboardsSharedWithMeRequest {}
+message ListWhiteboardsSharedWithMeResponse { repeated Whiteboard whiteboards = 1; }
+
+message GrantBoardAccessRequest {
+  string board_id = 1;
+  string grantee_user_id = 2;
+  string role = 3;
+}
+message GrantBoardAccessResponse { ObjectGrant grant = 1; }
+
+message ListBoardGrantsRequest { string board_id = 1; }
+message ListBoardGrantsResponse { repeated ObjectGrant grants = 1; }
+
+message RevokeBoardAccessRequest {
+  string board_id = 1;
+  string grantee_user_id = 2;
+}
+message RevokeBoardAccessResponse {}

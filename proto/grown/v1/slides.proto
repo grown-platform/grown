@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+import "grown/v1/drive.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// SlidesService manages presentations. The deck contents are stored as an
+// opaque JSON blob (an array of slides with positioned elements) saved via
+// SaveDeck.
+service SlidesService {
+  rpc ListDecks(ListDecksRequest) returns (ListDecksResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/slides"
+    };
+  }
+
+  rpc CreateDeck(CreateDeckRequest) returns (Deck) {
+    option (google.api.http) = {
+      post: "/api/v1/slides"
+      body: "*"
+    };
+  }
+
+  // GetDeck returns metadata + the deck JSON.
+  rpc GetDeck(GetDeckRequest) returns (Deck) {
+    option (google.api.http) = {
+      get: "/api/v1/slides/d/{id}"
+    };
+  }
+
+  rpc RenameDeck(RenameDeckRequest) returns (Deck) {
+    option (google.api.http) = {
+      patch: "/api/v1/slides/d/{id}"
+      body: "*"
+    };
+  }
+
+  rpc TrashDeck(TrashDeckRequest) returns (TrashDeckResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/slides/d/{id}"
+    };
+  }
+
+  // SaveDeck stores the deck JSON (autosaved by the editor).
+  rpc SaveDeck(SaveDeckRequest) returns (SaveDeckResponse) {
+    option (google.api.http) = {
+      put: "/api/v1/slides/d/{id}/data"
+      body: "*"
+    };
+  }
+
+  // ListSharedWithMe returns decks this caller has been granted access to by a
+  // per-user ACL grant (object_grants), including decks in other orgs.
+  rpc ListSharedWithMe(ListDecksSharedWithMeRequest) returns (ListDecksSharedWithMeResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/slides/shared-with-me"
+    };
+  }
+
+  // GrantAccess grants a grown user (by id) a role on a deck. role ∈
+  // {viewer, commenter, editor}. Idempotent.
+  rpc GrantAccess(GrantDeckAccessRequest) returns (GrantDeckAccessResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/slides/d/{deck_id}/grants"
+      body: "*"
+    };
+  }
+
+  // ListGrants returns the per-user ACL grants on a deck.
+  rpc ListGrants(ListDeckGrantsRequest) returns (ListDeckGrantsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/slides/d/{deck_id}/grants"
+    };
+  }
+
+  // RevokeAccess removes a user's per-user grant on a deck.
+  rpc RevokeAccess(RevokeDeckAccessRequest) returns (RevokeDeckAccessResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/slides/d/{deck_id}/grants/{grantee_user_id}"
+    };
+  }
+}
+
+// Deck is a presentation. `data` (the deck JSON) is populated only by
+// GetDeck; List responses omit it to stay light.
+message Deck {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string title = 4;
+  string created_at = 5;
+  string updated_at = 6;
+  // Deck JSON (slides model). Empty in List responses.
+  string data = 7;
+}
+
+message ListDecksRequest {}
+
+message ListDecksResponse {
+  repeated Deck decks = 1;
+}
+
+message CreateDeckRequest {
+  string title = 1;
+}
+
+message GetDeckRequest {
+  string id = 1;
+}
+
+message RenameDeckRequest {
+  string id = 1;
+  string title = 2;
+}
+
+message TrashDeckRequest {
+  string id = 1;
+}
+
+message TrashDeckResponse {}
+
+message SaveDeckRequest {
+  string id = 1;
+  string data = 2;
+}
+
+message SaveDeckResponse {}
+
+// Per-user ACL grants for Slides. ObjectGrant is defined in drive.proto (same
+// grown.v1 package) and reused here.
+message ListDecksSharedWithMeRequest {}
+message ListDecksSharedWithMeResponse { repeated Deck decks = 1; }
+
+message GrantDeckAccessRequest {
+  string deck_id = 1;
+  string grantee_user_id = 2;
+  string role = 3;
+}
+message GrantDeckAccessResponse { ObjectGrant grant = 1; }
+
+message ListDeckGrantsRequest { string deck_id = 1; }
+message ListDeckGrantsResponse { repeated ObjectGrant grants = 1; }
+
+message RevokeDeckAccessRequest {
+  string deck_id = 1;
+  string grantee_user_id = 2;
+}
+message RevokeDeckAccessResponse {}

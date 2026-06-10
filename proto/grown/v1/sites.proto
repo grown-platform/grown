@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// SitesService manages per-org websites (a Google Sites style builder).
+//
+// A site holds its full page/block tree as an opaque JSON string
+// (`content_json`) so the editor can evolve the block model client-side
+// without proto churn. The whole tree is upserted on UpdateSite.
+service SitesService {
+  rpc ListSites(ListSitesRequest) returns (ListSitesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/sites"
+    };
+  }
+
+  rpc CreateSite(CreateSiteRequest) returns (Site) {
+    option (google.api.http) = {
+      post: "/api/v1/sites"
+      body: "*"
+    };
+  }
+
+  rpc GetSite(GetSiteRequest) returns (Site) {
+    option (google.api.http) = {
+      get: "/api/v1/sites/{id}"
+    };
+  }
+
+  rpc UpdateSite(UpdateSiteRequest) returns (Site) {
+    option (google.api.http) = {
+      patch: "/api/v1/sites/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteSite(DeleteSiteRequest) returns (DeleteSiteResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/sites/{id}"
+    };
+  }
+
+  // GetPublishedSite returns a site only if it is published. It does not
+  // require an authenticated user — it powers the public /sites/view/:id
+  // share route. Returns NotFound if the site is missing or unpublished.
+  rpc GetPublishedSite(GetPublishedSiteRequest) returns (Site) {
+    option (google.api.http) = {
+      get: "/api/v1/sites/{id}/published"
+    };
+  }
+}
+
+// Site is one website. `content_json` is the serialized page/block tree.
+message Site {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string name = 4;
+  string content_json = 5;
+  bool published = 6;
+  string created_at = 7;
+  string updated_at = 8;
+}
+
+message ListSitesRequest {}
+
+message ListSitesResponse {
+  repeated Site sites = 1;
+}
+
+message CreateSiteRequest {
+  string name = 1;
+  // Optional initial content tree. Empty means the service seeds a blank page.
+  string content_json = 2;
+}
+
+message GetSiteRequest {
+  string id = 1;
+}
+
+// UpdateSite replaces the editable fields of an existing site. The whole
+// page/block tree is upserted via `content_json`, and the published flag is
+// included so a publish/unpublish toggle is a normal update.
+message UpdateSiteRequest {
+  string id = 1;
+  string name = 2;
+  string content_json = 3;
+  bool published = 4;
+}
+
+message DeleteSiteRequest {
+  string id = 1;
+}
+
+message DeleteSiteResponse {}
+
+message GetPublishedSiteRequest {
+  string id = 1;
+}

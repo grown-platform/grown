@@ -1,0 +1,224 @@
+syntax = "proto3";
+
+package pdf.signing;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "code.pick.haus/grown/pdf/pkg/proto/signing";
+
+// Signature field for guest signing
+message SigningField {
+  string id = 1;
+  string field_type = 2;
+  int32 page_number = 3;
+  double x = 4;
+  double y = 5;
+  double width = 6;
+  double height = 7;
+  bool required = 8;
+  string label = 9;
+  string value = 10;
+  bool is_filled = 11;
+}
+
+// Signing session for guest signers
+message SigningSession {
+  string signer_id = 1;
+  string signer_name = 2;
+  string signer_email = 3;
+  string document_id = 4;
+  string document_name = 5;
+  string document_download_url = 6;
+  int32 total_pages = 7;
+  repeated SigningField fields = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  bool is_signed = 10;
+  string sender_name = 11;
+  string message = 12;
+}
+
+// Get signing session
+message GetSigningSessionRequest {
+  string token = 1;
+}
+
+message GetSigningSessionResponse {
+  SigningSession session = 1;
+}
+
+// Record document view
+message RecordViewRequest {
+  string token = 1;
+}
+
+message RecordViewResponse {
+  bool success = 1;
+}
+
+// Field value for submission
+message FieldValue {
+  string field_id = 1;
+  string value = 2;
+}
+
+// PDF annotation from frontend editor
+message PDFAnnotation {
+  string id = 1;
+  string type = 2;              // freehand, rectangle, circle, arrow, text, highlight
+  int32 page_number = 3;
+  double x = 4;                 // Normalized 0-1 bounds
+  double y = 5;
+  double width = 6;
+  double height = 7;
+  string stroke_color = 8;
+  double stroke_width = 9;
+  string fill_color = 10;
+  double fill_opacity = 11;
+  string text = 12;             // For text annotations
+  double font_size = 13;
+  string font_color = 14;
+  repeated Point points = 15;   // For freehand paths
+}
+
+message Point {
+  double x = 1;
+  double y = 2;
+}
+
+// Submit signatures
+message SubmitSignatureRequest {
+  string token = 1;
+  repeated FieldValue field_values = 2;
+  bool consent_given = 3;
+  string consent_text = 4;
+  repeated PDFAnnotation annotations = 5;  // Optional PDF annotations from editor
+}
+
+message SubmitSignatureResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Decline signing
+message DeclineSigningRequest {
+  string token = 1;
+  string reason = 2;
+}
+
+message DeclineSigningResponse {
+  bool success = 1;
+}
+
+// Signing options/configuration
+message GetSigningOptionsRequest {
+  string token = 1;
+}
+
+message SigningMethod {
+  string id = 1;              // "typed", "drawn", "cac_mtls", "cac_extension"
+  string name = 2;            // Display name
+  string description = 3;     // Description of the method
+  bool enabled = 4;           // Whether this method is enabled
+  bool requires_redirect = 5; // True for mTLS (requires redirect to HTTPS endpoint)
+  string redirect_url = 6;    // URL to redirect to for mTLS signing
+}
+
+message GetSigningOptionsResponse {
+  repeated SigningMethod methods = 1;
+  string default_method = 2;
+  bool cac_detected = 3;      // True if CAC certificate was detected via mTLS
+  string cac_subject = 4;     // CAC certificate subject if detected
+}
+
+// Prepare signature for hash-based signing (browser extension)
+message PrepareSignatureRequest {
+  string token = 1;
+  repeated FieldValue field_values = 2;
+}
+
+message PrepareSignatureResponse {
+  string signature_id = 1;          // ID for this signing operation
+  string hash = 2;                  // Base64-encoded hash to be signed
+  string hash_algorithm = 3;        // "SHA256", "SHA384", "SHA512"
+  int64 expires_at = 4;             // Unix timestamp when this hash expires
+}
+
+// Complete signature with client-provided signature (browser extension)
+message CompleteSignatureRequest {
+  string token = 1;
+  string signature_id = 2;          // From PrepareSignatureResponse
+  string signature = 3;             // Base64-encoded PKCS#7/CMS signature
+  string certificate = 4;           // Base64-encoded X.509 certificate
+  repeated string certificate_chain = 5; // Optional intermediate certificates
+  bool consent_given = 6;
+  string consent_text = 7;
+}
+
+message CompleteSignatureResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// CAC certificate info from mTLS
+message CACCertificateInfo {
+  string subject = 1;
+  string issuer = 2;
+  string serial_number = 3;
+  string email = 4;
+  string common_name = 5;
+  string organization = 6;
+}
+
+// Signing service (guest endpoints)
+service SigningService {
+  // Get signing session details (no auth required, token-based)
+  rpc GetSigningSession(GetSigningSessionRequest) returns (GetSigningSessionResponse) {
+    option (google.api.http) = {get: "/api/sign/{token}"};
+  }
+
+  // Record that document was viewed
+  rpc RecordView(RecordViewRequest) returns (RecordViewResponse) {
+    option (google.api.http) = {
+      post: "/api/sign/{token}/view"
+      body: "*"
+    };
+  }
+
+  // Submit signatures
+  rpc SubmitSignature(SubmitSignatureRequest) returns (SubmitSignatureResponse) {
+    option (google.api.http) = {
+      post: "/api/sign/{token}/submit"
+      body: "*"
+    };
+  }
+
+  // Decline to sign
+  rpc DeclineSigning(DeclineSigningRequest) returns (DeclineSigningResponse) {
+    option (google.api.http) = {
+      post: "/api/sign/{token}/decline"
+      body: "*"
+    };
+  }
+
+  // Get available signing methods (CAC, typed, etc.)
+  rpc GetSigningOptions(GetSigningOptionsRequest) returns (GetSigningOptionsResponse) {
+    option (google.api.http) = {get: "/api/sign/{token}/options"};
+  }
+
+  // Prepare signature for hash-based signing (browser extension)
+  rpc PrepareSignature(PrepareSignatureRequest) returns (PrepareSignatureResponse) {
+    option (google.api.http) = {
+      post: "/api/sign/{token}/prepare"
+      body: "*"
+    };
+  }
+
+  // Complete signature with client-provided signature (browser extension)
+  rpc CompleteSignature(CompleteSignatureRequest) returns (CompleteSignatureResponse) {
+    option (google.api.http) = {
+      post: "/api/sign/{token}/complete"
+      body: "*"
+    };
+  }
+}

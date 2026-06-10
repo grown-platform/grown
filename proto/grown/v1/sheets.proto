@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+import "grown/v1/drive.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// SheetsService manages spreadsheets. The workbook contents are stored as an
+// opaque JSON blob (the FortuneSheet workbook model) saved via SaveSheet.
+service SheetsService {
+  rpc ListSheets(ListSheetsRequest) returns (ListSheetsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/sheets"
+    };
+  }
+
+  rpc CreateSheet(CreateSheetRequest) returns (Sheet) {
+    option (google.api.http) = {
+      post: "/api/v1/sheets"
+      body: "*"
+    };
+  }
+
+  // GetSheet returns metadata + the workbook JSON.
+  rpc GetSheet(GetSheetRequest) returns (Sheet) {
+    option (google.api.http) = {
+      get: "/api/v1/sheets/d/{id}"
+    };
+  }
+
+  rpc RenameSheet(RenameSheetRequest) returns (Sheet) {
+    option (google.api.http) = {
+      patch: "/api/v1/sheets/d/{id}"
+      body: "*"
+    };
+  }
+
+  rpc TrashSheet(TrashSheetRequest) returns (TrashSheetResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/sheets/d/{id}"
+    };
+  }
+
+  // SaveSheet stores the workbook JSON (autosaved by the editor).
+  rpc SaveSheet(SaveSheetRequest) returns (SaveSheetResponse) {
+    option (google.api.http) = {
+      put: "/api/v1/sheets/d/{id}/data"
+      body: "*"
+    };
+  }
+
+  // ListSharedWithMe returns sheets this caller has been granted access to by a
+  // per-user ACL grant (object_grants), including sheets in other orgs.
+  rpc ListSharedWithMe(ListSheetsSharedWithMeRequest) returns (ListSheetsSharedWithMeResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/sheets/shared-with-me"
+    };
+  }
+
+  // GrantAccess grants a grown user (by id) a role on a sheet. role ∈
+  // {viewer, commenter, editor}. Idempotent.
+  rpc GrantAccess(GrantSheetAccessRequest) returns (GrantSheetAccessResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/sheets/d/{sheet_id}/grants"
+      body: "*"
+    };
+  }
+
+  // ListGrants returns the per-user ACL grants on a sheet.
+  rpc ListGrants(ListSheetGrantsRequest) returns (ListSheetGrantsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/sheets/d/{sheet_id}/grants"
+    };
+  }
+
+  // RevokeAccess removes a user's per-user grant on a sheet.
+  rpc RevokeAccess(RevokeSheetAccessRequest) returns (RevokeSheetAccessResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/sheets/d/{sheet_id}/grants/{grantee_user_id}"
+    };
+  }
+}
+
+// Sheet is a spreadsheet. `data` (the workbook JSON) is populated only by
+// GetSheet; List responses omit it to stay light.
+message Sheet {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string title = 4;
+  string created_at = 5;
+  string updated_at = 6;
+  // Workbook JSON (FortuneSheet model). Empty in List responses.
+  string data = 7;
+}
+
+message ListSheetsRequest {}
+
+message ListSheetsResponse {
+  repeated Sheet sheets = 1;
+}
+
+message CreateSheetRequest {
+  string title = 1;
+}
+
+message GetSheetRequest {
+  string id = 1;
+}
+
+message RenameSheetRequest {
+  string id = 1;
+  string title = 2;
+}
+
+message TrashSheetRequest {
+  string id = 1;
+}
+
+message TrashSheetResponse {}
+
+message SaveSheetRequest {
+  string id = 1;
+  string data = 2;
+}
+
+message SaveSheetResponse {}
+
+// Per-user ACL grants for Sheets. ObjectGrant is defined in drive.proto (same
+// grown.v1 package) and reused here.
+message ListSheetsSharedWithMeRequest {}
+message ListSheetsSharedWithMeResponse { repeated Sheet sheets = 1; }
+
+message GrantSheetAccessRequest {
+  string sheet_id = 1;
+  string grantee_user_id = 2;
+  string role = 3;
+}
+message GrantSheetAccessResponse { ObjectGrant grant = 1; }
+
+message ListSheetGrantsRequest { string sheet_id = 1; }
+message ListSheetGrantsResponse { repeated ObjectGrant grants = 1; }
+
+message RevokeSheetAccessRequest {
+  string sheet_id = 1;
+  string grantee_user_id = 2;
+}
+message RevokeSheetAccessResponse {}

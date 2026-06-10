@@ -1,0 +1,6 @@
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Workspace">
+  <rect width="40" height="40" rx="10" fill="#3F704D"/>
+  <path d="M20 31 V19" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M20.5 21 C20.5 14.5 25.5 11.5 31 11.5 C31 18 26 21 20.5 21 Z" fill="#FFFFFF"/>
+  <path d="M19.5 24.5 C19.5 19.5 15 17 9.5 17 C9.5 22.5 14 25 19.5 25 Z" fill="#FFFFFF" fill-opacity="0.82"/>
+</svg>

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package grown.v1;
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// Org is a single tenant within a grown-workspace deployment.
+// In single-org mode, exactly one Org exists with slug = "default".
+message Org {
+  // UUID, stable for the lifetime of the org.
+  string id = 1;
+  // Short, URL-friendly identifier (e.g. "acme", "default").
+  string slug = 2;
+  // Human display name.
+  string display_name = 3;
+  // True for a single-user (personal) org created per-user on first sign-in
+  // (slug "personal-<hex>"); false for the shared "default" org and any
+  // normally-created team org. The SPA hides the Admin app (Users + Sessions
+  // management) for personal orgs.
+  bool is_personal = 4;
+}

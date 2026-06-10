@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// TelephonyService provides the internal WebRTC softphone surface: per-user
+// extensions, an org member directory, and call history. WebRTC signaling
+// itself runs over a separate WebSocket hub (see internal/telephony/hub.go).
+service TelephonyService {
+  // GetMyExtension returns the caller's extension, provisioning one on first
+  // access (lowest free extension >= 1001 within the org).
+  rpc GetMyExtension(GetMyExtensionRequest) returns (Extension) {
+    option (google.api.http) = {
+      get: "/api/v1/telephony/extension"
+    };
+  }
+
+  // ListDirectory lists org members with their extension and online status.
+  rpc ListDirectory(ListDirectoryRequest) returns (ListDirectoryResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/telephony/directory"
+    };
+  }
+
+  // ListCallHistory lists the caller's recent calls within the org.
+  rpc ListCallHistory(ListCallHistoryRequest) returns (ListCallHistoryResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/telephony/calls"
+    };
+  }
+}
+
+// Extension is a user's stable 4-digit telephony extension within an org.
+message Extension {
+  string org_id = 1;
+  string user_id = 2;
+  string extension = 3;
+  string created_at = 4;
+}
+
+message GetMyExtensionRequest {}
+
+message ListDirectoryRequest {}
+
+// DirectoryEntry is one org member in the telephony directory.
+message DirectoryEntry {
+  string user_id = 1;
+  string display_name = 2;
+  string email = 3;
+  string extension = 4;
+  bool online = 5;
+}
+
+message ListDirectoryResponse {
+  repeated DirectoryEntry entries = 1;
+}
+
+message ListCallHistoryRequest {}
+
+// CallRecord is one logged call involving the caller.
+message CallRecord {
+  string id = 1;
+  string org_id = 2;
+  string caller_id = 3;
+  string callee_id = 4;
+  // direction is "outgoing" or "incoming" relative to the requesting user.
+  string direction = 5;
+  // status is one of: completed, missed, rejected.
+  string status = 6;
+  string started_at = 7;
+  string ended_at = 8;
+  // Display fields for the other party (resolved server-side).
+  string peer_name = 9;
+  string peer_extension = 10;
+}
+
+message ListCallHistoryResponse {
+  repeated CallRecord calls = 1;
+}

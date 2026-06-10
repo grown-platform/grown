@@ -1,0 +1,205 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// FormsService manages per-org forms (Google Forms parity): a form has a
+// title/description plus an ordered list of questions, and collects responses.
+service FormsService {
+  rpc ListForms(ListFormsRequest) returns (ListFormsResponse) {
+    option (google.api.http) = {get: "/api/v1/forms"};
+  }
+
+  rpc CreateForm(CreateFormRequest) returns (Form) {
+    option (google.api.http) = {
+      post: "/api/v1/forms"
+      body: "*"
+    };
+  }
+
+  rpc GetForm(GetFormRequest) returns (Form) {
+    option (google.api.http) = {get: "/api/v1/forms/{id}"};
+  }
+
+  rpc UpdateForm(UpdateFormRequest) returns (Form) {
+    option (google.api.http) = {
+      patch: "/api/v1/forms/{id}"
+      body: "*"
+    };
+  }
+
+  rpc TrashForm(TrashFormRequest) returns (TrashFormResponse) {
+    option (google.api.http) = {delete: "/api/v1/forms/{id}"};
+  }
+
+  // SubmitFormResponse records one respondent's submission.
+  rpc SubmitFormResponse(SubmitFormResponseRequest) returns (FormResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/forms/{form_id}/responses"
+      body: "*"
+    };
+  }
+
+  // ListFormResponses returns the raw submissions for a form (owner view).
+  rpc ListFormResponses(ListFormResponsesRequest) returns (ListFormResponsesResponse) {
+    option (google.api.http) = {get: "/api/v1/forms/{form_id}/responses"};
+  }
+
+  // GetFormResponseSummary returns aggregate counts/answers per question.
+  rpc GetFormResponseSummary(GetFormResponseSummaryRequest) returns (FormResponseSummary) {
+    option (google.api.http) = {get: "/api/v1/forms/{form_id}/summary"};
+  }
+
+  // DeleteFormResponses deletes all responses for a form.
+  rpc DeleteFormResponses(DeleteFormResponsesRequest) returns (DeleteFormResponsesResponse) {
+    option (google.api.http) = {delete: "/api/v1/forms/{form_id}/responses"};
+  }
+}
+
+// FormQuestion is a single question within a form. The valid fields depend on
+// `type`. Types: "short_answer", "paragraph", "multiple_choice", "checkboxes",
+// "dropdown", "linear_scale", "date", "time", "file_upload".
+message FormQuestion {
+  string id = 1;
+  string type = 2;
+  string title = 3;
+  string description = 4;
+  bool required = 5;
+  // options is the list of choices for multiple_choice / checkboxes / dropdown.
+  repeated string options = 6;
+  // linear-scale config (only for type "linear_scale").
+  int32 scale_min = 7;
+  int32 scale_max = 8;
+  string scale_min_label = 9;
+  string scale_max_label = 10;
+  // Quiz fields: points awarded for a correct answer; correct_answers lists
+  // the option values (or text) that are considered correct.
+  int32 points = 11;
+  repeated string correct_answers = 12;
+  // Section branching (multiple_choice / dropdown only): maps option index ->
+  // target section id (or "__submit__" to end the form). Empty = no branching.
+  map<string, string> go_to_section = 13;
+  // section_id / is_section: when is_section=true this "question" is a section
+  // divider (has an id + title; no answer is collected).
+  bool is_section = 14;
+}
+
+message Form {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string title = 4;
+  string description = 5;
+  repeated FormQuestion questions = 6;
+  FormSettings settings = 7;
+  bool accepting = 8;
+  int32 response_count = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+// FormSettings holds per-form behaviour toggles (Forms "Settings" tab).
+message FormSettings {
+  bool collect_email = 1;
+  bool limit_one_response = 2;
+  bool show_progress_bar = 3;
+  bool shuffle_questions = 4;
+  string confirmation_message = 5;
+  // Quiz mode: when true auto-grading is enabled and scores are computed on submit.
+  bool is_quiz = 6;
+}
+
+// FormResponse is one respondent's submission. answers_json is a JSON object
+// mapping question id -> answer (string, or JSON array of strings for
+// checkbox questions). It is transported as a JSON string so a single answer
+// field can carry both scalar and list values across the gateway.
+message FormResponse {
+  string id = 1;
+  string form_id = 2;
+  string respondent_email = 3;
+  string answers_json = 4;
+  string created_at = 5;
+  // score is set when the form is a quiz (is_quiz=true). Null/absent = not graded.
+  float score = 6;
+  // max_score is the maximum possible points for this form (sum of per-question points).
+  float max_score = 7;
+}
+
+message ListFormsRequest {}
+
+message ListFormsResponse {
+  repeated Form forms = 1;
+}
+
+message CreateFormRequest {
+  string title = 1;
+  string description = 2;
+  repeated FormQuestion questions = 3;
+}
+
+message GetFormRequest {
+  string id = 1;
+}
+
+message UpdateFormRequest {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  repeated FormQuestion questions = 4;
+  FormSettings settings = 5;
+  bool accepting = 6;
+}
+
+message TrashFormRequest {
+  string id = 1;
+}
+
+message TrashFormResponse {}
+
+message SubmitFormResponseRequest {
+  string form_id = 1;
+  string respondent_email = 2;
+  // answers_json: JSON object mapping question id -> string or [string].
+  string answers_json = 3;
+}
+
+message ListFormResponsesRequest {
+  string form_id = 1;
+}
+
+message ListFormResponsesResponse {
+  repeated FormResponse responses = 1;
+}
+
+message GetFormResponseSummaryRequest {
+  string form_id = 1;
+}
+
+// FormQuestionSummary aggregates one question's answers across all responses.
+message FormQuestionSummary {
+  string question_id = 1;
+  string type = 2;
+  string title = 3;
+  // counts maps an option/answer value -> number of responses that gave it
+  // (used for choice/checkbox/dropdown/scale charts).
+  map<string, int32> counts = 4;
+  // text_answers lists free-text answers (short_answer/paragraph) in order.
+  repeated string text_answers = 5;
+}
+
+message FormResponseSummary {
+  string form_id = 1;
+  int32 response_count = 2;
+  repeated FormQuestionSummary questions = 3;
+}
+
+message DeleteFormResponsesRequest {
+  string form_id = 1;
+}
+
+message DeleteFormResponsesResponse {
+  int32 deleted = 1;
+}

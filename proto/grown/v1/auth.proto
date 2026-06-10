@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+import "grown/v1/org.proto";
+import "grown/v1/user.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// AuthService handles OIDC login, session lifecycle, and identity lookup.
+service AuthService {
+  // Login starts an OIDC authorization-code flow. The HTTP endpoint redirects
+  // (302) to the configured IdP. The response body is unused.
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/auth/login"
+    };
+  }
+
+  // Callback receives the authorization code from the IdP, exchanges it for
+  // tokens, upserts the user, and issues a session cookie. Redirects (302)
+  // to the configured post-login location.
+  rpc Callback(CallbackRequest) returns (CallbackResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/auth/callback"
+    };
+  }
+
+  // Whoami returns the authenticated user and their org. Requires a valid
+  // session cookie; returns Unauthenticated otherwise.
+  rpc Whoami(WhoamiRequest) returns (WhoamiResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/whoami"
+    };
+  }
+
+  // Logout revokes the current session and clears the cookie.
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/auth/logout"
+      body: "*"
+    };
+  }
+}
+
+message LoginRequest {
+  // Optional return path (relative URL on this origin) to redirect back to
+  // after successful login. Defaults to "/".
+  string return_to = 1;
+  // Optional OIDC prompt (e.g. "select_account" or "login") forwarded to the
+  // IdP. Used by the "Sign in with a different account" flow so Zitadel shows
+  // the account chooser instead of silently re-using the SSO session.
+  string prompt = 2;
+}
+
+message LoginResponse {
+  // The IdP authorization URL. The HTTP gateway turns this into a 302.
+  string authorization_url = 1;
+}
+
+message CallbackRequest {
+  // OIDC authorization code, supplied as the `code` query parameter.
+  string code = 1;
+  // State parameter for CSRF protection, supplied as the `state` query parameter.
+  string state = 2;
+}
+
+message CallbackResponse {
+  // Relative URL to redirect to after successful login.
+  string redirect_to = 1;
+}
+
+message WhoamiRequest {}
+
+message WhoamiResponse {
+  User user = 1;
+  Org org = 2;
+}
+
+message LogoutRequest {}
+
+message LogoutResponse {}

@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// LiveService manages multi-user live streaming ("like YouTube Live"). Any org
+// user can create a stream and Go Live by publishing to MediaMTX over RTMP
+// (OBS/streaming software) or WebRTC/WHIP (directly from the browser); other
+// org members watch over HLS or WebRTC/WHEP under grown's own origin (the
+// playback bytes are reverse-proxied by grown, so the browser sees one origin).
+//
+// MediaMTX is the media server. grown owns the stream metadata (in Postgres),
+// authorizes every publish/read via an HTTP auth webhook, and tracks live/
+// offline transitions via MediaMTX runOnReady/runOnNotReady hooks. Those two
+// webhooks are raw HTTP handlers (server-to-server, NOT grown-auth-wrapped) and
+// live outside this gRPC surface — see internal/live/webhooks.go.
+//
+// Message names are prefixed Live* to stay unique within the flat grown.v1
+// namespace.
+service LiveService {
+  // CreateStream provisions a new stream owned by the caller and returns it
+  // including the secret stream_key and the ingest/playback URLs. The caller
+  // configures their streaming software with ingest_rtmp_url + stream_key, or
+  // uses ingest_whip_url to publish from the browser.
+  rpc CreateStream(LiveCreateStreamRequest) returns (LiveStream) {
+    option (google.api.http) = {
+      post: "/api/v1/live/streams"
+      body: "*"
+    };
+  }
+
+  // ListStreams lists streams visible to the caller. filter selects the set:
+  //   "live" → currently-live streams the caller may watch (org + public);
+  //   "mine" → all of the caller's own streams (any status);
+  //   "all"  → all streams in the org the caller may watch (default).
+  rpc ListStreams(LiveListStreamsRequest) returns (LiveListStreamsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/live/streams"
+    };
+  }
+
+  // GetStream returns one stream by id. The secret stream_key and ingest URLs
+  // are only populated for the owner.
+  rpc GetStream(LiveGetStreamRequest) returns (LiveStream) {
+    option (google.api.http) = {
+      get: "/api/v1/live/streams/{id}"
+    };
+  }
+
+  // UpdateStream changes the editable metadata (title/description/visibility).
+  // Owner only.
+  rpc UpdateStream(LiveUpdateStreamRequest) returns (LiveStream) {
+    option (google.api.http) = {
+      patch: "/api/v1/live/streams/{id}"
+      body: "*"
+    };
+  }
+
+  // DeleteStream permanently removes a stream. Owner only.
+  rpc DeleteStream(LiveDeleteStreamRequest) returns (LiveDeleteStreamResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/live/streams/{id}"
+    };
+  }
+
+  // EndStream marks a stream offline (sets ended_at). Owner only. This does not
+  // forcibly disconnect a publisher; it flips grown's view of the stream. The
+  // authoritative live/offline state still comes from MediaMTX ready hooks.
+  rpc EndStream(LiveEndStreamRequest) returns (LiveStream) {
+    option (google.api.http) = {
+      post: "/api/v1/live/streams/{id}/end"
+      body: "*"
+    };
+  }
+}
+
+// LiveStream is one live-stream channel. The stream_key and ingest_* URLs are
+// secrets and only returned to the owner (CreateStream / owner GetStream /
+// owner-filtered ListStreams).
+message LiveStream {
+  string id = 1;
+  string org_id = 2;
+  string owner_id = 3;
+  string owner_name = 4;
+  string title = 5;
+  string description = 6;
+  // visibility ∈ {"org","public"}. org streams are watchable by org members;
+  // public streams by anyone (even signed-out).
+  string visibility = 7;
+  // status ∈ {"offline","live"}; flipped by MediaMTX ready/notready hooks.
+  string status = 8;
+  // path is the MediaMTX path (== the stream id); the publish/playback URLs are
+  // built from it.
+  string path = 9;
+  // stream_key is the secret publish password. Owner-only.
+  string stream_key = 10;
+  // ingest_rtmp_url is the RTMP publish URL for OBS/streaming software. The
+  // stream key is supplied separately as the RTMP "password" (or appended as a
+  // query — see the page UI). Owner-only.
+  string ingest_rtmp_url = 11;
+  // ingest_whip_url is the WebRTC/WHIP publish endpoint (browser Go Live).
+  // Owner-only.
+  string ingest_whip_url = 12;
+  // hls_url is the HLS playlist for playback (proxied under grown's origin).
+  string hls_url = 13;
+  // whep_url is the WebRTC/WHEP read endpoint for low-latency playback.
+  string whep_url = 14;
+  string started_at = 15;
+  string ended_at = 16;
+  string created_at = 17;
+  string updated_at = 18;
+}
+
+message LiveCreateStreamRequest {
+  string title = 1;
+  string description = 2;
+  // visibility ∈ {"org","public"}; defaults to "org" when empty.
+  string visibility = 3;
+}
+
+message LiveListStreamsRequest {
+  // filter ∈ {"live","mine","all"}; defaults to "all" when empty.
+  string filter = 1;
+}
+
+message LiveListStreamsResponse {
+  repeated LiveStream streams = 1;
+}
+
+message LiveGetStreamRequest {
+  string id = 1;
+}
+
+message LiveUpdateStreamRequest {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string visibility = 4;
+}
+
+message LiveDeleteStreamRequest {
+  string id = 1;
+}
+
+message LiveDeleteStreamResponse {}
+
+message LiveEndStreamRequest {
+  string id = 1;
+}

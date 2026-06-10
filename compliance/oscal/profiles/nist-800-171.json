@@ -1,0 +1,20 @@
+{
+  "profile": {
+    "uuid": "d4e5f6a7-0002-4000-8000-000000000001",
+    "metadata": {
+      "title": "grown-workspace NIST SP 800-171 Rev 2 / CMMC L2 Profile (thin import)",
+      "published": "2026-06-09T00:00:00Z",
+      "last-modified": "2026-06-09T00:00:00Z",
+      "version": "0.1.0",
+      "oscal-version": "1.1.3",
+      "remarks": "Thin selector for CMMC v2 Level 2, which is a 1:1 map to the 110 practices of NIST SP 800-171 Rev 2 across 14 families. IMPORTANT SOURCING CAVEAT: NIST's official OSCAL content repo (usnistgov/oscal-content) publishes only Rev 3 of 800-171 in OSCAL — there is NO NIST-official Rev 2 OSCAL catalog. The href below therefore points at a COMMUNITY-maintained Rev 2 OSCAL catalog (FATHOM5), which was confirmed to resolve and parse as a valid OSCAL catalog (top-level 'catalog', oscal-version 1.0.0). For the NIST-official Rev 3 catalog instead, use https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-171/rev3/json/NIST_SP800-171_rev3_catalog.json — but note CMMC L2 assessments still reference Rev 2. grown's 800-171 status is documented in ../../cmmc-l2-mapping.md and via control-171 props in ../component-definition.json. UNVALIDATED as a resolved profile."
+    },
+    "imports": [
+      {
+        "href": "https://raw.githubusercontent.com/FATHOM5/oscal/main/content/SP800-171/oscal-content/catalogs/NIST_SP-800-171_rev2_catalog.json",
+        "include-all": {}
+      }
+    ],
+    "merge": { "as-is": true }
+  }
+}

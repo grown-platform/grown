@@ -1,0 +1,18 @@
+# Zitadel `setup` steps. Run once at first boot via `zitadel setup`.
+# Reads zitadel.yaml for everything not specified here.
+# Local-dev defaults. NEVER use the credentials below in production.
+Steps:
+  FirstInstance:
+    InstanceName: grown-dev
+    DefaultLanguage: en
+    Org:
+      Name: grown-dev
+      Human:
+        UserName: admin
+        FirstName: Grown
+        LastName: Admin
+        Email:
+          Address: admin@grown.localtest.me
+          Verified: true
+        Password: DevPassword!1
+        PasswordChangeRequired: false

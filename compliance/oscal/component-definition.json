@@ -1,0 +1,570 @@
+{
+  "component-definition": {
+    "uuid": "a1b2c3d4-0001-4000-8000-000000000001",
+    "metadata": {
+      "title": "grown-workspace - Component Definition",
+      "published": "2026-06-09T00:00:00Z",
+      "last-modified": "2026-06-09T00:00:00Z",
+      "version": "0.1.0",
+      "oscal-version": "1.1.3",
+      "roles": [
+        { "id": "provider", "title": "Component Provider" },
+        { "id": "system-owner", "title": "System Owner" }
+      ],
+      "parties": [
+        {
+          "uuid": "a1b2c3d4-0002-4000-8000-000000000001",
+          "type": "organization",
+          "name": "grown-workspace (homelab / development)"
+        }
+      ],
+      "responsible-parties": [
+        {
+          "role-id": "provider",
+          "party-uuids": ["a1b2c3d4-0002-4000-8000-000000000001"]
+        }
+      ],
+      "remarks": "Hand-authored against the OSCAL 1.1.x JSON schema; UNVALIDATED by an automated OSCAL validator. UUIDs are fixed placeholders. control-id tokens are NIST SP 800-53 Rev 5 (lowercase, e.g. 'ac-2', 'au-2.3'). 800-171 mappings are carried as props (name='control-171') alongside their 800-53 owner where applicable. implementation-status values: implemented | partial | planned | not-applicable. grown is NOT authorized; see compliance/README.md."
+    },
+    "components": [
+      {
+        "uuid": "a1b2c3d4-1000-4000-8000-000000000001",
+        "type": "software",
+        "title": "Auth / Zitadel OIDC Integration",
+        "description": "grown's authentication layer (internal/auth). Delegates all identity to a Zitadel OIDC provider: Login mints a CSRF state cookie and redirects to the IdP; Callback validates state, exchanges the code, upserts the user (internal/users), and creates an opaque server-side session (internal/auth/session.go) delivered as an HttpOnly/Secure/host-only cookie (internal/auth/config.go, service.go). Sessions are revocable and time-bound. The in-app account-security panel (internal/zitadelproxy + web components/security/*) proxies a narrow slice of the Zitadel User API v2 so users self-manage TOTP, passkeys (FIDO2/WebAuthn), and password without leaving grown.",
+        "props": [
+          { "name": "asset-type", "value": "software" },
+          { "name": "deployment-model", "value": "self-hosted" },
+          { "name": "implementation-point", "value": "internal" }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "a1b2c3d4-1001-4000-8000-000000000001",
+            "source": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+            "description": "Controls satisfied by grown's Auth/Zitadel integration. Primary owner of the IA family; shared owner of AC. CMMC L2 / 800-171 equivalents carried in props.",
+            "implemented-requirements": [
+              {
+                "uuid": "a1b2c3d4-1a01-4000-8000-000000000001",
+                "control-id": "ia-2",
+                "description": "Every grown request is authenticated against a Zitadel-issued session before any service mutates state. auth.HTTPMiddleware (internal/auth/middleware.go) looks up the session cookie, resolves the user, and attaches it to context; service methods reject calls with no UserFromContext (e.g. AuthService.Whoami returns Unauthenticated).",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" },
+                  {
+                    "name": "control-171",
+                    "value": "3.5.1",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-1a02-4000-8000-000000000001",
+                "control-id": "ia-2.1",
+                "description": "MFA is CAPABLE but not enforced. The Zitadel proxy (internal/zitadelproxy/proxy.go) exposes TOTP and passkey/FIDO2 registration via the Zitadel User API v2, and the web security panel (components/security/*) drives it. Org-wide MFA enforcement is a Zitadel login-policy setting that is not yet turned on — see POA&M risk poam-mfa.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.5.3",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-1a03-4000-8000-000000000001",
+                "control-id": "ia-4",
+                "description": "Identifiers are managed by Zitadel (the OIDC 'sub' claim) and mirrored into grown.users (oidc_issuer, oidc_subject) with a UNIQUE (org_id, oidc_issuer, oidc_subject) constraint (migration 0002). users.UpsertByOIDC keys on issuer+subject so a user maps to exactly one immutable identity.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" },
+                  {
+                    "name": "control-171",
+                    "value": "3.5.5",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-1a04-4000-8000-000000000001",
+                "control-id": "ia-5",
+                "description": "Authenticator management is delegated to Zitadel: password policy, TOTP enrollment, passkey/FIDO2 registration, and password change are all driven through the User API v2 proxy. The proxy authorizes that {id} in /v2/users/{id}/... equals the caller's own oidc_subject (proxy.go authorizeUserAccess), so a user can only manage their own authenticators.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" },
+                  {
+                    "name": "control-171",
+                    "value": "3.5.2",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-1a05-4000-8000-000000000001",
+                "control-id": "ia-5.1",
+                "description": "Password complexity, hashing (bcrypt/Argon2), history, and lockout are enforced by Zitadel, not grown. grown never stores passwords; it holds only opaque session tokens (internal/auth/session.go). Inherited from the Zitadel component; grown's responsibility is to never bypass it (it does not).",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" },
+                  {
+                    "name": "control-171",
+                    "value": "3.5.7",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-1a06-4000-8000-000000000001",
+                "control-id": "ia-5.11",
+                "description": "Hardware authenticator (FIDO2/WebAuthn) support: the proxy injects the request Host as the WebAuthn RP id on passkey-registration starts (proxy.go injectPasskeyDomain), binding credentials to the origin the user is actually on. Backed by Zitadel WebAuthn.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-1a07-4000-8000-000000000001",
+                "control-id": "ia-8",
+                "description": "All identity is federated to an external OIDC IdP (Zitadel). grown is purely a relying party; it issues no local passwords.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-1a08-4000-8000-000000000001",
+                "control-id": "ac-7",
+                "description": "Unsuccessful-logon lockout is enforced upstream by Zitadel (failed-attempt lockout policy). grown surfaces only generic auth errors and never reveals account state.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.1.8",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-1a09-4000-8000-000000000001",
+                "control-id": "ac-12",
+                "description": "Session termination: sessions are opaque tokens persisted in grown.sessions with an expires_at and nullable revoked_at. SessionStore.Lookup returns ErrSessionExpired/ErrSessionRevoked (session.go); Logout calls Revoke and clears the cookie (service.go). Expired/revoked sessions are rejected on the next request.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" },
+                  {
+                    "name": "control-171",
+                    "value": "3.1.11",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-1a0a-4000-8000-000000000001",
+                "control-id": "ac-3",
+                "description": "Access enforcement: every authenticated request carries a resolved user AND org in context (auth.WithUser/WithOrg). Privileged operations (admin settings, audit viewer, adminusers) additionally gate on the GROWN_ADMIN_EMAILS allowlist (internal/admin/service.go requireAdmin, internal/audit/handler.go). NOTE: grown has no role/RBAC model; admin authority is an env allowlist with an open fallback when empty — see POA&M poam-rbac.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.1.2",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "a1b2c3d4-2000-4000-8000-000000000001",
+        "type": "software",
+        "title": "Audit Subsystem",
+        "description": "Cross-cutting activity trail (internal/audit). A gRPC unary interceptor (interceptor.go) records every MUTATING RPC (Create/Update/Delete/Share/Move/...) across ALL services after the handler runs; an HTTP middleware (.Log(), middleware.go) wraps every binary upload/download/stream route (drive, mail/chat attachments, photos, books, video, music — wired in internal/server/server.go). Events land in the append-only grown.audit_events table (migration 0037) with org_id, actor_id/email, service, action, resource_type/id, full method, status, JSONB detail, client IP (X-Forwarded-For first hop), user agent, and created_at. An admin-gated viewer (handler.go, GET /api/v1/admin/audit, web app/admin) lists an org's events with service/actor/action/limit/before filters.",
+        "props": [
+          { "name": "asset-type", "value": "software" },
+          { "name": "implementation-point", "value": "internal" }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "a1b2c3d4-2001-4000-8000-000000000001",
+            "source": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+            "description": "Controls satisfied by grown's audit subsystem. Primary owner of the AU family (event capture + content + protection + review).",
+            "implemented-requirements": [
+              {
+                "uuid": "a1b2c3d4-2a01-4000-8000-000000000001",
+                "control-id": "au-2",
+                "description": "Auditable events: every state-changing action is captured automatically. The interceptor's mutatingPrefixes list (Create, Update, Delete, Trash, Set, Submit, Post, Add, Remove, Move, Copy, Share, Rename, Reorder, Upsert, Generate) selects RPCs; read-only RPCs (List/Get/Search/Whoami/Health) are intentionally skipped. Binary routes are explicitly wrapped with action labels (upload/download/stream/attachment-*). One interceptor registration auto-covers every current and future gRPC service.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" },
+                  {
+                    "name": "control-171",
+                    "value": "3.3.1",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-2a02-4000-8000-000000000001",
+                "control-id": "au-3",
+                "description": "Audit record content: each grown.audit_events row records timestamp (created_at), event type (service+action+method), outcome (status ok|error plus gRPC code/HTTP status in detail), actor identity (actor_id, actor_email), source (ip, user_agent), and affected object (resource_type, resource_id). See repository.go Event struct and migration 0037.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" },
+                  {
+                    "name": "control-171",
+                    "value": "3.3.1",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-2a03-4000-8000-000000000001",
+                "control-id": "au-3.1",
+                "description": "Additional audit content: the JSONB detail column carries the gRPC code (on error) and HTTP status, and the method column carries the full gRPC method path or 'VERB path' for cross-system tracing.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-2a04-4000-8000-000000000001",
+                "control-id": "au-6",
+                "description": "Audit review: org admins review events through GET /api/v1/admin/audit (handler.go), filtered by service/actor/action and keyset-paginated by 'before'. Authorization requires an authenticated caller whose email is in GROWN_ADMIN_EMAILS. Review is manual / on-demand; there is no automated alerting (see POA&M poam-siem).",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.3.3",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-2a05-4000-8000-000000000001",
+                "control-id": "au-9",
+                "description": "Protection of audit information: audit_events is append-only by convention (the repository exposes only Insert + List — no Update/Delete code path). Read access via the viewer is admin-gated. NOTE: append-only is enforced only by the absence of mutating code, NOT by a database-level constraint or revoked DELETE grant — see POA&M poam-au9.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.3.8",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-2a06-4000-8000-000000000001",
+                "control-id": "au-12",
+                "description": "Audit generation: a single audit-generation capability (the interceptor + HTTP middleware) is centrally wired in internal/server/server.go and covers every service uniformly, so coverage cannot drift per-service. Generation is best-effort and never blocks the user's request (recorder.go).",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-2a07-4000-8000-000000000001",
+                "control-id": "au-4",
+                "description": "Audit storage capacity: events persist to Postgres with org/created_at and org/service indexes. There is NO retention, rotation, off-host forwarding, or capacity-alerting policy — see POA&M poam-retention.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.3.4",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "a1b2c3d4-3000-4000-8000-000000000001",
+        "type": "software",
+        "title": "API Gateway (gRPC + grpc-gateway REST)",
+        "description": "The single server binary (internal/server, cmd/server) exposes gRPC on :9000 and a grpc-gateway REST surface on :8080 that also serves the built React SPA. It wires the auth HTTP middleware (resolving session->user->org into context), the audit interceptor, the admin allowlist, the Zitadel proxy mount, and per-org service enablement (internal/admin). It is the policy-enforcement point where authentication, tenancy resolution, and audit capture converge.",
+        "props": [
+          { "name": "asset-type", "value": "software" },
+          { "name": "implementation-point", "value": "internal" }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "a1b2c3d4-3001-4000-8000-000000000001",
+            "source": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+            "description": "Controls satisfied at the API gateway / policy-enforcement point. Shared owner of AC and AU.",
+            "implemented-requirements": [
+              {
+                "uuid": "a1b2c3d4-3a01-4000-8000-000000000001",
+                "control-id": "ac-4",
+                "description": "Information flow enforcement: the Zitadel proxy restricts forwarded paths to /v2/users/{id}/... and forbids accessing another user's id (proxy.go authorizeUserAccess); it strips the caller's grown Cookie before forwarding so the session never leaks upstream, and replaces Authorization with the service PAT (copyProxyHeaders). Body size is bounded (1 MiB LimitReader).",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-3a02-4000-8000-000000000001",
+                "control-id": "ac-6",
+                "description": "Least privilege: privileged surfaces (SetServiceSettings, /api/v1/admin/audit, adminusers) require membership in GROWN_ADMIN_EMAILS; read-only admin reads are allowed to any authenticated member. The allowlist is an interim mechanism pending a real role model (see POA&M poam-rbac), and falls open when empty.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.1.5",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-3a03-4000-8000-000000000001",
+                "control-id": "sc-5",
+                "description": "Denial-of-service protection (partial): the Zitadel proxy caps request bodies and sets upstream timeouts (DefaultTimeout 30s). There is no rate limiting, connection throttling, or WAF in front of the gateway beyond the Cloudflare/cluster edge (see POA&M poam-boundary).",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-3a04-4000-8000-000000000001",
+                "control-id": "ac-14",
+                "description": "Permitted actions without identification: only OIDC discovery and the login/callback handshake are reachable unauthenticated; all data-bearing endpoints require a resolved user (UserFromContext) or return Unauthenticated.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "a1b2c3d4-4000-4000-8000-000000000001",
+        "type": "software",
+        "title": "PostgreSQL (per-tenant data store)",
+        "description": "Single Postgres instance holding all grown data in the 'grown' schema (internal/storage, migrations 0001-0038). Every domain table carries org_id (migration 0002 onward); repositories scope all queries by org_id resolved from context. Stores users, opaque sessions, audit_events, and per-app data. In the gitops deployment Postgres runs under CloudNativePG on the Talos cluster.",
+        "props": [
+          { "name": "asset-type", "value": "database" },
+          { "name": "deployment-model", "value": "kubernetes-operator" }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "a1b2c3d4-4001-4000-8000-000000000001",
+            "source": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+            "description": "Controls satisfied by the Postgres data layer. Shared owner of AC (tenant isolation), SC (data protection), AU (audit storage), CP (backup).",
+            "implemented-requirements": [
+              {
+                "uuid": "a1b2c3d4-4a01-4000-8000-000000000001",
+                "control-id": "ac-3",
+                "description": "Access enforcement / multi-tenant isolation: every table has an org_id FK to grown.orgs; every repository query filters by the caller's org_id (e.g. audit Repository.List rejects an empty org and scopes WHERE org_id = $1). A user resolves to exactly one org via UNIQUE (org_id, oidc_issuer, oidc_subject).",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" },
+                  {
+                    "name": "control-171",
+                    "value": "3.1.2",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-4a02-4000-8000-000000000001",
+                "control-id": "sc-28",
+                "description": "Protection of information at rest: encryption-at-rest depends entirely on the underlying disk (e.g. cloud-provider volume encryption). grown does NOT implement application-level encryption-at-rest for Postgres data, and there is no attestation that the deployed volume is encrypted — see POA&M poam-rest. SOPS+age protects deployment SECRETS, not row data.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.13.16",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-4a03-4000-8000-000000000001",
+                "control-id": "au-11",
+                "description": "Audit record retention: audit_events persist in Postgres indefinitely (no purge job), which over-retains rather than under-retains. There is no defined retention period, archival, or off-host copy — see POA&M poam-retention.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-4a04-4000-8000-000000000001",
+                "control-id": "cp-9",
+                "description": "System backup: in the gitops deployment, CloudNativePG provides Postgres backups and Velero backs up cluster state. This is an INHERITED operational control from pick-gitops, not implemented in grown's code, and is unverified here — see POA&M poam-contingency.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.8.9",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "a1b2c3d4-5000-4000-8000-000000000001",
+        "type": "service",
+        "title": "Blob Store (RustFS / S3-compatible)",
+        "description": "Object storage for user-uploaded binaries (drive files, mail/chat attachments, photos, books, video, music). grown talks to it via an S3 client (internal/drive/blobs.go) pointed at a RustFS endpoint with static access/secret keys. Upload/download/stream routes are all wrapped by the audit middleware. The PDF/pdf app (pdf/) additionally encrypts signing private keys with an AES-256-GCM KEK before storage (pdf/backend/internal/crypto/keystore.go).",
+        "props": [
+          { "name": "asset-type", "value": "service" },
+          { "name": "deployment-model", "value": "self-hosted" }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "a1b2c3d4-5001-4000-8000-000000000001",
+            "source": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+            "description": "Controls touching the blob store. Shared owner of SC (data protection) and AU (access audit).",
+            "implemented-requirements": [
+              {
+                "uuid": "a1b2c3d4-5a01-4000-8000-000000000001",
+                "control-id": "sc-13",
+                "description": "Cryptographic protection: the PDF app encrypts stored signing private keys with AES-256-GCM using a KEK (keystore.go). This is correct AEAD but uses the Go standard-library crypto, which is NOT a FIPS 140-validated module. No FIPS-validated cryptography is in use anywhere in grown — see POA&M poam-fips.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.13.11",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-5a02-4000-8000-000000000001",
+                "control-id": "sc-28",
+                "description": "Protection at rest: blob payloads are NOT encrypted at the application layer (the drive Blobs wrapper does no SSE configuration). At-rest protection depends on the RustFS backing volume's disk encryption, which is unattested here. The PDF KEK is the sole app-level at-rest encryption and is scoped to signing keys only.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-5a03-4000-8000-000000000001",
+                "control-id": "au-2",
+                "description": "Blob access auditing: every upload/download/stream route is wrapped with auditRec.Log(service, action, ...) in internal/server/server.go, so object access is captured in audit_events with the resource id sniffed from the path.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "a1b2c3d4-6000-4000-8000-000000000001",
+        "type": "service",
+        "title": "Gateway / TLS Termination (cert-manager + Gateway API)",
+        "description": "In the gitops deployment, TLS is terminated at the Talos/Kubernetes edge via the Gateway API, with cert-manager issuing a Let's Encrypt wildcard certificate (ACME). grown's own cookies are flagged Secure (CookieSecure) on the assumption that TLS terminates in front of it; the app binary itself serves plaintext HTTP/gRPC behind the gateway and does NOT terminate TLS (no ListenAndServeTLS in cmd/server or internal/server).",
+        "props": [
+          { "name": "asset-type", "value": "service" },
+          { "name": "deployment-model", "value": "kubernetes" }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "a1b2c3d4-6001-4000-8000-000000000001",
+            "source": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+            "description": "Controls satisfied at the TLS/edge boundary. Primary owner of SC transport-protection controls; inherited from the pick-gitops cert-manager component.",
+            "implemented-requirements": [
+              {
+                "uuid": "a1b2c3d4-6a01-4000-8000-000000000001",
+                "control-id": "sc-8",
+                "description": "Transmission confidentiality/integrity: external traffic reaches grown over HTTPS terminated at the Gateway. grown sets Secure on session/state cookies (config.go CookieSecure) so they are only sent over TLS. INHERITED from cert-manager; intra-cluster hop from gateway to the grown pod may be plaintext unless a mesh is enforced (unverified) — see POA&M poam-boundary.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" },
+                  {
+                    "name": "control-171",
+                    "value": "3.13.8",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-6a02-4000-8000-000000000001",
+                "control-id": "sc-12",
+                "description": "Cryptographic key establishment & management: certificate lifecycle (issuance, renewal, key generation) is automated by cert-manager via ACME/Let's Encrypt. INHERITED operational control from pick-gitops; not implemented in grown.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-6a03-4000-8000-000000000001",
+                "control-id": "sc-23",
+                "description": "Session authenticity: session cookies are HttpOnly + Secure + SameSite=Lax with an opaque 256-bit random token (session.go newToken). OIDC login is CSRF-protected by a short-lived state cookie validated on callback (service.go).",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-6a04-4000-8000-000000000001",
+                "control-id": "sc-13",
+                "description": "Cryptographic protection (transport): TLS uses Let's Encrypt-issued certificates and the cluster's TLS stack, which is NOT FIPS 140-validated. See POA&M poam-fips.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "a1b2c3d4-7000-4000-8000-000000000001",
+        "type": "service",
+        "title": "GitOps / Flux Deployment & Config Management",
+        "description": "grown is built as a single container image (Dockerfile: multi-stage, non-root user uid 10001, CGO disabled, embedded migrations) and deployed declaratively. In the broader platform, Flux reconciles cluster state from git and SOPS+age encrypts secrets at rest in the repo. Database schema is versioned as ordered SQL migrations embedded in the binary (internal/storage/migrate.go).",
+        "props": [
+          { "name": "asset-type", "value": "service" },
+          { "name": "deployment-model", "value": "gitops" }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "a1b2c3d4-7001-4000-8000-000000000001",
+            "source": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+            "description": "Controls satisfied by the build/deploy/config-management pipeline. Owner of CM and parts of SA; mostly inherited from pick-gitops.",
+            "implemented-requirements": [
+              {
+                "uuid": "a1b2c3d4-7a01-4000-8000-000000000001",
+                "control-id": "cm-2",
+                "description": "Baseline configuration: the deployed state is fully declared in git (manifests + the pinned container image) and reconciled by Flux, giving a version-controlled, diff-able baseline. Schema baseline is the ordered migration set.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" },
+                  {
+                    "name": "control-171",
+                    "value": "3.4.1",
+                    "ns": "https://csrc.nist.gov/ns/800-171"
+                  }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-7a02-4000-8000-000000000001",
+                "control-id": "cm-3",
+                "description": "Configuration change control: changes flow through git commits/PRs and Flux reconciliation, providing a change record and a single promotion path. There is no formal change-approval board or documented CCB process — partial.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-7a03-4000-8000-000000000001",
+                "control-id": "cm-6",
+                "description": "Configuration settings: app config is supplied via environment variables validated at startup (auth.Config.Validate rejects missing IssuerURL/ClientID/secret/etc.), failing closed on misconfiguration.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-7a04-4000-8000-000000000001",
+                "control-id": "cm-7",
+                "description": "Least functionality: the runtime image is minimal (alpine + only ca-certificates, pandoc for Docs export, tzdata), runs as a non-root user (uid 10001), and exposes only :8080/:9000.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-7a05-4000-8000-000000000001",
+                "control-id": "ia-5.7",
+                "description": "No embedded unencrypted static authenticators: secrets (OIDC client secret, DB creds, Zitadel PAT, blob keys, PDF KEK) are injected at runtime via env/secret refs; deployment secrets are SOPS+age encrypted in git. No credentials are committed in plaintext.",
+                "props": [
+                  { "name": "implementation-status", "value": "implemented" }
+                ]
+              },
+              {
+                "uuid": "a1b2c3d4-7a06-4000-8000-000000000001",
+                "control-id": "sa-15",
+                "description": "Development process: reproducible builds (pinned Go/Node/buf versions, trimpath, CGO disabled). No SAST/dependency-scan/SBOM gate is enforced in the grown pipeline itself — see POA&M poam-vulnscan.",
+                "props": [
+                  { "name": "implementation-status", "value": "partial" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

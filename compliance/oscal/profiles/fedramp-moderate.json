@@ -1,0 +1,20 @@
+{
+  "profile": {
+    "uuid": "d4e5f6a7-0001-4000-8000-000000000001",
+    "metadata": {
+      "title": "grown-workspace FedRAMP Moderate Profile (thin import)",
+      "published": "2026-06-09T00:00:00Z",
+      "last-modified": "2026-06-09T00:00:00Z",
+      "version": "0.1.0",
+      "oscal-version": "1.1.3",
+      "remarks": "Thin selector. It imports the upstream GSA FedRAMP Rev 5 Moderate baseline (which itself resolves the NIST SP 800-53 Rev 5 catalog) by URL rather than vendoring the catalog. We include all controls from the upstream baseline; the subset grown actually addresses is documented in ../component-definition.json and ../../control-mapping.md, and the gaps in ../poam.json. NOTE: the import href is the canonical GSA/fedramp-automation path widely cited in FedRAMP docs, but live reachability could NOT be confirmed from this authoring environment (fetches returned 404, likely an environment/network/redirect limitation, since the sibling 800-53 raw URL did resolve). VERIFY the href resolves and pin to a release tag before use. UNVALIDATED."
+    },
+    "imports": [
+      {
+        "href": "https://raw.githubusercontent.com/GSA/fedramp-automation/master/dist/content/rev5/baselines/json/FedRAMP_rev5_MODERATE-baseline_profile.json",
+        "include-all": {}
+      }
+    ],
+    "merge": { "as-is": true }
+  }
+}

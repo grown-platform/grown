@@ -1,0 +1,59 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 500 >>
+stream
+BT
+/F1 24 Tf
+150 700 Td
+(Non-Disclosure Agreement) Tj
+0 -50 Td
+/F1 12 Tf
+(CONFIDENTIALITY AGREEMENT) Tj
+0 -30 Td
+(This Agreement is entered into as of the date signed below.) Tj
+0 -30 Td
+(The Receiving Party agrees to:) Tj
+0 -20 Td
+(1. Keep all Confidential Information strictly confidential) Tj
+0 -20 Td
+(2. Use Confidential Information only for the Purpose) Tj
+0 -20 Td
+(3. Not disclose to third parties without written consent) Tj
+0 -20 Td
+(4. Return all materials upon request) Tj
+0 -60 Td
+(RECEIVING PARTY:) Tj
+0 -30 Td
+(Signature: ____________________________) Tj
+0 -20 Td
+(Name: ________________________________) Tj
+0 -20 Td
+(Date: ________________________________) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000266 00000 n
+0000000818 00000 n
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+891
+%%EOF

@@ -1,0 +1,41 @@
+# Nix build outputs
+result
+result-*
+
+# direnv cache
+.direnv/
+
+# Process-compose data dirs at dev time (Postgres data, Zitadel state, etc.)
+deploy/process-compose/data/*
+!deploy/process-compose/data/.gitkeep
+
+# Zitadel bootstrap artifacts (PAT written by `zitadel setup` on first boot)
+deploy/zitadel/data/
+
+# Frontend
+node_modules/
+web/*/node_modules/
+web/app/dist/
+web/*/test-results/
+
+# TypeScript incremental build artifacts
+web/app/tsconfig.tsbuildinfo
+web/app/tsconfig.node.tsbuildinfo
+web/app/vite.config.js
+web/app/vite.config.d.ts
+
+# Generated proto code -- regenerated via `nix run .#gen`. We commit it later
+# once the gen pipeline is stable; for now keep it out of git churn.
+gen/
+
+# Go build outputs
+/server
+
+# IDE noise
+.vscode/
+.idea/
+*.swp
+
+# Research-capture material kept out of git on principle (large, sensitive, kept
+# locally as architectural reference only). Entire dir is intentionally untracked.
+research/

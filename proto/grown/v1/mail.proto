@@ -1,0 +1,366 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// MailService is a lightweight per-org mailbox backing the Gmail-style UI.
+// Internal mail is delivered between org users; the surface is shaped to later
+// be fed by an IMAP/SMTP bridge (mailcow).
+service MailService {
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/mail/messages"
+    };
+  }
+
+  rpc GetMessage(GetMessageRequest) returns (MailMessage) {
+    option (google.api.http) = {
+      get: "/api/v1/mail/messages/{id}"
+    };
+  }
+
+  // ListThreads groups a folder's messages by thread_id, returning one entry per
+  // thread (the latest message + message count + aggregate read/star state).
+  rpc ListThreads(ListMessagesRequest) returns (ListThreadsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/mail/threads"
+    };
+  }
+
+  // GetThread returns every message in a thread (full bodies), oldest first, and
+  // marks them read.
+  rpc GetThread(GetThreadRequest) returns (GetThreadResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/mail/threads/{thread_id}"
+    };
+  }
+
+  // ListLabels returns the distinct labels in use across the caller's mailbox.
+  // Also returns named colored label entities from mail_labels.
+  rpc ListLabels(ListLabelsRequest) returns (ListLabelsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/mail/labels"
+    };
+  }
+
+  // CreateMailLabel creates a named, colored label entity.
+  rpc CreateMailLabel(CreateMailLabelRequest) returns (MailLabel) {
+    option (google.api.http) = {
+      post: "/api/v1/mail/labels"
+      body: "*"
+    };
+  }
+
+  // UpdateMailLabel renames a label or changes its color.
+  rpc UpdateMailLabel(UpdateMailLabelRequest) returns (MailLabel) {
+    option (google.api.http) = {
+      patch: "/api/v1/mail/labels/{id}"
+      body: "*"
+    };
+  }
+
+  // DeleteMailLabel removes a named label entity and its message associations.
+  rpc DeleteMailLabel(DeleteMailLabelRequest) returns (DeleteMailLabelResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/mail/labels/{id}"
+    };
+  }
+
+  // ApplyMailLabel attaches a label to a message.
+  rpc ApplyMailLabel(ApplyMailLabelRequest) returns (ApplyMailLabelResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/mail/messages/{message_id}/labels/{label_id}"
+      body: "*"
+    };
+  }
+
+  // RemoveMailLabel detaches a label from a message.
+  rpc RemoveMailLabel(RemoveMailLabelRequest) returns (RemoveMailLabelResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/mail/messages/{message_id}/labels/{label_id}"
+    };
+  }
+
+  // SendMessage stores a copy in the sender's Sent folder and delivers to the
+  // Inbox of any recipient that is an org user (internal delivery).
+  rpc SendMessage(SendMessageRequest) returns (MailMessage) {
+    option (google.api.http) = {
+      post: "/api/v1/mail/messages"
+      body: "*"
+    };
+  }
+
+  // ModifyMessage updates flags / folder (read, starred, folder move, labels).
+  rpc ModifyMessage(ModifyMessageRequest) returns (MailMessage) {
+    option (google.api.http) = {
+      patch: "/api/v1/mail/messages/{id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/mail/messages/{id}"
+    };
+  }
+
+  // --- Rules / filters ---
+  rpc ListRules(ListRulesRequest) returns (ListRulesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/mail/rules"
+    };
+  }
+  rpc CreateRule(CreateRuleRequest) returns (MailRule) {
+    option (google.api.http) = {
+      post: "/api/v1/mail/rules"
+      body: "*"
+    };
+  }
+  rpc DeleteRule(DeleteRuleRequest) returns (DeleteRuleResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/mail/rules/{id}"
+    };
+  }
+
+  // --- Normalized filters (mail_filters table) ---
+  rpc ListFilters(ListFiltersRequest) returns (ListFiltersResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/mail/filters"
+    };
+  }
+  rpc CreateFilter(CreateFilterRequest) returns (MailFilter) {
+    option (google.api.http) = {
+      post: "/api/v1/mail/filters"
+      body: "*"
+    };
+  }
+  rpc DeleteFilter(DeleteFilterRequest) returns (DeleteFilterResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/mail/filters/{id}"
+    };
+  }
+
+  // ApplyFilters applies matching filters to existing messages in the caller's
+  // inbox (an "apply all filters now" action).
+  rpc ApplyFilters(ApplyFiltersRequest) returns (ApplyFiltersResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/mail/filters:apply"
+      body: "*"
+    };
+  }
+}
+
+// MailLabel is a named, colored label entity owned by an org user.
+message MailLabel {
+  string id    = 1;
+  string name  = 2;
+  string color = 3;
+}
+
+message CreateMailLabelRequest {
+  string name  = 1;
+  string color = 2;
+}
+
+message UpdateMailLabelRequest {
+  string id    = 1;
+  string name  = 2;
+  string color = 3;
+}
+
+message DeleteMailLabelRequest {
+  string id = 1;
+}
+message DeleteMailLabelResponse {}
+
+message ApplyMailLabelRequest {
+  string message_id = 1;
+  string label_id   = 2;
+}
+message ApplyMailLabelResponse {}
+
+message RemoveMailLabelRequest {
+  string message_id = 1;
+  string label_id   = 2;
+}
+message RemoveMailLabelResponse {}
+
+// MailFilter is a normalized filter rule (mail_filters table).
+message MailFilter {
+  string id           = 1;
+  string match_field  = 2; // from|to|subject|body
+  string match_op     = 3; // contains|equals
+  string match_value  = 4;
+  string action_type  = 5; // label|mark_read|archive|star
+  string action_value = 6; // label name when action_type == label
+}
+
+message ListFiltersRequest {}
+message ListFiltersResponse {
+  repeated MailFilter filters = 1;
+}
+message CreateFilterRequest {
+  string match_field  = 1;
+  string match_op     = 2;
+  string match_value  = 3;
+  string action_type  = 4;
+  string action_value = 5;
+}
+message DeleteFilterRequest {
+  string id = 1;
+}
+message DeleteFilterResponse {}
+
+message ApplyFiltersRequest {}
+message ApplyFiltersResponse {
+  int32 modified = 1; // number of messages updated
+}
+
+// MailRule is a filter: match criteria (substrings, ANDed; empty = ignored) +
+// actions applied at delivery.
+message MailRule {
+  string id = 1;
+  string name = 2;
+  string match_from = 3;
+  string match_to = 4;
+  string match_subject = 5;
+  string act_label = 6;
+  string act_folder = 7;    // move to folder (e.g. trash, spam, a custom folder)
+  string act_forward = 8;   // redirect a copy to this address
+  bool act_mark_read = 9;
+  bool act_star = 10;
+}
+
+message ListRulesRequest {}
+message ListRulesResponse {
+  repeated MailRule rules = 1;
+}
+message CreateRuleRequest {
+  string name = 1;
+  string match_from = 2;
+  string match_to = 3;
+  string match_subject = 4;
+  string act_label = 5;
+  string act_folder = 6;
+  string act_forward = 7;
+  bool act_mark_read = 8;
+  bool act_star = 9;
+}
+message DeleteRuleRequest {
+  string id = 1;
+}
+message DeleteRuleResponse {}
+
+message MailMessage {
+  string id = 1;
+  string thread_id = 2;
+  string folder = 3;
+  string from_addr = 4;
+  string from_name = 5;
+  repeated string to_addrs = 6;
+  repeated string cc_addrs = 7;
+  string subject = 8;
+  string body = 9;
+  string snippet = 10;
+  bool is_read = 11;
+  bool starred = 12;
+  repeated string labels = 13;
+  string sent_at = 14;
+  repeated MailAttachment attachments = 15;
+  // snooze_until is an RFC3339 timestamp the message is snoozed until (empty when
+  // not snoozed). While set and in the future the message lives in the Snoozed
+  // folder and is hidden from Inbox.
+  string snooze_until = 16;
+  // label_objects carries the full MailLabel entities applied to this message.
+  repeated MailLabel label_objects = 17;
+}
+
+message MailAttachment {
+  string id = 1;
+  string filename = 2;
+  string content_type = 3;
+  int64 size = 4;
+}
+
+message ListMessagesRequest {
+  string folder = 1; // inbox|sent|drafts|trash|spam (default inbox)
+  string label = 2;  // optional label filter (name string)
+  string query = 3;  // optional full-text filter
+  bool starred = 4;  // when true, only starred
+  string label_id = 5; // optional label entity ID filter
+}
+
+message ListMessagesResponse {
+  repeated MailMessage messages = 1;
+  // Per-folder unread counts for the sidebar (folder -> count).
+  map<string, int32> unread = 2;
+}
+
+message GetMessageRequest {
+  string id = 1;
+}
+
+// MailThread is a conversation summary: the latest message plus aggregate state.
+message MailThread {
+  string thread_id = 1;
+  MailMessage latest = 2;     // newest message in the thread (light, no body)
+  int32 message_count = 3;
+  bool any_unread = 4;        // true if any message in the thread is unread
+  bool starred = 5;           // true if any message in the thread is starred
+  repeated string labels = 6; // union of labels across the thread
+  repeated string participants = 7; // distinct from-names/addresses, newest first
+  repeated MailLabel label_objects = 8; // label entities applied to thread messages
+}
+
+message ListThreadsResponse {
+  repeated MailThread threads = 1;
+  map<string, int32> unread = 2;
+}
+
+message GetThreadRequest {
+  string thread_id = 1;
+  string folder = 2; // scope the thread to a folder (default: all folders)
+}
+
+message GetThreadResponse {
+  repeated MailMessage messages = 1; // oldest first, full bodies
+}
+
+message ListLabelsRequest {}
+message ListLabelsResponse {
+  repeated string labels = 1;
+  // label_objects returns the full named label entities (with colors).
+  repeated MailLabel label_objects = 2;
+}
+
+message SendMessageRequest {
+  repeated string to_addrs = 1;
+  repeated string cc_addrs = 2;
+  string subject = 3;
+  string body = 4;
+  bool draft = 5; // when true, save to Drafts instead of sending
+  repeated string attachment_ids = 6; // uploaded attachment ids to attach
+}
+
+message ModifyMessageRequest {
+  string id = 1;
+  bool is_read = 2;
+  bool starred = 3;
+  string folder = 4;        // move to folder when non-empty
+  repeated string labels = 5;
+  bool set_labels = 6;      // when true, replace labels with the provided list
+  // snooze: when set_snooze is true, snooze_until replaces the snooze state. An
+  // RFC3339 timestamp snoozes the message (moves it to the Snoozed folder); an
+  // empty snooze_until un-snoozes it (returns it to Inbox).
+  string snooze_until = 7;
+  bool set_snooze = 8;
+}
+
+message DeleteMessageRequest {
+  string id = 1;
+}
+
+message DeleteMessageResponse {}

@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// SearchService provides unified cross-app search across the workspace.
+service SearchService {
+  // Search queries all searchable content within the caller's org and
+  // returns results grouped by type (drive, docs, sheets, slides,
+  // contacts, keep, calendar, mail).
+  rpc Search(SearchRequest) returns (SearchResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/search"
+    };
+  }
+}
+
+// SearchRequest carries the search query.
+message SearchRequest {
+  // query is the free-text search term.
+  string query = 1;
+  // limit is the maximum total results to return (default 50, max 200).
+  int32 limit = 2;
+}
+
+// SearchResultType identifies which app produced a result.
+enum SearchResultType {
+  SEARCH_RESULT_TYPE_UNSPECIFIED = 0;
+  SEARCH_RESULT_TYPE_DRIVE = 1;
+  SEARCH_RESULT_TYPE_DOCS = 2;
+  SEARCH_RESULT_TYPE_SHEETS = 3;
+  SEARCH_RESULT_TYPE_SLIDES = 4;
+  SEARCH_RESULT_TYPE_CONTACTS = 5;
+  SEARCH_RESULT_TYPE_KEEP = 6;
+  SEARCH_RESULT_TYPE_CALENDAR = 7;
+  SEARCH_RESULT_TYPE_MAIL = 8;
+}
+
+// SearchResult is a single matched item with enough info to render a row
+// in the results overlay and navigate to it.
+message SearchResult {
+  // type identifies the source app.
+  SearchResultType type = 1;
+  // id is the row's UUID (as a string).
+  string id = 2;
+  // title is the primary display text (file name, doc title, contact name, etc.).
+  string title = 3;
+  // snippet is a short secondary text (e.g. note body excerpt, mail subject, email address).
+  string snippet = 4;
+  // url is the deep-link path within the SPA (e.g. /docs/d/<id>).
+  string url = 5;
+}
+
+// SearchGroup is all results of a single type.
+message SearchGroup {
+  SearchResultType type = 1;
+  repeated SearchResult results = 2;
+}
+
+// SearchResponse contains results grouped by source type.
+message SearchResponse {
+  repeated SearchGroup groups = 1;
+  // total_count is the sum of all result counts across groups.
+  int32 total_count = 2;
+}

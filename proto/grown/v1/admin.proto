@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package grown.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// AdminService is the org-administration surface (modeled on the Google Admin
+// console). Its first feature is per-org enable/disable of individual workspace
+// services: an org admin can turn a service (e.g. Music or Books) OFF so its
+// members no longer see or use it on the dashboard.
+service AdminService {
+  // GetServiceSettings returns the calling org's per-service enabled map.
+  // Any service not explicitly stored is treated as enabled (default-on), so
+  // the response only reflects rows that have been set; callers should default
+  // unknown service ids to enabled=true.
+  rpc GetServiceSettings(GetServiceSettingsRequest) returns (ServiceSettings) {
+    option (google.api.http) = {
+      get: "/api/v1/admin/service-settings"
+    };
+  }
+
+  // SetServiceSettings upserts a list of {service_id, enabled} entries for the
+  // calling org and returns the full, updated settings map. Restricted to org
+  // admins (see the admin-authorization note in WIRING.md).
+  rpc SetServiceSettings(SetServiceSettingsRequest) returns (ServiceSettings) {
+    option (google.api.http) = {
+      put: "/api/v1/admin/service-settings"
+      body: "*"
+    };
+  }
+}
+
+// ServiceSetting is a single per-org service toggle.
+message ServiceSetting {
+  // service_id matches a catalog app id (e.g. "music", "books", "docs").
+  string service_id = 1;
+  // enabled is whether members of the org may see and use the service.
+  bool enabled = 2;
+  // external_url, when non-empty, causes the dashboard tile for this service
+  // to open the given URL in a new tab instead of routing to the built-in
+  // grown page.  Must be http:// or https://, or empty to clear.
+  string external_url = 3;
+}
+
+// ServiceSettings is the calling org's full set of explicit service toggles.
+// Services absent from this list are enabled by default.
+message ServiceSettings {
+  string org_id = 1;
+  repeated ServiceSetting settings = 2;
+}
+
+message GetServiceSettingsRequest {}
+
+// SetServiceSettingsRequest upserts a batch of service toggles for the org.
+message SetServiceSettingsRequest {
+  repeated ServiceSetting settings = 1;
+}

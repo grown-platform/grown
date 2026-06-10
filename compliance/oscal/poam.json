@@ -1,0 +1,538 @@
+{
+  "plan-of-action-and-milestones": {
+    "uuid": "c3d4e5f6-0001-4000-8000-000000000001",
+    "metadata": {
+      "title": "grown-workspace - Plan of Action and Milestones (POA&M)",
+      "published": "2026-06-09T00:00:00Z",
+      "last-modified": "2026-06-09T00:00:00Z",
+      "version": "0.1.0",
+      "oscal-version": "1.1.3",
+      "roles": [{ "id": "system-owner", "title": "System Owner" }],
+      "parties": [
+        {
+          "uuid": "c3d4e5f6-0002-4000-8000-000000000001",
+          "type": "organization",
+          "name": "grown-workspace (homelab / development)"
+        }
+      ],
+      "responsible-parties": [
+        {
+          "role-id": "system-owner",
+          "party-uuids": ["c3d4e5f6-0002-4000-8000-000000000001"]
+        }
+      ],
+      "remarks": "Honest gap analysis. Each poam-item references a risk and the affected 800-53 control(s). Severities are the author's assessment for a Moderate baseline. UNVALIDATED against an OSCAL validator. Milestone dates are illustrative placeholders. The system is NOT authorized; these are the gaps that would block authorization."
+    },
+    "import-ssp": { "href": "./ssp.json" },
+    "system-id": {
+      "identifier-type": "https://ietf.org/rfc/rfc4122",
+      "id": "b2c3d4e5-0003-4000-8000-000000000001"
+    },
+    "observations": [
+      {
+        "uuid": "c3d4e5f6-0b01-4000-8000-000000000001",
+        "title": "MFA capable but not enforced",
+        "description": "TOTP and passkey/FIDO2 enrollment are exposed via internal/zitadelproxy, but no Zitadel login policy enforces MFA, so an org member can authenticate with a single factor.",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      },
+      {
+        "uuid": "c3d4e5f6-0b02-4000-8000-000000000001",
+        "title": "No FIPS 140-validated cryptographic module",
+        "description": "AES-256-GCM (pdf/backend/internal/crypto/keystore.go) and TLS rely on Go standard-library crypto and Let's Encrypt; none is operated in a FIPS 140-2/3 validated mode.",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      },
+      {
+        "uuid": "c3d4e5f6-0b03-4000-8000-000000000001",
+        "title": "No continuous monitoring / vuln scanning / SIEM",
+        "description": "Audit data is reviewed only on-demand via the admin viewer; there is no vulnerability scanning, log forwarding, alerting, or SIEM integration.",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      },
+      {
+        "uuid": "c3d4e5f6-0b04-4000-8000-000000000001",
+        "title": "No application-level encryption at rest / no attestation",
+        "description": "Neither Postgres rows nor blob payloads are encrypted by grown; at-rest protection depends on unattested underlying-disk encryption. (Exception: the PDF KEK encrypts signing private keys only.)",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      },
+      {
+        "uuid": "c3d4e5f6-0b05-4000-8000-000000000001",
+        "title": "No audit retention / forwarding policy; append-only not enforced at DB",
+        "description": "audit_events grows unbounded in Postgres with no retention period, archival, or off-host forwarding. Append-only is enforced only by the absence of mutating code paths, not by a DB constraint or a revoked DELETE grant.",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      },
+      {
+        "uuid": "c3d4e5f6-0b06-4000-8000-000000000001",
+        "title": "No IR / contingency-plan / boundary-protection documentation",
+        "description": "There is no documented incident-response plan, contingency/DR plan tied to grown, or boundary-protection (firewall/NetworkPolicy/WAF) documentation for the grown workload.",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      },
+      {
+        "uuid": "c3d4e5f6-0b07-4000-8000-000000000001",
+        "title": "No role/RBAC model; admin authority is an env allowlist with open fallback",
+        "description": "grown has no role/owner concept (internal/users, internal/orgs). Admin authority is conferred by GROWN_ADMIN_EMAILS; when empty, privileged writes fall open to any authenticated member (internal/admin/service.go requireAdmin TODO).",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      },
+      {
+        "uuid": "c3d4e5f6-0b08-4000-8000-000000000001",
+        "title": "Multi-tenancy is single-org in practice",
+        "description": "Although every table is org_id-scoped, multi-org request routing is stubbed (internal/tenancy/middleware.go); the system runs single-org with a default org, so cross-tenant isolation is untested at runtime.",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      },
+      {
+        "uuid": "c3d4e5f6-0b09-4000-8000-000000000001",
+        "title": "No 800-171 SSP / SPRS submission",
+        "description": "No NIST SP 800-171 self-assessment, System Security Plan of record, or SPRS score has been produced or submitted; CMMC L2 prerequisites are unmet.",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      },
+      {
+        "uuid": "c3d4e5f6-0b0a-4000-8000-000000000001",
+        "title": "No SAST / dependency scan / SBOM gate in the grown pipeline",
+        "description": "The grown build is reproducible and minimal but enforces no static-analysis, dependency-vulnerability, or SBOM-generation gate.",
+        "methods": ["EXAMINE"],
+        "collected": "2026-06-09T00:00:00Z"
+      }
+    ],
+    "risks": [
+      {
+        "uuid": "c3d4e5f6-0c01-4000-8000-000000000001",
+        "title": "Single-factor authentication permitted",
+        "description": "Without enforced MFA, a compromised password grants full account access, defeating much of the IA/AC posture.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "high"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b01-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0c02-4000-8000-000000000001",
+        "title": "Non-FIPS-validated cryptography",
+        "description": "FedRAMP/CMMC require FIPS 140-validated modules for protecting CUI; current crypto would fail SC-13 / 800-171 3.13.11 assessment.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "high"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b02-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0c03-4000-8000-000000000001",
+        "title": "No continuous monitoring or alerting",
+        "description": "Threats and vulnerabilities can go undetected; no automated detection of anomalous audit patterns.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "high"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b03-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0c04-4000-8000-000000000001",
+        "title": "Unattested encryption at rest",
+        "description": "Data confidentiality at rest cannot be asserted; SC-28 / 800-171 3.13.16 unmet absent attestation or app-level encryption.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "moderate"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b04-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0c05-4000-8000-000000000001",
+        "title": "Audit integrity & retention gap",
+        "description": "Audit records could be deleted by anyone with DB write access, and unbounded growth risks capacity exhaustion; AU-4/AU-9/AU-11 partially unmet.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "moderate"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b05-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0c06-4000-8000-000000000001",
+        "title": "No incident-response / contingency / boundary documentation",
+        "description": "IR-*/CP-*/SC-7 require documented, tested plans and boundary protections; none exist for grown.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "moderate"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b06-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0c07-4000-8000-000000000001",
+        "title": "Coarse, open-fallback authorization",
+        "description": "Lack of a real RBAC model and the open-when-empty admin fallback risk privilege escalation; AC-6/AC-3 weakened.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "high"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b07-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0c08-4000-8000-000000000001",
+        "title": "Untested cross-tenant isolation",
+        "description": "org_id scoping is pervasive but multi-org routing is stubbed, so isolation is unexercised at runtime; a routing bug could expose cross-tenant data.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "moderate"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b08-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0c09-4000-8000-000000000001",
+        "title": "No 800-171 self-assessment / SPRS score",
+        "description": "CMMC L2 cannot proceed without a documented 800-171 SSP and SPRS submission.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "moderate"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b09-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0c0a-4000-8000-000000000001",
+        "title": "No supply-chain scanning gate",
+        "description": "Vulnerable dependencies or insecure code patterns could ship undetected; RA-5/SA-11/SA-15 partially unmet.",
+        "status": "open",
+        "characterizations": [
+          {
+            "origin": {
+              "actors": [
+                {
+                  "type": "party",
+                  "actor-uuid": "c3d4e5f6-0002-4000-8000-000000000001"
+                }
+              ]
+            },
+            "facets": [
+              {
+                "name": "severity",
+                "system": "https://grown.local/ns/risk",
+                "value": "moderate"
+              }
+            ]
+          }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b0a-4000-8000-000000000001" }
+        ]
+      }
+    ],
+    "poam-items": [
+      {
+        "uuid": "c3d4e5f6-0d01-4000-8000-000000000001",
+        "title": "POAM-001: Enforce MFA org-wide",
+        "description": "Enable a Zitadel login policy that requires a second factor (TOTP or passkey) for all users; optionally block password-only sessions in grown. Affected: AC-2(1), IA-2(1)(2) / 800-171 3.5.3.",
+        "props": [
+          { "name": "poam-id", "value": "poam-mfa" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b01-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c01-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0d02-4000-8000-000000000001",
+        "title": "POAM-002: Adopt FIPS 140-validated cryptography",
+        "description": "Build with a FIPS-validated crypto provider (e.g. Go BoringCrypto / a validated module) for TLS and the PDF KEK; document module certificate numbers. Affected: SC-13, SC-12, SC-8 / 800-171 3.13.11.",
+        "props": [
+          { "name": "poam-id", "value": "poam-fips" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b02-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c02-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0d03-4000-8000-000000000001",
+        "title": "POAM-003: Stand up continuous monitoring, vuln scanning, and SIEM",
+        "description": "Forward audit_events and infra logs to a SIEM; add anomaly alerting; run scheduled vulnerability scans on the image and cluster. Affected: CA-7, RA-5, SI-4, AU-6(1).",
+        "props": [
+          { "name": "poam-id", "value": "poam-siem" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b03-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c03-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0d04-4000-8000-000000000001",
+        "title": "POAM-004: Establish & attest encryption at rest",
+        "description": "Enable and ATTEST volume/database encryption for Postgres and the blob store (or add app-level encryption); document key management. Affected: SC-28, SC-28(1) / 800-171 3.13.16.",
+        "props": [
+          { "name": "poam-id", "value": "poam-rest" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b04-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c04-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0d05-4000-8000-000000000001",
+        "title": "POAM-005: Audit retention, forwarding & DB-enforced immutability",
+        "description": "Define an audit retention period; forward audit_events off-host; enforce append-only at the DB (revoke UPDATE/DELETE from the app role, or use a write-only role / trigger). Affected: AU-4, AU-9, AU-11 / 800-171 3.3.4, 3.3.8.",
+        "props": [
+          { "name": "poam-id", "value": "poam-retention" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b05-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c05-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0d06-4000-8000-000000000001",
+        "title": "POAM-006: Author IR, contingency, and boundary-protection docs",
+        "description": "Write and exercise an incident-response plan and a contingency/DR plan for grown; document boundary protection (NetworkPolicies, firewall, WAF/rate-limiting). Affected: IR-1/IR-4/IR-8, CP-1/CP-2/CP-9, SC-7.",
+        "props": [
+          { "name": "poam-id", "value": "poam-contingency" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b06-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c06-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0d07-4000-8000-000000000001",
+        "title": "POAM-007: Introduce a real role/RBAC model",
+        "description": "Add org membership roles (owner/admin/member) and require an admin role for privileged operations; remove the open-when-empty allowlist fallback. Affected: AC-2, AC-3, AC-6, AC-6(1)(2) / 800-171 3.1.5.",
+        "props": [
+          { "name": "poam-id", "value": "poam-rbac" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b07-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c07-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0d08-4000-8000-000000000001",
+        "title": "POAM-008: Exercise and test multi-tenant isolation",
+        "description": "Implement multi-org request routing (internal/tenancy) and add cross-tenant isolation tests; consider Postgres row-level security as defense-in-depth. Affected: AC-3, AC-4, SC-4.",
+        "props": [
+          { "name": "poam-id", "value": "poam-tenancy" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b08-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c08-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0d09-4000-8000-000000000001",
+        "title": "POAM-009: Produce 800-171 SSP & SPRS submission",
+        "description": "Complete a NIST SP 800-171 Rev 2 self-assessment, author the SSP of record, compute the SPRS score, and submit. Prerequisite for CMMC L2.",
+        "props": [
+          { "name": "poam-id", "value": "poam-171ssp" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b09-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c09-4000-8000-000000000001" }
+        ]
+      },
+      {
+        "uuid": "c3d4e5f6-0d0a-4000-8000-000000000001",
+        "title": "POAM-010: Add supply-chain scanning to CI",
+        "description": "Gate the build on SAST, dependency-vulnerability scanning, and SBOM generation (e.g. govulncheck, Trivy, Syft). Affected: RA-5, SA-11, SA-15.",
+        "props": [
+          { "name": "poam-id", "value": "poam-vulnscan" },
+          { "name": "implementation-status", "value": "planned" }
+        ],
+        "related-observations": [
+          { "observation-uuid": "c3d4e5f6-0b0a-4000-8000-000000000001" }
+        ],
+        "related-risks": [
+          { "risk-uuid": "c3d4e5f6-0c0a-4000-8000-000000000001" }
+        ]
+      }
+    ]
+  }
+}

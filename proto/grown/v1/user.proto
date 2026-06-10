@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package grown.v1;
+
+option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
+
+// User is a person within an org. Identity is authoritatively held by the
+// upstream OIDC provider; we cache the subject and claims for fast lookup.
+message User {
+  // UUID, stable for the lifetime of the user.
+  string id = 1;
+  // The Org this user belongs to.
+  string org_id = 2;
+  // OIDC issuer URL (e.g. "http://localhost:8081").
+  string oidc_issuer = 3;
+  // OIDC subject — the IdP's stable identifier for this user.
+  string oidc_subject = 4;
+  // Email address, refreshed from the OIDC claims on each login.
+  string email = 5;
+  // Display name, refreshed from the OIDC claims on each login.
+  string display_name = 6;
+  // Epoch seconds when the user record was first created.
+  int64 created_at = 7;
+}
