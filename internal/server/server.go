@@ -192,6 +192,13 @@ type Config struct {
 	// behavior is byte-for-byte identical to before this feature.
 	PDFBuiltin *pdfapp.App
 
+	// PDFStaticDir is the path to the built PDF SPA (Vite base "/pdf/"). When
+	// non-empty AND PDFBuiltin is active, grown serves the PDF frontend itself
+	// from this dir for /pdf and /pdf/* (with SPA history fallback), replacing
+	// the legacy PDFFrontendURL reverse-proxy. Empty leaves the reverse-proxy
+	// behavior unchanged.
+	PDFStaticDir string
+
 	// LiveRepo backs multi-user live streaming. nil disables the LiveService and
 	// the MediaMTX auth/ready webhooks. LiveURLs carries the public ingest/
 	// playback bases used to build a stream's URLs (set from GROWN_LIVE_* env).
@@ -1033,6 +1040,17 @@ func New(cfg Config) *Server {
 		pdfBuiltinHandler = driveAuthWrap(pdfapp.HTTPMiddleware(stripped))
 	}
 
+	// In-process PDF FRONTEND (Phase 2c). When the built-in PDF backend is on
+	// AND a static dir is configured, grown serves the PDF SPA itself for /pdf
+	// and /pdf/* from PDFStaticDir (SPA history fallback), so no separate
+	// pdf-frontend container is needed. This takes precedence over the legacy
+	// PDFFrontendURL reverse-proxy below; when off (nil here), the reverse-proxy
+	// branch is reached unchanged.
+	var pdfStaticHandler http.Handler
+	if cfg.PDFBuiltin != nil && cfg.PDFStaticDir != "" {
+		pdfStaticHandler = PDFStaticHandler(cfg.PDFStaticDir)
+	}
+
 	// MediaMTX playback proxies: grown serves HLS + WebRTC under its own origin
 	// so the browser uses a single origin (and org streams are gated by grown's
 	// auth middleware — see below). Prefix is stripped so /live-hls/<path>/...
@@ -1159,6 +1177,14 @@ func New(cfg Config) *Server {
 		}
 		if pdfBackend != nil && strings.HasPrefix(r.URL.Path, "/pdf-api/") {
 			pdfBackend.ServeHTTP(w, r)
+			return
+		}
+		// PDF frontend under /pdf and /pdf/*. When the in-process static SPA is
+		// configured (built-in + PDFStaticDir), grown serves the SPA itself;
+		// otherwise the legacy reverse-proxy to PDFFrontendURL is used. /pdf-api/*
+		// is already claimed above, so it never reaches here.
+		if pdfStaticHandler != nil && (r.URL.Path == "/pdf" || strings.HasPrefix(r.URL.Path, "/pdf/")) {
+			pdfStaticHandler.ServeHTTP(w, r)
 			return
 		}
 		if pdfFrontend != nil && (r.URL.Path == "/pdf" || strings.HasPrefix(r.URL.Path, "/pdf/")) {

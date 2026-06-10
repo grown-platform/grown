@@ -289,6 +289,10 @@ func main() {
 		PDFBackendURL:  os.Getenv("GROWN_PDF_BACKEND_URL"),
 		// In-process PDF backend (GROWN_PDF_BUILTIN). nil = legacy reverse-proxy.
 		PDFBuiltin: pdfBuiltin,
+		// In-process PDF frontend SPA (Phase 2c). When set AND the built-in PDF
+		// backend is on, grown serves the PDF SPA from this dir for /pdf*.
+		// Empty = legacy PDFFrontendURL reverse-proxy.
+		PDFStaticDir: os.Getenv("GROWN_PDF_STATIC_DIR"),
 		// Integrated Twenty CRM. GROWN_CRM_URL is Twenty's internal origin;
 		// GROWN_CRM_HOST is the public subdomain whose requests get proxied
 		// whole to Twenty at root. Both empty disables the CRM proxy.

@@ -23,6 +23,25 @@ RUN npm ci --no-fund --no-audit
 COPY web/app/ ./
 RUN npm run build   # -> /web/dist
 
+# ---- 1b. Build the PDF signing SPA (served in-process under /pdf) ----------
+# The PDF frontend (React 19 + Vite) is bundled and served by grown itself when
+# GROWN_PDF_BUILTIN=true and GROWN_PDF_STATIC_DIR points at its dist (see runtime
+# stage), so no separate pdf-frontend container is needed. Build env wires it to
+# grown's session: it talks to the in-process backend at /pdf-api/api with cookie
+# auth and redirects 401s to grown's login. Vite base "/pdf/" makes asset URLs
+# resolve under grown's /pdf mount (vite.config.ts reads GROWN_PDF_BASE).
+FROM node:22-alpine AS pdfweb
+WORKDIR /pdf
+ENV GROWN_PDF_BASE=/pdf/ \
+    VITE_GROWN_INTEGRATED=true \
+    VITE_API_BASE=/pdf-api/api \
+    VITE_GROWN_LOGIN_URL=/api/v1/auth/login
+# tibui is fetched from the public code.pick.haus registry per the lockfile.
+COPY pdf/frontend/package.json pdf/frontend/package-lock.json ./
+RUN npm ci --no-fund --no-audit
+COPY pdf/frontend/ ./
+RUN npm run build   # -> /pdf/dist
+
 # ---- 2. Generate protos + build the Go binary ------------------------------
 FROM golang:1.25-alpine AS build
 RUN apk add --no-cache git
@@ -45,9 +64,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates pandoc tzdata && adduser -D -u 10001 grown
 WORKDIR /app
-COPY --from=build /out/server /app/server
-COPY --from=web   /web/dist   /app/web/dist
-ENV GROWN_STATIC_DIR=/app/web/dist
+COPY --from=build  /out/server /app/server
+COPY --from=web    /web/dist   /app/web/dist
+COPY --from=pdfweb /pdf/dist   /app/pdf-web
+ENV GROWN_STATIC_DIR=/app/web/dist \
+    GROWN_PDF_STATIC_DIR=/app/pdf-web
 USER grown
 EXPOSE 8080 9000
 ENTRYPOINT ["/app/server"]
