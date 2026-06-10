@@ -7,8 +7,13 @@ web/app/node_modules
 web/app/dist
 # gen/ is regenerated inside the build via `buf generate` (remote plugins).
 gen
-# The PDF (pdf) app ships as its own image (pdf/*/Dockerfile).
+# PDF: the Go backend now lives in internal/pdf (built into grown). Only the
+# pdf/frontend SPA is needed by the build (the pdfweb Docker stage bundles it);
+# exclude the rest of pdf/ plus the frontend's node_modules/dist to stay lean.
 pdf
+!pdf/frontend
+pdf/frontend/node_modules
+pdf/frontend/dist
 # Local capture material + process-compose runtime data.
 research
 deploy/process-compose/data
