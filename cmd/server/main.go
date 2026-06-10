@@ -195,11 +195,16 @@ func main() {
 		var perr error
 		pdfBuiltin, perr = pdfapp.New(startupCtx, os.Environ())
 		if perr != nil {
-			logger.Error("GROWN_PDF_BUILTIN is on but PDF backend failed to construct", "err", perr)
-			os.Exit(1)
+			// Fail OPEN: a PDF misconfiguration must never take down the whole
+			// grown app. Log loudly and continue with pdfBuiltin=nil, which
+			// leaves /pdf-api on the legacy reverse-proxy path (PDF unavailable
+			// rather than grown crash-looping).
+			logger.Error("GROWN_PDF_BUILTIN is on but PDF backend failed to construct; continuing without built-in PDF", "err", perr)
+			pdfBuiltin = nil
+		} else {
+			defer pdfBuiltin.Close()
+			logger.Info("PDF backend mounted in-process (GROWN_PDF_BUILTIN=true)")
 		}
-		defer pdfBuiltin.Close()
-		logger.Info("PDF backend mounted in-process (GROWN_PDF_BUILTIN=true)")
 	}
 
 	srv := server.New(server.Config{
