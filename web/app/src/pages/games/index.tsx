@@ -1,4 +1,17 @@
-import { Container, Box, Typography } from "@mui/joy";
+import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  Container,
+  Box,
+  Typography,
+  Button,
+  Modal,
+  ModalDialog,
+  ModalClose,
+  IconButton,
+  Snackbar,
+  Avatar,
+} from "@mui/joy";
+import * as Icons from "@mui/icons-material";
 import { Header } from "../../components/Header";
 import { TileGrid } from "../../components/TileGrid";
 import type { AppTile } from "../../catalog/apps";
@@ -7,11 +20,16 @@ import type { User } from "../../api/types";
 /**
  * Games dashboard — a public sub-area surfacing playable games. It works
  * signed-out (no account required) and signed-in alike; the Header adapts to
- * a null user. Each game is its own separately-deployed app, linked out by
- * its external URL.
+ * a null user.
+ *
+ * Bundled games (GAMES) are trusted, self-contained HTML served from
+ * web/app/public/games/<id>.html and opened in a new tab.
+ *
+ * Imported games are UNTRUSTED user uploads (login + org-scoped). They are
+ * NEVER opened as a top-level document or same-origin iframe — they render
+ * ONLY inside a sandboxed iframe (no allow-same-origin) so they get an opaque
+ * origin and cannot reach grown's session cookie / APIs.
  */
-// Self-contained HTML games bundled under web/app/public/games/ and served at
-// /games/<name>.html. Each tile opens the game in a new tab (externalUrl).
 const arcade = (
   id: string,
   name: string,
@@ -53,19 +71,261 @@ const GAMES: AppTile[] = [
   arcade("sliding-puzzle", "Sliding Puzzle", "#5C6BC0", "Extension"),
 ];
 
+/** ImportedGame mirrors the JSON returned by GET /api/v1/games. */
+interface ImportedGame {
+  id: string;
+  name: string;
+  content_type: string;
+  size: number;
+  created_at: string;
+}
+
+/** A tile for an imported game — looks like a Tile, but opens the in-app
+ *  sandboxed player on click instead of navigating. */
+function ImportedTile({
+  game,
+  onPlay,
+}: {
+  game: ImportedGame;
+  onPlay: () => void;
+}) {
+  const SportsEsports = (
+    Icons as Record<string, React.ComponentType<{ sx?: object }>>
+  ).SportsEsports;
+  return (
+    <Box
+      component="button"
+      type="button"
+      onClick={onPlay}
+      data-testid={`imported-tile-${game.id}`}
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+        gap: 1,
+        py: 1.5,
+        px: 1,
+        border: "none",
+        background: "none",
+        cursor: "pointer",
+        font: "inherit",
+        color: "inherit",
+        borderRadius: "md",
+        transition: "background-color 120ms",
+        "&:hover": { bgcolor: "background.level1" },
+        "&:hover .grown-tile-icon": { transform: "scale(1.04)" },
+      }}
+    >
+      <Avatar
+        className="grown-tile-icon"
+        variant="plain"
+        sx={{
+          bgcolor: "background.surface",
+          width: 64,
+          height: 64,
+          boxShadow: "xs",
+          transition: "transform 150ms",
+          "& svg": { color: "#7C4DFF", fontSize: 32 },
+        }}
+      >
+        {SportsEsports ? <SportsEsports /> : game.name.charAt(0).toUpperCase()}
+      </Avatar>
+      <Typography level="body-sm" sx={{ fontWeight: 500 }} noWrap>
+        {game.name}
+      </Typography>
+    </Box>
+  );
+}
+
 export default function GamesApp({ user }: { user: User | null }) {
+  const [imported, setImported] = useState<ImportedGame[]>([]);
+  const [playing, setPlaying] = useState<ImportedGame | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const refresh = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await fetch("/api/v1/games", { credentials: "same-origin" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { games?: ImportedGame[] };
+      setImported(data.games ?? []);
+    } catch {
+      // best-effort; bundled games still render
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const onPick = () => fileRef.current?.click();
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    const isHtml =
+      file.type === "text/html" ||
+      file.name.toLowerCase().endsWith(".html") ||
+      file.name.toLowerCase().endsWith(".htm");
+    if (!isHtml) {
+      setError("Only self-contained HTML games are supported.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError("File too large (max 2 MiB).");
+      return;
+    }
+    setImporting(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/v1/games", {
+        method: "POST",
+        credentials: "same-origin",
+        body: form,
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        setError(msg.trim() || "Import failed.");
+        return;
+      }
+      await refresh();
+    } catch {
+      setError("Import failed.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <>
       <Header user={user} />
       <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Box sx={{ mb: 3 }}>
-          <Typography level="h2">Games</Typography>
-          <Typography level="body-sm" sx={{ opacity: 0.7 }}>
-            Play in your browser — no account required.
-          </Typography>
+        <Box
+          sx={{
+            mb: 3,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography level="h2">Games</Typography>
+            <Typography level="body-sm" sx={{ opacity: 0.7 }}>
+              Play in your browser — no account required.
+            </Typography>
+          </Box>
+          {user && (
+            <Button
+              variant="outlined"
+              onClick={onPick}
+              loading={importing}
+              startDecorator={<Icons.UploadFile />}
+            >
+              Import game
+            </Button>
+          )}
         </Box>
+
         <TileGrid apps={GAMES} />
+
+        {user && (
+          <Box sx={{ mt: 4 }}>
+            <Typography level="title-md" sx={{ mb: 1.5 }}>
+              Imported games
+            </Typography>
+            {imported.length === 0 ? (
+              <Typography level="body-sm" sx={{ opacity: 0.6 }}>
+                No imported games yet. Use “Import game” to upload a
+                self-contained HTML file.
+              </Typography>
+            ) : (
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 1.5,
+                  gridTemplateColumns:
+                    "repeat(auto-fill, minmax(96px, 1fr))",
+                }}
+              >
+                {imported.map((g) => (
+                  <ImportedTile
+                    key={g.id}
+                    game={g}
+                    onPlay={() => setPlaying(g)}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
       </Container>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".html,text/html"
+        style={{ display: "none" }}
+        onChange={onFile}
+      />
+
+      {/* Sandboxed player: the untrusted game runs ONLY inside this iframe with
+          an opaque origin (no allow-same-origin), so it cannot reach grown's
+          session cookie, localStorage, or APIs. */}
+      <Modal open={playing !== null} onClose={() => setPlaying(null)}>
+        <ModalDialog
+          layout="fullscreen"
+          sx={{ p: 0, display: "flex", flexDirection: "column" }}
+        >
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              px: 2,
+              py: 1,
+              borderBottom: "1px solid",
+              borderColor: "divider",
+            }}
+          >
+            <Typography level="title-sm" noWrap>
+              {playing?.name}
+            </Typography>
+            <IconButton
+              size="sm"
+              variant="plain"
+              onClick={() => setPlaying(null)}
+              aria-label="Close game"
+            >
+              <Icons.Close />
+            </IconButton>
+          </Box>
+          <ModalClose sx={{ display: "none" }} />
+          {playing && (
+            <iframe
+              title={playing.name}
+              sandbox="allow-scripts allow-modals allow-pointer-lock allow-forms"
+              src={`/api/v1/games/${playing.id}/content`}
+              style={{ width: "100%", height: "100%", border: 0, flex: 1 }}
+            />
+          )}
+        </ModalDialog>
+      </Modal>
+
+      <Snackbar
+        open={error !== null}
+        onClose={() => setError(null)}
+        autoHideDuration={4000}
+        color="danger"
+        variant="soft"
+      >
+        {error}
+      </Snackbar>
     </>
   );
 }

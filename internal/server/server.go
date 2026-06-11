@@ -38,6 +38,7 @@ import (
 	"code.pick.haus/grown/grown/internal/drive"
 	"code.pick.haus/grown/grown/internal/email"
 	"code.pick.haus/grown/grown/internal/forms"
+	"code.pick.haus/grown/grown/internal/games"
 	"code.pick.haus/grown/grown/internal/groups"
 	"code.pick.haus/grown/grown/internal/health"
 	"code.pick.haus/grown/grown/internal/keep"
@@ -93,13 +94,17 @@ type Config struct {
 	MailBackend mail.Backend
 	// MailBlobs is the blob store for mail attachments (shared with Drive).
 	MailBlobs mail.BlobStore
-	ChatRepo  *chat.Repository
+	// GamesRepo + GamesBlobs back the user-imported HTML games feature. When
+	// both are set, the /api/v1/games upload/list/content routes are enabled.
+	GamesRepo  *games.Repository
+	GamesBlobs games.BlobStore
+	ChatRepo   *chat.Repository
 	// ChatBlobs is the blob store for chat attachments (shared with Drive/Mail).
-	ChatBlobs  chat.BlobStore
+	ChatBlobs     chat.BlobStore
 	MeetRepo      *meet.Repository
 	TelephonyRepo *telephony.Repository
 	FormsRepo     *forms.Repository
-	PhotosRepo *photos.Repository
+	PhotosRepo    *photos.Repository
 	// PhotosBlobs / BooksBlobs / VideoBlobs are the media blob stores (shared with Drive).
 	PhotosBlobs photos.BlobStore
 	BooksRepo   *books.Repository
@@ -392,6 +397,11 @@ func New(cfg Config) *Server {
 	var mailAtt *mail.Attachments
 	if cfg.MailRepo != nil && cfg.MailBlobs != nil {
 		mailAtt = mail.NewAttachments(cfg.MailRepo, cfg.MailBlobs)
+	}
+
+	var gamesH *games.Games
+	if cfg.GamesRepo != nil && cfg.GamesBlobs != nil {
+		gamesH = games.New(cfg.GamesRepo, cfg.GamesBlobs)
 	}
 
 	var chatAtt *chat.Attachments
@@ -1222,6 +1232,24 @@ func New(cfg Config) *Server {
 			}
 			if strings.HasPrefix(r.URL.Path, "/api/v1/mail/attachments/") && strings.HasSuffix(r.URL.Path, "/content") && r.Method == http.MethodGet {
 				auditRec.Log("mail", "attachment-download", driveAuthWrap(mailAtt.DownloadHandler())).ServeHTTP(w, r)
+				return
+			}
+		}
+		// Imported HTML games — multipart upload + list + sandboxed content.
+		// Untrusted HTML: ContentHandler sets nosniff + frame-ancestors CSP and
+		// the frontend loads it only in a sandboxed iframe (no allow-same-origin).
+		if gamesH != nil {
+			path := strings.TrimRight(r.URL.Path, "/")
+			if path == "/api/v1/games" && r.Method == http.MethodPost {
+				auditRec.Log("games", "import", driveAuthWrap(gamesH.UploadHandler())).ServeHTTP(w, r)
+				return
+			}
+			if path == "/api/v1/games" && r.Method == http.MethodGet {
+				auditRec.Log("games", "list", driveAuthWrap(gamesH.ListHandler())).ServeHTTP(w, r)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, "/api/v1/games/") && strings.HasSuffix(r.URL.Path, "/content") && r.Method == http.MethodGet {
+				auditRec.Log("games", "content", driveAuthWrap(gamesH.ContentHandler())).ServeHTTP(w, r)
 				return
 			}
 		}

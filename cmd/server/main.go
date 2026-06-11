@@ -31,6 +31,7 @@ import (
 	"code.pick.haus/grown/grown/internal/email"
 	"code.pick.haus/grown/grown/internal/forgejo"
 	"code.pick.haus/grown/grown/internal/forms"
+	"code.pick.haus/grown/grown/internal/games"
 	"code.pick.haus/grown/grown/internal/groups"
 	"code.pick.haus/grown/grown/internal/keep"
 	"code.pick.haus/grown/grown/internal/live"
@@ -225,6 +226,8 @@ func main() {
 		MailRepo:          mail.NewRepository(pool),
 		MailBackend:       mailBackend(),
 		MailBlobs:         blobs,
+		GamesRepo:         games.NewRepository(pool),
+		GamesBlobs:        blobs,
 		ChatRepo:          chat.NewRepository(pool),
 		ChatBlobs:         blobs,
 		MeetRepo:          meet.NewRepository(pool),
