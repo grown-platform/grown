@@ -58,7 +58,13 @@ COPY proto/ ./proto/
 COPY buf.yaml buf.gen.yaml buf.lock ./
 RUN buf dep update && buf generate
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+# Stamp the build so GET /healthz reports the real version/commit instead of the
+# "0.0.0-dev"/"unknown" defaults. CI passes these via --build-arg; harmless if unset.
+ARG VERSION=0.0.0-dev
+ARG COMMIT=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+      -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+      -o /out/server ./cmd/server
 
 # ---- 3. Runtime ------------------------------------------------------------
 FROM alpine:3.20

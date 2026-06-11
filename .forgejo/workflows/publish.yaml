@@ -29,6 +29,8 @@ jobs:
           # both the immutable timestamped tag and a moving `latest`.
           nix run nixpkgs#docker -- buildx build \
             --platform linux/amd64 \
+            --build-arg "VERSION=${VERSION}" \
+            --build-arg "COMMIT=${GITHUB_SHA}" \
             -t "${IMAGE}:${VERSION}" \
             -t "${IMAGE}:latest" \
             --push .
