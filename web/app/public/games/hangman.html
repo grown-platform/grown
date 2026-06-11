@@ -39,6 +39,28 @@
 
         h1 { margin-top: 0; color: var(--primary); }
 
+        #difficulty {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+
+        .diff-btn {
+            padding: 6px 16px;
+            border: 1px solid var(--primary);
+            background: white;
+            color: var(--primary);
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            touch-action: manipulation;
+        }
+
+        .diff-btn.active { background: var(--primary); color: white; }
+
         #category-tag {
             display: inline-block;
             background: var(--primary);
@@ -72,11 +94,12 @@
             margin: 1.5rem 0;
             font-weight: bold;
             min-height: 3rem;
+            word-break: break-word;
         }
 
         #status-message {
             font-weight: bold;
-            height: 1.5rem;
+            min-height: 1.5rem;
             margin-bottom: 1rem;
         }
 
@@ -99,6 +122,7 @@
             font-weight: bold;
             transition: all 0.2s;
             user-select: none;
+            touch-action: manipulation;
         }
 
         .key:hover:not(:disabled) {
@@ -127,13 +151,15 @@
             border-radius: 5px;
             cursor: pointer;
             transition: opacity 0.2s;
+            touch-action: manipulation;
         }
 
         #reset-btn:hover { opacity: 0.9; }
 
         @media (max-width: 400px) {
-            #word-display { font-size: 1.5rem; }
+            #word-display { font-size: 1.5rem; letter-spacing: 0.35rem; }
             .key { padding: 8px 2px; font-size: 0.8rem; }
+            .diff-btn { padding: 6px 11px; }
         }
     </style>
 </head>
@@ -141,15 +167,22 @@
 
 <div id="game-container">
     <h1>Hangman</h1>
+
+    <div id="difficulty">
+        <button class="diff-btn" data-diff="easy">Easy</button>
+        <button class="diff-btn active" data-diff="medium">Medium</button>
+        <button class="diff-btn" data-diff="hard">Hard</button>
+    </div>
+
     <div id="category-tag">Category</div>
-    
+
     <svg id="hangman-svg" viewBox="0 0 200 200">
         <!-- Gallows -->
         <line x1="20" y1="190" x2="180" y2="190" stroke="#333" stroke-width="4" />
         <line x1="50" y1="190" x2="50" y2="20" stroke="#333" stroke-width="4" />
         <line x1="50" y1="20" x2="150" y2="20" stroke="#333" stroke-width="4" />
         <line x1="150" y1="20" x2="150" y2="50" stroke="#333" stroke-width="4" />
-        
+
         <!-- Hangman Parts -->
         <circle id="part-1" class="hangman-part" cx="150" cy="70" r="20" /> <!-- Head -->
         <line id="part-2" class="hangman-part" x1="150" y1="90" x2="150" y2="140" /> <!-- Body -->
@@ -162,44 +195,140 @@
     <div id="word-display">_ _ _ _ _</div>
     <div id="status-message"></div>
     <div id="keyboard"></div>
-    
+
     <div id="stats">Guesses remaining: <span id="remaining-count">6</span></div>
-    
+
     <button id="reset-btn">New Word</button>
 </div>
 
 <script>
+    // Words are single, lowercase, a–z only. Difficulty is derived from length
+    // (see DIFFICULTY): short words are Easy, long words are Hard.
     const wordBank = [
-        { w: 'elephant', c: 'Animals' }, { w: 'giraffe', c: 'Animals' }, { w: 'kangaroo', c: 'Animals' },
-        { w: 'penguin', c: 'Animals' }, { w: 'dolphin', c: 'Animals' }, { w: 'cheetah', c: 'Animals' },
-        { w: 'hamster', c: 'Animals' }, { w: 'octopus', c: 'Animals' }, { w: 'scorpion', c: 'Animals' },
-        { w: 'zebra', c: 'Animals' }, { w: 'gorilla', c: 'Animals' }, { w: 'leopard', c: 'Animals' },
-        { w: 'rabbit', c: 'Animals' }, { w: 'panther', c: 'Animals' }, { w: 'platypus', c: 'Animals' },
-        { w: 'japan', c: 'Countries' }, { w: 'brazil', c: 'Countries' }, { w: 'canada', c: 'Countries' },
-        { w: 'germany', c: 'Countries' }, { w: 'australia', c: 'Countries' }, { w: 'egypt', c: 'Countries' },
-        { w: 'mexico', c: 'Countries' }, { w: 'france', c: 'Countries' }, { w: 'italy', c: 'Countries' },
-        { w: 'thailand', c: 'Countries' }, { w: 'norway', c: 'Countries' }, { w: 'greece', c: 'Countries' },
-        { w: 'india', c: 'Countries' }, { w: 'spain', c: 'Countries' }, { w: 'turkey', c: 'Countries' },
-        { w: 'apple', c: 'Fruits' }, { w: 'banana', c: 'Fruits' }, { w: 'pineapple', c: 'Fruits' },
-        { w: 'strawberry', c: 'Fruits' }, { w: 'blueberry', c: 'Fruits' }, { w: 'mango', c: 'Fruits' },
-        { w: 'watermelon', c: 'Fruits' }, { w: 'cherry', c: 'Fruits' }, { w: 'peach', c: 'Fruits' },
-        { w: 'kiwi', c: 'Fruits' }, { w: 'orange', c: 'Fruits' }, { w: 'grape', c: 'Fruits' },
-        { w: 'lemon', c: 'Fruits' }, { w: 'papaya', c: 'Fruits' }, { w: 'melon', c: 'Fruits' },
-        { w: 'javascript', c: 'Programming' }, { w: 'python', c: 'Programming' }, { w: 'html', c: 'Programming' },
-        { w: 'css', c: 'Programming' }, { w: 'algorithm', c: 'Programming' }, { w: 'variable', c: 'Programming' },
-        { w: 'function', c: 'Programming' }, { w: 'database', c: 'Programming' }, { w: 'compiler', c: 'Programming' },
-        { w: 'boolean', c: 'Programming' }, { w: 'string', c: 'Programming' }, { w: 'integer', c: 'Programming' },
-        { w: 'galaxy', c: 'Space' }, { w: 'astronaut', c: 'Space' }, { w: 'neptune', c: 'Space' },
-        { w: 'jupiter', c: 'Space' }, { w: 'comet', c: 'Space' }, { w: 'asteroid', c: 'Space' },
-        { w: 'universe', c: 'Space' }, { w: 'orbit', c: 'Space' }, { w: 'satellite', c: 'Space' },
-        { w: 'eclipse', c: 'Space' }, { w: 'meteor', c: 'Space' }, { w: 'planet', c: 'Space' }
+        // ── Animals ──
+        ...['cat','dog','owl','fox','ant','bee','cow','pig','bat','rat','hen','elk',
+            'lion','bear','wolf','frog','goat','deer','seal','crab','duck','swan','mole','toad',
+            'tiger','horse','snake','sheep','mouse','koala','otter','camel','panda','eagle','shark','zebra','moose','hyena','rhino','sloth',
+            'donkey','rabbit','monkey','turtle','parrot','falcon','beaver','badger','walrus','iguana','jaguar','ocelot','cougar','baboon','python','gibbon',
+            'giraffe','dolphin','leopard','gorilla','panther','raccoon','hamster','octopus','buffalo','penguin','cheetah','meerkat','peacock','ostrich','manatee',
+            'elephant','kangaroo','scorpion','squirrel','flamingo','antelope','aardvark','mongoose','platypus','tortoise',
+            'crocodile','butterfly','porcupine','chameleon','orangutan','armadillo','chimpanzee','rhinoceros','hippopotamus'].map(w=>({w,c:'Animals'})),
+
+        // ── Countries ──
+        ...['cuba','peru','chad','mali','iran','iraq','laos','fiji','oman','togo',
+            'japan','spain','italy','china','egypt','kenya','india','chile','ghana','nepal','qatar','sudan','syria','yemen','libya','haiti',
+            'brazil','canada','mexico','france','norway','greece','turkey','poland','sweden','russia','jordan','panama','angola','bhutan','latvia',
+            'germany','finland','ireland','iceland','vietnam','morocco','romania','belgium','jamaica','ecuador','bolivia','nigeria','denmark','ukraine',
+            'thailand','portugal','malaysia','colombia','tanzania','pakistan','paraguay','mongolia',
+            'australia','indonesia','argentina','venezuela','singapore','cambodia','guatemala','nicaragua','switzerland'].map(w=>({w,c:'Countries'})),
+
+        // ── Fruits ──
+        ...['fig','plum','pear','lime','kiwi','date',
+            'apple','mango','grape','lemon','peach','melon','guava','berry','olive',
+            'banana','cherry','papaya','orange','quince','tomato','durian','lychee',
+            'apricot','avocado','currant','kumquat',
+            'pineapple','blueberry','raspberry','blackberry','nectarine','tangerine','cranberry',
+            'strawberry','watermelon','pomegranate'].map(w=>({w,c:'Fruits'})),
+
+        // ── Vegetables ──
+        ...['pea','yam','corn','kale','bean','beet','leek','okra',
+            'onion','chili','chard','cress',
+            'carrot','celery','potato','tomato','radish','turnip','pepper','garlic','squash','ginger','endive',
+            'cabbage','lettuce','spinach','pumpkin','parsnip','shallot',
+            'broccoli','zucchini','eggplant','cucumber','artichoke','asparagus','cauliflower'].map(w=>({w,c:'Vegetables'})),
+
+        // ── Sports ──
+        ...['golf','polo','judo',
+            'rugby','boxing','tennis','hockey','soccer','karate','rowing','diving','skiing','squash','cricket',
+            'archery','cycling','bowling','sailing','fencing','curling','surfing','skating','netball',
+            'baseball','football','swimming','climbing','handball','lacrosse','biathlon',
+            'badminton','wrestling','marathon','triathlon','basketball','volleyball','gymnastics','snowboarding'].map(w=>({w,c:'Sports'})),
+
+        // ── Music ──
+        ...['drum','harp','horn','tuba','oboe','bass','jazz','folk',
+            'piano','flute','viola','cello','banjo','organ','blues','tempo','chord','disco',
+            'guitar','violin','trumpet','melody','rhythm','reggae','techno','ballad','octave',
+            'trombone','clarinet','keyboard','symphony','harmony','soprano','baritone',
+            'saxophone','accordion','orchestra','percussion'].map(w=>({w,c:'Music'})),
+
+        // ── Food ──
+        ...['egg','jam','pie','rice','soup','taco','cake','bread','sushi','pasta','curry','salad','pizza','steak','bacon',
+            'noodle','cheese','butter','waffle','muffin','cookie','burger','omelet','pretzel','popcorn','pancake',
+            'lasagna','sandwich','dumpling','meatball','croissant','spaghetti'].map(w=>({w,c:'Food'})),
+
+        // ── Colors ──
+        ...['red','tan','blue','cyan','pink','gold','gray','teal','lime',
+            'green','black','white','brown','beige','coral','olive','amber','khaki','ivory',
+            'yellow','orange','purple','maroon','silver','indigo','violet','salmon','crimson','magenta','lavender','turquoise'].map(w=>({w,c:'Colors'})),
+
+        // ── Jobs ──
+        ...['chef','pilot','nurse','actor','baker','judge','miner',
+            'doctor','lawyer','farmer','artist','singer','dancer','writer','sailor','barber','tailor','waiter','dentist','plumber',
+            'teacher','painter','soldier','builder','cashier','surgeon','manager','janitor',
+            'engineer','musician','mechanic','reporter','director','plumber','detective',
+            'architect','scientist','astronaut','firefighter','electrician','veterinarian'].map(w=>({w,c:'Jobs'})),
+
+        // ── Space ──
+        ...['sun','star','moon','mars','orbit','comet','lunar','solar',
+            'galaxy','meteor','planet','saturn','uranus','pulsar','cosmos','nebula','rocket',
+            'jupiter','neptune','mercury','eclipse','gravity','stardust',
+            'asteroid','universe','spaceship','astronaut','satellite','telescope','supernova','astronomy','constellation'].map(w=>({w,c:'Space'})),
+
+        // ── Programming ──
+        ...['css','php','sql','git','byte','code','loop','data','java','ruby','rust','node',
+            'html','array','class','stack','queue','token','regex','linux','cache','debug','shell',
+            'python','syntax','object','string','binary','kernel','server','module','pointer','boolean','integer',
+            'compiler','variable','function','database','iterator','recursion',
+            'javascript','algorithm','framework','encryption'].map(w=>({w,c:'Programming'})),
+
+        // ── Nature ──
+        ...['oak','elm','fog','dew','mud','sea','bay','hill',
+            'leaf','tree','rock','sand','lake','cave','reef','dune','moss','fern',
+            'river','beach','cliff','ocean','swamp','marsh','grove','creek','ridge','delta','flora','fauna',
+            'forest','desert','meadow','valley','canyon','glacier','volcano','prairie',
+            'mountain','waterfall','rainforest','wilderness'].map(w=>({w,c:'Nature'})),
+
+        // ── Body ──
+        ...['arm','leg','ear','eye','toe','rib','jaw','hip','lip',
+            'hand','foot','knee','nose','chin','neck','bone','skin','heel','lung',
+            'elbow','wrist','ankle','liver','heart','spine','brain','thumb','chest',
+            'finger','muscle','kidney','stomach','eyebrow','knuckle','shoulder','forehead'].map(w=>({w,c:'Body'})),
+
+        // ── Weather ──
+        ...['sun','fog','ice','rain','snow','wind','hail','mist','heat','cold',
+            'cloud','storm','frost','sunny','windy','foggy','humid',
+            'thunder','drizzle','tornado','rainbow','monsoon','blizzard','overcast','sunshine',
+            'lightning','hurricane','temperature'].map(w=>({w,c:'Weather'})),
+
+        // ── Transportation ──
+        ...['bus','car','van','jet','cab','ship',
+            'taxi','boat','tram','bike','sled','kayak','canoe','ferry','wagon','truck','train','plane','metro','moped',
+            'subway','rocket','scooter','trolley','sailboat',
+            'bicycle','airplane','tricycle','submarine','helicopter','motorcycle','locomotive'].map(w=>({w,c:'Transportation'})),
+
+        // ── Science ──
+        ...['atom','cell','acid','gene','mass','heat','lens','wave',
+            'force','energy','proton','photon','neuron','enzyme','liquid','vacuum','plasma','fossil',
+            'gravity','nucleus','element','reaction','molecule','electron','particle','chemical',
+            'magnetism','radiation','organism','ecosystem','experiment','laboratory'].map(w=>({w,c:'Science'})),
     ];
 
+    // Difficulty: filter the word pool by length, and set how many wrong guesses
+    // are allowed. The 6-part figure is drawn proportionally so it completes
+    // exactly when guesses run out regardless of the limit.
+    const DIFFICULTY = {
+        easy:   { min: 3, max: 5,  lives: 8 },
+        medium: { min: 6, max: 7,  lives: 6 },
+        hard:   { min: 8, max: 99, lives: 5 },
+    };
+
+    let difficulty = 'medium';
+    let pool = [];
     let selectedWord = '';
     let category = '';
     let guessedLetters = [];
     let mistakes = 0;
-    const maxMistakes = 6;
+    let maxMistakes = 6;
     let gameOver = false;
 
     const categoryTag = document.getElementById('category-tag');
@@ -208,9 +337,17 @@
     const remainingCount = document.getElementById('remaining-count');
     const keyboard = document.getElementById('keyboard');
     const resetBtn = document.getElementById('reset-btn');
+    const diffButtons = document.querySelectorAll('.diff-btn');
+
+    function buildPool() {
+        const cfg = DIFFICULTY[difficulty];
+        pool = wordBank.filter(o => o.w.length >= cfg.min && o.w.length <= cfg.max);
+        maxMistakes = cfg.lives;
+    }
 
     function initGame() {
-        const randomObj = wordBank[Math.floor(Math.random() * wordBank.length)];
+        buildPool();
+        const randomObj = pool[Math.floor(Math.random() * pool.length)];
         selectedWord = randomObj.w.toLowerCase();
         category = randomObj.c;
         guessedLetters = [];
@@ -221,14 +358,20 @@
         statusMsg.textContent = '';
         statusMsg.className = '';
         remainingCount.textContent = maxMistakes;
-        
-        // Reset SVG
-        for (let i = 1; i <= maxMistakes; i++) {
-            document.getElementById(`part-${i}`).style.opacity = '0';
-        }
 
+        renderHangman();
         createKeyboard();
         updateDisplay();
+    }
+
+    // Reveal the figure proportionally to how many guesses have been used.
+    function renderHangman() {
+        const partsToShow = mistakes >= maxMistakes
+            ? 6
+            : Math.min(6, Math.round((mistakes / maxMistakes) * 6));
+        for (let i = 1; i <= 6; i++) {
+            document.getElementById(`part-${i}`).style.opacity = i <= partsToShow ? '1' : '0';
+        }
     }
 
     function createKeyboard() {
@@ -247,19 +390,17 @@
         if (gameOver || guessedLetters.includes(letter)) return;
 
         guessedLetters.push(letter);
-        
+
         const buttons = document.querySelectorAll('.key');
         const btn = Array.from(buttons).find(b => b.textContent.toLowerCase() === letter);
 
         if (selectedWord.includes(letter)) {
-            btn.classList.add('correct');
-            btn.disabled = true;
+            if (btn) { btn.classList.add('correct'); btn.disabled = true; }
         } else {
             mistakes++;
-            btn.classList.add('wrong');
-            btn.disabled = true;
-            document.getElementById(`part-${mistakes}`).style.opacity = '1';
-            remainingCount.textContent = maxMistakes - mistakes;
+            if (btn) { btn.classList.add('wrong'); btn.disabled = true; }
+            renderHangman();
+            remainingCount.textContent = Math.max(0, maxMistakes - mistakes);
         }
 
         updateDisplay();
@@ -267,7 +408,7 @@
     }
 
     function updateDisplay() {
-        const display = selectedWord.split('').map(char => 
+        const display = selectedWord.split('').map(char =>
             guessedLetters.includes(char) ? char.toUpperCase() : '_'
         ).join(' ');
         wordDisplay.textContent = display;
@@ -275,7 +416,7 @@
 
     function checkGameStatus() {
         const isWin = selectedWord.split('').every(char => guessedLetters.includes(char));
-        
+
         if (isWin) {
             statusMsg.textContent = "YOU WIN! 🎉";
             statusMsg.className = 'win-text';
@@ -289,11 +430,19 @@
 
     function endGame() {
         gameOver = true;
-        const buttons = document.querySelectorAll('.key');
-        buttons.forEach(btn => btn.disabled = true);
+        document.querySelectorAll('.key').forEach(btn => btn.disabled = true);
     }
 
-    // Physical Keyboard Support
+    // Difficulty selector
+    diffButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            difficulty = btn.dataset.diff;
+            diffButtons.forEach(b => b.classList.toggle('active', b === btn));
+            initGame();
+        });
+    });
+
+    // Physical keyboard support
     window.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
         if (/^[a-z]$/.test(key)) {
