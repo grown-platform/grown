@@ -50,8 +50,13 @@ import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import DevicesIcon from "@mui/icons-material/Devices";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import ShieldIcon from "@mui/icons-material/Shield";
+import GroupIcon from "@mui/icons-material/Group";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { Header } from "../../components/Header";
 import { SecuritySection } from "./SecuritySection";
+import { DashboardSection } from "./DashboardSection";
+import { GroupsSection } from "./GroupsSection";
+import { RolesSection } from "./RolesSection";
 import { whoami } from "../../api/client";
 import type { Org, User } from "../../api/types";
 import { apps, type AppTile } from "../../catalog/apps";
@@ -133,6 +138,8 @@ type SectionId =
   | "dashboard"
   | "services"
   | "users"
+  | "groups"
+  | "roles"
   | "sessions"
   | "audit"
   | "analytics"
@@ -148,10 +155,17 @@ const SECTIONS: {
     id: "dashboard",
     label: "Dashboard",
     icon: <DashboardIcon />,
-    enabled: false,
+    enabled: true,
   },
   { id: "services", label: "Services", icon: <AppsIcon />, enabled: true },
   { id: "users", label: "Users", icon: <PeopleIcon />, enabled: true },
+  { id: "groups", label: "Groups", icon: <GroupIcon />, enabled: true },
+  {
+    id: "roles",
+    label: "Admin roles",
+    icon: <AdminPanelSettingsIcon />,
+    enabled: true,
+  },
   {
     id: "sessions",
     label: "Sessions & logins",
@@ -180,7 +194,7 @@ const SECTIONS: {
 ];
 
 // Default section when the path is bare /admin.
-const DEFAULT_SECTION: SectionId = "services";
+const DEFAULT_SECTION: SectionId = "dashboard";
 
 function isSectionId(v: string | undefined): v is SectionId {
   return !!v && SECTIONS.some((s) => s.id === v && s.enabled);
@@ -340,8 +354,13 @@ export default function AdminApp({ user }: AdminAppProps) {
 
           {/* Main panel */}
           <Box sx={{ flex: 1, minWidth: 0 }}>
+            {section === "dashboard" && (
+              <DashboardSection onNavigate={(s) => setSection(s as SectionId)} />
+            )}
             {section === "services" && <AppsSection />}
             {section === "users" && <UsersSection />}
+            {section === "groups" && <GroupsSection />}
+            {section === "roles" && <RolesSection />}
             {section === "sessions" && <SessionsSection />}
             {section === "audit" && <AuditSection />}
             {section === "analytics" && <AnalyticsSection />}
