@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lights Out</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --cell-off: #333333;
+            --cell-on: #00f2ff;
+            --cell-shadow: rgba(0, 242, 255, 0.5);
+            --accent: #7000ff;
+            --accent-hover: #8a33ff;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .game-container {
+            background-color: var(--card-bg);
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            width: 340px;
+        }
+
+        h1 {
+            margin: 0 0 0.5rem 0;
+            font-weight: 300;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .stats {
+            margin-bottom: 1.5rem;
+            font-size: 1.1rem;
+            opacity: 0.8;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-bottom: 1.5rem;
+        }
+
+        .cell {
+            aspect-ratio: 1 / 1;
+            background-color: var(--cell-off);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            outline: none;
+        }
+
+        .cell.on {
+            background-color: var(--cell-on);
+            box-shadow: 0 0 15px var(--cell-shadow);
+        }
+
+        .cell:active {
+            transform: scale(0.9);
+        }
+
+        #win-message {
+            height: 24px;
+            margin-bottom: 1rem;
+            color: #00ff88;
+            font-weight: bold;
+            visibility: hidden;
+        }
+
+        #win-message.visible {
+            visibility: visible;
+            animation: pop 0.3s ease-out;
+        }
+
+        @keyframes pop {
+            0% { transform: scale(0.8); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background-color: var(--accent-hover);
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+    </style>
+</head>
+<body>
+
+<div class="game-container">
+    <h1>Lights Out</h1>
+    <div class="stats">Moves: <span id="move-count">0</span></div>
+    
+    <div id="grid" class="grid"></div>
+    
+    <div id="win-message">You Won! 🎉</div>
+    
+    <button id="new-game-btn">New Game</button>
+</div>
+
+<script>
+    const gridElement = document.getElementById('grid');
+    const moveDisplay = document.getElementById('move-count');
+    const winMessage = document.getElementById('win-message');
+    const newGameBtn = document.getElementById('new-game-btn');
+
+    const SIZE = 5;
+    let state = Array(SIZE * SIZE).fill(false);
+    let moves = 0;
+    let gameOver = false;
+
+    function initGrid() {
+        gridElement.innerHTML = '';
+        for (let i = 0; i < SIZE * SIZE; i++) {
+            const cell = document.createElement('button');
+            cell.classList.add('cell');
+            cell.dataset.index = i;
+            cell.addEventListener('click', () => handleCellClick(i));
+            gridElement.appendChild(cell);
+        }
+    }
+
+    function handleCellClick(index) {
+        if (gameOver) return;
+
+        moves++;
+        moveDisplay.textContent = moves;
+        
+        const r = Math.floor(index / SIZE);
+        const c = index % SIZE;
+        
+        toggleLights(r, c);
+        updateUI();
+        checkWin();
+    }
+
+    function toggleLights(r, c) {
+        const directions = [
+            [0, 0],   // center
+            [0, 1],   // right
+            [0, -1],  // left
+            [1, 0],   // down
+            [-1, 0]   // up
+        ];
+
+        directions.forEach(([dr, dc]) => {
+            const nr = r + dr;
+            const nc = c + dc;
+            if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+                const idx = nr * SIZE + nc;
+                state[idx] = !state[idx];
+            }
+        });
+    }
+
+    function updateUI() {
+        const cells = document.querySelectorAll('.cell');
+        cells.forEach((cell, i) => {
+            if (state[i]) {
+                cell.classList.add('on');
+            } else {
+                cell.classList.remove('on');
+            }
+        });
+    }
+
+    function checkWin() {
+        if (state.every(light => !light)) {
+            gameOver = true;
+            winMessage.classList.add('visible');
+        }
+    }
+
+    function startNewGame() {
+        // Reset state
+        state = Array(SIZE * SIZE).fill(false);
+        moves = 0;
+        gameOver = false;
+        moveDisplay.textContent = moves;
+        winMessage.classList.remove('visible');
+        
+        // Generate solvable state by simulating random clicks
+        // This is the most reliable way to ensure solvability
+        const shuffleMoves = 15 + Math.floor(Math.random() * 10);
+        for (let i = 0; i < shuffleMoves; i++) {
+            const randR = Math.floor(Math.random() * SIZE);
+            const randC = Math.floor(Math.random() * SIZE);
+            toggleLights(randR, randC);
+        }
+
+        // If by pure chance the shuffle results in all lights off, try again
+        if (state.every(light => !light)) {
+            startNewGame();
+            return;
+        }
+
+        updateUI();
+    }
+
+    newGameBtn.addEventListener('click', startNewGame);
+
+    // Initialize
+    initGrid();
+    startNewGame();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Hangman</title>
+    <style>
+        :root {
+            --primary: #4a90e2;
+            --secondary: #f5f7fa;
+            --accent: #e74c3c;
+            --success: #2ecc71;
+            --text: #2c3e50;
+            --shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--secondary);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        #game-container {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: var(--shadow);
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        h1 { margin-top: 0; color: var(--primary); }
+
+        #category-tag {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #hangman-svg {
+            width: 200px;
+            height: 200px;
+            margin: 10px auto;
+        }
+
+        .hangman-part {
+            stroke: var(--text);
+            stroke-width: 4;
+            fill: none;
+            stroke-linecap: round;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #word-display {
+            font-size: 2rem;
+            letter-spacing: 0.5rem;
+            margin: 1.5rem 0;
+            font-weight: bold;
+            min-height: 3rem;
+        }
+
+        #status-message {
+            font-weight: bold;
+            height: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .error-text { color: var(--accent); }
+        .win-text { color: var(--success); }
+
+        #keyboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(35px, 1fr));
+            gap: 8px;
+            margin-top: 1rem;
+        }
+
+        .key {
+            padding: 10px 5px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .key:hover:not(:disabled) {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .key:disabled { cursor: default; }
+        .key.correct { background: var(--success); color: white; border-color: var(--success); }
+        .key.wrong { background: var(--accent); color: white; border-color: var(--accent); }
+
+        #stats {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #7f8c8d;
+        }
+
+        #reset-btn {
+            margin-top: 1.5rem;
+            padding: 10px 25px;
+            font-size: 1rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        #reset-btn:hover { opacity: 0.9; }
+
+        @media (max-width: 400px) {
+            #word-display { font-size: 1.5rem; }
+            .key { padding: 8px 2px; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h1>Hangman</h1>
+    <div id="category-tag">Category</div>
+    
+    <svg id="hangman-svg" viewBox="0 0 200 200">
+        <!-- Gallows -->
+        <line x1="20" y1="190" x2="180" y2="190" stroke="#333" stroke-width="4" />
+        <line x1="50" y1="190" x2="50" y2="20" stroke="#333" stroke-width="4" />
+        <line x1="50" y1="20" x2="150" y2="20" stroke="#333" stroke-width="4" />
+        <line x1="150" y1="20" x2="150" y2="50" stroke="#333" stroke-width="4" />
+        
+        <!-- Hangman Parts -->
+        <circle id="part-1" class="hangman-part" cx="150" cy="70" r="20" /> <!-- Head -->
+        <line id="part-2" class="hangman-part" x1="150" y1="90" x2="150" y2="140" /> <!-- Body -->
+        <line id="part-3" class="hangman-part" x1="150" y1="110" x2="120" y2="130" /> <!-- L Arm -->
+        <line id="part-4" class="hangman-part" x1="150" y1="110" x2="180" y2="130" /> <!-- R Arm -->
+        <line id="part-5" class="hangman-part" x1="150" y1="140" x2="130" y2="170" /> <!-- L Leg -->
+        <line id="part-6" class="hangman-part" x1="150" y1="140" x2="170" y2="170" /> <!-- R Leg -->
+    </svg>
+
+    <div id="word-display">_ _ _ _ _</div>
+    <div id="status-message"></div>
+    <div id="keyboard"></div>
+    
+    <div id="stats">Guesses remaining: <span id="remaining-count">6</span></div>
+    
+    <button id="reset-btn">New Word</button>
+</div>
+
+<script>
+    const wordBank = [
+        { w: 'elephant', c: 'Animals' }, { w: 'giraffe', c: 'Animals' }, { w: 'kangaroo', c: 'Animals' },
+        { w: 'penguin', c: 'Animals' }, { w: 'dolphin', c: 'Animals' }, { w: 'cheetah', c: 'Animals' },
+        { w: 'hamster', c: 'Animals' }, { w: 'octopus', c: 'Animals' }, { w: 'scorpion', c: 'Animals' },
+        { w: 'zebra', c: 'Animals' }, { w: 'gorilla', c: 'Animals' }, { w: 'leopard', c: 'Animals' },
+        { w: 'rabbit', c: 'Animals' }, { w: 'panther', c: 'Animals' }, { w: 'platypus', c: 'Animals' },
+        { w: 'japan', c: 'Countries' }, { w: 'brazil', c: 'Countries' }, { w: 'canada', c: 'Countries' },
+        { w: 'germany', c: 'Countries' }, { w: 'australia', c: 'Countries' }, { w: 'egypt', c: 'Countries' },
+        { w: 'mexico', c: 'Countries' }, { w: 'france', c: 'Countries' }, { w: 'italy', c: 'Countries' },
+        { w: 'thailand', c: 'Countries' }, { w: 'norway', c: 'Countries' }, { w: 'greece', c: 'Countries' },
+        { w: 'india', c: 'Countries' }, { w: 'spain', c: 'Countries' }, { w: 'turkey', c: 'Countries' },
+        { w: 'apple', c: 'Fruits' }, { w: 'banana', c: 'Fruits' }, { w: 'pineapple', c: 'Fruits' },
+        { w: 'strawberry', c: 'Fruits' }, { w: 'blueberry', c: 'Fruits' }, { w: 'mango', c: 'Fruits' },
+        { w: 'watermelon', c: 'Fruits' }, { w: 'cherry', c: 'Fruits' }, { w: 'peach', c: 'Fruits' },
+        { w: 'kiwi', c: 'Fruits' }, { w: 'orange', c: 'Fruits' }, { w: 'grape', c: 'Fruits' },
+        { w: 'lemon', c: 'Fruits' }, { w: 'papaya', c: 'Fruits' }, { w: 'melon', c: 'Fruits' },
+        { w: 'javascript', c: 'Programming' }, { w: 'python', c: 'Programming' }, { w: 'html', c: 'Programming' },
+        { w: 'css', c: 'Programming' }, { w: 'algorithm', c: 'Programming' }, { w: 'variable', c: 'Programming' },
+        { w: 'function', c: 'Programming' }, { w: 'database', c: 'Programming' }, { w: 'compiler', c: 'Programming' },
+        { w: 'boolean', c: 'Programming' }, { w: 'string', c: 'Programming' }, { w: 'integer', c: 'Programming' },
+        { w: 'galaxy', c: 'Space' }, { w: 'astronaut', c: 'Space' }, { w: 'neptune', c: 'Space' },
+        { w: 'jupiter', c: 'Space' }, { w: 'comet', c: 'Space' }, { w: 'asteroid', c: 'Space' },
+        { w: 'universe', c: 'Space' }, { w: 'orbit', c: 'Space' }, { w: 'satellite', c: 'Space' },
+        { w: 'eclipse', c: 'Space' }, { w: 'meteor', c: 'Space' }, { w: 'planet', c: 'Space' }
+    ];
+
+    let selectedWord = '';
+    let category = '';
+    let guessedLetters = [];
+    let mistakes = 0;
+    const maxMistakes = 6;
+    let gameOver = false;
+
+    const categoryTag = document.getElementById('category-tag');
+    const wordDisplay = document.getElementById('word-display');
+    const statusMsg = document.getElementById('status-message');
+    const remainingCount = document.getElementById('remaining-count');
+    const keyboard = document.getElementById('keyboard');
+    const resetBtn = document.getElementById('reset-btn');
+
+    function initGame() {
+        const randomObj = wordBank[Math.floor(Math.random() * wordBank.length)];
+        selectedWord = randomObj.w.toLowerCase();
+        category = randomObj.c;
+        guessedLetters = [];
+        mistakes = 0;
+        gameOver = false;
+
+        categoryTag.textContent = category;
+        statusMsg.textContent = '';
+        statusMsg.className = '';
+        remainingCount.textContent = maxMistakes;
+        
+        // Reset SVG
+        for (let i = 1; i <= maxMistakes; i++) {
+            document.getElementById(`part-${i}`).style.opacity = '0';
+        }
+
+        createKeyboard();
+        updateDisplay();
+    }
+
+    function createKeyboard() {
+        keyboard.innerHTML = '';
+        const alphabet = 'abcdefghijklmnopqrstuvwxyz'.split('');
+        alphabet.forEach(letter => {
+            const btn = document.createElement('button');
+            btn.textContent = letter.toUpperCase();
+            btn.classList.add('key');
+            btn.addEventListener('click', () => handleGuess(letter));
+            keyboard.appendChild(btn);
+        });
+    }
+
+    function handleGuess(letter) {
+        if (gameOver || guessedLetters.includes(letter)) return;
+
+        guessedLetters.push(letter);
+        
+        const buttons = document.querySelectorAll('.key');
+        const btn = Array.from(buttons).find(b => b.textContent.toLowerCase() === letter);
+
+        if (selectedWord.includes(letter)) {
+            btn.classList.add('correct');
+            btn.disabled = true;
+        } else {
+            mistakes++;
+            btn.classList.add('wrong');
+            btn.disabled = true;
+            document.getElementById(`part-${mistakes}`).style.opacity = '1';
+            remainingCount.textContent = maxMistakes - mistakes;
+        }
+
+        updateDisplay();
+        checkGameStatus();
+    }
+
+    function updateDisplay() {
+        const display = selectedWord.split('').map(char => 
+            guessedLetters.includes(char) ? char.toUpperCase() : '_'
+        ).join(' ');
+        wordDisplay.textContent = display;
+    }
+
+    function checkGameStatus() {
+        const isWin = selectedWord.split('').every(char => guessedLetters.includes(char));
+        
+        if (isWin) {
+            statusMsg.textContent = "YOU WIN! 🎉";
+            statusMsg.className = 'win-text';
+            endGame();
+        } else if (mistakes >= maxMistakes) {
+            statusMsg.textContent = `GAME OVER! Word was: ${selectedWord.toUpperCase()}`;
+            statusMsg.className = 'error-text';
+            endGame();
+        }
+    }
+
+    function endGame() {
+        gameOver = true;
+        const buttons = document.querySelectorAll('.key');
+        buttons.forEach(btn => btn.disabled = true);
+    }
+
+    // Physical Keyboard Support
+    window.addEventListener('keydown', (e) => {
+        const key = e.key.toLowerCase();
+        if (/^[a-z]$/.test(key)) {
+            handleGuess(key);
+        }
+    });
+
+    resetBtn.addEventListener('click', initGame);
+
+    // Start the game
+    initGame();
+</script>
+
+</body>
+</html>

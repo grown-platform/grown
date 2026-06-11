@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>15-Puzzle Pro</title>
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+            --primary: #4a90e2;
+            --secondary: #6c757d;
+            --accent: #2ecc71;
+            --text: #2d3436;
+            --tile-bg: #ffffff;
+            --tile-text: #2d3436;
+            --empty-bg: #dfe6e9;
+            --shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        h1 { margin: 0 0 1rem 0; font-weight: 600; }
+
+        .stats-bar {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+            font-weight: bold;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            gap: 10px;
+            background-color: #b2bec3;
+            padding: 10px;
+            border-radius: 8px;
+            aspect-ratio: 1 / 1;
+            margin-bottom: 1.5rem;
+        }
+
+        .tile {
+            background-color: var(--tile-bg);
+            color: var(--tile-text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.1s, background-color 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .tile:hover {
+            background-color: #f8f9fa;
+            transform: scale(1.02);
+        }
+
+        .tile.empty {
+            background-color: var(--empty-bg);
+            cursor: default;
+            box-shadow: none;
+        }
+
+        .tile.empty:hover { transform: none; }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn-new { background-color: var(--primary); color: white; }
+        .btn-solve { background-color: var(--secondary); color: white; }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #message {
+            margin-top: 1rem;
+            font-weight: bold;
+            color: var(--accent);
+            height: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>15-Puzzle</h1>
+    
+    <div class="stats-bar">
+        <span>Moves: <span id="move-count">0</span></span>
+        <span>Time: <span id="timer">00:00</span></span>
+    </div>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="controls">
+        <button class="btn-new" onclick="newGame()">New Game</button>
+        <button class="btn-solve" id="solve-btn" onclick="solveGame()">Solve</button>
+    </div>
+
+    <div id="message"></div>
+</div>
+
+<script>
+    let board = [];
+    let moves = 0;
+    let seconds = 0;
+    let timerInterval = null;
+    let gameActive = false;
+    let isSolving = false;
+
+    const gridElement = document.getElementById('grid');
+    const moveDisplay = document.getElementById('move-count');
+    const timerDisplay = document.getElementById('timer');
+    const messageDisplay = document.getElementById('message');
+    const solveBtn = document.getElementById('solve-btn');
+
+    function initBoard() {
+        board = Array.from({length: 15}, (_, i) => i + 1);
+        board.push(0); // 0 represents the empty space
+    }
+
+    function render() {
+        gridElement.innerHTML = '';
+        board.forEach((val, idx) => {
+            const tile = document.createElement('div');
+            tile.classList.add('tile');
+            if (val === 0) {
+                tile.classList.add('empty');
+                tile.textContent = '';
+            } else {
+                tile.textContent = val;
+                tile.addEventListener('click', () => handleMove(idx));
+            }
+            gridElement.appendChild(tile);
+        });
+    }
+
+    function handleMove(idx) {
+        if (!gameActive || isSolving) return;
+        const emptyIdx = board.indexOf(0);
+        if (isAdjacent(idx, emptyIdx)) {
+            swap(idx, emptyIdx);
+            moves++;
+            moveDisplay.textContent = moves;
+            render();
+            checkWin();
+        }
+    }
+
+    function isAdjacent(idx1, idx2) {
+        const r1 = Math.floor(idx1 / 4), c1 = idx1 % 4;
+        const r2 = Math.floor(idx2 / 4), c2 = idx2 % 4;
+        return Math.abs(r1 - r2) + Math.abs(c1 - c2) === 1;
+    }
+
+    function swap(idx1, idx2) {
+        const temp = board[idx1];
+        board[idx1] = board[idx2];
+        board[idx2] = temp;
+    }
+
+    function shuffle() {
+        // Shuffle using valid moves to ensure solvability
+        for (let i = 0; i < 300; i++) {
+            const emptyIdx = board.indexOf(0);
+            const neighbors = [];
+            const r = Math.floor(emptyIdx / 4), c = emptyIdx % 4;
+            
+            if (r > 0) neighbors.push(emptyIdx - 4);
+            if (r < 3) neighbors.push(emptyIdx + 4);
+            if (c > 0) neighbors.push(emptyIdx - 1);
+            if (c < 3) neighbors.push(emptyIdx + 1);
+            
+            const randMove = neighbors[Math.floor(Math.random() * neighbors.length)];
+            swap(emptyIdx, randMove);
+        }
+    }
+
+    function startTimer() {
+        clearInterval(timerInterval);
+        seconds = 0;
+        timerInterval = setInterval(() => {
+            seconds++;
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            timerDisplay.textContent = `${m}:${s}`;
+        }, 1000);
+    }
+
+    function newGame() {
+        initBoard();
+        shuffle();
+        moves = 0;
+        seconds = 0;
+        gameActive = true;
+        isSolving = false;
+        moveDisplay.textContent = '0';
+        timerDisplay.textContent = '00:00';
+        messageDisplay.textContent = '';
+        solveBtn.disabled = false;
+        startTimer();
+        render();
+    }
+
+    function checkWin() {
+        const winState = Array.from({length: 15}, (_, i) => i + 1);
+        winState.push(0);
+        if (board.every((val, i) => val === winState[i])) {
+            gameActive = false;
+            clearInterval(timerInterval);
+            messageDisplay.textContent = "🎉 You Won!";
+            solveBtn.disabled = true;
+        }
+    }
+
+    // --- SOLVER (A* Algorithm) ---
+    
+    function getManhattanDistance(state) {
+        let dist = 0;
+        for (let i = 0; i < 16; i++) {
+            const val = state[i];
+            if (val !== 0) {
+                const targetIdx = val - 1;
+                const targetR = Math.floor(targetIdx / 4), targetC = targetIdx % 4;
+                const currR = Math.floor(i / 4), currC = i % 4;
+                dist += Math.abs(targetR - currR) + Math.abs(targetC - currC);
+            }
+        }
+        return dist;
+    }
+
+    async function solveGame() {
+        if (!gameActive || isSolving) return;
+        isSolving = true;
+        solveBtn.disabled = true;
+        messageDisplay.textContent = "Calculating...";
+
+        // Run A* in a timeout to prevent UI freeze
+        setTimeout(async () => {
+            const path = await findPath();
+            if (path) {
+                messageDisplay.textContent = "Solving...";
+                for (const moveIdx of path) {
+                    if (!gameActive) break;
+                    const emptyIdx = board.indexOf(0);
+                    swap(moveIdx, emptyIdx);
+                    moves++;
+                    moveDisplay.textContent = moves;
+                    render();
+                    await new Promise(r => setTimeout(r, 150));
+                }
+                messageDisplay.textContent = "";
+                isSolving = false;
+                checkWin();
+            } else {
+                messageDisplay.textContent = "No solution found.";
+                isSolving = false;
+                solveBtn.disabled = false;
+            }
+        }, 50);
+    }
+
+    async function findPath() {
+        const target = Array.from({length: 15}, (_, i) => i + 1);
+        target.push(0);
+        const targetStr = target.join(',');
+
+        const startStr = board.join(',');
+        if (startStr === targetStr) return [];
+
+        // Priority Queue implementation (Min-Heap)
+        const openSet = new PriorityQueue((a, b) => a.f < b.f);
+        const cameFrom = new Map();
+        const gScore = new Map();
+        const fScore = new Map();
+
+        openSet.push({ state: [...board], f: getManhattanDistance(board), idx: -1 });
+        gScore.set(startStr, 0);
+        fScore.set(startStr, getManhattanDistance(board));
+
+        while (!openSet.isEmpty()) {
+            const currentObj = openSet.pop();
+            const current = currentObj.state;
+            const currentStr = current.join(',');
+
+            if (currentStr === targetStr) {
+                return reconstructPath(cameFrom, currentStr);
+            }
+
+            const emptyIdx = current.indexOf(0);
+            const neighbors = getNeighborIndices(emptyIdx);
+
+            for (const nextIdx of neighbors) {
+                const nextState = [...current];
+                [nextState[emptyIdx], nextState[nextIdx]] = [nextState[nextIdx], nextState[emptyIdx]];
+                const nextStr = nextState.join(',');
+
+                const tentativeGScore = gScore.get(currentStr) + 1;
+
+                if (!gScore.has(nextStr) || tentativeGScore < gScore.get(nextStr)) {
+                    cameFrom.set(nextStr, { prevStr: currentStr, moveIdx: nextIdx });
+                    gScore.set(nextStr, tentativeGScore);
+                    const f = tentativeGScore + getManhattanDistance(nextState);
+                    fScore.set(nextStr, f);
+                    openSet.push({ state: nextState, f: f });
+                }
+            }
+            
+            // Safety break for browser performance
+            if (gScore.size > 5000) break; 
+        }
+        return null;
+    }
+
+    function getNeighborIndices(idx) {
+        const res = [];
+        const r = Math.floor(idx / 4), c = idx % 4;
+        if (r > 0) res.push(idx - 4);
+        if (r < 3) res.push(idx + 4);
+        if (c > 0) res.push(idx - 1);
+        if (c < 3) res.push(idx + 1);
+        return res;
+    }
+
+    function reconstructPath(cameFrom, currentStr) {
+        const path = [];
+        while (cameFrom.has(currentStr)) {
+            const step = cameFrom.get(currentStr);
+            path.push(step.moveIdx);
+            currentStr = step.prevStr;
+        }
+        return path.reverse();
+    }
+
+    class PriorityQueue {
+        constructor(comparator = (a, b) => a < b) {
+            this.heap = [];
+            this.comparator = comparator;
+        }
+        isEmpty() { return this.heap.length === 0; }
+        push(val) {
+            this.heap.push(val);
+            this.siftUp();
+        }
+        pop() {
+            if (this.heap.length === 1) return this.heap.pop();
+            const top = this.heap[0];
+            this.heap[0] = this.heap.pop();
+            this.siftDown();
+            return top;
+        }
+        siftUp() {
+            let node = this.heap.length - 1;
+            while (node > 0) {
+                let parent = (node - 1) >> 1;
+                if (this.comparator(this.heap[node], this.heap[parent])) {
+                    [this.heap[node], this.heap[parent]] = [this.heap[parent], this.heap[node]];
+                    node = parent;
+                } else break;
+            }
+        }
+        siftDown() {
+            let node = 0;
+            while (true) {
+                let left = (node << 1) + 1, right = (node << 1) + 2, smallest = node;
+                if (left < this.heap.length && this.comparator(this.heap[left], this.heap[smallest])) smallest = left;
+                if (right < this.heap.length && this.comparator(this.heap[right], this.heap[smallest])) smallest = right;
+                if (smallest !== node) {
+                    [this.heap[node], this.heap[smallest]] = [this.heap[smallest], this.heap[node]];
+                    node = smallest;
+                } else break;
+            }
+        }
+    }
+
+    // Start the game on load
+    newGame();
+</script>
+
+</body>
+</html>

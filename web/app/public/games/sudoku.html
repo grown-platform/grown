@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Sudoku</title>
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+            --error: #ef4444;
+            --border-color: #cbd5e1;
+            --border-thick: #475569;
+            --cell-size: 50px;
+            --fixed-color: #000000;
+            --user-color: #2563eb;
+            --conflict-bg: #fee2e2;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .game-container {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        h1 { margin-top: 0; font-weight: 700; color: var(--text-main); }
+
+        #sudoku-grid {
+            display: grid;
+            grid-template-columns: repeat(9, var(--cell-size));
+            grid-template-rows: repeat(9, var(--cell-size));
+            border: 2px solid var(--border-thick);
+            margin: 1.5rem auto;
+            user-select: none;
+        }
+
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            box-sizing: border-box;
+        }
+
+        /* 3x3 Borders */
+        .cell:nth-child(3n) { border-right: 2px solid var(--border-thick); }
+        .cell:nth-child(9n) { border-right: 1px solid var(--border-color); } /* Reset last col */
+        .cell:nth-child(n+19):nth-child(-n+27),
+        .cell:nth-child(n+46):nth-child(-n+54) { border-bottom: 2px solid var(--border-thick); }
+        /* Adjusting for grid logic: nth-child is tricky with 2D grids, better to use classes */
+
+        .cell.border-right { border-right: 2px solid var(--border-thick); }
+        .cell.border-bottom { border-bottom: 2px solid var(--border-thick); }
+
+        .cell:hover { background-color: #f1f5f9; }
+        .cell.selected { background-color: #dbeafe !important; outline: 2px solid var(--primary); z-index: 10; }
+        .cell.fixed { font-weight: 800; color: var(--fixed-color); cursor: default; }
+        .cell.user { color: var(--user-color); }
+        .cell.conflict { background-color: var(--conflict-bg); color: var(--error); }
+
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+
+        button:active { transform: scale(0.95); }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-secondary { background: var(--border-color); color: var(--text-main); }
+        .btn-danger { background: var(--error); color: white; }
+
+        .numpad {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .num-btn {
+            padding: 0.8rem;
+            background: #f1f5f9;
+            border-radius: 0.4rem;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        #message {
+            margin-top: 1rem;
+            font-weight: 600;
+            height: 1.5rem;
+        }
+
+        @media (max-width: 500px) {
+            :root { --cell-size: 38px; }
+            .game-container { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="game-container">
+    <h1>Sudoku</h1>
+    
+    <div class="controls">
+        <button class="btn-primary" onclick="game.newGame()">New Game</button>
+        <button class="btn-secondary" onclick="game.checkSolution()">Check</button>
+        <button class="btn-secondary" onclick="game.solve()">Solve</button>
+    </div>
+
+    <div id="sudoku-grid"></div>
+
+    <div class="numpad">
+        <button class="num-btn" onclick="game.inputNumber(1)">1</button>
+        <button class="num-btn" onclick="game.inputNumber(2)">2</button>
+        <button class="num-btn" onclick="game.inputNumber(3)">3</button>
+        <button class="num-btn" onclick="game.inputNumber(4)">4</button>
+        <button class="num-btn" onclick="game.inputNumber(5)">5</button>
+        <button class="num-btn" onclick="game.inputNumber(6)">6</button>
+        <button class="num-btn" onclick="game.inputNumber(7)">7</button>
+        <button class="num-btn" onclick="game.inputNumber(8)">8</button>
+        <button class="num-btn" onclick="game.inputNumber(9)">9</button>
+        <button class="num-btn" style="background:#cbd5e1" onclick="game.inputNumber(0)">⌫</button>
+    </div>
+
+    <div id="message"></div>
+</div>
+
+<script>
+class Sudoku {
+    constructor() {
+        this.grid = Array(81).fill(0);
+        this.solution = Array(81).fill(0);
+        this.initial = Array(81).fill(false);
+        this.selectedIndex = -1;
+        this.gridElement = document.getElementById('sudoku-grid');
+        this.messageElement = document.getElementById('message');
+        
+        this.init();
+    }
+
+    init() {
+        this.renderGrid();
+        this.newGame();
+        window.addEventListener('keydown', (e) => this.handleKeydown(e));
+    }
+
+    renderGrid() {
+        this.gridElement.innerHTML = '';
+        for (let i = 0; i < 81; i++) {
+            const cell = document.createElement('div');
+            cell.classList.add('cell');
+            
+            // Add thick borders for 3x3 boxes
+            const row = Math.floor(i / 9);
+            const col = i % 9;
+            if ((col + 1) % 3 === 0 && col < 8) cell.classList.add('border-right');
+            if ((row + 1) % 3 === 0 && row < 8) cell.classList.add('border-bottom');
+
+            cell.addEventListener('click', () => this.selectCell(i));
+            this.gridElement.appendChild(cell);
+        }
+    }
+
+    newGame() {
+        this.messageElement.textContent = '';
+        this.messageElement.style.color = 'inherit';
+        this.generateFullBoard();
+        this.solution = [...this.grid];
+        this.createPuzzle();
+        this.selectedIndex = -1;
+        this.updateUI();
+    }
+
+    generateFullBoard() {
+        this.grid = Array(81).fill(0);
+        this.solveSudoku(this.grid);
+    }
+
+    solveSudoku(board) {
+        for (let i = 0; i < 81; i++) {
+            if (board[i] === 0) {
+                const nums = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - 0.5);
+                for (let num of nums) {
+                    if (this.isValid(board, i, num)) {
+                        board[i] = num;
+                        if (this.solveSudoku(board)) return true;
+                        board[i] = 0;
+                    }
+                }
+                return false;
+            }
+        }
+        return true;
+    }
+
+    isValid(board, index, num) {
+        const row = Math.floor(index / 9);
+        const col = index % 9;
+        const boxRow = Math.floor(row / 3) * 3;
+        const boxCol = Math.floor(col / 3) * 3;
+
+        for (let i = 0; i < 9; i++) {
+            // Check row
+            if (board[row * 9 + i] === num) return false;
+            // Check col
+            if (board[i * 9 + col] === num) return false;
+            // Check box
+            const r = boxRow + Math.floor(i / 3);
+            const c = boxCol + (i % 3);
+            if (board[r * 9 + c] === num) return false;
+        }
+        return true;
+    }
+
+    createPuzzle() {
+        this.initial = Array(81).fill(true);
+        let attempts = 46; // 81 - 35 = 46 removals
+        while (attempts > 0) {
+            let idx = Math.floor(Math.random() * 81);
+            if (this.grid[idx] !== 0) {
+                this.grid[idx] = 0;
+                this.initial[idx] = false;
+                attempts--;
+            }
+        }
+    }
+
+    selectCell(index) {
+        this.selectedIndex = index;
+        this.updateUI();
+    }
+
+    inputNumber(num) {
+        if (this.selectedIndex === -1 || this.initial[this.selectedIndex]) return;
+        this.grid[this.selectedIndex] = num;
+        this.messageElement.textContent = '';
+        this.updateUI();
+    }
+
+    handleKeydown(e) {
+        if (e.key >= '1' && e.key <= '9') this.inputNumber(parseInt(e.key));
+        else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') this.inputNumber(0);
+        else if (e.key.startsWith('Arrow')) {
+            if (this.selectedIndex === -1) { this.selectedIndex = 0; }
+            else {
+                let idx = this.selectedIndex;
+                if (e.key === 'ArrowUp') idx -= 9;
+                if (e.key === 'ArrowDown') idx += 9;
+                if (e.key === 'ArrowLeft') idx -= 1;
+                if (e.key === 'ArrowRight') idx += 1;
+                if (idx >= 0 && idx < 81) this.selectedIndex = idx;
+            }
+            this.updateUI();
+        }
+    }
+
+    updateUI() {
+        const cells = this.gridElement.children;
+        const conflicts = this.getConflicts();
+
+        for (let i = 0; i < 81; i++) {
+            const cell = cells[i];
+            cell.textContent = this.grid[i] === 0 ? '' : this.grid[i];
+            cell.className = 'cell';
+            
+            // Re-apply borders
+            const row = Math.floor(i / 9);
+            const col = i % 9;
+            if ((col + 1) % 3 === 0 && col < 8) cell.classList.add('border-right');
+            if ((row + 1) % 3 === 0 && row < 8) cell.classList.add('border-bottom');
+
+            if (this.initial[i]) cell.classList.add('fixed');
+            else if (this.grid[i] !== 0) cell.classList.add('user');
+
+            if (this.selectedIndex === i) cell.classList.add('selected');
+            if (conflicts.has(i)) cell.classList.add('conflict');
+        }
+    }
+
+    getConflicts() {
+        const conflictIndices = new Set();
+        for (let i = 0; i < 81; i++) {
+            if (this.grid[i] === 0) continue;
+            const val = this.grid[i];
+            const row = Math.floor(i / 9);
+            const col = i % 9;
+            const boxRow = Math.floor(row / 3) * 3;
+            const boxCol = Math.floor(col / 3) * 3;
+
+            let isConflict = false;
+            for (let j = 0; j < 81; j++) {
+                if (i === j || this.grid[j] === 0) continue;
+                if (this.grid[j] === val) {
+                    const r = Math.floor(j / 9);
+                    const c = j % 9;
+                    const br = Math.floor(r / 3) * 3;
+                    const bc = Math.floor(c / 3) * 3;
+
+                    if (r === row || c === col || (br === boxRow && bc === boxCol)) {
+                        isConflict = true;
+                        break;
+                    }
+                }
+            }
+            if (isConflict) conflictIndices.add(i);
+        }
+        return conflictIndices;
+    }
+
+    checkSolution() {
+        const conflicts = this.getConflicts();
+        const isFull = !this.grid.includes(0);
+        
+        if (conflicts.size > 0) {
+            this.messageElement.textContent = "Conflicts detected!";
+            this.messageElement.style.color = "var(--error)";
+            return;
+        }
+
+        if (!isFull) {
+            this.messageElement.textContent = "Keep going! The board isn't full.";
+            this.messageElement.style.color = "var(--primary)";
+            return;
+        }
+
+        let correct = true;
+        for (let i = 0; i < 81; i++) {
+            if (this.grid[i] !== this.solution[i]) {
+                correct = false;
+                break;
+            }
+        }
+
+        if (correct) {
+            this.messageElement.textContent = "Perfect! You solved it!";
+            this.messageElement.style.color = "#10b981";
+        } else {
+            this.messageElement.textContent = "Not quite right. Check again.";
+            this.messageElement.style.color = "var(--error)";
+        }
+    }
+
+    solve() {
+        this.grid = [...this.solution];
+        this.updateUI();
+        this.messageElement.textContent = "Solution revealed!";
+        this.messageElement.style.color = "var(--primary)";
+    }
+}
+
+const game = new Sudoku();
+</script>
+
+</body>
+</html>

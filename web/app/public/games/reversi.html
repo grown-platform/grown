@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Reversi</title>
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --board-color: #2e7d32;
+            --cell-color: #388e3c;
+            --cell-border: #2e7d32;
+            --black-piece: #212121;
+            --white-piece: #ffffff;
+            --accent-color: #4caf50;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            color: var(--text-color);
+        }
+
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            text-align: center;
+        }
+
+        .stats {
+            display: flex;
+            gap: 40px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .piece-preview {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid #ccc;
+        }
+
+        .black-preview { background-color: var(--black-piece); }
+        .white-preview { background-color: var(--white-piece); }
+
+        #board {
+            display: grid;
+            grid-template-columns: repeat(8, 50px);
+            grid-template-rows: repeat(8, 50px);
+            background-color: var(--cell-border);
+            border: 5px solid var(--cell-border);
+            border-radius: 4px;
+            gap: 2px;
+        }
+
+        @media (min-width: 500px) {
+            #board {
+                grid-template-columns: repeat(8, 60px);
+                grid-template-rows: repeat(8, 60px);
+            }
+        }
+
+        .cell {
+            background-color: var(--cell-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .piece {
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            transition: transform 0.3s ease, background-color 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .piece.black { background-color: var(--black-piece); }
+        .piece.white { background-color: var(--white-piece); }
+
+        .legal-move-indicator {
+            width: 12px;
+            height: 12px;
+            background-color: rgba(0, 0, 0, 0.15);
+            border-radius: 50%;
+        }
+
+        .status-msg {
+            height: 24px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 10px 25px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            background-color: var(--accent-color);
+            color: white;
+        }
+
+        button:hover {
+            background-color: #388e3c;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <div class="header">
+            <h1>Reversi</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="piece-preview black-preview"></div>
+                    <span id="black-score">2</span>
+                </div>
+                <div class="stat-item">
+                    <div class="piece-preview white-preview"></div>
+                    <span id="white-score">2</span>
+                </div>
+            </div>
+            <div id="status" class="status-msg">Your turn</div>
+        </div>
+
+        <div id="board"></div>
+
+        <div class="controls">
+            <button onclick="resetGame()">New Game</button>
+        </div>
+    </div>
+
+    <script>
+        const BOARD_SIZE = 8;
+        const BLACK = 1; // Human
+        const WHITE = 2; // AI
+        const EMPTY = 0;
+
+        const WEIGHTS = [
+            [100, -20, 10,  5,  5, 10, -20, 100],
+            [-20, -50, -2, -2, -2, -2, -50, -20],
+            [ 10,  -2,  5,  1,  1,  5,  -2,  10],
+            [  5,  -2,  1,  0,  0,  1,  -2,   5],
+            [  5,  -2,  1,  0,  0,  1,  -2,   5],
+            [ 10,  -2,  5,  1,  1,  5,  -2,  10],
+            [-20, -50, -2, -2, -2, -2, -50, -20],
+            [100, -20, 10,  5,  5, 10, -20, 100]
+        ];
+
+        let board = [];
+        let currentPlayer = BLACK;
+        let gameOver = false;
+        let passCount = 0;
+
+        const boardEl = document.getElementById('board');
+        const blackScoreEl = document.getElementById('black-score');
+        const whiteScoreEl = document.getElementById('white-score');
+        const statusEl = document.getElementById('status');
+
+        function initBoard() {
+            board = Array(64).fill(EMPTY);
+            // Starting position
+            const mid = 28;
+            board[mid] = WHITE;
+            board[mid + 1] = BLACK;
+            board[mid + 16] = BLACK;
+            board[mid + 17] = WHITE;
+        }
+
+        function render() {
+            boardEl.innerHTML = '';
+            const legalMoves = getLegalMoves(board, currentPlayer);
+            
+            let blackCount = 0;
+            let whiteCount = 0;
+
+            for (let i = 0; i < 64; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.onclick = () => handleCellClick(i);
+
+                if (board[i] !== EMPTY) {
+                    const piece = document.createElement('div');
+                    piece.className = `piece ${board[i] === BLACK ? 'black' : 'white'}`;
+                    cell.appendChild(piece);
+                    if (board[i] === BLACK) blackCount++;
+                    else whiteCount++;
+                } else if (!gameOver && currentPlayer === BLACK && legalMoves.includes(i)) {
+                    const indicator = document.createElement('div');
+                    indicator.className = 'legal-move-indicator';
+                    cell.appendChild(indicator);
+                }
+
+                boardEl.appendChild(cell);
+            }
+
+            blackScoreEl.textContent = blackCount;
+            whiteScoreEl.textContent = whiteCount;
+        }
+
+        function getLegalMoves(currentBoard, player) {
+            const moves = [];
+            for (let i = 0; i < 64; i++) {
+                if (canMove(currentBoard, player, i)) {
+                    moves.push(i);
+                }
+            }
+            return moves;
+        }
+
+        function canMove(currentBoard, player, index) {
+            if (currentBoard[index] !== EMPTY) return false;
+            const opponent = player === BLACK ? WHITE : BLACK;
+            const directions = [
+                [-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]
+            ];
+
+            for (let [dr, dc] of directions) {
+                let r = Math.floor(index / 8) + dr;
+                let c = index % 8 + dc;
+                let count = 0;
+
+                while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                    const targetIdx = r * 8 + c;
+                    if (currentBoard[targetIdx] === opponent) {
+                        count++;
+                    } else if (currentBoard[targetIdx] === player) {
+                        if (count > 0) return true;
+                        break;
+                    } else {
+                        break;
+                    }
+                    r += dr;
+                    c += dc;
+                }
+            }
+            return false;
+        }
+
+        function executeMove(currentBoard, player, index) {
+            const newBoard = [...currentBoard];
+            newBoard[index] = player;
+            const opponent = player === BLACK ? WHITE : BLACK;
+            const directions = [
+                [-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]
+            ];
+
+            for (let [dr, dc] of directions) {
+                let r = Math.floor(index / 8) + dr;
+                let c = index % 8 + dc;
+                let path = [];
+
+                while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                    const targetIdx = r * 8 + c;
+                    if (newBoard[targetIdx] === opponent) {
+                        path.push(targetIdx);
+                    } else if (newBoard[targetIdx] === player) {
+                        path.forEach(idx => newBoard[idx] = player);
+                        break;
+                    } else {
+                        break;
+                    }
+                    r += dr;
+                    c += dc;
+                }
+            }
+            return newBoard;
+        }
+
+        function handleCellClick(index) {
+            if (gameOver || currentPlayer !== BLACK) return;
+
+            if (canMove(board, BLACK, index)) {
+                board = executeMove(board, BLACK, index);
+                currentPlayer = WHITE;
+                passCount = 0;
+                render();
+                checkGameState();
+                if (!gameOver) {
+                    statusEl.textContent = "Computer is thinking...";
+                    setTimeout(aiTurn, 600);
+                }
+            }
+        }
+
+        function aiTurn() {
+            const moves = getLegalMoves(board, WHITE);
+            if (moves.length > 0) {
+                const bestMove = minimax(board, 3, -Infinity, Infinity, true).move;
+                board = executeMove(board, WHITE, bestMove);
+                currentPlayer = BLACK;
+                passCount = 0;
+                statusEl.textContent = "Your turn";
+            } else {
+                passCount++;
+                currentPlayer = BLACK;
+                statusEl.textContent = "Computer passes";
+            }
+            
+            render();
+            checkGameState();
+            if (!gameOver && currentPlayer === BLACK) {
+                const playerMoves = getLegalMoves(board, BLACK);
+                if (playerMoves.length === 0) {
+                    passCount++;
+                    statusEl.textContent = "You pass";
+                    setTimeout(() => {
+                        currentPlayer = WHITE;
+                        aiTurn();
+                    }, 1000);
+                }
+            }
+        }
+
+        function checkGameState() {
+            const blackMoves = getLegalMoves(board, BLACK);
+            const whiteMoves = getLegalMoves(board, WHITE);
+            const isFull = !board.includes(EMPTY);
+
+            if (isFull || (blackMoves.length === 0 && whiteMoves.length === 0) || passCount >= 2) {
+                gameOver = true;
+                const b = board.filter(x => x === BLACK).length;
+                const w = board.filter(x => x === WHITE).length;
+                if (b > w) statusEl.textContent = "You Win!";
+                else if (w > b) statusEl.textContent = "Computer Wins!";
+                else statusEl.textContent = "It's a Draw!";
+            }
+        }
+
+        function evaluate(currentBoard) {
+            let score = 0;
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const idx = r * 8 + c;
+                    if (currentBoard[idx] === WHITE) score += WEIGHTS[r][c];
+                    else if (currentBoard[idx] === BLACK) score -= WEIGHTS[r][c];
+                }
+            }
+            return score;
+        }
+
+        function minimax(currentBoard, depth, alpha, beta, isMaximizing) {
+            if (depth === 0) {
+                return { score: evaluate(currentBoard) };
+            }
+
+            const player = isMaximizing ? WHITE : BLACK;
+            const moves = getLegalMoves(currentBoard, player);
+
+            if (moves.length === 0) {
+                // If no moves, it's effectively a pass, but for minimax we just return evaluation
+                return { score: evaluate(currentBoard) };
+            }
+
+            let bestMove = moves[0];
+
+            if (isMaximizing) {
+                let maxEval = -Infinity;
+                for (const move of moves) {
+                    const nextBoard = executeMove(currentBoard, WHITE, move);
+                    const evalResult = minimax(nextBoard, depth - 1, alpha, beta, false);
+                    if (evalResult.score > maxEval) {
+                        maxEval = evalResult.score;
+                        bestMove = move;
+                    }
+                    alpha = Math.max(alpha, evalResult.score);
+                    if (beta <= alpha) break;
+                }
+                return { score: maxEval, move: bestMove };
+            } else {
+                let minEval = Infinity;
+                for (const move of moves) {
+                    const nextBoard = executeMove(currentBoard, BLACK, move);
+                    const evalResult = minimax(nextBoard, depth - 1, alpha, beta, true);
+                    if (evalResult.score < minEval) {
+                        minEval = evalResult.score;
+                        bestMove = move;
+                    }
+                    beta = Math.min(beta, evalResult.score);
+                    if (beta <= alpha) break;
+                }
+                return { score: minEval, move: bestMove };
+            }
+        }
+
+        function resetGame() {
+            initBoard();
+            currentPlayer = BLACK;
+            gameOver = false;
+            passCount = 0;
+            statusEl.textContent = "Your turn";
+            render();
+        }
+
+        // Start
+        resetGame();
+    </script>
+</body>
+</html>
