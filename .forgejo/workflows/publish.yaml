@@ -43,7 +43,9 @@ jobs:
       - name: Verify daemon + registry auth (fail fast)
         run: |
           docker info >/dev/null
-          echo "${{ github.token }}" | docker login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
+          # The automatic job token can't write org-level packages; use the
+          # org REGISTRY_USER/REGISTRY_TOKEN secrets (package:write on grown).
+          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login "$REGISTRY" -u "${{ secrets.REGISTRY_USER }}" --password-stdin
 
       - name: Checkout
         run: |
