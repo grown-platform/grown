@@ -16,13 +16,6 @@ option go_package = "code.pick.haus/grown/grown/gen/go/grown/v1;grownv1";
 // collisions every Groups message is prefixed — `Group`, `GroupTopic`,
 // `GroupPost`, `GroupMember`, `ListGroupMembersRequest`, etc.
 service GroupsService {
-  // ── Member picker ──────────────────────────────────────────────────────────
-  // ListMembers lists the org's users for the group member picker. The RPC name
-  // is reused but every message it touches is Group-prefixed to stay unique.
-  rpc ListMembers(ListGroupMembersRequest) returns (ListGroupMembersResponse) {
-    option (google.api.http) = { get: "/api/v1/groups/members" };
-  }
-
   // ── Groups ───────────────────────────────────────────────────────────────
   rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {
     option (google.api.http) = { get: "/api/v1/groups" };
@@ -38,6 +31,17 @@ service GroupsService {
   }
   rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse) {
     option (google.api.http) = { delete: "/api/v1/groups/{id}" };
+  }
+
+  // ── Member picker ──────────────────────────────────────────────────────────
+  // ListMembers lists the org's users for the group member picker. It MUST be
+  // declared AFTER GetGroup (GET /api/v1/groups/{id}): grpc-gateway prepends
+  // handlers, so the last-registered route is matched first. The literal
+  // "/groups/members" route therefore has to register after the "/groups/{id}"
+  // wildcard, otherwise the wildcard captures "members" as an id and the request
+  // 500s on the UUID cast. Guarded by TestGroupsMembersRouting in internal/groups.
+  rpc ListMembers(ListGroupMembersRequest) returns (ListGroupMembersResponse) {
+    option (google.api.http) = { get: "/api/v1/groups/members" };
   }
 
   // ── Topics (conversations within a group) ──────────────────────────────────
