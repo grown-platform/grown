@@ -1,11 +1,19 @@
 package server
 
 import (
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+func init() {
+	// Go's mime table has no ".webmanifest" entry, so http.ServeFile would sniff
+	// PWA manifests as text/plain. Register the spec type so installable games
+	// (web/app/public/games/*.webmanifest) are served correctly.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 // StaticHandler serves the built React SPA from `dir`. Behavior:
 //   - GET /api/* always returns 404 (so the gateway mux handles it via the
