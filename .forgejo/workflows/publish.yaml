@@ -1,37 +1,64 @@
-name: Build and Push
-# Builds the grown-workspace image from the root Dockerfile and pushes it to the
-# Forgejo registry on every push to main (plus manual dispatch). Tags are
-# `YYYYMMDD-HHMMSS-<sha>` (+ `latest`); the Flux ImagePolicy "grown:grown" in the
-# gitops repo selects the newest timestamped tag and rolls it out. Mirrors the
-# version/auth scheme of pdf/.forgejo/workflows/publish.yaml.
+name: Build and Deploy
+# On every push to main (and manual dispatch) build the grown image from the
+# root Dockerfile and push it to the Forgejo container registry. Flux's
+# ImagePolicy "grown:grown" (in the gitops repo) then detects the newest
+# YYYYMMDD-HHMMSS-<sha> tag and rolls it out — so push-to-main auto-deploys.
+#
+# Runs on the in-cluster Forgejo runner (label `docker`, which has a dind
+# sidecar). Auth uses the automatic per-job token — no pre-created secrets.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 jobs:
   build:
-    runs-on: nix-arc
+    runs-on: docker
     steps:
+      - name: Diagnostics
+        run: |
+          set -x
+          echo "actor=$GITHUB_ACTOR repo=$GITHUB_REPOSITORY ref=$GITHUB_REF_NAME"
+          echo "server=$GITHUB_SERVER_URL sha=$GITHUB_SHA"
+          echo "DOCKER_HOST=${DOCKER_HOST:-<unset>}"
+          ls -la /var/run/docker.sock 2>&1 || true
+          (command -v git && git --version) || echo "NO git"
+          (command -v docker && docker version) || echo "NO docker cli yet"
+
+      - name: Ensure docker + git
+        run: |
+          if ! command -v docker >/dev/null 2>&1; then
+            (apt-get update -qq && apt-get install -y -qq docker.io git) \
+              || (apk add --no-cache docker-cli git) || true
+          fi
+          docker version
+
+      - name: Verify daemon + registry auth (fail fast)
+        run: |
+          docker info >/dev/null
+          REGISTRY="${GITHUB_SERVER_URL#https://}"
+          echo "${{ github.token }}" | docker login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
+
       - name: Checkout
         run: |
-          git config --global credential.helper '!f() { echo "username=token"; echo "password=${{ secrets.CLONE_TOKEN }}"; }; f'
-          git clone --depth 1 --branch "${GITHUB_REF_NAME}" "${{ github.server_url }}/${{ github.repository }}.git" .
-      - name: Set version
-        run: |
-          echo "VERSION=$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::8}" >> "$GITHUB_ENV"
-          echo "REGISTRY=$(echo "${{ github.server_url }}" | sed 's|https\?://||')" >> "$GITHUB_ENV"
+          git config --global --add safe.directory '*'
+          REGISTRY="${GITHUB_SERVER_URL#https://}"
+          git clone --depth 1 --branch "$GITHUB_REF_NAME" \
+            "https://token:${{ github.token }}@${REGISTRY}/${GITHUB_REPOSITORY}.git" src
+          cd src && git rev-parse HEAD
+
       - name: Build and push
         run: |
-          IMAGE="${REGISTRY}/grown/grown"
-          echo "${{ secrets.REGISTRY_PASSWORD }}" \
-            | nix run nixpkgs#skopeo -- login "${REGISTRY}" -u forgejo_admin --password-stdin
-          # Build the multi-stage Dockerfile for the cluster arch (amd64) and push
-          # both the immutable timestamped tag and a moving `latest`.
-          nix run nixpkgs#docker -- buildx build \
-            --platform linux/amd64 \
-            --build-arg "VERSION=${VERSION}" \
-            --build-arg "COMMIT=${GITHUB_SHA}" \
-            -t "${IMAGE}:${VERSION}" \
-            -t "${IMAGE}:latest" \
-            --push .
-          echo "Pushed ${IMAGE}:${VERSION}"
+          cd src
+          REGISTRY="${GITHUB_SERVER_URL#https://}"
+          IMAGE="$REGISTRY/grown/grown"
+          VERSION="$(date -u +%Y%m%d-%H%M%S)-$(echo "$GITHUB_SHA" | cut -c1-8)"
+          export DOCKER_BUILDKIT=1
+          docker build \
+            --build-arg VERSION="$VERSION" \
+            --build-arg COMMIT="$GITHUB_SHA" \
+            -t "$IMAGE:$VERSION" \
+            -t "$IMAGE:latest" \
+            .
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:latest"
+          echo "Pushed $IMAGE:$VERSION"
