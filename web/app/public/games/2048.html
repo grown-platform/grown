@@ -25,8 +25,12 @@
             color: var(--text-dark);
         }
 
+        :root {
+            --board-size: min(400px, 92vw);
+        }
+
         .header {
-            width: 400px;
+            width: var(--board-size);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -59,17 +63,18 @@
         }
 
         #grid-container {
-            width: 400px;
-            height: 400px;
+            width: var(--board-size);
+            height: var(--board-size);
             background-color: var(--grid-bg);
             border-radius: 6px;
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             grid-template-rows: repeat(4, 1fr);
-            gap: 12px;
-            padding: 12px;
+            gap: 3%;
+            padding: 3%;
             position: relative;
             box-sizing: border-box;
+            touch-action: none;
         }
 
         .tile {
@@ -80,7 +85,7 @@
             justify-content: center;
             align-items: center;
             font-weight: bold;
-            font-size: 35px;
+            font-size: min(35px, 8.75vw);
             background-color: var(--empty-tile);
         }
 
@@ -91,15 +96,15 @@
         .tile-16 { background: #f59563; color: var(--text-light); }
         .tile-32 { background: #f67c5f; color: var(--text-light); }
         .tile-64 { background: #f65e3b; color: var(--text-light); }
-        .tile-128 { background: #edcf72; color: var(--text-light); font-size: 30px; }
-        .tile-256 { background: #edcc61; color: var(--text-light); font-size: 30px; }
-        .tile-512 { background: #edc850; color: var(--text-light); font-size: 30px; }
-        .tile-1024 { background: #edc53f; color: var(--text-light); font-size: 25px; }
-        .tile-2048 { background: #edc22e; color: var(--text-light); font-size: 25px; }
+        .tile-128 { background: #edcf72; color: var(--text-light); font-size: min(30px, 7.5vw); }
+        .tile-256 { background: #edcc61; color: var(--text-light); font-size: min(30px, 7.5vw); }
+        .tile-512 { background: #edc850; color: var(--text-light); font-size: min(30px, 7.5vw); }
+        .tile-1024 { background: #edc53f; color: var(--text-light); font-size: min(25px, 6.25vw); }
+        .tile-2048 { background: #edc22e; color: var(--text-light); font-size: min(25px, 6.25vw); }
 
         .controls {
             margin-top: 20px;
-            width: 400px;
+            width: var(--board-size);
             display: flex;
             justify-content: flex-end;
         }
@@ -289,6 +294,34 @@
                 move(e.code);
             }
         });
+
+        // Touch swipe support (mobile) — reuses the same move() logic as the keyboard.
+        let touchStartX = 0, touchStartY = 0;
+        const SWIPE_MIN = 20; // minimum swipe distance in px
+
+        gridContainer.addEventListener('touchstart', (e) => {
+            const t = e.changedTouches[0];
+            touchStartX = t.clientX;
+            touchStartY = t.clientY;
+            e.preventDefault();
+        }, { passive: false });
+
+        gridContainer.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+
+        gridContainer.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            const t = e.changedTouches[0];
+            const dx = t.clientX - touchStartX;
+            const dy = t.clientY - touchStartY;
+            if (Math.abs(dx) < SWIPE_MIN && Math.abs(dy) < SWIPE_MIN) return;
+            if (Math.abs(dx) > Math.abs(dy)) {
+                move(dx > 0 ? 'ArrowRight' : 'ArrowLeft');
+            } else {
+                move(dy > 0 ? 'ArrowDown' : 'ArrowUp');
+            }
+        }, { passive: false });
 
         init();
     </script>

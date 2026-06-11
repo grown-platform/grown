@@ -69,6 +69,7 @@ const GAMES: AppTile[] = [
   arcade("hangman", "Hangman", "#6D4C41", "Spellcheck"),
   arcade("lights-out", "Lights Out", "#F4A261", "Lightbulb"),
   arcade("sliding-puzzle", "Sliding Puzzle", "#5C6BC0", "Extension"),
+  arcade("solitaire", "Solitaire", "#0B6E4F", "Style"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */

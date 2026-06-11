@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Solitaire</title>
+    <style>
+      :root {
+        --felt: #1b6b43;
+        --felt-dark: #14512f;
+        --card-bg: #fdfdfb;
+        --card-back: #2552a0;
+        --card-back-2: #3a6fd0;
+        --red: #d11e2a;
+        --black: #1c1c1c;
+        --slot: rgba(255, 255, 255, 0.16);
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: radial-gradient(circle at 50% 0%, var(--felt) 0%, var(--felt-dark) 100%);
+        color: #fff;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 8px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 2px 4px 8px;
+      }
+      header h1 {
+        font-size: 18px;
+        margin: 0;
+        flex: 1;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+      }
+      .stat {
+        font-variant-numeric: tabular-nums;
+        font-size: 13px;
+        opacity: 0.9;
+        background: rgba(0, 0, 0, 0.18);
+        padding: 4px 8px;
+        border-radius: 8px;
+      }
+      button.btn {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.16);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        padding: 6px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      button.btn:active { background: rgba(255, 255, 255, 0.3); }
+      #board {
+        position: relative;
+        flex: 1;
+        touch-action: none;
+        margin-top: 4px;
+      }
+      .slot {
+        position: absolute;
+        border: 2px solid var(--slot);
+        border-radius: 7px;
+        background: rgba(0, 0, 0, 0.12);
+      }
+      .slot.foundation::after {
+        content: attr(data-suit);
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 26px;
+        color: rgba(255, 255, 255, 0.22);
+      }
+      .slot.stock-empty::after {
+        content: "↺";
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 26px;
+        color: rgba(255, 255, 255, 0.32);
+      }
+      .card {
+        position: absolute;
+        border-radius: 7px;
+        background: var(--card-bg);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+        overflow: hidden;
+        will-change: transform, left, top;
+      }
+      .card .face {
+        position: absolute;
+        inset: 0;
+        padding: 4px 5px;
+        display: flex;
+        flex-direction: column;
+        line-height: 1;
+      }
+      .card .corner {
+        font-weight: 700;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: max-content;
+      }
+      .card .pip {
+        margin: auto;
+        font-weight: 700;
+      }
+      .card.red { color: var(--red); }
+      .card.black { color: var(--black); }
+      .card.back {
+        background: repeating-linear-gradient(45deg, var(--card-back) 0 6px, var(--card-back-2) 6px 12px);
+        border: 2px solid #f4f6fb;
+      }
+      .card.hint { box-shadow: 0 0 0 3px #ffd54a, 0 1px 3px rgba(0,0,0,.4); }
+      .card.dragging { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45); z-index: 9999; }
+      #overlay {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.55);
+        z-index: 10000;
+        border-radius: 8px;
+      }
+      #overlay.show { display: flex; }
+      #overlay .panel {
+        background: #fff;
+        color: #133;
+        padding: 24px 28px;
+        border-radius: 14px;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      }
+      #overlay h2 { margin: 0 0 6px; }
+      #overlay p { margin: 0 0 16px; opacity: 0.8; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Solitaire</h1>
+        <span class="stat" id="time">0:00</span>
+        <span class="stat" id="moves">0 moves</span>
+        <button class="btn" id="undo">Undo</button>
+        <button class="btn" id="new">New game</button>
+      </header>
+      <div id="board">
+        <div id="overlay">
+          <div class="panel">
+            <h2 id="ovTitle">You win! 🎉</h2>
+            <p id="ovSub"></p>
+            <button class="btn" id="ovNew" style="background:#1b6b43;border-color:#1b6b43;">New game</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // ── Model ────────────────────────────────────────────────────────────
+      const SUITS = ["♠", "♥", "♦", "♣"];
+      const RED = new Set(["♥", "♦"]);
+      const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+      const isRed = (s) => RED.has(s);
+      const color = (s) => (isRed(s) ? "red" : "black");
+
+      // Piles: stock, waste, foundations[0..3], tableau[0..6]
+      let state, history, moves, startTime, timerId, won;
+
+      function freshDeck() {
+        const d = [];
+        let id = 0;
+        for (const s of SUITS) for (let r = 0; r < 13; r++) d.push({ id: id++, suit: s, rank: r, up: false });
+        // Fisher–Yates
+        for (let i = d.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [d[i], d[j]] = [d[j], d[i]];
+        }
+        return d;
+      }
+
+      function deal() {
+        const deck = freshDeck();
+        const tableau = [[], [], [], [], [], [], []];
+        for (let col = 0; col < 7; col++) {
+          for (let row = 0; row <= col; row++) {
+            const c = deck.pop();
+            c.up = row === col; // only the last card of each column is face up
+            tableau[col].push(c);
+          }
+        }
+        return { stock: deck, waste: [], foundations: [[], [], [], []], tableau };
+      }
+
+      function newGame() {
+        state = deal();
+        history = [];
+        moves = 0;
+        won = false;
+        startTime = Date.now();
+        if (timerId) clearInterval(timerId);
+        timerId = setInterval(updateClock, 500);
+        overlay.classList.remove("show");
+        render();
+        updateHud();
+      }
+
+      // Deep snapshot for undo.
+      function snapshot() {
+        history.push(JSON.stringify(state));
+        if (history.length > 200) history.shift();
+      }
+      function undo() {
+        if (!history.length) return;
+        state = JSON.parse(history.pop());
+        moves++;
+        won = false;
+        overlay.classList.remove("show");
+        render();
+        updateHud();
+      }
+
+      // ── Rules ────────────────────────────────────────────────────────────
+      function canStackTableau(card, onto) {
+        if (!onto) return card.rank === 12; // empty column accepts a King
+        // `card` goes on top of `onto`: must be opposite color and one rank lower.
+        return onto.up && color(onto.suit) !== color(card.suit) && onto.rank === card.rank + 1;
+      }
+      function canStackFoundation(card, foundation) {
+        const top = foundation[foundation.length - 1];
+        if (!top) return card.rank === 0; // empty foundation accepts an Ace
+        return top.suit === card.suit && card.rank === top.rank + 1;
+      }
+
+      // Returns the list of cards picked up when grabbing `card` from a source.
+      function grabFrom(src) {
+        // src: {pile, index}
+        if (src.pile === "waste") return state.waste.slice(-1);
+        if (src.pile === "foundation") return state.foundations[src.i].slice(-1);
+        if (src.pile === "tableau") return state.tableau[src.i].slice(src.index);
+        return [];
+      }
+
+      function removeGrabbed(src, n) {
+        if (src.pile === "waste") return state.waste.splice(-n, n);
+        if (src.pile === "foundation") return state.foundations[src.i].splice(-n, n);
+        if (src.pile === "tableau") return state.tableau[src.i].splice(src.index);
+        return [];
+      }
+
+      // Try to place a grabbed group onto a destination pile. Returns true on success.
+      function tryDrop(src, group, dest) {
+        if (!group.length) return false;
+        const head = group[0];
+        if (dest.pile === "foundation") {
+          if (group.length !== 1) return false;
+          if (!canStackFoundation(head, state.foundations[dest.i])) return false;
+          snapshot();
+          removeGrabbed(src, 1);
+          state.foundations[dest.i].push(head);
+        } else if (dest.pile === "tableau") {
+          const col = state.tableau[dest.i];
+          if (!canStackTableau(head, col[col.length - 1])) return false;
+          snapshot();
+          const moved = removeGrabbed(src, group.length);
+          col.push(...moved);
+        } else {
+          return false;
+        }
+        afterMove(src);
+        return true;
+      }
+
+      // Auto-send a single card to a foundation if it fits anywhere.
+      function autoToFoundation(src) {
+        const group = grabFrom(src);
+        if (group.length !== 1) return false;
+        for (let i = 0; i < 4; i++) {
+          if (canStackFoundation(group[0], state.foundations[i])) {
+            return tryDrop(src, group, { pile: "foundation", i });
+          }
+        }
+        return false;
+      }
+
+      function afterMove(src) {
+        // Flip newly exposed tableau card.
+        if (src.pile === "tableau") {
+          const col = state.tableau[src.i];
+          const top = col[col.length - 1];
+          if (top && !top.up) top.up = true;
+        }
+        moves++;
+        updateHud();
+        render();
+        checkWin();
+      }
+
+      function drawStock() {
+        snapshot();
+        if (state.stock.length === 0) {
+          // recycle waste back to stock, face down, reversed
+          state.stock = state.waste.reverse().map((c) => ({ ...c, up: false }));
+          state.waste = [];
+        } else {
+          const c = state.stock.pop();
+          c.up = true;
+          state.waste.push(c);
+        }
+        moves++;
+        updateHud();
+        render();
+      }
+
+      function checkWin() {
+        if (state.foundations.every((f) => f.length === 13)) {
+          won = true;
+          clearInterval(timerId);
+          ovTitle.textContent = "You win! 🎉";
+          ovSub.textContent = `${moves} moves · ${fmtTime(Date.now() - startTime)}`;
+          overlay.classList.add("show");
+        }
+      }
+
+      // ── Layout / rendering ───────────────────────────────────────────────
+      const board = document.getElementById("board");
+      const overlay = document.getElementById("overlay");
+      const ovTitle = document.getElementById("ovTitle");
+      const ovSub = document.getElementById("ovSub");
+
+      let L = {}; // layout metrics + per-pile geometry, recomputed on render/resize
+
+      function computeLayout() {
+        const W = board.clientWidth;
+        const gap = Math.max(5, Math.round(W * 0.012));
+        const cardW = Math.floor((W - gap * 6) / 7);
+        const cardH = Math.round(cardW * 1.42);
+        const cols = [];
+        for (let i = 0; i < 7; i++) cols.push(i * (cardW + gap));
+        const topY = 0;
+        const tableauY = cardH + Math.round(cardH * 0.28);
+        let fanUp = Math.round(cardH * 0.30);
+        let fanDown = Math.round(cardH * 0.14);
+        // Compress the fan so the longest tableau column always fits the board
+        // height — keeps every card on screen on small/landscape phones.
+        const maxLen = state ? Math.max(1, ...state.tableau.map((c) => c.length)) : 1;
+        const availH = Math.max(140, board.clientHeight - tableauY - cardH);
+        if (maxLen > 1) fanUp = Math.min(fanUp, Math.max(11, Math.floor(availH / (maxLen - 1))));
+        fanDown = Math.min(fanDown, Math.round(fanUp * 0.5));
+        L = { W, gap, cardW, cardH, cols, topY, tableauY, fanUp, fanDown,
+          fontScale: cardW / 60 };
+        board.style.setProperty("--cw", cardW + "px");
+      }
+
+      // Geometry of each pile's drop zone (for hit testing). Filled during render.
+      let pileGeom = {};
+
+      function makeCardEl(card) {
+        const el = document.createElement("div");
+        el.className = "card " + (card.up ? color(card.suit) : "back");
+        el.style.width = L.cardW + "px";
+        el.style.height = L.cardH + "px";
+        el.dataset.id = card.id;
+        if (card.up) {
+          const fs = Math.max(10, Math.round(L.cardW * 0.30));
+          const pipFs = Math.max(16, Math.round(L.cardW * 0.5));
+          el.innerHTML =
+            `<div class="face"><div class="corner" style="font-size:${fs}px">` +
+            `<span>${RANKS[card.rank]}</span><span>${card.suit}</span></div>` +
+            `<div class="pip" style="font-size:${pipFs}px">${card.suit}</div></div>`;
+        }
+        return el;
+      }
+
+      function positionCard(el, x, y, z) {
+        el.style.left = x + "px";
+        el.style.top = y + "px";
+        el.style.zIndex = z;
+      }
+
+      function render() {
+        computeLayout();
+        // wipe everything except the overlay
+        [...board.querySelectorAll(".card,.slot")].forEach((n) => n.remove());
+        pileGeom = {};
+
+        const { cardW, cardH, cols, topY, tableauY, fanUp, fanDown } = L;
+
+        // --- Slots (drop placeholders) ---
+        const addSlot = (x, y, cls, suit) => {
+          const s = document.createElement("div");
+          s.className = "slot " + (cls || "");
+          s.style.left = x + "px";
+          s.style.top = y + "px";
+          s.style.width = cardW + "px";
+          s.style.height = cardH + "px";
+          if (suit) s.dataset.suit = suit;
+          board.appendChild(s);
+        };
+
+        // Stock (col0), Waste (col1), Foundations (col 3..6)
+        addSlot(cols[0], topY, state.stock.length ? "" : "stock-empty");
+        addSlot(cols[1], topY, "");
+        for (let i = 0; i < 4; i++) addSlot(cols[3 + i], topY, "foundation", SUITS[i]);
+
+        pileGeom.stock = { x: cols[0], y: topY, w: cardW, h: cardH, pile: "stock" };
+        pileGeom.waste = { x: cols[1], y: topY, w: cardW, h: cardH, pile: "waste" };
+        for (let i = 0; i < 4; i++)
+          pileGeom["f" + i] = { x: cols[3 + i], y: topY, w: cardW, h: cardH, pile: "foundation", i };
+
+        let z = 1;
+
+        // --- Stock ---
+        state.stock.forEach((card) => {
+          const el = makeCardEl({ ...card, up: false });
+          el.dataset.pile = "stock";
+          positionCard(el, cols[0], topY, z++);
+          board.appendChild(el);
+        });
+
+        // --- Waste (show top up to 1) ---
+        const wTop = state.waste[state.waste.length - 1];
+        if (wTop) {
+          const el = makeCardEl(wTop);
+          el.dataset.pile = "waste";
+          positionCard(el, cols[1], topY, z++);
+          board.appendChild(el);
+        }
+
+        // --- Foundations ---
+        state.foundations.forEach((f, i) => {
+          const top = f[f.length - 1];
+          if (top) {
+            const el = makeCardEl(top);
+            el.dataset.pile = "foundation";
+            el.dataset.i = i;
+            positionCard(el, cols[3 + i], topY, z++);
+            board.appendChild(el);
+          }
+        });
+
+        // --- Tableau ---
+        state.tableau.forEach((col, ci) => {
+          let y = tableauY;
+          const x = cols[ci];
+          if (col.length === 0) {
+            addSlot(x, tableauY, "");
+          }
+          col.forEach((card, idx) => {
+            const el = makeCardEl(card);
+            el.dataset.pile = "tableau";
+            el.dataset.i = ci;
+            el.dataset.index = idx;
+            positionCard(el, x, y, z++);
+            board.appendChild(el);
+            y += card.up ? fanUp : fanDown;
+          });
+          // drop geometry covers the whole column down to the last card
+          const lastY = col.length ? y - (col[col.length - 1].up ? fanUp : fanDown) : tableauY;
+          pileGeom["t" + ci] = { x, y: tableauY, w: cardW, h: lastY + cardH - tableauY, pile: "tableau", i: ci };
+        });
+        board.style.minHeight = "10px";
+      }
+
+      // ── Input (unified pointer: drag, tap-to-foundation, draw) ───────────
+      let drag = null; // {src, group, els[], dx, dy, moved, startX, startY}
+
+      function srcFromEl(el) {
+        const pile = el.dataset.pile;
+        if (pile === "stock") return { pile: "stock" };
+        if (pile === "waste") return { pile: "waste", index: state.waste.length - 1 };
+        if (pile === "foundation") return { pile: "foundation", i: +el.dataset.i };
+        if (pile === "tableau") return { pile: "tableau", i: +el.dataset.i, index: +el.dataset.index };
+        return null;
+      }
+
+      function isGrabbable(src) {
+        if (!src) return false;
+        if (src.pile === "stock") return false;
+        if (src.pile === "waste") return state.waste.length > 0;
+        if (src.pile === "foundation") return state.foundations[src.i].length > 0;
+        if (src.pile === "tableau") {
+          const card = state.tableau[src.i][src.index];
+          return card && card.up;
+        }
+        return false;
+      }
+
+      function onPointerDown(e) {
+        if (won) return;
+        const cardEl = e.target.closest(".card");
+        const slotEl = e.target.closest(".slot");
+        // Tapping the stock pile (card or empty slot) draws.
+        if ((cardEl && cardEl.dataset.pile === "stock") ||
+            (slotEl && pointInRect(localPoint(e), pileGeom.stock) && state.stock.length === 0)) {
+          drawStock();
+          return;
+        }
+        if (!cardEl) return;
+        const src = srcFromEl(cardEl);
+        if (!isGrabbable(src)) return;
+        const group = grabFrom(src);
+        if (!group.length) return;
+
+        const p = localPoint(e);
+        const baseRect = cardEl.getBoundingClientRect();
+        const boardRect = board.getBoundingClientRect();
+        const els = group.map((card) => board.querySelector(`.card[data-id="${card.id}"]`)).filter(Boolean);
+        drag = {
+          src, group, els,
+          offX: p.x - (baseRect.left - boardRect.left),
+          offY: p.y - (baseRect.top - boardRect.top),
+          startX: p.x, startY: p.y, moved: false,
+        };
+        els.forEach((el) => el.classList.add("dragging"));
+        board.setPointerCapture?.(e.pointerId);
+      }
+
+      function onPointerMove(e) {
+        if (!drag) return;
+        const p = localPoint(e);
+        if (!drag.moved) {
+          if (Math.hypot(p.x - drag.startX, p.y - drag.startY) < 6) return;
+          drag.moved = true;
+        }
+        const baseEl = drag.els[0];
+        const baseLeft = parseFloat(baseEl.style.left);
+        const baseTop = parseFloat(baseEl.style.top);
+        const targetLeft = p.x - drag.offX;
+        const targetTop = p.y - drag.offY;
+        const dx = targetLeft - baseLeft;
+        const dy = targetTop - baseTop;
+        drag.els.forEach((el) => { el.style.transform = `translate(${dx}px, ${dy}px)`; });
+      }
+
+      function onPointerUp(e) {
+        if (!drag) return;
+        const d = drag;
+        drag = null;
+        d.els.forEach((el) => { el.classList.remove("dragging"); el.style.transform = ""; });
+
+        if (!d.moved) {
+          // Tap: send to foundation if possible.
+          autoToFoundation(d.src);
+          return;
+        }
+        // Drop onto whichever pile is under the pointer (forgiving on touch).
+        const p = localPoint(e);
+        const dest = pileAt(p.x, p.y, d.src);
+        if (dest && tryDrop(d.src, d.group, dest)) return;
+        render(); // no valid drop → snap back
+      }
+
+      // Hit test pointer against pile geometry, excluding the source pile.
+      function pileAt(x, y, src) {
+        let best = null;
+        for (const key in pileGeom) {
+          const g = pileGeom[key];
+          if (g.pile === "stock") continue;
+          if (sameSrc(g, src)) continue;
+          if (pointInRect({ x, y }, g)) {
+            // prefer the closest center for overlapping zones
+            const cx = g.x + g.w / 2, cy = g.y + g.h / 2;
+            const dist = Math.hypot(x - cx, y - cy);
+            if (!best || dist < best.dist) best = { g, dist };
+          }
+        }
+        return best ? best.g : null;
+      }
+      function sameSrc(g, src) {
+        if (g.pile !== src.pile) return false;
+        if (g.pile === "tableau" || g.pile === "foundation") return g.i === src.i;
+        return true;
+      }
+      function pointInRect(p, r) { return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
+      function localPoint(e) {
+        const r = board.getBoundingClientRect();
+        return { x: e.clientX - r.left, y: e.clientY - r.top };
+      }
+
+      // ── HUD ──────────────────────────────────────────────────────────────
+      const movesEl = document.getElementById("moves");
+      const timeEl = document.getElementById("time");
+      function updateHud() { movesEl.textContent = moves + (moves === 1 ? " move" : " moves"); }
+      function fmtTime(ms) {
+        const s = Math.floor(ms / 1000);
+        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+      }
+      function updateClock() { if (!won) timeEl.textContent = fmtTime(Date.now() - startTime); }
+
+      // ── Wire up ──────────────────────────────────────────────────────────
+      board.addEventListener("pointerdown", onPointerDown);
+      board.addEventListener("pointermove", onPointerMove);
+      board.addEventListener("pointerup", onPointerUp);
+      board.addEventListener("pointercancel", () => { if (drag) { const d = drag; drag = null; d.els.forEach((el)=>{el.classList.remove("dragging");el.style.transform="";}); render(); } });
+      // double-tap / double-click anywhere on a card → auto to foundation
+      board.addEventListener("dblclick", (e) => {
+        const cardEl = e.target.closest(".card");
+        if (!cardEl) return;
+        const src = srcFromEl(cardEl);
+        if (isGrabbable(src)) autoToFoundation(src);
+      });
+      document.getElementById("new").addEventListener("click", newGame);
+      document.getElementById("ovNew").addEventListener("click", newGame);
+      document.getElementById("undo").addEventListener("click", undo);
+      window.addEventListener("resize", () => { if (state) render(); });
+      // prevent the page itself from scrolling/zooming during play
+      document.addEventListener("touchmove", (e) => { if (drag) e.preventDefault(); }, { passive: false });
+
+      newGame();
+    </script>
+  </body>
+</html>

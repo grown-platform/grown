@@ -14,6 +14,9 @@
             --white-piece: #ffffff;
             --accent-color: #4caf50;
             --text-color: #333;
+            /* Responsive cell size: shrinks to fit narrow phones, caps at 50px.
+               8 cells + 7*2px gaps must fit within ~96vw. */
+            --cell-size: min(50px, (96vw - 14px) / 8);
         }
 
         body {
@@ -69,18 +72,19 @@
 
         #board {
             display: grid;
-            grid-template-columns: repeat(8, 50px);
-            grid-template-rows: repeat(8, 50px);
+            grid-template-columns: repeat(8, var(--cell-size));
+            grid-template-rows: repeat(8, var(--cell-size));
             background-color: var(--cell-border);
             border: 5px solid var(--cell-border);
             border-radius: 4px;
             gap: 2px;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         @media (min-width: 500px) {
-            #board {
-                grid-template-columns: repeat(8, 60px);
-                grid-template-rows: repeat(8, 60px);
+            :root {
+                --cell-size: 60px;
             }
         }
 
@@ -91,6 +95,7 @@
             justify-content: center;
             position: relative;
             cursor: pointer;
+            touch-action: manipulation;
         }
 
         .piece {
@@ -105,8 +110,8 @@
         .piece.white { background-color: var(--white-piece); }
 
         .legal-move-indicator {
-            width: 12px;
-            height: 12px;
+            width: 24%;
+            height: 24%;
             background-color: rgba(0, 0, 0, 0.15);
             border-radius: 50%;
         }

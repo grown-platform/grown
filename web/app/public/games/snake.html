@@ -54,7 +54,57 @@
             background-color: #000;
             border-radius: 8px;
             border: 2px solid #334155;
+            /* Scale displayed size to fit narrow screens; internal resolution unchanged */
+            max-width: 100%;
+            height: auto;
+            touch-action: none;
         }
+
+        #game-container {
+            max-width: 360px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* On-screen d-pad for touch devices */
+        #dpad {
+            margin-top: 18px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, auto);
+            gap: 8px;
+            justify-items: center;
+            max-width: 220px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .dpad-btn {
+            width: 64px;
+            height: 56px;
+            min-width: 48px;
+            min-height: 48px;
+            padding: 0;
+            font-size: 1.6rem;
+            line-height: 1;
+            background-color: var(--card-bg);
+            color: var(--text-color);
+            border: 2px solid #334155;
+            border-radius: 12px;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .dpad-btn:hover {
+            background-color: #334155;
+            transform: none;
+        }
+
+        .dpad-up    { grid-column: 2; grid-row: 1; }
+        .dpad-left  { grid-column: 1; grid-row: 2; }
+        .dpad-right { grid-column: 3; grid-row: 2; }
+        .dpad-down  { grid-column: 2; grid-row: 3; }
 
         .controls {
             margin-top: 20px;
@@ -119,6 +169,13 @@
             <button onclick="resetGame()">Try Again</button>
         </div>
 
+        <div id="dpad">
+            <button type="button" class="dpad-btn dpad-up"    data-dx="0"  data-dy="-1" aria-label="Up">▲</button>
+            <button type="button" class="dpad-btn dpad-left"  data-dx="-1" data-dy="0"  aria-label="Left">◀</button>
+            <button type="button" class="dpad-btn dpad-right" data-dx="1"  data-dy="0"  aria-label="Right">▶</button>
+            <button type="button" class="dpad-btn dpad-down"  data-dx="0"  data-dy="1"  aria-label="Down">▼</button>
+        </div>
+
         <div class="controls">
             <button onclick="resetGame()">Restart Game</button>
         </div>
@@ -175,17 +232,28 @@
             }
         }
 
+        // Shared direction-change logic with 180°-reversal guard.
+        // Vertical moves only allowed when currently moving horizontally (direction.y === 0),
+        // horizontal moves only when moving vertically (direction.x === 0).
+        function setDirection(dx, dy) {
+            if (dy !== 0 && direction.y === 0) {
+                nextDirection = {x: 0, y: dy};
+            } else if (dx !== 0 && direction.x === 0) {
+                nextDirection = {x: dx, y: 0};
+            }
+        }
+
         function handleInput(e) {
             const key = e.key;
             // Arrow keys or WASD
-            if ((key === 'ArrowUp' || key === 'w' || key === 'W') && direction.y === 0) {
-                nextDirection = {x: 0, y: -1};
-            } else if ((key === 'ArrowDown' || key === 's' || key === 'S') && direction.y === 0) {
-                nextDirection = {x: 0, y: 1};
-            } else if ((key === 'ArrowLeft' || key === 'a' || key === 'A') && direction.x === 0) {
-                nextDirection = {x: -1, y: 0};
-            } else if ((key === 'ArrowRight' || key === 'd' || key === 'D') && direction.x === 0) {
-                nextDirection = {x: 1, y: 0};
+            if (key === 'ArrowUp' || key === 'w' || key === 'W') {
+                setDirection(0, -1);
+            } else if (key === 'ArrowDown' || key === 's' || key === 'S') {
+                setDirection(0, 1);
+            } else if (key === 'ArrowLeft' || key === 'a' || key === 'A') {
+                setDirection(-1, 0);
+            } else if (key === 'ArrowRight' || key === 'd' || key === 'D') {
+                setDirection(1, 0);
             }
         }
 
@@ -270,6 +338,50 @@
         }
 
         window.addEventListener('keydown', handleInput);
+
+        // --- Touch swipe controls on the canvas ---
+        const SWIPE_MIN = 20; // minimum px distance to register a swipe
+        let touchStartX = 0, touchStartY = 0;
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.changedTouches.length === 0) return;
+            const t = e.changedTouches[0];
+            touchStartX = t.clientX;
+            touchStartY = t.clientY;
+            e.preventDefault();
+        }, { passive: false });
+
+        // Prevent the page from scrolling while swiping over the canvas.
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', (e) => {
+            if (e.changedTouches.length === 0) return;
+            const t = e.changedTouches[0];
+            const dx = t.clientX - touchStartX;
+            const dy = t.clientY - touchStartY;
+            const absX = Math.abs(dx);
+            const absY = Math.abs(dy);
+
+            if (absX < SWIPE_MIN && absY < SWIPE_MIN) return; // too small, ignore tap
+
+            // Pick the axis with the larger delta.
+            if (absX > absY) {
+                setDirection(dx > 0 ? 1 : -1, 0);
+            } else {
+                setDirection(0, dy > 0 ? 1 : -1);
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        // --- On-screen d-pad controls ---
+        document.querySelectorAll('.dpad-btn').forEach((btn) => {
+            const dx = parseInt(btn.dataset.dx, 10);
+            const dy = parseInt(btn.dataset.dy, 10);
+            btn.addEventListener('click', () => setDirection(dx, dy));
+        });
+
         init();
     </script>
 </body>
