@@ -1,0 +1,35 @@
+name: Build and Push
+# Builds the grown-workspace image from the root Dockerfile and pushes it to the
+# Forgejo registry on every push to main (plus manual dispatch). Tags are
+# `YYYYMMDD-HHMMSS-<sha>` (+ `latest`); the Flux ImagePolicy "grown:grown" in the
+# gitops repo selects the newest timestamped tag and rolls it out. Mirrors the
+# version/auth scheme of pdf/.forgejo/workflows/publish.yaml.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: nix-arc
+    steps:
+      - name: Checkout
+        run: |
+          git config --global credential.helper '!f() { echo "username=token"; echo "password=${{ secrets.CLONE_TOKEN }}"; }; f'
+          git clone --depth 1 --branch "${GITHUB_REF_NAME}" "${{ github.server_url }}/${{ github.repository }}.git" .
+      - name: Set version
+        run: |
+          echo "VERSION=$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::8}" >> "$GITHUB_ENV"
+          echo "REGISTRY=$(echo "${{ github.server_url }}" | sed 's|https\?://||')" >> "$GITHUB_ENV"
+      - name: Build and push
+        run: |
+          IMAGE="${REGISTRY}/grown/grown"
+          echo "${{ secrets.REGISTRY_PASSWORD }}" \
+            | nix run nixpkgs#skopeo -- login "${REGISTRY}" -u forgejo_admin --password-stdin
+          # Build the multi-stage Dockerfile for the cluster arch (amd64) and push
+          # both the immutable timestamped tag and a moving `latest`.
+          nix run nixpkgs#docker -- buildx build \
+            --platform linux/amd64 \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:latest" \
+            --push .
+          echo "Pushed ${IMAGE}:${VERSION}"
