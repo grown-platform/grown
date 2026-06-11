@@ -1,0 +1,25 @@
+{
+  "name": "Hangman",
+  "short_name": "Hangman",
+  "description": "Hangman — play in your browser, online or off.",
+  "start_url": "/games/hangman.html",
+  "scope": "/games/hangman.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#6D4C41",
+  "icons": [
+    {
+      "src": "/games/icons/hangman.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/hangman.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -155,6 +155,17 @@
         .c5 { background-color: var(--c5); }
         .c6 { background-color: var(--c6); }
     </style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/mastermind.svg">
+    <link rel="manifest" href="/games/mastermind.webmanifest">
+    <meta name="theme-color" content="#7C4DFF">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Mastermind">
+    <link rel="apple-touch-icon" href="/games/icons/mastermind.svg">
+    <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}</script>
+    <!-- pwa:end -->
 </head>
 <body>
 

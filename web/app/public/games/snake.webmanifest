@@ -1,0 +1,25 @@
+{
+  "name": "Snake",
+  "short_name": "Snake",
+  "description": "Snake — play in your browser, online or off.",
+  "start_url": "/games/snake.html",
+  "scope": "/games/snake.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#43A047",
+  "icons": [
+    {
+      "src": "/games/icons/snake.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/snake.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -152,6 +152,17 @@
             color: var(--food-color);
         }
     </style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/snake.svg">
+    <link rel="manifest" href="/games/snake.webmanifest">
+    <meta name="theme-color" content="#43A047">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Snake">
+    <link rel="apple-touch-icon" href="/games/icons/snake.svg">
+    <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}</script>
+    <!-- pwa:end -->
 </head>
 <body>
 

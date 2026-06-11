@@ -158,7 +158,18 @@
       #overlay h2 { margin: 0 0 6px; }
       #overlay p { margin: 0 0 16px; opacity: 0.8; }
     </style>
-  </head>
+      <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/solitaire.svg">
+    <link rel="manifest" href="/games/solitaire.webmanifest">
+    <meta name="theme-color" content="#0B6E4F">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Solitaire">
+    <link rel="apple-touch-icon" href="/games/icons/solitaire.svg">
+    <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}</script>
+    <!-- pwa:end -->
+</head>
   <body>
     <div id="app">
       <header>

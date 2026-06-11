@@ -1,0 +1,25 @@
+{
+  "name": "Mastermind",
+  "short_name": "Mastermind",
+  "description": "Mastermind — play in your browser, online or off.",
+  "start_url": "/games/mastermind.html",
+  "scope": "/games/mastermind.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#7C4DFF",
+  "icons": [
+    {
+      "src": "/games/icons/mastermind.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/mastermind.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

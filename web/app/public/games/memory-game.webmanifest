@@ -1,0 +1,25 @@
+{
+  "name": "Memory",
+  "short_name": "Memory",
+  "description": "Memory — play in your browser, online or off.",
+  "start_url": "/games/memory-game.html",
+  "scope": "/games/memory-game.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#26A69A",
+  "icons": [
+    {
+      "src": "/games/icons/memory-game.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/memory-game.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

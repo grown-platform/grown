@@ -162,6 +162,17 @@
             .diff-btn { padding: 6px 11px; }
         }
     </style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/hangman.svg">
+    <link rel="manifest" href="/games/hangman.webmanifest">
+    <meta name="theme-color" content="#6D4C41">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Hangman">
+    <link rel="apple-touch-icon" href="/games/icons/hangman.svg">
+    <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}</script>
+    <!-- pwa:end -->
 </head>
 <body>
 
