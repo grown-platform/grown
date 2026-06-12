@@ -10,7 +10,10 @@ FROM node:22-alpine AS web
 WORKDIR /web
 # Build-time public URLs baked into the SPA. Override per-environment with
 # --build-arg. Defaults point at the pick.haus deployment's sibling apps.
-ARG VITE_PDF_URL=https://pdf.pick.haus/
+# PDF is served IN-PROCESS at /pdf on the same origin (GROWN_PDF_BUILTIN +
+# GROWN_PDF_STATIC_DIR); the standalone pdf.pick.haus host is retired, so the
+# tiles point at the same-domain /pdf rather than a dead external host.
+ARG VITE_PDF_URL=/pdf/
 ARG VITE_CRM_URL=https://crm.pick.haus/
 ARG VITE_GIT_URL=https://code.pick.haus
 ARG VITE_ASSEMBLE_URL=https://assemble.pick.haus
