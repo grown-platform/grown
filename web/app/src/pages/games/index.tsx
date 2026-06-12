@@ -67,7 +67,9 @@ const GAMES: AppTile[] = [
     comingSoon: false,
     iconName: "SportsEsports",
     iconUrl: "/games/mightymike/icon.png",
-    externalUrl: "/games/mightymike/index.html",
+    // Entry is play.html (not index.html): http.ServeFile 301-redirects any
+    // */index.html to the directory, which falls through to the SPA.
+    externalUrl: "/games/mightymike/play.html",
   },
   arcade("2048", "2048", "#EDC22E", "GridOn"),
   arcade("snake", "Snake", "#43A047", "Timeline"),
