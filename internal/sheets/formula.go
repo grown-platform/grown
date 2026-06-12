@@ -144,12 +144,49 @@ const (
 	kindStr
 	kindBool
 	kindErr
+	kindArray // a 2D result that spills into neighbouring cells
 )
 
 type value struct {
 	kind valKind
 	num  float64
 	str  string
+	arr  *spillArray // set only when kind == kindArray
+}
+
+// spillArray is a rectangular result produced by a dynamic-array function
+// (SEQUENCE, FILTER, SORT, UNIQUE, TRANSPOSE …). When a formula evaluates to
+// one, Recompute writes the top-left into the formula cell and "spills" the
+// remaining cells into the cells below/right (or #SPILL! if blocked).
+type spillArray struct {
+	rows, cols int
+	cells      [][]value // row-major, cells[r][c]
+}
+
+// arrayValue wraps a 2D result. A 1×1 array collapses to its scalar; an empty
+// array becomes #CALC! (matching Excel's empty dynamic-array result).
+func arrayValue(cells [][]value) value {
+	rows := len(cells)
+	cols := 0
+	if rows > 0 {
+		cols = len(cells[0])
+	}
+	if rows == 0 || cols == 0 {
+		return errVal("#CALC!")
+	}
+	if rows == 1 && cols == 1 {
+		return cells[0][0]
+	}
+	return value{kind: kindArray, arr: &spillArray{rows: rows, cols: cols, cells: cells}}
+}
+
+// topLeft returns the anchor cell of an array value (or the value itself when
+// it is not an array). Used when an array is consumed in a scalar context.
+func (v value) topLeft() value {
+	if v.kind == kindArray && v.arr != nil && v.arr.rows > 0 && v.arr.cols > 0 {
+		return v.arr.cells[0][0]
+	}
+	return v
 }
 
 var (
@@ -160,6 +197,7 @@ var (
 	errNum   = value{kind: kindErr, str: "#NUM!"}
 	errNA    = value{kind: kindErr, str: "#N/A"}
 	errCirc  = value{kind: kindErr, str: "#CIRC!"}
+	errSpill = value{kind: kindErr, str: "#SPILL!"}
 )
 
 func numVal(n float64) value { return value{kind: kindNum, num: n} }
@@ -180,6 +218,8 @@ func (v value) isTruthy() bool {
 		return v.num != 0
 	case kindStr:
 		return v.str != ""
+	case kindArray:
+		return v.topLeft().isTruthy()
 	}
 	return false
 }
@@ -194,6 +234,8 @@ func (v value) toNum() (float64, bool) {
 			return f, true
 		}
 		return 0, false
+	case kindArray:
+		return v.topLeft().toNum()
 	}
 	return 0, false
 }
@@ -215,6 +257,8 @@ func (v value) toStr() string {
 		return v.str
 	case kindErr:
 		return v.str
+	case kindArray:
+		return v.topLeft().toStr()
 	}
 	return ""
 }
@@ -228,6 +272,8 @@ func (v value) asInterface() interface{} {
 		return v.str
 	case kindErr:
 		return v.str
+	case kindArray:
+		return v.topLeft().asInterface()
 	}
 	return nil
 }
@@ -437,6 +483,27 @@ func Recompute(data []FsCellData) []FsCellData {
 		ev.results[addr] = errCirc
 	}
 
+	// Occupancy of the original sheet: cells already holding a value or formula.
+	// A dynamic array may not spill onto an occupied cell (→ #SPILL!).
+	occupied := make(map[cellAddr]bool)
+	isFormula := make(map[cellAddr]bool)
+	for _, cd := range data {
+		if cd.V == nil {
+			continue
+		}
+		a := cellAddr{row: cd.R, col: cd.C}
+		if strings.HasPrefix(cd.V.F, "=") {
+			isFormula[a] = true
+			occupied[a] = true
+		} else if cd.V.V != nil && cd.V.V != "" {
+			occupied[a] = true
+		}
+	}
+
+	// spillCells accumulates values written into non-anchor cells by dynamic
+	// arrays, keyed by address.
+	spillCells := make(map[cellAddr]value)
+
 	// Evaluate in topological order.
 	for _, addr := range order {
 		cell := ev.grid.get(addr)
@@ -445,27 +512,83 @@ func Recompute(data []FsCellData) []FsCellData {
 		}
 		ev.curRow, ev.curCol = addr.row, addr.col
 		v := ev.evalExpr(cell.F[1:])
+		if v.kind == kindArray {
+			v = ev.spill(addr, v.arr, occupied, isFormula, spillCells)
+		}
 		ev.results[addr] = v
 	}
 
-	// Write results back into celldata.
-	out := make([]FsCellData, len(data))
-	for i, cd := range data {
-		out[i] = cd
+	// Write results back. Update existing cells; append spilled cells that had
+	// no original celldata entry.
+	out := make([]FsCellData, 0, len(data)+len(spillCells))
+	seen := make(map[cellAddr]bool, len(data))
+	for _, cd := range data {
 		addr := cellAddr{row: cd.R, col: cd.C}
-		res, ok := ev.results[addr]
-		if !ok {
+		seen[addr] = true
+		nc := cd
+		if res, ok := ev.results[addr]; ok && cd.V != nil {
+			newCell := *cd.V
+			newCell.V = res.asInterface()
+			newCell.M = res.toStr()
+			nc.V = &newCell
+			ev.grid.set(addr, nc.V)
+		} else if sv, ok := spillCells[addr]; ok {
+			// Originally-empty cell that received a spilled value; keep its
+			// style/Extra fields but drop any (absent) formula.
+			var base FsCell
+			if cd.V != nil {
+				base = *cd.V
+			}
+			base.F = ""
+			base.V = sv.asInterface()
+			base.M = sv.toStr()
+			nc.V = &base
+		}
+		out = append(out, nc)
+	}
+	for addr, sv := range spillCells {
+		if seen[addr] {
 			continue
 		}
-		// Copy cell, updating v and m.
-		newCell := *cd.V
-		newCell.V = res.asInterface()
-		newCell.M = res.toStr()
-		out[i].V = &newCell
-		// Also update grid so downstream refs see computed value.
-		ev.grid.set(addr, out[i].V)
+		out = append(out, FsCellData{
+			R: addr.row, C: addr.col,
+			V: &FsCell{V: sv.asInterface(), M: sv.toStr()},
+		})
 	}
 	return out
+}
+
+// spill writes a dynamic array anchored at addr: the top-left lands in the
+// anchor (returned to the caller), the rest go into spillCells and the live
+// grid (so later formulas can read them). Returns #SPILL! when any non-anchor
+// target cell is already occupied by a value or another formula.
+func (ev *Evaluator) spill(addr cellAddr, arr *spillArray, occupied, isFormula map[cellAddr]bool, spillCells map[cellAddr]value) value {
+	if arr == nil || arr.rows == 0 || arr.cols == 0 {
+		return errVal("#CALC!")
+	}
+	for r := 0; r < arr.rows; r++ {
+		for c := 0; c < arr.cols; c++ {
+			if r == 0 && c == 0 {
+				continue
+			}
+			t := cellAddr{row: addr.row + r, col: addr.col + c}
+			if occupied[t] || isFormula[t] {
+				return errSpill
+			}
+		}
+	}
+	for r := 0; r < arr.rows; r++ {
+		for c := 0; c < arr.cols; c++ {
+			if r == 0 && c == 0 {
+				continue
+			}
+			t := cellAddr{row: addr.row + r, col: addr.col + c}
+			cv := arr.cells[r][c]
+			spillCells[t] = cv
+			ev.grid.set(t, &FsCell{V: cv.asInterface(), M: cv.toStr()})
+		}
+	}
+	return arr.cells[0][0]
 }
 
 // cellValue returns the evaluated value for a cell (reading from results cache
