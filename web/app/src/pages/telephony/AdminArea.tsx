@@ -14,6 +14,7 @@ import {
   Divider,
   FormControl,
   FormLabel,
+  ListItem,
 } from "@mui/joy";
 import DialpadIcon from "@mui/icons-material/Dialpad";
 import GroupsIcon from "@mui/icons-material/Groups";
@@ -26,6 +27,20 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import SupportAgentIcon from "@mui/icons-material/SupportAgent";
+import AssessmentIcon from "@mui/icons-material/Assessment";
+import FiberManualRecordIcon from "@mui/icons-material/FiberManualRecord";
+import MusicNoteIcon from "@mui/icons-material/MusicNote";
+import PrintIcon from "@mui/icons-material/Print";
+import ContactsIcon from "@mui/icons-material/Contacts";
+import PhonelinkSetupIcon from "@mui/icons-material/PhonelinkSetup";
+import SecurityIcon from "@mui/icons-material/Security";
+import BackupIcon from "@mui/icons-material/Backup";
+import HistoryIcon from "@mui/icons-material/History";
+import EmailIcon from "@mui/icons-material/Email";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import DownloadIcon from "@mui/icons-material/Download";
 import type { SvgIconComponent } from "@mui/icons-material";
 import type { User } from "../../api/types";
 
@@ -43,30 +58,60 @@ interface AdminAreaProps {
 }
 
 type SectionId =
+  | "dashboard"
   | "extensions"
   | "ringgroups"
+  | "queues"
   | "ivr"
   | "trunks"
   | "inbound"
   | "outbound"
   | "voicemail"
+  | "reports"
+  | "recordings"
+  | "moh"
+  | "fax"
+  | "contacts"
+  | "phones"
+  | "security"
+  | "backup"
+  | "activity"
+  | "email"
   | "settings";
 
 interface SectionDef {
   id: SectionId;
   label: string;
   icon: SvgIconComponent;
+  group: string;
 }
 
 const SECTIONS: SectionDef[] = [
-  { id: "extensions", label: "Extensions", icon: DialpadIcon },
-  { id: "ringgroups", label: "Ring Groups", icon: GroupsIcon },
-  { id: "ivr", label: "Auto-Attendant", icon: AccountTreeIcon },
-  { id: "trunks", label: "SIP Trunks", icon: RouterIcon },
-  { id: "inbound", label: "Inbound Routes", icon: CallReceivedIcon },
-  { id: "outbound", label: "Outbound Routes", icon: CallMadeIcon },
-  { id: "voicemail", label: "Voicemail", icon: VoicemailIcon },
-  { id: "settings", label: "Settings", icon: SettingsIcon },
+  { id: "dashboard", label: "Dashboard", icon: DashboardIcon, group: "Overview" },
+
+  { id: "extensions", label: "Extensions", icon: DialpadIcon, group: "Call Handling" },
+  { id: "ringgroups", label: "Ring Groups", icon: GroupsIcon, group: "Call Handling" },
+  { id: "queues", label: "Call Queues", icon: SupportAgentIcon, group: "Call Handling" },
+  { id: "ivr", label: "Auto-Attendant", icon: AccountTreeIcon, group: "Call Handling" },
+
+  { id: "trunks", label: "SIP Trunks", icon: RouterIcon, group: "Routing" },
+  { id: "inbound", label: "Inbound Routes", icon: CallReceivedIcon, group: "Routing" },
+  { id: "outbound", label: "Outbound Routes", icon: CallMadeIcon, group: "Routing" },
+
+  { id: "voicemail", label: "Voicemail", icon: VoicemailIcon, group: "Messaging & Media" },
+  { id: "moh", label: "Music on Hold", icon: MusicNoteIcon, group: "Messaging & Media" },
+  { id: "fax", label: "FAX", icon: PrintIcon, group: "Messaging & Media" },
+  { id: "contacts", label: "Contacts", icon: ContactsIcon, group: "Messaging & Media" },
+
+  { id: "reports", label: "Call Reports", icon: AssessmentIcon, group: "Reporting" },
+  { id: "recordings", label: "Recordings", icon: FiberManualRecordIcon, group: "Reporting" },
+  { id: "activity", label: "Activity Log", icon: HistoryIcon, group: "Reporting" },
+
+  { id: "phones", label: "Phones", icon: PhonelinkSetupIcon, group: "System" },
+  { id: "security", label: "Security", icon: SecurityIcon, group: "System" },
+  { id: "backup", label: "Backup & Restore", icon: BackupIcon, group: "System" },
+  { id: "email", label: "Email (SMTP)", icon: EmailIcon, group: "System" },
+  { id: "settings", label: "Settings", icon: SettingsIcon, group: "System" },
 ];
 
 const ACCENT = "#00897B";
@@ -897,15 +942,1261 @@ function SettingsSection() {
 }
 
 // ===========================================================================
+// 9. Dashboard
+// ===========================================================================
+
+function StatCard({
+  label,
+  value,
+  hint,
+  color,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  color?: "success" | "danger" | "neutral";
+}) {
+  return (
+    <Sheet variant="outlined" sx={{ borderRadius: "md", p: 2 }}>
+      <Typography level="body-xs" sx={{ opacity: 0.7, textTransform: "uppercase", letterSpacing: 0.5 }}>
+        {label}
+      </Typography>
+      <Typography
+        level="h2"
+        sx={{ mt: 0.5, color: color === "danger" ? "danger.500" : ACCENT }}
+      >
+        {value}
+      </Typography>
+      {hint && (
+        <Typography level="body-xs" sx={{ opacity: 0.6 }}>
+          {hint}
+        </Typography>
+      )}
+    </Sheet>
+  );
+}
+
+interface SystemStatusRow {
+  service: string;
+  status: "OK" | "Degraded" | "Down";
+  detail: string;
+}
+
+const MOCK_SYSTEM_STATUS: SystemStatusRow[] = [
+  { service: "PBX service (Asterisk)", status: "OK", detail: "Uptime 14d 6h" },
+  { service: "SIP registration", status: "OK", detail: "2 of 3 trunks registered" },
+  { service: "Recording storage", status: "Degraded", detail: "82% of 200 GB used" },
+];
+
+function DashboardSection() {
+  const [status] = useState(MOCK_SYSTEM_STATUS);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Dashboard"
+        description="At-a-glance health and activity for the PBX."
+      />
+
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(3, 1fr)", md: "repeat(5, 1fr)" },
+          gap: 2,
+          mb: 2.5,
+        }}
+      >
+        <StatCard label="Registered extensions" value="3 / 4" hint="1 offline" />
+        <StatCard label="Active calls" value="2" hint="1 inbound, 1 internal" />
+        <StatCard label="Trunks up" value="2 / 3" hint="1 down" color="danger" />
+        <StatCard label="Calls today" value="148" hint="62 in · 86 out" />
+        <StatCard label="Voicemails" value="7" hint="new messages" />
+      </Box>
+
+      <PanelSheet>
+        <Box sx={{ p: 2.5, pb: 1 }}>
+          <Typography level="title-sm">System status</Typography>
+        </Box>
+        <Table sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th style={{ width: 140 }}>Status</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {status.map((s) => (
+              <tr key={s.service}>
+                <td>{s.service}</td>
+                <td>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={s.status === "OK" ? "success" : s.status === "Degraded" ? "warning" : "danger"}
+                  >
+                    {s.status}
+                  </Chip>
+                </td>
+                <td style={{ opacity: 0.8 }}>{s.detail}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 10. Call Queues
+// ===========================================================================
+
+type QueueStrategy = "Ring all" | "Least recent" | "Fewest calls" | "Round robin";
+
+interface QueueRow {
+  name: string;
+  extension: string;
+  strategy: QueueStrategy;
+  agents: string[];
+  sla: number;
+  waiting: number;
+}
+
+const QUEUE_STRATEGIES: QueueStrategy[] = ["Ring all", "Least recent", "Fewest calls", "Round robin"];
+
+const MOCK_QUEUES: QueueRow[] = [
+  { name: "Sales Queue", extension: "2001", strategy: "Round robin", agents: ["1001", "1002", "1003"], sla: 30, waiting: 2 },
+  { name: "Support Queue", extension: "2002", strategy: "Least recent", agents: ["1002", "1004"], sla: 45, waiting: 0 },
+  { name: "Billing Queue", extension: "2003", strategy: "Fewest calls", agents: ["1003"], sla: 60, waiting: 1 },
+];
+
+function QueuesSection() {
+  const [adding, setAdding] = useState(false);
+  const [rows] = useState(MOCK_QUEUES);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Call Queues"
+        description="Hold callers in a queue and distribute them to agents by strategy."
+        action={
+          <Button
+            startDecorator={<AddIcon />}
+            onClick={() => setAdding((v) => !v)}
+            variant={adding ? "soft" : "solid"}
+            sx={{ bgcolor: adding ? undefined : ACCENT }}
+          >
+            Add queue
+          </Button>
+        }
+      />
+
+      {adding && (
+        <PanelSheet>
+          <Box sx={{ p: 2.5 }}>
+            <Typography level="title-sm" sx={{ mb: 1.5 }}>
+              New call queue
+            </Typography>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr 1fr" },
+                gap: 2,
+              }}
+            >
+              <FormControl>
+                <FormLabel>Queue name</FormLabel>
+                <Input placeholder="Sales Queue" />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Virtual extension</FormLabel>
+                <Input placeholder="2004" />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Strategy</FormLabel>
+                <Select defaultValue="Ring all">
+                  {QUEUE_STRATEGIES.map((s) => (
+                    <Option key={s} value={s}>
+                      {s}
+                    </Option>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl>
+                <FormLabel>SLA / timeout (s)</FormLabel>
+                <Input type="number" placeholder="30" />
+              </FormControl>
+            </Box>
+            <Box sx={{ display: "flex", gap: 1, mt: 2 }}>
+              <Button variant="solid" sx={{ bgcolor: ACCENT }} disabled>
+                Create queue
+              </Button>
+              <Button variant="plain" color="neutral" onClick={() => setAdding(false)}>
+                Cancel
+              </Button>
+            </Box>
+          </Box>
+        </PanelSheet>
+      )}
+
+      <PanelSheet>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th>Queue</th>
+              <th style={{ width: 110 }}>Extension</th>
+              <th style={{ width: 150 }}>Strategy</th>
+              <th>Agents</th>
+              <th style={{ width: 100 }}>SLA</th>
+              <th style={{ width: 110 }}>Waiting</th>
+              <th style={{ width: 90 }} aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.name}>
+                <td>{r.name}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.extension}</td>
+                <td>
+                  <Chip size="sm" variant="soft" color="primary">
+                    {r.strategy}
+                  </Chip>
+                </td>
+                <td>
+                  <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                    {r.agents.map((a) => (
+                      <Chip key={a} size="sm" variant="outlined">
+                        {a}
+                      </Chip>
+                    ))}
+                  </Box>
+                </td>
+                <td>{r.sla}s</td>
+                <td>
+                  <Chip size="sm" variant="soft" color={r.waiting > 0 ? "warning" : "neutral"}>
+                    {r.waiting} waiting
+                  </Chip>
+                </td>
+                <td>
+                  <RowActions />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 11. Call Reports (CDR)
+// ===========================================================================
+
+interface CdrRow {
+  time: string;
+  from: string;
+  to: string;
+  direction: "Inbound" | "Outbound" | "Internal";
+  duration: string;
+  status: "Answered" | "Missed" | "Voicemail" | "Busy";
+  recording: boolean;
+}
+
+const MOCK_CDR: CdrRow[] = [
+  { time: "2026-06-12 09:14", from: "+1 (415) 555-0100", to: "1001", direction: "Inbound", duration: "04:21", status: "Answered", recording: true },
+  { time: "2026-06-12 09:02", from: "1002", to: "+1 (650) 555-0190", direction: "Outbound", duration: "01:08", status: "Answered", recording: true },
+  { time: "2026-06-12 08:55", from: "+1 (415) 555-0142", to: "2001", direction: "Inbound", duration: "00:00", status: "Missed", recording: false },
+  { time: "2026-06-12 08:40", from: "1004", to: "1001", direction: "Internal", duration: "02:37", status: "Answered", recording: false },
+  { time: "2026-06-12 08:21", from: "+1 (212) 555-0177", to: "1003", direction: "Inbound", duration: "00:32", status: "Voicemail", recording: true },
+];
+
+function ReportsSection() {
+  const [rows] = useState(MOCK_CDR);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Call Reports"
+        description="Call-detail records (CDR) for inbound, outbound, and internal calls."
+      />
+
+      <PanelSheet>
+        <Box sx={{ p: 2.5 }}>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr 1fr 1fr" },
+              gap: 2,
+            }}
+          >
+            <FormControl>
+              <FormLabel>From date</FormLabel>
+              <Input type="date" defaultValue="2026-06-01" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>To date</FormLabel>
+              <Input type="date" defaultValue="2026-06-12" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Direction</FormLabel>
+              <Select defaultValue="all">
+                <Option value="all">All</Option>
+                <Option value="inbound">Inbound</Option>
+                <Option value="outbound">Outbound</Option>
+                <Option value="internal">Internal</Option>
+              </Select>
+            </FormControl>
+            <FormControl>
+              <FormLabel>Status</FormLabel>
+              <Select defaultValue="all">
+                <Option value="all">All</Option>
+                <Option value="answered">Answered</Option>
+                <Option value="missed">Missed</Option>
+                <Option value="voicemail">Voicemail</Option>
+                <Option value="busy">Busy</Option>
+              </Select>
+            </FormControl>
+          </Box>
+        </Box>
+      </PanelSheet>
+
+      <PanelSheet>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th style={{ width: 160 }}>Time</th>
+              <th>From</th>
+              <th>To</th>
+              <th style={{ width: 120 }}>Direction</th>
+              <th style={{ width: 110 }}>Duration</th>
+              <th style={{ width: 120 }}>Status</th>
+              <th style={{ width: 110 }}>Recording</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{r.time}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.from}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.to}</td>
+                <td>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={r.direction === "Inbound" ? "primary" : r.direction === "Outbound" ? "success" : "neutral"}
+                  >
+                    {r.direction}
+                  </Chip>
+                </td>
+                <td style={{ fontFamily: "monospace" }}>{r.duration}</td>
+                <td>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={r.status === "Answered" ? "success" : r.status === "Missed" || r.status === "Busy" ? "danger" : "warning"}
+                  >
+                    {r.status}
+                  </Chip>
+                </td>
+                <td>
+                  {r.recording ? (
+                    <IconButton size="sm" variant="plain" color="neutral" aria-label="Play recording">
+                      <PlayArrowIcon fontSize="small" />
+                    </IconButton>
+                  ) : (
+                    <Typography level="body-xs" sx={{ opacity: 0.5 }}>
+                      —
+                    </Typography>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 12. Recordings
+// ===========================================================================
+
+interface RecordingRow {
+  date: string;
+  parties: string;
+  duration: string;
+  size: string;
+}
+
+const MOCK_RECORDINGS: RecordingRow[] = [
+  { date: "2026-06-12 09:14", parties: "+1 (415) 555-0100 → 1001", duration: "04:21", size: "2.1 MB" },
+  { date: "2026-06-12 09:02", parties: "1002 → +1 (650) 555-0190", duration: "01:08", size: "0.6 MB" },
+  { date: "2026-06-12 08:21", parties: "+1 (212) 555-0177 → 1003", duration: "00:32", size: "0.3 MB" },
+  { date: "2026-06-11 16:48", parties: "1004 → +1 (415) 555-0142", duration: "08:55", size: "4.4 MB" },
+];
+
+function RecordingsSection() {
+  const [rows] = useState(MOCK_RECORDINGS);
+  const [retention, setRetention] = useState("90");
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Recordings"
+        description="Stored call recordings, storage usage, and retention policy."
+      />
+
+      <PanelSheet>
+        <Box sx={{ p: 2.5 }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
+            <Typography level="title-sm">Storage usage</Typography>
+            <Typography level="body-sm" sx={{ opacity: 0.7 }}>
+              164 GB of 200 GB
+            </Typography>
+          </Box>
+          <Box
+            sx={{
+              height: 10,
+              borderRadius: "sm",
+              bgcolor: "neutral.softBg",
+              overflow: "hidden",
+              mb: 2,
+            }}
+          >
+            <Box sx={{ width: "82%", height: "100%", bgcolor: ACCENT }} />
+          </Box>
+          <FormControl sx={{ maxWidth: 280 }}>
+            <FormLabel>Retention period</FormLabel>
+            <Select value={retention} onChange={(_, v) => v && setRetention(v)}>
+              <Option value="30">30 days</Option>
+              <Option value="90">90 days</Option>
+              <Option value="180">180 days</Option>
+              <Option value="365">1 year</Option>
+              <Option value="forever">Keep forever</Option>
+            </Select>
+          </FormControl>
+        </Box>
+      </PanelSheet>
+
+      <PanelSheet>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th style={{ width: 160 }}>Date</th>
+              <th>Parties</th>
+              <th style={{ width: 110 }}>Duration</th>
+              <th style={{ width: 100 }}>Size</th>
+              <th style={{ width: 130 }} aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{r.date}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.parties}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.duration}</td>
+                <td>{r.size}</td>
+                <td>
+                  <Box sx={{ display: "flex", gap: 0.5, justifyContent: "flex-end" }}>
+                    <IconButton size="sm" variant="plain" color="neutral" aria-label="Play">
+                      <PlayArrowIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="sm" variant="plain" color="neutral" aria-label="Download">
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="sm" variant="plain" color="danger" aria-label="Delete">
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 13. Music on Hold
+// ===========================================================================
+
+interface MohRow {
+  name: string;
+  tracks: number;
+  source: "Uploaded" | "Stream";
+  assignedTo: string;
+}
+
+const MOCK_MOH: MohRow[] = [
+  { name: "Default", tracks: 5, source: "Uploaded", assignedTo: "System default" },
+  { name: "Sales", tracks: 3, source: "Uploaded", assignedTo: "Sales Queue" },
+  { name: "Support", tracks: 4, source: "Stream", assignedTo: "Support Queue" },
+];
+
+function MohSection() {
+  const [rows] = useState(MOCK_MOH);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Music on Hold"
+        description="Playlists and audio sources played to callers while on hold."
+        action={
+          <Button startDecorator={<AddIcon />} variant="solid" sx={{ bgcolor: ACCENT }}>
+            Upload track
+          </Button>
+        }
+      />
+
+      <PanelSheet>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th>Playlist / Source</th>
+              <th style={{ width: 110 }}>Tracks</th>
+              <th style={{ width: 130 }}>Source</th>
+              <th>Assigned to</th>
+              <th style={{ width: 90 }} aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.name}>
+                <td>{r.name}</td>
+                <td>{r.tracks}</td>
+                <td>
+                  <Chip size="sm" variant="soft" color={r.source === "Stream" ? "primary" : "neutral"}>
+                    {r.source}
+                  </Chip>
+                </td>
+                <td style={{ opacity: 0.8 }}>{r.assignedTo}</td>
+                <td>
+                  <RowActions />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+
+      <Typography level="body-xs" sx={{ opacity: 0.6, px: 0.5 }}>
+        Each ring group and call queue can be assigned its own on-hold playlist.
+      </Typography>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 14. FAX
+// ===========================================================================
+
+interface FaxRow {
+  time: string;
+  direction: "Received" | "Sent";
+  party: string;
+  pages: number;
+  status: "Delivered" | "Failed" | "Received";
+}
+
+const MOCK_FAX: FaxRow[] = [
+  { time: "2026-06-12 08:30", direction: "Received", party: "+1 (415) 555-0133", pages: 3, status: "Received" },
+  { time: "2026-06-11 14:12", direction: "Sent", party: "+1 (650) 555-0144", pages: 1, status: "Delivered" },
+  { time: "2026-06-10 11:05", direction: "Sent", party: "+1 (212) 555-0166", pages: 2, status: "Failed" },
+];
+
+function FaxSection() {
+  const [faxToEmail, setFaxToEmail] = useState(true);
+  const [rows] = useState(MOCK_FAX);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="FAX"
+        description="Virtual fax with fax-to-email delivery and a transmission log."
+      />
+
+      <PanelSheet>
+        <Box sx={{ p: 2.5 }}>
+          <Typography level="title-sm" sx={{ mb: 1.5 }}>
+            Fax-to-email
+          </Typography>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 2,
+              mb: 2,
+              maxWidth: 560,
+            }}
+          >
+            <Box>
+              <Typography level="body-sm" sx={{ fontWeight: 600 }}>
+                Deliver inbound faxes by email
+              </Typography>
+              <Typography level="body-xs" sx={{ opacity: 0.7 }}>
+                Received faxes are converted to PDF and emailed.
+              </Typography>
+            </Box>
+            <Switch checked={faxToEmail} onChange={(e) => setFaxToEmail(e.target.checked)} />
+          </Box>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+              gap: 2,
+              maxWidth: 640,
+            }}
+          >
+            <FormControl>
+              <FormLabel>Fax DID</FormLabel>
+              <Input placeholder="+1 (415) 555-0199" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Deliver to email</FormLabel>
+              <Input placeholder="fax@example.com" />
+            </FormControl>
+          </Box>
+        </Box>
+      </PanelSheet>
+
+      <PanelSheet>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th style={{ width: 160 }}>Time</th>
+              <th style={{ width: 120 }}>Direction</th>
+              <th>Party</th>
+              <th style={{ width: 90 }}>Pages</th>
+              <th style={{ width: 130 }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{r.time}</td>
+                <td>
+                  <Chip size="sm" variant="soft" color={r.direction === "Received" ? "primary" : "success"}>
+                    {r.direction}
+                  </Chip>
+                </td>
+                <td style={{ fontFamily: "monospace" }}>{r.party}</td>
+                <td>{r.pages}</td>
+                <td>
+                  <Chip size="sm" variant="soft" color={r.status === "Failed" ? "danger" : "success"}>
+                    {r.status}
+                  </Chip>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 15. Contacts (Phonebook)
+// ===========================================================================
+
+interface ContactRow {
+  name: string;
+  company: string;
+  numbers: string;
+  ext: string;
+}
+
+const MOCK_CONTACTS: ContactRow[] = [
+  { name: "Jane Cooper", company: "Acme Corp", numbers: "+1 (415) 555-0100", ext: "—" },
+  { name: "Robert Fox", company: "Globex", numbers: "+1 (650) 555-0190", ext: "—" },
+  { name: "Ada Lovelace", company: "Internal", numbers: "+1 (415) 555-0188", ext: "1001" },
+  { name: "Front Desk", company: "Internal", numbers: "+1 (415) 555-0188", ext: "1004" },
+];
+
+function ContactsSection() {
+  const [adding, setAdding] = useState(false);
+  const [rows] = useState(MOCK_CONTACTS);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Contacts (Phonebook)"
+        description="Company phonebook used for caller-ID name lookup and click-to-dial."
+        action={
+          <Button
+            startDecorator={<AddIcon />}
+            onClick={() => setAdding((v) => !v)}
+            variant={adding ? "soft" : "solid"}
+            sx={{ bgcolor: adding ? undefined : ACCENT }}
+          >
+            Add contact
+          </Button>
+        }
+      />
+
+      {adding && (
+        <PanelSheet>
+          <Box sx={{ p: 2.5 }}>
+            <Typography level="title-sm" sx={{ mb: 1.5 }}>
+              New contact
+            </Typography>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                gap: 2,
+              }}
+            >
+              <FormControl>
+                <FormLabel>Name</FormLabel>
+                <Input placeholder="Jane Cooper" />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Company</FormLabel>
+                <Input placeholder="Acme Corp" />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Phone number</FormLabel>
+                <Input placeholder="+1 (415) 555-0100" />
+              </FormControl>
+              <FormControl>
+                <FormLabel>Internal extension</FormLabel>
+                <Input placeholder="optional" />
+              </FormControl>
+            </Box>
+            <Box sx={{ display: "flex", gap: 1, mt: 2 }}>
+              <Button variant="solid" sx={{ bgcolor: ACCENT }} disabled>
+                Save contact
+              </Button>
+              <Button variant="soft" color="neutral" disabled>
+                Import CSV
+              </Button>
+              <Button variant="plain" color="neutral" onClick={() => setAdding(false)}>
+                Cancel
+              </Button>
+            </Box>
+          </Box>
+        </PanelSheet>
+      )}
+
+      <PanelSheet>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Company</th>
+              <th>Number(s)</th>
+              <th style={{ width: 90 }}>Ext</th>
+              <th style={{ width: 90 }} aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td>{r.name}</td>
+                <td style={{ opacity: 0.8 }}>{r.company}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.numbers}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.ext}</td>
+                <td>
+                  <RowActions />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 16. Phones (Provisioning)
+// ===========================================================================
+
+interface PhoneRow {
+  mac: string;
+  model: string;
+  extension: string;
+  firmware: string;
+  status: "Online" | "Offline";
+}
+
+const MOCK_PHONES: PhoneRow[] = [
+  { mac: "00:04:13:AB:CD:01", model: "Yealink T54W", extension: "1002", firmware: "96.86.0.85", status: "Online" },
+  { mac: "00:04:13:AB:CD:02", model: "Yealink T31P", extension: "1004", firmware: "124.86.0.40", status: "Online" },
+  { mac: "00:15:65:11:22:33", model: "Grandstream GRP2614", extension: "1003", firmware: "1.0.11.48", status: "Offline" },
+];
+
+function PhonesSection() {
+  const [autoProvision, setAutoProvision] = useState(true);
+  const [rows] = useState(MOCK_PHONES);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Phones (Provisioning)"
+        description="Auto-provision desk phones with their extension and firmware settings."
+        action={
+          <Button startDecorator={<AddIcon />} variant="solid" sx={{ bgcolor: ACCENT }}>
+            Add phone
+          </Button>
+        }
+      />
+
+      <PanelSheet>
+        <Box
+          sx={{
+            p: 2.5,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography level="body-sm" sx={{ fontWeight: 600 }}>
+              Auto-provisioning
+            </Typography>
+            <Typography level="body-xs" sx={{ opacity: 0.7 }}>
+              Serve config files to phones by MAC over the provisioning server.
+            </Typography>
+          </Box>
+          <Switch checked={autoProvision} onChange={(e) => setAutoProvision(e.target.checked)} />
+        </Box>
+      </PanelSheet>
+
+      <PanelSheet>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th style={{ width: 180 }}>MAC address</th>
+              <th>Model</th>
+              <th style={{ width: 130 }}>Extension</th>
+              <th style={{ width: 150 }}>Firmware</th>
+              <th style={{ width: 120 }}>Status</th>
+              <th style={{ width: 90 }} aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.mac}>
+                <td style={{ fontFamily: "monospace" }}>{r.mac}</td>
+                <td>{r.model}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.extension}</td>
+                <td style={{ fontFamily: "monospace", opacity: 0.8 }}>{r.firmware}</td>
+                <td>
+                  <Chip size="sm" variant="soft" color={r.status === "Online" ? "success" : "danger"}>
+                    {r.status}
+                  </Chip>
+                </td>
+                <td>
+                  <RowActions />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 17. Security
+// ===========================================================================
+
+interface BlockedRow {
+  value: string;
+  type: "IP" | "Number";
+  reason: string;
+  added: string;
+}
+
+const MOCK_BLOCKED: BlockedRow[] = [
+  { value: "203.0.113.45", type: "IP", reason: "Repeated SIP auth failures", added: "2026-06-10" },
+  { value: "198.51.100.12", type: "IP", reason: "Port scan", added: "2026-06-08" },
+  { value: "+1 (900) 555-0123", type: "Number", reason: "Toll fraud pattern", added: "2026-06-05" },
+];
+
+const ALL_COUNTRIES = ["United States", "Canada", "United Kingdom", "Germany", "Australia", "Mexico"];
+
+function SecuritySection() {
+  const [sipIds, setSipIds] = useState(true);
+  const [allowedCountries, setAllowedCountries] = useState<string[]>(["United States", "Canada"]);
+  const [rows] = useState(MOCK_BLOCKED);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Security"
+        description="Anti-fraud, intrusion detection, and SIP attack protection."
+      />
+
+      <PanelSheet>
+        <Box sx={{ p: 2.5 }}>
+          <Typography level="title-sm" sx={{ mb: 1.5 }}>
+            Protection
+          </Typography>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 2,
+              mb: 2,
+              maxWidth: 560,
+            }}
+          >
+            <Box>
+              <Typography level="body-sm" sx={{ fontWeight: 600 }}>
+                SIP intrusion detection (IDS)
+              </Typography>
+              <Typography level="body-xs" sx={{ opacity: 0.7 }}>
+                Auto-ban IPs that exceed the failed-auth threshold.
+              </Typography>
+            </Box>
+            <Switch checked={sipIds} onChange={(e) => setSipIds(e.target.checked)} />
+          </Box>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+              gap: 2,
+              maxWidth: 640,
+            }}
+          >
+            <FormControl>
+              <FormLabel>Failed-auth attempts before lockout</FormLabel>
+              <Input type="number" defaultValue="5" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Lockout duration (minutes)</FormLabel>
+              <Input type="number" defaultValue="30" />
+            </FormControl>
+            <FormControl sx={{ gridColumn: { sm: "1 / -1" } }}>
+              <FormLabel>Allowed outbound countries</FormLabel>
+              <Select
+                multiple
+                value={allowedCountries}
+                onChange={(_, value) => setAllowedCountries(value as string[])}
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                    {selected.map((o) => (
+                      <Chip key={o.value} size="sm" variant="soft">
+                        {o.label}
+                      </Chip>
+                    ))}
+                  </Box>
+                )}
+              >
+                {ALL_COUNTRIES.map((c) => (
+                  <Option key={c} value={c}>
+                    {c}
+                  </Option>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+        </Box>
+      </PanelSheet>
+
+      <PanelSheet>
+        <Box sx={{ p: 2.5, pb: 1 }}>
+          <Typography level="title-sm">Blacklist</Typography>
+        </Box>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th>Value</th>
+              <th style={{ width: 100 }}>Type</th>
+              <th>Reason</th>
+              <th style={{ width: 130 }}>Added</th>
+              <th style={{ width: 90 }} aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.value}>
+                <td style={{ fontFamily: "monospace" }}>{r.value}</td>
+                <td>
+                  <Chip size="sm" variant="soft" color={r.type === "IP" ? "primary" : "warning"}>
+                    {r.type}
+                  </Chip>
+                </td>
+                <td style={{ opacity: 0.8 }}>{r.reason}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.added}</td>
+                <td>
+                  <RowActions />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 18. Backup & Restore
+// ===========================================================================
+
+interface BackupRow {
+  date: string;
+  size: string;
+  type: "Scheduled" | "Manual";
+}
+
+const MOCK_BACKUPS: BackupRow[] = [
+  { date: "2026-06-12 02:00", size: "248 MB", type: "Scheduled" },
+  { date: "2026-06-11 02:00", size: "246 MB", type: "Scheduled" },
+  { date: "2026-06-10 15:32", size: "245 MB", type: "Manual" },
+];
+
+function BackupSection() {
+  const [rows] = useState(MOCK_BACKUPS);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Backup & Restore"
+        description="Scheduled and on-demand backups of PBX configuration and data."
+        action={
+          <Button startDecorator={<BackupIcon />} variant="solid" sx={{ bgcolor: ACCENT }}>
+            Backup now
+          </Button>
+        }
+      />
+
+      <PanelSheet>
+        <Box sx={{ p: 2.5 }}>
+          <Typography level="title-sm" sx={{ mb: 1.5 }}>
+            Schedule
+          </Typography>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr 1fr" },
+              gap: 2,
+            }}
+          >
+            <FormControl>
+              <FormLabel>Frequency</FormLabel>
+              <Select defaultValue="daily">
+                <Option value="daily">Daily</Option>
+                <Option value="weekly">Weekly</Option>
+                <Option value="monthly">Monthly</Option>
+              </Select>
+            </FormControl>
+            <FormControl>
+              <FormLabel>Time</FormLabel>
+              <Input type="time" defaultValue="02:00" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Keep last N backups</FormLabel>
+              <Input type="number" defaultValue="14" />
+            </FormControl>
+          </Box>
+        </Box>
+      </PanelSheet>
+
+      <PanelSheet>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th style={{ width: 180 }}>Date</th>
+              <th style={{ width: 120 }}>Size</th>
+              <th style={{ width: 140 }}>Type</th>
+              <th style={{ width: 160 }} aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{r.date}</td>
+                <td>{r.size}</td>
+                <td>
+                  <Chip size="sm" variant="soft" color={r.type === "Scheduled" ? "primary" : "neutral"}>
+                    {r.type}
+                  </Chip>
+                </td>
+                <td>
+                  <Box sx={{ display: "flex", gap: 0.5, justifyContent: "flex-end" }}>
+                    <Button size="sm" variant="soft" color="neutral">
+                      Restore
+                    </Button>
+                    <IconButton size="sm" variant="plain" color="neutral" aria-label="Download">
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 19. Activity Log
+// ===========================================================================
+
+interface ActivityRow {
+  time: string;
+  actor: string;
+  event: string;
+  detail: string;
+}
+
+const MOCK_ACTIVITY: ActivityRow[] = [
+  { time: "2026-06-12 09:20", actor: "admin", event: "Extension created", detail: "Added extension 1005" },
+  { time: "2026-06-12 08:11", actor: "admin", event: "Trunk updated", detail: "Backup-SIP max channels 5 → 8" },
+  { time: "2026-06-11 17:45", actor: "system", event: "IP banned", detail: "203.0.113.45 (auth failures)" },
+  { time: "2026-06-11 02:00", actor: "system", event: "Backup completed", detail: "Scheduled backup 246 MB" },
+  { time: "2026-06-10 14:30", actor: "ada@example.com", event: "Login", detail: "Admin console sign-in" },
+];
+
+function ActivitySection() {
+  const [rows] = useState(MOCK_ACTIVITY);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Activity Log"
+        description="Audit trail of configuration changes and system events."
+      />
+      <PanelSheet>
+        <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
+          <thead>
+            <tr>
+              <th style={{ width: 160 }}>Time</th>
+              <th style={{ width: 180 }}>Actor</th>
+              <th style={{ width: 180 }}>Event</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{r.time}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.actor}</td>
+                <td>{r.event}</td>
+                <td style={{ opacity: 0.8 }}>{r.detail}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
+// 20. Email (SMTP)
+// ===========================================================================
+
+function EmailSection() {
+  const [useTls, setUseTls] = useState(true);
+
+  return (
+    <Box>
+      <SectionHeader
+        title="Email (SMTP)"
+        description="Outbound mail server for voicemail-to-email, faxes, and reports."
+      />
+      <PanelSheet>
+        <Box sx={{ p: 2.5 }}>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+              gap: 2,
+              maxWidth: 640,
+            }}
+          >
+            <FormControl>
+              <FormLabel>SMTP host</FormLabel>
+              <Input placeholder="smtp.example.com" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Port</FormLabel>
+              <Input type="number" defaultValue="587" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Username</FormLabel>
+              <Input placeholder="pbx@example.com" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Password</FormLabel>
+              <Input type="password" placeholder="••••••••" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>From address</FormLabel>
+              <Input placeholder="pbx@example.com" />
+            </FormControl>
+            <FormControl>
+              <FormLabel>From name</FormLabel>
+              <Input defaultValue="Company PBX" />
+            </FormControl>
+          </Box>
+
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 2,
+              mt: 2,
+              maxWidth: 640,
+            }}
+          >
+            <Box>
+              <Typography level="body-sm" sx={{ fontWeight: 600 }}>
+                Use TLS / STARTTLS
+              </Typography>
+              <Typography level="body-xs" sx={{ opacity: 0.7 }}>
+                Encrypt the connection to the mail server.
+              </Typography>
+            </Box>
+            <Switch checked={useTls} onChange={(e) => setUseTls(e.target.checked)} />
+          </Box>
+
+          <Box sx={{ display: "flex", gap: 1, mt: 2 }}>
+            <Button variant="solid" sx={{ bgcolor: ACCENT }} disabled>
+              Save
+            </Button>
+            <Button variant="soft" color="neutral" disabled>
+              Send test email
+            </Button>
+          </Box>
+        </Box>
+      </PanelSheet>
+    </Box>
+  );
+}
+
+// ===========================================================================
 // Section renderer
 // ===========================================================================
 
 function renderSection(id: SectionId) {
   switch (id) {
+    case "dashboard":
+      return <DashboardSection />;
     case "extensions":
       return <ExtensionsSection />;
     case "ringgroups":
       return <RingGroupsSection />;
+    case "queues":
+      return <QueuesSection />;
     case "ivr":
       return <IvrSection />;
     case "trunks":
@@ -916,6 +2207,26 @@ function renderSection(id: SectionId) {
       return <OutboundSection />;
     case "voicemail":
       return <VoicemailSection />;
+    case "moh":
+      return <MohSection />;
+    case "fax":
+      return <FaxSection />;
+    case "contacts":
+      return <ContactsSection />;
+    case "reports":
+      return <ReportsSection />;
+    case "recordings":
+      return <RecordingsSection />;
+    case "activity":
+      return <ActivitySection />;
+    case "phones":
+      return <PhonesSection />;
+    case "security":
+      return <SecuritySection />;
+    case "backup":
+      return <BackupSection />;
+    case "email":
+      return <EmailSection />;
     case "settings":
       return <SettingsSection />;
   }
@@ -926,7 +2237,18 @@ function renderSection(id: SectionId) {
 // ===========================================================================
 
 export function AdminArea({ user }: AdminAreaProps) {
-  const [active, setActive] = useState<SectionId>("extensions");
+  const [active, setActive] = useState<SectionId>("dashboard");
+
+  // Preserve declaration order while grouping by category for the sub-nav.
+  const groupedSections: { group: string; items: SectionDef[] }[] = [];
+  for (const s of SECTIONS) {
+    let bucket = groupedSections.find((g) => g.group === s.group);
+    if (!bucket) {
+      bucket = { group: s.group, items: [] };
+      groupedSections.push(bucket);
+    }
+    bucket.items.push(s);
+  }
 
   return (
     <Box sx={{ maxWidth: 1100, mx: "auto", width: "100%" }}>
@@ -958,11 +2280,18 @@ export function AdminArea({ user }: AdminAreaProps) {
           onChange={(_, value) => value && setActive(value)}
           sx={{ width: "100%" }}
         >
-          {SECTIONS.map((s) => (
-            <Option key={s.id} value={s.id}>
-              {s.label}
-            </Option>
-          ))}
+          {groupedSections.map((g) => [
+            <ListItem key={`head-${g.group}`} sticky>
+              <Typography level="body-xs" sx={{ textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.7 }}>
+                {g.group}
+              </Typography>
+            </ListItem>,
+            ...g.items.map((s) => (
+              <Option key={s.id} value={s.id}>
+                {s.label}
+              </Option>
+            )),
+          ])}
         </Select>
       </Box>
 
@@ -986,22 +2315,42 @@ export function AdminArea({ user }: AdminAreaProps) {
           }}
         >
           <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-            {SECTIONS.map((s) => {
-              const Icon = s.icon;
-              const selected = s.id === active;
-              return (
-                <Button
-                  key={s.id}
-                  variant={selected ? "soft" : "plain"}
-                  color={selected ? "primary" : "neutral"}
-                  startDecorator={<Icon fontSize="small" />}
-                  onClick={() => setActive(s.id)}
-                  sx={{ justifyContent: "flex-start", fontWeight: selected ? 700 : 500 }}
+            {groupedSections.map((g, gi) => (
+              <Box key={g.group}>
+                <Typography
+                  level="body-xs"
+                  sx={{
+                    px: 1,
+                    pt: gi === 0 ? 0.5 : 1.25,
+                    pb: 0.5,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    opacity: 0.55,
+                    fontWeight: 600,
+                  }}
                 >
-                  {s.label}
-                </Button>
-              );
-            })}
+                  {g.group}
+                </Typography>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                  {g.items.map((s) => {
+                    const Icon = s.icon;
+                    const selected = s.id === active;
+                    return (
+                      <Button
+                        key={s.id}
+                        variant={selected ? "soft" : "plain"}
+                        color={selected ? "primary" : "neutral"}
+                        startDecorator={<Icon fontSize="small" />}
+                        onClick={() => setActive(s.id)}
+                        sx={{ justifyContent: "flex-start", fontWeight: selected ? 700 : 500 }}
+                      >
+                        {s.label}
+                      </Button>
+                    );
+                  })}
+                </Box>
+              </Box>
+            ))}
           </Box>
           <Divider sx={{ my: 1 }} />
           <Typography level="body-xs" sx={{ px: 1, py: 0.5, opacity: 0.55 }}>
