@@ -274,7 +274,7 @@ export const apps: AppTile[] = [
   {
     id: "crm",
     name: "CRM",
-    blurb: "Customer relationships (Twenty).",
+    blurb: "Twenty CRM (OSS).",
     accentColor: "#3B5BDB",
     phase: 4,
     comingSoon: false,
