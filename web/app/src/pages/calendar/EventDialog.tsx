@@ -74,7 +74,7 @@ interface EventDialogProps {
   defaultItemType?: ItemType; // for new items from the Create menu
   currentUserEmail?: string;
   onClose: () => void;
-  onSave: (input: EventInput) => Promise<void>;
+  onSave: (input: EventInput) => Promise<CalendarEvent | void>;
   onDelete?: (
     id: string,
     scope?: number,
@@ -177,8 +177,10 @@ export function EventDialog({
   const [attendeesLoading, setAttendeesLoading] = useState(false);
   const [rsvpSaving, setRsvpSaving] = useState(false);
 
-  // Meet video meeting attached to this event.
+  // Meet video meeting attached to this event. For a not-yet-created event the
+  // selection is held "pending" and attached right after the event is saved.
   const [meet, setMeet] = useState<EventMeet | null>(null);
+  const [meetPending, setMeetPending] = useState(false);
   const [meetBusy, setMeetBusy] = useState(false);
   const [rooms, setRooms] = useState<MeetRoom[]>([]);
 
@@ -198,15 +200,17 @@ export function EventDialog({
       .finally(() => setAttendeesLoading(false));
   }, [event?.id]);
 
-  // Load the event's attached meeting (and pickable rooms) for existing events.
+  // Load the event's attached meeting (and pickable rooms). Existing events
+  // load their saved meeting; new events start empty.
   useEffect(() => {
+    setMeetPending(false);
     if (!event?.id) {
       setMeet(null);
-      return;
+    } else {
+      getEventMeet(event.id)
+        .then(setMeet)
+        .catch(() => setMeet(null));
     }
-    getEventMeet(event.id)
-      .then(setMeet)
-      .catch(() => setMeet(null));
     listRooms()
       .then((rs) => setRooms(rs.filter((r) => r.code)))
       .catch(() => {
@@ -215,12 +219,11 @@ export function EventDialog({
   }, [event?.id]);
 
   async function createMeetingForEvent() {
-    if (!event?.id) return;
     setMeetBusy(true);
     try {
       const room = await createMeeting(title || "Meeting");
       if (!room.code) return;
-      setMeet(await setEventMeet(event.id, { room_id: room.id, code: room.code }));
+      await applyMeet({ room_id: room.id, code: room.code });
     } catch {
       /* ignore */
     } finally {
@@ -229,12 +232,11 @@ export function EventDialog({
   }
 
   async function attachRoom(roomId: string) {
-    if (!event?.id) return;
     const room = rooms.find((r) => r.id === roomId);
     if (!room?.code) return;
     setMeetBusy(true);
     try {
-      setMeet(await setEventMeet(event.id, { room_id: room.id, code: room.code }));
+      await applyMeet({ room_id: room.id, code: room.code });
     } catch {
       /* ignore */
     } finally {
@@ -242,12 +244,24 @@ export function EventDialog({
     }
   }
 
+  // Persist the chosen meeting now for existing events, or hold it pending for
+  // a new event (attached on save once the event has an id).
+  async function applyMeet(link: EventMeet) {
+    if (event?.id) {
+      setMeet(await setEventMeet(event.id, link));
+      setMeetPending(false);
+    } else {
+      setMeet(link);
+      setMeetPending(true);
+    }
+  }
+
   async function removeMeeting() {
-    if (!event?.id) return;
     setMeetBusy(true);
     try {
-      await clearEventMeet(event.id);
+      if (event?.id && !meetPending) await clearEventMeet(event.id);
       setMeet(null);
+      setMeetPending(false);
     } catch {
       /* ignore */
     } finally {
@@ -343,12 +357,20 @@ export function EventDialog({
       input.scope = SCOPE_ALL;
     }
     try {
-      await onSave(input);
+      const saved = await onSave(input);
       // Sync newly added attendees to the attendees table if editing an existing event.
       if (event?.id) {
         const existingEmails = new Set(structuredAttendees.map((a) => a.email));
         const toAdd = attendees.filter((em) => !existingEmails.has(em));
         await Promise.all(toAdd.map((em) => addAttendee(event.id, em)));
+      }
+      // Attach a meeting chosen during creation, now that the event has an id.
+      if (!event?.id && meetPending && meet && saved && "id" in saved) {
+        try {
+          await setEventMeet(saved.id, meet);
+        } catch {
+          /* meeting attach is best-effort */
+        }
       }
       onClose();
     } catch (err) {
@@ -623,11 +645,7 @@ export function EventDialog({
           {/* Video meeting (Meet) */}
           <FormControl>
             <FormLabel>Video meeting</FormLabel>
-            {!event?.id ? (
-              <Typography level="body-sm" sx={{ opacity: 0.6 }}>
-                Save the event first, then reopen it to add a video meeting.
-              </Typography>
-            ) : meet ? (
+            {meet ? (
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
                 <Button
                   component="a"
@@ -647,6 +665,11 @@ export function EventDialog({
                 >
                   {`${window.location.origin}/meet/${meet.code}`}
                 </Typography>
+                {meetPending && (
+                  <Typography level="body-xs" sx={{ opacity: 0.6 }}>
+                    (added when you save)
+                  </Typography>
+                )}
                 <Button
                   size="sm"
                   variant="plain"

@@ -225,9 +225,11 @@ export default function CalendarApp({ user }: CalendarAppProps) {
   }, [view, anchor]);
 
   async function onSave(input: EventInput) {
-    if (dialog?.event) await updateEvent(dialog.event.id, input);
-    else await createEvent(input);
+    const saved = dialog?.event
+      ? await updateEvent(dialog.event.id, input)
+      : await createEvent(input);
     await reload();
+    return saved;
   }
   async function onDelete(id: string, scope?: number, originalStart?: string) {
     setEvents((cur) =>
