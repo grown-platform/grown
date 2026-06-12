@@ -150,6 +150,15 @@
     var dpadPointer = null;
     var origin = null; // { x, y } screen point of the active touch-down
 
+    // Control scheme: "joystick" (floating origin) or "dpad" (fixed origin).
+    // Persisted so the player's choice sticks between sessions.
+    var STORE_KEY = "gpo_control_mode";
+    var controlMode = "joystick";
+    try {
+      var savedMode = localStorage.getItem(STORE_KEY);
+      if (savedMode === "dpad" || savedMode === "joystick") controlMode = savedMode;
+    } catch (e) { /* storage unavailable */ }
+
     function placeBase(x, y) {
       dpadEl.classList.add("gpo-float");
       dpadEl.style.left = x + "px";
@@ -188,7 +197,23 @@
     }
     function dpadRelease() {
       applyDir({ up: false, down: false, left: false, right: false });
+      dpadEl.classList.remove("gpo-press");
       homeBase();
+    }
+    // Begin a movement gesture. The joystick floats its origin to the thumb;
+    // the d-pad keeps a fixed origin at the base's home centre (the visible
+    // ring stays put and just brightens).
+    function startInput(x, y) {
+      if (controlMode === "dpad") {
+        homeBase();
+        var r = dpadEl.getBoundingClientRect();
+        origin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        dpadEl.classList.add("gpo-press");
+      } else {
+        origin = { x: x, y: y };
+        placeBase(x, y);
+      }
+      applyDir(dpadDir(x, y));
     }
 
     // --- Touch input (phones) ---
@@ -204,10 +229,8 @@
       if (dpadTouchId !== null) return; // already tracking a finger
       var t = e.changedTouches[0];
       dpadTouchId = t.identifier;
-      origin = { x: t.clientX, y: t.clientY };
-      placeBase(t.clientX, t.clientY);
       e.preventDefault();
-      applyDir(dpadDir(t.clientX, t.clientY)); // neutral until the thumb moves
+      startInput(t.clientX, t.clientY);
     }, { passive: false });
     zoneEl.addEventListener("touchmove", function (e) {
       if (dpadTouchId === null) return;
@@ -240,9 +263,7 @@
       e.preventDefault();
       zoneEl.setPointerCapture && zoneEl.setPointerCapture(e.pointerId);
       dpadPointer = e.pointerId;
-      origin = { x: e.clientX, y: e.clientY };
-      placeBase(e.clientX, e.clientY);
-      applyDir(dpadDir(e.clientX, e.clientY));
+      startInput(e.clientX, e.clientY);
     });
     zoneEl.addEventListener("pointermove", function (e) {
       if (e.pointerType === "touch" || dpadPointer !== e.pointerId) return;
@@ -255,6 +276,65 @@
     };
     zoneEl.addEventListener("pointerup", dpadUp);
     zoneEl.addEventListener("pointercancel", dpadUp);
+
+    // ---- Control-mode switcher (top bar) ------------------------------------
+    // A small menu, sitting to the left of Pause, that switches between the
+    // floating Joystick and a fixed D-Pad. The button's icon reflects the
+    // active mode and the choice is remembered across sessions.
+    var MODE_ICON = { joystick: "🕹️", dpad: "✚" };
+    var MODE_LABEL = { joystick: "Joystick", dpad: "D-Pad" };
+
+    var modeBtn = document.createElement("button");
+    modeBtn.className = "gpo-btn gpo-mode";
+    modeBtn.setAttribute("aria-label", "Control mode");
+    modeBtn.textContent = MODE_ICON[controlMode];
+    topEl.insertBefore(modeBtn, topEl.firstChild); // leftmost → left of Pause
+
+    var menu = document.createElement("div");
+    menu.className = "gpo-menu";
+    ["joystick", "dpad"].forEach(function (m) {
+      var item = document.createElement("button");
+      item.setAttribute("data-m", m);
+      item.textContent = MODE_ICON[m] + "  " + MODE_LABEL[m];
+      if (m === controlMode) item.classList.add("gpo-active");
+      menu.appendChild(item);
+    });
+    root.appendChild(menu);
+
+    function setMode(m) {
+      if (m !== "joystick" && m !== "dpad") return;
+      controlMode = m;
+      modeBtn.textContent = MODE_ICON[m];
+      try { localStorage.setItem(STORE_KEY, m); } catch (e) { /* ignore */ }
+      var items = menu.querySelectorAll("button");
+      for (var i = 0; i < items.length; i++) {
+        items[i].classList.toggle("gpo-active", items[i].getAttribute("data-m") === m);
+      }
+      // Don't leave a direction held while switching schemes.
+      applyDir({ up: false, down: false, left: false, right: false });
+      dpadEl.classList.remove("gpo-press");
+      homeBase();
+    }
+
+    modeBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      menu.style.display = menu.style.display === "flex" ? "none" : "flex";
+    });
+    menu.addEventListener("click", function (e) {
+      var t = e.target;
+      while (t && t !== menu && !(t.getAttribute && t.getAttribute("data-m"))) t = t.parentNode;
+      if (t && t.getAttribute && t.getAttribute("data-m")) {
+        e.preventDefault();
+        setMode(t.getAttribute("data-m"));
+        menu.style.display = "none";
+      }
+    });
+    // Tap anywhere else closes the menu.
+    document.addEventListener("pointerdown", function (e) {
+      if (menu.style.display !== "flex") return;
+      if (menu.contains(e.target) || e.target === modeBtn) return;
+      menu.style.display = "none";
+    }, true);
 
     // Release everything if the page is hidden / loses focus.
     global.addEventListener("blur", releaseAll);
@@ -279,15 +359,27 @@
     ".gpo-root{position:fixed;inset:0;z-index:2147483000;pointer-events:none;" +
     "font:600 16px system-ui,sans-serif;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}" +
     ".gpo-root>*{pointer-events:auto;}" +
-    // Invisible activation area: the whole lower-left quadrant. Touch anywhere
-    // here and the stick floats to your thumb — no need to aim for the ring.
-    ".gpo-zone{position:absolute;left:0;top:18%;width:50%;bottom:0;touch-action:none;background:transparent;}" +
+    // Invisible activation area: the entire left half of the screen. Touch
+    // anywhere here to drive movement — the joystick floats to your thumb, the
+    // d-pad reads direction from its fixed home centre.
+    ".gpo-zone{position:absolute;left:0;top:0;width:50%;height:100%;touch-action:none;background:transparent;}" +
     // Visible base is a hint only; the zone handles all input (pointer-events:none).
     ".gpo-dpad{position:absolute;left:calc(env(safe-area-inset-left,0px) + 18px);bottom:calc(env(safe-area-inset-bottom,0px) + 22px);" +
     "width:148px;height:148px;border-radius:50%;background:rgba(20,24,38,.32);border:1px solid rgba(255,255,255,.18);" +
     "pointer-events:none;opacity:.55;touch-action:none;}" +
     // While a thumb is down, the base hops to the touch point and brightens.
     ".gpo-dpad.gpo-float{left:0;top:0;bottom:auto;transform:translate(-50%,-50%);opacity:1;}" +
+    // In fixed d-pad mode the base stays home but brightens while pressed.
+    ".gpo-dpad.gpo-press{opacity:1;}" +
+    // Control-mode switcher button + its little pop-up menu.
+    ".gpo-mode{font-size:19px;}" +
+    ".gpo-menu{position:absolute;right:calc(env(safe-area-inset-right,0px) + 14px);top:calc(env(safe-area-inset-top,0px) + 60px);" +
+    "display:none;flex-direction:column;gap:4px;padding:6px;border-radius:12px;min-width:158px;z-index:2147483600;" +
+    "background:rgba(16,20,32,.94);border:1px solid rgba(255,255,255,.16);box-shadow:0 8px 24px rgba(0,0,0,.5);}" +
+    ".gpo-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;border:0;border-radius:8px;" +
+    "background:transparent;color:#e6ecff;font:600 15px system-ui,sans-serif;text-align:left;cursor:pointer;}" +
+    ".gpo-menu button.gpo-active{background:rgba(90,130,255,.32);}" +
+    ".gpo-menu button:active{background:rgba(90,130,255,.55);}" +
     ".gpo-stick{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;border-radius:50%;" +
     "background:rgba(230,236,255,.55);border:1px solid rgba(255,255,255,.5);transition:transform .04s;}" +
     ".gpo-cross{position:absolute;inset:0;color:rgba(255,255,255,.5);}" +
