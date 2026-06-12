@@ -51,8 +51,11 @@
     window.addEventListener("click", function(){ Module.canvas.focus(); });
   </script>
 
-  <!-- Touch gamepad overlay → synthesizes the game's real key bindings -->
-  <script src="gamepad-overlay.js"></script>
+  <!-- Touch gamepad overlay → synthesizes the game's real key bindings.
+       The ?v= version busts Cloudflare's 4h edge cache on each change —
+       play.html itself is served fresh (not edge-cached), so bumping this
+       token guarantees the new overlay is fetched. Bump it on every edit. -->
+  <script src="gamepad-overlay.js?v=20260612-modeswitch"></script>
   <script>
     window.addEventListener("load", function(){
       if (!window.GamepadOverlay) return;
