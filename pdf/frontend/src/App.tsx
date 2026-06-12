@@ -121,19 +121,16 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
             {isCollapsed ? (
               <>
                 <span className="hidden lg:flex items-center">
-                  <span className="text-blue-600">G</span>
-                  <span className="text-black">S</span>
+                  <span className="text-blue-600">PDF</span>
                   <ChevronRight className="w-4 h-4 ml-1 text-text-muted" />
                 </span>
                 <span className="lg:hidden flex items-center">
                   <span className="text-blue-600">PDF</span>
-                  <span className="text-black">Sign</span>
                 </span>
               </>
             ) : (
               <span className="flex items-center">
                 <span className="text-blue-600">PDF</span>
-                <span className="text-black">Sign</span>
                 <ChevronLeft className="w-4 h-4 ml-2 text-text-muted hidden lg:inline" />
               </span>
             )}
@@ -219,7 +216,6 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
           </button>
           <span className="ml-4 text-lg font-semibold">
             <span className="text-blue-600">PDF</span>
-            <span className="text-black">Sign</span>
           </span>
         </header>
 

@@ -167,17 +167,6 @@ export const apps: AppTile[] = [
     externalUrl: PDF_URL,
   },
   {
-    id: "pdf-editor",
-    name: "PDF Editor",
-    blurb: "Edit & annotate PDFs.",
-    accentColor: "#C2410C",
-    phase: 3,
-    comingSoon: false,
-    iconName: "EditNote",
-    // Deep-link straight to the signing-free editor (focused layout).
-    externalUrl: `${PDF_URL}editor`,
-  },
-  {
     id: "forms",
     name: "Forms",
     blurb: "Surveys and quizzes.",
