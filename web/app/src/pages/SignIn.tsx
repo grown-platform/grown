@@ -126,19 +126,27 @@ export function SignIn() {
     >
       <Card variant="soft" sx={{ maxWidth: 420, width: "100%" }}>
         <CardContent sx={{ alignItems: "center", textAlign: "center", gap: 2 }}>
-          <Avatar
-            variant="solid"
-            sx={{
-              bgcolor: brand.primaryColor,
-              color: "white",
-              fontWeight: 700,
-              width: 64,
-              height: 64,
-              fontSize: 28,
-            }}
-          >
-            {brand.productName.charAt(0).toUpperCase()}
-          </Avatar>
+          {brand.logoSVG ? (
+            <Box
+              aria-label={brand.productName}
+              sx={{ width: 64, height: 64, display: "flex", flexShrink: 0 }}
+              dangerouslySetInnerHTML={{ __html: brand.logoSVG }}
+            />
+          ) : (
+            <Avatar
+              variant="solid"
+              sx={{
+                bgcolor: brand.primaryColor,
+                color: "white",
+                fontWeight: 700,
+                width: 64,
+                height: 64,
+                fontSize: 28,
+              }}
+            >
+              {brand.productName.charAt(0).toUpperCase()}
+            </Avatar>
+          )}
           <Typography level="h3">{brand.productName}</Typography>
           <Typography level="body-md" sx={{ opacity: 0.75 }}>
             {brand.tagline}
