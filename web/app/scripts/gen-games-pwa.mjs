@@ -188,11 +188,13 @@ const PRECACHE = [
 const SW = `/* grown-workspace games service worker — full offline + installability.
    Precaches every game on install; network-first at runtime so deploys are
    picked up online, with cache fallback offline. Scope: /games/. */
-const CACHE = 'grown-games-v2';
+const CACHE = 'grown-games-v3';
 const PRECACHE = ${JSON.stringify(PRECACHE)};
 self.addEventListener('install', (e) => {
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE).catch(() => {})));
+  // Cache each game individually so one bad URL can't abort the whole precache
+  // (addAll is atomic); this guarantees every other game is available offline.
+  e.waitUntil(caches.open(CACHE).then((c) => Promise.allSettled(PRECACHE.map((u) => c.add(u)))));
 });
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
   const keys = await caches.keys();

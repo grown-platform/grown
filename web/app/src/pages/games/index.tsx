@@ -178,7 +178,7 @@ const CATEGORIES: { key: string; label: string; icon: string }[] = [
   { key: "Casino", label: "Casino", icon: "Casino" },
   { key: "Kids", label: "Kids", icon: "ChildCare" },
   { key: "Speed", label: "Speed", icon: "Bolt" },
-  { key: "Party", label: "Party", icon: "Groups" },
+  { key: "Group", label: "Group", icon: "Groups" },
 ];
 
 const CATEGORY_IDS: Record<string, string[]> = {
@@ -190,7 +190,6 @@ const CATEGORY_IDS: Record<string, string[]> = {
   Casino: ["blackjack", "video-poker", "baccarat", "slot-machine", "yahtzee", "pig"],
   Kids: ["memory-game", "whack-a-mole", "simon", "rock-paper-scissors", "coloring", "math-quiz", "balloon-pop", "fruit-catch", "dot-to-dot", "cookie-clicker", "guess-the-number"],
   Speed: ["reaction-time", "aim-trainer", "piano-tiles"],
-  Party: ["heads-up", "catch-phrase"],
 };
 
 const CATEGORY_OF: Record<string, string> = Object.entries(CATEGORY_IDS).reduce(
@@ -200,6 +199,19 @@ const CATEGORY_OF: Record<string, string> = Object.entries(CATEGORY_IDS).reduce(
   },
   {} as Record<string, string>,
 );
+
+// "Group" is a cross-cutting tag for games meant to be played with other people
+// (party games + competitive multiplayer genres), so these still keep their
+// primary category above and also surface under the Group filter. heads-up /
+// catch-phrase have no primary category — they only appear under All + Group.
+const GROUP_IDS = new Set<string>([
+  "heads-up", "catch-phrase", "rock-paper-scissors",
+  "tic-tac-toe", "connect-four", "ultimate-tic-tac-toe", "checkers", "chess",
+  "reversi", "gomoku", "dots-and-boxes", "mancala", "nine-mens-morris",
+  "dominoes", "battleship", "snakes-and-ladders", "ludo", "chinese-checkers",
+  "air-hockey", "pong", "war", "snap", "go-fish", "old-maid", "crazy-eights",
+  "pig", "monopoly-deal",
+]);
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */
 interface ImportedGame {
@@ -384,9 +396,11 @@ export default function GamesApp({ user }: { user: User | null }) {
   };
 
   const q = query.trim().toLowerCase();
+  const matchesCat = (id: string) =>
+    cat === "All" || (cat === "Group" ? GROUP_IDS.has(id) : CATEGORY_OF[id] === cat);
   const filteredGames = GAMES.filter(
     (g) =>
-      (cat === "All" || CATEGORY_OF[g.id] === cat) &&
+      matchesCat(g.id) &&
       (!q || `${g.name} ${g.blurb ?? ""}`.toLowerCase().includes(q)),
   );
   // Imported games are user uploads with no category, so they only appear under "All".
