@@ -179,6 +179,7 @@ const CATEGORIES: { key: string; label: string; icon: string }[] = [
   { key: "Kids", label: "Kids", icon: "ChildCare" },
   { key: "Speed", label: "Speed", icon: "Bolt" },
   { key: "Group", label: "Group", icon: "Groups" },
+  { key: "2-Player", label: "2-Player", icon: "People" },
 ];
 
 const CATEGORY_IDS: Record<string, string[]> = {
@@ -211,6 +212,16 @@ const GROUP_IDS = new Set<string>([
   "dominoes", "battleship", "snakes-and-ladders", "ludo", "chinese-checkers",
   "air-hockey", "pong", "war", "snap", "go-fish", "old-maid", "crazy-eights",
   "pig", "monopoly-deal",
+]);
+
+// "2-Player" surfaces games that actually support two humans on ONE device
+// (local hot-seat / pass-and-play, or both playing at once). Only games with a
+// real two-human mode belong here — most others are single-player vs the
+// computer. Keep this in sync as more games gain a 2-player mode.
+const TWO_PLAYER_IDS = new Set<string>([
+  "battleship", "checkers", "tic-tac-toe", "connect-four", "ultimate-tic-tac-toe",
+  "gomoku", "reversi", "chess", "dots-and-boxes", "mancala", "nine-mens-morris",
+  "chinese-checkers", "snakes-and-ladders", "ludo", "pong", "pig", "air-hockey",
 ]);
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */
@@ -397,7 +408,12 @@ export default function GamesApp({ user }: { user: User | null }) {
 
   const q = query.trim().toLowerCase();
   const matchesCat = (id: string) =>
-    cat === "All" || (cat === "Group" ? GROUP_IDS.has(id) : CATEGORY_OF[id] === cat);
+    cat === "All" ||
+    (cat === "Group"
+      ? GROUP_IDS.has(id)
+      : cat === "2-Player"
+        ? TWO_PLAYER_IDS.has(id)
+        : CATEGORY_OF[id] === cat);
   const filteredGames = GAMES.filter(
     (g) =>
       matchesCat(g.id) &&

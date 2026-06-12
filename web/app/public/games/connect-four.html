@@ -116,6 +116,29 @@
         button:active {
             transform: translateY(2px);
         }
+
+        .mode-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .mode-overlay.show { display: flex; }
+        .mode-modal {
+            background: #fff;
+            padding: 2rem;
+            border-radius: 1.5rem;
+            text-align: center;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+            max-width: 80vw;
+            color: #2c3e50;
+        }
+        .mode-modal h2 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+        .mode-modal p { margin: 0 0 1.25rem; color: #7f8c8d; }
+        .mode-modal .mode-btns { display: flex; flex-direction: column; gap: 0.75rem; }
     </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/connect-four.svg">
@@ -186,6 +209,17 @@
         <button onclick="resetGame()">New Game</button>
     </div>
 
+    <div id="modeOverlay" class="mode-overlay">
+        <div class="mode-modal">
+            <h2>Connect Four</h2>
+            <p>Choose a mode</p>
+            <div class="mode-btns">
+                <button id="modeAi">🤖 vs Computer</button>
+                <button id="modeTwo">👥 2 Players</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const ROWS = 6;
         const COLS = 7;
@@ -196,16 +230,31 @@
         let board = [];
         let gameOver = false;
         let currentPlayer = PLAYER;
+        let mode = 'ai'; // 'ai' = vs computer, '2p' = pass-and-play hot seat
 
         const boardElement = document.getElementById('board');
         const statusElement = document.getElementById('status');
+        const modeOverlay = document.getElementById('modeOverlay');
+
+        // In 2p both sides are human; in ai only the PLAYER (red) side is human.
+        function isHumanTurn() { return mode === '2p' ? true : currentPlayer === PLAYER; }
+        function sideName(side) {
+            if (mode === '2p') return side === PLAYER ? 'Red' : 'Yellow';
+            return side === PLAYER ? 'You' : 'AI';
+        }
+        function sideColor(side) { return side === PLAYER ? '#e74c3c' : '#f1c40f'; }
+
+        function turnText() {
+            if (mode === '2p') return sideName(currentPlayer) + "'s Turn";
+            return currentPlayer === PLAYER ? "Your Turn (Red)" : "AI is thinking...";
+        }
 
         function initBoard() {
             board = Array(ROWS).fill().map(() => Array(COLS).fill(EMPTY));
             gameOver = false;
             currentPlayer = PLAYER;
-            statusElement.textContent = "Your Turn (Red)";
-            statusElement.style.color = "#34495e";
+            statusElement.textContent = turnText();
+            statusElement.style.color = mode === '2p' ? sideColor(currentPlayer) : "#34495e";
             renderBoard();
         }
 
@@ -230,14 +279,20 @@
         }
 
         function handleMove(col) {
-            if (gameOver || currentPlayer !== PLAYER) return;
+            if (gameOver || !isHumanTurn()) return;
 
-            if (makeMove(col, PLAYER)) {
+            const mover = currentPlayer;
+            if (makeMove(col, mover)) {
                 const winInfo = checkWin(board);
                 if (winInfo) {
-                    endGame(winInfo, PLAYER);
+                    endGame(winInfo, mover);
                 } else if (isBoardFull()) {
                     endGame(null, 'draw');
+                } else if (mode === '2p') {
+                    // Pass-and-play: the other human moves next.
+                    currentPlayer = mover === PLAYER ? AI : PLAYER;
+                    statusElement.textContent = turnText();
+                    statusElement.style.color = sideColor(currentPlayer);
                 } else {
                     currentPlayer = AI;
                     statusElement.textContent = "AI is thinking...";
@@ -284,8 +339,9 @@
                 statusElement.textContent = "It's a Draw!";
                 statusElement.style.color = "#7f8c8d";
             } else {
-                statusElement.textContent = winner === PLAYER ? "You Win!" : "AI Wins!";
-                statusElement.style.color = winner === PLAYER ? "#e74c3c" : "#f1c40f";
+                if (mode === '2p') statusElement.textContent = sideName(winner) + " Wins!";
+                else statusElement.textContent = winner === PLAYER ? "You Win!" : "AI Wins!";
+                statusElement.style.color = sideColor(winner);
                 if (winInfo) highlightWinners(winInfo);
             }
         }
@@ -485,12 +541,23 @@
             return b.map(row => [...row]);
         }
 
+        // "New Game" returns to the mode picker so you can switch AI / 2-player.
         function resetGame() {
-            initBoard();
+            showModeSelect();
         }
 
-        // Start the game
+        function showModeSelect() { modeOverlay.classList.add('show'); }
+        function startMode(m) {
+            mode = m;
+            modeOverlay.classList.remove('show');
+            initBoard();
+        }
+        document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
+        document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
+
+        // Render an idle board behind the picker, then ask for a mode.
         initBoard();
+        showModeSelect();
 
     </script>
 </body>

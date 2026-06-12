@@ -179,12 +179,16 @@
     <div id="overlay">
       <h2 id="ovTitle">PONG</h2>
       <p id="ovText">Drag on your side (left) to move your paddle. First to 7 wins.</p>
-      <button id="startBtn">Play</button>
+      <div id="modePick" style="display:flex;flex-direction:column;gap:10px;align-items:center">
+        <button id="aiBtn">🤖 vs Computer</button>
+        <button id="twoBtn" style="background:#fb8">👥 2 Players</button>
+      </div>
+      <button id="startBtn" style="display:none">Play</button>
     </div>
   </div>
 
   <footer>
-    You = <span style="color:#6cf">blue (left)</span> &nbsp;·&nbsp; CPU = <span style="color:#f86">orange (right)</span>
+    <span id="sideLabel">You = <span style="color:#6cf">blue (left)</span> &nbsp;·&nbsp; CPU = <span style="color:#f86">orange (right)</span></span>
     &nbsp;·&nbsp; <button id="restartBtn" style="background:#2a2a40;color:#cdd;padding:6px 14px;font-size:12px;border-radius:8px">Restart</button>
   </footer>
 </div>
@@ -212,6 +216,8 @@
   var BALL_R = 8;
   var EDGE = 18; // gap between paddle and wall
 
+  var mode = "ai"; // 'ai' = vs computer (right paddle is AI); '2p' = right paddle is a second human
+
   var state = {
     running: false,
     over: false,
@@ -220,7 +226,8 @@
     playerY: H / 2 - PADDLE_H / 2,
     cpuY: H / 2 - PADDLE_H / 2,
     ball: null,
-    targetY: H / 2 // where finger/pointer wants the paddle center
+    targetY: H / 2,  // where the left player's finger/pointer wants the paddle center
+    target2Y: H / 2  // where the right player's finger wants the paddle center (2p mode)
   };
 
   // ----- Audio (WebAudio, generated; no external resources) -----
@@ -271,6 +278,7 @@
     state.playerY = H / 2 - PADDLE_H / 2;
     state.cpuY = H / 2 - PADDLE_H / 2;
     state.targetY = H / 2;
+    state.target2Y = H / 2;
     state.ball = newBall(serveToPlayer ? -1 : 1);
   }
 
@@ -334,25 +342,30 @@
     pointerActive = false;
   }
 
-  // Touch
-  canvas.addEventListener("touchstart", function (e) {
+  // Touch: read ALL active touches each event so two fingers work at once.
+  // A touch in the left half drives the left paddle; in 2p mode a touch in the
+  // right half drives the right paddle (one player at each end of the device).
+  function handleTouches(e) {
     e.preventDefault();
-    var t = e.changedTouches[0];
-    onPointerDown(t.clientX, t.clientY);
-  }, { passive: false });
-  canvas.addEventListener("touchmove", function (e) {
-    e.preventDefault();
-    var t = e.changedTouches[0];
-    onPointerMove(t.clientY);
-  }, { passive: false });
-  canvas.addEventListener("touchend", function (e) {
-    e.preventDefault();
-    onPointerUp();
-  }, { passive: false });
-  canvas.addEventListener("touchcancel", function (e) {
-    e.preventDefault();
-    onPointerUp();
-  }, { passive: false });
+    ensureAudio();
+    if (!state.running) return;
+    var rect = canvas.getBoundingClientRect();
+    var leftSet = false, rightSet = false;
+    for (var i = 0; i < e.touches.length; i++) {
+      var t = e.touches[i];
+      var fx = (t.clientX - rect.left) / rect.width; // 0..1 across the board
+      var y = ((t.clientY - rect.top) / rect.height) * H;
+      if (fx < 0.5) {
+        if (!leftSet) { state.targetY = clamp(y, PADDLE_H / 2, H - PADDLE_H / 2); leftSet = true; }
+      } else if (mode === "2p") {
+        if (!rightSet) { state.target2Y = clamp(y, PADDLE_H / 2, H - PADDLE_H / 2); rightSet = true; }
+      }
+    }
+  }
+  canvas.addEventListener("touchstart", handleTouches, { passive: false });
+  canvas.addEventListener("touchmove", handleTouches, { passive: false });
+  canvas.addEventListener("touchend", handleTouches, { passive: false });
+  canvas.addEventListener("touchcancel", handleTouches, { passive: false });
 
   // Mouse
   canvas.addEventListener("mousedown", function (e) {
@@ -363,24 +376,48 @@
   });
   window.addEventListener("mouseup", onPointerUp);
 
-  // Keyboard
-  var keys = { up: false, down: false };
+  // Keyboard. Player 1 (left) = W/S; Player 2 (right) = Arrow keys. In ai mode
+  // the arrow keys fall back to driving the left paddle (see update()).
+  var keys = { up: false, down: false };   // player 1 (W/S)
+  var keys2 = { up: false, down: false };  // player 2 (arrows)
   window.addEventListener("keydown", function (e) {
-    if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") { keys.up = true; e.preventDefault(); }
-    else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") { keys.down = true; e.preventDefault(); }
+    if (e.key === "w" || e.key === "W") { keys.up = true; e.preventDefault(); }
+    else if (e.key === "s" || e.key === "S") { keys.down = true; e.preventDefault(); }
+    else if (e.key === "ArrowUp") { keys2.up = true; e.preventDefault(); }
+    else if (e.key === "ArrowDown") { keys2.down = true; e.preventDefault(); }
     else if (e.key === " " || e.key === "Enter") {
-      if (!state.running) { startGame(); e.preventDefault(); }
+      if (!state.running) { startMode(mode); e.preventDefault(); }
     }
   });
   window.addEventListener("keyup", function (e) {
-    if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") keys.up = false;
-    else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") keys.down = false;
+    if (e.key === "w" || e.key === "W") keys.up = false;
+    else if (e.key === "s" || e.key === "S") keys.down = false;
+    else if (e.key === "ArrowUp") keys2.up = false;
+    else if (e.key === "ArrowDown") keys2.down = false;
   });
 
-  startBtn.addEventListener("click", startGame);
+  // ----- Mode selection -----
+  function updateSideLabels() {
+    var el = document.getElementById("sideLabel");
+    if (!el) return;
+    var p1 = '<span style="color:#6cf">blue (left)</span>';
+    var p2 = '<span style="color:#f86">orange (right)</span>';
+    el.innerHTML = (mode === "2p")
+      ? ("Player 1 = " + p1 + " &nbsp;·&nbsp; Player 2 = " + p2)
+      : ("You = " + p1 + " &nbsp;·&nbsp; CPU = " + p2);
+  }
+  function startMode(m) {
+    mode = m;
+    updateSideLabels();
+    startGame();
+  }
+  document.getElementById("aiBtn").addEventListener("click", function () { startMode("ai"); });
+  document.getElementById("twoBtn").addEventListener("click", function () { startMode("2p"); });
+
+  startBtn.addEventListener("click", function () { startMode(mode); });
   restartBtn.addEventListener("click", function () {
     fullReset();
-    showOverlay("PONG", "Drag on your side (left) to move your paddle. First to " + TARGET + " wins.", "Play");
+    showOverlay("PONG", "Pick a mode. Left paddle: drag the left side or W/S. In 2 Players, right paddle: drag the right side or arrow keys. First to " + TARGET + " wins.", "Play");
   });
 
   // ----- Physics / update -----
@@ -390,10 +427,15 @@
     if (!state.running) return;
     var b = state.ball;
 
-    // Player paddle: keyboard nudges target, pointer sets it directly.
+    // Left player paddle: keyboard nudges target, pointer sets it directly.
+    // P1 keys are W/S; in ai mode the arrow keys also drive the left paddle.
     var KEY_SPEED = 7.5;
     if (keys.up) state.targetY -= KEY_SPEED;
     if (keys.down) state.targetY += KEY_SPEED;
+    if (mode === "ai") {
+      if (keys2.up) state.targetY -= KEY_SPEED;
+      if (keys2.down) state.targetY += KEY_SPEED;
+    }
     state.targetY = clamp(state.targetY, PADDLE_H / 2, H - PADDLE_H / 2);
 
     // Smoothly move player paddle toward target (feels responsive but not jittery)
@@ -401,22 +443,32 @@
     state.playerY += (desiredPlayerTop - state.playerY) * 0.55;
     state.playerY = clamp(state.playerY, 0, H - PADDLE_H);
 
-    // CPU paddle: track ball with lag + imperfection so it's beatable.
-    var cpuCenter = state.cpuY + PADDLE_H / 2;
-    var cpuSpeedCap = 4.6; // slower than ball top speed -> beatable
-    // Only react strongly when ball heads toward CPU; idle-drift to center otherwise.
-    var aim;
-    if (b.vx > 0) {
-      // add a small error band that grows with ball speed
-      var err = (Math.random() - 0.5) * (28 + b.speed * 2.0);
-      aim = b.y + err;
+    // Right paddle: a second human in 2p mode, otherwise the AI.
+    if (mode === "2p") {
+      if (keys2.up) state.target2Y -= KEY_SPEED;
+      if (keys2.down) state.target2Y += KEY_SPEED;
+      state.target2Y = clamp(state.target2Y, PADDLE_H / 2, H - PADDLE_H / 2);
+      var desiredTop = state.target2Y - PADDLE_H / 2;
+      state.cpuY += (desiredTop - state.cpuY) * 0.55;
+      state.cpuY = clamp(state.cpuY, 0, H - PADDLE_H);
     } else {
-      aim = H / 2; // drift back to center
+      // CPU paddle: track ball with lag + imperfection so it's beatable.
+      var cpuCenter = state.cpuY + PADDLE_H / 2;
+      var cpuSpeedCap = 4.6; // slower than ball top speed -> beatable
+      // Only react strongly when ball heads toward CPU; idle-drift to center otherwise.
+      var aim;
+      if (b.vx > 0) {
+        // add a small error band that grows with ball speed
+        var err = (Math.random() - 0.5) * (28 + b.speed * 2.0);
+        aim = b.y + err;
+      } else {
+        aim = H / 2; // drift back to center
+      }
+      var diff = aim - cpuCenter;
+      var move = clamp(diff * 0.10, -cpuSpeedCap, cpuSpeedCap);
+      state.cpuY += move;
+      state.cpuY = clamp(state.cpuY, 0, H - PADDLE_H);
     }
-    var diff = aim - cpuCenter;
-    var move = clamp(diff * 0.10, -cpuSpeedCap, cpuSpeedCap);
-    state.cpuY += move;
-    state.cpuY = clamp(state.cpuY, 0, H - PADDLE_H);
 
     // Move ball
     b.x += b.vx;
@@ -495,10 +547,13 @@
     if (state.pScore >= TARGET || state.cScore >= TARGET) {
       state.running = false;
       state.over = true;
-      var won = state.pScore > state.cScore;
+      var won = state.pScore > state.cScore; // left side won
+      var title = (mode === "2p")
+        ? (won ? "PLAYER 1 WINS!" : "PLAYER 2 WINS!")
+        : (won ? "YOU WIN!" : "CPU WINS");
       showOverlay(
-        won ? "YOU WIN!" : "CPU WINS",
-        (won ? "Nice — " : "Final ") + state.pScore + " : " + state.cScore + ". Tap Play for a rematch.",
+        title,
+        "Final " + state.pScore + " : " + state.cScore + ". Pick a mode for a rematch.",
         "Play again"
       );
       beep(won ? 880 : 110, 0.3, won ? "triangle" : "sawtooth");

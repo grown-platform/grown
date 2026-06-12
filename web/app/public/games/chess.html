@@ -147,6 +147,22 @@
     cursor: pointer;
   }
   #promo .opt:active { background: #d8d9be; }
+  #modeOverlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 60;
+  }
+  #modeOverlay.show { display: flex; }
+  #modeOverlay .box {
+    background: #262421; border-radius: 14px; padding: 26px 28px;
+    text-align: center; max-width: 80vw;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  #modeOverlay h2 { margin: 0 0 4px; font-size: 22px; }
+  #modeOverlay p { margin: 0 0 16px; font-size: 14px; opacity: 0.8; }
+  #modeOverlay .modeBtns { display: flex; flex-direction: column; gap: 12px; }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/chess.svg">
@@ -214,6 +230,16 @@
     <button id="newGame">New Game</button>
   </div>
   <div id="promo"><div class="box" id="promoBox"></div></div>
+  <div id="modeOverlay">
+    <div class="box">
+      <h2>Chess</h2>
+      <p>Choose a mode</p>
+      <div class="modeBtns">
+        <button id="modeAi">🤖 vs Computer</button>
+        <button id="modeTwo">👥 2 Players</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 (function () {
@@ -723,6 +749,15 @@
   var HUMAN = 'w';
   var AI = 'b';
   var AI_DEPTH = 3;
+  var mode = 'ai';   // 'ai' = vs computer (human is White), '2p' = pass-and-play
+
+  // In 2p both colors are human, so the side to move is always human.
+  // In ai mode only White (HUMAN) is human.
+  function isHumanTurn() { return mode === '2p' ? true : state.turn === HUMAN; }
+  function sideName(color) {
+    if (mode === '2p') return color === 'w' ? 'White' : 'Black';
+    return color === HUMAN ? 'You' : 'CPU';
+  }
 
   var selected = -1;       // selected square index
   var legalForSel = [];    // legal moves from selected square
@@ -846,7 +881,10 @@
       state.gameOver = true;
       statusEl.classList.add('over');
       if (checked) {
-        var winner = color === 'w' ? 'Black (CPU)' : 'White (You)';
+        var winColor = color === 'w' ? 'b' : 'w';
+        var winner = mode === '2p'
+          ? sideName(winColor)
+          : (winColor === 'b' ? 'Black (CPU)' : 'White (You)');
         statusEl.textContent = 'Checkmate — ' + winner + ' wins!';
       } else {
         statusEl.textContent = 'Stalemate — Draw';
@@ -860,19 +898,31 @@
       statusEl.textContent = 'Draw — 50-move rule';
       return;
     }
-    var who = color === HUMAN ? 'Your move (White)' : 'CPU thinking (Black)…';
+    var colorWord = color === 'w' ? 'White' : 'Black';
+    var who, checkMsg;
+    if (mode === '2p') {
+      who = sideName(color) + ' to move (' + colorWord + ')';
+      checkMsg = 'Check! ' + sideName(color) + ' to move';
+    } else if (color === HUMAN) {
+      who = 'Your move (White)';
+      checkMsg = 'Check! Your move';
+    } else {
+      who = 'CPU thinking (Black)…';
+      checkMsg = 'Check! CPU thinking…';
+    }
     if (checked) {
       statusEl.classList.add('check');
-      statusEl.textContent = (color === HUMAN ? 'Check! Your move' : 'Check! CPU thinking…');
+      statusEl.textContent = checkMsg;
     } else {
       statusEl.textContent = who;
     }
   }
 
   function onCellClick(e) {
-    if (state.gameOver || thinking || state.turn !== HUMAN) return;
+    if (state.gameOver || thinking || !isHumanTurn()) return;
     var i = parseInt(e.currentTarget.dataset.i, 10);
     var b = state.board;
+    var side = state.turn;
 
     // If clicking a legal destination of the currently selected piece -> move.
     if (selected >= 0) {
@@ -883,11 +933,11 @@
       }
     }
 
-    // Otherwise (re)select if it's the human's own piece.
+    // Otherwise (re)select if it's a piece of the side to move.
     var p = b[i];
-    if (p && p.c === HUMAN) {
+    if (p && p.c === side) {
       selected = i;
-      legalForSel = legalMoves(state, HUMAN).filter(function (m) { return m.from === i; });
+      legalForSel = legalMoves(state, side).filter(function (m) { return m.from === i; });
       render();
     } else {
       selected = -1;
@@ -899,7 +949,7 @@
   function completeHumanMove(candidates) {
     // candidates may contain multiple (promotion variants).
     if (candidates.length > 1 && candidates[0].flag === 'promo') {
-      showPromo(HUMAN, function (promoType) {
+      showPromo(state.turn, function (promoType) {
         var mv = candidates.filter(function (m) { return m.promo === promoType; })[0] || candidates[0];
         applyMove(mv);
         finishHumanTurn();
@@ -915,10 +965,12 @@
     legalForSel = [];
     render();
     updateStatus();
-    if (!state.gameOver) {
+    if (!state.gameOver && mode === 'ai' && state.turn === AI) {
+      // Hand off to the computer.
       thinking = true;
       setTimeout(aiTurn, 220);
     }
+    // In 2p mode the other human simply moves next (input already unlocked).
   }
 
   function applyMove(mv) {
@@ -977,9 +1029,22 @@
     updateStatus();
   }
 
+  // ---- Mode selection ----
+  var modeOverlay = document.getElementById('modeOverlay');
+  function showModeSelect() { modeOverlay.classList.add('show'); }
+  function startMode(m) {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    mode = m;
+    modeOverlay.classList.remove('show');
+    newGame();
+  }
+  document.getElementById('modeAi').addEventListener('click', function () { startMode('ai'); });
+  document.getElementById('modeTwo').addEventListener('click', function () { startMode('2p'); });
+
+  // "New Game" returns to the mode picker so you can switch AI / 2-player.
   document.getElementById('newGame').addEventListener('click', function () {
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-    newGame();
+    showModeSelect();
   });
 
   // Unlock audio on first interaction.
@@ -991,7 +1056,9 @@
   boardEl.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
 
   buildBoard();
+  // Render an initial (idle) board behind the mode picker, then ask for a mode.
   newGame();
+  showModeSelect();
 })();
 </script>
 </body>

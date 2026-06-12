@@ -89,6 +89,28 @@
     transition: transform .05s, box-shadow .05s;
   }
   button:active { transform: translateY(2px); box-shadow: 0 1px 0 #a87420; }
+  .mode-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+  .mode-overlay.show { display: flex; }
+  .mode-modal {
+    background: var(--panel);
+    color: var(--text);
+    padding: 28px 30px;
+    border-radius: 16px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    max-width: 80vw;
+  }
+  .mode-modal h2 { margin: 0 0 8px; font-size: 1.5rem; color: var(--accent); }
+  .mode-modal p { margin: 0 0 18px; color: var(--muted); }
+  .mode-modal .mode-btns { display: flex; flex-direction: column; gap: 12px; }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/gomoku.svg">
@@ -158,6 +180,17 @@
     <button id="newGame">New Game</button>
   </footer>
 
+  <div id="modeOverlay" class="mode-overlay">
+    <div class="mode-modal">
+      <h2>Gomoku</h2>
+      <p>Choose a mode</p>
+      <div class="mode-btns">
+        <button id="modeAi">🤖 vs Computer</button>
+        <button id="modeTwo">👥 2 Players</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 (function () {
   "use strict";
@@ -170,11 +203,21 @@
   let winLine = null;      // {cells:[[r,c],...]}
   let lastMove = null;     // [r,c]
   let moveCount = 0;
+  let mode = 'ai';         // 'ai' = vs computer, '2p' = pass-and-play hot seat
+  let turn = HUMAN;        // side to move (used in 2p; in ai humans are always HUMAN)
 
   const canvas = document.getElementById("board");
   const ctx = canvas.getContext("2d");
   const statusText = document.getElementById("statusText");
   const statusDot = document.querySelector("#status .dot");
+  const modeOverlay = document.getElementById("modeOverlay");
+
+  // In 2p both sides are human; in ai only HUMAN (black) is human-controlled.
+  function isHumanTurn() { return mode === '2p' ? true : turn === HUMAN; }
+  function sideName(side) {
+    if (mode === '2p') return side === HUMAN ? 'Black' : 'White';
+    return side === HUMAN ? 'You' : 'CPU';
+  }
 
   let cell = 0, margin = 0, pxSize = 0, dpr = 1;
 
@@ -335,7 +378,8 @@
       winLine = win;
       gameOver = true;
       draw();
-      if (player === HUMAN) { setStatus("You win! 🎉", null); }
+      if (mode === '2p') { setStatus(sideName(player) + " wins! 🎉", null); }
+      else if (player === HUMAN) { setStatus("You win! 🎉", null); }
       else { setStatus("CPU wins", null); }
       soundWin();
       return true;
@@ -366,14 +410,22 @@
   }
 
   function humanMove(px, py) {
-    if (gameOver || busy) return;
+    if (gameOver || busy || !isHumanTurn()) return;
     const cellHit = pointToCell(px, py);
     if (!cellHit) return;
     const [r, c] = cellHit;
     if (board[idx(r, c)] !== EMPTY) return;
 
-    const ended = placeStone(r, c, HUMAN);
+    const mover = turn;
+    const ended = placeStone(r, c, mover);
     if (ended) return;
+
+    if (mode === '2p') {
+      // Pass-and-play: the other human moves next.
+      turn = mover === HUMAN ? CPU : HUMAN;
+      setStatus(sideName(turn) + "'s move", turn);
+      return;
+    }
 
     busy = true;
     setStatus("CPU thinking…", CPU);
@@ -527,28 +579,41 @@
     winLine = null;
     lastMove = null;
     moveCount = 0;
-    setStatus("Your move", HUMAN);
+    turn = HUMAN;
+    setStatus(mode === '2p' ? sideName(HUMAN) + "'s move" : "Your move", HUMAN);
     // try to resume audio on user gesture
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     draw();
   }
 
-  document.getElementById("newGame").addEventListener("click", function () {
+  // ---------- Mode selection ----------
+  function showModeSelect() { modeOverlay.classList.add("show"); }
+  function startMode(m) {
+    mode = m;
+    modeOverlay.classList.remove("show");
     newGame();
+  }
+  document.getElementById("modeAi").addEventListener("click", function () { startMode("ai"); });
+  document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
+
+  // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  document.getElementById("newGame").addEventListener("click", function () {
+    showModeSelect();
   });
 
-  // keyboard: N for new game
+  // keyboard: N for new game (returns to mode picker)
   window.addEventListener("keydown", function (e) {
-    if (e.key === "n" || e.key === "N") newGame();
+    if (e.key === "n" || e.key === "N") showModeSelect();
   });
 
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", function () { setTimeout(resize, 150); });
 
-  // init
+  // init: render an idle board, then ask for a mode.
   board = new Array(N * N).fill(EMPTY);
   resize();
   newGame();
+  showModeSelect();
 })();
 </script>
 </body>

@@ -120,6 +120,29 @@
   #card h2 { font-size: 26px; margin-bottom: 8px; }
   #card p { font-size: 15px; opacity: 0.85; margin-bottom: 18px; }
   #card button { width: 100%; padding: 13px; }
+  #modeOverlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8,10,15,0.82);
+    z-index: 11;
+    backdrop-filter: blur(3px);
+  }
+  #modeOverlay.show { display: flex; }
+  #modeCard {
+    background: #1c2230;
+    border-radius: 18px;
+    padding: 26px 28px;
+    text-align: center;
+    max-width: 86%;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  #modeCard h2 { font-size: 24px; margin-bottom: 4px; }
+  #modeCard p { font-size: 14px; opacity: 0.85; margin-bottom: 18px; }
+  #modeCard .modeBtns { display: flex; flex-direction: column; gap: 12px; }
+  #modeCard button { width: 100%; padding: 13px; }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/dots-and-boxes.svg">
@@ -213,6 +236,17 @@
   </div>
 </div>
 
+<div id="modeOverlay">
+  <div id="modeCard">
+    <h2>Dots &amp; Boxes</h2>
+    <p>Choose a mode</p>
+    <div class="modeBtns">
+      <button id="modeAi">🤖 vs Computer</button>
+      <button id="modeTwo">👥 2 Players</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   "use strict";
@@ -228,6 +262,18 @@
   var overlay = document.getElementById("overlay");
   var resTitle = document.getElementById("resTitle");
   var resText = document.getElementById("resText");
+  var modeOverlay = document.getElementById("modeOverlay");
+  var n1 = document.querySelector("#s1 .name");
+  var n2 = document.querySelector("#s2 .name");
+
+  var mode = "ai"; // "ai" = vs computer (P1 human), "2p" = pass-and-play
+  // In 2p both players are human, so the current player is always human.
+  // In ai mode only player 1 is human.
+  function isHumanTurn() { return mode === "2p" ? true : current === 1; }
+  function sideName(player) {
+    if (mode === "2p") return player === 1 ? "Player 1" : "Player 2";
+    return player === 1 ? "You" : "CPU";
+  }
 
   var P1 = "#ff5c7a"; // human
   var P2 = "#4db8ff"; // cpu
@@ -271,6 +317,8 @@
     gameOver = false;
     busy = false;
     overlay.classList.remove("show");
+    n1.textContent = sideName(1);
+    n2.textContent = sideName(2);
     updateUI();
     resize();
   }
@@ -456,6 +504,8 @@
     s2.classList.toggle("active", current === 2 && !gameOver);
     if (gameOver) {
       turnEl.textContent = "Game over";
+    } else if (mode === "2p") {
+      turnEl.textContent = sideName(current) + " — tap a line";
     } else {
       turnEl.textContent = current === 1 ? "Your turn — tap a line" : "CPU is thinking…";
     }
@@ -466,30 +516,35 @@
     updateUI();
     var s = scores();
     if (s.p1 > s.p2) {
-      resTitle.textContent = "You win!";
+      resTitle.textContent = mode === "2p" ? sideName(1) + " wins!" : "You win!";
       resTitle.style.color = P1;
     } else if (s.p2 > s.p1) {
-      resTitle.textContent = "CPU wins";
+      resTitle.textContent = mode === "2p" ? sideName(2) + " wins!" : "CPU wins";
       resTitle.style.color = P2;
     } else {
       resTitle.textContent = "It's a tie!";
       resTitle.style.color = "#e8edf2";
     }
-    resText.textContent = "You " + s.p1 + " — " + s.p2 + " CPU";
+    resText.textContent = sideName(1) + " " + s.p1 + " — " + s.p2 + " " + sideName(2);
     setTimeout(function () { overlay.classList.add("show"); beepEnd(); }, 350);
   }
 
   // ---- Turn flow ----
   function humanMove(e) {
-    if (busy || gameOver || current !== 1) return;
+    if (busy || gameOver || !isHumanTurn()) return;
     if (edgeDrawn(e)) return;
-    var got = applyMove(e, 1);
+    var mover = current;
+    var got = applyMove(e, mover);
     blip(got > 0);
     draw();
     updateUI();
     if (isFull()) { finish(); return; }
     if (got > 0) {
-      // human goes again
+      // completing a box grants another turn — same player goes again
+      updateUI();
+    } else if (mode === "2p") {
+      // pass-and-play: hand off to the other human
+      current = mover === 1 ? 2 : 1;
       updateUI();
     } else {
       current = 2;
@@ -647,7 +702,7 @@
 
   function onTap(ev) {
     ev.preventDefault();
-    if (busy || gameOver || current !== 1) return;
+    if (busy || gameOver || !isHumanTurn()) return;
     var p = pointerPos(ev);
     var e = hitEdge(p.x, p.y);
     if (e && !edgeDrawn(e)) humanMove(e);
@@ -693,15 +748,30 @@
     if (ac()) { try { actx.resume(); } catch (e) {} }
     init(parseInt(sizeSel.value, 10));
   }
-  document.getElementById("newBtn").addEventListener("click", newGame);
+  // ---- Mode selection ----
+  function showModeSelect() { modeOverlay.classList.add("show"); }
+  function startMode(m) {
+    if (ac()) { try { actx.resume(); } catch (e) {} }
+    mode = m;
+    modeOverlay.classList.remove("show");
+    newGame();
+  }
+  document.getElementById("modeAi").addEventListener("click", function () { startMode("ai"); });
+  document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
+
+  // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  document.getElementById("newBtn").addEventListener("click", showModeSelect);
+  // "Play Again" restarts the same mode.
   document.getElementById("againBtn").addEventListener("click", newGame);
+  // Changing size restarts the current mode at the new size.
   sizeSel.addEventListener("change", newGame);
 
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
 
-  // start
+  // start: render an idle board behind the mode picker, then ask for a mode.
   init(parseInt(sizeSel.value, 10));
+  showModeSelect();
 })();
 </script>
 </body>

@@ -116,6 +116,28 @@
         button:active {
             transform: scale(0.98);
         }
+
+        .mode-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .mode-overlay.show { display: flex; }
+        .mode-modal {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 1.5rem;
+            text-align: center;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+            max-width: 80vw;
+        }
+        .mode-modal h2 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+        .mode-modal p { margin: 0 0 1.25rem; color: var(--text-muted); }
+        .mode-modal .mode-btns { display: flex; flex-direction: column; gap: 0.75rem; }
     </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/tic-tac-toe.svg">
@@ -194,16 +216,42 @@
     <button id="resetBtn">Reset Game</button>
 </div>
 
+<div id="modeOverlay" class="mode-overlay">
+    <div class="mode-modal">
+        <h2>Tic-Tac-Toe</h2>
+        <p>Choose a mode</p>
+        <div class="mode-btns">
+            <button id="modeAi">🤖 vs Computer</button>
+            <button id="modeTwo">👥 2 Players</button>
+        </div>
+    </div>
+</div>
+
 <script>
     const boardElement = document.getElementById('board');
     const cells = document.querySelectorAll('.cell');
     const statusDisplay = document.getElementById('status');
     const resetBtn = document.getElementById('resetBtn');
 
+    const modeOverlay = document.getElementById('modeOverlay');
+
     let board = ['', '', '', '', '', '', '', '', ''];
     let gameActive = true;
     const HUMAN = 'X';
     const AI = 'O';
+    let mode = 'ai';            // 'ai' = vs computer, '2p' = pass-and-play
+    let currentPlayer = HUMAN;  // whose turn it is (X always starts)
+
+    // In 2p both sides are human; in ai only X is human.
+    function isHumanTurn() { return mode === '2p' ? true : currentPlayer === HUMAN; }
+    function sideName(side) {
+        if (mode === '2p') return side === HUMAN ? 'Player 1 (X)' : 'Player 2 (O)';
+        return side === HUMAN ? 'You' : 'Computer';
+    }
+    function turnText() {
+        if (mode === '2p') return sideName(currentPlayer) + "'s turn";
+        return currentPlayer === HUMAN ? 'Your turn (X)' : "Computer's turn (O)";
+    }
 
     const winConditions = [
         [0, 1, 2], [3, 4, 5], [6, 7, 8], // Rows
@@ -215,11 +263,11 @@
         const clickedCell = e.target;
         const index = parseInt(clickedCell.getAttribute('data-index'));
 
-        if (board[index] !== '' || !gameActive) return;
+        if (board[index] !== '' || !gameActive || !isHumanTurn()) return;
 
-        makeMove(index, HUMAN);
+        makeMove(index, currentPlayer);
 
-        if (gameActive) {
+        if (gameActive && mode === 'ai' && currentPlayer === AI) {
             statusDisplay.innerText = "Computer is thinking...";
             setTimeout(aiMove, 400);
         }
@@ -229,19 +277,20 @@
         board[index] = player;
         cells[index].innerText = player;
         cells[index].classList.add('taken', player.toLowerCase());
-        
+
         const winResult = checkWinner(board);
         if (winResult) {
             endGame(winResult);
         } else if (board.every(cell => cell !== '')) {
             endGame('draw');
         } else {
-            statusDisplay.innerText = player === HUMAN ? "Computer's turn (O)" : "Your turn (X)";
+            currentPlayer = player === HUMAN ? AI : HUMAN;
+            statusDisplay.innerText = turnText();
         }
     }
 
     function aiMove() {
-        if (!gameActive) return;
+        if (!gameActive || mode !== 'ai') return;
         let bestScore = -Infinity;
         let move;
 

@@ -196,7 +196,7 @@
   #newBtn:active { background: #ffe9d6; }
 
   /* win overlay */
-  #winOverlay {
+  #winOverlay, #modeOverlay {
     position: fixed;
     inset: 0;
     background: rgba(20,20,30,.55);
@@ -206,7 +206,8 @@
     z-index: 50;
     padding: 16px;
   }
-  #winOverlay.show { display: flex; }
+  #winOverlay.show, #modeOverlay.show { display: flex; }
+  #modeOverlay { z-index: 60; }
   .winCard {
     background: #fff;
     border-radius: 20px;
@@ -289,11 +290,11 @@
 
   <div class="status">
     <div class="pcard you active" id="card-you">
-      <div class="name"><span class="dot you"></span> You</div>
+      <div class="name"><span class="dot you"></span> <span id="name-you">You</span></div>
       <div class="pos" id="pos-you">0</div>
     </div>
     <div class="pcard cpu" id="card-cpu">
-      <div class="name"><span class="dot cpu"></span> CPU</div>
+      <div class="name"><span class="dot cpu"></span> <span id="name-cpu">CPU</span></div>
       <div class="pos" id="pos-cpu">0</div>
     </div>
   </div>
@@ -324,6 +325,15 @@
       <h2 id="winTitle">You win!</h2>
       <p id="winText">First to 100 wins the game.</p>
       <button id="playAgain">Play Again</button>
+    </div>
+  </div>
+
+  <div id="modeOverlay" class="show">
+    <div class="winCard">
+      <h2>🐍 Snakes &amp; Ladders 🪜</h2>
+      <p>Choose a mode</p>
+      <button id="modeAi" style="margin-bottom:10px;">🤖 vs Computer</button>
+      <button id="modeTwo">👥 Pass &amp; Play</button>
     </div>
   </div>
 
@@ -449,6 +459,7 @@
   });
 
   // ---- Game state ----
+  var mode = "ai"; // 'ai' = vs computer, '2p' = pass-and-play hot seat
   var state = {
     you: 0,
     cpu: 0,
@@ -457,12 +468,22 @@
     over: false
   };
 
+  // In 2p mode both seats are human; in ai mode only "you" is human.
+  function isHumanTurn() { return mode === "2p" ? true : state.turn === "you"; }
+  function sideName(who) {
+    if (mode === "2p") return who === "you" ? "Player 1" : "Player 2";
+    return who === "you" ? "You" : "CPU";
+  }
+
   var tokYou = document.getElementById("tok-you");
   var tokCpu = document.getElementById("tok-cpu");
   var posYou = document.getElementById("pos-you");
   var posCpu = document.getElementById("pos-cpu");
   var cardYou = document.getElementById("card-you");
   var cardCpu = document.getElementById("card-cpu");
+  var nameYou = document.getElementById("name-you");
+  var nameCpu = document.getElementById("name-cpu");
+  var modeOverlay = document.getElementById("modeOverlay");
   var msg = document.getElementById("msg");
   var rollBtn = document.getElementById("rollBtn");
   var newBtn = document.getElementById("newBtn");
@@ -615,10 +636,15 @@
     cardYou.classList.remove("active");
     cardCpu.classList.remove("active");
     sndWin();
-    winTitle.textContent = winner === "you" ? "🎉 You Win!" : "🤖 CPU Wins!";
-    winText.textContent = winner === "you"
-      ? "You reached 100 first. Great job!"
-      : "The computer reached 100 first. Try again!";
+    if (mode === "2p") {
+      winTitle.textContent = "🎉 " + sideName(winner) + " Wins!";
+      winText.textContent = sideName(winner) + " reached 100 first!";
+    } else {
+      winTitle.textContent = winner === "you" ? "🎉 You Win!" : "🤖 CPU Wins!";
+      winText.textContent = winner === "you"
+        ? "You reached 100 first. Great job!"
+        : "The computer reached 100 first. Try again!";
+    }
     winOverlay.classList.add("show");
   }
 
@@ -640,32 +666,40 @@
     });
   }
 
-  function youRoll() {
-    if (state.busy || state.over || state.turn !== "you") return;
+  // A human-driven roll for the seat that is currently to move. In ai mode this
+  // is always "you"; in 2p mode it's whichever seat (you/cpu) holds the turn.
+  function humanRoll() {
+    if (state.busy || state.over || !isHumanTurn()) return;
+    var who = state.turn;
+    var other = who === "you" ? "cpu" : "you";
     state.busy = true;
     rollBtn.disabled = true;
     var v = rollValue();
-    msg.textContent = "You rolled a " + v + "!";
+    msg.textContent = sideName(who) + " rolled a " + v + "!";
     animateDie(v).then(function () {
-      return doTurn("you", v);
+      return doTurn(who, v);
     }).then(function (res) {
-      if (res.won) { endGame("you"); return; }
-      // switch to CPU
-      state.turn = "cpu";
+      if (res.won) { endGame(who); return; }
+      state.turn = other;
       render();
-      if (jumps[state.you] === undefined &&
+      if (jumps[state[who]] === undefined &&
           !/ladder|snake/i.test(msg.textContent)) {
-        msg.textContent = "You moved to " + state.you + ". CPU's turn…";
+        msg.textContent = sideName(who) + " moved to " + state[who] + ". " + sideName(other) + "'s turn…";
       } else {
-        msg.textContent += " — CPU's turn…";
+        msg.textContent += " — " + sideName(other) + "'s turn…";
       }
       state.busy = false;
-      setTimeout(cpuTurn, 800);
+      if (mode === "ai" && other === "cpu") {
+        setTimeout(cpuTurn, 800);
+      } else {
+        // Pass-and-play: next human taps Roll.
+        rollBtn.disabled = false;
+      }
     });
   }
 
   function cpuTurn() {
-    if (state.over || state.turn !== "cpu") return;
+    if (state.over || state.turn !== "cpu" || mode !== "ai") return;
     state.busy = true;
     var v = rollValue();
     msg.textContent = "CPU rolled a " + v + "…";
@@ -694,28 +728,49 @@
     state.over = false;
     winOverlay.classList.remove("show");
     rollBtn.disabled = false;
-    msg.textContent = "Your turn — tap Roll Dice!";
+    nameYou.textContent = sideName("you");
+    nameCpu.textContent = sideName("cpu");
+    msg.textContent = sideName("you") + " — tap Roll Dice!";
     showDie(1);
     placeToken(tokYou, 0, true);
     placeToken(tokCpu, 0, false);
     render();
   }
 
+  // ---- Mode selection ----
+  function showModeSelect() { modeOverlay.classList.add("show"); }
+  function startMode(m) {
+    mode = m;
+    modeOverlay.classList.remove("show");
+    newGame();
+  }
+
   // ---- Events ----
   rollBtn.addEventListener("click", function () {
     if (AC && AC.state === "suspended") { AC.resume(); }
-    youRoll();
+    humanRoll();
   });
-  newBtn.addEventListener("click", newGame);
+  // "New Game" returns to the mode picker so you can switch AI / pass-and-play.
+  newBtn.addEventListener("click", showModeSelect);
+  // "Play Again" from the win card restarts the same mode.
   playAgain.addEventListener("click", newGame);
+  document.getElementById("modeAi").addEventListener("click", function () {
+    if (AC && AC.state === "suspended") { AC.resume(); }
+    startMode("ai");
+  });
+  document.getElementById("modeTwo").addEventListener("click", function () {
+    if (AC && AC.state === "suspended") { AC.resume(); }
+    startMode("2p");
+  });
 
   // prevent double-tap zoom / accidental gestures on buttons
   [rollBtn, newBtn, playAgain].forEach(function (b) {
     b.addEventListener("touchend", function (e) { e.preventDefault(); b.click(); }, { passive: false });
   });
 
-  // init
+  // init — render an idle board behind the mode picker, then ask for a mode.
   newGame();
+  showModeSelect();
 })();
 </script>
 </body>

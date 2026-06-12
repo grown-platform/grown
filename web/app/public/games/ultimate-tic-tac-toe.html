@@ -193,6 +193,23 @@
   #banner .big.x { color: var(--x); }
   #banner .big.o { color: var(--o); }
   #banner .big.tie { color: var(--muted); }
+
+  #modeOverlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    background: rgba(10,13,22,0.82);
+    z-index: 11;
+    text-align: center;
+    padding: 20px;
+  }
+  #modeOverlay.show { display: flex; }
+  #modeOverlay h2 { font-size: 28px; margin: 0 0 6px; }
+  #modeOverlay p { color: var(--muted); margin: 0 0 18px; }
+  #modeOverlay .mode-btns { display: flex; flex-direction: column; gap: 12px; }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/ultimate-tic-tac-toe.svg">
@@ -271,6 +288,15 @@
     <button id="bannerNew">Play Again</button>
   </div>
 
+  <div id="modeOverlay">
+    <h2>Ultimate Tic-Tac-Toe</h2>
+    <p>Choose a mode</p>
+    <div class="mode-btns">
+      <button id="modeAi">🤖 vs Computer</button>
+      <button id="modeTwo">👥 2 Players</button>
+    </div>
+  </div>
+
 <script>
 (function () {
   "use strict";
@@ -295,11 +321,21 @@
   var lastMove;        // {b, c} of last placed mark, or null
   var lock;            // input lock during CPU move/animations
 
+  var mode = "ai"; // 'ai' = vs computer, '2p' = pass-and-play hot seat
+
   var boardEl = document.getElementById("board");
   var statusEl = document.getElementById("status");
   var bannerEl = document.getElementById("banner");
   var bannerTitle = document.getElementById("bannerTitle");
   var bannerSub = document.getElementById("bannerSub");
+  var modeOverlay = document.getElementById("modeOverlay");
+
+  // In 2p both sides are human; in ai only HUMAN (X) is human-controlled.
+  function isHumanTurn() { return mode === "2p" ? true : current === HUMAN; }
+  function sideName(side) {
+    if (mode === "2p") return side === HUMAN ? "Player 1 (X)" : "Player 2 (O)";
+    return side === HUMAN ? "You" : "CPU";
+  }
 
   // DOM refs
   var smallEls = [];   // 9
@@ -464,7 +500,7 @@
         cell.textContent = v || "";
         cell.className = "cell" + (v === "X" ? " x" : v === "O" ? " o" : "");
         // playable: human's turn, board legal, cell empty, not won
-        if (!gameOver && current === HUMAN && legalSet[b] && !v && !w) {
+        if (!gameOver && isHumanTurn() && legalSet[b] && !v && !w) {
           cell.classList.add("playable");
         }
         if (lastMove && lastMove.b === b && lastMove.c === c) {
@@ -479,12 +515,23 @@
     statusEl.classList.remove("you", "cpu", "win");
     if (gameOver) {
       statusEl.classList.add("win");
-      if (overallWinner === "X") statusEl.textContent = "You win the game! \u{1F389}";
-      else if (overallWinner === "O") statusEl.textContent = "CPU wins the game.";
-      else statusEl.textContent = "Game tied.";
+      if (mode === "2p") {
+        if (overallWinner === "T") statusEl.textContent = "Game tied.";
+        else statusEl.textContent = sideName(overallWinner) + " wins the game! \u{1F389}";
+      } else {
+        if (overallWinner === "X") statusEl.textContent = "You win the game! \u{1F389}";
+        else if (overallWinner === "O") statusEl.textContent = "CPU wins the game.";
+        else statusEl.textContent = "Game tied.";
+      }
       return;
     }
-    if (current === HUMAN) {
+    if (mode === "2p") {
+      statusEl.classList.add(current === HUMAN ? "you" : "cpu");
+      var who = sideName(current);
+      statusEl.textContent = (activeBoard >= 0 && boardOpen(activeBoard))
+        ? who + " — play the highlighted board"
+        : who + " — play any highlighted board";
+    } else if (current === HUMAN) {
       statusEl.classList.add("you");
       statusEl.textContent = (activeBoard >= 0 && boardOpen(activeBoard))
         ? "Your turn (X) — play the highlighted board"
@@ -531,7 +578,7 @@
 
   // ---- Human click ----
   function onCellClick(e) {
-    if (lock || gameOver || current !== HUMAN) return;
+    if (lock || gameOver || !isHumanTurn()) return;
     var t = e.target.closest(".cell");
     if (!t) return;
     var b = +t.dataset.b;
@@ -544,14 +591,20 @@
     if (boardWinner[b]) return;               // decided board
 
     ensureAudio();
-    var res = applyMove(b, c, HUMAN);
+    var mover = current;
+    var res = applyMove(b, c, mover);
     if (res && res.smallWon) sndSmallWin(); else sndPlace();
 
     advance(c);
-    current = CPU;
+    current = mover === HUMAN ? CPU : HUMAN;
     render();
 
     if (gameOver) { finish(); return; }
+
+    if (mode === "2p") {
+      // Pass-and-play: the other human moves next (no CPU).
+      return;
+    }
 
     lock = true;
     setTimeout(cpuTurn, 420);
@@ -559,6 +612,12 @@
 
   // ---- Game end handling ----
   function finish() {
+    if (mode === "2p") {
+      if (overallWinner === "X") { sndWin(); showBanner("Player 1 Wins!", "x", "X lined up three boards in a row."); }
+      else if (overallWinner === "O") { sndWin(); showBanner("Player 2 Wins!", "o", "O lined up three boards in a row."); }
+      else { showBanner("It's a Tie", "tie", "No three boards in a row for anyone."); }
+      return;
+    }
     if (overallWinner === "X") { sndWin(); showBanner("You Win!", "x", "Three small boards in a row — nicely done."); }
     else if (overallWinner === "O") { sndLose(); showBanner("CPU Wins", "o", "The computer lined up three boards."); }
     else { showBanner("It's a Tie", "tie", "No three boards in a row for anyone."); }
@@ -689,10 +748,22 @@
     if (gameOver) { finish(); }
   }
 
+  // ---- Mode selection ----
+  function showModeSelect() { modeOverlay.classList.add("show"); }
+  function startMode(m) {
+    mode = m;
+    modeOverlay.classList.remove("show");
+    newGame();
+  }
+
   // ---- Events ----
   boardEl.addEventListener("click", onCellClick);
-  document.getElementById("newGame").addEventListener("click", function () { ensureAudio(); newGame(); });
+  // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  document.getElementById("newGame").addEventListener("click", function () { ensureAudio(); showModeSelect(); });
+  // "Play Again" from the banner restarts the same mode.
   document.getElementById("bannerNew").addEventListener("click", function () { ensureAudio(); newGame(); });
+  document.getElementById("modeAi").addEventListener("click", function () { ensureAudio(); startMode("ai"); });
+  document.getElementById("modeTwo").addEventListener("click", function () { ensureAudio(); startMode("2p"); });
   var soundBtn = document.getElementById("sound");
   soundBtn.addEventListener("click", function () {
     soundOn = !soundOn;
@@ -707,7 +778,8 @@
 
   // ---- Init ----
   buildDOM();
-  newGame();
+  newGame();          // render an idle board behind the picker
+  showModeSelect();
 })();
 </script>
 </body>

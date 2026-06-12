@@ -164,6 +164,27 @@
   }
   #overlayCard h2 { margin: 0 0 6px; font-size: 1.3rem; }
   #overlayCard p { margin: 0 0 16px; font-size: 0.9rem; opacity: 0.85; }
+  #modeOverlay {
+    position: fixed; inset: 0;
+    background: rgba(8,12,18,0.82);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 11;
+  }
+  #modeOverlay.show { display: flex; }
+  #modeCard {
+    background: #1c2937;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    padding: 24px 26px;
+    text-align: center;
+    max-width: 280px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  #modeCard h2 { margin: 0 0 4px; font-size: 1.3rem; }
+  #modeCard p { margin: 0 0 16px; font-size: 0.9rem; opacity: 0.85; }
+  #modeCard .modeBtns { display: flex; flex-direction: column; gap: 12px; }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/nine-mens-morris.svg">
@@ -252,6 +273,17 @@
       <h2 id="overTitle">Game Over</h2>
       <p id="overText"></p>
       <button id="overBtn">Play Again</button>
+    </div>
+  </div>
+
+  <div id="modeOverlay">
+    <div id="modeCard">
+      <h2>Nine Men's Morris</h2>
+      <p>Choose a mode</p>
+      <div class="modeBtns">
+        <button id="modeAi">🤖 vs Computer</button>
+        <button id="modeTwo">👥 2 Players</button>
+      </div>
     </div>
   </div>
 
@@ -346,6 +378,15 @@
   // ---- Game state ----
   const HUMAN = 1, CPU = 2;
   let board, turn, phase, handCount, selected, gameOver, awaitRemoval, flying;
+  let mode = "ai"; // "ai" = vs computer (human is player 1), "2p" = pass-and-play
+
+  // In 2p both players are human, so the side to move is always human.
+  // In ai mode only player 1 (HUMAN) is human.
+  function isHumanTurn() { return mode === "2p" ? true : turn === HUMAN; }
+  function sideName(pl) {
+    if (mode === "2p") return pl === 1 ? "Player 1" : "Player 2";
+    return pl === HUMAN ? "You" : "CPU";
+  }
 
   function newGame() {
     board = new Array(24).fill(0); // 0 empty, 1 human, 2 cpu
@@ -356,9 +397,16 @@
     gameOver = false;
     awaitRemoval = false;
     flying = document.getElementById("flyToggle").checked;
+    document.querySelector("#score1 .name").innerHTML =
+      '<span class="swatch p1"></span>' + sideName(1);
+    document.querySelector("#score2 .name").innerHTML =
+      '<span class="swatch p2"></span>' + sideName(2);
     hideOverlay();
     render();
-    setStatus("Tap an empty point to place a piece.");
+    setStatus(isHumanTurn()
+      ? (mode === "2p" ? sideName(turn) + ": tap an empty point to place a piece."
+                       : "Tap an empty point to place a piece.")
+      : "Tap an empty point to place a piece.");
   }
 
   function piecesOnBoard(pl) {
@@ -464,10 +512,18 @@
   function endGame(winner, reason) {
     gameOver = true;
     const won = winner === HUMAN;
-    setStatus((won ? "You win!" : "CPU wins!") + " (" + reason + ")");
-    render();
-    showOverlay(won ? "You Win!" : "CPU Wins", (won ? "You" : "CPU") + " won — " + reason + ".");
-    beep(won ? 660 : 180, 0.25);
+    if (mode === "2p") {
+      const w = sideName(winner);
+      setStatus(w + " wins! (" + reason + ")");
+      render();
+      showOverlay(w + " Wins!", w + " won — " + reason + ".");
+      beep(660, 0.25);
+    } else {
+      setStatus((won ? "You win!" : "CPU wins!") + " (" + reason + ")");
+      render();
+      showOverlay(won ? "You Win!" : "CPU Wins", (won ? "You" : "CPU") + " won — " + reason + ".");
+      beep(won ? 660 : 180, 0.25);
+    }
   }
 
   // ---- Phase update ----
@@ -482,11 +538,13 @@
   // =========================================================
   function onPointTap(p) {
     if (gameOver) return;
-    if (turn !== HUMAN) return;
+    if (!isHumanTurn()) return;
+    // The side currently to move (in 2p this may be player 2).
+    const me = turn;
 
     if (awaitRemoval) {
-      // human is removing an opponent piece
-      const targets = removableTargets(HUMAN);
+      // current player is removing an opponent piece
+      const targets = removableTargets(me);
       if (targets.includes(p)) {
         board[p] = 0;
         awaitRemoval = false;
@@ -496,15 +554,15 @@
       return;
     }
 
-    if (phase === "place" || handCount[HUMAN] > 0) {
+    if (phase === "place" || handCount[me] > 0) {
       // placing
       if (board[p] === 0) {
-        board[p] = HUMAN;
-        handCount[HUMAN]--;
+        board[p] = me;
+        handCount[me]--;
         beep(440, 0.06);
-        if (formsMillAt(p, HUMAN)) {
+        if (formsMillAt(p, me)) {
           render();
-          beginRemoval(HUMAN);
+          beginRemoval(me);
         } else {
           afterMove();
         }
@@ -514,23 +572,23 @@
 
     // move phase
     if (selected === null) {
-      if (board[p] === HUMAN) {
+      if (board[p] === me) {
         selected = p;
         render();
       }
     } else {
       if (p === selected) { selected = null; render(); return; }
-      if (board[p] === HUMAN) { selected = p; render(); return; }
-      const dests = legalDestinations(selected, HUMAN);
+      if (board[p] === me) { selected = p; render(); return; }
+      const dests = legalDestinations(selected, me);
       if (dests.includes(p)) {
-        board[p] = HUMAN;
+        board[p] = me;
         board[selected] = 0;
         const moved = p;
         selected = null;
         beep(400, 0.06);
-        if (formsMillAt(moved, HUMAN)) {
+        if (formsMillAt(moved, me)) {
           render();
-          beginRemoval(HUMAN);
+          beginRemoval(me);
         } else {
           afterMove();
         }
@@ -545,9 +603,11 @@
       afterMove();
       return;
     }
-    if (pl === HUMAN) {
+    if (mode === "2p" || pl === HUMAN) {
+      // Human-controlled removal: let the mover tap an opponent piece.
       awaitRemoval = true;
-      setStatus("Mill! Tap a highlighted CPU piece to remove.");
+      const oppName = mode === "2p" ? sideName(opponent(pl)) : "CPU";
+      setStatus("Mill! Tap a highlighted " + oppName + " piece to remove.");
       beep(700, 0.1);
       render();
     } else {
@@ -570,19 +630,22 @@
     if (checkGameEnd()) { render(); return; }
     render();
     updateTurnStatus();
-    if (turn === CPU && !gameOver) {
+    if (mode === "ai" && turn === CPU && !gameOver) {
       setTimeout(cpuTurn, 480);
     }
+    // In 2p mode the other human simply plays next (input already unlocked).
   }
 
   function updateTurnStatus() {
     if (gameOver) return;
-    const who = turn === HUMAN ? "Your" : "CPU's";
+    const human = isHumanTurn();
+    const who = mode === "2p" ? sideName(turn) + "'s" : (turn === HUMAN ? "Your" : "CPU's");
+    const hint = human ? null : "thinking…";
     if (phase === "place") {
-      setStatus(who + " turn — placing. " + (turn === HUMAN ? "Tap an empty point." : "thinking…"));
+      setStatus(who + " turn — placing. " + (human ? "Tap an empty point." : hint));
     } else {
       const fly = flying && piecesOnBoard(turn) === 3 ? " (flying)" : "";
-      setStatus(who + " turn — moving" + fly + ". " + (turn === HUMAN ? "Tap a piece, then a spot." : "thinking…"));
+      setStatus(who + " turn — moving" + fly + ". " + (human ? "Tap a piece, then a spot." : hint));
     }
   }
 
@@ -777,13 +840,13 @@
     // valid destinations for highlighting
     let validSet = new Set();
     let removeSet = new Set();
-    if (!gameOver && turn === HUMAN) {
+    if (!gameOver && isHumanTurn()) {
       if (awaitRemoval) {
-        removableTargets(HUMAN).forEach(p => removeSet.add(p));
-      } else if (phase === "place" || handCount[HUMAN] > 0) {
+        removableTargets(turn).forEach(p => removeSet.add(p));
+      } else if (phase === "place" || handCount[turn] > 0) {
         for (let i = 0; i < 24; i++) if (board[i] === 0) validSet.add(i);
       } else if (selected !== null) {
-        legalDestinations(selected, HUMAN).forEach(p => validSet.add(p));
+        legalDestinations(selected, turn).forEach(p => validSet.add(p));
       }
     }
 
@@ -799,7 +862,7 @@
       } else {
         piece.style.display = "";
         let pcls = "piece " + (board[i] === 1 ? "p1" : "p2");
-        if (board[i] === HUMAN && selected === i) pcls += " selected";
+        if (selected === i) pcls += " selected";
         if (inMillSet.has(i)) pcls += " inmill";
         if (removeSet.has(i)) {
           dot.setAttribute("class", "point-dot removable");
@@ -847,7 +910,19 @@
   }
 
   // ---- Wire up ----
-  document.getElementById("newGame").addEventListener("click", newGame);
+  // ---- Mode selection ----
+  function showModeSelect() { document.getElementById("modeOverlay").classList.add("show"); }
+  function startMode(m) {
+    mode = m;
+    document.getElementById("modeOverlay").classList.remove("show");
+    newGame();
+  }
+  document.getElementById("modeAi").addEventListener("click", function () { startMode("ai"); });
+  document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
+
+  // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  document.getElementById("newGame").addEventListener("click", showModeSelect);
+  // "Play Again" restarts the same mode.
   document.getElementById("overBtn").addEventListener("click", newGame);
   document.getElementById("flyToggle").addEventListener("change", function () {
     flying = this.checked;
@@ -856,7 +931,9 @@
   document.addEventListener("gesturestart", e => e.preventDefault());
 
   buildBoardStatic();
+  // Render an idle board behind the mode picker, then ask for a mode.
   newGame();
+  showModeSelect();
 })();
 </script>
 </body>

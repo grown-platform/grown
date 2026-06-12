@@ -63,15 +63,16 @@
   .legend{display:flex;gap:10px;justify-content:center;margin-top:2px;font-size:12px;opacity:.85;flex-wrap:wrap;}
   .legend span{display:inline-flex;align-items:center;gap:4px;}
   .legend i{width:10px;height:10px;border-radius:50%;display:inline-block;}
-  #overlay{
+  #overlay, #modeOverlay{
     position:fixed; inset:0; background:rgba(6,8,14,.82); backdrop-filter:blur(3px);
     display:none; align-items:center; justify-content:center; flex-direction:column; gap:16px;
     z-index:10; text-align:center; padding:20px;
   }
-  #overlay.show{display:flex;}
-  #overlay h2{font-size:30px;margin:0;}
-  #overlay p{margin:0;opacity:.8;}
-  #overlay button{
+  #overlay.show, #modeOverlay.show{display:flex;}
+  #modeOverlay{z-index:11;}
+  #overlay h2, #modeOverlay h2{font-size:30px;margin:0;}
+  #overlay p, #modeOverlay p{margin:0;opacity:.8;}
+  #overlay button, #modeOverlay button{
     background:#fff;color:#10131a;border:none;padding:14px 26px;border-radius:12px;
     font-size:17px;font-weight:700;cursor:pointer;
   }
@@ -154,6 +155,15 @@
   <button id="overBtn">New Game</button>
 </div>
 
+<div id="modeOverlay" class="show">
+  <h2>Ludo</h2>
+  <p>Choose a mode</p>
+  <div style="display:flex;flex-direction:column;gap:12px;">
+    <button id="modeAi">🤖 vs Computer</button>
+    <button id="modeTwo">👥 Pass &amp; Play</button>
+  </div>
+</div>
+
 <script>
 "use strict";
 (function(){
@@ -224,6 +234,15 @@
   let rolledThisTurn;
   let consecutiveSixes;
   let gameOver;
+  let mode = 'ai'; // 'ai' = you vs 3 CPUs, '2p' = pass-and-play, all 4 seats human
+
+  // In 2p mode every seat is human; in ai mode only seat 0 is human.
+  function isHumanTurn(){ return mode === '2p' ? true : turn === 0; }
+  // Name of a seat. In 2p use the seat color; in ai seat 0 is "You".
+  function sideName(p){
+    if(mode === '2p') return NAMES[p];
+    return p === 0 ? 'You' : NAMES[p];
+  }
 
   const svg = document.getElementById('board');
   const SVGNS = 'http://www.w3.org/2000/svg';
@@ -550,17 +569,17 @@
     const moves=legalMoves(p,dieVal);
     if(moves.length===0){
       // no move possible
-      setStatus(NAMES[p]+' rolled '+dieVal+' — no move');
+      setStatus(sideName(p)+' rolled '+dieVal+' — no move');
       render();
       // a 6 with no moves still ends turn (rare). pass.
       setTimeout(()=>endTurn(p, false), 650);
       return;
     }
     if(players[p].isCPU){
-      setStatus(NAMES[p]+' rolled '+dieVal);
+      setStatus(sideName(p)+' rolled '+dieVal);
       setTimeout(()=>cpuChoose(p, moves), 520);
     }else{
-      setStatus('You rolled '+dieVal+' — tap a token');
+      setStatus(sideName(p)+' rolled '+dieVal+' — tap a token');
       render();
     }
   }
@@ -594,10 +613,10 @@
       // same player goes again (capture, six, or finishing a token grant bonus)
       dieVal=0; rolledThisTurn=false;
       if(players[p].isCPU){
-        setStatus(NAMES[p]+' goes again');
+        setStatus(sideName(p)+' goes again');
         setTimeout(()=>cpuTurn(p), 520);
       }else{
-        setStatus('Bonus roll! Tap the dice');
+        setStatus((mode==='2p'?sideName(p)+' — bonus roll!':'Bonus roll! Tap the dice'));
         diceFace(0);
         render(); updateDiceButton();
       }
@@ -619,10 +638,10 @@
     render();
     updateDiceButton();
     if(players[turn].isCPU){
-      setStatus(NAMES[turn]+'’s turn');
+      setStatus(sideName(turn)+'’s turn');
       setTimeout(()=>cpuTurn(turn), 560);
     }else{
-      setStatus('Your turn — tap the dice');
+      setStatus((mode==='2p'?sideName(turn)+' — tap the dice':'Your turn — tap the dice'));
       document.getElementById('dice').classList.add('canroll');
     }
   }
@@ -687,12 +706,13 @@
     sWin();
     const ov=document.getElementById('overlay');
     document.getElementById('overTitle').textContent =
-      (p===0? 'You win!' : NAMES[p]+' wins');
+      (mode==='2p' ? sideName(p)+' wins!' : (p===0? 'You win!' : NAMES[p]+' wins'));
     document.getElementById('overTitle').style.color = COLVAR[COLORS[p]];
     document.getElementById('overSub').textContent =
-      (p===0? 'All four tokens home. Nicely done!' : 'Better luck next round.');
+      (mode==='2p' ? sideName(p)+' got all four tokens home!'
+                   : (p===0? 'All four tokens home. Nicely done!' : 'Better luck next round.'));
     ov.classList.add('show');
-    setStatus((p===0?'You':NAMES[p])+' won the game');
+    setStatus(sideName(p)+' won the game');
     updateDiceButton();
   }
 
@@ -704,7 +724,7 @@
     for(let p=0;p<4;p++){
       players.push({
         color:COLORS[p],
-        isCPU: p!==0,
+        isCPU: mode==='2p' ? false : p!==0,
         done:false,
         tokens:[0,1,2,3].map(s=>({state:'base', pos:-1, slot:s}))
       });
@@ -713,7 +733,7 @@
     buildBoard();
     diceFace(0);
     render();
-    setStatus('Your turn — tap the dice');
+    setStatus(mode==='2p' ? (sideName(0)+' — tap the dice') : 'Your turn — tap the dice');
     document.getElementById('dice').classList.add('canroll');
     updateDiceButton();
     buildLegend();
@@ -726,20 +746,33 @@
       const s=document.createElement('span');
       const dot=document.createElement('i'); dot.style.background=COLVAR[COLORS[i]];
       s.appendChild(dot);
-      s.appendChild(document.createTextNode(i===0?'You':nm));
+      s.appendChild(document.createTextNode(sideName(i)));
       el.appendChild(s);
     });
   }
 
+  // ---- Mode selection ----
+  function showModeSelect(){ document.getElementById('modeOverlay').classList.add('show'); }
+  function startMode(m){
+    mode=m;
+    document.getElementById('modeOverlay').classList.remove('show');
+    newGame();
+  }
+
   // ---- Events ----
   document.getElementById('dice').addEventListener('click', roll);
-  document.getElementById('newgame').addEventListener('click', newGame);
+  // "New Game" returns to the mode picker so you can switch AI / pass-and-play.
+  document.getElementById('newgame').addEventListener('click', showModeSelect);
+  // "New Game" on the win overlay restarts the same mode.
   document.getElementById('overBtn').addEventListener('click', newGame);
+  document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
+  document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
   // touch-action:manipulation + the viewport meta already kill double-tap zoom,
   // so we let clicks fire normally (no touchend preventDefault that would eat taps).
 
-  // init
+  // init — render an idle board behind the mode picker, then ask for a mode.
   newGame();
+  showModeSelect();
 })();
 </script>
 </body>

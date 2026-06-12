@@ -155,6 +155,14 @@
   <p id="ovText"></p>
   <button id="ovBtn">Play Again</button>
 </div>
+<div id="modeOverlay" class="show" style="position:fixed;inset:0;background:rgba(10,6,20,.9);display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:11;text-align:center;padding:20px;">
+  <h2 style="font-size:28px;margin:0 0 6px;background:linear-gradient(90deg,#ffd84d,#ff6fae);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">Chinese Checkers</h2>
+  <p style="font-size:15px;margin:0 0 18px;color:#d8c8f0;">Choose a mode</p>
+  <div style="display:flex;flex-direction:column;gap:12px;">
+    <button id="modeAi">🤖 vs Computer</button>
+    <button id="modeTwo">👥 Pass &amp; Play</button>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -249,6 +257,15 @@
   let turn = 'H';          // 'H' or 'C'
   let busy = false;        // animation / cpu thinking lock
   let gameOver = false;
+  let mode = 'ai';         // 'ai' = vs computer, '2p' = pass-and-play hot seat
+
+  // In 2p mode both sides are human, so the side to move is always human.
+  // In ai mode only 'H' is human.
+  function isHumanTurn(){ return mode === '2p' ? true : turn === 'H'; }
+  function sideName(side){
+    if(mode === '2p') return side === 'H' ? 'Blue' : 'Pink';
+    return side === 'H' ? 'You' : 'CPU';
+  }
 
   function resetGame(){
     occ = new Map();
@@ -517,7 +534,10 @@
     const dot=document.getElementById('turnDot');
     const txt=document.getElementById('statusText');
     if(gameOver){ return; }
-    if(turn==='H'){ dot.style.background='#3aa0ff'; txt.textContent='Your turn (blue)'; }
+    if(mode==='2p'){
+      if(turn==='H'){ dot.style.background='#3aa0ff'; txt.textContent=sideName('H')+'’s turn'; }
+      else { dot.style.background='#ff6fae'; txt.textContent=sideName('C')+'’s turn'; }
+    } else if(turn==='H'){ dot.style.background='#3aa0ff'; txt.textContent='Your turn (blue)'; }
     else { dot.style.background='#ff6fae'; txt.textContent='CPU thinking…'; }
   }
 
@@ -529,7 +549,7 @@
     selected=null; legalMoves=new Map();
     setStatus();
     draw();
-    if(turn==='C'){
+    if(mode==='ai' && turn==='C'){
       setTimeout(cpuTurn, 350);
     }
   }
@@ -539,19 +559,26 @@
     selected=null; legalMoves=new Map();
     draw();
     const ov=document.getElementById('overlay');
-    document.getElementById('ovTitle').textContent = winner==='H'? 'You win! 🎉':'CPU wins';
-    document.getElementById('ovText').textContent = winner==='H'
-      ? 'All your pegs reached the far triangle.'
-      : 'The CPU filled its target first. Try again!';
+    if(mode==='2p'){
+      document.getElementById('ovTitle').textContent = sideName(winner)+' wins! 🎉';
+      document.getElementById('ovText').textContent = sideName(winner)+' filled the far triangle first.';
+      document.getElementById('statusText').textContent = sideName(winner)+' wins!';
+      sndWin();
+    } else {
+      document.getElementById('ovTitle').textContent = winner==='H'? 'You win! 🎉':'CPU wins';
+      document.getElementById('ovText').textContent = winner==='H'
+        ? 'All your pegs reached the far triangle.'
+        : 'The CPU filled its target first. Try again!';
+      document.getElementById('statusText').textContent = winner==='H'?'You win!':'CPU wins';
+      if(winner==='H') sndWin(); else sndLose();
+    }
     ov.classList.add('show');
-    document.getElementById('statusText').textContent = winner==='H'?'You win!':'CPU wins';
     document.getElementById('turnDot').style.background = winner==='H'?'#3aa0ff':'#ff6fae';
-    if(winner==='H') sndWin(); else sndLose();
   }
 
   // ----- Input -----
   function onTap(px,py){
-    if(busy || gameOver || turn!=='H') return;
+    if(busy || gameOver || !isHumanTurn()) return;
     const k=hitTest(px,py);
     if(k===null){ // tap empty space deselects
       if(selected){ selected=null; legalMoves=new Map(); draw(); }
@@ -564,10 +591,10 @@
       const path=mv.path;
       selected=null; const saved=legalMoves; legalMoves=new Map();
       draw();
-      animateMove(path, 'H', ()=>{ endMove(); });
+      animateMove(path, turn, ()=>{ endMove(); });
       return;
     }
-    if(o==='H'){
+    if(o===turn){
       // select own peg
       selected=k;
       legalMoves=computeMoves(k);
@@ -691,11 +718,31 @@
     animateMove(bestMove.path, 'C', ()=>{ endMove(); });
   }
 
+  // ----- Mode selection -----
+  const modeOverlay=document.getElementById('modeOverlay');
+  function showModeSelect(){ modeOverlay.classList.add('show'); modeOverlay.style.display='flex'; }
+  function startMode(m){
+    mode=m;
+    modeOverlay.classList.remove('show');
+    modeOverlay.style.display='none';
+    resetGame();
+  }
+  document.getElementById('modeAi').addEventListener('click', function(){
+    if(actx && actx.state==='suspended') actx.resume();
+    startMode('ai');
+  });
+  document.getElementById('modeTwo').addEventListener('click', function(){
+    if(actx && actx.state==='suspended') actx.resume();
+    startMode('2p');
+  });
+
   // ----- Buttons & resize -----
+  // "New Game" returns to the mode picker so you can switch AI / pass-and-play.
   document.getElementById('newBtn').addEventListener('click', function(){
     if(actx && actx.state==='suspended') actx.resume();
-    resetGame();
+    showModeSelect();
   });
+  // "Play Again" from game over restarts the same mode.
   document.getElementById('ovBtn').addEventListener('click', function(){
     resetGame();
   });

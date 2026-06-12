@@ -52,6 +52,32 @@
     background: #0e1530;
     border-radius: 14px;
   }
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(6,10,24,0.78);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: #121a33;
+    padding: 28px 30px;
+    border-radius: 16px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+    max-width: 80vw;
+    color: #e8eefc;
+  }
+  .modal h2 { margin: 0 0 6px; font-size: 1.5rem; color: #7fd0ff; }
+  .modal p { margin: 0 0 18px; color: #9fb3d9; }
+  .modal .modeBtns { display: flex; flex-direction: column; gap: 12px; }
+  .modal button {
+    background: #1c2740; color: #cfe0ff; border: 1px solid #33456b;
+    border-radius: 10px; padding: 14px 18px; font-size: 16px; font-weight: 600;
+    cursor: pointer;
+  }
+  .modal button:active { background: #26345a; }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/air-hockey.svg">
@@ -113,11 +139,21 @@
 <div id="wrap">
   <div id="hud">
     <div id="title">AIR HOCKEY</div>
-    <div id="score"><span class="cpu" id="cpuScore">0</span><span class="sep">:</span><span class="you" id="youScore">0</span></div>
+    <div id="score"><span class="cpu" id="cpuLabel">CPU</span> <span class="cpu" id="cpuScore">0</span><span class="sep">:</span><span class="you" id="youScore">0</span> <span class="you" id="youLabel">You</span></div>
     <button id="restart">Restart</button>
   </div>
   <div id="stage">
     <canvas id="cv"></canvas>
+  </div>
+</div>
+<div id="modeOverlay" class="overlay">
+  <div class="modal">
+    <h2>Air Hockey</h2>
+    <p>Choose a mode</p>
+    <div class="modeBtns">
+      <button id="modeAi">🤖 vs Computer</button>
+      <button id="modeTwo">👥 2 Players</button>
+    </div>
   </div>
 </div>
 <script>
@@ -130,6 +166,20 @@
   var cpuScoreEl = document.getElementById("cpuScore");
   var youScoreEl = document.getElementById("youScore");
   var restartBtn = document.getElementById("restart");
+  var cpuLabelEl = document.getElementById("cpuLabel");
+  var youLabelEl = document.getElementById("youLabel");
+  var modeOverlay = document.getElementById("modeOverlay");
+
+  // Game mode: 'ai' = top paddle driven by computer (default),
+  // '2p' = top paddle driven by a second finger in the top half (local hot-seat).
+  var mode = 'ai';
+  var picking = false;   // mode-select overlay is up -> freeze simulation
+  var paused = false;    // soft pause from the top menu (grown:pause/resume)
+
+  // Honor the menu's soft-pause events so the simulation freezes while the
+  // top sheet is open, then resumes when it closes.
+  window.addEventListener("grown:pause", function () { paused = true; });
+  window.addEventListener("grown:resume", function () { paused = false; });
 
   // ---- Logical playfield dimensions (table aspect ~ tall/portrait) ----
   // We use a fixed logical coordinate space and scale to fit.
@@ -225,19 +275,28 @@
     return { x: lx, y: ly };
   }
 
-  // ---- Player input: drag mallet on the bottom half ----
+  // ---- Player input ----
+  // Bottom paddle (Player 1 / You) target is targetX/targetY.
+  // Top paddle (Player 2, only in '2p' mode) target is target2X/target2Y.
   var dragging = false;
   var targetX = you.x, targetY = you.y;
+  var target2X = cpu.x, target2Y = cpu.y;
+  var has2pTouch = false;     // is a finger currently controlling the top paddle?
 
   function setTarget(clientX, clientY) {
     var p = toLogical(clientX, clientY);
     targetX = p.x;
     targetY = p.y;
   }
+  function setTarget2(clientX, clientY) {
+    var p = toLogical(clientX, clientY);
+    target2X = p.x;
+    target2Y = p.y;
+  }
 
   function onPointerDown(e) {
     ensureAudio();
-    if (gameOver) { restart(); return; }
+    if (gameOver) { showModeSelect(); return; }
     dragging = true;
     setTarget(e.clientX, e.clientY);
     e.preventDefault();
@@ -252,20 +311,42 @@
     if (e && e.preventDefault) e.preventDefault();
   }
 
-  // Use Pointer Events when available (covers mouse + touch), else fall back.
+  // ---- Touch handling: partition active touches into top / bottom halves so
+  // two fingers (one player at each end of the phone) work simultaneously. ----
+  function handleTouches(e) {
+    ensureAudio();
+    if (gameOver) { showModeSelect(); e.preventDefault(); return; }
+    var r = canvas.getBoundingClientRect();
+    var midY = r.top + r.height / 2;
+    var bottomT = null, topT = null;
+    var list = e.touches;
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      if (t.clientY >= midY) { if (!bottomT) bottomT = t; }
+      else { if (!topT) topT = t; }
+    }
+    if (bottomT) { dragging = true; setTarget(bottomT.clientX, bottomT.clientY); }
+    else { dragging = false; }
+    if (mode === '2p') {
+      if (topT) { has2pTouch = true; setTarget2(topT.clientX, topT.clientY); }
+      else { has2pTouch = false; }
+    }
+    e.preventDefault();
+  }
+
+  // Use touch events directly (so we can read all simultaneous touches) plus
+  // mouse / pointer for desktop (which drives only the bottom paddle).
+  canvas.addEventListener("touchstart", handleTouches, { passive: false });
+  window.addEventListener("touchmove", handleTouches, { passive: false });
+  window.addEventListener("touchend", handleTouches, { passive: false });
+  window.addEventListener("touchcancel", handleTouches, { passive: false });
+
   if (window.PointerEvent) {
-    canvas.addEventListener("pointerdown", onPointerDown, { passive: false });
-    window.addEventListener("pointermove", onPointerMove, { passive: false });
-    window.addEventListener("pointerup", onPointerUp, { passive: false });
-    window.addEventListener("pointercancel", onPointerUp, { passive: false });
+    canvas.addEventListener("pointerdown", function (e) { if (e.pointerType === "touch") return; onPointerDown(e); }, { passive: false });
+    window.addEventListener("pointermove", function (e) { if (e.pointerType === "touch") return; onPointerMove(e); }, { passive: false });
+    window.addEventListener("pointerup", function (e) { if (e.pointerType === "touch") return; onPointerUp(e); }, { passive: false });
+    window.addEventListener("pointercancel", function (e) { if (e.pointerType === "touch") return; onPointerUp(e); }, { passive: false });
   } else {
-    canvas.addEventListener("touchstart", function (e) {
-      var t = e.changedTouches[0]; onPointerDown({ clientX: t.clientX, clientY: t.clientY, preventDefault: function(){ e.preventDefault(); } });
-    }, { passive: false });
-    window.addEventListener("touchmove", function (e) {
-      var t = e.changedTouches[0]; onPointerMove({ clientX: t.clientX, clientY: t.clientY, preventDefault: function(){ e.preventDefault(); } });
-    }, { passive: false });
-    window.addEventListener("touchend", function (e) { onPointerUp({ preventDefault: function(){ e.preventDefault(); } }); }, { passive: false });
     canvas.addEventListener("mousedown", function (e) { onPointerDown(e); });
     window.addEventListener("mousemove", function (e) { onPointerMove(e); });
     window.addEventListener("mouseup", function (e) { onPointerUp(e); });
@@ -275,7 +356,7 @@
   document.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
   document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
 
-  restartBtn.addEventListener("click", function () { ensureAudio(); restart(); });
+  restartBtn.addEventListener("click", function () { ensureAudio(); showModeSelect(); });
 
   // ---- Geometry helpers ----
   var goalLeft = (W - GOAL_W) / 2;
@@ -300,6 +381,8 @@
     you.x = W / 2; you.y = H * 0.78; you.px = you.x; you.py = you.y;
     cpu.x = W / 2; cpu.y = H * 0.22; cpu.vx = 0; cpu.vy = 0;
     targetX = you.x; targetY = you.y;
+    target2X = cpu.x; target2Y = cpu.y;
+    has2pTouch = false; dragging = false;
     resetPuck(Math.random() < 0.5);
   }
 
@@ -362,8 +445,12 @@
     var youVx = you.x - you.px;
     var youVy = you.y - you.py;
 
-    // --- CPU AI ---
-    cpuAI();
+    // --- Top paddle: AI in 'ai' mode, or Player 2's finger in '2p' mode ---
+    if (mode === '2p') {
+      topPaddleHuman();
+    } else {
+      cpuAI();
+    }
 
     // --- Puck integration ---
     if (serveTimer > 0) {
@@ -521,6 +608,20 @@
     cpu.y = ny;
   }
 
+  // ---- Top paddle driven by Player 2's finger (top half), mirrors bottom ----
+  function topPaddleHuman() {
+    var px = cpu.x, py = cpu.y;
+    if (has2pTouch) {
+      var tx = clamp(target2X, WALL + MALLET_R, W - WALL - MALLET_R);
+      var ty = clamp(target2Y, WALL + MALLET_R, H / 2 - MALLET_R);
+      cpu.x += (tx - cpu.x) * 0.45;
+      cpu.y += (ty - cpu.y) * 0.45;
+    }
+    // velocity used for puck momentum transfer
+    cpu.vx = cpu.x - px;
+    cpu.vy = cpu.y - py;
+  }
+
   function endGame(who) {
     gameOver = true;
     winner = who;
@@ -616,13 +717,16 @@
       ctx.textAlign = "center";
       ctx.fillStyle = winner === "you" ? "#6fe3a0" : "#ff7b8a";
       ctx.font = "bold 34px sans-serif";
-      ctx.fillText(winner === "you" ? "YOU WIN!" : "CPU WINS", W / 2, H / 2 - 16);
+      var winMsg;
+      if (mode === '2p') winMsg = winner === "you" ? "PLAYER 1 WINS!" : "PLAYER 2 WINS!";
+      else winMsg = winner === "you" ? "YOU WIN!" : "CPU WINS";
+      ctx.fillText(winMsg, W / 2, H / 2 - 16);
       ctx.fillStyle = "#cfe0ff";
       ctx.font = "bold 18px sans-serif";
       ctx.fillText(scoreCpu + " : " + scoreYou, W / 2, H / 2 + 18);
       ctx.fillStyle = "#9fb8e8";
       ctx.font = "15px sans-serif";
-      ctx.fillText("Tap or press Restart to play again", W / 2, H / 2 + 52);
+      ctx.fillText("Tap to choose a mode", W / 2, H / 2 + 52);
     }
 
     ctx.restore();
@@ -671,7 +775,7 @@
     acc += dt;
     var iters = 0;
     while (acc >= STEP && iters < 5) {
-      step();
+      if (!picking && !paused) step();
       acc -= STEP;
       iters++;
     }
@@ -679,9 +783,36 @@
     requestAnimationFrame(loop);
   }
 
+  // ---- Mode selection ----
+  function applyLabels() {
+    if (mode === '2p') {
+      cpuLabelEl.textContent = "P2";
+      youLabelEl.textContent = "P1";
+    } else {
+      cpuLabelEl.textContent = "CPU";
+      youLabelEl.textContent = "You";
+    }
+  }
+  function showModeSelect() {
+    picking = true;
+    modeOverlay.classList.add("show");
+  }
+  function startMode(m) {
+    ensureAudio();
+    mode = m;
+    applyLabels();
+    picking = false;
+    modeOverlay.classList.remove("show");
+    restart();
+  }
+  document.getElementById("modeAi").addEventListener("click", function () { startMode('ai'); });
+  document.getElementById("modeTwo").addEventListener("click", function () { startMode('2p'); });
+
   // ---- Init ----
   resize();
+  applyLabels();
   restart();
+  showModeSelect();
   requestAnimationFrame(loop);
 })();
 </script>

@@ -322,6 +322,14 @@
     <button id="btnPlayAgain">Play Again</button>
   </div>
 
+  <div class="overlay" id="modeOverlay">
+    <div class="emoji">🎲</div>
+    <h2>Pig</h2>
+    <p>Choose a mode</p>
+    <button id="btnModeAi">🤖 vs Computer</button>
+    <button id="btnMode2p">👥 2 Players</button>
+  </div>
+
 <script>
 (function () {
   "use strict";
@@ -329,11 +337,19 @@
   var WIN = 100;
   var CPU_HOLD_AT = 20;
 
+  var mode = "ai";       // 'ai' = vs computer, '2p' = pass-and-play (cpu seat is human)
   var scores = { you: 0, cpu: 0 };
   var turnTotal = 0;
   var current = "you";   // whose turn
   var busy = false;      // true while animating / CPU thinking
   var gameOver = false;
+
+  // In 2p mode every seat is human. The "cpu" seat is just Player 2.
+  function isHumanTurn() { return mode === "2p" || current === "you"; }
+  function sideName(who) {
+    if (mode === "2p") return who === "you" ? "Player 1" : "Player 2";
+    return who === "you" ? "You" : "CPU";
+  }
 
   var el = {
     scoreYou: document.getElementById("scoreYou"),

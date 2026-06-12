@@ -146,6 +146,29 @@
         button:active {
             transform: translateY(1px);
         }
+
+        .mode-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .mode-overlay.show { display: flex; }
+        .mode-modal {
+            background: #fff;
+            padding: 2rem;
+            border-radius: 1.5rem;
+            text-align: center;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+            max-width: 80vw;
+            color: var(--text-color);
+        }
+        .mode-modal h2 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+        .mode-modal p { margin: 0 0 1.25rem; color: #777; }
+        .mode-modal .mode-btns { display: flex; flex-direction: column; gap: 0.75rem; }
     </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/reversi.svg">
@@ -228,6 +251,17 @@
         </div>
     </div>
 
+    <div id="modeOverlay" class="mode-overlay">
+        <div class="mode-modal">
+            <h2>Reversi</h2>
+            <p>Choose a mode</p>
+            <div class="mode-btns">
+                <button id="modeAi">🤖 vs Computer</button>
+                <button id="modeTwo">👥 2 Players</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const BOARD_SIZE = 8;
         const BLACK = 1; // Human
@@ -249,11 +283,24 @@
         let currentPlayer = BLACK;
         let gameOver = false;
         let passCount = 0;
+        let mode = 'ai'; // 'ai' = vs computer, '2p' = pass-and-play hot seat
 
         const boardEl = document.getElementById('board');
         const blackScoreEl = document.getElementById('black-score');
         const whiteScoreEl = document.getElementById('white-score');
         const statusEl = document.getElementById('status');
+        const modeOverlay = document.getElementById('modeOverlay');
+
+        // In 2p both sides are human; in ai only BLACK is human.
+        function isHumanTurn() { return mode === '2p' ? true : currentPlayer === BLACK; }
+        function sideName(side) {
+            if (mode === '2p') return side === BLACK ? 'Black' : 'White';
+            return side === BLACK ? 'You' : 'Computer';
+        }
+        function turnStatus() {
+            return mode === '2p' ? sideName(currentPlayer) + "'s turn"
+                                 : (currentPlayer === BLACK ? "Your turn" : "Computer is thinking...");
+        }
 
         function initBoard() {
             board = Array(64).fill(EMPTY);
@@ -283,7 +330,7 @@
                     cell.appendChild(piece);
                     if (board[i] === BLACK) blackCount++;
                     else whiteCount++;
-                } else if (!gameOver && currentPlayer === BLACK && legalMoves.includes(i)) {
+                } else if (!gameOver && isHumanTurn() && legalMoves.includes(i)) {
                     const indicator = document.createElement('div');
                     indicator.className = 'legal-move-indicator';
                     cell.appendChild(indicator);
@@ -366,19 +413,41 @@
         }
 
         function handleCellClick(index) {
-            if (gameOver || currentPlayer !== BLACK) return;
+            if (gameOver || !isHumanTurn()) return;
 
-            if (canMove(board, BLACK, index)) {
-                board = executeMove(board, BLACK, index);
-                currentPlayer = WHITE;
+            const mover = currentPlayer;
+            if (canMove(board, mover, index)) {
+                board = executeMove(board, mover, index);
+                currentPlayer = mover === BLACK ? WHITE : BLACK;
                 passCount = 0;
                 render();
                 checkGameState();
-                if (!gameOver) {
+                if (gameOver) return;
+                if (mode === '2p') {
+                    advanceTwoPlayer();
+                } else {
                     statusEl.textContent = "Computer is thinking...";
                     setTimeout(aiTurn, 600);
                 }
             }
+        }
+
+        // Pass-and-play turn advance: if the side to move has no legal moves,
+        // skip them (counting a pass) and hand back to the other human.
+        function advanceTwoPlayer() {
+            const moves = getLegalMoves(board, currentPlayer);
+            if (moves.length === 0) {
+                passCount++;
+                const passer = currentPlayer;
+                currentPlayer = passer === BLACK ? WHITE : BLACK;
+                checkGameState();
+                if (gameOver) { render(); return; }
+                statusEl.textContent = sideName(passer) + " has no move — " + turnStatus();
+                render();
+                return;
+            }
+            statusEl.textContent = turnStatus();
+            render();
         }
 
         function aiTurn() {
@@ -419,9 +488,15 @@
                 gameOver = true;
                 const b = board.filter(x => x === BLACK).length;
                 const w = board.filter(x => x === WHITE).length;
-                if (b > w) statusEl.textContent = "You Win!";
-                else if (w > b) statusEl.textContent = "Computer Wins!";
-                else statusEl.textContent = "It's a Draw!";
+                if (mode === '2p') {
+                    if (b > w) statusEl.textContent = sideName(BLACK) + " Wins!";
+                    else if (w > b) statusEl.textContent = sideName(WHITE) + " Wins!";
+                    else statusEl.textContent = "It's a Draw!";
+                } else {
+                    if (b > w) statusEl.textContent = "You Win!";
+                    else if (w > b) statusEl.textContent = "Computer Wins!";
+                    else statusEl.textContent = "It's a Draw!";
+                }
             }
         }
 
@@ -481,17 +556,32 @@
             }
         }
 
-        function resetGame() {
+        function startGame() {
             initBoard();
             currentPlayer = BLACK;
             gameOver = false;
             passCount = 0;
-            statusEl.textContent = "Your turn";
+            statusEl.textContent = turnStatus();
             render();
         }
 
-        // Start
-        resetGame();
+        // "New Game" returns to the mode picker so you can switch AI / 2-player.
+        function resetGame() {
+            showModeSelect();
+        }
+
+        function showModeSelect() { modeOverlay.classList.add('show'); }
+        function startMode(m) {
+            mode = m;
+            modeOverlay.classList.remove('show');
+            startGame();
+        }
+        document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
+        document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
+
+        // Render an idle board behind the picker, then ask for a mode.
+        startGame();
+        showModeSelect();
     </script>
 </body>
 </html>
