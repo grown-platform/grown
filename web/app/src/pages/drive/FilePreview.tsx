@@ -1,7 +1,7 @@
 import { Box, Button, Typography } from "@mui/joy";
 import { PdfPreview } from "./PdfPreview";
 import { CsvPreview } from "./CsvPreview";
-import { ImageLocation } from "./ImageLocation";
+import { ImageMetadata } from "./ImageMetadata";
 import type { DriveFile } from "./types";
 import { downloadURL } from "./api";
 
@@ -30,7 +30,7 @@ export function FilePreview({ file }: FilePreviewProps) {
             alt={file.name}
             style={{ maxWidth: "100%", display: "block", margin: "0 auto" }}
           />
-          <ImageLocation url={url} />
+          <ImageMetadata url={url} />
         </>
       )}
       {m.startsWith("video/") && (

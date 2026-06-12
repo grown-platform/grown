@@ -30,6 +30,7 @@ import {
   revokeFileAccess,
 } from "./api";
 import { PeopleGrants } from "../../components/PeopleGrants";
+import { ImageMetadata } from "./ImageMetadata";
 
 interface FileDetailsPanelProps {
   file: DriveFile;
@@ -248,6 +249,9 @@ export function FileDetailsPanel({
               <Icons.InsertDriveFile sx={{ fontSize: 80, opacity: 0.35 }} />
             )}
           </Box>
+
+          {/* Embedded image metadata (EXIF: dimensions, camera, date, GPS) */}
+          {isImage && <ImageMetadata url={downloadURL(file.id)} />}
 
           {/* Open button */}
           {!isFolder(file) && (
