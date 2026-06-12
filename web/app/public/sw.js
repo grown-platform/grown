@@ -1,8 +1,32 @@
 /* grown-workspace service worker — Web Push delivery + clicks, plus a minimal
    navigation fetch handler so the app (and the installable /games hub) meets
    PWA install criteria and has an offline fallback. */
-const SHELL_CACHE = "grown-shell-v1";
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+const SHELL_CACHE = "grown-shell-v2";
+
+// Precache the app shell so the first offline launch works, and activate the
+// new worker immediately rather than waiting for every tab to close.
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(SHELL_CACHE)
+      .then((c) => c.add("/"))
+      .catch(() => {})
+      .then(() => self.skipWaiting()),
+  );
+});
+
+// Take control of open pages and drop caches from older worker versions.
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.filter((k) => k !== SHELL_CACHE).map((k) => caches.delete(k)),
+      );
+      await self.clients.claim();
+    })(),
+  );
+});
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
