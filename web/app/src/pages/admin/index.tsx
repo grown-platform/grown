@@ -1988,8 +1988,21 @@ function fmtTime(iso: string): string {
   return d.toLocaleString();
 }
 
+// isPrivateIP skips addresses that won't geolocate (loopback, RFC1918, CGNAT,
+// link-local, unique-local v6).
+function isPrivateIP(ip: string): boolean {
+  if (!ip) return true;
+  if (ip === "127.0.0.1" || ip === "::1") return true;
+  if (ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.")) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
+  if (/^fc|^fd|^fe80/i.test(ip)) return true;
+  return false;
+}
+
 function AuditSection() {
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
+  // IP → approximate location, resolved via a free geo-IP service and cached.
+  const [geo, setGeo] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
@@ -2031,6 +2044,52 @@ function AuditSection() {
     const s = new Set<string>();
     for (const ev of events ?? []) if (ev.service) s.add(ev.service);
     return Array.from(s).sort();
+  }, [events]);
+
+  // Resolve the public IPs in the current page to a city/country for display.
+  // Lookups use a free, keyless geo-IP service and are cached per IP.
+  useEffect(() => {
+    const ips = Array.from(
+      new Set(
+        (events ?? [])
+          .map((e) => e.ip)
+          .filter((ip) => ip && !isPrivateIP(ip) && !(ip in geo)),
+      ),
+    ).slice(0, 50);
+    if (ips.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const out: Record<string, string> = {};
+      await Promise.all(
+        ips.map(async (ip) => {
+          try {
+            const r = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`);
+            const d = (await r.json()) as {
+              success?: boolean;
+              city?: string;
+              country?: string;
+              flag?: { emoji?: string };
+            };
+            if (d?.success) {
+              const flag = d.flag?.emoji ? `${d.flag.emoji} ` : "";
+              out[ip] =
+                `${flag}${[d.city, d.country].filter(Boolean).join(", ")}`.trim() ||
+                ip;
+            } else {
+              out[ip] = ip;
+            }
+          } catch {
+            out[ip] = ip;
+          }
+        }),
+      );
+      if (!cancelled) setGeo((g) => ({ ...g, ...out }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // geo is intentionally read but not a dep (we only resolve new IPs).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events]);
 
   if (forbidden) {
@@ -2163,6 +2222,7 @@ function AuditSection() {
                 <th style={{ width: 110 }}>Action</th>
                 <th>Resource</th>
                 <th style={{ width: 90 }}>Status</th>
+                <th style={{ width: 200 }}>Location</th>
               </tr>
             </thead>
             <tbody>
@@ -2204,6 +2264,16 @@ function AuditSection() {
                     >
                       {ev.status || "—"}
                     </Chip>
+                  </td>
+                  <td>
+                    <Typography level="body-xs" sx={{ whiteSpace: "nowrap" }}>
+                      {ev.ip ? geo[ev.ip] || ev.ip : "—"}
+                    </Typography>
+                    {ev.ip && geo[ev.ip] && geo[ev.ip] !== ev.ip && (
+                      <Typography level="body-xs" sx={{ opacity: 0.5 }}>
+                        {ev.ip}
+                      </Typography>
+                    )}
                   </td>
                 </tr>
               ))}
