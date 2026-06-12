@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Checkers</title>
+<style>
+  :root {
+    --bg: #f0f2f5;
+    --panel: #ffffff;
+    --dark-sq: #6d4c2f;
+    --light-sq: #e6c9a0;
+    --player: #d94343;
+    --player-edge: #a32626;
+    --cpu: #2b2b2b;
+    --cpu-edge: #000000;
+    --crown: #ffd23f;
+    --sel: #4caf50;
+    --dest: #4caf50;
+    --text: #2a2a2a;
+    /* 8 cells fit within ~96vw, cap at 48px */
+    --cell: min(48px, (96vw - 8px) / 8);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100vh;
+    padding: env(safe-area-inset-top) 0 0 0;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 10px 20px;
+    max-width: 100%;
+  }
+  h1 {
+    margin: 4px 0 0;
+    font-size: 1.5rem;
+    letter-spacing: 1px;
+  }
+  .status {
+    font-size: 1.05rem;
+    font-weight: 700;
+    min-height: 1.4em;
+    text-align: center;
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: var(--panel);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+  .status.player { color: var(--player-edge); }
+  .status.cpu { color: var(--cpu); }
+  .status.win { color: #2e7d32; }
+  .status.lose { color: #c62828; }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(8, var(--cell));
+    grid-template-rows: repeat(8, var(--cell));
+    border: 4px solid #3d2a18;
+    border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    background: #3d2a18;
+    touch-action: manipulation;
+  }
+  .cell {
+    width: var(--cell);
+    height: var(--cell);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cell.light { background: var(--light-sq); }
+  .cell.dark { background: var(--dark-sq); }
+  .piece {
+    width: 78%;
+    height: 78%;
+    border-radius: 50%;
+    position: relative;
+    box-shadow: 0 3px 4px rgba(0,0,0,0.35), inset 0 -3px 4px rgba(0,0,0,0.25), inset 0 3px 4px rgba(255,255,255,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.08s;
+  }
+  .piece.p { background: radial-gradient(circle at 35% 30%, #ef6b6b, var(--player)); border: 2px solid var(--player-edge); }
+  .piece.c { background: radial-gradient(circle at 35% 30%, #444, var(--cpu)); border: 2px solid var(--cpu-edge); }
+  .piece.king::after {
+    content: "\2605";
+    color: var(--crown);
+    font-size: calc(var(--cell) * 0.42);
+    line-height: 1;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  }
+  .cell.selected .piece { transform: scale(1.08); outline: 3px solid var(--sel); outline-offset: 1px; }
+  .cell.selected .piece { box-shadow: 0 0 0 3px var(--sel), 0 3px 4px rgba(0,0,0,0.35); }
+  .cell.dest::before {
+    content: "";
+    position: absolute;
+    width: 40%;
+    height: 40%;
+    border-radius: 50%;
+    background: var(--dest);
+    opacity: 0.7;
+    box-shadow: 0 0 8px var(--dest);
+  }
+  .cell.dest.capture::before {
+    width: 64%;
+    height: 64%;
+    background: transparent;
+    border: 4px solid var(--dest);
+    box-shadow: 0 0 10px var(--dest);
+  }
+  .cell.clickable { cursor: pointer; }
+  .controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  button {
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    padding: 12px 22px;
+    min-height: 48px;
+    border: none;
+    border-radius: 24px;
+    background: var(--sel);
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(76,175,80,0.4);
+    touch-action: manipulation;
+  }
+  button:active { transform: translateY(1px); }
+  .scores {
+    display: flex;
+    gap: 24px;
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .scores .lbl { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
+  .dot.p { background: var(--player); border: 2px solid var(--player-edge); }
+  .dot.c { background: var(--cpu); border: 2px solid var(--cpu-edge); }
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: var(--panel);
+    padding: 28px 30px;
+    border-radius: 16px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    max-width: 80vw;
+  }
+  .modal h2 { margin: 0 0 8px; font-size: 1.6rem; }
+  .modal p { margin: 0 0 18px; color: #555; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/checkers.svg">
+    <link rel="manifest" href="/games/checkers.webmanifest">
+    <meta name="theme-color" content="#B91C1C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Checkers">
+    <link rel="apple-touch-icon" href="/games/icons/checkers.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#B91C1C;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <div class="wrap">
+    <h1>Checkers</h1>
+    <div id="status" class="status player">Your turn</div>
+    <div class="scores">
+      <span class="lbl"><span class="dot p"></span>You: <span id="pScore">12</span></span>
+      <span class="lbl"><span class="dot c"></span>CPU: <span id="cScore">12</span></span>
+    </div>
+    <div id="board" class="board"></div>
+    <div class="controls">
+      <button id="newGame">New Game</button>
+    </div>
+  </div>
+
+  <div id="overlay" class="overlay">
+    <div class="modal">
+      <h2 id="modalTitle">Game Over</h2>
+      <p id="modalMsg"></p>
+      <button id="modalBtn">Play Again</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  // Board model: 8x8 grid. Only dark squares (where (r+c) is odd) are used.
+  // Cell values: null = empty, or { side:'p'|'c', king:bool }
+  // 'p' (player) sits at the bottom and moves UP (decreasing row).
+  // 'c' (cpu) sits at the top and moves DOWN (increasing row).
+  const SIZE = 8;
+  let board = [];
+  let turn = 'p';          // whose turn
+  let selected = null;     // {r,c} of selected piece
+  let legalForSelected = []; // list of moves for the selected piece
+  let mustContinueFrom = null; // {r,c} forced multi-jump continuation
+  let gameOver = false;
+  let busy = false;        // lock input during CPU/animation
+
+  const boardEl = document.getElementById('board');
+  const statusEl = document.getElementById('status');
+  const pScoreEl = document.getElementById('pScore');
+  const cScoreEl = document.getElementById('cScore');
+  const overlay = document.getElementById('overlay');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalMsg = document.getElementById('modalMsg');
+
+  // ----- Audio (WebAudio, optional) -----
+  let actx = null;
+  function beep(freq, dur, type, vol){
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = actx.createOscillator();
+      const g = actx.createGain();
+      o.type = type || 'sine';
+      o.frequency.value = freq;
+      g.gain.value = vol || 0.08;
+      o.connect(g); g.connect(actx.destination);
+      const t = actx.currentTime;
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (dur||0.12));
+      o.start(t); o.stop(t + (dur||0.12));
+    } catch(e){}
+  }
+  const sMove = () => beep(440, 0.08, 'sine', 0.06);
+  const sCap  = () => { beep(220, 0.1, 'square', 0.07); setTimeout(()=>beep(330,0.1,'square',0.06),60); };
+  const sKing = () => { beep(660,0.1,'triangle',0.08); setTimeout(()=>beep(880,0.12,'triangle',0.08),90); };
+  const sWin  = () => { [523,659,784].forEach((f,i)=>setTimeout(()=>beep(f,0.18,'triangle',0.1),i*120)); };
+  const sLose = () => { [392,330,262].forEach((f,i)=>setTimeout(()=>beep(f,0.22,'sawtooth',0.08),i*140)); };
+
+  // ----- Setup -----
+  function newGame(){
+    board = [];
+    for (let r = 0; r < SIZE; r++){
+      const row = [];
+      for (let c = 0; c < SIZE; c++){
+        let v = null;
+        const dark = (r + c) % 2 === 1;
+        if (dark){
+          if (r < 3) v = { side:'c', king:false };       // CPU top 3 rows
+          else if (r > 4) v = { side:'p', king:false };   // Player bottom 3 rows
+        }
+        row.push(v);
+      }
+      board.push(row);
+    }
+    turn = 'p';
+    selected = null;
+    legalForSelected = [];
+    mustContinueFrom = null;
+    gameOver = false;
+    busy = false;
+    overlay.classList.remove('show');
+    render();
+    updateStatus();
+  }
+
+  function inBounds(r, c){ return r >= 0 && r < SIZE && c >= 0 && c < SIZE; }
+  function opp(side){ return side === 'p' ? 'c' : 'p'; }
+
+  // Diagonal direction(s) a piece may travel. Men have one forward dir; kings both.
+  function directions(piece){
+    // player moves up = row decreases (-1); cpu moves down = row increases (+1)
+    if (piece.king) return [[-1,-1],[-1,1],[1,-1],[1,1]];
+    return piece.side === 'p' ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]];
+  }
+
+  // Get all capture moves available for a single piece at (r,c) on a given board state.
+  // Returns array of { from:{r,c}, to:{r,c}, captured:{r,c}, capture:true }
+  function pieceCaptures(bd, r, c){
+    const piece = bd[r][c];
+    if (!piece) return [];
+    const moves = [];
+    for (const [dr, dc] of directions(piece)){
+      const mr = r + dr, mc = c + dc;       // adjacent (jumped) square
+      const lr = r + 2*dr, lc = c + 2*dc;   // landing square
+      if (!inBounds(lr, lc)) continue;
+      const mid = bd[mr] && bd[mr][mc];
+      if (mid && mid.side === opp(piece.side) && bd[lr][lc] === null){
+        moves.push({ from:{r,c}, to:{r:lr,c:lc}, captured:{r:mr,c:mc}, capture:true });
+      }
+    }
+    return moves;
+  }
+
+  // Get all simple (non-capturing) moves for a piece.
+  function pieceSimpleMoves(bd, r, c){
+    const piece = bd[r][c];
+    if (!piece) return [];
+    const moves = [];
+    for (const [dr, dc] of directions(piece)){
+      const nr = r + dr, nc = c + dc;
+      if (inBounds(nr, nc) && bd[nr][nc] === null){
+        moves.push({ from:{r,c}, to:{r:nr,c:nc}, capture:false });
+      }
+    }
+    return moves;
+  }
+
+  // All legal moves for a side, applying mandatory-capture rule:
+  // if any capture exists for that side, only captures are legal.
+  function allLegalMoves(bd, side){
+    const caps = [];
+    const simples = [];
+    for (let r = 0; r < SIZE; r++){
+      for (let c = 0; c < SIZE; c++){
+        const p = bd[r][c];
+        if (!p || p.side !== side) continue;
+        const pc = pieceCaptures(bd, r, c);
+        if (pc.length) caps.push(...pc);
+        else simples.push(...pieceSimpleMoves(bd, r, c));
+      }
+    }
+    // Mandatory capture: also need to filter simples out for pieces; but globally,
+    // if ANY capture exists, only captures are allowed.
+    if (caps.length){
+      // recompute caps cleanly across all pieces (caps already only added when present)
+      // gather every capture (a piece with a capture contributes its captures)
+      const allCaps = [];
+      for (let r = 0; r < SIZE; r++){
+        for (let c = 0; c < SIZE; c++){
+          const p = bd[r][c];
+          if (!p || p.side !== side) continue;
+          allCaps.push(...pieceCaptures(bd, r, c));
+        }
+      }
+      return allCaps;
+    }
+    return simples;
+  }
+
+  // Would moving this piece to the far row promote it?
+  function promotesAt(piece, r){
+    if (piece.king) return false;
+    if (piece.side === 'p' && r === 0) return true;
+    if (piece.side === 'c' && r === SIZE - 1) return true;
+    return false;
+  }
+
+  // Apply a move to the board (mutates bd). Returns info about promotion/continuation.
+  // If the move was a capture and the SAME piece can capture again (and it did not
+  // just promote), a multi-jump continuation is available.
+  function applyMove(bd, move){
+    const piece = bd[move.from.r][move.from.c];
+    bd[move.from.r][move.from.c] = null;
+    if (move.capture){
+      bd[move.captured.r][move.captured.c] = null;
+    }
+    let promoted = false;
+    if (promotesAt(piece, move.to.r)){
+      piece.king = true;
+      promoted = true;
+    }
+    bd[move.to.r][move.to.c] = piece;
+
+    let canContinue = false;
+    if (move.capture && !promoted){
+      // continuation only if the same piece has another capture available
+      if (pieceCaptures(bd, move.to.r, move.to.c).length) canContinue = true;
+    }
+    return { promoted, canContinue };
+  }
+
+  // ----- Rendering -----
+  function render(){
+    boardEl.innerHTML = '';
+    // Determine which destinations are highlighted
+    const destMap = {};
+    if (selected){
+      for (const m of legalForSelected){
+        destMap[m.to.r + ',' + m.to.c] = m;
+      }
+    }
+    for (let r = 0; r < SIZE; r++){
+      for (let c = 0; c < SIZE; c++){
+        const cell = document.createElement('div');
+        const dark = (r + c) % 2 === 1;
+        cell.className = 'cell ' + (dark ? 'dark' : 'light');
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+
+        const p = board[r][c];
+        if (p){
+          const pe = document.createElement('div');
+          pe.className = 'piece ' + p.side + (p.king ? ' king' : '');
+          cell.appendChild(pe);
+        }
+
+        if (selected && selected.r === r && selected.c === c){
+          cell.classList.add('selected');
+        }
+        const key = r + ',' + c;
+        if (destMap[key]){
+          cell.classList.add('dest', 'clickable');
+          if (destMap[key].capture) cell.classList.add('capture');
+        }
+        // Make selectable player pieces look clickable on their turn
+        if (!busy && !gameOver && turn === 'p' && p && p.side === 'p'){
+          cell.classList.add('clickable');
+        }
+        boardEl.appendChild(cell);
+      }
+    }
+    updateScores();
+  }
+
+  function countPieces(side){
+    let n = 0;
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++)
+        if (board[r][c] && board[r][c].side === side) n++;
+    return n;
+  }
+
+  function updateScores(){
+    pScoreEl.textContent = countPieces('p');
+    cScoreEl.textContent = countPieces('c');
+  }
+
+  function updateStatus(){
+    if (gameOver) return;
+    if (turn === 'p'){
+      statusEl.className = 'status player';
+      statusEl.textContent = mustContinueFrom ? 'Continue your jump!' : 'Your turn';
+    } else {
+      statusEl.className = 'status cpu';
+      statusEl.textContent = 'CPU thinking…';
+    }
+  }
+
+  // ----- Input handling -----
+  boardEl.addEventListener('click', onBoardClick);
+
+  function onBoardClick(e){
+    if (busy || gameOver || turn !== 'p') return;
+    const cell = e.target.closest('.cell');
+    if (!cell) return;
+    const r = parseInt(cell.dataset.r, 10);
+    const c = parseInt(cell.dataset.c, 10);
+
+    // If clicking a highlighted destination, perform the move.
+    if (selected){
+      const move = legalForSelected.find(m => m.to.r === r && m.to.c === c);
+      if (move){
+        doPlayerMove(move);
+        return;
+      }
+    }
+
+    // Otherwise try to select a player piece (respecting forced-jump piece lock).
+    const p = board[r][c];
+    if (p && p.side === 'p'){
+      selectPiece(r, c);
+    } else {
+      // tapped empty/elsewhere: deselect (unless mid multi-jump, keep locked piece)
+      if (!mustContinueFrom){
+        selected = null;
+        legalForSelected = [];
+        render();
+      }
+    }
+  }
+
+  function selectPiece(r, c){
+    const legal = allLegalMoves(board, 'p');
+    // If a multi-jump continuation is forced, only that piece is selectable.
+    if (mustContinueFrom){
+      if (r !== mustContinueFrom.r || c !== mustContinueFrom.c) return;
+    }
+    const movesForPiece = legal.filter(m => m.from.r === r && m.from.c === c);
+    if (!movesForPiece.length){
+      // Not a movable piece (e.g. captures mandatory elsewhere). Flash nothing.
+      selected = null;
+      legalForSelected = [];
+      render();
+      return;
+    }
+    selected = { r, c };
+    legalForSelected = movesForPiece;
+    render();
+  }
+
+  function doPlayerMove(move){
+    busy = true;
+    const res = applyMove(board, move);
+    if (move.capture) sCap(); else sMove();
+    if (res.promoted) sKing();
+
+    if (res.canContinue){
+      // Continue multi-jump with same piece.
+      mustContinueFrom = { r: move.to.r, c: move.to.c };
+      selected = { r: move.to.r, c: move.to.c };
+      legalForSelected = pieceCaptures(board, move.to.r, move.to.c);
+      busy = false;
+      render();
+      updateStatus();
+      return;
+    }
+
+    // Turn ends.
+    mustContinueFrom = null;
+    selected = null;
+    legalForSelected = [];
+    render();
+
+    if (checkGameOver('p')) return;
+
+    turn = 'c';
+    updateStatus();
+    render();
+    setTimeout(cpuTurn, 450);
+  }
+
+  // ----- Game over checks -----
+  // sideThatJustMoved: used only for flavour; we test the side to move next.
+  function checkGameOver(sideThatJustMoved){
+    const next = opp(sideThatJustMoved);
+    const nextMoves = allLegalMoves(board, next);
+    const nextCount = countPieces(next);
+    if (nextCount === 0 || nextMoves.length === 0){
+      gameOver = true;
+      busy = true;
+      if (next === 'c'){ // CPU cannot move -> player wins
+        statusEl.className = 'status win';
+        statusEl.textContent = 'You win!';
+        sWin();
+        showModal('You Win!', 'The CPU has no moves left.');
+      } else {           // player cannot move -> player loses
+        statusEl.className = 'status lose';
+        statusEl.textContent = 'You lose.';
+        sLose();
+        showModal('You Lose', 'You have no moves left.');
+      }
+      render();
+      return true;
+    }
+    return false;
+  }
+
+  function showModal(title, msg){
+    modalTitle.textContent = title;
+    modalMsg.textContent = msg;
+    overlay.classList.add('show');
+  }
+
+  // ----- CPU -----
+  // Heuristic: pick the move maximizing a simple score.
+  // Captures are strongly preferred; among captures pick longest multi-jump chain
+  // (greedy). Promotions and central advancement add bonus. Some randomness for variety.
+  function cpuTurn(){
+    if (gameOver) return;
+    busy = true;
+
+    const move = chooseCpuMove();
+    if (!move){
+      // CPU has no move -> player wins (shouldn't reach here; checkGameOver covers it)
+      checkGameOver('p');
+      return;
+    }
+    playCpuMoveChain(move);
+  }
+
+  // Choose the first hop of the best move. We evaluate full capture chains for ranking
+  // but execute hop-by-hop so the animation/continuation is natural.
+  function chooseCpuMove(){
+    const legal = allLegalMoves(board, 'c');
+    if (!legal.length) return null;
+
+    let best = null, bestScore = -Infinity;
+    for (const m of legal){
+      const score = evaluateCpuMove(m);
+      // add slight noise to avoid deterministic stalemate loops
+      const s = score + Math.random() * 0.5;
+      if (s > bestScore){ bestScore = s; best = m; }
+    }
+    return best;
+  }
+
+  // Evaluate a candidate first-hop move by simulating it (incl. greedy multi-jump)
+  // on a board copy and scoring the resulting position from CPU's perspective.
+  function evaluateCpuMove(firstMove){
+    const bd = cloneBoard(board);
+    let captured = 0;
+    let promoted = false;
+    let cur = firstMove;
+    // Execute the chain greedily (pick first available continuation each time).
+    while (true){
+      const res = applyMove(bd, cur);
+      if (cur.capture) captured++;
+      if (res.promoted) promoted = true;
+      if (res.canContinue){
+        const conts = pieceCaptures(bd, cur.to.r, cur.to.c);
+        // greedily extend; prefer continuations (any) — pick the one capturing most downstream
+        cur = pickBestContinuation(bd, conts);
+        continue;
+      }
+      break;
+    }
+
+    let score = 0;
+    score += captured * 12;          // capturing material is great
+    if (promoted) score += 8;        // becoming a king
+
+    // Positional eval of resulting board (material + king value + advancement + safety)
+    score += boardScore(bd);
+
+    return score;
+  }
+
+  // Pick continuation that leads to the most additional captures (1-ply greedy lookahead).
+  function pickBestContinuation(bd, conts){
+    let best = conts[0], bestN = -1;
+    for (const m of conts){
+      const test = cloneBoard(bd);
+      applyMove(test, m);
+      // count further captures available from landing
+      const further = pieceCaptures(test, m.to.r, m.to.c).length;
+      const n = 1 + further;
+      if (n > bestN){ bestN = n; best = m; }
+    }
+    return best;
+  }
+
+  function boardScore(bd){
+    let s = 0;
+    for (let r = 0; r < SIZE; r++){
+      for (let c = 0; c < SIZE; c++){
+        const p = bd[r][c];
+        if (!p) continue;
+        let v = p.king ? 5 : 3;
+        // advancement: CPU advances toward larger r; reward progress.
+        if (!p.king){
+          if (p.side === 'c') v += r * 0.12;       // moving down = good for cpu
+          else v += (SIZE - 1 - r) * 0.12;         // player advancing toward 0
+        }
+        // central columns slightly safer
+        const centerBonus = (c >= 2 && c <= 5) ? 0.15 : 0;
+        v += (p.king ? 0 : centerBonus);
+        // back-row defense for CPU: keep some pieces on row 0 early
+        if (p.side === 'c' && r === 0) v += 0.2;
+        s += (p.side === 'c') ? v : -v;
+      }
+    }
+    // Penalize CPU pieces that sit where the player can immediately capture them.
+    s -= immediateThreatPenalty(bd);
+    return s;
+  }
+
+  // Sum value of CPU pieces that the player can capture right now (rough hanging check).
+  function immediateThreatPenalty(bd){
+    let pen = 0;
+    const playerCaps = (function(){
+      const out = [];
+      for (let r = 0; r < SIZE; r++)
+        for (let c = 0; c < SIZE; c++){
+          const p = bd[r][c];
+          if (p && p.side === 'p') out.push(...pieceCaptures(bd, r, c));
+        }
+      return out;
+    })();
+    for (const cap of playerCaps){
+      const victim = bd[cap.captured.r][cap.captured.c];
+      if (victim && victim.side === 'c') pen += victim.king ? 5 : 3;
+    }
+    return pen;
+  }
+
+  function cloneBoard(bd){
+    const nb = [];
+    for (let r = 0; r < SIZE; r++){
+      const row = [];
+      for (let c = 0; c < SIZE; c++){
+        const p = bd[r][c];
+        row.push(p ? { side:p.side, king:p.king } : null);
+      }
+      nb.push(row);
+    }
+    return nb;
+  }
+
+  // Execute a CPU move including any forced multi-jump continuations, with pauses.
+  function playCpuMoveChain(move){
+    const res = applyMove(board, move);
+    if (move.capture) sCap(); else sMove();
+    if (res.promoted) sKing();
+    render();
+
+    if (res.canContinue){
+      const conts = pieceCaptures(board, move.to.r, move.to.c);
+      const next = pickBestContinuation(board, conts);
+      setTimeout(() => playCpuMoveChain(next), 380);
+      return;
+    }
+
+    // CPU turn complete.
+    if (checkGameOver('c')) return;
+
+    turn = 'p';
+    busy = false;
+    mustContinueFrom = null;
+    selected = null;
+    legalForSelected = [];
+    render();
+    updateStatus();
+  }
+
+  // ----- Controls -----
+  document.getElementById('newGame').addEventListener('click', newGame);
+  document.getElementById('modalBtn').addEventListener('click', newGame);
+
+  // Prevent double-tap zoom / scroll on the board explicitly.
+  boardEl.addEventListener('touchend', function(e){ /* click handles logic */ }, {passive:true});
+
+  newGame();
+})();
+</script>
+</body>
+</html>

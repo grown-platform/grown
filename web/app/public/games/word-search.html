@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Word Search</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel2: #273449;
+    --cell: #334155;
+    --cellsel: #f59e0b;
+    --cellfound: #10b981;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 10px 8px 24px;
+    overscroll-behavior: none;
+  }
+  h1 {
+    font-size: 1.4rem;
+    margin: 4px 0 2px;
+    letter-spacing: 0.5px;
+  }
+  .theme-label {
+    color: var(--accent);
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    min-height: 1.1em;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 8px;
+    width: 100%;
+    max-width: 380px;
+  }
+  .diff-group { display: flex; gap: 4px; }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel2);
+    border: 1px solid #3b4a63;
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: scale(0.97); }
+  button.diff.active {
+    background: var(--accent);
+    color: #06283d;
+    border-color: var(--accent);
+    font-weight: 700;
+  }
+  button#newBtn {
+    background: #475569;
+  }
+  .status {
+    font-size: 0.95rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+    min-height: 1.2em;
+    text-align: center;
+  }
+  .status .count { color: var(--cellfound); font-weight: 700; }
+  .win {
+    color: var(--cellfound);
+    font-weight: 700;
+    font-size: 1.05rem;
+  }
+  #gridWrap {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    justify-content: center;
+  }
+  #grid {
+    display: grid;
+    gap: 2px;
+    background: var(--panel);
+    padding: 4px;
+    border-radius: 10px;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cell);
+    border-radius: 4px;
+    font-weight: 600;
+    color: var(--text);
+    text-transform: uppercase;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .cell.sel { background: var(--cellsel); color: #2a1900; }
+  .cell.found { background: var(--cellfound); color: #053123; }
+  .cell.found.sel { background: var(--cellsel); color: #2a1900; }
+  .words {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    justify-content: center;
+    margin-top: 12px;
+    max-width: 380px;
+  }
+  .word {
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text);
+    padding: 2px 4px;
+  }
+  .word.done {
+    text-decoration: line-through;
+    color: var(--muted);
+    text-decoration-thickness: 2px;
+  }
+  .word.done::before { content: "\2713 "; color: var(--cellfound); text-decoration: none; }
+  .hint {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-top: 14px;
+    text-align: center;
+    max-width: 340px;
+    line-height: 1.4;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/word-search.svg">
+    <link rel="manifest" href="/games/word-search.webmanifest">
+    <meta name="theme-color" content="#0891B2">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Word Search">
+    <link rel="apple-touch-icon" href="/games/icons/word-search.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#0891B2;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <h1>Word Search</h1>
+  <div class="theme-label" id="themeLabel"></div>
+  <div class="controls">
+    <div class="diff-group">
+      <button class="diff" data-diff="easy">Easy</button>
+      <button class="diff" data-diff="medium">Medium</button>
+      <button class="diff" data-diff="hard">Hard</button>
+    </div>
+    <button id="newBtn">New Puzzle</button>
+  </div>
+  <div class="status" id="status"></div>
+  <div id="gridWrap"><div id="grid"></div></div>
+  <div class="words" id="words"></div>
+  <div class="hint">Drag across letters in a straight line (horizontal, vertical, or diagonal) to find words.</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Themed word lists ----
+  var THEMES = {
+    Animals: ["TIGER","PANDA","KOALA","ZEBRA","OTTER","MOOSE","CAMEL","HORSE","SHARK","WHALE","EAGLE","SNAKE","RABBIT","MONKEY","FALCON","WALRUS","BEAVER","JAGUAR","TURTLE","DONKEY","BISON","LEMUR","COBRA","RAVEN","HYENA"],
+    Food: ["APPLE","BREAD","PIZZA","SALAD","MANGO","LEMON","ONION","PASTA","HONEY","WAFFLE","CHEESE","BANANA","CARROT","TOMATO","PEPPER","COOKIE","BURGER","NOODLE","MUFFIN","PICKLE","GRAPE","OLIVE","BACON","PEACH","CANDY"],
+    Space: ["COMET","ORBIT","LUNAR","SOLAR","PLUTO","VENUS","MARS","STAR","MOON","NOVA","GALAXY","COSMOS","ROCKET","PLANET","METEOR","NEBULA","SATURN","URANUS","SHUTTLE","GRAVITY","ECLIPSE","ASTEROID","QUASAR","CRATER","SATELLITE"],
+    Sports: ["RUGBY","HOCKEY","TENNIS","BOXING","SOCCER","GOLF","SWIM","DIVE","RACE","SKATE","CRICKET","BOWLING","ARCHERY","CYCLING","SKIING","CURLING","ROWING","FENCING","KARATE","JUDO","SURFING","CLIMBING","SPRINT","RELAY","DISCUS"],
+    Nature: ["RIVER","OCEAN","FOREST","DESERT","VALLEY","CANYON","ISLAND","MEADOW","JUNGLE","GLACIER","VOLCANO","PRAIRIE","WATERFALL","MOUNTAIN","RAINBOW","THUNDER","BREEZE","BLOSSOM","BOULDER","STREAM","SUNSET","HORIZON","TUNDRA","LAGOON","PEBBLE"]
+  };
+  var THEME_NAMES = Object.keys(THEMES);
+
+  var DIFFS = {
+    easy:   { size: 8,  count: 6,  diagonals: false, reverse: false },
+    medium: { size: 11, count: 9,  diagonals: true,  reverse: false },
+    hard:   { size: 14, count: 12, diagonals: true,  reverse: true  }
+  };
+
+  // Direction vectors: [dr, dc]
+  var DIRS_ORTHO = [[0,1],[1,0]];               // right, down
+  var DIRS_DIAG  = [[1,1],[1,-1]];              // down-right, down-left
+
+  // ---- State ----
+  var difficulty = "easy";
+  var size = 8;
+  var grid = [];        // grid[r][c] = letter
+  var placedWords = []; // {word, cells:[{r,c}...], found:false}
+  var themeName = "";
+  var cellEls = [];     // cellEls[r][c] = element
+
+  var gridEl = document.getElementById("grid");
+  var wordsEl = document.getElementById("words");
+  var statusEl = document.getElementById("status");
+  var themeLabelEl = document.getElementById("themeLabel");
+
+  function rand(n) { return Math.floor(Math.random() * n); }
+  function pick(arr) { return arr[rand(arr.length)]; }
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = rand(i + 1);
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+  var ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  // ---- Sound (WebAudio) ----
+  var audioCtx = null;
+  function beep(freq, dur, type, vol) {
+    try {
+      if (!audioCtx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audioCtx = new AC();
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = vol == null ? 0.12 : vol;
+      o.connect(g); g.connect(audioCtx.destination);
+      var t = audioCtx.currentTime;
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t);
+      o.stop(t + dur);
+    } catch (e) {}
+  }
+  function soundFound() { beep(660, 0.12, "triangle", 0.13); setTimeout(function(){ beep(880, 0.16, "triangle", 0.13); }, 90); }
+  function soundWin() {
+    [523, 659, 784, 1047].forEach(function (f, i) {
+      setTimeout(function () { beep(f, 0.22, "triangle", 0.14); }, i * 120);
+    });
+  }
+
+  // ---- Puzzle generation ----
+  function buildDirections() {
+    var cfg = DIFFS[difficulty];
+    var dirs = DIRS_ORTHO.slice();
+    if (cfg.diagonals) dirs = dirs.concat(DIRS_DIAG);
+    // forward set; reversed adds negated versions
+    if (cfg.reverse) {
+      var rev = dirs.map(function (d) { return [-d[0], -d[1]]; });
+      dirs = dirs.concat(rev);
+    }
+    return dirs;
+  }
+
+  function inBounds(r, c) { return r >= 0 && r < size && c >= 0 && c < size; }
+
+  function tryPlace(word, dirs) {
+    // attempt random placements
+    var attempts = 200;
+    while (attempts-- > 0) {
+      var dir = pick(dirs);
+      var dr = dir[0], dc = dir[1];
+      var r0 = rand(size), c0 = rand(size);
+      var rEnd = r0 + dr * (word.length - 1);
+      var cEnd = c0 + dc * (word.length - 1);
+      if (!inBounds(rEnd, cEnd)) continue;
+      // check fit (overlap only on matching letters)
+      var ok = true;
+      var cells = [];
+      for (var i = 0; i < word.length; i++) {
+        var r = r0 + dr * i, c = c0 + dc * i;
+        var existing = grid[r][c];
+        if (existing !== "" && existing !== word[i]) { ok = false; break; }
+        cells.push({ r: r, c: c });
+      }
+      if (!ok) continue;
+      // commit
+      for (var k = 0; k < word.length; k++) {
+        grid[cells[k].r][cells[k].c] = word[k];
+      }
+      return cells;
+    }
+    return null;
+  }
+
+  function generate() {
+    var cfg = DIFFS[difficulty];
+    size = cfg.size;
+    // pick theme
+    themeName = pick(THEME_NAMES);
+    var pool = THEMES[themeName].slice();
+    // choose words that fit (length <= size), prefer variety
+    pool = pool.filter(function (w) { return w.length <= size; });
+    shuffle(pool);
+
+    var dirs = buildDirections();
+
+    // retry whole generation a few times if we can't place enough
+    var bestGrid = null, bestPlaced = null;
+    for (var attempt = 0; attempt < 12; attempt++) {
+      grid = [];
+      for (var r = 0; r < size; r++) {
+        var row = [];
+        for (var c = 0; c < size; c++) row.push("");
+        grid.push(row);
+      }
+      placedWords = [];
+      var used = {};
+      // sort longer words first for easier placement
+      var candidates = pool.slice().sort(function (a, b) { return b.length - a.length; });
+      for (var w = 0; w < candidates.length && placedWords.length < cfg.count; w++) {
+        var word = candidates[w];
+        if (used[word]) continue;
+        var cells = tryPlace(word, dirs);
+        if (cells) {
+          placedWords.push({ word: word, cells: cells, found: false });
+          used[word] = true;
+        }
+      }
+      if (placedWords.length >= cfg.count) break;
+      if (!bestPlaced || placedWords.length > bestPlaced.length) {
+        bestGrid = grid; bestPlaced = placedWords;
+      }
+    }
+    if (placedWords.length < cfg.count && bestPlaced) {
+      grid = bestGrid; placedWords = bestPlaced;
+    }
+
+    // fill empties with random letters
+    for (var rr = 0; rr < size; rr++) {
+      for (var cc = 0; cc < size; cc++) {
+        if (grid[rr][cc] === "") grid[rr][cc] = ALPHA[rand(26)];
+      }
+    }
+  }
+
+  // ---- Rendering ----
+  function computeCellSize() {
+    // grid wrap max 360px; account for padding (8) and gaps (2*(size-1))
+    var avail = Math.min(360, window.innerWidth - 24);
+    var gaps = 2 * (size - 1);
+    var padding = 8;
+    var cs = Math.floor((avail - gaps - padding) / size);
+    return Math.max(16, cs);
+  }
+
+  function render() {
+    var cs = computeCellSize();
+    gridEl.style.gridTemplateColumns = "repeat(" + size + ", " + cs + "px)";
+    gridEl.innerHTML = "";
+    cellEls = [];
+    var fontSize = Math.max(10, Math.floor(cs * 0.52));
+    for (var r = 0; r < size; r++) {
+      var rowEls = [];
+      for (var c = 0; c < size; c++) {
+        var el = document.createElement("div");
+        el.className = "cell";
+        el.style.width = cs + "px";
+        el.style.height = cs + "px";
+        el.style.fontSize = fontSize + "px";
+        el.textContent = grid[r][c];
+        el.dataset.r = r;
+        el.dataset.c = c;
+        gridEl.appendChild(el);
+        rowEls.push(el);
+      }
+      cellEls.push(rowEls);
+    }
+    // restore found highlights
+    placedWords.forEach(function (pw) {
+      if (pw.found) {
+        pw.cells.forEach(function (cell) {
+          cellEls[cell.r][cell.c].classList.add("found");
+        });
+      }
+    });
+    renderWords();
+    renderStatus();
+    themeLabelEl.textContent = "Theme: " + themeName;
+  }
+
+  function renderWords() {
+    wordsEl.innerHTML = "";
+    placedWords.forEach(function (pw) {
+      var el = document.createElement("span");
+      el.className = "word" + (pw.found ? " done" : "");
+      el.textContent = pw.word;
+      wordsEl.appendChild(el);
+    });
+  }
+
+  function renderStatus() {
+    var total = placedWords.length;
+    var found = placedWords.filter(function (p) { return p.found; }).length;
+    if (total > 0 && found === total) {
+      statusEl.innerHTML = '<span class="win">You found them all! 🎉</span>';
+    } else {
+      statusEl.innerHTML = 'Found <span class="count">' + found + '</span> / ' + total;
+    }
+  }
+
+  // ---- Selection / drag ----
+  var dragging = false;
+  var startCell = null; // {r,c}
+  var curSelection = []; // array of {r,c}
+
+  function clearSelClasses() {
+    curSelection.forEach(function (cell) {
+      var el = cellEls[cell.r] && cellEls[cell.r][cell.c];
+      if (el) el.classList.remove("sel");
+    });
+    curSelection = [];
+  }
+
+  function cellFromPoint(x, y) {
+    var elem = document.elementFromPoint(x, y);
+    if (!elem || !elem.classList || !elem.classList.contains("cell")) return null;
+    if (elem.dataset.r === undefined) return null;
+    return { r: parseInt(elem.dataset.r, 10), c: parseInt(elem.dataset.c, 10) };
+  }
+
+  // Build a straight line of cells from start to end, snapped to nearest
+  // of the 8 directions. Returns null if not a valid straight line.
+  function lineCells(start, end) {
+    var dr = end.r - start.r;
+    var dc = end.c - start.c;
+    if (dr === 0 && dc === 0) return [start];
+    var adr = Math.abs(dr), adc = Math.abs(dc);
+    var sr = Math.sign(dr), sc = Math.sign(dc);
+    var stepR, stepC, len;
+    if (dr === 0) { stepR = 0; stepC = sc; len = adc; }            // horizontal
+    else if (dc === 0) { stepR = sr; stepC = 0; len = adr; }       // vertical
+    else if (adr === adc) { stepR = sr; stepC = sc; len = adr; }   // perfect diagonal
+    else {
+      // not aligned — snap to dominant axis or diagonal
+      if (adr > adc * 2) { stepR = sr; stepC = 0; len = adr; }       // mostly vertical
+      else if (adc > adr * 2) { stepR = 0; stepC = sc; len = adc; }  // mostly horizontal
+      else { stepR = sr; stepC = sc; len = Math.max(adr, adc); }     // diagonal-ish
+    }
+    var cells = [];
+    for (var i = 0; i <= len; i++) {
+      var r = start.r + stepR * i;
+      var c = start.c + stepC * i;
+      if (!inBounds(r, c)) break;
+      cells.push({ r: r, c: c });
+    }
+    return cells;
+  }
+
+  function updateSelection(end) {
+    clearSelClasses();
+    if (!startCell || !end) return;
+    var cells = lineCells(startCell, end);
+    curSelection = cells;
+    cells.forEach(function (cell) {
+      cellEls[cell.r][cell.c].classList.add("sel");
+    });
+  }
+
+  function sameCellSet(a, b) {
+    if (a.length !== b.length) return false;
+    // forward
+    var fwd = true, rev = true;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].r !== b[i].r || a[i].c !== b[i].c) fwd = false;
+      var j = b.length - 1 - i;
+      if (a[i].r !== b[j].r || a[i].c !== b[j].c) rev = false;
+    }
+    return fwd || rev;
+  }
+
+  function commitSelection() {
+    if (curSelection.length < 2) { clearSelClasses(); return; }
+    // A word is found when the selection covers exactly its placed cells
+    // (in either direction). This is the accurate, position-based check.
+    var matched = null;
+    for (var i = 0; i < placedWords.length; i++) {
+      var pw = placedWords[i];
+      if (pw.found) continue;
+      if (sameCellSet(curSelection, pw.cells)) { matched = pw; break; }
+    }
+    if (matched) {
+      matched.found = true;
+      matched.cells.forEach(function (cell) {
+        cellEls[cell.r][cell.c].classList.remove("sel");
+        cellEls[cell.r][cell.c].classList.add("found");
+      });
+      curSelection = [];
+      soundFound();
+      renderWords();
+      renderStatus();
+      checkWin();
+    } else {
+      clearSelClasses();
+    }
+  }
+
+  function checkWin() {
+    var all = placedWords.length > 0 && placedWords.every(function (p) { return p.found; });
+    if (all) soundWin();
+  }
+
+  // Pointer handlers on the grid
+  function getPoint(e) {
+    if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  function onStart(e) {
+    var p = getPoint(e);
+    var cell = cellFromPoint(p.x, p.y);
+    if (!cell) return;
+    e.preventDefault();
+    dragging = true;
+    startCell = cell;
+    updateSelection(cell);
+    // warm up audio on first interaction
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    var p = getPoint(e);
+    var cell = cellFromPoint(p.x, p.y);
+    if (cell) updateSelection(cell);
+  }
+  function onEnd(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    dragging = false;
+    commitSelection();
+    startCell = null;
+  }
+
+  // Use pointer events if available, else touch+mouse
+  if (window.PointerEvent) {
+    gridEl.addEventListener("pointerdown", onStart, { passive: false });
+    gridEl.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onEnd, { passive: false });
+    gridEl.addEventListener("pointercancel", onEnd, { passive: false });
+  } else {
+    gridEl.addEventListener("touchstart", onStart, { passive: false });
+    gridEl.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onEnd, { passive: false });
+    gridEl.addEventListener("mousedown", onStart, { passive: false });
+    window.addEventListener("mousemove", onMove, { passive: false });
+    window.addEventListener("mouseup", onEnd, { passive: false });
+  }
+
+  // prevent context menu on long-press
+  gridEl.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+  // ---- Controls ----
+  function setDifficulty(d) {
+    difficulty = d;
+    Array.prototype.forEach.call(document.querySelectorAll("button.diff"), function (b) {
+      b.classList.toggle("active", b.dataset.diff === d);
+    });
+  }
+
+  function newPuzzle() {
+    dragging = false; startCell = null; curSelection = [];
+    generate();
+    render();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("button.diff"), function (b) {
+    b.addEventListener("click", function () {
+      setDifficulty(b.dataset.diff);
+      newPuzzle();
+    });
+  });
+  document.getElementById("newBtn").addEventListener("click", newPuzzle);
+
+  // re-render on resize/orientation (keeps state)
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { render(); }, 150);
+  });
+
+  // ---- Init ----
+  setDifficulty("easy");
+  newPuzzle();
+})();
+</script>
+</body>
+</html>

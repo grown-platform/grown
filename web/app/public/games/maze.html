@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Maze</title>
+<style>
+  :root {
+    --bg: #0f1226;
+    --panel: #1a1f3d;
+    --wall: #2d3566;
+    --line: #4a5494;
+    --player: #ffd23f;
+    --start: #36d399;
+    --exit: #f87272;
+    --trail: rgba(255, 210, 63, 0.18);
+    --text: #e6e9f5;
+    --muted: #9aa3c7;
+    --accent: #6c7bff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+  }
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 10px max(10px, env(safe-area-inset-bottom)) 10px;
+  }
+  h1 {
+    font-size: 1.4rem;
+    margin: 4px 0 8px;
+    letter-spacing: 0.5px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .controls {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+  }
+  .seg {
+    display: inline-flex;
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .seg button {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 7px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .seg button.active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn {
+    border: none;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 9px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .btn:active { transform: translateY(1px); }
+  .stats {
+    width: 100%;
+    display: flex;
+    justify-content: space-around;
+    gap: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 6px 10px;
+    text-align: center;
+    flex: 1;
+  }
+  .stat .label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .stat .value { font-size: 1.15rem; font-weight: 700; }
+  .board-wrap {
+    position: relative;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: var(--bg);
+    border-radius: 12px;
+    touch-action: none;
+    width: 100%;
+    max-width: 360px;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+  }
+  .win-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 12, 30, 0.82);
+    border-radius: 12px;
+    text-align: center;
+    padding: 16px;
+  }
+  .win-overlay.show { display: flex; }
+  .win-card .big { font-size: 1.5rem; font-weight: 800; margin-bottom: 6px; color: var(--start); }
+  .win-card .sub { color: var(--muted); margin-bottom: 14px; line-height: 1.5; }
+  .win-card .btn { background: var(--accent); color: #fff; padding: 11px 18px; font-size: 0.95rem; }
+  .dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 64px);
+    grid-template-rows: repeat(3, 64px);
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .dpad button {
+    border: none;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 1.5rem;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .dpad button:active { background: var(--accent); }
+  .dpad .up { grid-column: 2; grid-row: 1; }
+  .dpad .left { grid-column: 1; grid-row: 2; }
+  .dpad .down { grid-column: 2; grid-row: 3; }
+  .dpad .right { grid-column: 3; grid-row: 2; }
+  .hint { color: var(--muted); font-size: 0.75rem; text-align: center; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/maze.svg">
+    <link rel="manifest" href="/games/maze.webmanifest">
+    <meta name="theme-color" content="#7C3AED">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Maze">
+    <link rel="apple-touch-icon" href="/games/icons/maze.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#7C3AED;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <div class="wrap">
+    <h1>Maze</h1>
+    <div class="controls">
+      <div class="seg" id="diff">
+        <button data-size="8">Easy</button>
+        <button data-size="13" class="active">Medium</button>
+        <button data-size="18">Hard</button>
+      </div>
+      <button class="btn" id="newBtn">New Maze</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">Moves</div><div class="value" id="moves">0</div></div>
+      <div class="stat"><div class="label">Time</div><div class="value" id="time">0:00</div></div>
+      <div class="stat"><div class="label">Size</div><div class="value" id="size">13</div></div>
+    </div>
+    <div class="board-wrap">
+      <canvas id="cv" width="360" height="360"></canvas>
+      <div class="win-overlay" id="win">
+        <div class="win-card">
+          <div class="big">You reached the exit!</div>
+          <div class="sub" id="winSub">Nice work.</div>
+          <button class="btn" id="winNew">New Maze</button>
+        </div>
+      </div>
+    </div>
+    <div class="dpad">
+      <button class="up" data-dir="up" aria-label="Up">&#9650;</button>
+      <button class="left" data-dir="left" aria-label="Left">&#9664;</button>
+      <button class="down" data-dir="down" aria-label="Down">&#9660;</button>
+      <button class="right" data-dir="right" aria-label="Right">&#9654;</button>
+    </div>
+    <div class="hint">Swipe, use the arrows, or press keyboard arrows. You glide until a wall.</div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var cv = document.getElementById("cv");
+  var ctx = cv.getContext("2d");
+  var movesEl = document.getElementById("moves");
+  var timeEl = document.getElementById("time");
+  var sizeEl = document.getElementById("size");
+  var winEl = document.getElementById("win");
+  var winSub = document.getElementById("winSub");
+
+  // Internal canvas resolution; CSS scales it down responsively.
+  var CANVAS = 360;
+  cv.width = CANVAS;
+  cv.height = CANVAS;
+
+  var N = 13;              // maze dimension (cells per side)
+  var cell = 0;            // pixel size of a cell on the canvas
+  var pad = 0;             // padding so maze is centered
+  // grid[y][x] holds wall bits: 1=N, 2=E, 4=S, 8=W. A bit set means a wall on that side.
+  var grid = [];
+  var px = 0, py = 0;      // player cell
+  var trail = {};          // visited cells "x,y" -> true
+  var moves = 0;
+  var startTime = 0;
+  var timerId = null;
+  var won = false;
+
+  var DIRS = {
+    up:    { dx: 0, dy: -1, bit: 1, opp: 4 },
+    right: { dx: 1, dy: 0, bit: 2, opp: 8 },
+    down:  { dx: 0, dy: 1, bit: 4, opp: 1 },
+    left:  { dx: -1, dy: 0, bit: 8, opp: 2 }
+  };
+
+  // ---- WebAudio (optional, lazy) ----
+  var actx = null;
+  function beep(freq, dur, type, vol) {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") actx.resume();
+      var o = actx.createOscillator();
+      var g = actx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = vol == null ? 0.05 : vol;
+      o.connect(g); g.connect(actx.destination);
+      var t = actx.currentTime;
+      o.start(t);
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.stop(t + dur);
+    } catch (e) { /* audio not available; ignore */ }
+  }
+
+  // ---- Maze generation: recursive backtracker (iterative) ----
+  function generate(n) {
+    grid = [];
+    for (var y = 0; y < n; y++) {
+      var row = [];
+      for (var x = 0; x < n; x++) row.push(15); // all four walls
+      grid.push(row);
+    }
+    var visited = [];
+    for (var i = 0; i < n; i++) {
+      var vr = [];
+      for (var j = 0; j < n; j++) vr.push(false);
+      visited.push(vr);
+    }
+
+    var stack = [{ x: 0, y: 0 }];
+    visited[0][0] = true;
+    var dirList = [DIRS.up, DIRS.right, DIRS.down, DIRS.left];
+
+    while (stack.length) {
+      var cur = stack[stack.length - 1];
+      var neighbors = [];
+      for (var d = 0; d < 4; d++) {
+        var dir = dirList[d];
+        var nx = cur.x + dir.dx, ny = cur.y + dir.dy;
+        if (nx >= 0 && nx < n && ny >= 0 && ny < n && !visited[ny][nx]) {
+          neighbors.push(dir);
+        }
+      }
+      if (neighbors.length) {
+        var pick = neighbors[(Math.random() * neighbors.length) | 0];
+        var tx = cur.x + pick.dx, ty = cur.y + pick.dy;
+        // remove wall between cur and target
+        grid[cur.y][cur.x] &= ~pick.bit;
+        grid[ty][tx] &= ~pick.opp;
+        visited[ty][tx] = true;
+        stack.push({ x: tx, y: ty });
+      } else {
+        stack.pop();
+      }
+    }
+  }
+
+  function layout() {
+    pad = Math.max(2, Math.round(CANVAS * 0.02));
+    cell = (CANVAS - pad * 2) / N;
+  }
+
+  function cellCenter(x, y) {
+    return { cx: pad + x * cell + cell / 2, cy: pad + y * cell + cell / 2 };
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, CANVAS, CANVAS);
+    ctx.fillStyle = getCss("--bg");
+    ctx.fillRect(0, 0, CANVAS, CANVAS);
+
+    // trail
+    ctx.fillStyle = getCss("--trail");
+    for (var key in trail) {
+      if (!trail.hasOwnProperty(key)) continue;
+      var p = key.split(",");
+      var tx = +p[0], ty = +p[1];
+      ctx.fillRect(pad + tx * cell, pad + ty * cell, cell, cell);
+    }
+
+    // start & exit cells
+    ctx.fillStyle = getCss("--start");
+    ctx.fillRect(pad, pad, cell, cell);
+    ctx.fillStyle = getCss("--exit");
+    ctx.fillRect(pad + (N - 1) * cell, pad + (N - 1) * cell, cell, cell);
+
+    // walls
+    ctx.strokeStyle = getCss("--line");
+    ctx.lineWidth = Math.max(1.5, cell * 0.12);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    for (var y = 0; y < N; y++) {
+      for (var x = 0; x < N; x++) {
+        var w = grid[y][x];
+        var x0 = pad + x * cell, y0 = pad + y * cell;
+        var x1 = x0 + cell, y1 = y0 + cell;
+        if (w & 1) { ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); } // N
+        if (w & 2) { ctx.moveTo(x1, y0); ctx.lineTo(x1, y1); } // E
+        if (w & 4) { ctx.moveTo(x0, y1); ctx.lineTo(x1, y1); } // S
+        if (w & 8) { ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); } // W
+      }
+    }
+    ctx.stroke();
+
+    // labels (only if cells are big enough)
+    if (cell > 18) {
+      ctx.fillStyle = "#06301f";
+      ctx.font = "bold " + Math.round(cell * 0.42) + "px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      var s = cellCenter(0, 0);
+      ctx.fillText("S", s.cx, s.cy);
+      ctx.fillStyle = "#3a0606";
+      var e = cellCenter(N - 1, N - 1);
+      ctx.fillText("E", e.cx, e.cy);
+    }
+
+    // player token
+    var c = cellCenter(px, py);
+    var r = cell * 0.30;
+    ctx.beginPath();
+    ctx.fillStyle = getCss("--player");
+    ctx.arc(c.cx, c.cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, cell * 0.04);
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.stroke();
+  }
+
+  var cssCache = {};
+  function getCss(name) {
+    if (cssCache[name]) return cssCache[name];
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    cssCache[name] = v;
+    return v;
+  }
+
+  function canMove(x, y, dir) {
+    var d = DIRS[dir];
+    if (grid[y][x] & d.bit) return false; // wall on this side
+    var nx = x + d.dx, ny = y + d.dy;
+    if (nx < 0 || nx >= N || ny < 0 || ny >= N) return false;
+    return true;
+  }
+
+  // Glide in a direction until a wall (or a junction other than straight ahead).
+  function move(dir) {
+    if (won) return;
+    var d = DIRS[dir];
+    var moved = false;
+    var startX = px, startY = py;
+
+    while (canMove(px, py, dir)) {
+      px += d.dx;
+      py += d.dy;
+      trail[px + "," + py] = true;
+      moved = true;
+      // Stop at junctions: if there's an opening to the side, halt so the
+      // player can choose. Keeps gliding through plain corridors and bends.
+      if (px === N - 1 && py === N - 1) break;
+      var sideOpen = false;
+      var perp = (dir === "up" || dir === "down") ? ["left", "right"] : ["up", "down"];
+      for (var i = 0; i < perp.length; i++) {
+        if (canMove(px, py, perp[i])) { sideOpen = true; break; }
+      }
+      if (sideOpen) break;
+    }
+
+    if (moved) {
+      moves++;
+      movesEl.textContent = moves;
+      if (!startTime) startTimer();
+      beep(440, 0.05, "square", 0.03);
+      draw();
+      checkWin();
+    } else {
+      // bumped a wall
+      beep(120, 0.04, "sawtooth", 0.02);
+    }
+    // suppress unused warning style
+    void startX; void startY;
+  }
+
+  function checkWin() {
+    if (px === N - 1 && py === N - 1 && !won) {
+      won = true;
+      stopTimer();
+      beep(660, 0.12, "sine", 0.06);
+      setTimeout(function () { beep(880, 0.16, "sine", 0.06); }, 110);
+      winSub.textContent = "Solved in " + moves + " moves and " + fmtTime(elapsed()) + ".";
+      winEl.classList.add("show");
+    }
+  }
+
+  // ---- Timer ----
+  function elapsed() {
+    if (!startTime) return 0;
+    return Math.floor((Date.now() - startTime) / 1000);
+  }
+  function fmtTime(s) {
+    var m = Math.floor(s / 60);
+    var sec = s % 60;
+    return m + ":" + (sec < 10 ? "0" : "") + sec;
+  }
+  function startTimer() {
+    startTime = Date.now();
+    timerId = setInterval(function () {
+      timeEl.textContent = fmtTime(elapsed());
+    }, 250);
+  }
+  function stopTimer() {
+    if (timerId) { clearInterval(timerId); timerId = null; }
+  }
+
+  // ---- New maze ----
+  function newMaze() {
+    won = false;
+    moves = 0;
+    px = 0; py = 0;
+    trail = {};
+    trail["0,0"] = true;
+    stopTimer();
+    startTime = 0;
+    movesEl.textContent = "0";
+    timeEl.textContent = "0:00";
+    sizeEl.textContent = N;
+    winEl.classList.remove("show");
+    generate(N);
+    layout();
+    draw();
+  }
+
+  // ---- Input: keyboard ----
+  document.addEventListener("keydown", function (e) {
+    var dir = null;
+    if (e.key === "ArrowUp") dir = "up";
+    else if (e.key === "ArrowDown") dir = "down";
+    else if (e.key === "ArrowLeft") dir = "left";
+    else if (e.key === "ArrowRight") dir = "right";
+    if (dir) { e.preventDefault(); move(dir); }
+  });
+
+  // ---- Input: D-pad ----
+  var dpadBtns = document.querySelectorAll(".dpad button");
+  for (var i = 0; i < dpadBtns.length; i++) {
+    (function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        move(btn.getAttribute("data-dir"));
+      });
+    })(dpadBtns[i]);
+  }
+
+  // ---- Input: swipe on canvas ----
+  var touchStart = null;
+  function onStart(x, y) { touchStart = { x: x, y: y }; }
+  function onEnd(x, y) {
+    if (!touchStart) return;
+    var dx = x - touchStart.x, dy = y - touchStart.y;
+    touchStart = null;
+    var ax = Math.abs(dx), ay = Math.abs(dy);
+    var THRESH = 18;
+    if (ax < THRESH && ay < THRESH) return;
+    if (ax > ay) move(dx > 0 ? "right" : "left");
+    else move(dy > 0 ? "down" : "up");
+  }
+
+  cv.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    onStart(t.clientX, t.clientY);
+  }, { passive: false });
+  cv.addEventListener("touchmove", function (e) {
+    e.preventDefault(); // never scroll/zoom while swiping the maze
+  }, { passive: false });
+  cv.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    onEnd(t.clientX, t.clientY);
+  }, { passive: false });
+
+  // Mouse drag = swipe (desktop nicety)
+  var mouseDown = false;
+  cv.addEventListener("mousedown", function (e) { mouseDown = true; onStart(e.clientX, e.clientY); });
+  window.addEventListener("mouseup", function (e) { if (mouseDown) { mouseDown = false; onEnd(e.clientX, e.clientY); } });
+
+  // ---- Difficulty selector ----
+  var diff = document.getElementById("diff");
+  diff.addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    var btns = diff.querySelectorAll("button");
+    for (var k = 0; k < btns.length; k++) btns[k].classList.remove("active");
+    b.classList.add("active");
+    N = parseInt(b.getAttribute("data-size"), 10);
+    newMaze();
+  });
+
+  document.getElementById("newBtn").addEventListener("click", newMaze);
+  document.getElementById("winNew").addEventListener("click", newMaze);
+
+  // init
+  newMaze();
+})();
+</script>
+</body>
+</html>

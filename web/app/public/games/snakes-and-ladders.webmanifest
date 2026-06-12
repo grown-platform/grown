@@ -1,0 +1,25 @@
+{
+  "name": "Snakes & Ladders",
+  "short_name": "Snakes & Ladders",
+  "description": "Snakes & Ladders — play in your browser, online or off.",
+  "start_url": "/games/snakes-and-ladders.html",
+  "scope": "/games/snakes-and-ladders.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#16A34A",
+  "icons": [
+    {
+      "src": "/games/icons/snakes-and-ladders.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/snakes-and-ladders.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

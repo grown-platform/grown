@@ -39,6 +39,15 @@ const CONFIG = [
   { id: "bubble-shooter", name: "Bubble Shooter", color: "#DB2777", glyph: "🫧" },
   { id: "tower-stack", name: "Tower Stack", color: "#F59E0B", glyph: "📦" },
   { id: "hormuz", name: "Strait of Hormuz", color: "#0369A1", glyph: "🚤" },
+  { id: "word-search", name: "Word Search", color: "#0891B2", glyph: "🔍" },
+  { id: "asteroids", name: "Asteroids", color: "#334155", glyph: "☄️" },
+  { id: "doodle-jump", name: "Doodle Jump", color: "#22C55E", glyph: "🦘" },
+  { id: "rock-paper-scissors", name: "Rock Paper Scissors", color: "#F43F5E", glyph: "✊" },
+  { id: "checkers", name: "Checkers", color: "#B91C1C", glyph: "🟤" },
+  { id: "maze", name: "Maze", color: "#7C3AED", glyph: "🧭" },
+  { id: "coloring", name: "Coloring Pad", color: "#EC4899", glyph: "🎨" },
+  { id: "snakes-and-ladders", name: "Snakes & Ladders", color: "#16A34A", glyph: "🎲" },
+  { id: "math-quiz", name: "Math Quiz", color: "#2563EB", glyph: "➗" },
 ];
 
 const iconSvg = (color, glyph) =>

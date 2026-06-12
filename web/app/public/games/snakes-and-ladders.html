@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Snakes &amp; Ladders</title>
+<style>
+  :root {
+    --board-size: min(94vw, 420px);
+    --cell: calc(var(--board-size) / 10);
+    --bg1: #fef6e4;
+    --bg2: #d4f0f7;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, var(--bg1), var(--bg2));
+    color: #2b2b40;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100%;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  h1 {
+    margin: 4px 0 6px;
+    font-size: clamp(20px, 6vw, 30px);
+    letter-spacing: .5px;
+    color: #e85d04;
+    text-shadow: 1px 1px 0 #fff;
+    text-align: center;
+  }
+  .status {
+    display: flex;
+    gap: 8px;
+    width: var(--board-size);
+    margin-bottom: 6px;
+  }
+  .pcard {
+    flex: 1;
+    background: #fff;
+    border-radius: 12px;
+    padding: 6px 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.12);
+    text-align: center;
+    border: 3px solid transparent;
+    transition: border-color .2s, transform .2s;
+  }
+  .pcard.active { transform: translateY(-2px); }
+  .pcard.you.active { border-color: #2a9d8f; }
+  .pcard.cpu.active { border-color: #e76f51; }
+  .pcard .name { font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .pcard .pos { font-size: 22px; font-weight: 800; line-height: 1.1; }
+  .dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    display: inline-block;
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,.18);
+  }
+  .dot.you { background: #2a9d8f; }
+  .dot.cpu { background: #e76f51; }
+
+  .boardWrap {
+    position: relative;
+    width: var(--board-size);
+    height: var(--board-size);
+  }
+  #board {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    grid-template-rows: repeat(10, 1fr);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  }
+  .cell {
+    position: relative;
+    font-size: calc(var(--cell) * 0.26);
+    font-weight: 600;
+    color: rgba(0,0,0,.45);
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 2px 0 0 3px;
+  }
+  .cell.light { background: #fff7e6; }
+  .cell.dark  { background: #ffe6c7; }
+  .cell.l-up  { background: #d8f3dc; }
+  .cell.l-up.dark { background: #c7ecc7; }
+  .cell.s-down { background: #ffd6d6; }
+  .cell.s-down.dark { background: #ffc2c2; }
+
+  /* SVG overlay for snakes & ladders */
+  #overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  /* tokens */
+  .token {
+    position: absolute;
+    width: calc(var(--cell) * 0.5);
+    height: calc(var(--cell) * 0.5);
+    border-radius: 50%;
+    z-index: 5;
+    transition: left .18s ease, top .18s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4), inset 0 2px 3px rgba(255,255,255,.5);
+    border: 2px solid #fff;
+    transform: translate(-50%, -50%);
+  }
+  .token.you { background: radial-gradient(circle at 35% 30%, #5fd3c4, #1f7a6f); }
+  .token.cpu { background: radial-gradient(circle at 35% 30%, #ff9b7a, #c44a30); }
+
+  .controls {
+    width: var(--board-size);
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .dicebar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .die {
+    width: 56px; height: 56px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 3px 8px rgba(0,0,0,.2);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    padding: 8px;
+    flex: 0 0 auto;
+  }
+  .die span {
+    width: 9px; height: 9px;
+    background: #333;
+    border-radius: 50%;
+    align-self: center;
+    justify-self: center;
+    visibility: hidden;
+  }
+  .die.rolling { animation: shake .4s linear infinite; }
+  @keyframes shake {
+    0%,100% { transform: rotate(-8deg); }
+    50% { transform: rotate(8deg); }
+  }
+  #msg {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 600;
+    min-height: 20px;
+  }
+  button {
+    font-family: inherit;
+    border: none;
+    border-radius: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  #rollBtn {
+    background: linear-gradient(#ffb703, #fb8500);
+    color: #fff;
+    font-size: 20px;
+    padding: 16px;
+    box-shadow: 0 4px 0 #c96b00;
+    text-shadow: 0 1px 1px rgba(0,0,0,.25);
+  }
+  #rollBtn:active { transform: translateY(3px); box-shadow: 0 1px 0 #c96b00; }
+  #rollBtn:disabled { filter: grayscale(.6) brightness(.95); opacity: .7; box-shadow: 0 4px 0 #999; }
+  #newBtn {
+    background: #fff;
+    color: #e85d04;
+    border: 2px solid #e85d04;
+    padding: 10px;
+    font-size: 15px;
+  }
+  #newBtn:active { background: #ffe9d6; }
+
+  /* win overlay */
+  #winOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20,20,30,.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 16px;
+  }
+  #winOverlay.show { display: flex; }
+  .winCard {
+    background: #fff;
+    border-radius: 20px;
+    padding: 26px 22px;
+    text-align: center;
+    max-width: 320px;
+    width: 100%;
+    box-shadow: 0 10px 40px rgba(0,0,0,.4);
+    animation: pop .35s ease;
+  }
+  @keyframes pop { from { transform: scale(.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .winCard h2 { margin: 0 0 6px; font-size: 26px; }
+  .winCard p { margin: 0 0 16px; color: #555; }
+  .winCard button {
+    background: linear-gradient(#ffb703, #fb8500);
+    color: #fff; font-size: 18px; padding: 14px 22px; width: 100%;
+    box-shadow: 0 4px 0 #c96b00;
+  }
+  .winCard button:active { transform: translateY(3px); box-shadow: 0 1px 0 #c96b00; }
+  .confetti { font-size: 40px; margin-bottom: 4px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/snakes-and-ladders.svg">
+    <link rel="manifest" href="/games/snakes-and-ladders.webmanifest">
+    <meta name="theme-color" content="#16A34A">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Snakes & Ladders">
+    <link rel="apple-touch-icon" href="/games/icons/snakes-and-ladders.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#16A34A;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <h1>🐍 Snakes &amp; Ladders 🪜</h1>
+
+  <div class="status">
+    <div class="pcard you active" id="card-you">
+      <div class="name"><span class="dot you"></span> You</div>
+      <div class="pos" id="pos-you">0</div>
+    </div>
+    <div class="pcard cpu" id="card-cpu">
+      <div class="name"><span class="dot cpu"></span> CPU</div>
+      <div class="pos" id="pos-cpu">0</div>
+    </div>
+  </div>
+
+  <div class="boardWrap">
+    <div id="board"></div>
+    <svg id="overlay" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+    <div class="token you" id="tok-you"></div>
+    <div class="token cpu" id="tok-cpu"></div>
+  </div>
+
+  <div class="controls">
+    <div class="dicebar">
+      <div class="die" id="die">
+        <span data-p="0"></span><span data-p="1"></span><span data-p="2"></span>
+        <span data-p="3"></span><span data-p="4"></span><span data-p="5"></span>
+        <span data-p="6"></span><span data-p="7"></span><span data-p="8"></span>
+      </div>
+      <div id="msg">Your turn — tap Roll Dice!</div>
+    </div>
+    <button id="rollBtn">🎲 Roll Dice</button>
+    <button id="newBtn">New Game</button>
+  </div>
+
+  <div id="winOverlay">
+    <div class="winCard">
+      <div class="confetti">🎉</div>
+      <h2 id="winTitle">You win!</h2>
+      <p id="winText">First to 100 wins the game.</p>
+      <button id="playAgain">Play Again</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Board geometry: boustrophedon numbering 1..100 ----
+  // Row 0 is the bottom (squares 1-10 L->R), row 9 is the top.
+  // Returns {col, row} grid coords (0-indexed, row 0 = bottom).
+  function squareToGrid(n) {
+    var idx = n - 1;            // 0..99
+    var row = Math.floor(idx / 10);
+    var inRow = idx % 10;
+    var col = (row % 2 === 0) ? inRow : (9 - inRow);
+    return { col: col, row: row };
+  }
+
+  // Center of a square in SVG/percent coords (0..100). y is flipped so row 0 is bottom.
+  function squareCenterPct(n) {
+    var g = squareToGrid(n);
+    var x = g.col * 10 + 5;
+    var yTop = (9 - g.row) * 10 + 5; // top-origin for DOM/SVG
+    return { x: x, y: yTop };
+  }
+
+  // ---- Fixed snakes & ladders ----
+  // ladders: tail(bottom) -> head(top)  (go up)
+  var LADDERS = { 4: 25, 13: 46, 33: 49, 42: 63, 50: 69, 62: 81, 74: 92 };
+  // snakes: head(top) -> tail(bottom) (go down)
+  var SNAKES = { 27: 5, 40: 19, 54: 31, 66: 45, 76: 58, 89: 53, 99: 41 };
+
+  var jumps = {};
+  Object.keys(LADDERS).forEach(function (k) { jumps[+k] = LADDERS[k]; });
+  Object.keys(SNAKES).forEach(function (k) { jumps[+k] = SNAKES[k]; });
+
+  // ---- Build board DOM ----
+  var board = document.getElementById("board");
+  var cells = {}; // n -> element
+  // Render top row first (square 100 area) down to bottom.
+  // Grid fills row by row top->bottom, left->right.
+  for (var domRow = 9; domRow >= 0; domRow--) {
+    for (var domCol = 0; domCol < 10; domCol++) {
+      // figure out which square number sits at grid (col=domCol, row=domRow)
+      var n;
+      var inRow = (domRow % 2 === 0) ? domCol : (9 - domCol);
+      n = domRow * 10 + inRow + 1;
+      var c = document.createElement("div");
+      var isDark = (domRow + domCol) % 2 === 1;
+      c.className = "cell " + (isDark ? "dark" : "light");
+      if (LADDERS[n] !== undefined) c.classList.add("l-up");
+      if (SNAKES[n] !== undefined) c.classList.add("s-down");
+      c.textContent = n;
+      cells[n] = c;
+      board.appendChild(c);
+    }
+  }
+
+  // ---- Draw snakes & ladders on SVG overlay ----
+  var svg = document.getElementById("overlay");
+  var SVGNS = "http://www.w3.org/2000/svg";
+
+  function line(x1, y1, x2, y2, color, w) {
+    var l = document.createElementNS(SVGNS, "line");
+    l.setAttribute("x1", x1); l.setAttribute("y1", y1);
+    l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+    l.setAttribute("stroke", color);
+    l.setAttribute("stroke-width", w);
+    l.setAttribute("stroke-linecap", "round");
+    svg.appendChild(l);
+  }
+  function circle(x, y, r, color) {
+    var c = document.createElementNS(SVGNS, "circle");
+    c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", r);
+    c.setAttribute("fill", color);
+    svg.appendChild(c);
+  }
+
+  // Ladders: two rails + rungs
+  Object.keys(LADDERS).forEach(function (k) {
+    var a = squareCenterPct(+k);          // bottom
+    var b = squareCenterPct(LADDERS[k]);  // top
+    var dx = b.x - a.x, dy = b.y - a.y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / len, ny = dx / len; // perpendicular unit
+    var off = 1.7;
+    line(a.x + nx * off, a.y + ny * off, b.x + nx * off, b.y + ny * off, "#b5651d", 0.9);
+    line(a.x - nx * off, a.y - ny * off, b.x - nx * off, b.y - ny * off, "#b5651d", 0.9);
+    var rungs = Math.max(2, Math.round(len / 7));
+    for (var i = 1; i < rungs; i++) {
+      var t = i / rungs;
+      var px = a.x + dx * t, py = a.y + dy * t;
+      line(px + nx * off, py + ny * off, px - nx * off, py - ny * off, "#cd853f", 0.7);
+    }
+  });
+
+  // Snakes: thick wavy-ish line from head to tail + head circle
+  Object.keys(SNAKES).forEach(function (k) {
+    var head = squareCenterPct(+k);
+    var tail = squareCenterPct(SNAKES[k]);
+    var path = document.createElementNS(SVGNS, "path");
+    var midx = (head.x + tail.x) / 2;
+    var midy = (head.y + tail.y) / 2;
+    var dx = tail.x - head.x, dy = tail.y - head.y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / len, ny = dx / len;
+    var bow = 6;
+    var c1x = head.x + dx * 0.33 + nx * bow, c1y = head.y + dy * 0.33 + ny * bow;
+    var c2x = head.x + dx * 0.66 - nx * bow, c2y = head.y + dy * 0.66 - ny * bow;
+    path.setAttribute("d", "M" + head.x + "," + head.y +
+      " C" + c1x + "," + c1y + " " + c2x + "," + c2y + " " + tail.x + "," + tail.y);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "#3a8a3a");
+    path.setAttribute("stroke-width", "2.4");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("opacity", "0.85");
+    svg.appendChild(path);
+    // head
+    circle(head.x, head.y, 2.4, "#2e7d32");
+    // eyes
+    circle(head.x - 0.9, head.y - 0.6, 0.5, "#fff");
+    circle(head.x + 0.9, head.y - 0.6, 0.5, "#fff");
+  });
+
+  // ---- Game state ----
+  var state = {
+    you: 0,
+    cpu: 0,
+    turn: "you",
+    busy: false,
+    over: false
+  };
+
+  var tokYou = document.getElementById("tok-you");
+  var tokCpu = document.getElementById("tok-cpu");
+  var posYou = document.getElementById("pos-you");
+  var posCpu = document.getElementById("pos-cpu");
+  var cardYou = document.getElementById("card-you");
+  var cardCpu = document.getElementById("card-cpu");
+  var msg = document.getElementById("msg");
+  var rollBtn = document.getElementById("rollBtn");
+  var newBtn = document.getElementById("newBtn");
+  var dieEl = document.getElementById("die");
+  var winOverlay = document.getElementById("winOverlay");
+  var winTitle = document.getElementById("winTitle");
+  var winText = document.getElementById("winText");
+  var playAgain = document.getElementById("playAgain");
+
+  // place a token at a square (1..100); 0 = off-board start (bottom-left, slightly outside)
+  function placeToken(el, n, isYou) {
+    var pct;
+    if (n <= 0) {
+      // start position near square 1 but offset so both visible
+      pct = { x: isYou ? 2 : 8, y: 98 };
+    } else {
+      pct = squareCenterPct(n);
+    }
+    // offset the two tokens so they don't fully overlap on same square
+    var ox = isYou ? -1.6 : 1.6;
+    var oy = isYou ? -1.2 : 1.2;
+    el.style.left = (pct.x + ox) + "%";
+    el.style.top = (pct.y + oy) + "%";
+  }
+
+  function render() {
+    posYou.textContent = state.you;
+    posCpu.textContent = state.cpu;
+    cardYou.classList.toggle("active", state.turn === "you" && !state.over);
+    cardCpu.classList.toggle("active", state.turn === "cpu" && !state.over);
+  }
+
+  // ---- Dice pip rendering ----
+  var PIPS = {
+    1: [4],
+    2: [0, 8],
+    3: [0, 4, 8],
+    4: [0, 2, 6, 8],
+    5: [0, 2, 4, 6, 8],
+    6: [0, 2, 3, 5, 6, 8]
+  };
+  function showDie(val) {
+    var spans = dieEl.querySelectorAll("span");
+    spans.forEach(function (s) { s.style.visibility = "hidden"; });
+    PIPS[val].forEach(function (p) {
+      var s = dieEl.querySelector('span[data-p="' + p + '"]');
+      if (s) s.style.visibility = "visible";
+    });
+  }
+
+  // ---- Sound (WebAudio) ----
+  var AC = null;
+  function actx() {
+    if (!AC) {
+      try { AC = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { AC = null; }
+    }
+    return AC;
+  }
+  function beep(freq, dur, type, vol) {
+    var ac = actx();
+    if (!ac) return;
+    try {
+      var o = ac.createOscillator();
+      var g = ac.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = vol || 0.08;
+      o.connect(g); g.connect(ac.destination);
+      var t = ac.currentTime;
+      o.start(t);
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.stop(t + dur);
+    } catch (e) {}
+  }
+  function sndStep() { beep(440 + Math.random() * 60, 0.07, "square", 0.05); }
+  function sndLadder() { beep(523, 0.12, "sine", 0.09); setTimeout(function(){ beep(784, 0.16, "sine", 0.09); }, 110); }
+  function sndSnake() { beep(400, 0.18, "sawtooth", 0.08); setTimeout(function(){ beep(220, 0.22, "sawtooth", 0.08); }, 120); }
+  function sndWin() { [523, 659, 784, 1046].forEach(function (f, i) { setTimeout(function(){ beep(f, 0.18, "triangle", 0.1); }, i * 130); }); }
+
+  // ---- Movement (step by step) ----
+  function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function stepMove(who, from, steps) {
+    // advance one square at a time up to `steps`, returns Promise of final square (no jump yet)
+    return new Promise(function (resolve) {
+      var cur = from;
+      var remaining = steps;
+      function next() {
+        if (remaining <= 0) { resolve(cur); return; }
+        cur += 1;
+        remaining -= 1;
+        placeToken(who === "you" ? tokYou : tokCpu, cur, who === "you");
+        state[who] = cur;
+        render();
+        sndStep();
+        setTimeout(next, 160);
+      }
+      next();
+    });
+  }
+
+  function applyJump(who, square) {
+    return new Promise(function (resolve) {
+      if (jumps[square] !== undefined) {
+        var dest = jumps[square];
+        var isLadder = dest > square;
+        setTimeout(function () {
+          state[who] = dest;
+          placeToken(who === "you" ? tokYou : tokCpu, dest, who === "you");
+          render();
+          if (isLadder) { sndLadder(); msg.textContent = (who === "you" ? "You" : "CPU") + " climbed a ladder! 🪜 → " + dest; }
+          else { sndSnake(); msg.textContent = (who === "you" ? "You" : "CPU") + " hit a snake! 🐍 → " + dest; }
+          setTimeout(function () { resolve(dest); }, 360);
+        }, 280);
+      } else {
+        resolve(square);
+      }
+    });
+  }
+
+  function doTurn(who, value) {
+    return new Promise(function (resolve) {
+      var from = state[who];
+      // Overshoot rule: reach 100+ wins. We allow going past, but cap display at 100 for win.
+      var target = from + value;
+      stepMove(who, from, value).then(function (landed) {
+        // landed === target
+        if (landed >= 100) {
+          // win — snap to 100
+          state[who] = 100;
+          placeToken(who === "you" ? tokYou : tokCpu, 100, who === "you");
+          render();
+          resolve({ won: true });
+          return;
+        }
+        applyJump(who, landed).then(function (finalSq) {
+          resolve({ won: finalSq >= 100 });
+        });
+      });
+    });
+  }
+
+  function rollValue() { return 1 + Math.floor(Math.random() * 6); }
+
+  function endGame(winner) {
+    state.over = true;
+    rollBtn.disabled = true;
+    cardYou.classList.remove("active");
+    cardCpu.classList.remove("active");
+    sndWin();
+    winTitle.textContent = winner === "you" ? "🎉 You Win!" : "🤖 CPU Wins!";
+    winText.textContent = winner === "you"
+      ? "You reached 100 first. Great job!"
+      : "The computer reached 100 first. Try again!";
+    winOverlay.classList.add("show");
+  }
+
+  function animateDie(finalVal) {
+    return new Promise(function (resolve) {
+      dieEl.classList.add("rolling");
+      var ticks = 8;
+      var i = 0;
+      var id = setInterval(function () {
+        showDie(rollValue());
+        i++;
+        if (i >= ticks) {
+          clearInterval(id);
+          dieEl.classList.remove("rolling");
+          showDie(finalVal);
+          resolve();
+        }
+      }, 55);
+    });
+  }
+
+  function youRoll() {
+    if (state.busy || state.over || state.turn !== "you") return;
+    state.busy = true;
+    rollBtn.disabled = true;
+    var v = rollValue();
+    msg.textContent = "You rolled a " + v + "!";
+    animateDie(v).then(function () {
+      return doTurn("you", v);
+    }).then(function (res) {
+      if (res.won) { endGame("you"); return; }
+      // switch to CPU
+      state.turn = "cpu";
+      render();
+      if (jumps[state.you] === undefined &&
+          !/ladder|snake/i.test(msg.textContent)) {
+        msg.textContent = "You moved to " + state.you + ". CPU's turn…";
+      } else {
+        msg.textContent += " — CPU's turn…";
+      }
+      state.busy = false;
+      setTimeout(cpuTurn, 800);
+    });
+  }
+
+  function cpuTurn() {
+    if (state.over || state.turn !== "cpu") return;
+    state.busy = true;
+    var v = rollValue();
+    msg.textContent = "CPU rolled a " + v + "…";
+    animateDie(v).then(function () {
+      return doTurn("cpu", v);
+    }).then(function (res) {
+      if (res.won) { endGame("cpu"); return; }
+      state.turn = "you";
+      render();
+      if (jumps[state.cpu] === undefined &&
+          !/ladder|snake/i.test(msg.textContent)) {
+        msg.textContent = "CPU moved to " + state.cpu + ". Your turn!";
+      } else {
+        msg.textContent += " Your turn!";
+      }
+      state.busy = false;
+      rollBtn.disabled = false;
+    });
+  }
+
+  function newGame() {
+    state.you = 0;
+    state.cpu = 0;
+    state.turn = "you";
+    state.busy = false;
+    state.over = false;
+    winOverlay.classList.remove("show");
+    rollBtn.disabled = false;
+    msg.textContent = "Your turn — tap Roll Dice!";
+    showDie(1);
+    placeToken(tokYou, 0, true);
+    placeToken(tokCpu, 0, false);
+    render();
+  }
+
+  // ---- Events ----
+  rollBtn.addEventListener("click", function () {
+    if (AC && AC.state === "suspended") { AC.resume(); }
+    youRoll();
+  });
+  newBtn.addEventListener("click", newGame);
+  playAgain.addEventListener("click", newGame);
+
+  // prevent double-tap zoom / accidental gestures on buttons
+  [rollBtn, newBtn, playAgain].forEach(function (b) {
+    b.addEventListener("touchend", function (e) { e.preventDefault(); b.click(); }, { passive: false });
+  });
+
+  // init
+  newGame();
+})();
+</script>
+</body>
+</html>

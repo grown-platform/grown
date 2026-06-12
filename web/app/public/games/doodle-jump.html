@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Doodle Jump</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #2a2150;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: #fff;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100%;
+    background: linear-gradient(160deg, #3a2f74 0%, #211a44 100%);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #wrap {
+    width: 100%;
+    max-width: 480px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 {
+    margin: 2px 0 6px;
+    font-size: clamp(1.2rem, 6vw, 1.7rem);
+    letter-spacing: 1px;
+    text-shadow: 0 2px 0 rgba(0,0,0,.35);
+  }
+  h1 span { color: #ffd166; }
+  #hud {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 480px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+    padding: 0 6px;
+  }
+  #hud .label { opacity: .7; font-weight: 600; font-size: .72rem; display:block; }
+  #score-val { color: #ffd166; }
+  #best-val { color: #06d6a0; }
+  #stage {
+    position: relative;
+    width: 100%;
+    line-height: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px -12px rgba(0,0,0,.6);
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    touch-action: none;
+    background: #b8e0ff;
+  }
+  #restart {
+    margin-top: 10px;
+    padding: 10px 22px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #211a44;
+    background: #ffd166;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 4px 0 #c79a2f;
+    transition: transform .05s, box-shadow .05s;
+  }
+  #restart:active { transform: translateY(3px); box-shadow: 0 1px 0 #c79a2f; }
+  #hint { margin-top: 8px; font-size: .78rem; opacity: .65; text-align: center; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/doodle-jump.svg">
+    <link rel="manifest" href="/games/doodle-jump.webmanifest">
+    <meta name="theme-color" content="#22C55E">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Doodle Jump">
+    <link rel="apple-touch-icon" href="/games/icons/doodle-jump.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#22C55E;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="wrap">
+  <h1>Doodle <span>Jump</span></h1>
+  <div id="hud">
+    <div><span class="label">SCORE</span><span id="score-val">0</span></div>
+    <div style="text-align:right"><span class="label">BEST</span><span id="best-val">0</span></div>
+  </div>
+  <div id="stage">
+    <canvas id="game"></canvas>
+  </div>
+  <button id="restart" type="button">Restart</button>
+  <div id="hint">Hold LEFT / RIGHT half of screen &nbsp;•&nbsp; or use ← →</div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var scoreEl = document.getElementById("score-val");
+  var bestEl = document.getElementById("best-val");
+  var restartBtn = document.getElementById("restart");
+  var stage = document.getElementById("stage");
+
+  // Logical game dimensions (portrait). The canvas is scaled by CSS.
+  var W = 360;
+  var H = 600;
+
+  // ---- responsive sizing -------------------------------------------------
+  function fitCanvas() {
+    // Cap CSS width to viewport (with padding) and ~480px.
+    var maxW = Math.min(window.innerWidth - 16, 480);
+    // Reserve some vertical space for title/hud/button.
+    var maxH = window.innerHeight - 150;
+    var aspect = W / H;
+    var cssW = maxW;
+    var cssH = cssW / aspect;
+    if (cssH > maxH) {
+      cssH = maxH;
+      cssW = cssH * aspect;
+    }
+    // Backing store at device pixel ratio for crispness.
+    var dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", fitCanvas);
+  window.addEventListener("orientationchange", fitCanvas);
+
+  // ---- audio (WebAudio, no assets) --------------------------------------
+  var AC = null;
+  function audioCtx() {
+    if (AC === null) {
+      try {
+        var Ctor = window.AudioContext || window.webkitAudioContext;
+        AC = Ctor ? new Ctor() : false;
+      } catch (e) { AC = false; }
+    }
+    return AC || null;
+  }
+  function beep(freq, dur, type, vol) {
+    var ac = audioCtx();
+    if (!ac) return;
+    if (ac.state === "suspended") { try { ac.resume(); } catch (e) {} }
+    try {
+      var osc = ac.createOscillator();
+      var g = ac.createGain();
+      osc.type = type || "square";
+      osc.frequency.value = freq;
+      var now = ac.currentTime;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(vol || 0.12, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(g);
+      g.connect(ac.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (e) {}
+  }
+  function sndJump() { beep(520, 0.10, "square", 0.10); }
+  function sndSpring() { beep(380, 0.18, "sawtooth", 0.12); setTimeout(function(){ beep(760, 0.12, "square", 0.10); }, 60); }
+  function sndDie() { beep(220, 0.25, "sawtooth", 0.14); setTimeout(function(){ beep(140, 0.3, "sawtooth", 0.14); }, 120); }
+
+  // ---- game constants ----------------------------------------------------
+  var GRAVITY = 0.30;
+  var JUMP_V = -12.2;          // fixed bounce velocity
+  var SPRING_V = -19.5;        // extra-bounce from spring platform
+  var MOVE_ACCEL = 0.9;        // horizontal acceleration while held
+  var MOVE_MAX = 7.0;          // max horizontal speed
+  var FRICTION = 0.86;         // horizontal damping when no input
+  var PLAYER_W = 34;
+  var PLAYER_H = 34;
+  var PLAT_W = 64;
+  var PLAT_H = 14;
+  var GAP_MIN = 60;            // vertical gap between generated platforms
+  var GAP_MAX = 95;
+
+  var BEST_KEY = "doodleJumpBest";
+
+  // ---- state -------------------------------------------------------------
+  var player, platforms, cameraY, score, best, running, gameOver, started;
+  var nextPlatY;               // world-Y where the next platform should spawn (upward = smaller)
+  var input = { left: false, right: false };
+
+  function loadBest() {
+    var v = 0;
+    try { v = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; } catch (e) {}
+    return v;
+  }
+  function saveBest(v) {
+    try { localStorage.setItem(BEST_KEY, String(v)); } catch (e) {}
+  }
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  // Platform types: 0 = static, 1 = moving (horizontal), 2 = spring (gives big bounce)
+  function makePlatform(y, type) {
+    var x = rand(0, W - PLAT_W);
+    var p = { x: x, y: y, w: PLAT_W, h: PLAT_H, type: type, vx: 0, hasSpring: false };
+    if (type === 1) {
+      p.vx = (Math.random() < 0.5 ? -1 : 1) * rand(0.8, 1.8);
+    }
+    if (type === 2) {
+      // spring sits on a static platform
+      p.type = 0;
+      p.hasSpring = true;
+    }
+    return p;
+  }
+
+  // Decide platform type based on current score (difficulty curve).
+  function pickType() {
+    var r = Math.random();
+    // moving platforms appear from score ~ 1500, spring chance throughout (rare).
+    var movingChance = 0;
+    if (score > 4000) movingChance = 0.42;
+    else if (score > 2500) movingChance = 0.30;
+    else if (score > 1500) movingChance = 0.18;
+    var springChance = 0.07;
+    if (r < springChance) return 2;
+    if (r < springChance + movingChance) return 1;
+    return 0;
+  }
+
+  function spawnAbove() {
+    // Spawn platforms upward until we've covered above the camera top.
+    var topBound = cameraY - H * 0.5; // generate a bit beyond the visible top
+    while (nextPlatY > topBound) {
+      platforms.push(makePlatform(nextPlatY, pickType()));
+      nextPlatY -= rand(GAP_MIN, GAP_MAX);
+    }
+  }
+
+  function reset() {
+    player = {
+      x: W / 2 - PLAYER_W / 2,
+      y: H - 120,
+      w: PLAYER_W,
+      h: PLAYER_H,
+      vx: 0,
+      vy: JUMP_V,
+      face: 1
+    };
+    platforms = [];
+    // Starting platform directly under the player so it never insta-dies.
+    var start = { x: W / 2 - PLAT_W / 2, y: H - 70, w: PLAT_W, h: PLAT_H, type: 0, vx: 0, hasSpring: false };
+    platforms.push(start);
+
+    // Fill an initial column of static-ish platforms going up.
+    nextPlatY = H - 70 - rand(GAP_MIN, GAP_MAX);
+    cameraY = 0;
+    score = 0;
+    started = false;
+    // For the very first screen keep things easy (mostly static).
+    while (nextPlatY > -H) {
+      var t = Math.random() < 0.10 ? 2 : 0;
+      platforms.push(makePlatform(nextPlatY, t));
+      nextPlatY -= rand(GAP_MIN, GAP_MAX);
+    }
+
+    cameraY = 0;
+    running = true;
+    gameOver = false;
+    input.left = false;
+    input.right = false;
+    best = loadBest();
+    bestEl.textContent = best;
+    scoreEl.textContent = 0;
+  }
+
+  // ---- update ------------------------------------------------------------
+  function update() {
+    if (!running) return;
+
+    // horizontal input
+    if (input.left && !input.right) {
+      player.vx -= MOVE_ACCEL;
+      player.face = -1;
+    } else if (input.right && !input.left) {
+      player.vx += MOVE_ACCEL;
+      player.face = 1;
+    } else {
+      player.vx *= FRICTION;
+      if (Math.abs(player.vx) < 0.05) player.vx = 0;
+    }
+    if (player.vx > MOVE_MAX) player.vx = MOVE_MAX;
+    if (player.vx < -MOVE_MAX) player.vx = -MOVE_MAX;
+
+    player.x += player.vx;
+
+    // horizontal wrap
+    if (player.x + player.w < 0) player.x = W;
+    else if (player.x > W) player.x = -player.w;
+
+    // gravity / vertical
+    player.vy += GRAVITY;
+    var prevBottom = player.y + player.h;
+    player.y += player.vy;
+    var newBottom = player.y + player.h;
+
+    // moving platforms
+    for (var i = 0; i < platforms.length; i++) {
+      var p = platforms[i];
+      if (p.type === 1) {
+        p.x += p.vx;
+        if (p.x <= 0) { p.x = 0; p.vx = -p.vx; }
+        else if (p.x + p.w >= W) { p.x = W - p.w; p.vx = -p.vx; }
+      }
+    }
+
+    // landing collision: only when falling, and player's feet crossed the top of a platform
+    if (player.vy > 0) {
+      for (var j = 0; j < platforms.length; j++) {
+        var pl = platforms[j];
+        var withinX = (player.x + player.w > pl.x + 4) && (player.x < pl.x + pl.w - 4);
+        var crossedTop = (prevBottom <= pl.y) && (newBottom >= pl.y);
+        if (withinX && crossedTop) {
+          player.y = pl.y - player.h;
+          if (pl.hasSpring) {
+            player.vy = SPRING_V;
+            sndSpring();
+          } else {
+            player.vy = JUMP_V;
+            sndJump();
+          }
+          started = true;
+          break;
+        }
+      }
+    }
+
+    // camera: when the player rises above 40% of the screen, scroll the world.
+    var threshold = H * 0.40;
+    var playerScreenY = player.y - cameraY;
+    if (playerScreenY < threshold) {
+      var dy = threshold - playerScreenY; // positive
+      cameraY -= dy;                      // move camera up (world scrolls down)
+      // score increases with height climbed (only upward camera movement)
+      score += Math.round(dy);
+      if (score < 0) score = 0;
+      scoreEl.textContent = score;
+    }
+
+    // spawn new platforms above and recycle ones below the screen.
+    spawnAbove();
+    var bottomBound = cameraY + H + 40;
+    var kept = [];
+    for (var k = 0; k < platforms.length; k++) {
+      if (platforms[k].y < bottomBound) kept.push(platforms[k]);
+    }
+    platforms = kept;
+
+    // game over: fell below the bottom of the visible screen
+    if (player.y - cameraY > H + 4) {
+      endGame();
+    }
+  }
+
+  function endGame() {
+    running = false;
+    gameOver = true;
+    sndDie();
+    if (score > best) {
+      best = score;
+      saveBest(best);
+      bestEl.textContent = best;
+    }
+  }
+
+  // ---- render ------------------------------------------------------------
+  function drawBackground() {
+    // soft sky gradient
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#d6efff");
+    g.addColorStop(1, "#a9d6ff");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // subtle horizontal "grid" that scrolls with camera for a sense of height
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 1;
+    var spacing = 60;
+    var off = ((cameraY % spacing) + spacing) % spacing;
+    for (var y = -off; y < H; y += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(W, y + 0.5);
+      ctx.stroke();
+    }
+  }
+
+  function drawPlatform(p) {
+    var sy = p.y - cameraY;
+    if (sy < -PLAT_H || sy > H + PLAT_H) return;
+    var col, edge;
+    if (p.type === 1) { col = "#6fa8ff"; edge = "#3f74c9"; }   // moving = blue
+    else { col = "#43c46a"; edge = "#2c9249"; }                 // static = green
+    // body
+    ctx.fillStyle = col;
+    roundRect(p.x, sy, p.w, p.h, 6);
+    ctx.fill();
+    // top highlight
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    roundRect(p.x + 3, sy + 2, p.w - 6, 4, 3);
+    ctx.fill();
+    // bottom edge
+    ctx.fillStyle = edge;
+    ctx.fillRect(p.x + 4, sy + p.h - 2, p.w - 8, 2);
+
+    if (p.hasSpring) {
+      var sw = 16, shx = p.x + p.w / 2 - sw / 2, shy = sy - 12;
+      ctx.fillStyle = "#777";
+      ctx.fillRect(shx + 4, shy + 4, sw - 8, 8);
+      ctx.fillStyle = "#ffd166";
+      ctx.fillRect(shx, shy, sw, 5);
+      ctx.fillStyle = "#c79a2f";
+      ctx.fillRect(shx + 2, shy + 6, sw - 4, 2);
+    }
+  }
+
+  function roundRect(x, y, w, h, r) {
+    if (w < 2 * r) r = w / 2;
+    if (h < 2 * r) r = h / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawPlayer() {
+    var sx = player.x;
+    var sy = player.y - cameraY;
+    var cx = sx + player.w / 2;
+    var cy = sy + player.h / 2;
+
+    // body (rounded blob)
+    ctx.fillStyle = "#8b5cf6";
+    roundRect(sx, sy, player.w, player.h, 10);
+    ctx.fill();
+    // belly highlight
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    roundRect(sx + 5, sy + 4, player.w - 10, player.h * 0.5, 8);
+    ctx.fill();
+
+    // legs (point down when falling, tuck when rising)
+    ctx.fillStyle = "#6d3fd1";
+    var legY = sy + player.h - 2;
+    ctx.fillRect(sx + 7, legY, 6, 6);
+    ctx.fillRect(sx + player.w - 13, legY, 6, 6);
+
+    // eyes (look in facing direction)
+    var ex = player.face >= 0 ? 3 : -3;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(cx - 6 + ex, cy - 5, 5, 0, Math.PI * 2);
+    ctx.arc(cx + 6 + ex, cy - 5, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1a1233";
+    ctx.beginPath();
+    ctx.arc(cx - 6 + ex + player.face, cy - 5, 2.2, 0, Math.PI * 2);
+    ctx.arc(cx + 6 + ex + player.face, cy - 5, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // little smile
+    ctx.strokeStyle = "#1a1233";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx + ex, cy + 4, 4, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+  }
+
+  function drawControlsHint() {
+    // faint center divider so players know the two control halves
+    ctx.strokeStyle = "rgba(0,0,0,0.06)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(W / 2, 0);
+    ctx.lineTo(W / 2, H);
+    ctx.stroke();
+    if (!started) {
+      ctx.fillStyle = "rgba(33,26,68,0.55)";
+      ctx.font = "bold 15px 'Segoe UI', Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("Hold LEFT / RIGHT to steer", W / 2, H * 0.30);
+      ctx.fillText("←        →", W / 2, H * 0.30 + 26);
+      ctx.textAlign = "left";
+    }
+  }
+
+  function drawGameOver() {
+    ctx.fillStyle = "rgba(20,14,44,0.72)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffd166";
+    ctx.font = "bold 34px 'Segoe UI', Arial, sans-serif";
+    ctx.fillText("Game Over", W / 2, H * 0.40);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 20px 'Segoe UI', Arial, sans-serif";
+    ctx.fillText("Score: " + score, W / 2, H * 0.40 + 38);
+    ctx.fillStyle = "#06d6a0";
+    ctx.font = "16px 'Segoe UI', Arial, sans-serif";
+    ctx.fillText("Best: " + best, W / 2, H * 0.40 + 64);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = "bold 16px 'Segoe UI', Arial, sans-serif";
+    ctx.fillText("Tap to restart", W / 2, H * 0.40 + 100);
+    ctx.textAlign = "left";
+  }
+
+  function render() {
+    drawBackground();
+    drawControlsHint();
+    for (var i = 0; i < platforms.length; i++) drawPlatform(platforms[i]);
+    drawPlayer();
+    if (gameOver) drawGameOver();
+  }
+
+  // ---- main loop ---------------------------------------------------------
+  var lastTime = 0;
+  var acc = 0;
+  var STEP = 1000 / 60;
+  function loop(t) {
+    if (!lastTime) lastTime = t;
+    var dt = t - lastTime;
+    lastTime = t;
+    if (dt > 250) dt = 250; // avoid huge catch-up after tab switch
+    acc += dt;
+    var guard = 0;
+    while (acc >= STEP && guard < 6) {
+      update();
+      acc -= STEP;
+      guard++;
+    }
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  // ---- input handling ----------------------------------------------------
+  function setHalfFromX(clientX) {
+    var rect = canvas.getBoundingClientRect();
+    var mid = rect.left + rect.width / 2;
+    if (clientX < mid) { input.left = true; input.right = false; }
+    else { input.right = true; input.left = false; }
+  }
+
+  function handleStart(clientX) {
+    // resume audio on first gesture
+    var ac = audioCtx();
+    if (ac && ac.state === "suspended") { try { ac.resume(); } catch (e) {} }
+    if (gameOver) { reset(); return; }
+    setHalfFromX(clientX);
+  }
+
+  // Pointer events cover mouse + touch on modern browsers.
+  var activePointers = {};
+  stage.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    activePointers[e.pointerId] = e.clientX;
+    if (gameOver) { reset(); recomputeInput(); return; }
+    recomputeInput();
+  }, { passive: false });
+
+  stage.addEventListener("pointermove", function (e) {
+    if (activePointers[e.pointerId] === undefined) return;
+    e.preventDefault();
+    activePointers[e.pointerId] = e.clientX;
+    recomputeInput();
+  }, { passive: false });
+
+  function pointerUp(e) {
+    if (activePointers[e.pointerId] !== undefined) {
+      delete activePointers[e.pointerId];
+      recomputeInput();
+    }
+  }
+  stage.addEventListener("pointerup", pointerUp, { passive: false });
+  stage.addEventListener("pointercancel", pointerUp, { passive: false });
+  stage.addEventListener("pointerleave", function (e) {
+    // only drop if this exact pointer leaves
+    pointerUp(e);
+  }, { passive: false });
+
+  function recomputeInput() {
+    // resume audio
+    var ac = audioCtx();
+    if (ac && ac.state === "suspended") { try { ac.resume(); } catch (e) {} }
+    var rect = canvas.getBoundingClientRect();
+    var mid = rect.left + rect.width / 2;
+    var anyLeft = false, anyRight = false;
+    for (var id in activePointers) {
+      if (!activePointers.hasOwnProperty(id)) continue;
+      if (activePointers[id] < mid) anyLeft = true; else anyRight = true;
+    }
+    // keyboard combined below in keydown/up via separate flags
+    input.left = anyLeft || keyLeft;
+    input.right = anyRight || keyRight;
+  }
+
+  // prevent the page from scrolling/zooming via touch on the stage
+  stage.addEventListener("touchstart", function (e) { e.preventDefault(); }, { passive: false });
+  stage.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+
+  // keyboard
+  var keyLeft = false, keyRight = false;
+  window.addEventListener("keydown", function (e) {
+    var k = e.key;
+    if (k === "ArrowLeft" || k === "a" || k === "A") { keyLeft = true; recomputeInput(); e.preventDefault(); }
+    else if (k === "ArrowRight" || k === "d" || k === "D") { keyRight = true; recomputeInput(); e.preventDefault(); }
+    else if ((k === " " || k === "Enter") && gameOver) { reset(); e.preventDefault(); }
+  });
+  window.addEventListener("keyup", function (e) {
+    var k = e.key;
+    if (k === "ArrowLeft" || k === "a" || k === "A") { keyLeft = false; recomputeInput(); }
+    else if (k === "ArrowRight" || k === "d" || k === "D") { keyRight = false; recomputeInput(); }
+  });
+
+  restartBtn.addEventListener("click", function () { reset(); });
+
+  // pause/clear input when tab hidden
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      activePointers = {};
+      keyLeft = keyRight = false;
+      input.left = input.right = false;
+    }
+  });
+
+  // ---- boot --------------------------------------------------------------
+  fitCanvas();
+  reset();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

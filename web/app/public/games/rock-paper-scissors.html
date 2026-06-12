@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Rock Paper Scissors</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg1: #ffe29f;
+    --bg2: #ffa99f;
+    --bg3: #ff719a;
+    --card: rgba(255,255,255,0.92);
+    --ink: #3a2a4d;
+    --rock: #ff8a5c;
+    --paper: #4ecdc4;
+    --scissor: #c08bff;
+  }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, var(--bg1), var(--bg2) 55%, var(--bg3));
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .app {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  h1 {
+    text-align: center;
+    font-size: clamp(1.4rem, 6vw, 2rem);
+    color: #fff;
+    text-shadow: 0 2px 0 rgba(0,0,0,0.15);
+    letter-spacing: 0.5px;
+  }
+  h1 .em { font-size: 1.1em; }
+
+  .scoreboard {
+    display: flex;
+    gap: 8px;
+    background: var(--card);
+    border-radius: 18px;
+    padding: 10px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  }
+  .score {
+    flex: 1;
+    text-align: center;
+    border-radius: 12px;
+    padding: 8px 4px;
+    background: rgba(0,0,0,0.04);
+  }
+  .score .label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+    font-weight: 700;
+  }
+  .score .num {
+    font-size: 1.7rem;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+  .score.you { box-shadow: inset 0 0 0 2px #4ecdc4; }
+  .score.cpu { box-shadow: inset 0 0 0 2px #ff719a; }
+  .score.tie { box-shadow: inset 0 0 0 2px #ffb347; }
+
+  .arena {
+    background: var(--card);
+    border-radius: 22px;
+    padding: 14px 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    text-align: center;
+  }
+  .hands {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .hand {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .hand .who {
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+  }
+  .hand .emoji {
+    font-size: clamp(2.6rem, 16vw, 4rem);
+    line-height: 1;
+    height: 1.1em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .vs {
+    font-size: 1rem;
+    font-weight: 800;
+    opacity: 0.55;
+    padding: 0 2px;
+  }
+  /* CPU mirrored so the hands face each other */
+  .hand.cpu .emoji { transform: scaleX(-1); }
+
+  @keyframes shake {
+    0%,100% { transform: translateY(0) rotate(0deg); }
+    20% { transform: translateY(-10px) rotate(-8deg); }
+    40% { transform: translateY(0) rotate(0deg); }
+    60% { transform: translateY(-10px) rotate(8deg); }
+    80% { transform: translateY(0) rotate(0deg); }
+  }
+  @keyframes shakeMir {
+    0%,100% { transform: scaleX(-1) translateY(0) rotate(0deg); }
+    20% { transform: scaleX(-1) translateY(-10px) rotate(-8deg); }
+    40% { transform: scaleX(-1) translateY(0) rotate(0deg); }
+    60% { transform: scaleX(-1) translateY(-10px) rotate(8deg); }
+    80% { transform: scaleX(-1) translateY(0) rotate(0deg); }
+  }
+  .hand .emoji.shaking { animation: shake 0.45s ease-in-out 2; }
+  .hand.cpu .emoji.shaking { animation: shakeMir 0.45s ease-in-out 2; }
+
+  @keyframes pop {
+    0% { transform: scale(0.4); }
+    60% { transform: scale(1.18); }
+    100% { transform: scale(1); }
+  }
+  @keyframes popMir {
+    0% { transform: scaleX(-1) scale(0.4); }
+    60% { transform: scaleX(-1) scale(1.18); }
+    100% { transform: scaleX(-1) scale(1); }
+  }
+  .hand .emoji.reveal { animation: pop 0.35s ease-out; }
+  .hand.cpu .emoji.reveal { animation: popMir 0.35s ease-out; }
+
+  .result {
+    margin-top: 10px;
+    font-size: 1.15rem;
+    font-weight: 800;
+    min-height: 1.5em;
+    transition: color 0.2s;
+  }
+  .result.win { color: #16a34a; }
+  .result.lose { color: #e11d48; }
+  .result.tie { color: #d97706; }
+
+  .choices {
+    display: flex;
+    gap: 10px;
+  }
+  .choice {
+    flex: 1;
+    min-height: 84px;
+    border: none;
+    border-radius: 20px;
+    font-size: 2.4rem;
+    color: #fff;
+    cursor: pointer;
+    touch-action: manipulation;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    box-shadow: 0 5px 0 rgba(0,0,0,0.18), 0 8px 16px rgba(0,0,0,0.14);
+    transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .choice .name {
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .choice.rock { background: var(--rock); }
+  .choice.paper { background: var(--paper); }
+  .choice.scissor { background: var(--scissor); }
+  .choice:active { transform: translateY(4px); box-shadow: 0 1px 0 rgba(0,0,0,0.18), 0 3px 8px rgba(0,0,0,0.14); }
+  .choice:disabled { filter: grayscale(0.5) opacity(0.7); cursor: default; }
+
+  .controls {
+    display: flex;
+    justify-content: center;
+  }
+  .reset {
+    border: none;
+    background: rgba(255,255,255,0.85);
+    color: var(--ink);
+    font-weight: 800;
+    font-size: 0.95rem;
+    padding: 12px 22px;
+    border-radius: 999px;
+    cursor: pointer;
+    touch-action: manipulation;
+    min-height: 44px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .reset:active { transform: translateY(2px); }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/rock-paper-scissors.svg">
+    <link rel="manifest" href="/games/rock-paper-scissors.webmanifest">
+    <meta name="theme-color" content="#F43F5E">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Rock Paper Scissors">
+    <link rel="apple-touch-icon" href="/games/icons/rock-paper-scissors.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#F43F5E;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <div class="app">
+    <h1><span class="em">✊</span> Rock Paper Scissors <span class="em">✌️</span></h1>
+
+    <div class="scoreboard">
+      <div class="score you">
+        <div class="label">You</div>
+        <div class="num" id="scoreYou">0</div>
+      </div>
+      <div class="score tie">
+        <div class="label">Ties</div>
+        <div class="num" id="scoreTie">0</div>
+      </div>
+      <div class="score cpu">
+        <div class="label">CPU</div>
+        <div class="num" id="scoreCpu">0</div>
+      </div>
+    </div>
+
+    <div class="arena">
+      <div class="hands">
+        <div class="hand you">
+          <div class="who">You</div>
+          <div class="emoji" id="handYou">✊</div>
+        </div>
+        <div class="vs">VS</div>
+        <div class="hand cpu">
+          <div class="who">CPU</div>
+          <div class="emoji" id="handCpu">✊</div>
+        </div>
+      </div>
+      <div class="result tie" id="result">Pick one to play!</div>
+    </div>
+
+    <div class="choices">
+      <button class="choice rock" data-move="rock" aria-label="Rock">✊<span class="name">Rock</span></button>
+      <button class="choice paper" data-move="paper" aria-label="Paper">✋<span class="name">Paper</span></button>
+      <button class="choice scissor" data-move="scissors" aria-label="Scissors">✌️<span class="name">Scissors</span></button>
+    </div>
+
+    <div class="controls">
+      <button class="reset" id="reset">↺ Reset Score</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var EMOJI = { rock: "✊", paper: "✋", scissors: "✌️" };
+  var BEATS = { rock: "scissors", paper: "rock", scissors: "paper" };
+  var MOVES = ["rock", "paper", "scissors"];
+
+  var scores = { you: 0, cpu: 0, tie: 0 };
+
+  var el = {
+    scoreYou: document.getElementById("scoreYou"),
+    scoreCpu: document.getElementById("scoreCpu"),
+    scoreTie: document.getElementById("scoreTie"),
+    handYou: document.getElementById("handYou"),
+    handCpu: document.getElementById("handCpu"),
+    result: document.getElementById("result"),
+    reset: document.getElementById("reset")
+  };
+
+  var buttons = Array.prototype.slice.call(document.querySelectorAll(".choice"));
+  var busy = false;
+
+  // --- WebAudio (lazy, optional) ---
+  var actx = null;
+  function tone(freq, dur, type, when, gain) {
+    if (!actx) return;
+    var t0 = actx.currentTime + (when || 0);
+    var osc = actx.createOscillator();
+    var g = actx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain || 0.18, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g);
+    g.connect(actx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }
+  function ensureAudio() {
+    if (actx) return;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) actx = new AC();
+    } catch (e) { actx = null; }
+  }
+  function sndTick() { tone(220, 0.05, "square", 0, 0.08); }
+  function sndWin() { tone(523, 0.12, "triangle", 0, 0.2); tone(784, 0.18, "triangle", 0.1, 0.2); }
+  function sndLose() { tone(330, 0.16, "sawtooth", 0, 0.16); tone(196, 0.22, "sawtooth", 0.12, 0.16); }
+  function sndTie() { tone(440, 0.14, "sine", 0, 0.16); }
+
+  function render() {
+    el.scoreYou.textContent = scores.you;
+    el.scoreCpu.textContent = scores.cpu;
+    el.scoreTie.textContent = scores.tie;
+  }
+
+  function setButtons(disabled) {
+    buttons.forEach(function (b) { b.disabled = disabled; });
+  }
+
+  function decide(you, cpu) {
+    if (you === cpu) return "tie";
+    return BEATS[you] === cpu ? "win" : "lose";
+  }
+
+  function play(youMove) {
+    if (busy) return;
+    busy = true;
+    ensureAudio();
+    setButtons(true);
+
+    var cpuMove = MOVES[Math.floor(Math.random() * MOVES.length)];
+
+    // Reset hands to "rock" fists for the shake
+    el.handYou.classList.remove("reveal");
+    el.handCpu.classList.remove("reveal");
+    el.handYou.textContent = "✊";
+    el.handCpu.textContent = "✊";
+    el.result.textContent = "Rock… Paper… Scissors…";
+    el.result.className = "result tie";
+
+    // Force reflow so the animation restarts reliably
+    void el.handYou.offsetWidth;
+    el.handYou.classList.add("shaking");
+    el.handCpu.classList.add("shaking");
+    sndTick();
+    setTimeout(sndTick, 220);
+    setTimeout(sndTick, 440);
+
+    // After the shake (~0.9s), reveal
+    setTimeout(function () {
+      el.handYou.classList.remove("shaking");
+      el.handCpu.classList.remove("shaking");
+
+      el.handYou.textContent = EMOJI[youMove];
+      el.handCpu.textContent = EMOJI[cpuMove];
+      void el.handYou.offsetWidth;
+      el.handYou.classList.add("reveal");
+      el.handCpu.classList.add("reveal");
+
+      var outcome = decide(youMove, cpuMove);
+      if (outcome === "win") {
+        scores.you++;
+        el.result.textContent = "You win! 🎉";
+        el.result.className = "result win";
+        sndWin();
+      } else if (outcome === "lose") {
+        scores.cpu++;
+        el.result.textContent = "CPU wins! 🤖";
+        el.result.className = "result lose";
+        sndLose();
+      } else {
+        scores.tie++;
+        el.result.textContent = "It's a tie! 🤝";
+        el.result.className = "result tie";
+        sndTie();
+      }
+      render();
+
+      setButtons(false);
+      busy = false;
+    }, 950);
+  }
+
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () {
+      play(b.getAttribute("data-move"));
+    });
+  });
+
+  el.reset.addEventListener("click", function () {
+    if (busy) return;
+    ensureAudio();
+    scores.you = 0;
+    scores.cpu = 0;
+    scores.tie = 0;
+    render();
+    el.handYou.textContent = "✊";
+    el.handCpu.textContent = "✊";
+    el.handYou.classList.remove("reveal");
+    el.handCpu.classList.remove("reveal");
+    el.result.textContent = "Pick one to play!";
+    el.result.className = "result tie";
+    sndTick();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

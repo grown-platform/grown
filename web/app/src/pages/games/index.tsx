@@ -80,6 +80,15 @@ const GAMES: AppTile[] = [
   arcade("bubble-shooter", "Bubble Shooter", "#DB2777", "BubbleChart"),
   arcade("tower-stack", "Tower Stack", "#F59E0B", "Layers"),
   arcade("hormuz", "Strait of Hormuz", "#0369A1", "DirectionsBoat"),
+  arcade("word-search", "Word Search", "#0891B2", "Search"),
+  arcade("asteroids", "Asteroids", "#334155", "Rocket"),
+  arcade("doodle-jump", "Doodle Jump", "#22C55E", "TrendingUp"),
+  arcade("rock-paper-scissors", "Rock Paper Scissors", "#F43F5E", "PanTool"),
+  arcade("checkers", "Checkers", "#B91C1C", "RadioButtonChecked"),
+  arcade("maze", "Maze", "#7C3AED", "Route"),
+  arcade("coloring", "Coloring Pad", "#EC4899", "Palette"),
+  arcade("snakes-and-ladders", "Snakes & Ladders", "#16A34A", "Casino"),
+  arcade("math-quiz", "Math Quiz", "#2563EB", "Calculate"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */

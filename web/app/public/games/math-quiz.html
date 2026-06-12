@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Math Quiz</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, #4e54c8 0%, #8f94fb 100%);
+    color: #fff;
+    overflow: hidden;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  #app {
+    width: 100%;
+    max-width: 480px;
+    height: 100%;
+    max-height: 820px;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 14px 18px;
+    gap: 12px;
+  }
+  h1 {
+    text-align: center;
+    font-size: clamp(26px, 8vw, 38px);
+    font-weight: 800;
+    letter-spacing: .5px;
+    text-shadow: 0 3px 0 rgba(0,0,0,.18);
+  }
+  h1 .emoji { font-size: 0.9em; }
+
+  /* Difficulty selector */
+  .diff-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+  }
+  .diff-btn {
+    flex: 1;
+    min-height: 48px;
+    border: none;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(255,255,255,.18);
+    cursor: pointer;
+    transition: transform .08s ease, background .15s ease;
+    touch-action: manipulation;
+  }
+  .diff-btn:active { transform: scale(.95); }
+  .diff-btn.easy.sel   { background: #2ecc71; box-shadow: 0 4px 0 #27ae60; }
+  .diff-btn.medium.sel { background: #f39c12; box-shadow: 0 4px 0 #d68910; }
+  .diff-btn.hard.sel   { background: #e74c3c; box-shadow: 0 4px 0 #c0392b; }
+
+  /* Stats bar */
+  .stats {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 700;
+  }
+  .stat {
+    flex: 1;
+    background: rgba(255,255,255,.15);
+    border-radius: 12px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+  .stat .lbl { font-size: 11px; opacity: .85; text-transform: uppercase; letter-spacing: .5px; }
+  .stat .val { font-size: 22px; font-weight: 800; }
+  .stat.streak .val { color: #ffe27a; }
+
+  /* Timer */
+  .timer-wrap {
+    height: 12px;
+    border-radius: 6px;
+    background: rgba(0,0,0,.22);
+    overflow: hidden;
+  }
+  #timerBar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #6bf, #2ecc71);
+    border-radius: 6px;
+    transition: width .25s linear, background .25s linear;
+  }
+  #timerBar.warn { background: linear-gradient(90deg, #f39c12, #e74c3c); }
+
+  /* Problem */
+  .problem-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+  }
+  #problem {
+    font-size: clamp(40px, 15vw, 72px);
+    font-weight: 800;
+    text-align: center;
+    text-shadow: 0 4px 0 rgba(0,0,0,.2);
+  }
+  #feedback {
+    margin-top: 10px;
+    font-size: clamp(18px, 5vw, 24px);
+    font-weight: 800;
+    min-height: 30px;
+    text-align: center;
+  }
+  #feedback.good { color: #d2ffd6; }
+  #feedback.bad  { color: #ffd2d2; }
+
+  /* Answer grid */
+  .answers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .ans-btn {
+    min-height: 64px;
+    border: none;
+    border-radius: 16px;
+    font-size: clamp(24px, 7vw, 32px);
+    font-weight: 800;
+    color: #333;
+    background: #fff;
+    cursor: pointer;
+    box-shadow: 0 4px 0 rgba(0,0,0,.18);
+    transition: transform .08s ease, background .15s ease, color .15s ease;
+    touch-action: manipulation;
+    position: relative;
+  }
+  .ans-btn .num { font-size: 11px; position: absolute; top: 6px; left: 9px; opacity: .45; font-weight: 700; }
+  .ans-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,.18); }
+  .ans-btn.correct { background: #2ecc71; color: #fff; }
+  .ans-btn.wrong   { background: #e74c3c; color: #fff; }
+  .ans-btn.disabled { pointer-events: none; }
+
+  /* Overlay (start / summary) */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    text-align: center;
+    background: rgba(40,42,110,.92);
+    padding: 24px;
+    z-index: 10;
+  }
+  .overlay.hidden { display: none; }
+  .overlay h2 { font-size: clamp(28px, 9vw, 44px); font-weight: 800; text-shadow: 0 3px 0 rgba(0,0,0,.2); }
+  .overlay p { font-size: 18px; line-height: 1.5; max-width: 320px; }
+  .big-num { font-size: 56px; font-weight: 800; color: #ffe27a; }
+  .play-btn {
+    min-height: 56px;
+    min-width: 200px;
+    padding: 0 28px;
+    border: none;
+    border-radius: 18px;
+    font-size: 22px;
+    font-weight: 800;
+    color: #fff;
+    background: #2ecc71;
+    box-shadow: 0 5px 0 #27ae60;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .play-btn:active { transform: translateY(2px); box-shadow: 0 3px 0 #27ae60; }
+
+  @media (max-height: 560px) {
+    #problem { font-size: clamp(34px, 11vw, 54px); }
+    .ans-btn { min-height: 54px; }
+    h1 { font-size: 24px; }
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/math-quiz.svg">
+    <link rel="manifest" href="/games/math-quiz.webmanifest">
+    <meta name="theme-color" content="#2563EB">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Math Quiz">
+    <link rel="apple-touch-icon" href="/games/icons/math-quiz.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#2563EB;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <h1><span class="emoji">🧮</span> Math Quiz</h1>
+
+  <div class="diff-row" id="diffRow">
+    <button class="diff-btn easy sel" data-diff="easy">Easy</button>
+    <button class="diff-btn medium" data-diff="medium">Medium</button>
+    <button class="diff-btn hard" data-diff="hard">Hard</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="lbl">Score</div><div class="val" id="scoreVal">0</div></div>
+    <div class="stat streak"><div class="lbl">Streak</div><div class="val" id="streakVal">0</div></div>
+    <div class="stat"><div class="lbl">Time</div><div class="val" id="timeVal">60</div></div>
+  </div>
+
+  <div class="timer-wrap"><div id="timerBar"></div></div>
+
+  <div class="problem-area">
+    <div id="problem">Ready?</div>
+    <div id="feedback"></div>
+  </div>
+
+  <div class="answers" id="answers">
+    <button class="ans-btn" data-i="0"><span class="num">1</span><span class="txt"></span></button>
+    <button class="ans-btn" data-i="1"><span class="num">2</span><span class="txt"></span></button>
+    <button class="ans-btn" data-i="2"><span class="num">3</span><span class="txt"></span></button>
+    <button class="ans-btn" data-i="3"><span class="num">4</span><span class="txt"></span></button>
+  </div>
+
+  <!-- Start overlay -->
+  <div class="overlay" id="startOverlay">
+    <h2>🧮 Math Quiz</h2>
+    <p>Pick a difficulty, then answer as many problems as you can in <b>60 seconds</b>. Build a streak for bonus points!</p>
+    <button class="play-btn" id="startBtn">Start ▶</button>
+  </div>
+
+  <!-- Summary overlay -->
+  <div class="overlay hidden" id="summaryOverlay">
+    <h2 id="summaryTitle">Time's Up!</h2>
+    <div class="big-num" id="finalScore">0</div>
+    <p id="summaryText">Great job!</p>
+    <button class="play-btn" id="againBtn">Play Again ▶</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Config ----
+  var ROUND_TIME = 60;          // seconds
+  var DIFFS = ["easy", "medium", "hard"];
+
+  // ---- State ----
+  var state = {
+    diff: "easy",
+    score: 0,
+    streak: 0,
+    bestStreak: 0,
+    correctCount: 0,
+    totalCount: 0,
+    timeLeft: ROUND_TIME,
+    current: null,    // { text, answer, choices:[], qStart }
+    locked: false,
+    running: false,
+    timerId: null,
+    tickStart: 0
+  };
+
+  // ---- DOM ----
+  var $ = function (id) { return document.getElementById(id); };
+  var elProblem = $("problem");
+  var elFeedback = $("feedback");
+  var elScore = $("scoreVal");
+  var elStreak = $("streakVal");
+  var elTime = $("timeVal");
+  var elTimerBar = $("timerBar");
+  var elAnswers = $("answers");
+  var ansButtons = Array.prototype.slice.call(elAnswers.querySelectorAll(".ans-btn"));
+  var startOverlay = $("startOverlay");
+  var summaryOverlay = $("summaryOverlay");
+
+  // ---- Sound (WebAudio, no assets) ----
+  var actx = null;
+  function audioCtx() {
+    if (actx === null) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        actx = AC ? new AC() : false;
+      } catch (e) { actx = false; }
+    }
+    return actx || null;
+  }
+  function beep(freqs, dur, type, gainVal) {
+    var ctx = audioCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") { try { ctx.resume(); } catch (e) {} }
+    var t0 = ctx.currentTime;
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gainVal || 0.18, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    g.connect(ctx.destination);
+    freqs.forEach(function (f, i) {
+      var o = ctx.createOscillator();
+      o.type = type || "sine";
+      o.frequency.setValueAtTime(f, t0 + i * (dur / freqs.length) * 0.5);
+      o.connect(g);
+      o.start(t0 + i * (dur / freqs.length) * 0.5);
+      o.stop(t0 + dur);
+    });
+  }
+  function soundCorrect() { beep([660, 880], 0.18, "triangle", 0.2); }
+  function soundWrong()   { beep([180, 120], 0.25, "sawtooth", 0.16); }
+  function soundEnd()     { beep([523, 659, 784, 1046], 0.5, "triangle", 0.2); }
+
+  // ---- Helpers ----
+  function randInt(min, max) { // inclusive
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+
+  // ---- Problem generation ----
+  function makeProblem(diff) {
+    var a, b, op, answer, text;
+
+    if (diff === "easy") {
+      // + and - within 0..20, no negative results
+      op = Math.random() < 0.5 ? "+" : "-";
+      if (op === "+") {
+        a = randInt(0, 20); b = randInt(0, 20 - a < 0 ? 0 : 20 - a);
+        answer = a + b;
+      } else {
+        a = randInt(0, 20); b = randInt(0, a);
+        answer = a - b;
+      }
+      text = a + " " + op + " " + b;
+
+    } else if (diff === "medium") {
+      // +, -, x within 0..50; small multiplication
+      var r = Math.random();
+      if (r < 0.38) {
+        a = randInt(0, 50); b = randInt(0, 50);
+        answer = a + b; op = "+";
+        text = a + " + " + b;
+      } else if (r < 0.72) {
+        a = randInt(0, 50); b = randInt(0, a);
+        answer = a - b; op = "-";
+        text = a + " − " + b;
+      } else {
+        a = randInt(2, 12); b = randInt(2, 9);
+        answer = a * b; op = "×";
+        text = a + " × " + b;
+      }
+
+    } else { // hard
+      // +, -, x, ÷ with larger numbers; division comes out whole
+      var rr = Math.random();
+      if (rr < 0.28) {
+        a = randInt(20, 99); b = randInt(20, 99);
+        answer = a + b; op = "+";
+        text = a + " + " + b;
+      } else if (rr < 0.52) {
+        a = randInt(30, 120); b = randInt(0, a);
+        answer = a - b; op = "-";
+        text = a + " − " + b;
+      } else if (rr < 0.78) {
+        a = randInt(6, 19); b = randInt(4, 12);
+        answer = a * b; op = "×";
+        text = a + " × " + b;
+      } else {
+        // whole division: pick divisor and quotient, build dividend
+        b = randInt(2, 12);
+        var q = randInt(2, 12);
+        a = b * q;
+        answer = q; op = "÷";
+        text = a + " ÷ " + b;
+      }
+    }
+
+    return { text: text, answer: answer, choices: makeChoices(answer, diff) };
+  }
+
+  function makeChoices(answer, diff) {
+    var set = {};
+    set[answer] = true;
+    var choices = [answer];
+    var spread = diff === "hard" ? 10 : (diff === "medium" ? 6 : 4);
+    var guard = 0;
+    while (choices.length < 4 && guard < 200) {
+      guard++;
+      var delta = randInt(1, spread) * (Math.random() < 0.5 ? -1 : 1);
+      // occasionally use off-by larger / multiplicative-style errors
+      if (Math.random() < 0.25) delta = randInt(1, 2) * 10 * (Math.random() < 0.5 ? -1 : 1);
+      var cand = answer + delta;
+      if (cand < 0) cand = answer + Math.abs(delta) + randInt(1, 3);
+      if (cand === answer || set[cand]) continue;
+      set[cand] = true;
+      choices.push(cand);
+    }
+    // fallback fill (in case guard hit)
+    var bump = 1;
+    while (choices.length < 4) {
+      var c = answer + bump;
+      if (!set[c]) { set[c] = true; choices.push(c); }
+      bump++;
+    }
+    return shuffle(choices);
+  }
+
+  // ---- Render ----
+  function renderProblem() {
+    var p = state.current;
+    elProblem.textContent = p.text + " = ?";
+    for (var i = 0; i < ansButtons.length; i++) {
+      var btn = ansButtons[i];
+      btn.className = "ans-btn";
+      btn.querySelector(".txt").textContent = p.choices[i];
+      btn.dataset.val = p.choices[i];
+    }
+  }
+  function updateStats() {
+    elScore.textContent = state.score;
+    elStreak.textContent = state.streak;
+    elTime.textContent = Math.ceil(state.timeLeft);
+  }
+
+  function nextQuestion() {
+    state.current = makeProblem(state.diff);
+    state.current.qStart = performance.now();
+    state.locked = false;
+    elFeedback.textContent = "";
+    elFeedback.className = "";
+    renderProblem();
+  }
+
+  // ---- Answer handling ----
+  function handleAnswer(btn) {
+    if (state.locked || !state.running) return;
+    var val = parseInt(btn.dataset.val, 10);
+    var ans = state.current.answer;
+    state.locked = true;
+    state.totalCount++;
+
+    ansButtons.forEach(function (b) { b.classList.add("disabled"); });
+
+    if (val === ans) {
+      // correct: base 10 + speed bonus + streak bonus
+      var elapsed = (performance.now() - state.current.qStart) / 1000;
+      var speedBonus = Math.max(0, Math.round((3 - elapsed) * 3)); // up to +9 if <0.x s
+      state.streak++;
+      if (state.streak > state.bestStreak) state.bestStreak = state.streak;
+      var streakBonus = Math.min(state.streak - 1, 10) * 2;
+      var gained = 10 + speedBonus + streakBonus;
+      state.score += gained;
+      state.correctCount++;
+      btn.classList.add("correct");
+      elFeedback.textContent = pickPraise() + " +" + gained;
+      elFeedback.className = "good";
+      soundCorrect();
+      schedule(550);
+    } else {
+      state.streak = 0;
+      btn.classList.add("wrong");
+      // highlight correct
+      ansButtons.forEach(function (b) {
+        if (parseInt(b.dataset.val, 10) === ans) b.classList.add("correct");
+      });
+      elFeedback.textContent = "Oops! Answer: " + ans;
+      elFeedback.className = "bad";
+      soundWrong();
+      schedule(1100);
+    }
+    updateStats();
+  }
+
+  function schedule(delay) {
+    setTimeout(function () {
+      if (state.running) {
+        ansButtons.forEach(function (b) { b.classList.remove("disabled"); });
+        nextQuestion();
+      }
+    }, delay);
+  }
+
+  var PRAISES = ["Nice!", "Great!", "Yes!", "Boom!", "Awesome!", "Correct!", "Smart!", "Wow!"];
+  function pickPraise() { return PRAISES[Math.floor(Math.random() * PRAISES.length)]; }
+
+  // ---- Timer ----
+  function startTimer() {
+    state.tickStart = performance.now();
+    var last = state.tickStart;
+    function loop(now) {
+      if (!state.running) return;
+      var dt = (now - last) / 1000;
+      last = now;
+      state.timeLeft -= dt;
+      if (state.timeLeft <= 0) {
+        state.timeLeft = 0;
+        updateStats();
+        renderTimerBar();
+        endRound();
+        return;
+      }
+      updateStats();
+      renderTimerBar();
+      state.timerId = requestAnimationFrame(loop);
+    }
+    state.timerId = requestAnimationFrame(loop);
+  }
+  function renderTimerBar() {
+    var pct = Math.max(0, state.timeLeft / ROUND_TIME) * 100;
+    elTimerBar.style.width = pct + "%";
+    if (state.timeLeft <= 10) elTimerBar.classList.add("warn");
+    else elTimerBar.classList.remove("warn");
+  }
+
+  // ---- Round lifecycle ----
+  function startRound() {
+    state.score = 0;
+    state.streak = 0;
+    state.bestStreak = 0;
+    state.correctCount = 0;
+    state.totalCount = 0;
+    state.timeLeft = ROUND_TIME;
+    state.running = true;
+    state.locked = false;
+    startOverlay.classList.add("hidden");
+    summaryOverlay.classList.add("hidden");
+    elTimerBar.classList.remove("warn");
+    elTimerBar.style.width = "100%";
+    updateStats();
+    // resume audio on the user gesture that started the round
+    var ctx = audioCtx();
+    if (ctx && ctx.state === "suspended") { try { ctx.resume(); } catch (e) {} }
+    nextQuestion();
+    startTimer();
+  }
+
+  function endRound() {
+    state.running = false;
+    if (state.timerId) cancelAnimationFrame(state.timerId);
+    soundEnd();
+    $("finalScore").textContent = state.score;
+    var acc = state.totalCount ? Math.round((state.correctCount / state.totalCount) * 100) : 0;
+    var msg = "You answered " + state.correctCount + " correctly (" + acc + "% accuracy). " +
+              "Best streak: " + state.bestStreak + ".";
+    var title = "Time's Up!";
+    if (state.score >= 250) title = "🏆 Math Champ!";
+    else if (state.score >= 150) title = "🌟 Awesome!";
+    else if (state.score >= 60) title = "👍 Well Done!";
+    $("summaryTitle").textContent = title;
+    $("summaryText").textContent = msg;
+    summaryOverlay.classList.remove("hidden");
+  }
+
+  // ---- Events ----
+  $("diffRow").addEventListener("click", function (e) {
+    var btn = e.target.closest(".diff-btn");
+    if (!btn) return;
+    state.diff = btn.dataset.diff;
+    Array.prototype.forEach.call(this.querySelectorAll(".diff-btn"), function (b) {
+      b.classList.toggle("sel", b.dataset.diff === state.diff);
+    });
+  });
+
+  elAnswers.addEventListener("click", function (e) {
+    var btn = e.target.closest(".ans-btn");
+    if (btn) handleAnswer(btn);
+  });
+
+  $("startBtn").addEventListener("click", startRound);
+  $("againBtn").addEventListener("click", startRound);
+
+  // keyboard 1-4
+  document.addEventListener("keydown", function (e) {
+    if (!state.running) {
+      if (e.key === "Enter" || e.key === " ") {
+        if (!startOverlay.classList.contains("hidden") || !summaryOverlay.classList.contains("hidden")) {
+          startRound();
+        }
+      }
+      return;
+    }
+    var n = parseInt(e.key, 10);
+    if (n >= 1 && n <= 4) {
+      handleAnswer(ansButtons[n - 1]);
+    }
+  });
+
+  // prevent double-tap zoom edge cases
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+
+  // init timer bar full
+  elTimerBar.style.width = "100%";
+})();
+</script>
+</body>
+</html>
