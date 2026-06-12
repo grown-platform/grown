@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Fruit Catch</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: linear-gradient(180deg, #aee9ff 0%, #d8f6ff 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #wrap {
+    display: flex; flex-direction: column;
+    align-items: center;
+    width: 100%; height: 100%;
+    max-width: 480px; margin: 0 auto;
+  }
+  header {
+    width: 100%;
+    padding: 8px 12px 4px;
+    text-align: center;
+    flex: 0 0 auto;
+  }
+  h1 {
+    font-size: 22px;
+    color: #d6336c;
+    text-shadow: 0 1px 0 #fff;
+    letter-spacing: 0.5px;
+  }
+  #hud {
+    display: flex; justify-content: space-between; align-items: center;
+    width: 100%;
+    padding: 6px 14px;
+    font-size: 17px; font-weight: 700;
+    color: #2b6cb0;
+    flex: 0 0 auto;
+  }
+  #lives { color: #e03131; }
+  #canvasHolder {
+    position: relative;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    background: linear-gradient(180deg, #bdeaff 0%, #e7fbe9 100%);
+    border-radius: 14px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    display: block;
+    touch-action: none;
+  }
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.82);
+    border-radius: 14px;
+    text-align: center;
+    padding: 20px;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h2 { font-size: 26px; color: #d6336c; margin-bottom: 8px; }
+  #overlay p { font-size: 17px; color: #444; margin-bottom: 16px; line-height: 1.4; }
+  button {
+    font-size: 18px; font-weight: 700;
+    padding: 12px 28px;
+    border: none; border-radius: 30px;
+    background: #ff8787; color: #fff;
+    box-shadow: 0 3px 0 #e03131;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: translateY(2px); box-shadow: 0 1px 0 #e03131; }
+  footer { flex: 0 0 auto; padding: 4px 0 8px; font-size: 12px; color: #5a7a8a; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/fruit-catch.svg">
+    <link rel="manifest" href="/games/fruit-catch.webmanifest">
+    <meta name="theme-color" content="#F97316">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Fruit Catch">
+    <link rel="apple-touch-icon" href="/games/icons/fruit-catch.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#F97316;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="wrap">
+  <header><h1>🧺 Fruit Catch 🍎</h1></header>
+  <div id="hud">
+    <div id="score">Score: 0</div>
+    <div id="lives">❤️❤️❤️</div>
+  </div>
+  <div id="canvasHolder">
+    <canvas id="game"></canvas>
+    <div id="overlay">
+      <h2>Fruit Catch</h2>
+      <p>Drag to move the basket.<br>Catch fruit 🍎🍌🍓 — dodge bombs 💣!</p>
+      <button id="startBtn">Play</button>
+    </div>
+  </div>
+  <footer>Drag / ← → to move</footer>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var holder = document.getElementById("canvasHolder");
+  var overlay = document.getElementById("overlay");
+  var startBtn = document.getElementById("startBtn");
+  var scoreEl = document.getElementById("score");
+  var livesEl = document.getElementById("lives");
+
+  // Logical (CSS pixel) dimensions of the canvas; set in resize().
+  var W = 360, H = 480;
+  var DPR = 1;
+
+  var FRUITS = ["🍎", "🍌", "🍓", "🍇", "🍊", "🍉", "🍑", "🍒", "🥝", "🍍"];
+  var BOMB = "💣";
+
+  var state = "menu"; // "menu" | "playing" | "over"
+  var score = 0;
+  var lives = 3;
+  var items = [];
+  var basket = { x: 180, w: 80, h: 26, y: 0 };
+  var lastTime = 0;
+  var spawnTimer = 0;
+  var elapsed = 0; // seconds since game start (drives difficulty)
+  var rafId = null;
+
+  // ---------- Audio ----------
+  var audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      } catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }
+  function beep(freq, dur, type, vol) {
+    if (!audioCtx) return;
+    try {
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = type || "sine";
+      osc.frequency.value = freq;
+      gain.gain.value = vol == null ? 0.15 : vol;
+      var t = audioCtx.currentTime;
+      gain.gain.setValueAtTime(gain.gain.value, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + dur);
+    } catch (e) {}
+  }
+  function soundCatch() { beep(660, 0.12, "triangle", 0.18); beep(990, 0.12, "sine", 0.1); }
+  function soundMiss() { beep(200, 0.22, "sawtooth", 0.18); }
+  function soundBomb() { beep(90, 0.4, "sawtooth", 0.28); }
+
+  // ---------- Sizing ----------
+  function resize() {
+    var availW = holder.clientWidth;
+    var availH = holder.clientHeight;
+    if (availW <= 0 || availH <= 0) return;
+    // Aim for a 3:4 portrait play area that fits the available space.
+    var targetRatio = 3 / 4; // w/h
+    var w = availW;
+    var h = w / targetRatio;
+    if (h > availH) {
+      h = availH;
+      w = h * targetRatio;
+    }
+    W = Math.round(w);
+    H = Math.round(h);
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    basket.w = Math.max(60, Math.min(110, W * 0.24));
+    basket.h = basket.w * 0.34;
+    basket.y = H - basket.h - 10;
+    if (basket.x === 180 || basket.x > W) basket.x = W / 2;
+    clampBasket();
+    if (state !== "playing") draw();
+  }
+
+  function clampBasket() {
+    var half = basket.w / 2;
+    if (basket.x < half) basket.x = half;
+    if (basket.x > W - half) basket.x = W - half;
+  }
+
+  // ---------- Game flow ----------
+  function reset() {
+    score = 0;
+    lives = 3;
+    items = [];
+    elapsed = 0;
+    spawnTimer = 0;
+    basket.x = W / 2;
+    updateHud();
+  }
+
+  function startGame() {
+    ensureAudio();
+    reset();
+    state = "playing";
+    overlay.classList.add("hidden");
+    lastTime = performance.now();
+    if (rafId) cancelAnimationFrame(rafId);
+    loop(lastTime);
+  }
+
+  function gameOver() {
+    state = "over";
+    soundBomb();
+    overlay.classList.remove("hidden");
+    overlay.querySelector("h2").textContent = "Game Over";
+    overlay.querySelector("p").innerHTML =
+      "Score: <b>" + score + "</b><br>Nice catching!";
+    startBtn.textContent = "Play Again";
+  }
+
+  function updateHud() {
+    scoreEl.textContent = "Score: " + score;
+    var hearts = "";
+    for (var i = 0; i < lives; i++) hearts += "❤️";
+    livesEl.textContent = lives > 0 ? hearts : "💀";
+  }
+
+  function loseLife() {
+    lives--;
+    updateHud();
+    if (lives <= 0) {
+      gameOver();
+    }
+  }
+
+  // ---------- Spawning ----------
+  function spawnItem() {
+    var isBomb = Math.random() < bombChance();
+    var size = Math.round(28 + Math.random() * 8);
+    var x = size + Math.random() * (W - size * 2);
+    items.push({
+      x: x,
+      y: -size,
+      size: size,
+      vy: fallSpeed() * (0.85 + Math.random() * 0.4),
+      emoji: isBomb ? BOMB : FRUITS[(Math.random() * FRUITS.length) | 0],
+      bomb: isBomb,
+      wobble: Math.random() * Math.PI * 2
+    });
+  }
+
+  // Difficulty curves (functions of elapsed seconds).
+  function fallSpeed() {
+    // px per second, scaled to canvas height so feel is consistent.
+    var base = H * 0.42;
+    return base + Math.min(elapsed * 9, H * 0.9);
+  }
+  function spawnInterval() {
+    // seconds between spawns; gets shorter over time.
+    return Math.max(0.45, 1.15 - elapsed * 0.012);
+  }
+  function bombChance() {
+    return Math.min(0.28, 0.06 + elapsed * 0.0035);
+  }
+
+  // ---------- Update ----------
+  function update(dt) {
+    elapsed += dt;
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnItem();
+      spawnTimer = spawnInterval();
+    }
+
+    var basketTop = basket.y;
+    var basketLeft = basket.x - basket.w / 2;
+    var basketRight = basket.x + basket.w / 2;
+
+    for (var i = items.length - 1; i >= 0; i--) {
+      var it = items[i];
+      it.y += it.vy * dt;
+      it.wobble += dt * 4;
+
+      var r = it.size / 2;
+      // Catch test: item center within basket opening near top of basket.
+      if (it.y + r >= basketTop && it.y - r <= basketTop + basket.h) {
+        if (it.x >= basketLeft - 4 && it.x <= basketRight + 4) {
+          items.splice(i, 1);
+          if (it.bomb) {
+            loseLife();
+            if (state !== "playing") return; // game ended
+          } else {
+            score += 1;
+            updateHud();
+            soundCatch();
+          }
+          continue;
+        }
+      }
+
+      // Off the bottom.
+      if (it.y - r > H) {
+        items.splice(i, 1);
+        if (!it.bomb) {
+          soundMiss();
+          loseLife();
+          if (state !== "playing") return;
+        }
+      }
+    }
+  }
+
+  // ---------- Draw ----------
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // soft background already from CSS gradient; draw a sun + clouds
+    drawScenery();
+
+    // items
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      ctx.save();
+      ctx.font = it.size + "px serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      var wob = Math.sin(it.wobble) * 2;
+      ctx.fillText(it.emoji, it.x + wob, it.y);
+      ctx.restore();
+    }
+
+    drawBasket();
+
+    if (state === "menu") {
+      // overlay handles menu visuals
+    }
+  }
+
+  function drawScenery() {
+    // sun
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 221, 87, 0.9)";
+    ctx.beginPath();
+    ctx.arc(W - 38, 38, 22, 0, Math.PI * 2);
+    ctx.fill();
+    // clouds
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    cloud(60, 56, 1);
+    cloud(W * 0.5, 40, 0.8);
+    ctx.restore();
+  }
+  function cloud(x, y, s) {
+    ctx.beginPath();
+    ctx.arc(x, y, 16 * s, 0, Math.PI * 2);
+    ctx.arc(x + 18 * s, y + 4 * s, 13 * s, 0, Math.PI * 2);
+    ctx.arc(x - 18 * s, y + 4 * s, 13 * s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawBasket() {
+    var x = basket.x, y = basket.y, w = basket.w, h = basket.h;
+    var left = x - w / 2;
+    ctx.save();
+    // basket body
+    ctx.fillStyle = "#c98a3b";
+    ctx.strokeStyle = "#8a5a1e";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    var r = 8;
+    roundRect(left, y, w, h, r);
+    ctx.fill();
+    ctx.stroke();
+    // rim
+    ctx.fillStyle = "#e0a85a";
+    roundRect(left - 3, y - 6, w + 6, 12, 6);
+    ctx.fill();
+    ctx.stroke();
+    // weave lines
+    ctx.strokeStyle = "rgba(120,75,25,0.5)";
+    ctx.lineWidth = 1.5;
+    for (var k = 1; k < 4; k++) {
+      var ly = y + (h / 4) * k;
+      ctx.beginPath();
+      ctx.moveTo(left + 2, ly);
+      ctx.lineTo(left + w - 2, ly);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // ---------- Loop ----------
+  function loop(now) {
+    if (state !== "playing") { draw(); return; }
+    var dt = (now - lastTime) / 1000;
+    lastTime = now;
+    if (dt > 0.05) dt = 0.05; // clamp big gaps (tab switch)
+    update(dt);
+    if (state === "playing") draw();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  // ---------- Input ----------
+  var keyLeft = false, keyRight = false;
+  function moveToClientX(clientX) {
+    var rect = canvas.getBoundingClientRect();
+    var x = (clientX - rect.left);
+    // rect is in CSS px == logical px
+    basket.x = x;
+    clampBasket();
+  }
+
+  // Touch
+  canvas.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    ensureAudio();
+    if (e.touches.length) moveToClientX(e.touches[0].clientX);
+  }, { passive: false });
+  canvas.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+    if (e.touches.length) moveToClientX(e.touches[0].clientX);
+  }, { passive: false });
+  canvas.addEventListener("touchend", function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  // Mouse (desktop drag)
+  var dragging = false;
+  canvas.addEventListener("mousedown", function (e) {
+    dragging = true; ensureAudio(); moveToClientX(e.clientX);
+  });
+  window.addEventListener("mousemove", function (e) {
+    if (dragging) moveToClientX(e.clientX);
+  });
+  window.addEventListener("mouseup", function () { dragging = false; });
+
+  // Keyboard
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowLeft") { keyLeft = true; e.preventDefault(); }
+    else if (e.key === "ArrowRight") { keyRight = true; e.preventDefault(); }
+    else if ((e.key === "Enter" || e.key === " ") && state !== "playing") {
+      startGame();
+    }
+  });
+  window.addEventListener("keyup", function (e) {
+    if (e.key === "ArrowLeft") keyLeft = false;
+    else if (e.key === "ArrowRight") keyRight = false;
+  });
+
+  // Apply keyboard movement each frame via a small ticker folded into update:
+  // we handle it here by hooking update through a wrapper.
+  var _update = update;
+  update = function (dt) {
+    if (keyLeft || keyRight) {
+      var speed = W * 1.6; // px/sec
+      if (keyLeft) basket.x -= speed * dt;
+      if (keyRight) basket.x += speed * dt;
+      clampBasket();
+    }
+    _update(dt);
+  };
+
+  startBtn.addEventListener("click", function () {
+    startGame();
+  });
+
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () {
+    setTimeout(resize, 200);
+  });
+
+  // Init
+  resize();
+  draw();
+})();
+</script>
+</body>
+</html>

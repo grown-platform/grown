@@ -48,6 +48,22 @@ const CONFIG = [
   { id: "coloring", name: "Coloring Pad", color: "#EC4899", glyph: "🎨" },
   { id: "snakes-and-ladders", name: "Snakes & Ladders", color: "#16A34A", glyph: "🎲" },
   { id: "math-quiz", name: "Math Quiz", color: "#2563EB", glyph: "➗" },
+  { id: "space-invaders", name: "Space Invaders", color: "#6366F1", glyph: "👾" },
+  { id: "gomoku", name: "Gomoku", color: "#0F766E", glyph: "5️⃣" },
+  { id: "dots-and-boxes", name: "Dots & Boxes", color: "#DB2777", glyph: "🔲" },
+  { id: "tower-of-hanoi", name: "Tower of Hanoi", color: "#CA8A04", glyph: "🗼" },
+  { id: "water-sort", name: "Water Sort", color: "#06B6D4", glyph: "🧪" },
+  { id: "sokoban", name: "Sokoban", color: "#B45309", glyph: "🗃️" },
+  { id: "frogger", name: "Frogger", color: "#16A34A", glyph: "🐸" },
+  { id: "blackjack", name: "Blackjack", color: "#15803D", glyph: "♠️" },
+  { id: "air-hockey", name: "Air Hockey", color: "#DC2626", glyph: "🏒" },
+  { id: "piano-tiles", name: "Piano Tiles", color: "#1E293B", glyph: "🎹" },
+  { id: "fruit-catch", name: "Fruit Catch", color: "#F97316", glyph: "🍎" },
+  { id: "balloon-pop", name: "Balloon Pop", color: "#EF4444", glyph: "🎈" },
+  { id: "reaction-time", name: "Reaction Time", color: "#10B981", glyph: "⚡" },
+  { id: "aim-trainer", name: "Aim Trainer", color: "#E11D48", glyph: "🎯" },
+  { id: "guess-the-number", name: "Guess the Number", color: "#2563EB", glyph: "❓" },
+  { id: "higher-lower", name: "Higher or Lower", color: "#7C3AED", glyph: "🎴" },
 ];
 
 const iconSvg = (color, glyph) =>

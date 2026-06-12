@@ -1,0 +1,25 @@
+{
+  "name": "Piano Tiles",
+  "short_name": "Piano Tiles",
+  "description": "Piano Tiles — play in your browser, online or off.",
+  "start_url": "/games/piano-tiles.html",
+  "scope": "/games/piano-tiles.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#1E293B",
+  "icons": [
+    {
+      "src": "/games/icons/piano-tiles.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/piano-tiles.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

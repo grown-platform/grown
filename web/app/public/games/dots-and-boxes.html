@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Dots and Boxes</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #11151c;
+    color: #e8edf2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: env(safe-area-inset-top) 10px env(safe-area-inset-bottom);
+  }
+  h1 {
+    text-align: center;
+    font-size: 20px;
+    font-weight: 700;
+    padding: 10px 0 6px;
+    letter-spacing: 0.5px;
+  }
+  #scores {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .score {
+    flex: 1;
+    border-radius: 12px;
+    padding: 8px 6px;
+    text-align: center;
+    background: #1c2230;
+    border: 2px solid transparent;
+    transition: border-color 0.2s, transform 0.15s;
+  }
+  .score.active { transform: translateY(-2px); }
+  .score.p1 { color: #ff5c7a; }
+  .score.p2 { color: #4db8ff; }
+  .score.p1.active { border-color: #ff5c7a; box-shadow: 0 0 14px rgba(255,92,122,0.4); }
+  .score.p2.active { border-color: #4db8ff; box-shadow: 0 0 14px rgba(77,184,255,0.4); }
+  .score .name { font-size: 12px; opacity: 0.85; }
+  .score .val { font-size: 24px; font-weight: 800; line-height: 1.1; }
+  #turn {
+    text-align: center;
+    font-size: 13px;
+    min-height: 18px;
+    margin-bottom: 6px;
+    opacity: 0.9;
+  }
+  #boardWrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+  }
+  canvas {
+    touch-action: none;
+    display: block;
+    border-radius: 10px;
+    background: #161b25;
+  }
+  #controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 0 4px;
+  }
+  select, button {
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 10px;
+    border: none;
+    padding: 11px 12px;
+    background: #2a3344;
+    color: #e8edf2;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  select { flex: 1; text-align: center; }
+  button {
+    flex: 1;
+    font-weight: 700;
+    background: #3a7bd5;
+    color: #fff;
+    cursor: pointer;
+  }
+  button:active { transform: scale(0.97); }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8,10,15,0.82);
+    z-index: 10;
+    backdrop-filter: blur(3px);
+  }
+  #overlay.show { display: flex; }
+  #card {
+    background: #1c2230;
+    border-radius: 18px;
+    padding: 26px 28px;
+    text-align: center;
+    max-width: 86%;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  #card h2 { font-size: 26px; margin-bottom: 8px; }
+  #card p { font-size: 15px; opacity: 0.85; margin-bottom: 18px; }
+  #card button { width: 100%; padding: 13px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/dots-and-boxes.svg">
+    <link rel="manifest" href="/games/dots-and-boxes.webmanifest">
+    <meta name="theme-color" content="#DB2777">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Dots & Boxes">
+    <link rel="apple-touch-icon" href="/games/icons/dots-and-boxes.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DB2777;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <h1>Dots &amp; Boxes</h1>
+  <div id="scores">
+    <div class="score p1" id="s1">
+      <div class="name">You</div>
+      <div class="val" id="v1">0</div>
+    </div>
+    <div class="score p2" id="s2">
+      <div class="name">CPU</div>
+      <div class="val" id="v2">0</div>
+    </div>
+  </div>
+  <div id="turn">Your turn</div>
+  <div id="boardWrap">
+    <canvas id="board"></canvas>
+  </div>
+  <div id="controls">
+    <select id="size">
+      <option value="3">3 × 3 boxes</option>
+      <option value="4" selected>4 × 4 boxes</option>
+      <option value="5">5 × 5 boxes</option>
+      <option value="6">6 × 6 boxes</option>
+    </select>
+    <button id="newBtn">New Game</button>
+  </div>
+</div>
+
+<div id="overlay">
+  <div id="card">
+    <h2 id="resTitle">You win!</h2>
+    <p id="resText"></p>
+    <button id="againBtn">Play Again</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var canvas = document.getElementById("board");
+  var ctx = canvas.getContext("2d");
+  var v1 = document.getElementById("v1");
+  var v2 = document.getElementById("v2");
+  var s1 = document.getElementById("s1");
+  var s2 = document.getElementById("s2");
+  var turnEl = document.getElementById("turn");
+  var sizeSel = document.getElementById("size");
+  var overlay = document.getElementById("overlay");
+  var resTitle = document.getElementById("resTitle");
+  var resText = document.getElementById("resText");
+
+  var P1 = "#ff5c7a"; // human
+  var P2 = "#4db8ff"; // cpu
+  var P1_FILL = "rgba(255,92,122,0.22)";
+  var P2_FILL = "rgba(77,184,255,0.22)";
+
+  // ---- Game state ----
+  var N;            // boxes per side
+  // Edges represented as two arrays:
+  //   hEdges[r][c]: horizontal edge below... actually horizontal lines at row r (0..N), col c (0..N-1)
+  //   vEdges[r][c]: vertical lines at row r (0..N-1), col c (0..N)
+  var hEdges, vEdges;   // boolean: drawn?
+  var hOwner, vOwner;   // player index who drew it (for line color) 1 or 2
+  var owner;            // owner[r][c] of box (0 none, 1, 2)
+  var current;          // 1 human, 2 cpu
+  var gameOver;
+  var busy;             // input locked during cpu move / animation
+
+  // geometry (pixels)
+  var dotR, gap, ox, oy, cellPx;
+
+  function init(n) {
+    N = n;
+    hEdges = []; hOwner = [];
+    vEdges = []; vOwner = [];
+    owner = [];
+    for (var r = 0; r <= N; r++) {
+      var hr = [], hor = [];
+      for (var c = 0; c < N; c++) { hr.push(false); hor.push(0); }
+      hEdges.push(hr); hOwner.push(hor);
+    }
+    for (var r2 = 0; r2 < N; r2++) {
+      var vr = [], vor = [];
+      for (var c2 = 0; c2 <= N; c2++) { vr.push(false); vor.push(0); }
+      vEdges.push(vr); vOwner.push(vor);
+      var orow = [];
+      for (var c3 = 0; c3 < N; c3++) orow.push(0);
+      owner.push(orow);
+    }
+    current = 1;
+    gameOver = false;
+    busy = false;
+    overlay.classList.remove("show");
+    updateUI();
+    resize();
+  }
+
+  // ---- Layout / drawing ----
+  function resize() {
+    var wrap = document.getElementById("boardWrap");
+    var avail = Math.min(wrap.clientWidth, wrap.clientHeight);
+    if (avail <= 0) avail = Math.min(window.innerWidth - 20, 480);
+    var px = Math.max(160, Math.floor(avail) - 4);
+    var dpr = window.devicePixelRatio || 1;
+
+    canvas.style.width = px + "px";
+    canvas.style.height = px + "px";
+    canvas.width = Math.round(px * dpr);
+    canvas.height = Math.round(px * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var margin = Math.round(px * 0.07);
+    ox = margin; oy = margin;
+    cellPx = (px - margin * 2) / N;
+    gap = cellPx;
+    dotR = Math.max(3, Math.min(7, cellPx * 0.09));
+    draw();
+  }
+
+  function dotXY(r, c) {
+    return { x: ox + c * cellPx, y: oy + r * cellPx };
+  }
+
+  function draw() {
+    var w = canvas.width / (window.devicePixelRatio || 1);
+    ctx.clearRect(0, 0, w, w);
+
+    // filled boxes
+    for (var r = 0; r < N; r++) {
+      for (var c = 0; c < N; c++) {
+        if (owner[r][c]) {
+          var p = dotXY(r, c);
+          ctx.fillStyle = owner[r][c] === 1 ? P1_FILL : P2_FILL;
+          ctx.fillRect(p.x, p.y, cellPx, cellPx);
+        }
+      }
+    }
+
+    var lineW = Math.max(3, cellPx * 0.085);
+
+    // undrawn edge hints (faint)
+    ctx.lineWidth = Math.max(1.5, lineW * 0.4);
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(255,255,255,0.07)";
+    drawEdges(false);
+
+    // drawn edges (colored)
+    ctx.lineWidth = lineW;
+    drawEdges(true);
+
+    // dots
+    ctx.fillStyle = "#cdd6e2";
+    for (var rr = 0; rr <= N; rr++) {
+      for (var cc = 0; cc <= N; cc++) {
+        var d = dotXY(rr, cc);
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function drawEdges(drawnOnes) {
+    var r, c, a, b;
+    // horizontal
+    for (r = 0; r <= N; r++) {
+      for (c = 0; c < N; c++) {
+        if (hEdges[r][c] !== drawnOnes) continue;
+        a = dotXY(r, c); b = dotXY(r, c + 1);
+        if (drawnOnes) ctx.strokeStyle = hOwner[r][c] === 1 ? P1 : P2;
+        seg(a, b);
+      }
+    }
+    // vertical
+    for (r = 0; r < N; r++) {
+      for (c = 0; c <= N; c++) {
+        if (vEdges[r][c] !== drawnOnes) continue;
+        a = dotXY(r, c); b = dotXY(r + 1, c);
+        if (drawnOnes) ctx.strokeStyle = vOwner[r][c] === 1 ? P1 : P2;
+        seg(a, b);
+      }
+    }
+  }
+
+  function seg(a, b) {
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+
+  // ---- Edge model helpers ----
+  // An edge is { type:'h'|'v', r, c }
+  function edgeDrawn(e) {
+    return e.type === "h" ? hEdges[e.r][e.c] : vEdges[e.r][e.c];
+  }
+  function setEdge(e, player) {
+    if (e.type === "h") { hEdges[e.r][e.c] = true; hOwner[e.r][e.c] = player; }
+    else { vEdges[e.r][e.c] = true; vOwner[e.r][e.c] = player; }
+  }
+
+  // count drawn sides of box (r,c); optionally treating a hypothetical edge as drawn
+  function boxSides(r, c) {
+    var n = 0;
+    if (hEdges[r][c]) n++;
+    if (hEdges[r + 1][c]) n++;
+    if (vEdges[r][c]) n++;
+    if (vEdges[r][c + 1]) n++;
+    return n;
+  }
+
+  // Boxes adjacent to an edge
+  function adjacentBoxes(e) {
+    var res = [];
+    if (e.type === "h") {
+      if (e.r - 1 >= 0) res.push({ r: e.r - 1, c: e.c });
+      if (e.r < N) res.push({ r: e.r, c: e.c });
+    } else {
+      if (e.c - 1 >= 0) res.push({ r: e.r, c: e.c - 1 });
+      if (e.c < N) res.push({ r: e.r, c: e.c });
+    }
+    return res;
+  }
+
+  // all undrawn edges
+  function freeEdges() {
+    var list = [];
+    var r, c;
+    for (r = 0; r <= N; r++)
+      for (c = 0; c < N; c++)
+        if (!hEdges[r][c]) list.push({ type: "h", r: r, c: c });
+    for (r = 0; r < N; r++)
+      for (c = 0; c <= N; c++)
+        if (!vEdges[r][c]) list.push({ type: "v", r: r, c: c });
+    return list;
+  }
+
+  // ---- Play a move ----
+  // Returns number of boxes completed by this move.
+  function applyMove(e, player) {
+    setEdge(e, player);
+    var boxes = adjacentBoxes(e);
+    var completed = 0;
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      if (owner[b.r][b.c] === 0 && boxSides(b.r, b.c) === 4) {
+        owner[b.r][b.c] = player;
+        completed++;
+      }
+    }
+    return completed;
+  }
+
+  function scores() {
+    var a = 0, b = 0;
+    for (var r = 0; r < N; r++)
+      for (var c = 0; c < N; c++) {
+        if (owner[r][c] === 1) a++;
+        else if (owner[r][c] === 2) b++;
+      }
+    return { p1: a, p2: b };
+  }
+
+  function totalBoxes() { return N * N; }
+
+  function isFull() {
+    var s = scores();
+    return s.p1 + s.p2 === totalBoxes();
+  }
+
+  function updateUI() {
+    var s = scores();
+    v1.textContent = s.p1;
+    v2.textContent = s.p2;
+    s1.classList.toggle("active", current === 1 && !gameOver);
+    s2.classList.toggle("active", current === 2 && !gameOver);
+    if (gameOver) {
+      turnEl.textContent = "Game over";
+    } else {
+      turnEl.textContent = current === 1 ? "Your turn — tap a line" : "CPU is thinking…";
+    }
+  }
+
+  function finish() {
+    gameOver = true;
+    updateUI();
+    var s = scores();
+    if (s.p1 > s.p2) {
+      resTitle.textContent = "You win!";
+      resTitle.style.color = P1;
+    } else if (s.p2 > s.p1) {
+      resTitle.textContent = "CPU wins";
+      resTitle.style.color = P2;
+    } else {
+      resTitle.textContent = "It's a tie!";
+      resTitle.style.color = "#e8edf2";
+    }
+    resText.textContent = "You " + s.p1 + " — " + s.p2 + " CPU";
+    setTimeout(function () { overlay.classList.add("show"); beepEnd(); }, 350);
+  }
+
+  // ---- Turn flow ----
+  function humanMove(e) {
+    if (busy || gameOver || current !== 1) return;
+    if (edgeDrawn(e)) return;
+    var got = applyMove(e, 1);
+    blip(got > 0);
+    draw();
+    updateUI();
+    if (isFull()) { finish(); return; }
+    if (got > 0) {
+      // human goes again
+      updateUI();
+    } else {
+      current = 2;
+      updateUI();
+      busy = true;
+      setTimeout(cpuTurn, 420);
+    }
+  }
+
+  function cpuTurn() {
+    if (gameOver) { busy = false; return; }
+    var e = chooseCpuMove();
+    if (!e) { busy = false; return; }
+    var got = applyMove(e, 2);
+    blip(got > 0);
+    draw();
+    updateUI();
+    if (isFull()) { finish(); busy = false; return; }
+    if (got > 0) {
+      // cpu plays again
+      setTimeout(cpuTurn, 420);
+    } else {
+      current = 1;
+      busy = false;
+      updateUI();
+    }
+  }
+
+  // ---- CPU strategy ----
+  // 1. Take any edge that completes a box (free box). Prefer chains.
+  // 2. Otherwise play a "safe" edge: one that does NOT create a box with 3 sides.
+  // 3. If no safe edge, give away the smallest sacrifice (random among least-bad).
+  function chooseCpuMove() {
+    var edges = freeEdges();
+    if (edges.length === 0) return null;
+
+    var capturing = [];
+    var safe = [];
+    var unsafe = [];
+
+    for (var i = 0; i < edges.length; i++) {
+      var e = edges[i];
+      var boxes = adjacentBoxes(e);
+      var completes = false;
+      var creates3 = false;
+      for (var j = 0; j < boxes.length; j++) {
+        var sides = boxSides(boxes[j].r, boxes[j].c);
+        if (sides === 3) completes = true;      // drawing 4th side -> capture
+        if (sides === 2) creates3 = true;       // drawing makes it a 3-sided box (gift)
+      }
+      if (completes) capturing.push(e);
+      else if (creates3) unsafe.push(e);
+      else safe.push(e);
+    }
+
+    if (capturing.length > 0) {
+      return capturing[Math.floor(Math.random() * capturing.length)];
+    }
+    if (safe.length > 0) {
+      return safe[Math.floor(Math.random() * safe.length)];
+    }
+    // All remaining moves give something away: pick the one opening the smallest chain.
+    var best = null, bestCost = Infinity;
+    for (var k = 0; k < unsafe.length; k++) {
+      var cost = sacrificeCost(unsafe[k]);
+      if (cost < bestCost) { bestCost = cost; best = unsafe[k]; }
+    }
+    return best || unsafe[0] || edges[0];
+  }
+
+  // Estimate how many boxes the opponent could grab through the chain
+  // opened by playing edge e. Cheap heuristic: walk the chain of 3-sided boxes.
+  function sacrificeCost(e) {
+    // simulate drawing e, then count consecutive capturable boxes
+    var snapshotH = cloneBool(hEdges);
+    var snapshotV = cloneBool(vEdges);
+    var snapshotO = cloneNum(owner);
+
+    setEdge(e, 0);
+    var count = 0;
+    var guard = 0;
+    while (guard++ < N * N * 2) {
+      // find a box with exactly 3 sides not yet owned, capture it (draw its missing edge)
+      var found = null, miss = null;
+      for (var r = 0; r < N && !found; r++) {
+        for (var c = 0; c < N; c++) {
+          if (owner[r][c] === 0 && boxSides(r, c) === 3) {
+            miss = missingEdge(r, c);
+            found = { r: r, c: c };
+            break;
+          }
+        }
+      }
+      if (!found) break;
+      setEdge(miss, 0);
+      owner[found.r][found.c] = 1; // mark as taken (any non-zero) so loop progresses
+      count++;
+    }
+
+    // restore
+    hEdges = snapshotH; vEdges = snapshotV; owner = snapshotO;
+    return count;
+  }
+
+  function missingEdge(r, c) {
+    if (!hEdges[r][c]) return { type: "h", r: r, c: c };
+    if (!hEdges[r + 1][c]) return { type: "h", r: r + 1, c: c };
+    if (!vEdges[r][c]) return { type: "v", r: r, c: c };
+    return { type: "v", r: r, c: c + 1 };
+  }
+
+  function cloneBool(a) { return a.map(function (row) { return row.slice(); }); }
+  function cloneNum(a) { return a.map(function (row) { return row.slice(); }); }
+
+  // ---- Hit testing (pointer -> nearest edge) ----
+  function hitEdge(px, py) {
+    var bestE = null, bestD = Infinity;
+    var r, c, a, b, d, mid;
+    var tol = Math.max(18, cellPx * 0.45); // generous hit radius
+
+    // horizontal edges
+    for (r = 0; r <= N; r++) {
+      for (c = 0; c < N; c++) {
+        a = dotXY(r, c); b = dotXY(r, c + 1);
+        d = distToSeg(px, py, a.x, a.y, b.x, b.y);
+        if (d < bestD) { bestD = d; bestE = { type: "h", r: r, c: c }; }
+      }
+    }
+    // vertical edges
+    for (r = 0; r < N; r++) {
+      for (c = 0; c <= N; c++) {
+        a = dotXY(r, c); b = dotXY(r + 1, c);
+        d = distToSeg(px, py, a.x, a.y, b.x, b.y);
+        if (d < bestD) { bestD = d; bestE = { type: "v", r: r, c: c }; }
+      }
+    }
+    if (bestD <= tol) return bestE;
+    return null;
+  }
+
+  function distToSeg(px, py, x1, y1, x2, y2) {
+    var dx = x2 - x1, dy = y2 - y1;
+    var len2 = dx * dx + dy * dy;
+    var t = len2 ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    var cx = x1 + t * dx, cy = y1 + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  }
+
+  function pointerPos(ev) {
+    var rect = canvas.getBoundingClientRect();
+    var pt = ev.touches && ev.touches.length ? ev.touches[0] : ev;
+    return { x: pt.clientX - rect.left, y: pt.clientY - rect.top };
+  }
+
+  function onTap(ev) {
+    ev.preventDefault();
+    if (busy || gameOver || current !== 1) return;
+    var p = pointerPos(ev);
+    var e = hitEdge(p.x, p.y);
+    if (e && !edgeDrawn(e)) humanMove(e);
+  }
+
+  canvas.addEventListener("touchstart", onTap, { passive: false });
+  canvas.addEventListener("mousedown", function (ev) {
+    if (ev.button === 0) onTap(ev);
+  });
+
+  // ---- Sound (WebAudio) ----
+  var actx = null;
+  function ac() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { actx = null; }
+    }
+    return actx;
+  }
+  function tone(freq, dur, type, vol) {
+    var a = ac(); if (!a) return;
+    var o = a.createOscillator(), g = a.createGain();
+    o.type = type || "sine";
+    o.frequency.value = freq;
+    g.gain.value = 0.0001;
+    o.connect(g); g.connect(a.destination);
+    var t = a.currentTime;
+    g.gain.exponentialRampToValueAtTime(vol || 0.18, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function blip(captured) {
+    if (captured) { tone(660, 0.12, "triangle", 0.22); tone(990, 0.14, "triangle", 0.16); }
+    else { tone(300, 0.06, "square", 0.12); }
+  }
+  function beepEnd() {
+    tone(523, 0.16, "sine", 0.2);
+    setTimeout(function () { tone(784, 0.22, "sine", 0.2); }, 130);
+  }
+
+  // ---- Controls ----
+  function newGame() {
+    if (ac()) { try { actx.resume(); } catch (e) {} }
+    init(parseInt(sizeSel.value, 10));
+  }
+  document.getElementById("newBtn").addEventListener("click", newGame);
+  document.getElementById("againBtn").addEventListener("click", newGame);
+  sizeSel.addEventListener("change", newGame);
+
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
+
+  // start
+  init(parseInt(sizeSel.value, 10));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Piano Tiles</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #1b1b22;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #f2f2f2;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    background: #23232c;
+  }
+  header {
+    flex: 0 0 auto;
+    padding: 10px 14px calc(8px + env(safe-area-inset-top));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: #2c2c38;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    z-index: 5;
+  }
+  h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; white-space: nowrap; }
+  .scores { display: flex; gap: 14px; font-size: 13px; }
+  .scores .label { opacity: 0.6; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; display: block; }
+  .scores .val { font-size: 18px; font-weight: 700; line-height: 1.1; }
+  #score-val { color: #5ad6a0; }
+  #best-val { color: #f0c25a; }
+  #board-wrap {
+    position: relative;
+    flex: 1 1 auto;
+    overflow: hidden;
+    background: #15151b;
+  }
+  #board {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+  #hitline {
+    position: absolute;
+    left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #5ad6a0, transparent);
+    pointer-events: none;
+    z-index: 2;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: rgba(15,15,20,0.88);
+    z-index: 10;
+    text-align: center;
+    padding: 24px;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h2 { font-size: 26px; font-weight: 800; }
+  #overlay p { font-size: 15px; opacity: 0.85; line-height: 1.5; }
+  #overlay .big { font-size: 40px; font-weight: 800; color: #5ad6a0; }
+  button {
+    font: inherit;
+    font-weight: 700;
+    font-size: 17px;
+    padding: 13px 34px;
+    border: none;
+    border-radius: 40px;
+    background: #5ad6a0;
+    color: #10241b;
+    cursor: pointer;
+    touch-action: manipulation;
+    box-shadow: 0 4px 12px rgba(90,214,160,0.35);
+  }
+  button:active { transform: translateY(1px); }
+  #restart-top {
+    background: #3a3a48;
+    color: #f2f2f2;
+    font-size: 13px;
+    padding: 8px 16px;
+    box-shadow: none;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/piano-tiles.svg">
+    <link rel="manifest" href="/games/piano-tiles.webmanifest">
+    <meta name="theme-color" content="#1E293B">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Piano Tiles">
+    <link rel="apple-touch-icon" href="/games/icons/piano-tiles.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#1E293B;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🎹 Piano Tiles</h1>
+    <div class="scores">
+      <div><span class="label">Score</span><span class="val" id="score-val">0</span></div>
+      <div><span class="label">Best</span><span class="val" id="best-val">0</span></div>
+    </div>
+    <button id="restart-top">Restart</button>
+  </header>
+  <div id="board-wrap">
+    <canvas id="board"></canvas>
+    <div id="hitline"></div>
+    <div id="overlay">
+      <h2 id="ov-title">Piano Tiles</h2>
+      <p id="ov-msg">Tap the <b>black</b> tiles as they fall.<br>Don't miss one and don't tap white!</p>
+      <div class="big" id="ov-score"></div>
+      <button id="ov-btn">Start</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Config ----------
+  var COLS = 4;
+  var BEST_KEY = "pianoTilesBest";
+  // Notes (a pentatonic-ish run for pleasant random sequences) in Hz
+  var NOTES = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
+
+  // ---------- DOM ----------
+  var canvas = document.getElementById("board");
+  var ctx = canvas.getContext("2d");
+  var wrap = document.getElementById("board-wrap");
+  var hitlineEl = document.getElementById("hitline");
+  var scoreEl = document.getElementById("score-val");
+  var bestEl = document.getElementById("best-val");
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ov-title");
+  var ovMsg = document.getElementById("ov-msg");
+  var ovScore = document.getElementById("ov-score");
+  var ovBtn = document.getElementById("ov-btn");
+  var restartTop = document.getElementById("restart-top");
+
+  // ---------- Audio ----------
+  var audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }
+  function playNote(freq) {
+    if (!audioCtx) return;
+    var t = audioCtx.currentTime;
+    var master = audioCtx.createGain();
+    master.gain.setValueAtTime(0.0001, t);
+    master.gain.exponentialRampToValueAtTime(0.32, t + 0.012);
+    master.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+    master.connect(audioCtx.destination);
+    // Two partials for a slightly piano-ish timbre
+    var partials = [
+      { type: "triangle", mul: 1, gain: 1.0 },
+      { type: "sine", mul: 2, gain: 0.35 }
+    ];
+    for (var i = 0; i < partials.length; i++) {
+      var p = partials[i];
+      var osc = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      osc.type = p.type;
+      osc.frequency.value = freq * p.mul;
+      g.gain.value = p.gain;
+      osc.connect(g);
+      g.connect(master);
+      osc.start(t);
+      osc.stop(t + 0.6);
+    }
+  }
+  function playError() {
+    if (!audioCtx) return;
+    var t = audioCtx.currentTime;
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(180, t);
+    osc.frequency.exponentialRampToValueAtTime(70, t + 0.35);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+    osc.connect(g);
+    g.connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.42);
+  }
+
+  // ---------- State ----------
+  var W = 0, H = 0, dpr = 1;
+  var colW = 0;
+  var rowH = 0;            // height of one tile row (in CSS px)
+  var rows = [];          // active rows: { col, y, tapped, noteIdx }
+  var speed = 0;          // px per second (CSS px)
+  var baseSpeed = 170;
+  var running = false;
+  var gameOver = false;
+  var started = false;
+  var score = 0;
+  var best = 0;
+  var lastTime = 0;
+  var noteCursor = 0;
+  var hitlineY = 0;       // CSS px from top where the bottom line is
+  var rafId = null;
+
+  best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0;
+  bestEl.textContent = best;
+
+  // ---------- Sizing ----------
+  function resize() {
+    var rect = wrap.getBoundingClientRect();
+    W = Math.max(1, Math.round(rect.width));
+    H = Math.max(1, Math.round(rect.height));
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    colW = W / COLS;
+    rowH = H / 4;                 // 4 rows visible at a time
+    hitlineY = H - rowH * 0.5;    // hit line near the bottom (center of bottom band)
+    hitlineEl.style.top = hitlineY + "px";
+    draw();
+  }
+
+  // ---------- Row spawning ----------
+  function makeRow(yTop) {
+    return {
+      col: Math.floor(Math.random() * COLS),
+      y: yTop,
+      tapped: false,
+      noteIdx: (noteCursor++) % NOTES.length
+    };
+  }
+
+  function seedRows() {
+    rows = [];
+    // Fill from above the top so they scroll into view; start the lowest one
+    // just at the top edge so the player has reaction time.
+    var count = Math.ceil(H / rowH) + 2;
+    for (var i = 0; i < count; i++) {
+      // first row's top so its bottom sits at y=0 initially
+      rows.push(makeRow(-rowH * (i + 1)));
+    }
+  }
+
+  function spawnAbove() {
+    // find current highest (smallest y) row top
+    var minY = Infinity;
+    for (var i = 0; i < rows.length; i++) if (rows[i].y < minY) minY = rows[i].y;
+    if (minY > -rowH) {
+      rows.push(makeRow(minY - rowH));
+    }
+  }
+
+  // ---------- Game flow ----------
+  function startGame() {
+    ensureAudio();
+    score = 0;
+    speed = baseSpeed;
+    noteCursor = 0;
+    running = true;
+    gameOver = false;
+    started = true;
+    scoreEl.textContent = "0";
+    seedRows();
+    overlay.classList.add("hidden");
+    lastTime = performance.now();
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function endGame(reason) {
+    if (gameOver) return;
+    running = false;
+    gameOver = true;
+    playError();
+    if (score > best) {
+      best = score;
+      localStorage.setItem(BEST_KEY, String(best));
+      bestEl.textContent = best;
+    }
+    ovTitle.textContent = "Game Over";
+    ovMsg.innerHTML = reason + "<br>Best: <b>" + best + "</b>";
+    ovScore.textContent = score;
+    ovBtn.textContent = "Play Again";
+    overlay.classList.remove("hidden");
+    draw(); // render final frame with the highlighted miss
+  }
+
+  function addScore() {
+    score++;
+    scoreEl.textContent = score;
+    // ramp speed up gradually, capped
+    speed = baseSpeed + Math.min(score * 6.5, 360);
+  }
+
+  // ---------- Main loop ----------
+  function loop(now) {
+    if (!running) return;
+    var dt = (now - lastTime) / 1000;
+    if (dt > 0.05) dt = 0.05; // clamp on tab stalls
+    lastTime = now;
+
+    var move = speed * dt;
+    for (var i = 0; i < rows.length; i++) rows[i].y += move;
+
+    // Check for missed black tile: a black tile whose bottom passed the hit line
+    // without being tapped.
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j];
+      if (!r.tapped && r.y > hitlineY) {
+        // The black tile's top has crossed below the hit line -> miss
+        r.missed = true;
+        draw();
+        endGame("You missed a tile!");
+        return;
+      }
+    }
+
+    // Remove rows fully off the bottom (only tapped ones reach here)
+    rows = rows.filter(function (r) { return r.y < H + rowH; });
+
+    // Spawn new rows above as needed
+    spawnAbove();
+
+    draw();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  // ---------- Render ----------
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // column separators
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    ctx.lineWidth = 1;
+    for (var c = 1; c < COLS; c++) {
+      ctx.beginPath();
+      ctx.moveTo(c * colW, 0);
+      ctx.lineTo(c * colW, H);
+      ctx.stroke();
+    }
+
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var x = r.col * colW;
+      var y = r.y;
+      var pad = 2;
+      // black tile
+      if (r.missed) {
+        ctx.fillStyle = "#e0454f";
+      } else if (r.tapped) {
+        ctx.fillStyle = "#3a6e58";
+      } else {
+        ctx.fillStyle = "#101015";
+      }
+      roundRect(ctx, x + pad, y + pad, colW - pad * 2, rowH - pad * 2, 6);
+      ctx.fill();
+      if (!r.tapped && !r.missed) {
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
+
+  function roundRect(c, x, y, w, h, rad) {
+    if (w < 0 || h < 0) { return; }
+    var rr = Math.min(rad, w / 2, h / 2);
+    c.beginPath();
+    c.moveTo(x + rr, y);
+    c.arcTo(x + w, y, x + w, y + h, rr);
+    c.arcTo(x + w, y + h, x, y + h, rr);
+    c.arcTo(x, y + h, x, y, rr);
+    c.arcTo(x, y, x + w, y, rr);
+    c.closePath();
+  }
+
+  // ---------- Input ----------
+  function handleTap(clientX, clientY) {
+    if (!running || gameOver) return;
+    var rect = canvas.getBoundingClientRect();
+    var px = clientX - rect.left;
+    var py = clientY - rect.top;
+    if (px < 0 || px > W || py < 0 || py > H) return;
+    var col = Math.floor(px / colW);
+    if (col < 0) col = 0;
+    if (col >= COLS) col = COLS - 1;
+
+    // Find the lowest (largest y) un-tapped black tile in this column whose
+    // body contains the tap point.
+    var hit = null;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (r.tapped) continue;
+      if (r.col !== col) continue;
+      if (py >= r.y && py <= r.y + rowH) {
+        if (!hit || r.y > hit.y) hit = r;
+      }
+    }
+
+    if (hit) {
+      hit.tapped = true;
+      playNote(NOTES[hit.noteIdx]);
+      addScore();
+      draw();
+    } else {
+      // Tapped a white area (no black tile here) -> game over
+      endGame("You tapped a white tile!");
+    }
+  }
+
+  function onPointer(e) {
+    // Use the first changed touch / pointer
+    e.preventDefault();
+    if (e.changedTouches && e.changedTouches.length) {
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        var t = e.changedTouches[i];
+        handleTap(t.clientX, t.clientY);
+      }
+    } else {
+      handleTap(e.clientX, e.clientY);
+    }
+  }
+
+  // Prefer touch on mobile; fall back to mouse. Guard against double-firing.
+  canvas.addEventListener("touchstart", onPointer, { passive: false });
+  canvas.addEventListener("mousedown", function (e) {
+    // ignore synthetic mouse events that follow touches
+    if (e.button !== undefined && e.button !== 0) return;
+    onPointer(e);
+  });
+
+  // Block scroll/zoom gestures globally over the board
+  ["touchstart", "touchmove", "touchend", "gesturestart"].forEach(function (ev) {
+    wrap.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false });
+  });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+
+  // ---------- Buttons ----------
+  ovBtn.addEventListener("click", startGame);
+  restartTop.addEventListener("click", function () { startGame(); });
+
+  // ---------- Resize ----------
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
+
+  // ---------- Init ----------
+  resize();
+  draw();
+
+})();
+</script>
+</body>
+</html>

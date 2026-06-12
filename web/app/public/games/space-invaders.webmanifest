@@ -1,0 +1,25 @@
+{
+  "name": "Space Invaders",
+  "short_name": "Space Invaders",
+  "description": "Space Invaders — play in your browser, online or off.",
+  "start_url": "/games/space-invaders.html",
+  "scope": "/games/space-invaders.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#6366F1",
+  "icons": [
+    {
+      "src": "/games/icons/space-invaders.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/space-invaders.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

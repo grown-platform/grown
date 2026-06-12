@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Guess the Number</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel2: #334155;
+    --accent: #38bdf8;
+    --accent2: #0ea5e9;
+    --good: #22c55e;
+    --bad: #f87171;
+    --warn: #fbbf24;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+  body {
+    display: flex;
+    justify-content: center;
+    touch-action: manipulation;
+  }
+  #app {
+    width: 100%;
+    max-width: 460px;
+    min-height: 100%;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  header { text-align: center; }
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(90deg, var(--accent), #818cf8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .sub { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+
+  .diff {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+  }
+  .diff button {
+    flex: 1;
+    padding: 9px 4px;
+    border: 1px solid var(--panel2);
+    background: var(--panel);
+    color: var(--muted);
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: all 0.12s;
+  }
+  .diff button.active {
+    background: var(--accent2);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 10px 14px;
+  }
+  .stat { text-align: center; flex: 1; }
+  .stat .label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  .stat .value { font-size: 1.1rem; font-weight: 800; margin-top: 1px; }
+
+  .display {
+    background: var(--panel);
+    border-radius: 14px;
+    padding: 14px;
+    text-align: center;
+    min-height: 96px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+  }
+  .guess-num {
+    font-size: 2.6rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    line-height: 1;
+    min-height: 2.6rem;
+    color: var(--accent);
+    transition: color 0.15s;
+  }
+  .guess-num.placeholder { color: var(--panel2); }
+  .feedback {
+    font-size: 1rem;
+    font-weight: 700;
+    min-height: 1.3rem;
+    transition: color 0.15s;
+  }
+  .feedback.high { color: var(--bad); }
+  .feedback.low { color: var(--warn); }
+  .feedback.win { color: var(--good); }
+  .feedback.hint { color: var(--muted); font-weight: 500; }
+
+  .history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    justify-content: center;
+    min-height: 22px;
+  }
+  .chip {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--panel2);
+    color: var(--text);
+  }
+  .chip.high { background: rgba(248,113,113,0.2); color: var(--bad); }
+  .chip.low { background: rgba(251,191,36,0.2); color: var(--warn); }
+
+  .keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .key {
+    padding: 16px 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 12px;
+    background: var(--panel2);
+    color: var(--text);
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: transform 0.05s, background 0.12s;
+  }
+  .key:active { transform: scale(0.94); background: #475569; }
+  .key.util { background: var(--panel); font-size: 1.05rem; }
+  .key.del { color: var(--bad); }
+  .key.enter {
+    grid-column: span 1;
+    background: var(--accent2);
+    color: #fff;
+  }
+  .key.enter:active { background: var(--accent); }
+  .key:disabled { opacity: 0.4; cursor: default; transform: none; }
+
+  .newgame {
+    padding: 14px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    border: none;
+    border-radius: 12px;
+    background: var(--good);
+    color: #06281a;
+    cursor: pointer;
+    touch-action: manipulation;
+    display: none;
+  }
+  .newgame:active { transform: scale(0.98); }
+  .newgame.show { display: block; }
+
+  @keyframes pop { 0%{transform:scale(1);} 50%{transform:scale(1.15);} 100%{transform:scale(1);} }
+  .pop { animation: pop 0.3s ease; }
+  @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-6px);} 75%{transform:translateX(6px);} }
+  .shake { animation: shake 0.25s ease; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/guess-the-number.svg">
+    <link rel="manifest" href="/games/guess-the-number.webmanifest">
+    <meta name="theme-color" content="#2563EB">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Guess the Number">
+    <link rel="apple-touch-icon" href="/games/icons/guess-the-number.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#2563EB;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Guess the Number</h1>
+    <div class="sub" id="rangeSub">Pick a difficulty to begin</div>
+  </header>
+
+  <div class="diff" id="diff">
+    <button data-max="10">1–10</button>
+    <button data-max="100" class="active">1–100</button>
+    <button data-max="1000">1–1000</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">Attempts</div><div class="value" id="attempts">0</div></div>
+    <div class="stat"><div class="label">Range</div><div class="value" id="rangeVal">1–100</div></div>
+    <div class="stat"><div class="label">Optimal</div><div class="value" id="optimal">7</div></div>
+  </div>
+
+  <div class="display">
+    <div class="guess-num placeholder" id="guessNum">—</div>
+    <div class="feedback hint" id="feedback">Enter your guess below</div>
+    <div class="history" id="history"></div>
+  </div>
+
+  <div class="keypad" id="keypad"></div>
+
+  <button class="newgame" id="newGame">New Game</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- State ----
+  var maxN = 100;
+  var secret = 0;
+  var attempts = 0;
+  var current = "";        // current keypad entry as string
+  var solved = false;
+  var guesses = [];        // {val, dir}
+
+  // ---- Elements ----
+  var elRangeSub = document.getElementById("rangeSub");
+  var elAttempts = document.getElementById("attempts");
+  var elRangeVal = document.getElementById("rangeVal");
+  var elOptimal = document.getElementById("optimal");
+  var elGuessNum = document.getElementById("guessNum");
+  var elFeedback = document.getElementById("feedback");
+  var elHistory = document.getElementById("history");
+  var elKeypad = document.getElementById("keypad");
+  var elNewGame = document.getElementById("newGame");
+  var elDiff = document.getElementById("diff");
+
+  // ---- Audio (WebAudio, lazy) ----
+  var audioCtx = null;
+  function tone(freq, dur, type, vol) {
+    try {
+      if (!audioCtx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audioCtx = new AC();
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      var now = audioCtx.currentTime;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(vol || 0.15, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.start(now);
+      o.stop(now + dur + 0.02);
+    } catch (e) { /* ignore */ }
+  }
+  function sndTap()  { tone(440, 0.05, "square", 0.06); }
+  function sndHigh() { tone(330, 0.12, "sawtooth", 0.1); }
+  function sndLow()  { tone(550, 0.12, "sawtooth", 0.1); }
+  function sndBad()  { tone(160, 0.18, "square", 0.1); }
+  function sndWin()  {
+    [523, 659, 784, 1047].forEach(function (f, i) {
+      setTimeout(function () { tone(f, 0.18, "triangle", 0.14); }, i * 110);
+    });
+  }
+
+  // ---- Helpers ----
+  function optimalGuesses(n) {
+    // worst-case binary search: ceil(log2(n))
+    return Math.max(1, Math.ceil(Math.log2(n)));
+  }
+
+  function rndSecret(n) {
+    return Math.floor(Math.random() * n) + 1;
+  }
+
+  function updateDisplayNumber() {
+    if (current === "") {
+      elGuessNum.textContent = "—";
+      elGuessNum.classList.add("placeholder");
+    } else {
+      elGuessNum.textContent = current;
+      elGuessNum.classList.remove("placeholder");
+    }
+  }
+
+  function setFeedback(text, cls) {
+    elFeedback.textContent = text;
+    elFeedback.className = "feedback " + (cls || "hint");
+  }
+
+  function renderHistory() {
+    elHistory.innerHTML = "";
+    guesses.forEach(function (g) {
+      var c = document.createElement("span");
+      c.className = "chip " + g.dir;
+      var arrow = g.dir === "high" ? " ↓" : (g.dir === "low" ? " ↑" : " ✓");
+      c.textContent = g.val + arrow;
+      elHistory.appendChild(c);
+    });
+  }
+
+  function newGame() {
+    secret = rndSecret(maxN);
+    attempts = 0;
+    current = "";
+    solved = false;
+    guesses = [];
+    elAttempts.textContent = "0";
+    elRangeVal.textContent = "1–" + maxN;
+    elRangeSub.textContent = "I'm thinking of a number from 1 to " + maxN + "…";
+    elOptimal.textContent = optimalGuesses(maxN);
+    setFeedback("Enter your guess below", "hint");
+    renderHistory();
+    updateDisplayNumber();
+    elNewGame.classList.remove("show");
+    setEnabled(true);
+  }
+
+  function setEnabled(on) {
+    var keys = elKeypad.querySelectorAll("button");
+    for (var i = 0; i < keys.length; i++) keys[i].disabled = !on;
+  }
+
+  function pressDigit(d) {
+    if (solved) return;
+    // prevent leading zeros and overly long entries
+    var maxLen = String(maxN).length;
+    if (current === "0") current = "";
+    if (current.length >= maxLen) return;
+    current += d;
+    sndTap();
+    updateDisplayNumber();
+  }
+
+  function pressDel() {
+    if (solved) return;
+    if (current.length === 0) return;
+    current = current.slice(0, -1);
+    sndTap();
+    updateDisplayNumber();
+  }
+
+  function pressClear() {
+    if (solved) return;
+    if (current.length === 0) return;
+    current = "";
+    sndTap();
+    updateDisplayNumber();
+  }
+
+  function shakeDisplay() {
+    var d = elGuessNum;
+    d.classList.remove("shake");
+    void d.offsetWidth; // reflow to restart animation
+    d.classList.add("shake");
+  }
+  function popDisplay() {
+    var d = elGuessNum;
+    d.classList.remove("pop");
+    void d.offsetWidth;
+    d.classList.add("pop");
+  }
+
+  function submitGuess() {
+    if (solved) return;
+    if (current === "") {
+      setFeedback("Type a number first", "hint");
+      sndBad();
+      shakeDisplay();
+      return;
+    }
+    var val = parseInt(current, 10);
+    if (isNaN(val) || val < 1 || val > maxN) {
+      setFeedback("Enter a number from 1 to " + maxN, "hint");
+      sndBad();
+      shakeDisplay();
+      return;
+    }
+
+    attempts++;
+    elAttempts.textContent = attempts;
+
+    if (val === secret) {
+      solved = true;
+      guesses.push({ val: val, dir: "win" });
+      renderHistory();
+      popDisplay();
+      sndWin();
+      var opt = optimalGuesses(maxN);
+      var praise;
+      if (attempts <= opt) praise = "Perfect! Even a computer couldn't do better.";
+      else if (attempts <= opt + 2) praise = "Sharp guessing!";
+      else if (attempts <= opt * 2) praise = "Nicely done!";
+      else praise = "You got it!";
+      setFeedback("Correct! " + attempts + (attempts === 1 ? " try" : " tries") + ". " + praise, "win");
+      elRangeSub.textContent = "Optimal would take about " + opt + " guesses. " + praise;
+      elNewGame.classList.add("show");
+      setEnabled(false);
+      return;
+    }
+
+    if (val > secret) {
+      guesses.push({ val: val, dir: "high" });
+      setFeedback("Too high — try lower", "high");
+      sndHigh();
+    } else {
+      guesses.push({ val: val, dir: "low" });
+      setFeedback("Too low — try higher", "low");
+      sndLow();
+    }
+    shakeDisplay();
+    renderHistory();
+    current = "";
+    updateDisplayNumber();
+  }
+
+  // ---- Build keypad ----
+  // Layout: 1 2 3 / 4 5 6 / 7 8 9 / Clear 0 Del  then full-width Enter row via grid
+  function buildKeypad() {
+    elKeypad.innerHTML = "";
+    var layout = [
+      { t: "1", k: "d" }, { t: "2", k: "d" }, { t: "3", k: "d" },
+      { t: "4", k: "d" }, { t: "5", k: "d" }, { t: "6", k: "d" },
+      { t: "7", k: "d" }, { t: "8", k: "d" }, { t: "9", k: "d" },
+      { t: "C", k: "clear" }, { t: "0", k: "d" }, { t: "⌫", k: "del" }
+    ];
+    layout.forEach(function (item) {
+      var b = document.createElement("button");
+      b.className = "key";
+      b.textContent = item.t;
+      b.type = "button";
+      if (item.k === "clear") { b.className += " util"; }
+      if (item.k === "del") { b.className += " util del"; }
+      b.addEventListener("click", function () {
+        if (item.k === "d") pressDigit(item.t);
+        else if (item.k === "clear") pressClear();
+        else if (item.k === "del") pressDel();
+      });
+      elKeypad.appendChild(b);
+    });
+    // Enter button spans full width
+    var enter = document.createElement("button");
+    enter.className = "key enter";
+    enter.textContent = "✓ Guess";
+    enter.type = "button";
+    enter.style.gridColumn = "1 / -1";
+    enter.addEventListener("click", submitGuess);
+    elKeypad.appendChild(enter);
+  }
+
+  // ---- Difficulty buttons ----
+  elDiff.addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-max]");
+    if (!btn) return;
+    var btns = elDiff.querySelectorAll("button");
+    for (var i = 0; i < btns.length; i++) btns[i].classList.remove("active");
+    btn.classList.add("active");
+    maxN = parseInt(btn.getAttribute("data-max"), 10);
+    sndTap();
+    newGame();
+  });
+
+  elNewGame.addEventListener("click", function () {
+    sndTap();
+    newGame();
+  });
+
+  // Physical keyboard support (desktop convenience; not relied upon for mobile)
+  document.addEventListener("keydown", function (e) {
+    if (e.key >= "0" && e.key <= "9") { pressDigit(e.key); }
+    else if (e.key === "Enter") { submitGuess(); }
+    else if (e.key === "Backspace") { e.preventDefault(); pressDel(); }
+    else if (e.key === "Escape") { pressClear(); }
+  });
+
+  // ---- Init ----
+  buildKeypad();
+  newGame();
+})();
+</script>
+</body>
+</html>

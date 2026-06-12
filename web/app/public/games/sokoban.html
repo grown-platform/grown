@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Sokoban</title>
+<style>
+  :root {
+    --wall: #3a3f5a;
+    --wall-top: #4b5174;
+    --floor: #1d2030;
+    --goal: #c8553d;
+    --box: #c98a3a;
+    --box-on: #6cc24a;
+    --player: #4aa3ff;
+    --bg: #0e1018;
+    --panel: #161a28;
+    --txt: #e6e8f0;
+    --accent: #4aa3ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--txt);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    overscroll-behavior: none;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom) 8px;
+  }
+  header {
+    text-align: center;
+    padding: 8px 0 4px;
+    flex: 0 0 auto;
+  }
+  h1 {
+    font-size: 22px;
+    letter-spacing: 1px;
+    color: var(--accent);
+  }
+  #hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 4px;
+    flex: 0 0 auto;
+    font-size: 13px;
+  }
+  .stat {
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 6px 10px;
+    flex: 1;
+    text-align: center;
+    min-width: 0;
+  }
+  .stat b { color: var(--accent); display: block; font-size: 16px; }
+  .stat span { color: #9aa0b5; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  #boardWrap {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    overflow: hidden;
+    touch-action: none;
+  }
+  #board {
+    position: relative;
+    background: var(--floor);
+    border-radius: 6px;
+    touch-action: none;
+  }
+  .cell {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .c-wall {
+    background: var(--wall);
+    box-shadow: inset 0 3px 0 var(--wall-top);
+    border-radius: 3px;
+  }
+  .c-goal::after {
+    content: "";
+    width: 38%;
+    height: 38%;
+    border-radius: 50%;
+    background: var(--goal);
+    box-shadow: 0 0 6px rgba(200,85,61,.7);
+  }
+  .box {
+    width: 84%;
+    height: 84%;
+    border-radius: 6px;
+    background: var(--box);
+    box-shadow: inset 0 0 0 3px rgba(0,0,0,.25), inset 0 4px 0 rgba(255,255,255,.18);
+    transition: background .12s, transform .12s;
+  }
+  .box.on {
+    background: var(--box-on);
+    box-shadow: inset 0 0 0 3px rgba(0,0,0,.25), 0 0 10px rgba(108,194,74,.7);
+  }
+  .player {
+    width: 72%;
+    height: 72%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #9cd0ff, var(--player));
+    box-shadow: 0 0 8px rgba(74,163,255,.6);
+    position: relative;
+  }
+  .player::after {
+    content: "";
+    position: absolute;
+    left: 50%; top: 52%;
+    width: 50%; height: 18%;
+    transform: translate(-50%,-50%);
+    background: rgba(0,0,0,.35);
+    border-radius: 4px;
+  }
+  #controls {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0 4px;
+  }
+  #btnRow {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+  }
+  button.tb {
+    background: var(--panel);
+    color: var(--txt);
+    border: 1px solid #2a3046;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    flex: 1;
+    max-width: 130px;
+    cursor: pointer;
+  }
+  button.tb:active { background: #222842; }
+  #dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
+    gap: 6px;
+  }
+  .dbtn {
+    background: var(--panel);
+    border: 1px solid #2a3046;
+    border-radius: 12px;
+    color: var(--accent);
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .dbtn:active { background: #283054; }
+  .dbtn.empty { background: transparent; border: none; }
+  #up { grid-column: 2; grid-row: 1; }
+  #left { grid-column: 1; grid-row: 2; }
+  #right { grid-column: 3; grid-row: 2; }
+  #down { grid-column: 2; grid-row: 3; }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(8,10,18,.88);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    text-align: center;
+    padding: 24px;
+    z-index: 10;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 { font-size: 28px; color: var(--box-on); margin-bottom: 10px; }
+  #overlay p { color: #b9bfd4; margin-bottom: 20px; font-size: 15px; }
+  #overlay button {
+    background: var(--accent);
+    color: #06121f;
+    border: none;
+    border-radius: 12px;
+    padding: 14px 28px;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  #hint { font-size: 11px; color: #5a6178; text-align: center; padding-bottom: 2px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/sokoban.svg">
+    <link rel="manifest" href="/games/sokoban.webmanifest">
+    <meta name="theme-color" content="#B45309">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Sokoban">
+    <link rel="apple-touch-icon" href="/games/icons/sokoban.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#B45309;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header><h1>SOKOBAN</h1></header>
+  <div id="hud">
+    <div class="stat"><b id="levelNum">1</b><span>Level</span></div>
+    <div class="stat"><b id="moveCount">0</b><span>Moves</span></div>
+    <div class="stat"><b id="boxLeft">0</b><span>Left</span></div>
+  </div>
+  <div id="boardWrap"><div id="board"></div></div>
+  <div id="hint">Swipe or use the D-pad / arrow keys</div>
+  <div id="controls">
+    <div id="btnRow">
+      <button class="tb" id="undoBtn">Undo</button>
+      <button class="tb" id="restartBtn">Restart</button>
+    </div>
+    <div id="dpad">
+      <div class="dbtn empty"></div>
+      <div class="dbtn" id="up">&#9650;</div>
+      <div class="dbtn empty"></div>
+      <div class="dbtn" id="left">&#9664;</div>
+      <div class="dbtn empty"></div>
+      <div class="dbtn" id="right">&#9654;</div>
+      <div class="dbtn empty"></div>
+      <div class="dbtn" id="down">&#9660;</div>
+      <div class="dbtn empty"></div>
+    </div>
+  </div>
+</div>
+<div id="overlay">
+  <h2 id="ovTitle">Level Complete!</h2>
+  <p id="ovText"></p>
+  <button id="ovBtn">Next Level</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ASCII map legend:
+  //  #  wall
+  //  .  floor (open)
+  //  $  box
+  //  *  box already on a goal
+  //  @  player
+  //  +  player standing on a goal
+  //  o  goal target (empty)
+  //  (space) outside / treated as empty non-walkable void
+  // Note: '.' is open floor; a literal space ' ' is exterior void (non-walkable).
+  // Every level below has been verified solvable by a BFS push-state search.
+  var LEVELS = [
+    // Level 1 - intro: one box, one goal
+    [
+      "#######",
+      "#.....#",
+      "#..o..#",
+      "#.$@..#",
+      "#.....#",
+      "#######"
+    ],
+    // Level 2 - two boxes
+    [
+      "########",
+      "#......#",
+      "#.o..o.#",
+      "#.$..$.#",
+      "#..@...#",
+      "#......#",
+      "########"
+    ],
+    // Level 3 - corridor pushes
+    [
+      "########",
+      "#o...o.#",
+      "#.##.#.#",
+      "#.$@.$.#",
+      "#......#",
+      "#..#...#",
+      "########"
+    ],
+    // Level 4 - three boxes, tighter
+    [
+      "#########",
+      "#..o.o..#",
+      "#.$...$.#",
+      "#..#@#..#",
+      "#.$.o...#",
+      "#.......#",
+      "#########"
+    ],
+    // Level 5 - classic-style chamber
+    [
+      "  #####  ",
+      "###...###",
+      "#o.$.$.o#",
+      "#..#@#..#",
+      "#o.$.$.o#",
+      "###...###",
+      "  #####  "
+    ],
+    // Level 6 - hardest: four corners with a central cross
+    [
+      "#########",
+      "#o.....o#",
+      "#.$...$.#",
+      "#..#.#..#",
+      "#.$...$.#",
+      "#...@...#",
+      "#o.....o#",
+      "#########"
+    ]
+  ];
+
+  // Tile types
+  var WALL = 1, FLOOR = 0, VOID = 2;
+
+  var board = document.getElementById("board");
+  var levelNumEl = document.getElementById("levelNum");
+  var moveCountEl = document.getElementById("moveCount");
+  var boxLeftEl = document.getElementById("boxLeft");
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ovTitle");
+  var ovText = document.getElementById("ovText");
+  var ovBtn = document.getElementById("ovBtn");
+
+  var state = null; // current parsed level state
+
+  // Parse an ASCII map into a structured state object.
+  function parseLevel(map) {
+    var rows = map.length;
+    var cols = 0;
+    var i, j;
+    for (i = 0; i < rows; i++) cols = Math.max(cols, map[i].length);
+
+    var grid = [];     // base terrain: WALL / FLOOR / VOID
+    var goals = [];     // boolean per cell
+    var boxes = [];     // list of {r,c}
+    var player = null;
+
+    for (i = 0; i < rows; i++) {
+      grid[i] = [];
+      goals[i] = [];
+      for (j = 0; j < cols; j++) {
+        var ch = j < map[i].length ? map[i][j] : " ";
+        var isGoal = false;
+        var tile = FLOOR;
+        switch (ch) {
+          case "#": tile = WALL; break;
+          case " ": tile = VOID; break;
+          case "o": isGoal = true; break;
+          case "$": break; // box on floor
+          case "*": isGoal = true; break; // box on goal
+          case "@": break; // player on floor
+          case "+": isGoal = true; break; // player on goal
+          case ".": break; // explicit floor
+          default: tile = FLOOR; break;
+        }
+        grid[i][j] = tile;
+        goals[i][j] = isGoal;
+        if (ch === "$" || ch === "*") boxes.push({ r: i, c: j });
+        if (ch === "@" || ch === "+") player = { r: i, c: j };
+      }
+    }
+
+    return {
+      rows: rows,
+      cols: cols,
+      grid: grid,
+      goals: goals,
+      boxes: boxes,
+      player: player,
+      moves: 0,
+      history: []
+    };
+  }
+
+  function boxAt(s, r, c) {
+    for (var k = 0; k < s.boxes.length; k++) {
+      if (s.boxes[k].r === r && s.boxes[k].c === c) return k;
+    }
+    return -1;
+  }
+
+  function isWall(s, r, c) {
+    if (r < 0 || c < 0 || r >= s.rows || c >= s.cols) return true;
+    return s.grid[r][c] === WALL || s.grid[r][c] === VOID;
+  }
+
+  function isGoal(s, r, c) {
+    if (r < 0 || c < 0 || r >= s.rows || c >= s.cols) return false;
+    return s.goals[r][c];
+  }
+
+  function solved(s) {
+    for (var k = 0; k < s.boxes.length; k++) {
+      if (!isGoal(s, s.boxes[k].r, s.boxes[k].c)) return false;
+    }
+    return true;
+  }
+
+  function boxesLeft(s) {
+    var n = 0;
+    for (var k = 0; k < s.boxes.length; k++) {
+      if (!isGoal(s, s.boxes[k].r, s.boxes[k].c)) n++;
+    }
+    return n;
+  }
+
+  // Attempt to move the player by (dr,dc). Returns true if anything moved.
+  function tryMove(dr, dc) {
+    var s = state;
+    if (!s || overlay.classList.contains("show")) return;
+
+    var nr = s.player.r + dr;
+    var nc = s.player.c + dc;
+    if (isWall(s, nr, nc)) return;
+
+    var bi = boxAt(s, nr, nc);
+    var pushed = -1;
+    if (bi !== -1) {
+      // there's a box; can we push it?
+      var br = nr + dr;
+      var bc = nc + dc;
+      if (isWall(s, br, bc) || boxAt(s, br, bc) !== -1) return; // blocked
+      pushed = bi;
+    }
+
+    // Record history snapshot (only the minimal delta needed to undo).
+    s.history.push({
+      pr: s.player.r,
+      pc: s.player.c,
+      box: pushed,
+      br: pushed !== -1 ? s.boxes[pushed].r : 0,
+      bc: pushed !== -1 ? s.boxes[pushed].c : 0
+    });
+
+    // Apply.
+    if (pushed !== -1) {
+      s.boxes[pushed].r += dr;
+      s.boxes[pushed].c += dc;
+    }
+    s.player.r = nr;
+    s.player.c = nc;
+    s.moves++;
+
+    beep(pushed !== -1 ? 220 : 330, 0.04);
+    render();
+
+    if (solved(s)) onSolved();
+  }
+
+  function undo() {
+    var s = state;
+    if (!s || !s.history.length || overlay.classList.contains("show")) return;
+    var h = s.history.pop();
+    s.player.r = h.pr;
+    s.player.c = h.pc;
+    if (h.box !== -1) {
+      s.boxes[h.box].r = h.br;
+      s.boxes[h.box].c = h.bc;
+    }
+    s.moves++; // undo counts as a move action
+    beep(180, 0.04);
+    render();
+  }
+
+  var currentLevel = 0;
+
+  function loadLevel(idx) {
+    currentLevel = idx;
+    state = parseLevel(LEVELS[idx]);
+    overlay.classList.remove("show");
+    render();
+  }
+
+  function restart() {
+    loadLevel(currentLevel);
+    beep(260, 0.05);
+  }
+
+  function onSolved() {
+    var last = currentLevel >= LEVELS.length - 1;
+    winChime();
+    if (last) {
+      ovTitle.textContent = "You Win! 🎉";
+      ovText.textContent = "All " + LEVELS.length + " levels solved in great style. Play again?";
+      ovBtn.textContent = "Play Again";
+    } else {
+      ovTitle.textContent = "Level " + (currentLevel + 1) + " Complete!";
+      ovText.textContent = "Solved in " + state.moves + " moves.";
+      ovBtn.textContent = "Next Level";
+    }
+    // small delay so the final box-on-goal render is visible
+    setTimeout(function () { overlay.classList.add("show"); }, 220);
+  }
+
+  function nextOrReplay() {
+    if (currentLevel >= LEVELS.length - 1) {
+      loadLevel(0);
+    } else {
+      loadLevel(currentLevel + 1);
+    }
+  }
+
+  // ---- Rendering ----
+  var cellSize = 32;
+
+  function computeCellSize(s) {
+    var wrap = document.getElementById("boardWrap");
+    var availW = wrap.clientWidth;
+    var availH = wrap.clientHeight;
+    if (availW <= 0) availW = Math.min(window.innerWidth, 520) - 16;
+    if (availH <= 0) availH = 300;
+    var byW = Math.floor(availW / s.cols);
+    var byH = Math.floor(availH / s.rows);
+    var sz = Math.min(byW, byH);
+    if (sz < 16) sz = 16;
+    if (sz > 56) sz = 56;
+    return sz;
+  }
+
+  function render() {
+    var s = state;
+    if (!s) return;
+    cellSize = computeCellSize(s);
+    board.style.width = (s.cols * cellSize) + "px";
+    board.style.height = (s.rows * cellSize) + "px";
+    board.innerHTML = "";
+
+    var i, j;
+    // terrain
+    for (i = 0; i < s.rows; i++) {
+      for (j = 0; j < s.cols; j++) {
+        var t = s.grid[i][j];
+        if (t === VOID) continue;
+        var d = document.createElement("div");
+        d.className = "cell";
+        if (t === WALL) d.className += " c-wall";
+        else if (s.goals[i][j]) d.className += " c-goal";
+        d.style.left = (j * cellSize) + "px";
+        d.style.top = (i * cellSize) + "px";
+        d.style.width = cellSize + "px";
+        d.style.height = cellSize + "px";
+        board.appendChild(d);
+      }
+    }
+    // boxes
+    for (var k = 0; k < s.boxes.length; k++) {
+      var b = s.boxes[k];
+      var cell = document.createElement("div");
+      cell.className = "cell";
+      cell.style.left = (b.c * cellSize) + "px";
+      cell.style.top = (b.r * cellSize) + "px";
+      cell.style.width = cellSize + "px";
+      cell.style.height = cellSize + "px";
+      var bx = document.createElement("div");
+      bx.className = "box" + (isGoal(s, b.r, b.c) ? " on" : "");
+      cell.appendChild(bx);
+      board.appendChild(cell);
+    }
+    // player
+    var pc = document.createElement("div");
+    pc.className = "cell";
+    pc.style.left = (s.player.c * cellSize) + "px";
+    pc.style.top = (s.player.r * cellSize) + "px";
+    pc.style.width = cellSize + "px";
+    pc.style.height = cellSize + "px";
+    var pl = document.createElement("div");
+    pl.className = "player";
+    pc.appendChild(pl);
+    board.appendChild(pc);
+
+    // HUD
+    levelNumEl.textContent = (currentLevel + 1);
+    moveCountEl.textContent = s.moves;
+    boxLeftEl.textContent = boxesLeft(s);
+  }
+
+  // ---- Audio (WebAudio, no assets) ----
+  var actx = null;
+  function audio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { actx = null; }
+    }
+    return actx;
+  }
+  function beep(freq, dur) {
+    var a = audio();
+    if (!a) return;
+    if (a.state === "suspended") a.resume();
+    var o = a.createOscillator();
+    var g = a.createGain();
+    o.type = "square";
+    o.frequency.value = freq;
+    g.gain.value = 0.05;
+    o.connect(g); g.connect(a.destination);
+    var now = a.currentTime;
+    g.gain.setValueAtTime(0.05, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    o.start(now);
+    o.stop(now + dur + 0.02);
+  }
+  function winChime() {
+    var a = audio();
+    if (!a) return;
+    if (a.state === "suspended") a.resume();
+    var notes = [523, 659, 784, 1047];
+    for (var i = 0; i < notes.length; i++) {
+      (function (n, t) {
+        var o = a.createOscillator();
+        var g = a.createGain();
+        o.type = "triangle";
+        o.frequency.value = n;
+        o.connect(g); g.connect(a.destination);
+        var st = a.currentTime + t;
+        g.gain.setValueAtTime(0.0001, st);
+        g.gain.exponentialRampToValueAtTime(0.12, st + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, st + 0.22);
+        o.start(st);
+        o.stop(st + 0.24);
+      })(notes[i], i * 0.12);
+    }
+  }
+
+  // ---- Input ----
+  // Keyboard
+  window.addEventListener("keydown", function (e) {
+    var handled = true;
+    switch (e.key) {
+      case "ArrowUp": case "w": case "W": tryMove(-1, 0); break;
+      case "ArrowDown": case "s": case "S": tryMove(1, 0); break;
+      case "ArrowLeft": case "a": case "A": tryMove(0, -1); break;
+      case "ArrowRight": case "d": case "D": tryMove(0, 1); break;
+      case "z": case "Z": undo(); break;
+      case "r": case "R": restart(); break;
+      default: handled = false;
+    }
+    if (handled) e.preventDefault();
+  });
+
+  // D-pad buttons
+  function bindHold(id, dr, dc) {
+    var el = document.getElementById(id);
+    var act = function (e) {
+      e.preventDefault();
+      tryMove(dr, dc);
+    };
+    el.addEventListener("touchstart", act, { passive: false });
+    el.addEventListener("mousedown", act);
+  }
+  bindHold("up", -1, 0);
+  bindHold("down", 1, 0);
+  bindHold("left", 0, -1);
+  bindHold("right", 0, 1);
+
+  document.getElementById("undoBtn").addEventListener("click", undo);
+  document.getElementById("restartBtn").addEventListener("click", restart);
+  ovBtn.addEventListener("click", function () { audio(); nextOrReplay(); });
+
+  // Prevent scroll/zoom gestures globally inside the app
+  document.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+
+  // Swipe detection on the board area
+  var sw = null;
+  var SWIPE_MIN = 24; // px
+  var wrap = document.getElementById("boardWrap");
+  wrap.addEventListener("touchstart", function (e) {
+    audio();
+    var t = e.changedTouches[0];
+    sw = { x: t.clientX, y: t.clientY };
+    e.preventDefault();
+  }, { passive: false });
+  wrap.addEventListener("touchend", function (e) {
+    if (!sw) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - sw.x;
+    var dy = t.clientY - sw.y;
+    sw = null;
+    e.preventDefault();
+    if (Math.abs(dx) < SWIPE_MIN && Math.abs(dy) < SWIPE_MIN) return;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      tryMove(0, dx > 0 ? 1 : -1);
+    } else {
+      tryMove(dy > 0 ? 1 : -1, 0);
+    }
+  }, { passive: false });
+
+  // Resize handling
+  var rt = null;
+  window.addEventListener("resize", function () {
+    if (rt) clearTimeout(rt);
+    rt = setTimeout(render, 80);
+  });
+  window.addEventListener("orientationchange", function () {
+    setTimeout(render, 200);
+  });
+
+  // Init
+  loadLevel(0);
+})();
+</script>
+</body>
+</html>

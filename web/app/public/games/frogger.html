@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Frogger</title>
+<style>
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #0a0e14; color: #e8eef2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden; touch-action: none; overscroll-behavior: none;
+  }
+  #app {
+    display: flex; flex-direction: column; align-items: center;
+    height: 100%; width: 100%; max-width: 520px; margin: 0 auto;
+    padding: 6px; gap: 6px;
+  }
+  header {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 4px;
+  }
+  h1 { font-size: 18px; margin: 0; letter-spacing: 1px; color: #7cf07c; }
+  #stats { display: flex; gap: 12px; font-size: 14px; font-variant-numeric: tabular-nums; }
+  #stats b { color: #ffd24d; }
+  #lives { color: #ff6b6b; letter-spacing: 1px; }
+  #wrap { position: relative; flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  canvas {
+    background: #001018; display: block; touch-action: none;
+    border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    max-width: 100%; max-height: 100%;
+  }
+  #overlay {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    background: rgba(0,8,14,.82); border-radius: 8px; text-align: center; padding: 16px;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 { margin: 0; font-size: 26px; color: #ff6b6b; }
+  #overlay p { margin: 0; font-size: 15px; opacity: .9; }
+  button {
+    font-family: inherit; font-size: 15px; font-weight: 600;
+    color: #04140a; background: #7cf07c; border: none; border-radius: 10px;
+    padding: 11px 22px; cursor: pointer; touch-action: manipulation;
+  }
+  button:active { transform: translateY(1px); }
+  #controls {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    padding: 2px 4px 4px;
+  }
+  #dpad {
+    display: grid; grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(3, 54px);
+    gap: 4px;
+  }
+  .pad {
+    display: flex; align-items: center; justify-content: center;
+    background: #1b2733; color: #cfe6ff; border-radius: 10px;
+    font-size: 22px; touch-action: none; cursor: pointer;
+    border: 1px solid #2c3e50;
+  }
+  .pad:active { background: #2c4256; }
+  .pad.up { grid-column: 2; grid-row: 1; }
+  .pad.left { grid-column: 1; grid-row: 2; }
+  .pad.right { grid-column: 3; grid-row: 2; }
+  .pad.down { grid-column: 2; grid-row: 3; }
+  #restartBtn { background: #ffd24d; }
+  #hint { font-size: 12px; opacity: .55; max-width: 150px; text-align: right; line-height: 1.3; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/frogger.svg">
+    <link rel="manifest" href="/games/frogger.webmanifest">
+    <meta name="theme-color" content="#16A34A">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Frogger">
+    <link rel="apple-touch-icon" href="/games/icons/frogger.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#16A34A;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>FROGGER</h1>
+    <div id="stats">
+      <span>Score <b id="score">0</b></span>
+      <span>Lvl <b id="level">1</b></span>
+      <span id="lives">&#9829;&#9829;&#9829;</span>
+    </div>
+  </header>
+  <div id="wrap">
+    <canvas id="game"></canvas>
+    <div id="overlay">
+      <h2 id="ovTitle">Game Over</h2>
+      <p id="ovText">Final score: 0</p>
+      <button id="playBtn">Play Again</button>
+    </div>
+  </div>
+  <div id="controls">
+    <div id="dpad">
+      <div class="pad up" data-dir="up">&#9650;</div>
+      <div class="pad left" data-dir="left">&#9664;</div>
+      <div class="pad right" data-dir="right">&#9654;</div>
+      <div class="pad down" data-dir="down">&#9660;</div>
+    </div>
+    <button id="restartBtn">Restart</button>
+    <div id="hint">Swipe or use the D-pad / arrow keys to hop.</div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  // ---- Grid configuration ----------------------------------------------
+  // 13 rows tall, 13 columns wide.
+  // Row 0 = goal slots, rows 1-5 = river, row 6 = median (safe),
+  // rows 7-11 = road, row 12 = start (safe).
+  var COLS = 13;
+  var ROWS = 13;
+  var GOAL_ROW = 0;
+  var MEDIAN_ROW = 6;
+  var START_ROW = 12;
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+
+  var cell = 28;   // CSS-pixel size per grid cell (recomputed on resize)
+  var cssW = 0, cssH = 0; // canvas size in CSS pixels (drawing coordinate space)
+
+  // ---- Audio -----------------------------------------------------------
+  var actx = null;
+  function audio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { actx = null; }
+    }
+    return actx;
+  }
+  function beep(freq, dur, type, vol) {
+    var a = audio(); if (!a) return;
+    if (a.state === "suspended") { try { a.resume(); } catch (e) {} }
+    var o = a.createOscillator(), g = a.createGain();
+    o.type = type || "square";
+    o.frequency.value = freq;
+    g.gain.value = vol == null ? 0.06 : vol;
+    o.connect(g); g.connect(a.destination);
+    var t = a.currentTime;
+    o.start(t);
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.stop(t + dur + 0.02);
+  }
+  function sHop()  { beep(440, 0.08, "square", 0.05); }
+  function sWin()  { beep(660, 0.10, "square", 0.06); setTimeout(function(){beep(880,0.14,"square",0.06);}, 90); }
+  function sDie()  { beep(200, 0.18, "sawtooth", 0.07); setTimeout(function(){beep(120,0.24,"sawtooth",0.07);}, 110); }
+  function sLevel(){ beep(523,0.10,"triangle",0.06); setTimeout(function(){beep(784,0.16,"triangle",0.06);},110); }
+
+  // ---- Game state ------------------------------------------------------
+  var state, lanes, slots, level, score, lives, gameOver, frog, frogVel, deathTimer, winTimer;
+  var lastTime = 0;
+
+  // Lane definition: type 'car' (road, deadly) or 'log'/'turtle' (river, ride).
+  // Each lane has a row, a set of "objects" (with x position in cell units,
+  // length in cells), a speed (cells/sec, signed for direction), and color.
+  function buildLanes(lvl) {
+    var spd = 1 + (lvl - 1) * 0.22; // base speed scales gently with level
+    function mk(row, type, dir, speed, lenMin, lenMax, gapMin, gapMax, color) {
+      var objs = [];
+      var x = -Math.random() * 3;
+      while (x < COLS + 4) {
+        var len = lenMin + Math.floor(Math.random() * (lenMax - lenMin + 1));
+        objs.push({ x: x, len: len });
+        x += len + gapMin + Math.random() * (gapMax - gapMin);
+      }
+      return { row: row, type: type, speed: dir * speed * spd, objs: objs, color: color };
+    }
+    var L = [];
+    // Road rows 7-11 (cars/trucks)
+    L.push(mk(11, "car",  1, 1.6, 1, 1, 2.5, 4, "#ff5252")); // car
+    L.push(mk(10, "car", -1, 2.2, 1, 1, 3,   5, "#ffb74d")); // fast car
+    L.push(mk(9,  "car",  1, 1.2, 2, 3, 3,   5, "#ba68c8")); // truck (long, slow)
+    L.push(mk(8,  "car", -1, 2.8, 1, 1, 2.5, 4, "#4dd0e1")); // speedy
+    L.push(mk(7,  "car",  1, 1.8, 1, 2, 3,   5, "#fff176")); // mixed
+    // River rows 1-5 (logs / turtles)
+    L.push(mk(5,  "log",    -1, 1.4, 3, 4, 2.5, 4, "#8d6e63")); // long log
+    L.push(mk(4,  "turtle",  1, 1.8, 2, 3, 2,   3, "#66bb6a")); // turtles
+    L.push(mk(3,  "log",     1, 1.1, 4, 5, 3,   5, "#a1887f")); // big slow log
+    L.push(mk(2,  "turtle", -1, 2.2, 2, 2, 2,   3, "#43a047")); // turtles
+    L.push(mk(1,  "log",    -1, 1.6, 3, 4, 2.5, 4, "#6d4c41")); // log
+    return L;
+  }
+
+  function reset(full) {
+    if (full) {
+      level = 1; score = 0; lives = 3; gameOver = false;
+      slots = [false, false, false, false, false];
+    }
+    lanes = buildLanes(level);
+    resetFrog();
+    deathTimer = 0; winTimer = 0;
+    updateHud();
+    hideOverlay();
+  }
+
+  function resetFrog() {
+    frog = { col: Math.floor(COLS / 2), row: START_ROW, ridingDx: 0 };
+  }
+
+  // Goal slot x-centers (5 slots evenly spread). Each slot is 1 cell wide,
+  // placed at columns roughly 1, 4, 6, 8, 11 of a 13-wide board.
+  var SLOT_COLS = [1, 4, 6, 8, 11];
+
+  // ---- Movement --------------------------------------------------------
+  function move(dir) {
+    if (gameOver || deathTimer > 0 || winTimer > 0) return;
+    var nc = frog.col, nr = frog.row;
+    if (dir === "up") nr--;
+    else if (dir === "down") nr++;
+    else if (dir === "left") nc--;
+    else if (dir === "right") nc++;
+    if (nr < 0 || nr > ROWS - 1 || nc < 0 || nc > COLS - 1) return;
+    frog.col = nc; frog.row = nr;
+    sHop();
+    if (frog.row === GOAL_ROW) tryGoal();
+  }
+
+  function tryGoal() {
+    // Find nearest slot; succeed if frog center aligns with an empty slot.
+    var fc = frog.col + 0.5; // frog center
+    var best = -1, bestD = 999;
+    for (var i = 0; i < SLOT_COLS.length; i++) {
+      var d = Math.abs((SLOT_COLS[i] + 0.5) - fc);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    // Accept landing if the frog center is within ~0.6 cells of a slot center.
+    if (best >= 0 && bestD <= 0.6 && !slots[best]) {
+      frog.col = SLOT_COLS[best]; // snap into the slot
+      slots[best] = true;
+      score += 100 + level * 10;
+      sWin();
+      winTimer = 0.35;
+      // Check level complete
+      if (slots.every(function (s) { return s; })) {
+        score += 500;
+        level++;
+        slots = [false, false, false, false, false];
+        winTimer = 0.6;
+        setTimeout(sLevel, 200);
+        // rebuild lanes faster next frame via flag
+        pendingLevel = true;
+      }
+      updateHud();
+    } else {
+      // landed on water/wall at top row without a slot -> die
+      die();
+    }
+  }
+  var pendingLevel = false;
+
+  function die() {
+    if (deathTimer > 0 || gameOver) return;
+    lives--;
+    sDie();
+    deathTimer = 0.7;
+    updateHud();
+  }
+
+  // ---- Update loop -----------------------------------------------------
+  function update(dt) {
+    // advance lanes
+    for (var i = 0; i < lanes.length; i++) {
+      var ln = lanes[i];
+      for (var j = 0; j < ln.objs.length; j++) {
+        ln.objs[j].x += ln.speed * dt;
+      }
+      // wrap objects around
+      var wrapPad = 4;
+      for (var k = 0; k < ln.objs.length; k++) {
+        var o = ln.objs[k];
+        if (ln.speed > 0 && o.x > COLS + wrapPad) {
+          o.x = minX(ln) - o.len - (1 + Math.random() * 3);
+        } else if (ln.speed < 0 && o.x + o.len < -wrapPad) {
+          o.x = maxX(ln) + (1 + Math.random() * 3);
+        }
+      }
+    }
+
+    if (deathTimer > 0) {
+      deathTimer -= dt;
+      if (deathTimer <= 0) {
+        deathTimer = 0;
+        if (lives <= 0) { endGame(); }
+        else { resetFrog(); }
+      }
+      return;
+    }
+    if (winTimer > 0) {
+      winTimer -= dt;
+      if (winTimer <= 0) {
+        winTimer = 0;
+        if (pendingLevel) { pendingLevel = false; lanes = buildLanes(level); }
+        resetFrog();
+      }
+      return;
+    }
+    if (gameOver) return;
+
+    // Collision / riding logic based on frog row
+    var r = frog.row;
+    if (r >= 7 && r <= 11) {
+      // road: hit by any car overlapping frog column
+      var ln = laneByRow(r);
+      if (ln && overlapsObj(ln, frog.col)) { die(); return; }
+    } else if (r >= 1 && r <= 5) {
+      // river: must be on a log/turtle, else drown
+      var rl = laneByRow(r);
+      var ride = rideObj(rl, frog.col);
+      if (!ride) { die(); return; }
+      // carried by the platform
+      frog.col += rl.speed * dt;
+      if (frog.col < 0 || frog.col > COLS - 1) { die(); return; }
+    }
+    // rows 0,6,12 are safe
+  }
+
+  function minX(ln){var m=999;for(var i=0;i<ln.objs.length;i++)if(ln.objs[i].x<m)m=ln.objs[i].x;return m;}
+  function maxX(ln){var m=-999;for(var i=0;i<ln.objs.length;i++)if(ln.objs[i].x>m)m=ln.objs[i].x;return m;}
+
+  function laneByRow(row) {
+    for (var i = 0; i < lanes.length; i++) if (lanes[i].row === row) return lanes[i];
+    return null;
+  }
+  // Returns true if frog's cell center overlaps any object in lane (for cars)
+  function overlapsObj(ln, fcol) {
+    var fc = fcol + 0.5; // frog center in cell units
+    for (var i = 0; i < ln.objs.length; i++) {
+      var o = ln.objs[i];
+      if (fc > o.x + 0.15 && fc < o.x + o.len - 0.15) return true;
+    }
+    return false;
+  }
+  // For river: returns the object the frog is standing on, or null
+  function rideObj(ln, fcol) {
+    if (!ln) return null;
+    var fc = fcol + 0.5;
+    for (var i = 0; i < ln.objs.length; i++) {
+      var o = ln.objs[i];
+      if (fc > o.x - 0.05 && fc < o.x + o.len + 0.05) return o;
+    }
+    return null;
+  }
+
+  // ---- Render ----------------------------------------------------------
+  function draw() {
+    var W = cssW, H = cssH;
+    ctx.clearRect(0, 0, W, H);
+    // background bands
+    // goal row
+    band(GOAL_ROW, "#2e7d32");
+    // river rows 1-5
+    for (var r = 1; r <= 5; r++) band(r, "#0d47a1");
+    // median row 6
+    band(MEDIAN_ROW, "#388e3c");
+    // road rows 7-11
+    for (var rr = 7; rr <= 11; rr++) band(rr, "#37474f");
+    // start row 12
+    band(START_ROW, "#388e3c");
+
+    // lane markings on road
+    ctx.strokeStyle = "rgba(255,255,255,.25)";
+    ctx.lineWidth = Math.max(1, cell * 0.06);
+    ctx.setLineDash([cell * 0.4, cell * 0.4]);
+    for (var lr = 8; lr <= 11; lr++) {
+      var y = lr * cell;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // goal slots
+    for (var s = 0; s < SLOT_COLS.length; s++) {
+      var sx = SLOT_COLS[s] * cell;
+      ctx.fillStyle = slots[s] ? "#1b5e20" : "#15301a";
+      roundRect(sx + cell * 0.08, cell * 0.08, cell * 0.84, cell * 0.84, cell * 0.18);
+      ctx.fill();
+      if (slots[s]) {
+        // a resting frog (filled slot)
+        drawFrogShape(sx + cell / 2, cell / 2, cell * 0.32, "#43a047");
+      } else {
+        ctx.fillStyle = "rgba(255,255,255,.12)";
+        ctx.font = "bold " + (cell * 0.5) + "px sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("⚑", sx + cell / 2, cell / 2);
+      }
+    }
+
+    // draw lane objects
+    for (var i = 0; i < lanes.length; i++) {
+      var ln = lanes[i];
+      var y = ln.row * cell;
+      for (var j = 0; j < ln.objs.length; j++) {
+        var o = ln.objs[j];
+        var px = o.x * cell;
+        var pw = o.len * cell;
+        if (ln.type === "car") drawCar(px, y, pw, cell, ln.color, ln.speed > 0);
+        else if (ln.type === "log") drawLog(px, y, pw, cell, ln.color);
+        else drawTurtles(px, y, pw, cell, ln.color, o.len);
+      }
+    }
+
+    // frog
+    if (!gameOver) {
+      var fx = frog.col * cell + cell / 2;
+      var fy = frog.row * cell + cell / 2;
+      if (deathTimer > 0) {
+        // death splash / squish
+        var t = 1 - (deathTimer / 0.7);
+        ctx.fillStyle = "rgba(255,80,80," + (0.8 - t * 0.6).toFixed(2) + ")";
+        ctx.beginPath();
+        ctx.arc(fx, fy, cell * (0.3 + t * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        drawFrogShape(fx, fy, cell * 0.38, "#7cf07c");
+      }
+    }
+  }
+
+  function band(row, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, row * cell, cssW, cell);
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawCar(x, y, w, h, color, facingRight) {
+    var pad = h * 0.14;
+    ctx.fillStyle = color;
+    roundRect(x + pad * 0.5, y + pad, w - pad, h - pad * 2, h * 0.2); ctx.fill();
+    // windshield
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    var wx = facingRight ? x + w - h * 0.55 : x + h * 0.2;
+    roundRect(wx, y + pad * 1.6, h * 0.35, h - pad * 3.2, h * 0.1); ctx.fill();
+    // wheels
+    ctx.fillStyle = "#111";
+    ctx.fillRect(x + h * 0.2, y + h - pad * 1.2, h * 0.25, pad);
+    ctx.fillRect(x + w - h * 0.45, y + h - pad * 1.2, h * 0.25, pad);
+  }
+
+  function drawLog(x, y, w, h, color) {
+    var pad = h * 0.12;
+    ctx.fillStyle = color;
+    roundRect(x, y + pad, w, h - pad * 2, h * 0.25); ctx.fill();
+    // wood rings on ends
+    ctx.fillStyle = "rgba(0,0,0,.25)";
+    ctx.beginPath(); ctx.arc(x + h * 0.35, y + h / 2, h * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + w - h * 0.35, y + h / 2, h * 0.16, 0, Math.PI * 2); ctx.fill();
+    // bark lines
+    ctx.strokeStyle = "rgba(0,0,0,.18)";
+    ctx.lineWidth = Math.max(1, h * 0.05);
+    ctx.beginPath(); ctx.moveTo(x + h * 0.6, y + h * 0.35); ctx.lineTo(x + w - h * 0.6, y + h * 0.35); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + h * 0.6, y + h * 0.62); ctx.lineTo(x + w - h * 0.6, y + h * 0.62); ctx.stroke();
+  }
+
+  function drawTurtles(x, y, w, h, color, n) {
+    for (var i = 0; i < n; i++) {
+      var cx = x + (i + 0.5) * (w / n);
+      var cy = y + h / 2;
+      var r = h * 0.36;
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,.22)";
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2); ctx.fill();
+      // head
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(cx + r * 0.9, cy, r * 0.3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  function drawFrogShape(cx, cy, r, color) {
+    // body
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.1, r * 0.9, r, 0, 0, Math.PI * 2); ctx.fill();
+    // legs
+    ctx.beginPath(); ctx.ellipse(cx - r * 0.8, cy + r * 0.7, r * 0.45, r * 0.3, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + r * 0.8, cy + r * 0.7, r * 0.45, r * 0.3, 0.5, 0, Math.PI * 2); ctx.fill();
+    // eyes
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(cx - r * 0.4, cy - r * 0.7, r * 0.28, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + r * 0.4, cy - r * 0.7, r * 0.28, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#062";
+    ctx.beginPath(); ctx.arc(cx - r * 0.4, cy - r * 0.7, r * 0.13, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + r * 0.4, cy - r * 0.7, r * 0.13, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ---- HUD / overlay ---------------------------------------------------
+  var elScore = document.getElementById("score");
+  var elLevel = document.getElementById("level");
+  var elLives = document.getElementById("lives");
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ovTitle");
+  var ovText = document.getElementById("ovText");
+
+  function updateHud() {
+    elScore.textContent = score;
+    elLevel.textContent = level;
+    var h = "";
+    for (var i = 0; i < Math.max(0, lives); i++) h += "♥";
+    elLives.textContent = h || " ";
+  }
+  function showOverlay(title, text) {
+    ovTitle.textContent = title;
+    ovText.textContent = text;
+    overlay.classList.add("show");
+  }
+  function hideOverlay() { overlay.classList.remove("show"); }
+
+  function endGame() {
+    gameOver = true;
+    showOverlay("Game Over", "Final score: " + score + "  ·  Level " + level);
+  }
+
+  // ---- Loop ------------------------------------------------------------
+  function frame(ts) {
+    if (!lastTime) lastTime = ts;
+    var dt = Math.min(0.05, (ts - lastTime) / 1000);
+    lastTime = ts;
+    if (!gameOver) update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // ---- Resize ----------------------------------------------------------
+  function resize() {
+    var wrap = document.getElementById("wrap");
+    var availW = wrap.clientWidth;
+    var availH = wrap.clientHeight;
+    // grid aspect: COLS x ROWS
+    var cw = Math.floor(availW / COLS);
+    var ch = Math.floor(availH / ROWS);
+    cell = Math.max(12, Math.min(cw, ch));
+    cssW = cell * COLS;
+    cssH = cell * ROWS;
+    var dpr = window.devicePixelRatio || 1;
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    // Draw in CSS-pixel coordinates; the transform maps them to device pixels.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // ---- Input: keyboard -------------------------------------------------
+  window.addEventListener("keydown", function (e) {
+    var k = e.key;
+    var dir = null;
+    if (k === "ArrowUp" || k === "w" || k === "W") dir = "up";
+    else if (k === "ArrowDown" || k === "s" || k === "S") dir = "down";
+    else if (k === "ArrowLeft" || k === "a" || k === "A") dir = "left";
+    else if (k === "ArrowRight" || k === "d" || k === "D") dir = "right";
+    if (dir) { e.preventDefault(); if (!gameOver) move(dir); }
+  }, { passive: false });
+
+  // ---- Input: D-pad ----------------------------------------------------
+  var pads = document.querySelectorAll(".pad");
+  for (var p = 0; p < pads.length; p++) {
+    (function (pad) {
+      var dir = pad.getAttribute("data-dir");
+      function go(e) { e.preventDefault(); audio(); if (!gameOver) move(dir); }
+      pad.addEventListener("touchstart", go, { passive: false });
+      pad.addEventListener("mousedown", go);
+    })(pads[p]);
+  }
+
+  // ---- Input: swipe on canvas -----------------------------------------
+  var sx0 = 0, sy0 = 0, swiping = false;
+  function tStart(e) {
+    audio();
+    var t = e.touches ? e.touches[0] : e;
+    sx0 = t.clientX; sy0 = t.clientY; swiping = true;
+    e.preventDefault();
+  }
+  function tEnd(e) {
+    if (!swiping) return;
+    swiping = false;
+    var t = (e.changedTouches && e.changedTouches[0]) || e;
+    var dx = t.clientX - sx0, dy = t.clientY - sy0;
+    var ax = Math.abs(dx), ay = Math.abs(dy);
+    var TH = 18;
+    if (ax < TH && ay < TH) { e.preventDefault(); return; } // treat tiny as tap (ignore)
+    var dir;
+    if (ax > ay) dir = dx > 0 ? "right" : "left";
+    else dir = dy > 0 ? "down" : "up";
+    if (!gameOver) move(dir);
+    e.preventDefault();
+  }
+  canvas.addEventListener("touchstart", tStart, { passive: false });
+  canvas.addEventListener("touchend", tEnd, { passive: false });
+  canvas.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+  // mouse drag (desktop) on canvas
+  canvas.addEventListener("mousedown", tStart);
+  window.addEventListener("mouseup", function (e) { if (swiping) tEnd(e); });
+
+  // prevent gesture zoom
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+
+  // ---- Buttons ---------------------------------------------------------
+  document.getElementById("restartBtn").addEventListener("click", function () { audio(); reset(true); });
+  document.getElementById("playBtn").addEventListener("click", function () { audio(); reset(true); });
+
+  // ---- Boot ------------------------------------------------------------
+  window.addEventListener("resize", function () { resize(); });
+  window.addEventListener("orientationchange", function () { setTimeout(resize, 150); });
+
+  resize();
+  reset(true);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

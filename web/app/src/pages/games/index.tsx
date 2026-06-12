@@ -89,6 +89,22 @@ const GAMES: AppTile[] = [
   arcade("coloring", "Coloring Pad", "#EC4899", "Palette"),
   arcade("snakes-and-ladders", "Snakes & Ladders", "#16A34A", "Casino"),
   arcade("math-quiz", "Math Quiz", "#2563EB", "Calculate"),
+  arcade("space-invaders", "Space Invaders", "#6366F1", "VideogameAsset"),
+  arcade("gomoku", "Gomoku", "#0F766E", "Grain"),
+  arcade("dots-and-boxes", "Dots & Boxes", "#DB2777", "BorderOuter"),
+  arcade("tower-of-hanoi", "Tower of Hanoi", "#CA8A04", "Toll"),
+  arcade("water-sort", "Water Sort", "#06B6D4", "Science"),
+  arcade("sokoban", "Sokoban", "#B45309", "Inventory2"),
+  arcade("frogger", "Frogger", "#16A34A", "DirectionsCar"),
+  arcade("blackjack", "Blackjack", "#15803D", "Style"),
+  arcade("air-hockey", "Air Hockey", "#DC2626", "SportsHockey"),
+  arcade("piano-tiles", "Piano Tiles", "#1E293B", "Piano"),
+  arcade("fruit-catch", "Fruit Catch", "#F97316", "Restaurant"),
+  arcade("balloon-pop", "Balloon Pop", "#EF4444", "Celebration"),
+  arcade("reaction-time", "Reaction Time", "#10B981", "Bolt"),
+  arcade("aim-trainer", "Aim Trainer", "#E11D48", "GpsFixed"),
+  arcade("guess-the-number", "Guess the Number", "#2563EB", "QuestionMark"),
+  arcade("higher-lower", "Higher or Lower", "#7C3AED", "SwapVert"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */

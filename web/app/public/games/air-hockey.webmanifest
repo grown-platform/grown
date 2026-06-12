@@ -1,0 +1,25 @@
+{
+  "name": "Air Hockey",
+  "short_name": "Air Hockey",
+  "description": "Air Hockey — play in your browser, online or off.",
+  "start_url": "/games/air-hockey.html",
+  "scope": "/games/air-hockey.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#DC2626",
+  "icons": [
+    {
+      "src": "/games/icons/air-hockey.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/air-hockey.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

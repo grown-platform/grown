@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Aim Trainer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --accent: #58a6ff;
+    --good: #3fb950;
+    --bad: #f85149;
+    --text: #e6edf3;
+    --muted: #8b949e;
+  }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  #app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    flex: 0 0 auto;
+    padding: 10px 12px calc(10px + env(safe-area-inset-top));
+    padding-top: calc(8px + env(safe-area-inset-top));
+    background: var(--panel);
+    border-bottom: 1px solid #21262d;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-align: center;
+    margin-bottom: 8px;
+    color: var(--accent);
+  }
+  #hud {
+    display: flex;
+    justify-content: space-around;
+    gap: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat { text-align: center; flex: 1; }
+  .stat .label {
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .stat .value { font-size: 18px; font-weight: 700; }
+  #timeStat .value { color: var(--accent); }
+
+  #play {
+    flex: 1 1 auto;
+    position: relative;
+    overflow: hidden;
+    touch-action: none;
+    background:
+      radial-gradient(circle at 30% 20%, rgba(88,166,255,0.08), transparent 40%),
+      radial-gradient(circle at 70% 80%, rgba(63,185,80,0.06), transparent 45%),
+      var(--bg);
+  }
+
+  .target {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ff8a80, var(--bad) 60%, #b3261e);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.15) inset, 0 2px 8px rgba(0,0,0,0.5);
+    transform: translate(-50%, -50%) scale(0);
+    will-change: transform;
+    transition: transform 0.09s ease-out;
+  }
+  .target.show { transform: translate(-50%, -50%) scale(1); }
+  .target::after {
+    content: "";
+    position: absolute;
+    inset: 28%;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.85);
+  }
+
+  .ripple {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid var(--good);
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 0.9;
+    pointer-events: none;
+    animation: rip 0.45s ease-out forwards;
+  }
+  .ripple.miss { border-color: var(--bad); }
+  @keyframes rip {
+    to { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
+  }
+
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 20px;
+    text-align: center;
+    background: rgba(13,17,23,0.92);
+    backdrop-filter: blur(2px);
+    z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h2 { font-size: 24px; color: var(--accent); }
+  #overlay p { color: var(--muted); font-size: 14px; max-width: 300px; line-height: 1.5; }
+
+  #summary {
+    display: none;
+    width: 100%;
+    max-width: 320px;
+    background: var(--panel);
+    border: 1px solid #21262d;
+    border-radius: 12px;
+    padding: 16px;
+  }
+  #summary.show { display: block; }
+  .sumrow {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 4px;
+    border-bottom: 1px solid #21262d;
+    font-size: 15px;
+  }
+  .sumrow:last-child { border-bottom: none; }
+  .sumrow .k { color: var(--muted); }
+  .sumrow .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  button {
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    padding: 14px 32px;
+    cursor: pointer;
+    touch-action: manipulation;
+    min-width: 180px;
+    box-shadow: 0 4px 14px rgba(88,166,255,0.3);
+  }
+  button:active { transform: translateY(1px); filter: brightness(0.95); }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/aim-trainer.svg">
+    <link rel="manifest" href="/games/aim-trainer.webmanifest">
+    <meta name="theme-color" content="#E11D48">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Aim Trainer">
+    <link rel="apple-touch-icon" href="/games/icons/aim-trainer.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#E11D48;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>AIM TRAINER</h1>
+    <div id="hud">
+      <div class="stat"><span class="label">Time</span><span class="value" id="timeStat">30.0</span></div>
+      <div class="stat"><span class="label">Hits</span><span class="value" id="hitStat">0</span></div>
+      <div class="stat"><span class="label">Accuracy</span><span class="value" id="accStat">100%</span></div>
+    </div>
+  </header>
+  <div id="play">
+    <div id="overlay">
+      <h2 id="ovTitle">Aim Trainer</h2>
+      <p id="ovText">Tap the targets as fast as you can. You have 30 seconds. Targets shrink and appear faster as time runs out.</p>
+      <div id="summary"></div>
+      <button id="startBtn">Start</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var play = document.getElementById("play");
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ovTitle");
+  var ovText = document.getElementById("ovText");
+  var summary = document.getElementById("summary");
+  var startBtn = document.getElementById("startBtn");
+  var timeStat = document.getElementById("timeStat");
+  var hitStat = document.getElementById("hitStat");
+  var accStat = document.getElementById("accStat");
+
+  var ROUND_MS = 30000;          // 30-second timed mode
+  var MAX_R = 46;                // starting target radius (px)
+  var MIN_R = 18;                // ending target radius (px)
+  var SPAWN_START = 1100;        // ms target lifetime at start
+  var SPAWN_END = 620;           // ms target lifetime at end (faster)
+
+  var state = {
+    running: false,
+    startTime: 0,
+    endsAt: 0,
+    hits: 0,
+    misses: 0,
+    sumHitTime: 0,   // ms accumulated from spawn->hit
+    target: null,    // current target element
+    targetSpawn: 0,  // timestamp current target spawned
+    lifeTimer: 0,
+    rafId: 0
+  };
+
+  // ---- Audio (WebAudio, no external files) ----
+  var audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      } catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  }
+  function beep(freq, dur, type, vol) {
+    if (!audioCtx) return;
+    try {
+      var t = audioCtx.currentTime;
+      var osc = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      osc.type = type || "sine";
+      osc.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol || 0.2, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(g);
+      g.connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + dur + 0.02);
+    } catch (e) {}
+  }
+  function hitSound() {
+    beep(880, 0.09, "triangle", 0.25);
+    beep(1320, 0.07, "sine", 0.12);
+  }
+  function missSound() { beep(140, 0.12, "sawtooth", 0.18); }
+
+  // ---- Difficulty interpolation based on elapsed fraction (0..1) ----
+  function progress() {
+    var frac = (Date.now() - state.startTime) / ROUND_MS;
+    if (frac < 0) frac = 0;
+    if (frac > 1) frac = 1;
+    return frac;
+  }
+  function currentRadius() {
+    return MAX_R + (MIN_R - MAX_R) * progress();
+  }
+  function currentLifetime() {
+    return SPAWN_START + (SPAWN_END - SPAWN_START) * progress();
+  }
+
+  function rect() { return play.getBoundingClientRect(); }
+
+  function clearTarget() {
+    if (state.lifeTimer) { clearTimeout(state.lifeTimer); state.lifeTimer = 0; }
+    if (state.target && state.target.parentNode) {
+      state.target.parentNode.removeChild(state.target);
+    }
+    state.target = null;
+  }
+
+  function spawnTarget() {
+    if (!state.running) return;
+    clearTarget();
+
+    var r = currentRadius();
+    var box = rect();
+    var pad = r + 6;
+    var maxX = Math.max(pad, box.width - pad);
+    var maxY = Math.max(pad, box.height - pad);
+    var x = pad + Math.random() * (maxX - pad);
+    var y = pad + Math.random() * (maxY - pad);
+
+    var el = document.createElement("div");
+    el.className = "target";
+    el.style.width = (r * 2) + "px";
+    el.style.height = (r * 2) + "px";
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+    play.appendChild(el);
+
+    // force reflow then animate in
+    void el.offsetWidth;
+    el.classList.add("show");
+
+    state.target = el;
+    state.targetSpawn = Date.now();
+
+    var life = currentLifetime();
+    state.lifeTimer = setTimeout(function () {
+      // target expired without a hit = a miss of opportunity
+      if (state.running && state.target === el) {
+        state.misses++;
+        clearTarget();
+        updateHud();
+        // brief gap then respawn
+        state.lifeTimer = setTimeout(spawnTarget, 120);
+      }
+    }, life);
+  }
+
+  function ripple(x, y, isMiss) {
+    var rp = document.createElement("div");
+    rp.className = "ripple" + (isMiss ? " miss" : "");
+    var size = isMiss ? 40 : 70;
+    rp.style.width = size + "px";
+    rp.style.height = size + "px";
+    rp.style.left = x + "px";
+    rp.style.top = y + "px";
+    play.appendChild(rp);
+    setTimeout(function () {
+      if (rp.parentNode) rp.parentNode.removeChild(rp);
+    }, 480);
+  }
+
+  function onPointer(clientX, clientY) {
+    if (!state.running) return;
+    var box = rect();
+    var px = clientX - box.left;
+    var py = clientY - box.top;
+
+    var hitEl = null;
+    if (state.target) {
+      var tb = state.target.getBoundingClientRect();
+      var cx = tb.left + tb.width / 2 - box.left;
+      var cy = tb.top + tb.height / 2 - box.top;
+      var rr = tb.width / 2;
+      var dx = px - cx, dy = py - cy;
+      if (dx * dx + dy * dy <= rr * rr) hitEl = state.target;
+    }
+
+    if (hitEl) {
+      state.hits++;
+      state.sumHitTime += (Date.now() - state.targetSpawn);
+      hitSound();
+      ripple(px, py, false);
+      clearTarget();
+      updateHud();
+      spawnTarget();
+    } else {
+      state.misses++;
+      missSound();
+      ripple(px, py, true);
+      updateHud();
+    }
+  }
+
+  // Use pointer events; preventDefault so taps never scroll/zoom.
+  play.addEventListener("pointerdown", function (e) {
+    if (!state.running) return;
+    e.preventDefault();
+    onPointer(e.clientX, e.clientY);
+  }, { passive: false });
+
+  // Fallback for browsers without Pointer Events.
+  play.addEventListener("touchstart", function (e) {
+    if (!state.running) return;
+    if (window.PointerEvent) return; // pointer handler already covers it
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    if (t) onPointer(t.clientX, t.clientY);
+  }, { passive: false });
+
+  function accuracy() {
+    var total = state.hits + state.misses;
+    if (total === 0) return 100;
+    return Math.round((state.hits / total) * 100);
+  }
+
+  function updateHud() {
+    hitStat.textContent = state.hits;
+    accStat.textContent = accuracy() + "%";
+  }
+
+  function tick() {
+    if (!state.running) return;
+    var remain = state.endsAt - Date.now();
+    if (remain <= 0) {
+      timeStat.textContent = "0.0";
+      endRound();
+      return;
+    }
+    timeStat.textContent = (remain / 1000).toFixed(1);
+    state.rafId = requestAnimationFrame(tick);
+  }
+
+  function startRound() {
+    ensureAudio();
+    clearTarget();
+    state.running = true;
+    state.startTime = Date.now();
+    state.endsAt = state.startTime + ROUND_MS;
+    state.hits = 0;
+    state.misses = 0;
+    state.sumHitTime = 0;
+    updateHud();
+    overlay.classList.add("hidden");
+    summary.classList.remove("show");
+    timeStat.textContent = (ROUND_MS / 1000).toFixed(1);
+    spawnTarget();
+    state.rafId = requestAnimationFrame(tick);
+  }
+
+  function endRound() {
+    state.running = false;
+    if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = 0; }
+    clearTarget();
+    beep(660, 0.12, "sine", 0.2);
+    setTimeout(function () { beep(990, 0.18, "sine", 0.2); }, 110);
+
+    var avg = state.hits > 0 ? (state.sumHitTime / state.hits) : 0;
+    var avgTxt = state.hits > 0 ? (avg / 1000).toFixed(2) + "s" : "—";
+
+    summary.innerHTML =
+      '<div class="sumrow"><span class="k">Hits</span><span class="v">' + state.hits + '</span></div>' +
+      '<div class="sumrow"><span class="k">Misses</span><span class="v">' + state.misses + '</span></div>' +
+      '<div class="sumrow"><span class="k">Accuracy</span><span class="v">' + accuracy() + '%</span></div>' +
+      '<div class="sumrow"><span class="k">Avg time to hit</span><span class="v">' + avgTxt + '</span></div>';
+    summary.classList.add("show");
+
+    ovTitle.textContent = "Time's Up!";
+    ovText.textContent = "";
+    ovText.style.display = "none";
+    startBtn.textContent = "Play Again";
+    overlay.classList.remove("hidden");
+  }
+
+  startBtn.addEventListener("click", function () {
+    ovText.style.display = "";
+    startRound();
+  });
+
+  // Resume audio on any first interaction (iOS unlock safety).
+  document.addEventListener("pointerdown", ensureAudio, { once: true });
+
+  // Keep targets sensible if the viewport resizes mid-round (orientation change).
+  window.addEventListener("resize", function () {
+    if (state.running && state.target) {
+      var box = rect();
+      var tb = state.target.getBoundingClientRect();
+      var r = tb.width / 2;
+      var x = tb.left + r - box.left;
+      var y = tb.top + r - box.top;
+      x = Math.min(Math.max(x, r + 6), Math.max(r + 6, box.width - r - 6));
+      y = Math.min(Math.max(y, r + 6), Math.max(r + 6, box.height - r - 6));
+      state.target.style.left = x + "px";
+      state.target.style.top = y + "px";
+    }
+  });
+})();
+</script>
+</body>
+</html>

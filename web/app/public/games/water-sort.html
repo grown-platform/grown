@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Water Sort</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    touch-action: none; overscroll-behavior: none;
+    background: #0e1426; color: #e8ecf5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    user-select: none; -webkit-user-select: none;
+  }
+  #app {
+    display: flex; flex-direction: column;
+    width: 100%; height: 100%; height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    flex: 0 0 auto; text-align: center; padding: 10px 8px 4px;
+  }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+  #status { font-size: 13px; color: #9aa6c4; margin-top: 2px; min-height: 16px; }
+  #board {
+    flex: 1 1 auto; position: relative;
+    display: flex; flex-wrap: wrap; align-content: center; justify-content: center;
+    gap: 12px 14px; padding: 8px; overflow: hidden;
+  }
+  .tube {
+    position: relative;
+    width: 48px; height: 168px;
+    border: 3px solid #46527a;
+    border-top: none;
+    border-radius: 6px 6px 22px 22px;
+    background: rgba(255,255,255,0.03);
+    display: flex; flex-direction: column-reverse;
+    padding: 4px; cursor: pointer;
+    transition: transform 0.12s ease;
+  }
+  .tube::before {
+    content: ""; position: absolute; top: -3px; left: -6px; right: -6px;
+    height: 3px; background: #46527a; border-radius: 3px;
+  }
+  .tube.selected { transform: translateY(-14px); }
+  .tube.selected { box-shadow: 0 0 0 3px #ffd76a inset, 0 8px 18px rgba(0,0,0,0.4); }
+  .tube.win { box-shadow: 0 0 0 3px #4ad991 inset; }
+  .seg {
+    width: 100%; height: 38px; border-radius: 3px;
+    margin-top: 3px;
+    transition: height 0.18s ease, opacity 0.18s ease;
+  }
+  .seg:first-child { border-radius: 3px 3px 14px 14px; }
+  footer {
+    flex: 0 0 auto;
+    display: flex; gap: 10px; justify-content: center; align-items: center;
+    flex-wrap: wrap; padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+  }
+  button {
+    font-size: 15px; font-weight: 600; color: #e8ecf5;
+    background: #2a3358;
+    border: 1px solid #46527a; border-radius: 10px;
+    padding: 11px 16px; cursor: pointer; touch-action: manipulation;
+  }
+  button:active { background: #3a4570; transform: scale(0.97); }
+  button.primary { background: #3563d6; border-color: #4a78f0; }
+  button.primary:active { background: #2a52b8; }
+  select {
+    font-size: 15px; font-weight: 600; color: #e8ecf5;
+    background: #2a3358; border: 1px solid #46527a; border-radius: 10px;
+    padding: 11px 10px; touch-action: manipulation;
+  }
+  .winBanner {
+    position: absolute; inset: 0; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(8,12,24,0.82); z-index: 10; gap: 14px; text-align: center;
+  }
+  .winBanner.show { display: flex; }
+  .winBanner h2 { font-size: 34px; color: #4ad991; }
+  .winBanner p { color: #cfd7ec; font-size: 15px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/water-sort.svg">
+    <link rel="manifest" href="/games/water-sort.webmanifest">
+    <meta name="theme-color" content="#06B6D4">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Water Sort">
+    <link rel="apple-touch-icon" href="/games/icons/water-sort.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#06B6D4;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Water Sort</h1>
+    <div id="status">Tap a tube to pour</div>
+  </header>
+  <div id="board">
+    <div class="winBanner" id="winBanner">
+      <h2>Solved!</h2>
+      <p id="winSub"></p>
+      <button class="primary" id="winNew">New Puzzle</button>
+    </div>
+  </div>
+  <footer>
+    <button id="undoBtn">Undo</button>
+    <select id="difficulty" aria-label="Colors">
+      <option value="4">4 colors</option>
+      <option value="5">5 colors</option>
+      <option value="6" selected>6 colors</option>
+      <option value="8">8 colors</option>
+      <option value="10">10 colors</option>
+    </select>
+    <button class="primary" id="newBtn">New</button>
+  </footer>
+</div>
+
+<script>
+"use strict";
+(function () {
+  var CAP = 4; // segments per tube
+  var PALETTE = [
+    "#e4453a", "#3f7be8", "#4ad971", "#f2c43d",
+    "#a85ce0", "#ff8c2e", "#22c4c4", "#ec5fa8",
+    "#7d8a3a", "#9a5b30", "#c9d0e0", "#5b6bff"
+  ];
+
+  var boardEl = document.getElementById("board");
+  var statusEl = document.getElementById("status");
+  var undoBtn = document.getElementById("undoBtn");
+  var newBtn = document.getElementById("newBtn");
+  var winNew = document.getElementById("winNew");
+  var difficultyEl = document.getElementById("difficulty");
+  var winBanner = document.getElementById("winBanner");
+  var winSub = document.getElementById("winSub");
+
+  var tubes = [];        // array of arrays; index 0 = bottom
+  var emptyCount = 2;
+  var selected = -1;
+  var history = [];      // stack of snapshots for undo
+  var moveCount = 0;
+  var animating = false;
+  var tubeEls = [];
+
+  // ---------- WebAudio ----------
+  var audioCtx = null;
+  function beep(freq, dur, type, vol) {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = 0.0001;
+      o.connect(g); g.connect(audioCtx.destination);
+      var t = audioCtx.currentTime;
+      g.gain.exponentialRampToValueAtTime(vol || 0.12, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.12));
+      o.start(t); o.stop(t + (dur || 0.12) + 0.02);
+    } catch (e) {}
+  }
+  function sndPour() { beep(420, 0.16, "sine", 0.11); }
+  function sndSelect() { beep(660, 0.07, "triangle", 0.09); }
+  function sndBad() { beep(150, 0.14, "sawtooth", 0.08); }
+  function sndWin() {
+    [523, 659, 784, 1046].forEach(function (f, i) {
+      setTimeout(function () { beep(f, 0.22, "triangle", 0.13); }, i * 130);
+    });
+  }
+
+  // ---------- Helpers on tube state ----------
+  function topColor(t) { return t.length ? t[t.length - 1] : null; }
+  function topRun(t) {
+    if (!t.length) return 0;
+    var c = t[t.length - 1], n = 0;
+    for (var i = t.length - 1; i >= 0 && t[i] === c; i--) n++;
+    return n;
+  }
+  function isComplete(t) {
+    if (t.length === 0) return true;
+    if (t.length !== CAP) return false;
+    for (var i = 1; i < t.length; i++) if (t[i] !== t[0]) return false;
+    return true;
+  }
+  function canPour(from, to) {
+    if (from === to) return false;
+    var s = tubes[from], d = tubes[to];
+    if (!s.length) return false;
+    if (d.length >= CAP) return false;
+    if (d.length === 0) return true;
+    return topColor(s) === topColor(d);
+  }
+  function isWin() {
+    for (var i = 0; i < tubes.length; i++) if (!isComplete(tubes[i])) return false;
+    return true;
+  }
+
+  function clone(state) {
+    return state.map(function (t) { return t.slice(); });
+  }
+
+  // ---------- Puzzle generation (deal randomly, verify with solver) ----------
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
+    return arr;
+  }
+
+  // Pour helpers operating on a plain state array (used by solver/generator).
+  function applyPourState(st, f, d) {
+    var color = st[f][st[f].length - 1];
+    var run = 0, i;
+    for (i = st[f].length - 1; i >= 0 && st[f][i] === color; i--) run++;
+    var space = CAP - st[d].length;
+    var move = Math.min(run, space);
+    for (i = 0; i < move; i++) { st[d].push(color); st[f].pop(); }
+    return move;
+  }
+  function stateKey(st) {
+    // Canonical: sort tube strings so equivalent permutations hash equal.
+    return st.map(function (t) { return t.join(","); }).sort().join("|");
+  }
+  function isSolvedState(st) {
+    for (var i = 0; i < st.length; i++) {
+      var t = st[i];
+      if (t.length === 0) continue;
+      if (t.length !== CAP) return false;
+      for (var j = 1; j < t.length; j++) if (t[j] !== t[0]) return false;
+    }
+    return true;
+  }
+
+  // DFS solver with memoization. Returns true if `start` is solvable.
+  function solvable(start) {
+    var seen = {};
+    var STACK_LIMIT = 200000;
+    var stack = [clone(start)];
+    var visits = 0;
+    while (stack.length) {
+      if (++visits > STACK_LIMIT) return false; // give up -> treat as unsolvable, regenerate
+      var st = stack.pop();
+      if (isSolvedState(st)) return true;
+      var key = stateKey(st);
+      if (seen[key]) continue;
+      seen[key] = true;
+      var n = st.length;
+      for (var f = 0; f < n; f++) {
+        if (!st[f].length) continue;
+        // Skip pouring from an already-uniform full tube (pointless).
+        var ft = st[f];
+        var uniform = ft.length === CAP && ft[0] === ft[CAP - 1] &&
+          ft.every(function (x) { return x === ft[0]; });
+        if (uniform) continue;
+        var topC = ft[ft.length - 1];
+        var pouredToEmpty = false;
+        for (var d = 0; d < n; d++) {
+          if (f === d) continue;
+          var dt = st[d];
+          if (dt.length >= CAP) continue;
+          if (dt.length === 0) {
+            // Only consider one empty target (they're equivalent).
+            if (pouredToEmpty) continue;
+            pouredToEmpty = true;
+          } else if (dt[dt.length - 1] !== topC) {
+            continue;
+          }
+          var ns = clone(st);
+          if (applyPourState(ns, f, d) > 0) stack.push(ns);
+        }
+      }
+    }
+    return false;
+  }
+
+  function dealRandom(numColors) {
+    emptyCount = 2;
+    // Build a pool: 4 of each color.
+    var pool = [];
+    for (var c = 0; c < numColors; c++) {
+      for (var k = 0; k < CAP; k++) pool.push(c);
+    }
+    shuffle(pool);
+    var st = [];
+    var idx = 0;
+    for (var i = 0; i < numColors; i++) {
+      var t = [];
+      for (var j = 0; j < CAP; j++) t.push(pool[idx++]);
+      st.push(t);
+    }
+    for (var e = 0; e < emptyCount; e++) st.push([]);
+    return st;
+  }
+
+  function generate(numColors) {
+    // Deal randomly, then verify solvability with a real solver. Reject
+    // already-solved deals and unsolvable deals; retry until we get a good one.
+    for (var attempt = 0; attempt < 400; attempt++) {
+      var st = dealRandom(numColors);
+      if (isSolvedState(st)) continue;
+      if (solvable(st)) return st;
+    }
+    // Fallback (should essentially never happen): solved-then-one-pour state.
+    var fb = dealRandom(numColors);
+    return fb;
+  }
+
+  function colorOf(idx) { return PALETTE[idx % PALETTE.length]; }
+
+  // ---------- Rendering ----------
+  function sizeTubes() {
+    var n = tubes.length;
+    // Estimate available height for board to scale tube height on small screens.
+    var bh = boardEl.clientHeight;
+    var bw = boardEl.clientWidth;
+    // choose rows: try to fit tubes in <=2 rows when many.
+    var perRow = Math.min(n, Math.max(4, Math.floor(bw / 62)));
+    var rows = Math.ceil(n / perRow);
+    var maxTubeH = Math.floor((bh - (rows + 1) * 14) / rows);
+    maxTubeH = Math.max(96, Math.min(200, maxTubeH));
+    var segH = Math.floor((maxTubeH - 14) / CAP);
+    document.documentElement.style.setProperty("--segH", segH + "px");
+    document.documentElement.style.setProperty("--tubeH", (segH * CAP + 14) + "px");
+  }
+
+  function render() {
+    // build/update tube elements
+    if (tubeEls.length !== tubes.length) {
+      // rebuild
+      Array.prototype.slice.call(boardEl.querySelectorAll(".tube")).forEach(function (e) { e.remove(); });
+      tubeEls = [];
+      for (var i = 0; i < tubes.length; i++) {
+        var el = document.createElement("div");
+        el.className = "tube";
+        el.dataset.idx = i;
+        boardEl.appendChild(el);
+        tubeEls.push(el);
+      }
+    }
+    sizeTubes();
+    var segH = getComputedStyle(document.documentElement).getPropertyValue("--segH").trim() || "38px";
+    var tubeH = getComputedStyle(document.documentElement).getPropertyValue("--tubeH").trim() || "168px";
+
+    for (var t = 0; t < tubes.length; t++) {
+      var el = tubeEls[t];
+      el.style.height = tubeH;
+      el.className = "tube" + (t === selected ? " selected" : "") + (isComplete(tubes[t]) && tubes[t].length ? " win" : "");
+      // rebuild segments
+      while (el.firstChild) el.removeChild(el.firstChild);
+      for (var s = 0; s < tubes[t].length; s++) {
+        var seg = document.createElement("div");
+        seg.className = "seg";
+        seg.style.height = segH;
+        seg.style.background = colorOf(tubes[t][s]);
+        el.appendChild(seg);
+      }
+    }
+    undoBtn.disabled = history.length === 0;
+    undoBtn.style.opacity = history.length === 0 ? "0.45" : "1";
+  }
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+
+  // ---------- Interaction ----------
+  function onTubeTap(idx) {
+    if (animating) return;
+    if (winBanner.classList.contains("show")) return;
+    if (selected === -1) {
+      if (!tubes[idx].length) { sndBad(); return; }
+      selected = idx;
+      sndSelect();
+      render();
+      setStatus("Tap a tube to pour into");
+      return;
+    }
+    if (selected === idx) {
+      selected = -1;
+      render();
+      setStatus("Tap a tube to pour");
+      return;
+    }
+    if (canPour(selected, idx)) {
+      doPour(selected, idx);
+    } else {
+      // reselect if tapped a non-empty tube
+      sndBad();
+      if (tubes[idx].length) {
+        selected = idx;
+        sndSelect();
+        render();
+        setStatus("Tap a tube to pour into");
+      } else {
+        selected = -1;
+        render();
+        setStatus("Can't pour there");
+      }
+    }
+  }
+
+  function doPour(from, to) {
+    history.push({ state: clone(tubes), moves: moveCount });
+    var color = topColor(tubes[from]);
+    var run = topRun(tubes[from]);
+    var space = CAP - tubes[to].length;
+    var amount = Math.min(run, space);
+
+    animating = true;
+    var src = tubeEls[from];
+    src.style.transform = "translateY(-14px)";
+    sndPour();
+
+    // simple delay to let the lift read, then apply state
+    setTimeout(function () {
+      for (var i = 0; i < amount; i++) { tubes[to].push(color); tubes[from].pop(); }
+      moveCount++;
+      selected = -1;
+      src.style.transform = "";
+      animating = false;
+      render();
+      if (isWin()) {
+        win(moveCount);
+      } else {
+        setStatus("Moves: " + moveCount);
+      }
+    }, 180);
+  }
+
+  function win(moves) {
+    sndWin();
+    winSub.textContent = "Solved in " + moves + " move" + (moves === 1 ? "" : "s");
+    winBanner.classList.add("show");
+    setStatus("You win!");
+  }
+
+  function undo() {
+    if (animating || !history.length) return;
+    var prev = history.pop();
+    tubes = prev.state;
+    moveCount = prev.moves;
+    selected = -1;
+    winBanner.classList.remove("show");
+    render();
+    setStatus(moveCount ? "Moves: " + moveCount : "Tap a tube to pour");
+  }
+
+  function newPuzzle() {
+    var n = parseInt(difficultyEl.value, 10) || 6;
+    tubes = generate(n);
+    tubeEls = []; // force rebuild (count changes)
+    selected = -1;
+    history = [];
+    moveCount = 0;
+    animating = false;
+    winBanner.classList.remove("show");
+    render();
+    setStatus("Tap a tube to pour");
+  }
+
+  // ---------- Events ----------
+  var lastTouchTime = 0;
+  function resumeAudio() {
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }
+  boardEl.addEventListener("click", function (e) {
+    // Ignore the synthetic click that follows a handled touch.
+    if (Date.now() - lastTouchTime < 600) return;
+    var tubeEl = e.target.closest ? e.target.closest(".tube") : null;
+    if (!tubeEl) return;
+    resumeAudio();
+    onTubeTap(parseInt(tubeEl.dataset.idx, 10));
+  });
+  // prevent double-tap zoom / scrolling on board
+  boardEl.addEventListener("touchstart", function (e) { e.preventDefault(); }, { passive: false });
+  boardEl.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    lastTouchTime = Date.now();
+    var touch = e.changedTouches[0];
+    if (!touch) return;
+    var el = document.elementFromPoint(touch.clientX, touch.clientY);
+    var tubeEl = el && el.closest ? el.closest(".tube") : null;
+    if (tubeEl) {
+      resumeAudio();
+      onTubeTap(parseInt(tubeEl.dataset.idx, 10));
+    }
+  }, { passive: false });
+
+  undoBtn.addEventListener("click", undo);
+  newBtn.addEventListener("click", newPuzzle);
+  winNew.addEventListener("click", newPuzzle);
+  difficultyEl.addEventListener("change", newPuzzle);
+
+  window.addEventListener("resize", function () { render(); });
+  window.addEventListener("orientationchange", function () { setTimeout(render, 200); });
+
+  // prevent page scroll/zoom globally
+  document.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+
+  // ---------- Start ----------
+  newPuzzle();
+})();
+</script>
+</body>
+</html>

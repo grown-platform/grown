@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Higher or Lower</title>
+<style>
+  :root {
+    --bg1: #0f2027;
+    --bg2: #203a43;
+    --bg3: #2c5364;
+    --accent: #ffd166;
+    --green: #06d6a0;
+    --red: #ef476f;
+    --card-bg: #fdfdfd;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overscroll-behavior: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: linear-gradient(160deg, var(--bg1), var(--bg2) 55%, var(--bg3));
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100%;
+    min-height: 100dvh;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap {
+    width: 100%;
+    max-width: 440px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px 18px;
+  }
+  header {
+    text-align: center;
+    margin-bottom: 6px;
+  }
+  h1 {
+    margin: 4px 0 2px;
+    font-size: 1.5rem;
+    letter-spacing: 0.5px;
+    font-weight: 800;
+  }
+  h1 .hi { color: var(--green); }
+  h1 .lo { color: var(--red); }
+  .sub {
+    font-size: 0.72rem;
+    opacity: 0.65;
+    margin: 0;
+  }
+  .stats {
+    display: flex;
+    justify-content: space-around;
+    gap: 8px;
+    margin: 10px 0 6px;
+  }
+  .stat {
+    flex: 1;
+    background: rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 8px 4px;
+    text-align: center;
+  }
+  .stat .label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.7;
+  }
+  .stat .value {
+    font-size: 1.4rem;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+  .stat .value.acc { color: var(--accent); }
+
+  .board {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 0;
+  }
+  .deck-info {
+    font-size: 0.72rem;
+    opacity: 0.65;
+    height: 1.1em;
+  }
+
+  /* Card */
+  .card-stage {
+    perspective: 900px;
+    width: 150px;
+    height: 210px;
+  }
+  .card {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.45s cubic-bezier(.2,.8,.2,1);
+  }
+  .card.flipping { transform: rotateY(90deg); }
+  .card.deal { animation: deal 0.4s cubic-bezier(.2,.9,.25,1); }
+  @keyframes deal {
+    0% { transform: translateY(-32px) scale(0.9) rotate(-6deg); opacity: 0; }
+    100% { transform: translateY(0) scale(1) rotate(0); opacity: 1; }
+  }
+  .card-face {
+    position: absolute;
+    inset: 0;
+    background: var(--card-bg);
+    border-radius: 14px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.45);
+    color: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid rgba(0,0,0,0.08);
+  }
+  .card-face.red { color: var(--red); }
+  .card-face.black { color: #1a1a1a; }
+  .corner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+    font-weight: 800;
+  }
+  .corner .r { font-size: 1.4rem; }
+  .corner .s { font-size: 1.2rem; }
+  .corner.br {
+    align-self: flex-end;
+    transform: rotate(180deg);
+  }
+  .center-pip {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 3.6rem;
+    line-height: 1;
+  }
+
+  /* Feedback flash */
+  .feedback {
+    height: 1.4em;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-align: center;
+  }
+  .feedback.win { color: var(--green); }
+  .feedback.lose { color: var(--red); }
+  .feedback.push { color: var(--accent); }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+  }
+  .btn {
+    flex: 1;
+    border: none;
+    border-radius: 16px;
+    padding: 18px 8px;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #07251c;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.08s ease, filter 0.15s ease, opacity 0.15s;
+    box-shadow: 0 6px 0 rgba(0,0,0,0.25);
+  }
+  .btn:active { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0,0,0,0.25); }
+  .btn[disabled] { opacity: 0.4; pointer-events: none; }
+  .btn.higher { background: linear-gradient(180deg, #2ee6ad, var(--green)); }
+  .btn.lower { background: linear-gradient(180deg, #ff6b91, var(--red)); color: #2a0410; }
+  .btn .ico { font-size: 1.3rem; display:block; }
+
+  .newgame {
+    margin-top: 12px;
+    width: 100%;
+    border: 1px solid rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.06);
+    color: #fff;
+    border-radius: 14px;
+    padding: 13px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .newgame:active { background: rgba(255,255,255,0.14); }
+
+  /* Game over overlay */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(6,12,16,0.86);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    z-index: 10;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+  .panel {
+    background: linear-gradient(160deg, #182c33, #0f2027);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 20px;
+    padding: 26px 22px;
+    text-align: center;
+    width: 100%;
+    max-width: 320px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  }
+  .panel h2 { margin: 0 0 6px; font-size: 1.6rem; }
+  .panel .go-emoji { font-size: 2.6rem; }
+  .panel p { margin: 8px 0; font-size: 0.95rem; opacity: 0.9; }
+  .panel .big { font-size: 2.2rem; font-weight: 800; color: var(--accent); margin: 6px 0; }
+  .panel .best-note { color: var(--green); font-weight: 700; }
+  .panel button {
+    margin-top: 14px;
+    width: 100%;
+    border: none;
+    border-radius: 14px;
+    padding: 16px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #07251c;
+    background: linear-gradient(180deg, #2ee6ad, var(--green));
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .panel button:active { transform: translateY(2px); }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/higher-lower.svg">
+    <link rel="manifest" href="/games/higher-lower.webmanifest">
+    <meta name="theme-color" content="#7C3AED">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Higher or Lower">
+    <link rel="apple-touch-icon" href="/games/icons/higher-lower.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#7C3AED;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="hi">Higher</span> or <span class="lo">Lower</span></h1>
+    <p class="sub">Will the next card beat it? (ties lose)</p>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="label">Streak</div><div class="value" id="streak">0</div></div>
+    <div class="stat"><div class="label">Best</div><div class="value acc" id="best">0</div></div>
+    <div class="stat"><div class="label">Cards Left</div><div class="value" id="left">52</div></div>
+  </div>
+
+  <div class="board">
+    <div class="deck-info" id="deckInfo">Tap Higher or Lower</div>
+    <div class="card-stage">
+      <div class="card deal" id="card">
+        <div class="card-face black" id="face">
+          <div class="corner tl"><span class="r">A</span><span class="s">&spades;</span></div>
+          <div class="center-pip">&spades;</div>
+          <div class="corner br"><span class="r">A</span><span class="s">&spades;</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="feedback" id="feedback">&nbsp;</div>
+  </div>
+
+  <div class="controls">
+    <button class="btn higher" id="higherBtn"><span class="ico">&#9650;</span>Higher</button>
+    <button class="btn lower" id="lowerBtn"><span class="ico">&#9660;</span>Lower</button>
+  </div>
+  <button class="newgame" id="newGameBtn">New Game</button>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="panel">
+    <div class="go-emoji">&#127183;</div>
+    <h2>Game Over</h2>
+    <p id="goReason">The card went the wrong way.</p>
+    <p>Final streak</p>
+    <div class="big" id="goStreak">0</div>
+    <p id="goBest">Best: 0</p>
+    <button id="goNewBtn">Play Again</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SUITS = [
+    { sym: "♠", color: "black" }, // spades
+    { sym: "♥", color: "red" },   // hearts
+    { sym: "♦", color: "red" },   // diamonds
+    { sym: "♣", color: "black" }  // clubs
+  ];
+  // rank value 2..14 ; label
+  var RANKS = [
+    { v: 2, l: "2" }, { v: 3, l: "3" }, { v: 4, l: "4" }, { v: 5, l: "5" },
+    { v: 6, l: "6" }, { v: 7, l: "7" }, { v: 8, l: "8" }, { v: 9, l: "9" },
+    { v: 10, l: "10" }, { v: 11, l: "J" }, { v: 12, l: "Q" },
+    { v: 13, l: "K" }, { v: 14, l: "A" }
+  ];
+
+  var RESHUFFLE_AT = 6; // reshuffle when fewer than this many cards remain
+
+  var deck = [];
+  var current = null;
+  var streak = 0;
+  var best = 0;
+  var busy = false;
+  var gameOver = false;
+
+  // DOM
+  var elCard = document.getElementById("card");
+  var elFace = document.getElementById("face");
+  var elStreak = document.getElementById("streak");
+  var elBest = document.getElementById("best");
+  var elLeft = document.getElementById("left");
+  var elDeckInfo = document.getElementById("deckInfo");
+  var elFeedback = document.getElementById("feedback");
+  var higherBtn = document.getElementById("higherBtn");
+  var lowerBtn = document.getElementById("lowerBtn");
+  var newGameBtn = document.getElementById("newGameBtn");
+  var overlay = document.getElementById("overlay");
+  var goReason = document.getElementById("goReason");
+  var goStreak = document.getElementById("goStreak");
+  var goBest = document.getElementById("goBest");
+  var goNewBtn = document.getElementById("goNewBtn");
+
+  // ---- localStorage best ----
+  var STORE_KEY = "higherLower.best";
+  function loadBest() {
+    try {
+      var v = parseInt(localStorage.getItem(STORE_KEY), 10);
+      if (!isNaN(v) && v >= 0) best = v;
+    } catch (e) { /* ignore */ }
+  }
+  function saveBest() {
+    try { localStorage.setItem(STORE_KEY, String(best)); } catch (e) { /* ignore */ }
+  }
+
+  // ---- audio ----
+  var audioCtx = null;
+  function getCtx() {
+    if (audioCtx === null) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      } catch (e) { audioCtx = false; }
+    }
+    return audioCtx || null;
+  }
+  function beep(freq, dur, type, vol) {
+    var ctx = getCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") { try { ctx.resume(); } catch (e) {} }
+    try {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = type || "sine";
+      osc.frequency.value = freq;
+      var now = ctx.currentTime;
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(vol || 0.18, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (e) { /* ignore */ }
+  }
+  function sndFlip() { beep(420, 0.08, "triangle", 0.12); }
+  function sndWin() {
+    beep(523, 0.10, "triangle", 0.16);
+    setTimeout(function () { beep(784, 0.14, "triangle", 0.16); }, 90);
+  }
+  function sndLose() {
+    beep(300, 0.18, "sawtooth", 0.16);
+    setTimeout(function () { beep(160, 0.30, "sawtooth", 0.16); }, 110);
+  }
+  function sndPush() { beep(440, 0.12, "sine", 0.14); }
+
+  // ---- deck ----
+  function buildDeck() {
+    var d = [];
+    for (var s = 0; s < SUITS.length; s++) {
+      for (var r = 0; r < RANKS.length; r++) {
+        d.push({
+          v: RANKS[r].v,
+          label: RANKS[r].l,
+          suit: SUITS[s].sym,
+          color: SUITS[s].color
+        });
+      }
+    }
+    return d;
+  }
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+  function ensureDeck() {
+    if (deck.length < RESHUFFLE_AT) {
+      deck = shuffle(buildDeck());
+      // avoid immediately repeating the exact current card on top (cosmetic)
+      return true; // reshuffled
+    }
+    return false;
+  }
+  function drawCard() {
+    ensureDeck();
+    return deck.pop();
+  }
+
+  // ---- render ----
+  function renderCard(card, animClass) {
+    elFace.className = "card-face " + card.color;
+    elFace.innerHTML =
+      '<div class="corner tl"><span class="r">' + card.label + '</span><span class="s">' + card.suit + '</span></div>' +
+      '<div class="center-pip">' + card.suit + '</div>' +
+      '<div class="corner br"><span class="r">' + card.label + '</span><span class="s">' + card.suit + '</span></div>';
+    if (animClass) {
+      elCard.classList.remove("deal");
+      // force reflow to restart animation
+      void elCard.offsetWidth;
+      elCard.classList.add(animClass);
+    }
+  }
+  function updateStats() {
+    elStreak.textContent = String(streak);
+    elBest.textContent = String(best);
+    elLeft.textContent = String(deck.length);
+  }
+  function setButtons(enabled) {
+    higherBtn.disabled = !enabled;
+    lowerBtn.disabled = !enabled;
+  }
+  function setFeedback(text, cls) {
+    elFeedback.textContent = text || " ";
+    elFeedback.className = "feedback" + (cls ? " " + cls : "");
+  }
+
+  // ---- game flow ----
+  function newGame() {
+    deck = shuffle(buildDeck());
+    streak = 0;
+    gameOver = false;
+    busy = false;
+    overlay.classList.remove("show");
+    current = deck.pop();
+    renderCard(current, "deal");
+    updateStats();
+    setFeedback(" ", "");
+    elDeckInfo.textContent = "Will the next card be higher or lower?";
+    setButtons(true);
+  }
+
+  function guess(higher) {
+    if (busy || gameOver) return;
+    busy = true;
+    setButtons(false);
+    sndFlip();
+
+    var next = drawCard();
+
+    // flip animation: rotate to edge, swap content, rotate back
+    elCard.classList.remove("deal");
+    elCard.classList.add("flipping");
+
+    setTimeout(function () {
+      renderCard(next, null);
+      elCard.classList.remove("flipping");
+
+      // evaluate
+      var win;
+      var isPush = (next.v === current.v);
+      if (isPush) {
+        // ties lose (consistent rule, also shown in subtitle)
+        win = false;
+      } else if (higher) {
+        win = next.v > current.v;
+      } else {
+        win = next.v < current.v;
+      }
+
+      current = next;
+
+      setTimeout(function () {
+        if (win) {
+          streak += 1;
+          if (streak > best) { best = streak; saveBest(); }
+          updateStats();
+          setFeedback("Correct! +1", "win");
+          sndWin();
+          elDeckInfo.textContent = "Nice! Keep going — higher or lower?";
+          busy = false;
+          setButtons(true);
+        } else {
+          updateStats();
+          if (isPush) {
+            setFeedback("Tie — you lose!", "lose");
+          } else {
+            setFeedback("Wrong!", "lose");
+          }
+          sndLose();
+          endGame(isPush);
+        }
+      }, 120);
+    }, 230); // matches half of flip transition
+  }
+
+  function endGame(wasTie) {
+    gameOver = true;
+    busy = false;
+    setButtons(false);
+    var beatBest = (streak > 0 && streak === best);
+    goReason.textContent = wasTie
+      ? "It was a tie — ties count as a loss."
+      : "The next card went the wrong way.";
+    goStreak.textContent = String(streak);
+    goBest.innerHTML = beatBest
+      ? '<span class="best-note">New best streak!</span>'
+      : "Best: " + best;
+    updateStats();
+    setTimeout(function () { overlay.classList.add("show"); }, 360);
+  }
+
+  // ---- events ----
+  higherBtn.addEventListener("click", function () { guess(true); });
+  lowerBtn.addEventListener("click", function () { guess(false); });
+  newGameBtn.addEventListener("click", newGame);
+  goNewBtn.addEventListener("click", newGame);
+
+  // prime audio on first touch (mobile autoplay policy)
+  function primeAudio() {
+    var ctx = getCtx();
+    if (ctx && ctx.state === "suspended") { try { ctx.resume(); } catch (e) {} }
+  }
+  document.addEventListener("touchstart", primeAudio, { once: true, passive: true });
+  document.addEventListener("mousedown", primeAudio, { once: true });
+
+  // ---- init ----
+  loadBest();
+  newGame();
+})();
+</script>
+</body>
+</html>
