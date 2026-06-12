@@ -137,6 +137,22 @@ const GAMES: AppTile[] = [
   arcade("flow-connect", "Flow Connect", "#DB2777", "Polyline"),
   arcade("columns", "Columns", "#7C3AED", "ViewColumn"),
   arcade("flood-it", "Flood It", "#EA580C", "FormatColorFill"),
+  arcade("pyramid-solitaire", "Pyramid Solitaire", "#B45309", "Style"),
+  arcade("tri-peaks", "TriPeaks", "#0E7490", "Terrain"),
+  arcade("golf-solitaire", "Golf Solitaire", "#15803D", "GolfCourse"),
+  arcade("peg-solitaire", "Peg Solitaire", "#92400E", "Adjust"),
+  arcade("chess", "Chess", "#1F2937", "Castle"),
+  arcade("chinese-checkers", "Chinese Checkers", "#7C3AED", "Star"),
+  arcade("ludo", "Ludo", "#DC2626", "Casino"),
+  arcade("ultimate-tic-tac-toe", "Ultimate Tic-Tac-Toe", "#EC407A", "Tag"),
+  arcade("galaxian", "Galaxian", "#4338CA", "Rocket"),
+  arcade("pinball", "Pinball", "#DB2777", "SportsEsports"),
+  arcade("stacker", "Stacker", "#F59E0B", "Layers"),
+  arcade("knife-hit", "Knife Hit", "#B91C1C", "ContentCut"),
+  arcade("color-switch", "Color Switch", "#06B6D4", "Circle"),
+  arcade("unblock", "Unblock", "#DC2626", "Extension"),
+  arcade("pipes", "Pipes", "#0891B2", "Plumbing"),
+  arcade("mahjong-solitaire", "Mahjong Solitaire", "#166534", "Style"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */

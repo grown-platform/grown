@@ -1,0 +1,25 @@
+{
+  "name": "Ultimate Tic-Tac-Toe",
+  "short_name": "Ultimate Tic-Tac-Toe",
+  "description": "Ultimate Tic-Tac-Toe — play in your browser, online or off.",
+  "start_url": "/games/ultimate-tic-tac-toe.html",
+  "scope": "/games/ultimate-tic-tac-toe.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#EC407A",
+  "icons": [
+    {
+      "src": "/games/icons/ultimate-tic-tac-toe.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/ultimate-tic-tac-toe.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

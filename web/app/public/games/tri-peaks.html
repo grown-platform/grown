@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>TriPeaks Solitaire</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #1b6b3a, #0a3d22 70%, #062b18);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    flex: 0 0 auto;
+    padding: 8px 12px 4px;
+    text-align: center;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    margin-bottom: 6px;
+  }
+  .stats {
+    display: flex;
+    justify-content: space-around;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .stat {
+    background: rgba(0,0,0,0.25);
+    border-radius: 10px;
+    padding: 5px 8px;
+    min-width: 64px;
+    line-height: 1.25;
+  }
+  .stat .label { font-size: 9px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat .val { font-size: 15px; font-weight: 700; }
+  .stat .val.streak { color: #ffd54a; }
+
+  #board {
+    flex: 1 1 auto;
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    overflow: hidden;
+  }
+  #peaks {
+    position: absolute;
+    inset: 0;
+  }
+
+  .card {
+    position: absolute;
+    border-radius: 7px;
+    background: #fff;
+    box-shadow: 0 2px 3px rgba(0,0,0,0.35);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 4px 5px;
+    font-weight: 800;
+    transition: transform 0.18s ease, opacity 0.18s ease, top 0.25s ease, left 0.25s ease;
+    will-change: transform, top, left;
+    cursor: default;
+  }
+  .card .corner { font-size: 13px; line-height: 1; display: flex; align-items: center; gap: 1px; }
+  .card .corner.bottom { transform: rotate(180deg); }
+  .card .pip { font-size: 22px; text-align: center; }
+  .card.red { color: #d4213d; }
+  .card.black { color: #1a1a1a; }
+
+  .card.back {
+    background: repeating-linear-gradient(45deg, #2a4d8f, #2a4d8f 5px, #3a63b5 5px, #3a63b5 10px);
+    border: 2px solid #fff;
+  }
+  .card.back::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    border: 1px solid rgba(255,255,255,0.5);
+    border-radius: 4px;
+  }
+
+  .card.exposed.playable {
+    cursor: pointer;
+    box-shadow: 0 0 0 2px #ffd54a, 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .card.covered { filter: brightness(0.78); }
+  .card.removing {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+
+  #footer {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 8px 12px 12px;
+    max-width: 480px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .pile {
+    position: relative;
+    flex: 0 0 auto;
+  }
+  .pile-label {
+    text-align: center;
+    font-size: 9px;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+  }
+  #stock-pile { cursor: pointer; }
+  #stock-pile.empty { opacity: 0.35; cursor: default; }
+  #stock-pile .count {
+    position: absolute;
+    bottom: 50%;
+    left: 50%;
+    transform: translate(-50%, 50%);
+    font-size: 18px;
+    color: #fff;
+    text-shadow: 0 1px 3px #000;
+    font-weight: 800;
+    z-index: 2;
+  }
+  .static-card {
+    position: relative !important;
+    transition: none;
+  }
+  #waste-slot .placeholder {
+    border: 2px dashed rgba(255,255,255,0.3);
+    background: rgba(0,0,0,0.15);
+    box-shadow: none;
+  }
+
+  #newgame {
+    background: #ffd54a;
+    color: #1a1a1a;
+    border: none;
+    border-radius: 20px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+  }
+  #newgame:active { transform: scale(0.95); }
+
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    backdrop-filter: blur(2px);
+  }
+  #overlay.show { display: flex; }
+  .modal {
+    background: #fff;
+    color: #1a1a1a;
+    border-radius: 16px;
+    padding: 24px 28px;
+    text-align: center;
+    max-width: 80%;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  }
+  .modal h2 { font-size: 26px; margin-bottom: 8px; }
+  .modal p { font-size: 14px; margin-bottom: 16px; color: #444; }
+  .modal button {
+    background: #1b6b3a;
+    color: #fff;
+    border: none;
+    border-radius: 22px;
+    padding: 11px 22px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .modal button:active { transform: scale(0.95); }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/tri-peaks.svg">
+    <link rel="manifest" href="/games/tri-peaks.webmanifest">
+    <meta name="theme-color" content="#0E7490">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="TriPeaks">
+    <link rel="apple-touch-icon" href="/games/icons/tri-peaks.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#0E7490;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>TriPeaks Solitaire</h1>
+    <div class="stats">
+      <div class="stat"><div class="label">Score</div><div class="val" id="score">0</div></div>
+      <div class="stat"><div class="label">Streak</div><div class="val streak" id="streak">0</div></div>
+      <div class="stat"><div class="label">Stock</div><div class="val" id="stockcount">24</div></div>
+    </div>
+  </header>
+
+  <div id="board">
+    <div id="peaks"></div>
+    <div id="overlay">
+      <div class="modal">
+        <h2 id="modal-title">You Win!</h2>
+        <p id="modal-msg"></p>
+        <button id="modal-btn">New Game</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer">
+    <div class="pile">
+      <div id="stock-pile"></div>
+      <div class="pile-label">Stock</div>
+    </div>
+    <button id="newgame">New Game</button>
+    <div class="pile">
+      <div id="waste-slot"></div>
+      <div class="pile-label">Waste</div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SUITS = [
+    { s: "♠", c: "black" }, // spades
+    { s: "♥", c: "red" },   // hearts
+    { s: "♦", c: "red" },   // diamonds
+    { s: "♣", c: "black" }  // clubs
+  ];
+  var RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+  // rank value 1..13 (index+1). Wrap: A(1) <-> K(13) adjacent.
+
+  // --- Peak layout definition ---------------------------------------------
+  // 28 cards: rows of 3, 6, 9, 10. Three peaks overlapping.
+  // We define each card's grid position + which cards it covers.
+  // Coordinates in "card units": col (x), row (y). Cards overlap vertically.
+  //
+  // Row 0 (peaks tips):   3 cards
+  // Row 1:                6 cards
+  // Row 2:                9 cards
+  // Row 3 (base):        10 cards
+  //
+  // Each card in a row (except base) covers two cards in the row below it.
+
+  // Build positions. Use a coordinate scheme so peaks overlap nicely.
+  // Horizontal unit spacing for base = 1 card width. Upper rows are offset.
+  var LAYOUT = buildLayout();
+
+  function buildLayout() {
+    var nodes = [];
+    // x positions chosen so three peaks sit over the 10-card base.
+    // Base row (row 3): 10 cards at x = 0..9
+    // Row 2: 9 cards at x = 0.5 .. 8.5
+    // Row 1: 6 cards -> two per peak. peaks centered at x=1.5, 4.5, 7.5
+    // Row 0: 3 tips at peak centers x=1.5, 4.5, 7.5
+    //
+    // We'll assign coverage by geometric proximity (a card covers the two
+    // cards directly below-left and below-right).
+
+    // Define rows with explicit x coords.
+    var rows = [
+      // row 0: three peak tips
+      { y: 0, xs: [1.5, 4.5, 7.5] },
+      // row 1: six cards (two flanking each tip)
+      { y: 1, xs: [1, 2, 4, 5, 7, 8] },
+      // row 2: nine cards
+      { y: 2, xs: [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5] },
+      // row 3: base, ten cards
+      { y: 3, xs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] }
+    ];
+
+    var id = 0;
+    var rowNodes = [];
+    for (var r = 0; r < rows.length; r++) {
+      var arr = [];
+      for (var i = 0; i < rows[r].xs.length; i++) {
+        var node = { id: id++, row: r, x: rows[r].xs[i], y: rows[r].y, covers: [] };
+        arr.push(node);
+        nodes.push(node);
+      }
+      rowNodes.push(arr);
+    }
+
+    // Assign coverage: a lower-row card sits in front of (covers) the two
+    // cards diagonally above it. So a card is "covered" by the two cards in
+    // the row below whose x is at this card's x ± 0.5. The base row (bottom)
+    // covers nothing and is exposed first; the peak tips are covered last.
+    for (var rr = 1; rr < rowNodes.length; rr++) {
+      var lower = rowNodes[rr];
+      var above = rowNodes[rr - 1];
+      for (var k = 0; k < lower.length; k++) {
+        var n = lower[k];
+        for (var a = 0; a < above.length; a++) {
+          var dx = above[a].x - n.x;
+          if (Math.abs(dx - 0.5) < 0.01 || Math.abs(dx + 0.5) < 0.01) {
+            n.covers.push(above[a].id);
+          }
+        }
+      }
+    }
+    return nodes;
+  }
+
+  // --- State --------------------------------------------------------------
+  var state = null;
+  var audioCtx = null;
+
+  function rankValue(rankIndex) { return rankIndex + 1; } // 1..13
+
+  function isAdjacent(a, b) {
+    // a, b are rank values 1..13. Adjacent if differ by 1, with wrap K<->A.
+    var d = Math.abs(a - b);
+    return d === 1 || d === 12;
+  }
+
+  function makeDeck() {
+    var deck = [];
+    for (var s = 0; s < SUITS.length; s++) {
+      for (var r = 0; r < RANKS.length; r++) {
+        deck.push({ rank: r, suit: s });
+      }
+    }
+    return deck;
+  }
+
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+
+  function newGame() {
+    var deck = shuffle(makeDeck());
+    // 28 cards to peaks, rest to stock (24).
+    var peaks = [];
+    for (var i = 0; i < LAYOUT.length; i++) {
+      var node = LAYOUT[i];
+      peaks.push({
+        node: node,
+        card: deck[i],
+        removed: false
+      });
+    }
+    var stock = deck.slice(28); // 24 cards
+    // First waste card drawn from stock at start.
+    var firstWaste = stock.pop();
+
+    state = {
+      peaks: peaks,            // 28 entries indexed by node.id
+      stock: stock,            // remaining (23 after first draw)
+      waste: firstWaste,       // current top
+      score: 0,
+      streak: 0,
+      bestStreak: 0,
+      gameOver: false,
+      won: false
+    };
+
+    hideOverlay();
+    render();
+  }
+
+  // Is a peak card exposed (uncovered)? Exposed if not removed AND all cards
+  // it is covered-by are removed.
+  function coveringIds(targetId) {
+    // find which cards cover targetId
+    var res = [];
+    for (var i = 0; i < LAYOUT.length; i++) {
+      if (LAYOUT[i].covers.indexOf(targetId) !== -1) res.push(LAYOUT[i].id);
+    }
+    return res;
+  }
+
+  // Precompute covering map once.
+  var COVERED_BY = (function () {
+    var map = {};
+    for (var i = 0; i < LAYOUT.length; i++) map[LAYOUT[i].id] = [];
+    for (var j = 0; j < LAYOUT.length; j++) {
+      for (var c = 0; c < LAYOUT[j].covers.length; c++) {
+        map[LAYOUT[j].covers[c]].push(LAYOUT[j].id);
+      }
+    }
+    return map;
+  })();
+
+  function isExposed(p) {
+    if (p.removed) return false;
+    var coverers = COVERED_BY[p.node.id];
+    for (var i = 0; i < coverers.length; i++) {
+      if (!state.peaks[coverers[i]].removed) return false;
+    }
+    return true;
+  }
+
+  function canPlay(p) {
+    if (!isExposed(p)) return false;
+    if (!state.waste) return false;
+    return isAdjacent(rankValue(p.card.rank), rankValue(state.waste.rank));
+  }
+
+  function anyPlayable() {
+    for (var i = 0; i < state.peaks.length; i++) {
+      if (canPlay(state.peaks[i])) return true;
+    }
+    return false;
+  }
+
+  function allCleared() {
+    for (var i = 0; i < state.peaks.length; i++) {
+      if (!state.peaks[i].removed) return false;
+    }
+    return true;
+  }
+
+  // --- Actions ------------------------------------------------------------
+  function playCard(p) {
+    if (state.gameOver || !canPlay(p)) return;
+    p.removed = true;
+    state.streak += 1;
+    if (state.streak > state.bestStreak) state.bestStreak = state.streak;
+    // Score: base 1 point per card in chain position (1,2,3...) -> chain bonus.
+    state.score += state.streak;
+    state.waste = p.card;
+    beep(440 + Math.min(state.streak, 10) * 40, 0.07);
+
+    if (allCleared()) {
+      // bonus for clearing
+      state.score += 100;
+      win();
+    } else {
+      checkLose();
+    }
+    render();
+  }
+
+  function drawStock() {
+    if (state.gameOver) return;
+    if (state.stock.length === 0) return;
+    state.waste = state.stock.pop();
+    state.streak = 0;
+    beep(220, 0.06);
+    checkLose();
+    render();
+  }
+
+  function checkLose() {
+    if (allCleared()) return;
+    if (state.stock.length === 0 && !anyPlayable()) {
+      lose();
+    }
+  }
+
+  function win() {
+    state.gameOver = true;
+    state.won = true;
+    beepWin();
+    showOverlay("You Win!", "Score " + state.score + " · Best streak " + state.bestStreak);
+  }
+
+  function lose() {
+    state.gameOver = true;
+    state.won = false;
+    beep(160, 0.25);
+    showOverlay("No Moves Left", "Score " + state.score + " · Best streak " + state.bestStreak);
+  }
+
+  // --- Rendering ----------------------------------------------------------
+  var peaksEl = document.getElementById("peaks");
+  var boardEl = document.getElementById("board");
+  var stockPileEl = document.getElementById("stock-pile");
+  var wasteSlotEl = document.getElementById("waste-slot");
+
+  function cardFace(card) {
+    var suit = SUITS[card.suit];
+    var rank = RANKS[card.rank];
+    var div = document.createElement("div");
+    div.className = "card " + suit.c;
+    div.innerHTML =
+      '<div class="corner top">' + rank + suit.s + '</div>' +
+      '<div class="pip">' + suit.s + '</div>' +
+      '<div class="corner bottom">' + rank + suit.s + '</div>';
+    return div;
+  }
+
+  // Compute card sizing based on board width. Base row has 10 cards spanning
+  // x=0..9 plus one card width => 10 card-widths wide.
+  function metrics() {
+    var bw = boardEl.clientWidth;
+    var bh = boardEl.clientHeight;
+    // 10 columns across, with a little horizontal margin.
+    var pad = 4;
+    var cardW = (bw - pad * 2) / 10;
+    cardW = Math.max(28, Math.min(cardW, 60));
+    var cardH = cardW * 1.42;
+    // Vertical overlap: 4 rows, each offset by ~0.42 * cardH.
+    var rowStep = cardH * 0.42;
+    var totalH = cardH + rowStep * 3;
+    var topPad = Math.max(4, (bh - totalH) / 2);
+    if (topPad > 30) topPad = 30;
+    // center horizontally
+    var usedW = cardW * 10;
+    var leftPad = (bw - usedW) / 2;
+    return { cardW: cardW, cardH: cardH, rowStep: rowStep, topPad: topPad, leftPad: leftPad };
+  }
+
+  function render() {
+    document.getElementById("score").textContent = state.score;
+    document.getElementById("streak").textContent = state.streak;
+    document.getElementById("stockcount").textContent = state.stock.length;
+
+    renderPeaks();
+    renderStock();
+    renderWaste();
+  }
+
+  function renderPeaks() {
+    peaksEl.innerHTML = "";
+    var m = metrics();
+    // Render in row order so later (lower) rows paint on top via z-index.
+    var sorted = state.peaks.slice().sort(function (a, b) { return a.node.row - b.node.row; });
+    for (var i = 0; i < sorted.length; i++) {
+      var p = sorted[i];
+      if (p.removed) continue;
+      var exposed = isExposed(p);
+      var el;
+      if (exposed) {
+        el = cardFace(p.card);
+        el.classList.add("exposed");
+        if (canPlay(p)) el.classList.add("playable");
+      } else {
+        el = document.createElement("div");
+        el.className = "card back covered";
+      }
+      var left = m.leftPad + p.node.x * m.cardW;
+      var top = m.topPad + p.node.row * m.rowStep;
+      el.style.left = left + "px";
+      el.style.top = top + "px";
+      el.style.width = m.cardW + "px";
+      el.style.height = m.cardH + "px";
+      el.style.zIndex = String(10 + p.node.row);
+      if (exposed && canPlay(p)) {
+        (function (pp) {
+          el.addEventListener("click", function () { playCard(pp); });
+        })(p);
+      }
+      peaksEl.appendChild(el);
+    }
+  }
+
+  function renderStock() {
+    stockPileEl.innerHTML = "";
+    var m = pileMetrics();
+    if (state.stock.length > 0) {
+      var back = document.createElement("div");
+      back.className = "card back static-card";
+      back.style.width = m.w + "px";
+      back.style.height = m.h + "px";
+      stockPileEl.appendChild(back);
+      var cnt = document.createElement("div");
+      cnt.className = "count";
+      cnt.textContent = state.stock.length;
+      stockPileEl.appendChild(cnt);
+      stockPileEl.classList.remove("empty");
+    } else {
+      var ph = document.createElement("div");
+      ph.className = "card placeholder static-card";
+      ph.style.width = m.w + "px";
+      ph.style.height = m.h + "px";
+      stockPileEl.appendChild(ph);
+      stockPileEl.classList.add("empty");
+    }
+  }
+
+  function renderWaste() {
+    wasteSlotEl.innerHTML = "";
+    var m = pileMetrics();
+    if (state.waste) {
+      var el = cardFace(state.waste);
+      el.classList.add("static-card");
+      el.style.width = m.w + "px";
+      el.style.height = m.h + "px";
+      wasteSlotEl.appendChild(el);
+    } else {
+      var ph = document.createElement("div");
+      ph.className = "card placeholder static-card";
+      ph.style.width = m.w + "px";
+      ph.style.height = m.h + "px";
+      wasteSlotEl.appendChild(ph);
+    }
+  }
+
+  function pileMetrics() {
+    var m = metrics();
+    var w = Math.max(40, Math.min(m.cardW * 1.15, 64));
+    return { w: w, h: w * 1.42 };
+  }
+
+  // --- Overlay ------------------------------------------------------------
+  var overlayEl = document.getElementById("overlay");
+  function showOverlay(title, msg) {
+    document.getElementById("modal-title").textContent = title;
+    document.getElementById("modal-msg").textContent = msg;
+    overlayEl.classList.add("show");
+  }
+  function hideOverlay() { overlayEl.classList.remove("show"); }
+
+  // --- Audio --------------------------------------------------------------
+  function ensureAudio() {
+    if (!audioCtx) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      } catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  }
+  function beep(freq, dur) {
+    if (!audioCtx) return;
+    try {
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.18, audioCtx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start();
+      o.stop(audioCtx.currentTime + dur + 0.02);
+    } catch (e) {}
+  }
+  function beepWin() {
+    if (!audioCtx) return;
+    var notes = [523, 659, 784, 1047];
+    for (var i = 0; i < notes.length; i++) {
+      (function (n, idx) {
+        setTimeout(function () { beep(n, 0.18); }, idx * 110);
+      })(notes[i], i);
+    }
+  }
+
+  // --- Wire up ------------------------------------------------------------
+  stockPileEl.addEventListener("click", function () { ensureAudio(); drawStock(); });
+  document.getElementById("newgame").addEventListener("click", function () { ensureAudio(); newGame(); });
+  document.getElementById("modal-btn").addEventListener("click", function () { ensureAudio(); newGame(); });
+  // prime audio on first touch anywhere
+  document.body.addEventListener("touchstart", ensureAudio, { once: true, passive: true });
+  document.body.addEventListener("mousedown", ensureAudio, { once: true });
+
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { if (state) render(); }, 80);
+  });
+
+  newGame();
+})();
+</script>
+</body>
+</html>

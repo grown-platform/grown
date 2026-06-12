@@ -96,6 +96,22 @@ const CONFIG = [
   { id: "flow-connect", name: "Flow Connect", color: "#DB2777", glyph: "🔗" },
   { id: "columns", name: "Columns", color: "#7C3AED", glyph: "💠" },
   { id: "flood-it", name: "Flood It", color: "#EA580C", glyph: "🌊" },
+  { id: "pyramid-solitaire", name: "Pyramid Solitaire", color: "#B45309", glyph: "🔺" },
+  { id: "tri-peaks", name: "TriPeaks", color: "#0E7490", glyph: "⛰️" },
+  { id: "golf-solitaire", name: "Golf Solitaire", color: "#15803D", glyph: "⛳" },
+  { id: "peg-solitaire", name: "Peg Solitaire", color: "#92400E", glyph: "🕳️" },
+  { id: "chess", name: "Chess", color: "#1F2937", glyph: "♟️" },
+  { id: "chinese-checkers", name: "Chinese Checkers", color: "#7C3AED", glyph: "✴️" },
+  { id: "ludo", name: "Ludo", color: "#DC2626", glyph: "🎲" },
+  { id: "ultimate-tic-tac-toe", name: "Ultimate Tic-Tac-Toe", color: "#EC407A", glyph: "#️⃣" },
+  { id: "galaxian", name: "Galaxian", color: "#4338CA", glyph: "🛸" },
+  { id: "pinball", name: "Pinball", color: "#DB2777", glyph: "🟣" },
+  { id: "stacker", name: "Stacker", color: "#F59E0B", glyph: "🟧" },
+  { id: "knife-hit", name: "Knife Hit", color: "#B91C1C", glyph: "🔪" },
+  { id: "color-switch", name: "Color Switch", color: "#06B6D4", glyph: "🌈" },
+  { id: "unblock", name: "Unblock", color: "#DC2626", glyph: "🚙" },
+  { id: "pipes", name: "Pipes", color: "#0891B2", glyph: "🚰" },
+  { id: "mahjong-solitaire", name: "Mahjong Solitaire", color: "#166534", glyph: "🀄" },
 ];
 
 const iconSvg = (color, glyph) =>

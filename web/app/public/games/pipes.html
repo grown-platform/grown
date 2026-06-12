@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Pipes</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #0e1726;
+    color: #e6edf6;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
+  }
+  #app {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 10px 10px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 26px;
+    margin: 6px 0 2px;
+    letter-spacing: 1px;
+    background: linear-gradient(90deg,#39c0ff,#7af0c8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .sub { font-size: 12px; color: #7e8ca3; margin-bottom: 8px; }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+    align-items: center; margin-bottom: 10px; width: 100%;
+  }
+  label { font-size: 12px; color: #9fb0c8; display: flex; align-items: center; gap: 4px; }
+  select, button {
+    font-family: inherit;
+    background: #1b2740;
+    color: #e6edf6;
+    border: 1px solid #2c3c5e;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.primary {
+    background: linear-gradient(135deg,#1d6fe0,#2e9cff);
+    border: none; font-weight: 600;
+  }
+  button:active { transform: translateY(1px); }
+  .status {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 14px; margin-bottom: 8px; min-height: 22px;
+  }
+  .dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #44506a; box-shadow: 0 0 0 2px #2c3c5e;
+    transition: background .2s;
+  }
+  .dot.on { background: #54e08a; box-shadow: 0 0 10px #54e08a; }
+  #boardWrap {
+    width: 100%;
+    display: flex; justify-content: center;
+  }
+  canvas {
+    width: 100%;
+    max-width: 360px;
+    aspect-ratio: 1 / 1;
+    background: #131d30;
+    border-radius: 14px;
+    box-shadow: inset 0 0 0 2px #233252, 0 8px 24px rgba(0,0,0,.4);
+    touch-action: manipulation;
+  }
+  .win {
+    margin-top: 12px;
+    font-size: 18px; font-weight: 700;
+    color: #7af0c8;
+    text-align: center;
+    min-height: 24px;
+    opacity: 0; transition: opacity .3s;
+  }
+  .win.show { opacity: 1; }
+  .moves { font-size: 12px; color: #7e8ca3; margin-top: 4px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/pipes.svg">
+    <link rel="manifest" href="/games/pipes.webmanifest">
+    <meta name="theme-color" content="#0891B2">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Pipes">
+    <link rel="apple-touch-icon" href="/games/icons/pipes.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#0891B2;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <h1>PIPES</h1>
+  <div class="sub">Tap a tile to rotate. Connect every pipe — no leaks.</div>
+
+  <div class="controls">
+    <label>Size
+      <select id="sizeSel">
+        <option value="4">4 × 4</option>
+        <option value="5" selected>5 × 5</option>
+        <option value="6">6 × 6</option>
+        <option value="7">7 × 7</option>
+        <option value="8">8 × 8</option>
+      </select>
+    </label>
+    <label>Mode
+      <select id="modeSel">
+        <option value="loop">Loop (no leaks)</option>
+        <option value="source" selected>Source flow</option>
+      </select>
+    </label>
+    <button id="newBtn" class="primary">New Puzzle</button>
+  </div>
+
+  <div class="status">
+    <span class="dot" id="dot"></span>
+    <span id="statusText">Not connected</span>
+  </div>
+
+  <div id="boardWrap">
+    <canvas id="board" width="600" height="600"></canvas>
+  </div>
+
+  <div class="win" id="winMsg">SOLVED! 🎉</div>
+  <div class="moves" id="movesMsg"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // Direction bit constants. Bit per edge.
+  // N=1 (up), E=2 (right), S=4 (down), W=8 (left)
+  var N = 1, E = 2, S = 4, W = 8;
+  var DIRS = [N, E, S, W];
+  // dx,dy for each dir
+  var DX = {}; DX[N]=0; DX[E]=1; DX[S]=0; DX[W]=-1;
+  var DY = {}; DY[N]=-1; DY[E]=0; DY[S]=1; DY[W]=0;
+  // opposite edge of a neighbor
+  var OPP = {}; OPP[N]=S; OPP[E]=W; OPP[S]=N; OPP[W]=E;
+
+  // Rotate a connection mask 90° clockwise: N->E->S->W->N
+  function rotCW(mask) {
+    var out = 0;
+    if (mask & N) out |= E;
+    if (mask & E) out |= S;
+    if (mask & S) out |= W;
+    if (mask & W) out |= N;
+    return out;
+  }
+
+  var canvas = document.getElementById('board');
+  var ctx = canvas.getContext('2d');
+  var sizeSel = document.getElementById('sizeSel');
+  var modeSel = document.getElementById('modeSel');
+  var newBtn = document.getElementById('newBtn');
+  var dot = document.getElementById('dot');
+  var statusText = document.getElementById('statusText');
+  var winMsg = document.getElementById('winMsg');
+  var movesMsg = document.getElementById('movesMsg');
+
+  var GRID = 5;
+  var mode = 'source';
+  var tiles = [];      // current connection mask per cell
+  var solution = [];   // solved mask per cell (for reference / not strictly needed)
+  var lit = [];        // boolean: cell is connected to source / part of solved net
+  var sourceIdx = 0;
+  var moves = 0;
+  var solved = false;
+  var anim = [];       // per-cell rotation animation {from,target,start}
+
+  function idx(x, y) { return y * GRID + x; }
+  function inBounds(x, y) { return x >= 0 && x < GRID && y >= 0 && y < GRID; }
+
+  // ---- Puzzle generation -------------------------------------------------
+  // Build a spanning tree over the grid (random DFS) so the graph is
+  // connected with no loops. Each edge used adds the corresponding bit to
+  // both endpoint cells. Result: every cell has degree >= 1, fully connected.
+  function generateSolved() {
+    var n = GRID * GRID;
+    var mask = new Array(n).fill(0);
+    var visited = new Array(n).fill(false);
+
+    var startX = (Math.random() * GRID) | 0;
+    var startY = (Math.random() * GRID) | 0;
+    sourceIdx = idx(startX, startY);
+
+    // iterative randomized DFS
+    var stack = [[startX, startY]];
+    visited[idx(startX, startY)] = true;
+
+    while (stack.length) {
+      var cur = stack[stack.length - 1];
+      var cx = cur[0], cy = cur[1];
+
+      // collect unvisited neighbors
+      var opts = [];
+      for (var d = 0; d < DIRS.length; d++) {
+        var dir = DIRS[d];
+        var nx = cx + DX[dir], ny = cy + DY[dir];
+        if (inBounds(nx, ny) && !visited[idx(nx, ny)]) {
+          opts.push(dir);
+        }
+      }
+      if (opts.length === 0) {
+        stack.pop();
+        continue;
+      }
+      var dir = opts[(Math.random() * opts.length) | 0];
+      var nx = cx + DX[dir], ny = cy + DY[dir];
+      // carve edge
+      mask[idx(cx, cy)] |= dir;
+      mask[idx(nx, ny)] |= OPP[dir];
+      visited[idx(nx, ny)] = true;
+      stack.push([nx, ny]);
+    }
+    return mask;
+  }
+
+  // Scramble: rotate each tile a random number of times. Ensure at least
+  // one tile is off so the puzzle isn't already solved (when possible).
+  function scramble(sol) {
+    var n = sol.length;
+    var cur = new Array(n);
+    var changed = false;
+    for (var i = 0; i < n; i++) {
+      var m = sol[i];
+      var r = (Math.random() * 4) | 0; // 0..3 rotations
+      var rotated = m;
+      for (var k = 0; k < r; k++) rotated = rotCW(rotated);
+      // A straight pipe (NS or EW) is symmetric under 180°, and an empty
+      // mask never changes — those tiles may match regardless. That's fine;
+      // we just want the overall board not trivially solved.
+      if (rotated !== m && r !== 0) changed = true;
+      cur[i] = rotated;
+    }
+    // force at least one real change if everything happened to land solved
+    if (!changed) {
+      for (var j = 0; j < n; j++) {
+        var rj = rotCW(sol[j]);
+        if (rj !== sol[j]) { cur[j] = rj; break; }
+      }
+    }
+    return cur;
+  }
+
+  function newPuzzle() {
+    GRID = parseInt(sizeSel.value, 10);
+    mode = modeSel.value;
+    solution = generateSolved();
+    // Scramble; re-scramble (a few attempts) if it happens to land solved so
+    // the player never opens an already-finished board.
+    var attempt = 0;
+    do {
+      tiles = scramble(solution);
+      lit = new Array(GRID * GRID).fill(false);
+      computeConnectivity();
+      attempt++;
+    } while (solved && attempt < 12);
+
+    anim = new Array(GRID * GRID).fill(null);
+    moves = 0;
+    solved = false;
+    winMsg.classList.remove('show');
+    movesMsg.textContent = '';
+    computeConnectivity();
+    draw();
+  }
+
+  // ---- Connectivity ------------------------------------------------------
+  // Two neighbors are "joined" only if BOTH point at each other.
+  function joined(i, dir) {
+    var x = i % GRID, y = (i / GRID) | 0;
+    if (!(tiles[i] & dir)) return -1; // this cell has no opening that way
+    var nx = x + DX[dir], ny = y + DY[dir];
+    if (!inBounds(nx, ny)) return -1;
+    var ni = idx(nx, ny);
+    if (tiles[ni] & OPP[dir]) return ni; // mutual
+    return -1;
+  }
+
+  // Source mode: light cells reachable from the source through joined edges.
+  // Win when ALL non-empty cells are lit AND there are no open ends anywhere.
+  // Loop mode: lit = every opening is matched (no leaks); win when no leaks
+  // and the whole non-empty graph is one connected component.
+  function computeConnectivity() {
+    var n = GRID * GRID;
+    lit = new Array(n).fill(false);
+
+    // Check leaks: any opening pointing off-grid, or to a neighbor that
+    // doesn't reciprocate, is an open end.
+    var leaks = false;
+    for (var i = 0; i < n; i++) {
+      if (tiles[i] === 0) continue;
+      for (var d = 0; d < DIRS.length; d++) {
+        var dir = DIRS[d];
+        if (tiles[i] & dir) {
+          if (joined(i, dir) === -1) { leaks = true; }
+        }
+      }
+    }
+
+    if (mode === 'source') {
+      // BFS from source over joined edges
+      var queue = [sourceIdx];
+      lit[sourceIdx] = true;
+      while (queue.length) {
+        var c = queue.shift();
+        for (var d2 = 0; d2 < DIRS.length; d2++) {
+          var dir2 = DIRS[d2];
+          var ni = joined(c, dir2);
+          if (ni !== -1 && !lit[ni]) {
+            lit[ni] = true;
+            queue.push(ni);
+          }
+        }
+      }
+      // win: no leaks and every non-empty cell lit
+      var allLit = true;
+      for (var k = 0; k < n; k++) {
+        if (tiles[k] !== 0 && !lit[k]) { allLit = false; break; }
+      }
+      // also the source itself must be reached (it is by definition); empty
+      // cells shouldn't exist in a spanning-tree board, but guard anyway.
+      solved = !leaks && allLit;
+    } else {
+      // loop mode: a cell is "lit" if all of its openings are matched.
+      var fullyMatched = new Array(n).fill(false);
+      for (var i2 = 0; i2 < n; i2++) {
+        if (tiles[i2] === 0) { fullyMatched[i2] = false; continue; }
+        var ok = true;
+        for (var d3 = 0; d3 < DIRS.length; d3++) {
+          var dir3 = DIRS[d3];
+          if (tiles[i2] & dir3) {
+            if (joined(i2, dir3) === -1) { ok = false; break; }
+          }
+        }
+        fullyMatched[i2] = ok;
+        lit[i2] = ok;
+      }
+      // connected component check across non-empty cells via joined edges
+      var firstNon = -1;
+      for (var f = 0; f < n; f++) { if (tiles[f] !== 0) { firstNon = f; break; } }
+      var connected = true;
+      if (firstNon !== -1) {
+        var seen = new Array(n).fill(false);
+        var q2 = [firstNon]; seen[firstNon] = true; var count = 1;
+        var total = 0;
+        for (var t = 0; t < n; t++) if (tiles[t] !== 0) total++;
+        while (q2.length) {
+          var c2 = q2.shift();
+          for (var d4 = 0; d4 < DIRS.length; d4++) {
+            var ni2 = joined(c2, DIRS[d4]);
+            if (ni2 !== -1 && !seen[ni2]) { seen[ni2] = true; count++; q2.push(ni2); }
+          }
+        }
+        connected = (count === total);
+      }
+      solved = !leaks && connected;
+    }
+
+    updateStatus();
+  }
+
+  function updateStatus() {
+    if (solved) {
+      dot.classList.add('on');
+      statusText.textContent = 'Connected!';
+    } else {
+      dot.classList.remove('on');
+      statusText.textContent = 'Not connected';
+    }
+  }
+
+  // ---- Rendering ---------------------------------------------------------
+  function cellSize() { return canvas.width / GRID; }
+
+  function draw() {
+    var W_ = canvas.width, H_ = canvas.height;
+    ctx.clearRect(0, 0, W_, H_);
+    var cs = cellSize();
+    var now = performance.now();
+    var needMore = false;
+
+    // grid background lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    for (var g = 1; g < GRID; g++) {
+      ctx.beginPath(); ctx.moveTo(g*cs, 0); ctx.lineTo(g*cs, H_); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, g*cs); ctx.lineTo(W_, g*cs); ctx.stroke();
+    }
+
+    for (var y = 0; y < GRID; y++) {
+      for (var x = 0; x < GRID; x++) {
+        var i = idx(x, y);
+        var cx = x * cs + cs / 2;
+        var cy = y * cs + cs / 2;
+
+        var rot = 0;
+        var a = anim[i];
+        if (a) {
+          var t = (now - a.start) / a.dur;
+          if (t >= 1) { anim[i] = null; }
+          else { needMore = true; rot = a.delta * (1 - Math.pow(1 - t, 3)); }
+        }
+
+        drawTile(cx, cy, cs, tiles[i], lit[i], i === sourceIdx, rot);
+      }
+    }
+
+    if (needMore) requestAnimationFrame(draw);
+  }
+
+  function drawTile(cx, cy, cs, mask, isLit, isSource, rot) {
+    var thickness = Math.max(6, cs * 0.20);
+    var reach = cs / 2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (rot) ctx.rotate(rot);
+
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // pipe colors
+    var pipeCol = isLit ? '#39c0ff' : '#46566f';
+    var glow = isLit ? 'rgba(57,192,255,0.55)' : 'transparent';
+
+    // draw each arm as a line from center to edge midpoint
+    function arm(dir) {
+      var ex = DX[dir] * reach, ey = DY[dir] * reach;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+
+    // glow underlay
+    if (isLit) {
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = thickness * 1.2;
+    } else {
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.strokeStyle = pipeCol;
+    ctx.lineWidth = thickness;
+    for (var d = 0; d < DIRS.length; d++) {
+      if (mask & DIRS[d]) arm(DIRS[d]);
+    }
+
+    // center hub
+    ctx.shadowBlur = isLit ? thickness : 0;
+    ctx.fillStyle = pipeCol;
+    ctx.beginPath();
+    ctx.arc(0, 0, thickness * 0.62, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+
+    // count openings to detect endpoints (degree 1)
+    var deg = 0;
+    for (var dd = 0; dd < DIRS.length; dd++) if (mask & DIRS[dd]) deg++;
+
+    if (isSource) {
+      // source marker
+      ctx.fillStyle = isLit ? '#7af0c8' : '#86d0b4';
+      ctx.beginPath();
+      ctx.arc(0, 0, thickness * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#0e1726';
+      ctx.beginPath();
+      ctx.arc(0, 0, thickness * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (deg === 1) {
+      // endpoint cap
+      ctx.fillStyle = isLit ? '#bfe9ff' : '#5d6e8a';
+      ctx.beginPath();
+      ctx.arc(0, 0, thickness * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // ---- Input -------------------------------------------------------------
+  function rotateTile(i) {
+    if (solved) return;
+    tiles[i] = rotCW(tiles[i]);
+    moves++;
+    // animate: we just rotated CW (visually +90°). Animate from -90° to 0.
+    anim[i] = { delta: -Math.PI / 2, start: performance.now(), dur: 140 };
+    requestAnimationFrame(draw);
+    computeConnectivity();
+    draw();
+    if (solved) onWin();
+    beep(i);
+  }
+
+  function onWin() {
+    winMsg.classList.add('show');
+    movesMsg.textContent = moves + (moves === 1 ? ' move' : ' moves');
+    winChime();
+  }
+
+  function pointerToCell(clientX, clientY) {
+    var rect = canvas.getBoundingClientRect();
+    var px = (clientX - rect.left) / rect.width * canvas.width;
+    var py = (clientY - rect.top) / rect.height * canvas.height;
+    var cs = cellSize();
+    var x = (px / cs) | 0;
+    var y = (py / cs) | 0;
+    if (!inBounds(x, y)) return -1;
+    return idx(x, y);
+  }
+
+  // Use pointer events; guard against double-fire by preventing default.
+  canvas.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    var i = pointerToCell(e.clientX, e.clientY);
+    if (i >= 0) rotateTile(i);
+  }, { passive: false });
+
+  // Prevent context menu / long-press menu on mobile.
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // ---- Sound (WebAudio) --------------------------------------------------
+  var audioCtx = null;
+  function ac() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { audioCtx = null; }
+    }
+    return audioCtx;
+  }
+  function beep(i) {
+    var c = ac(); if (!c) return;
+    if (c.state === 'suspended') c.resume();
+    var o = c.createOscillator();
+    var g = c.createGain();
+    o.type = 'triangle';
+    o.frequency.value = 320 + (i % 7) * 40;
+    g.gain.value = 0.0001;
+    o.connect(g); g.connect(c.destination);
+    var t = c.currentTime;
+    g.gain.exponentialRampToValueAtTime(0.08, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    o.start(t); o.stop(t + 0.13);
+  }
+  function winChime() {
+    var c = ac(); if (!c) return;
+    if (c.state === 'suspended') c.resume();
+    var notes = [523, 659, 784, 1047];
+    var t0 = c.currentTime;
+    notes.forEach(function (f, k) {
+      var o = c.createOscillator();
+      var g = c.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.value = 0.0001;
+      o.connect(g); g.connect(c.destination);
+      var t = t0 + k * 0.10;
+      g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.30);
+      o.start(t); o.stop(t + 0.32);
+    });
+  }
+
+  // ---- Wire up -----------------------------------------------------------
+  newBtn.addEventListener('click', newPuzzle);
+  sizeSel.addEventListener('change', newPuzzle);
+  modeSel.addEventListener('change', newPuzzle);
+
+  // Resize canvas backing store to be crisp-ish on big screens but keep it
+  // square. CSS handles display scaling; keep internal resolution moderate.
+  function setupResolution() {
+    var res = 600;
+    canvas.width = res;
+    canvas.height = res;
+  }
+  setupResolution();
+
+  newPuzzle();
+})();
+</script>
+</body>
+</html>

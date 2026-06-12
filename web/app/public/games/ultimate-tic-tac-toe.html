@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Ultimate Tic-Tac-Toe</title>
+<style>
+  :root {
+    --bg: #0f1320;
+    --panel: #1a2032;
+    --grid: #2c3550;
+    --x: #4fd1ff;
+    --o: #ff6b8a;
+    --active: #ffd24a;
+    --win: #3ddc84;
+    --text: #e6ebff;
+    --muted: #8b95b5;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  header {
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+    padding: 8px 0 4px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+  }
+  h1 .x { color: var(--x); }
+  h1 .o { color: var(--o); }
+  #status {
+    margin-top: 4px;
+    font-size: 14px;
+    min-height: 20px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  #status.you { color: var(--x); }
+  #status.cpu { color: var(--o); }
+  #status.win { color: var(--win); }
+
+  /* Board sizing: full 9x9 fits a phone */
+  #boardWrap {
+    width: 100%;
+    max-width: min(94vw, 420px);
+    margin: 6px auto 0;
+  }
+  #board {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 6px;
+    background: var(--grid);
+    padding: 6px;
+    border-radius: 10px;
+  }
+  .small {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 2px;
+    background: var(--panel);
+    border-radius: 6px;
+    padding: 3px;
+    transition: box-shadow 0.15s, background 0.15s;
+  }
+  .small.active {
+    box-shadow: 0 0 0 2px var(--active), 0 0 12px rgba(255,210,74,0.45);
+    background: #232c47;
+  }
+  .small.won {
+    overflow: hidden;
+  }
+  .cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #131826;
+    border-radius: 3px;
+    font-weight: 800;
+    line-height: 1;
+    font-size: clamp(10px, 3.2vw, 18px);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .cell.x { color: var(--x); }
+  .cell.o { color: var(--o); }
+  .cell.playable:active { background: #20283f; }
+  .cell.last {
+    box-shadow: inset 0 0 0 2px var(--active);
+  }
+  /* Overlay marker when a small board is won */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(34px, 14vw, 70px);
+    font-weight: 900;
+    border-radius: 6px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .overlay.x {
+    color: var(--x);
+    background: rgba(79,209,255,0.12);
+    text-shadow: 0 0 14px rgba(79,209,255,0.6);
+  }
+  .overlay.o {
+    color: var(--o);
+    background: rgba(255,107,138,0.12);
+    text-shadow: 0 0 14px rgba(255,107,138,0.6);
+  }
+  .overlay.tie {
+    color: var(--muted);
+    font-size: clamp(18px, 7vw, 34px);
+    background: rgba(139,149,181,0.10);
+  }
+
+  #controls {
+    margin-top: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  button {
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--bg);
+    background: var(--x);
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: translateY(1px); }
+  #sound {
+    background: var(--panel);
+    color: var(--text);
+    padding: 10px 14px;
+  }
+  #sound.off { opacity: 0.55; }
+
+  /* Win banner */
+  #banner {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    background: rgba(10,13,22,0.82);
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  #banner.show { display: flex; }
+  #banner h2 {
+    font-size: 32px;
+    margin: 0 0 6px;
+  }
+  #banner p { color: var(--muted); margin: 0 0 18px; }
+  #banner .big.x { color: var(--x); }
+  #banner .big.o { color: var(--o); }
+  #banner .big.tie { color: var(--muted); }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/ultimate-tic-tac-toe.svg">
+    <link rel="manifest" href="/games/ultimate-tic-tac-toe.webmanifest">
+    <meta name="theme-color" content="#EC407A">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Ultimate Tic-Tac-Toe">
+    <link rel="apple-touch-icon" href="/games/icons/ultimate-tic-tac-toe.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#EC407A;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>Ultimate <span class="x">Tic</span>-<span class="o">Tac</span>-Toe</h1>
+    <div id="status">Your turn (X)</div>
+  </header>
+
+  <div id="boardWrap">
+    <div id="board" aria-label="Ultimate tic-tac-toe board"></div>
+  </div>
+
+  <div id="controls">
+    <button id="newGame">New Game</button>
+    <button id="sound" aria-label="Toggle sound">&#128266;</button>
+  </div>
+
+  <div id="banner">
+    <h2 id="bannerTitle" class="big"></h2>
+    <p id="bannerSub"></p>
+    <button id="bannerNew">Play Again</button>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Constants ----
+  var HUMAN = "X";
+  var CPU = "O";
+  var LINES = [
+    [0,1,2],[3,4,5],[6,7,8], // rows
+    [0,3,6],[1,4,7],[2,5,8], // cols
+    [0,4,8],[2,4,6]          // diags
+  ];
+
+  // ---- State ----
+  // boards[b][c] = "X" | "O" | null
+  var boards;          // 9 small boards, each 9 cells
+  var boardWinner;     // winner per small board: "X" | "O" | "T" (tie) | null
+  var activeBoard;     // index of forced board, or -1 = play anywhere
+  var current;         // whose turn: HUMAN or CPU
+  var gameOver;        // boolean
+  var overallWinner;   // "X" | "O" | "T" | null
+  var lastMove;        // {b, c} of last placed mark, or null
+  var lock;            // input lock during CPU move/animations
+
+  var boardEl = document.getElementById("board");
+  var statusEl = document.getElementById("status");
+  var bannerEl = document.getElementById("banner");
+  var bannerTitle = document.getElementById("bannerTitle");
+  var bannerSub = document.getElementById("bannerSub");
+
+  // DOM refs
+  var smallEls = [];   // 9
+  var cellEls = [];    // [b][c]
+
+  // ---- Sound (WebAudio) ----
+  var soundOn = true;
+  var actx = null;
+  function ensureAudio() {
+    if (!actx) {
+      try {
+        actx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) { actx = null; }
+    }
+    if (actx && actx.state === "suspended") { actx.resume(); }
+  }
+  function beep(freq, dur, type, vol) {
+    if (!soundOn || !actx) return;
+    try {
+      var o = actx.createOscillator();
+      var g = actx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      var t = actx.currentTime;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol || 0.18, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.12));
+      o.connect(g); g.connect(actx.destination);
+      o.start(t); o.stop(t + (dur || 0.12) + 0.02);
+    } catch (e) {}
+  }
+  function sndPlace() { beep(520, 0.08, "triangle", 0.16); }
+  function sndCpu() { beep(360, 0.09, "sine", 0.14); }
+  function sndSmallWin() { beep(680, 0.14, "square", 0.12); setTimeout(function(){beep(880,0.16,"square",0.12);},90); }
+  function sndWin() {
+    [523, 659, 784, 1047].forEach(function (f, i) {
+      setTimeout(function () { beep(f, 0.18, "triangle", 0.2); }, i * 130);
+    });
+  }
+  function sndLose() {
+    [392, 330, 262].forEach(function (f, i) {
+      setTimeout(function () { beep(f, 0.22, "sawtooth", 0.16); }, i * 150);
+    });
+  }
+
+  // ---- Win logic ----
+  // returns "X"/"O" if a winner exists on a 9-cell array, else null
+  function lineWinner(cells) {
+    for (var i = 0; i < LINES.length; i++) {
+      var L = LINES[i];
+      var a = cells[L[0]];
+      if (a && a === cells[L[1]] && a === cells[L[2]]) return a;
+    }
+    return null;
+  }
+  function isFull(cells) {
+    for (var i = 0; i < 9; i++) { if (!cells[i]) return false; }
+    return true;
+  }
+
+  // For the overall board: treat boardWinner as the cell values,
+  // but ties ("T") count as no one.
+  function overallLineWinner() {
+    var arr = [];
+    for (var i = 0; i < 9; i++) {
+      arr[i] = (boardWinner[i] === "X" || boardWinner[i] === "O") ? boardWinner[i] : null;
+    }
+    return lineWinner(arr);
+  }
+  function allBoardsDecided() {
+    for (var i = 0; i < 9; i++) { if (!boardWinner[i]) return false; }
+    return true;
+  }
+
+  // ---- Build DOM ----
+  function buildDOM() {
+    boardEl.innerHTML = "";
+    smallEls = [];
+    cellEls = [];
+    for (var b = 0; b < 9; b++) {
+      var s = document.createElement("div");
+      s.className = "small";
+      s.dataset.b = b;
+      var row = [];
+      for (var c = 0; c < 9; c++) {
+        var cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.b = b;
+        cell.dataset.c = c;
+        s.appendChild(cell);
+        row.push(cell);
+      }
+      var ov = document.createElement("div");
+      ov.className = "overlay";
+      ov.style.display = "none";
+      s.appendChild(ov);
+      s._overlay = ov;
+      boardEl.appendChild(s);
+      smallEls.push(s);
+      cellEls.push(row);
+    }
+  }
+
+  // ---- Reset ----
+  function newGame() {
+    boards = [];
+    boardWinner = [];
+    for (var b = 0; b < 9; b++) {
+      boards.push([null,null,null,null,null,null,null,null,null]);
+      boardWinner.push(null);
+    }
+    activeBoard = -1;
+    current = HUMAN;
+    gameOver = false;
+    overallWinner = null;
+    lastMove = null;
+    lock = false;
+    bannerEl.classList.remove("show");
+    render();
+  }
+
+  // ---- Is a small board playable (open) ----
+  function boardOpen(b) {
+    return !boardWinner[b] && !isFull(boards[b]);
+  }
+
+  // ---- Which boards are legal targets for the current player ----
+  function legalBoards() {
+    if (activeBoard >= 0 && boardOpen(activeBoard)) return [activeBoard];
+    var list = [];
+    for (var b = 0; b < 9; b++) { if (boardOpen(b)) list.push(b); }
+    return list;
+  }
+
+  // ---- Render ----
+  function render() {
+    var legal = gameOver ? [] : legalBoards();
+    var legalSet = {};
+    legal.forEach(function (b) { legalSet[b] = true; });
+
+    for (var b = 0; b < 9; b++) {
+      var s = smallEls[b];
+      // active highlight (only on human's turn for clarity, but show always when not over)
+      if (!gameOver && legalSet[b]) s.classList.add("active");
+      else s.classList.remove("active");
+
+      // won overlay
+      var w = boardWinner[b];
+      if (w) {
+        s.classList.add("won");
+        s._overlay.style.display = "flex";
+        s._overlay.className = "overlay " + (w === "T" ? "tie" : (w === "X" ? "x" : "o"));
+        s._overlay.textContent = w === "T" ? "TIE" : w;
+      } else {
+        s.classList.remove("won");
+        s._overlay.style.display = "none";
+      }
+
+      for (var c = 0; c < 9; c++) {
+        var cell = cellEls[b][c];
+        var v = boards[b][c];
+        cell.textContent = v || "";
+        cell.className = "cell" + (v === "X" ? " x" : v === "O" ? " o" : "");
+        // playable: human's turn, board legal, cell empty, not won
+        if (!gameOver && current === HUMAN && legalSet[b] && !v && !w) {
+          cell.classList.add("playable");
+        }
+        if (lastMove && lastMove.b === b && lastMove.c === c) {
+          cell.classList.add("last");
+        }
+      }
+    }
+    updateStatus();
+  }
+
+  function updateStatus() {
+    statusEl.classList.remove("you", "cpu", "win");
+    if (gameOver) {
+      statusEl.classList.add("win");
+      if (overallWinner === "X") statusEl.textContent = "You win the game! \u{1F389}";
+      else if (overallWinner === "O") statusEl.textContent = "CPU wins the game.";
+      else statusEl.textContent = "Game tied.";
+      return;
+    }
+    if (current === HUMAN) {
+      statusEl.classList.add("you");
+      statusEl.textContent = (activeBoard >= 0 && boardOpen(activeBoard))
+        ? "Your turn (X) — play the highlighted board"
+        : "Your turn (X) — play any highlighted board";
+    } else {
+      statusEl.classList.add("cpu");
+      statusEl.textContent = "CPU thinking… (O)";
+    }
+  }
+
+  // ---- Apply a move; returns true if applied ----
+  function applyMove(b, c, player) {
+    if (boards[b][c]) return false;
+    boards[b][c] = player;
+    lastMove = { b: b, c: c };
+
+    // small board resolution
+    if (!boardWinner[b]) {
+      var w = lineWinner(boards[b]);
+      if (w) {
+        boardWinner[b] = w;
+        return { smallWon: true };
+      } else if (isFull(boards[b])) {
+        boardWinner[b] = "T";
+      }
+    }
+    return { smallWon: false };
+  }
+
+  // ---- After a move: set next active board + check overall end ----
+  function advance(c) {
+    // next forced board = the cell index just played
+    activeBoard = boardOpen(c) ? c : -1;
+
+    var ow = overallLineWinner();
+    if (ow) {
+      overallWinner = ow;
+      gameOver = true;
+    } else if (allBoardsDecided()) {
+      overallWinner = "T";
+      gameOver = true;
+    }
+  }
+
+  // ---- Human click ----
+  function onCellClick(e) {
+    if (lock || gameOver || current !== HUMAN) return;
+    var t = e.target.closest(".cell");
+    if (!t) return;
+    var b = +t.dataset.b;
+    var c = +t.dataset.c;
+    if (isNaN(b) || isNaN(c)) return;
+
+    var legal = legalBoards();
+    if (legal.indexOf(b) === -1) return;     // wrong board
+    if (boards[b][c]) return;                 // occupied
+    if (boardWinner[b]) return;               // decided board
+
+    ensureAudio();
+    var res = applyMove(b, c, HUMAN);
+    if (res && res.smallWon) sndSmallWin(); else sndPlace();
+
+    advance(c);
+    current = CPU;
+    render();
+
+    if (gameOver) { finish(); return; }
+
+    lock = true;
+    setTimeout(cpuTurn, 420);
+  }
+
+  // ---- Game end handling ----
+  function finish() {
+    if (overallWinner === "X") { sndWin(); showBanner("You Win!", "x", "Three small boards in a row — nicely done."); }
+    else if (overallWinner === "O") { sndLose(); showBanner("CPU Wins", "o", "The computer lined up three boards."); }
+    else { showBanner("It's a Tie", "tie", "No three boards in a row for anyone."); }
+  }
+  function showBanner(title, cls, sub) {
+    bannerTitle.textContent = title;
+    bannerTitle.className = "big " + cls;
+    bannerSub.textContent = sub;
+    bannerEl.classList.add("show");
+  }
+
+  // =========================================================
+  //  CPU AI
+  // =========================================================
+  // Strategy:
+  //  - From the legal boards, evaluate every legal move.
+  //  - Score = own immediate small-board considerations
+  //            + penalty/bonus for which board it sends opponent to.
+  //  - Prefer: win a small board, win the GAME, block opponent's
+  //    small-board win, avoid sending opponent to a board they can win,
+  //    avoid sending opponent to a "free" (anywhere) state.
+
+  function emptyCells(cells) {
+    var out = [];
+    for (var i = 0; i < 9; i++) if (!cells[i]) out.push(i);
+    return out;
+  }
+
+  // Would placing `player` at cell c in given 9-array win that line?
+  function wouldWin(cells, c, player) {
+    if (cells[c]) return false;
+    var copy = cells.slice();
+    copy[c] = player;
+    return lineWinner(copy) === player;
+  }
+
+  // Count immediate winning cells for player on a small board (open threats)
+  function threatCount(cells, player) {
+    var n = 0;
+    for (var c = 0; c < 9; c++) {
+      if (!cells[c] && wouldWin(cells, c, player)) n++;
+    }
+    return n;
+  }
+
+  // Evaluate sending opponent to board `dest` (the cell index just played).
+  // Returns a score from CPU's perspective (higher = better for CPU).
+  function sendScore(dest, oppBoardsWinner) {
+    // If dest board is not open -> opponent plays anywhere (bad for us).
+    if (!boardOpen(dest)) return -6;
+    var cells = boards[dest];
+    // If opponent can immediately win that small board -> very bad.
+    if (threatCount(cells, HUMAN) > 0) return -10;
+    // If we (CPU) could win there next time it's contested, mild bonus.
+    // Sending them to a nearly-full board limits their options -> slight good.
+    var empties = emptyCells(cells).length;
+    var s = 0;
+    if (empties <= 2) s += 2;
+    // Avoid sending to center board of overall (board 4) where they get flexibility — minor.
+    return s;
+  }
+
+  function cpuChooseMove() {
+    var legal = legalBoards();
+    var best = null;
+    var bestScore = -Infinity;
+
+    for (var li = 0; li < legal.length; li++) {
+      var b = legal[li];
+      var cells = boards[b];
+      var empties = emptyCells(cells);
+      for (var ei = 0; ei < empties.length; ei++) {
+        var c = empties[ei];
+        var score = 0;
+
+        // 1) Does this win the small board?
+        var winsSmall = wouldWin(cells, c, CPU);
+        if (winsSmall) {
+          score += 30;
+          // Would winning this small board win the GAME?
+          var simWinner = boardWinner.slice();
+          simWinner[b] = CPU;
+          var arr = [];
+          for (var k = 0; k < 9; k++) arr[k] = (simWinner[k] === "X" || simWinner[k] === "O") ? simWinner[k] : null;
+          if (lineWinner(arr) === CPU) score += 1000; // winning move
+          // winning a board that contributes to two lines is better (center=4 best)
+          if (b === 4) score += 6;
+          else if (b % 2 === 0) score += 3; // corners
+        } else {
+          // 2) Block: does HUMAN have a winning move at c (i.e. we deny it)?
+          if (wouldWin(cells, c, HUMAN)) score += 18;
+          // positional value within the small board
+          if (c === 4) score += 2;
+          else if (c % 2 === 0) score += 1;
+        }
+
+        // 3) Where does this send the opponent? dest = cell index c.
+        score += sendScore(c) ;
+
+        // 4) Slightly avoid handing opponent a free-choice (sending to a closed board)
+        //    already handled in sendScore via -6.
+
+        // tiny tiebreak randomness for variety
+        score += Math.random() * 0.5;
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = { b: b, c: c, winsSmall: winsSmall };
+        }
+      }
+    }
+    return best;
+  }
+
+  function cpuTurn() {
+    if (gameOver) { lock = false; return; }
+    var mv = cpuChooseMove();
+    if (!mv) { lock = false; return; }
+
+    var res = applyMove(mv.b, mv.c, CPU);
+    if (res && res.smallWon) sndSmallWin(); else sndCpu();
+
+    advance(mv.c);
+    current = HUMAN;
+    lock = false;
+    render();
+
+    if (gameOver) { finish(); }
+  }
+
+  // ---- Events ----
+  boardEl.addEventListener("click", onCellClick);
+  document.getElementById("newGame").addEventListener("click", function () { ensureAudio(); newGame(); });
+  document.getElementById("bannerNew").addEventListener("click", function () { ensureAudio(); newGame(); });
+  var soundBtn = document.getElementById("sound");
+  soundBtn.addEventListener("click", function () {
+    soundOn = !soundOn;
+    soundBtn.classList.toggle("off", !soundOn);
+    soundBtn.innerHTML = soundOn ? "\u{1F50A}" : "\u{1F507}";
+    if (soundOn) { ensureAudio(); beep(660, 0.08, "triangle", 0.15); }
+  });
+
+  // Prevent double-tap zoom / gestures
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+
+  // ---- Init ----
+  buildDOM();
+  newGame();
+})();
+</script>
+</body>
+</html>

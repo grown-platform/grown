@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Chinese Checkers</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    background: #1a1326;
+    color: #f3eafc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom) 8px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  header { text-align: center; margin: 6px 0 2px; }
+  h1 {
+    font-size: 20px; margin: 0;
+    letter-spacing: 0.5px;
+    background: linear-gradient(90deg,#ffd84d,#ff6fae);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  #status {
+    font-size: 14px; margin: 4px 0 6px;
+    min-height: 18px;
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 600;
+  }
+  #status .dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    display: inline-block; box-shadow: 0 0 6px rgba(255,255,255,.4);
+  }
+  #boardWrap {
+    flex: 1;
+    width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 0;
+    position: relative;
+  }
+  canvas { display: block; touch-action: none; }
+  #controls {
+    display: flex; gap: 10px; margin: 8px 0 4px; align-items: center;
+  }
+  button {
+    font-size: 15px; font-weight: 700;
+    padding: 10px 18px;
+    border: none; border-radius: 22px;
+    background: linear-gradient(135deg,#7b4dff,#c44dff);
+    color: #fff;
+    box-shadow: 0 3px 10px rgba(123,77,255,.4);
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  button:active { transform: translateY(1px); filter: brightness(1.1); }
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(10,6,20,.82);
+    display: none;
+    align-items: center; justify-content: center;
+    flex-direction: column;
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 { font-size: 30px; margin: 0 0 6px; }
+  #overlay p { font-size: 15px; margin: 0 0 18px; color: #d8c8f0; }
+  #hint { font-size: 11px; color: #9a86c0; margin-top: 2px; min-height: 14px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/chinese-checkers.svg">
+    <link rel="manifest" href="/games/chinese-checkers.webmanifest">
+    <meta name="theme-color" content="#7C3AED">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Chinese Checkers">
+    <link rel="apple-touch-icon" href="/games/icons/chinese-checkers.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#7C3AED;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Chinese Checkers</h1>
+    <div id="status"><span class="dot" id="turnDot"></span><span id="statusText">Your turn</span></div>
+  </header>
+  <div id="boardWrap"><canvas id="board"></canvas></div>
+  <div id="hint">Tap a peg, then tap a highlighted hole.</div>
+  <div id="controls">
+    <button id="newBtn">New Game</button>
+  </div>
+</div>
+<div id="overlay">
+  <h2 id="ovTitle">You win!</h2>
+  <p id="ovText"></p>
+  <button id="ovBtn">Play Again</button>
+</div>
+
+<script>
+"use strict";
+(function(){
+
+/* ============================================================
+   Chinese Checkers — 2 player (You vs CPU) on a 6-point star.
+   Coordinate system: axial hex (q, r). We build the full Star
+   of David: a central hexagon (radius 4) plus six triangular
+   points. Only two opposite triangles are used (top & bottom)
+   for a 2-player game, but all 121 holes exist for movement.
+   ============================================================ */
+
+  // ----- Build the star board in axial coords -----
+  // We use cube coords x+y+z=0. The classic Chinese-checker star:
+  // central hexagon = all cells with max(|x|,|y|,|z|) <= 4 forming
+  // a hexagon of "radius" 4 (that's a hex with side 5 -> 61 cells).
+  // The six triangular points extend beyond, side length 4 (10 cells each).
+  //
+  // Standard construction: a cell (x,y,z) is on the board if at most
+  // one of the three "outer" conditions exceeds the hex. We use the
+  // well-known definition based on the three pairs.
+  //
+  // Define limits: the board = cells where, in cube coords,
+  //   -4 <= x,y,z <= 4  (central hexagon)  OR  a triangle point.
+  // We'll instead enumerate directly with the canonical rule:
+  // For each axis pair we allow the triangle to stick out by up to 4.
+
+  // Canonical star-of-David hole set (121 holes):
+  // A cube cell (x,y,z) with x+y+z=0 is valid iff it satisfies:
+  //   at least 4 of the 6 half-plane constraints |coord|<=4 PLUS
+  // ... simpler: generate central hex (r<=4) plus 6 triangles.
+
+  function key(q,r){ return q+","+r; }
+
+  // axial <-> cube: cube x=q, z=r, y=-x-z.
+  const N = 4; // triangle side / hex radius
+
+  // Star-of-David membership (the clean 121-hole definition): a cube cell
+  // (x,y,z), x+y+z=0, is on the board iff at least two of the three coords
+  // have |coord| <= N. The central hexagon satisfies all three; each of the
+  // six triangular points is where exactly one axis coord exceeds N.
+  function inStar(x,y,z){
+    const ax=Math.abs(x), ay=Math.abs(y), az=Math.abs(z);
+    return (ax<=N&&ay<=N) || (ay<=N&&az<=N) || (ax<=N&&az<=N);
+  }
+
+  const board = new Map();   // key -> {q,r,x,y,z}
+  const R = 2*N;
+  for(let x=-R;x<=R;x++){
+    for(let y=-R;y<=R;y++){
+      const z=-x-y;
+      if(Math.abs(z)>R) continue;
+      if(inStar(x,y,z)){
+        board.set(key(x,z), {q:x, r:z, x, y, z});
+      }
+    }
+  }
+
+  // ---- Identify the two opposite triangular points for 2-player ----
+  // A tip along axis `ax` (sign +/-) is the set of board cells whose `ax`
+  // coordinate exceeds N in that direction. We orient z as the vertical-ish
+  // axis: +z tip = bottom (human home), -z tip = top (CPU home).
+  function tipCells(ax, sign){
+    const out=[];
+    for(const c of board.values()){
+      const v = c[ax];
+      if(sign>0 ? v>N : v<-N) out.push(key(c.q,c.r));
+    }
+    return out;
+  }
+
+  const HUMAN_HOME = tipCells('z', 1);   // bottom tip (z = +5..+8)
+  const CPU_HOME   = tipCells('z', -1);  // top tip
+  // Targets are the opposite home:
+  const HUMAN_TARGET = CPU_HOME.slice();
+  const CPU_TARGET   = HUMAN_HOME.slice();
+
+  // each home has 10 cells (1+2+3+4)
+
+  // ----- Hex neighbor directions (axial) -----
+  const DIRS = [
+    {dq:+1, dr:0}, {dq:+1, dr:-1}, {dq:0, dr:-1},
+    {dq:-1, dr:0}, {dq:-1, dr:+1}, {dq:0, dr:+1},
+  ];
+
+  // ----- Game state -----
+  // occupancy: key -> 'H' (human) | 'C' (cpu) | null
+  let occ = new Map();
+  let selected = null;     // key of selected peg
+  let legalMoves = new Map(); // destKey -> {type:'step'|'hop', path:[keys]}
+  let turn = 'H';          // 'H' or 'C'
+  let busy = false;        // animation / cpu thinking lock
+  let gameOver = false;
+
+  function resetGame(){
+    occ = new Map();
+    for(const k of board.keys()) occ.set(k, null);
+    for(const k of HUMAN_HOME) occ.set(k,'H');
+    for(const k of CPU_HOME) occ.set(k,'C');
+    selected=null; legalMoves=new Map();
+    turn='H'; busy=false; gameOver=false;
+    setStatus();
+    overlay.classList.remove('show');
+    layout();
+  }
+
+  // ----- Move generation -----
+  function neighborKey(k, dir){
+    const c=board.get(k);
+    const nq=c.q+dir.dq, nr=c.r+dir.dr;
+    const nk=key(nq,nr);
+    return board.has(nk)? nk : null;
+  }
+
+  function computeMoves(fromKey){
+    const moves = new Map();
+    // single steps
+    for(const dir of DIRS){
+      const nk=neighborKey(fromKey,dir);
+      if(nk && occ.get(nk)===null){
+        moves.set(nk, {type:'step', path:[fromKey,nk]});
+      }
+    }
+    // hop chains (BFS over jump graph)
+    const visited = new Set([fromKey]);
+    const queue = [{k:fromKey, path:[fromKey]}];
+    while(queue.length){
+      const cur=queue.shift();
+      for(const dir of DIRS){
+        const overK=neighborKey(cur.k,dir);
+        if(!overK) continue;
+        if(occ.get(overK)===null) continue; // must jump over a peg
+        const landC=board.get(overK);
+        const lq=landC.q+dir.dq, lr=landC.r+dir.dr;
+        const landK=key(lq,lr);
+        if(!board.has(landK)) continue;
+        if(occ.get(landK)!==null) continue; // landing must be empty
+        if(visited.has(landK)) continue;
+        visited.add(landK);
+        const np=cur.path.concat([landK]);
+        const existing=moves.get(landK);
+        // prefer hop over step? a hop reaching a step-dest: keep hop if not present
+        if(!existing || existing.type==='step'){
+          moves.set(landK, {type:'hop', path:np});
+        }
+        queue.push({k:landK, path:np});
+      }
+    }
+    return moves;
+  }
+
+  // ----- Win check -----
+  function playerWon(p){
+    const target = (p==='H')? HUMAN_TARGET : CPU_TARGET;
+    // must fill ALL target cells, and at least one of them with own peg
+    let hasOwn=false;
+    for(const k of target){
+      const o=occ.get(k);
+      if(o===null) return false;
+      if(o===p) hasOwn=true;
+    }
+    return hasOwn;
+  }
+
+  // ----- Rendering (canvas) -----
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const boardWrap = document.getElementById('boardWrap');
+  let geom = null; // {cx,cy,scale, pts: Map key->{x,y}, holeR}
+
+  function computeGeom(W,H){
+    // axial -> pixel (pointy-top hex layout)
+    // x = sqrt(3)*(q + r/2); y = 3/2 * r
+    const raw = new Map();
+    let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
+    for(const [k,c] of board){
+      const px = Math.sqrt(3)*(c.q + c.r/2);
+      const py = 1.5*c.r;
+      raw.set(k,{px,py});
+      if(px<minX)minX=px; if(px>maxX)maxX=px;
+      if(py<minY)minY=py; if(py>maxY)maxY=py;
+    }
+    const spanX=maxX-minX, spanY=maxY-minY;
+    const pad = 0.9; // hole radius units of margin
+    const scaleX = W/(spanX+pad*2);
+    const scaleY = H/(spanY+pad*2);
+    const scale = Math.min(scaleX, scaleY);
+    const offX = (W - spanX*scale)/2 - minX*scale;
+    const offY = (H - spanY*scale)/2 - minY*scale;
+    const pts = new Map();
+    for(const [k,p] of raw){
+      pts.set(k, {x: p.px*scale+offX, y: p.py*scale+offY});
+    }
+    const holeR = scale*0.46;
+    return {scale, pts, holeR};
+  }
+
+  function layout(){
+    const W = boardWrap.clientWidth;
+    const H = boardWrap.clientHeight;
+    const dpr = Math.min(window.devicePixelRatio||1, 2.5);
+    const side = Math.min(W, H);
+    canvas.style.width = side+'px';
+    canvas.style.height = side+'px';
+    canvas.width = Math.round(side*dpr);
+    canvas.height = Math.round(side*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    geom = computeGeom(side, side);
+    draw();
+  }
+
+  const HOME_TINT = {
+    H: 'rgba(80,180,255,0.10)',
+    C: 'rgba(255,110,160,0.10)',
+  };
+
+  function draw(){
+    if(!geom) return;
+    const side = canvas.width / (Math.min(window.devicePixelRatio||1,2.5));
+    ctx.clearRect(0,0,side,side);
+
+    // tint target/home triangles lightly
+    const targetSet = new Set(HUMAN_TARGET);     // CPU home (top) - human's goal
+    const homeSet   = new Set(HUMAN_HOME);       // bottom
+    const cpuHomeSet= new Set(CPU_HOME);
+
+    // draw holes
+    for(const [k,p] of geom.pts){
+      const o = occ.get(k);
+      // base hole
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,geom.holeR,0,Math.PI*2);
+      let fill='#2c2140';
+      if(homeSet.has(k)) fill='#243a52';
+      else if(cpuHomeSet.has(k)) fill='#4a2438';
+      ctx.fillStyle=fill;
+      ctx.fill();
+      ctx.lineWidth=1;
+      ctx.strokeStyle='rgba(0,0,0,0.35)';
+      ctx.stroke();
+    }
+
+    // highlight legal destinations
+    if(selected){
+      for(const [dk,mv] of legalMoves){
+        const p=geom.pts.get(dk);
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,geom.holeR*0.9,0,Math.PI*2);
+        ctx.fillStyle = mv.type==='hop'? 'rgba(255,216,77,0.40)':'rgba(120,255,160,0.35)';
+        ctx.fill();
+        ctx.lineWidth=2.5;
+        ctx.strokeStyle = mv.type==='hop'? '#ffd84d':'#78ff9c';
+        ctx.stroke();
+      }
+    }
+
+    // draw pegs
+    for(const [k,p] of geom.pts){
+      const o = occ.get(k);
+      if(o===null) continue;
+      drawPeg(p.x,p.y,geom.holeR*0.92, o, k===selected);
+    }
+  }
+
+  function drawPeg(x,y,r,owner,isSel){
+    const grd=ctx.createRadialGradient(x-r*0.35,y-r*0.4,r*0.2, x,y,r);
+    if(owner==='H'){ grd.addColorStop(0,'#aee2ff'); grd.addColorStop(1,'#2b8fe6'); }
+    else { grd.addColorStop(0,'#ffc2d8'); grd.addColorStop(1,'#e64d86'); }
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle=grd;
+    ctx.fill();
+    ctx.lineWidth = isSel? 3.5 : 1.2;
+    ctx.strokeStyle = isSel? '#fff' : 'rgba(0,0,0,0.4)';
+    ctx.stroke();
+    if(isSel){
+      ctx.beginPath();
+      ctx.arc(x,y,r+3,0,Math.PI*2);
+      ctx.lineWidth=2;
+      ctx.strokeStyle='rgba(255,255,255,0.6)';
+      ctx.stroke();
+    }
+  }
+
+  // ----- Hit testing -----
+  function hitTest(px,py){
+    let best=null, bd=1e9;
+    for(const [k,p] of geom.pts){
+      const dx=px-p.x, dy=py-p.y;
+      const d=dx*dx+dy*dy;
+      if(d<bd){ bd=d; best=k; }
+    }
+    const rr=(geom.holeR*1.25);
+    if(bd <= rr*rr) return best;
+    return null;
+  }
+
+  // ----- Audio -----
+  let actx=null;
+  function beep(freq,dur,type,vol){
+    try{
+      if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+      if(actx.state==='suspended') actx.resume();
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type=type||'sine'; o.frequency.value=freq;
+      g.gain.value=0; o.connect(g); g.connect(actx.destination);
+      const t=actx.currentTime;
+      g.gain.setValueAtTime(0,t);
+      g.gain.linearRampToValueAtTime(vol||0.15,t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+(dur||0.12));
+      o.start(t); o.stop(t+(dur||0.12)+0.02);
+    }catch(e){}
+  }
+  function sndSelect(){ beep(540,0.08,'sine',0.12); }
+  function sndStep(){ beep(420,0.10,'triangle',0.14); }
+  function sndHop(){ beep(680,0.07,'square',0.10); }
+  function sndWin(){ beep(523,0.15,'sine',0.18); setTimeout(()=>beep(659,0.15,'sine',0.18),140); setTimeout(()=>beep(784,0.25,'sine',0.2),300); }
+  function sndLose(){ beep(300,0.2,'sawtooth',0.14); setTimeout(()=>beep(200,0.3,'sawtooth',0.14),160); }
+
+  // ----- Animation of a move along path -----
+  function animateMove(path, owner, cb){
+    busy=true;
+    const fromK=path[0], toK=path[path.length-1];
+    occ.set(fromK, null); // peg lifted
+    const segs = path.length-1;
+    const segDur = path.length>2? 130 : 170; // per hop ms
+    let seg=0, t0=null;
+    const playSnd = path.length>2? sndHop : sndStep;
+    playSnd();
+
+    function frame(ts){
+      if(t0===null) t0=ts;
+      const elapsed=ts-t0;
+      let s=Math.floor(elapsed/segDur);
+      if(s>=segs){
+        occ.set(toK, owner);
+        draw();
+        busy=false;
+        cb&&cb();
+        return;
+      }
+      if(s!==seg){ seg=s; if(path.length>2) sndHop(); }
+      const localT=(elapsed - seg*segDur)/segDur;
+      const a=geom.pts.get(path[seg]);
+      const b=geom.pts.get(path[seg+1]);
+      const ease = localT<0.5? 2*localT*localT : 1-Math.pow(-2*localT+2,2)/2;
+      const x=a.x+(b.x-a.x)*ease;
+      const y=a.y+(b.y-a.y)*ease;
+      const arc = Math.sin(localT*Math.PI)* (path.length>2?10:6);
+      draw();
+      drawPeg(x, y-arc, geom.holeR*0.92, owner, false);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ----- Turn handling -----
+  function setStatus(){
+    const dot=document.getElementById('turnDot');
+    const txt=document.getElementById('statusText');
+    if(gameOver){ return; }
+    if(turn==='H'){ dot.style.background='#3aa0ff'; txt.textContent='Your turn (blue)'; }
+    else { dot.style.background='#ff6fae'; txt.textContent='CPU thinking…'; }
+  }
+
+  function endMove(){
+    // check win
+    if(playerWon('H')){ finish('H'); return; }
+    if(playerWon('C')){ finish('C'); return; }
+    turn = (turn==='H')? 'C':'H';
+    selected=null; legalMoves=new Map();
+    setStatus();
+    draw();
+    if(turn==='C'){
+      setTimeout(cpuTurn, 350);
+    }
+  }
+
+  function finish(winner){
+    gameOver=true; busy=false;
+    selected=null; legalMoves=new Map();
+    draw();
+    const ov=document.getElementById('overlay');
+    document.getElementById('ovTitle').textContent = winner==='H'? 'You win! 🎉':'CPU wins';
+    document.getElementById('ovText').textContent = winner==='H'
+      ? 'All your pegs reached the far triangle.'
+      : 'The CPU filled its target first. Try again!';
+    ov.classList.add('show');
+    document.getElementById('statusText').textContent = winner==='H'?'You win!':'CPU wins';
+    document.getElementById('turnDot').style.background = winner==='H'?'#3aa0ff':'#ff6fae';
+    if(winner==='H') sndWin(); else sndLose();
+  }
+
+  // ----- Input -----
+  function onTap(px,py){
+    if(busy || gameOver || turn!=='H') return;
+    const k=hitTest(px,py);
+    if(k===null){ // tap empty space deselects
+      if(selected){ selected=null; legalMoves=new Map(); draw(); }
+      return;
+    }
+    const o=occ.get(k);
+    if(selected && legalMoves.has(k)){
+      // make the move
+      const mv=legalMoves.get(k);
+      const path=mv.path;
+      selected=null; const saved=legalMoves; legalMoves=new Map();
+      draw();
+      animateMove(path, 'H', ()=>{ endMove(); });
+      return;
+    }
+    if(o==='H'){
+      // select own peg
+      selected=k;
+      legalMoves=computeMoves(k);
+      sndSelect();
+      draw();
+      return;
+    }
+    // tapped opponent peg or empty hole not legal: deselect
+    selected=null; legalMoves=new Map();
+    draw();
+  }
+
+  function canvasPos(ev){
+    const rect=canvas.getBoundingClientRect();
+    let cx,cy;
+    if(ev.touches && ev.touches.length){ cx=ev.touches[0].clientX; cy=ev.touches[0].clientY; }
+    else if(ev.changedTouches && ev.changedTouches.length){ cx=ev.changedTouches[0].clientX; cy=ev.changedTouches[0].clientY; }
+    else { cx=ev.clientX; cy=ev.clientY; }
+    return { x: cx-rect.left, y: cy-rect.top };
+  }
+
+  let touchHandled=false;
+  canvas.addEventListener('touchstart', function(e){
+    e.preventDefault();
+  }, {passive:false});
+  canvas.addEventListener('touchend', function(e){
+    e.preventDefault();
+    touchHandled=true;
+    const p=canvasPos(e);
+    onTap(p.x,p.y);
+    setTimeout(()=>{touchHandled=false;}, 400);
+  }, {passive:false});
+  canvas.addEventListener('click', function(e){
+    if(touchHandled) return;
+    const p=canvasPos(e);
+    onTap(p.x,p.y);
+  });
+
+  // ----- CPU AI -----
+  // CPU pegs are 'C', their goal is to fill CPU_TARGET (the bottom +z tip).
+  // Strategy: drive every peg toward the FAR APEX of the target triangle
+  // (deepest cell), measured by hex distance. Pegs that have settled into
+  // the deepest contiguous run of target cells are "locked" so they don't
+  // wander back out — this guarantees monotone progress and avoids loops.
+
+  const cpuTargetSet = new Set(CPU_TARGET);
+  const cpuHomeSet = new Set(CPU_HOME);
+
+  // hex distance between two cells (cube coords)
+  function hexDist(k1,k2){
+    const a=board.get(k1), b=board.get(k2);
+    return (Math.abs(a.x-b.x)+Math.abs(a.y-b.y)+Math.abs(a.z-b.z))/2;
+  }
+
+  // Apex = the single deepest target cell (greatest r for the bottom tip).
+  const cpuApex = CPU_TARGET.reduce(
+    (best,k)=> board.get(k).r > board.get(best).r ? k : best,
+    CPU_TARGET[0]
+  );
+  function cpuVal(k){ return hexDist(k, cpuApex); } // lower = closer to goal
+
+  // Target cells ordered from deepest (apex) outward.
+  const cpuTargetByDepth = CPU_TARGET.slice().sort((a,b)=>cpuVal(a)-cpuVal(b));
+
+  // Lock the deepest contiguous run of target cells currently held by C.
+  function cpuLockedTargets(){
+    const locked = new Set();
+    for(const k of cpuTargetByDepth){
+      if(occ.get(k)==='C') locked.add(k);
+      else break; // first unfilled deep slot breaks the run
+    }
+    return locked;
+  }
+
+  function cpuTurn(){
+    if(gameOver) return;
+    busy=true;
+    let bestMove=null, bestScore=-1e9;
+
+    const locked = cpuLockedTargets();
+    const cpuPegs=[];
+    for(const [k,o] of occ){ if(o==='C') cpuPegs.push(k); }
+
+    for(const fromK of cpuPegs){
+      if(locked.has(fromK)) continue; // never disturb settled pegs
+      const moves=computeMoves(fromK);
+      const fromV=cpuVal(fromK);
+      const fromInTarget = cpuTargetSet.has(fromK);
+      const fromInHome = cpuHomeSet.has(fromK);
+      for(const [destK,mv] of moves){
+        if(locked.has(destK)) continue; // don't try to enter a locked slot
+        let score = (fromV - cpuVal(destK)) * 10; // progress toward apex
+
+        // prefer long hop chains
+        if(mv.type==='hop') score += (mv.path.length-1) * 1.5;
+
+        // reward settling into the target; penalize leaving it
+        const destInTarget = cpuTargetSet.has(destK);
+        if(destInTarget && !fromInTarget) score += 8;
+        if(fromInTarget && !destInTarget) score -= 15;
+
+        // encourage leaving home early
+        if(fromInHome && !cpuHomeSet.has(destK)) score += 2;
+
+        // tiny tie-break randomness
+        score += Math.random()*0.3;
+
+        if(score>bestScore){
+          bestScore=score;
+          bestMove={path:mv.path, type:mv.type};
+        }
+      }
+    }
+
+    if(!bestMove){
+      // no legal move available — pass the turn
+      busy=false;
+      endMove();
+      return;
+    }
+    animateMove(bestMove.path, 'C', ()=>{ endMove(); });
+  }
+
+  // ----- Buttons & resize -----
+  document.getElementById('newBtn').addEventListener('click', function(){
+    if(actx && actx.state==='suspended') actx.resume();
+    resetGame();
+  });
+  document.getElementById('ovBtn').addEventListener('click', function(){
+    resetGame();
+  });
+
+  let rT=null;
+  window.addEventListener('resize', function(){
+    clearTimeout(rT); rT=setTimeout(layout, 120);
+  });
+  window.addEventListener('orientationchange', function(){ setTimeout(layout, 250); });
+
+  // prevent page scroll / pinch
+  document.addEventListener('gesturestart', e=>e.preventDefault());
+  document.addEventListener('touchmove', function(e){
+    if(e.touches.length>1) e.preventDefault();
+  }, {passive:false});
+
+  // ----- Init -----
+  const overlay=document.getElementById('overlay');
+  resetGame();
+  // ensure layout after fonts/render
+  setTimeout(layout, 60);
+
+})();
+</script>
+</body>
+</html>

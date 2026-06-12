@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Peg Solitaire</title>
+<style>
+  :root {
+    --bg: #1a1410;
+    --panel: #2a2018;
+    --wood: #6b4a2f;
+    --wood-dark: #4a3220;
+    --hole: #2e2014;
+    --peg: #d98a3d;
+    --peg-hi: #f4b860;
+    --sel: #ffd24a;
+    --legal: #5fd06a;
+    --text: #f0e6d8;
+    --accent: #e8a34b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: env(safe-area-inset-top) 10px env(safe-area-inset-bottom) 10px;
+    min-height: 100%;
+  }
+  header {
+    width: 100%;
+    max-width: 460px;
+    text-align: center;
+    padding: 10px 0 6px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .sub { font-size: 0.72rem; color: #b09b80; margin-top: 2px; }
+  .stats {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 4px;
+    font-size: 0.9rem;
+  }
+  .counter { font-weight: 600; }
+  .counter b { color: var(--peg-hi); font-size: 1.15rem; }
+  #status {
+    min-height: 1.2em;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-align: center;
+    color: var(--accent);
+  }
+  .boardwrap {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    justify-content: center;
+    margin: 6px 0;
+  }
+  #board {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: var(--wood);
+    border-radius: 18px;
+    box-shadow: inset 0 2px 8px rgba(255,255,255,0.08), inset 0 -4px 10px rgba(0,0,0,0.4), 0 6px 16px rgba(0,0,0,0.5);
+    border: 3px solid var(--wood-dark);
+  }
+  .cell {
+    position: absolute;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .hole {
+    width: 78%;
+    height: 78%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 35%, #1c130b, var(--hole));
+    box-shadow: inset 0 3px 6px rgba(0,0,0,0.7), inset 0 -1px 2px rgba(255,255,255,0.05);
+    transition: box-shadow 0.12s;
+  }
+  .peg {
+    width: 82%;
+    height: 82%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 30%, var(--peg-hi), var(--peg) 55%, #9c5e22 100%);
+    box-shadow: inset 0 -3px 5px rgba(0,0,0,0.45), inset 0 2px 3px rgba(255,255,255,0.35), 0 2px 4px rgba(0,0,0,0.4);
+    transition: transform 0.1s;
+  }
+  .cell.selected .peg {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 3px var(--sel), inset 0 -3px 5px rgba(0,0,0,0.45), inset 0 2px 3px rgba(255,255,255,0.35), 0 0 12px var(--sel);
+  }
+  .cell.legal .hole {
+    background: radial-gradient(circle at 50% 35%, #2c5a30, #16331a);
+    box-shadow: inset 0 2px 5px rgba(0,0,0,0.6), 0 0 0 3px var(--legal), 0 0 10px rgba(95,208,106,0.6);
+  }
+  .controls {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    gap: 10px;
+    padding: 8px 4px 4px;
+  }
+  button {
+    flex: 1;
+    padding: 13px 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    background: linear-gradient(180deg, #3a2c1f, #2a2018);
+    border: 1px solid var(--wood);
+    border-radius: 12px;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.06s, background 0.12s;
+  }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.primary {
+    background: linear-gradient(180deg, var(--accent), #c47f2e);
+    color: #1a1410;
+    border-color: #c47f2e;
+  }
+  .hint {
+    font-size: 0.7rem;
+    color: #8a7860;
+    text-align: center;
+    padding: 6px 8px 2px;
+    max-width: 460px;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/peg-solitaire.svg">
+    <link rel="manifest" href="/games/peg-solitaire.webmanifest">
+    <meta name="theme-color" content="#92400E">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Peg Solitaire">
+    <link rel="apple-touch-icon" href="/games/icons/peg-solitaire.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#92400E;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>Peg Solitaire</h1>
+    <div class="sub">Brainvita — clear the board to one peg</div>
+  </header>
+
+  <div class="stats">
+    <div class="counter">Pegs: <b id="pegCount">32</b></div>
+    <div id="status"></div>
+    <div class="counter" style="text-align:right">Moves: <b id="moveCount">0</b></div>
+  </div>
+
+  <div class="boardwrap">
+    <div id="board"></div>
+  </div>
+
+  <div class="controls">
+    <button id="undoBtn">Undo</button>
+    <button id="newBtn" class="primary">New Game</button>
+  </div>
+
+  <div class="hint">Tap a peg, then tap a highlighted hole to jump.</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // Board layout: 7x7 grid, with corners (2x2 each) invalid -> classic 33-hole plus.
+  // valid[r][c] = true if a hole exists.
+  const SIZE = 7;
+  const valid = [];
+  for (let r = 0; r < SIZE; r++) {
+    valid[r] = [];
+    for (let c = 0; c < SIZE; c++) {
+      const corner = (r < 2 || r > 4) && (c < 2 || c > 4);
+      valid[r][c] = !corner;
+    }
+  }
+
+  const CENTER = { r: 3, c: 3 };
+
+  // board state: 1 = peg, 0 = empty, null = invalid (no hole)
+  let board = [];
+  let selected = null;      // {r,c} of currently selected peg, or null
+  let legalDests = [];      // array of {r,c, midR, midC} legal destinations for selected peg
+  let history = [];         // stack of previous board snapshots (deep copies)
+  let moves = 0;
+
+  const boardEl = document.getElementById("board");
+  const pegCountEl = document.getElementById("pegCount");
+  const moveCountEl = document.getElementById("moveCount");
+  const statusEl = document.getElementById("status");
+  const undoBtn = document.getElementById("undoBtn");
+  const newBtn = document.getElementById("newBtn");
+
+  const cellEls = {}; // key "r,c" -> element
+
+  function cloneBoard(b) {
+    return b.map(row => row.slice());
+  }
+
+  function initBoard() {
+    board = [];
+    for (let r = 0; r < SIZE; r++) {
+      board[r] = [];
+      for (let c = 0; c < SIZE; c++) {
+        if (!valid[r][c]) board[r][c] = null;
+        else board[r][c] = 1; // peg
+      }
+    }
+    board[CENTER.r][CENTER.c] = 0; // empty center
+  }
+
+  // Build DOM cells once.
+  function buildBoard() {
+    boardEl.innerHTML = "";
+    for (const k in cellEls) delete cellEls[k];
+    // gap fraction relative to cell
+    const n = SIZE;
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        if (!valid[r][c]) continue;
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        // Position as percentage. Each cell occupies (100/n)% with padding handled by inner element size.
+        const sizePct = 100 / n;
+        cell.style.width = sizePct + "%";
+        cell.style.height = sizePct + "%";
+        cell.style.left = (c * sizePct) + "%";
+        cell.style.top = (r * sizePct) + "%";
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+        cell.addEventListener("click", onCellTap, false);
+        boardEl.appendChild(cell);
+        cellEls[r + "," + c] = cell;
+      }
+    }
+  }
+
+  // Compute legal destinations for a peg at (r,c).
+  // A move: jump orthogonally over an adjacent PEG into an EMPTY hole 2 cells away.
+  function destsFor(r, c) {
+    const out = [];
+    if (board[r][c] !== 1) return out;
+    const dirs = [[-2, 0], [2, 0], [0, -2], [0, 2]];
+    for (const [dr, dc] of dirs) {
+      const tr = r + dr, tc = c + dc;          // target hole
+      const mr = r + dr / 2, mc = c + dc / 2;  // jumped (middle) cell
+      if (tr < 0 || tr >= SIZE || tc < 0 || tc >= SIZE) continue;
+      if (!valid[tr][tc] || !valid[mr][mc]) continue;
+      if (board[tr][tc] === 0 && board[mr][mc] === 1) {
+        out.push({ r: tr, c: tc, midR: mr, midC: mc });
+      }
+    }
+    return out;
+  }
+
+  function anyMovesLeft() {
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        if (board[r][c] === 1 && destsFor(r, c).length > 0) return true;
+      }
+    }
+    return false;
+  }
+
+  function countPegs() {
+    let n = 0;
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++)
+        if (board[r][c] === 1) n++;
+    return n;
+  }
+
+  function clearSelection() {
+    selected = null;
+    legalDests = [];
+  }
+
+  function onCellTap(e) {
+    const cell = e.currentTarget;
+    const r = parseInt(cell.dataset.r, 10);
+    const c = parseInt(cell.dataset.c, 10);
+
+    // If game over, ignore taps (New Game required).
+    if (gameOver) return;
+
+    // If a destination tap (legal move from current selection)
+    if (selected) {
+      const dest = legalDests.find(d => d.r === r && d.c === c);
+      if (dest) {
+        doMove(selected.r, selected.c, dest);
+        return;
+      }
+      // Tapped the selected peg again -> deselect
+      if (selected.r === r && selected.c === c) {
+        clearSelection();
+        render();
+        return;
+      }
+    }
+
+    // Selecting a peg
+    if (board[r][c] === 1) {
+      const dests = destsFor(r, c);
+      if (dests.length > 0) {
+        selected = { r, c };
+        legalDests = dests;
+        beep(660, 0.05, 0.08);
+      } else {
+        // peg with no moves: still allow selecting (shows nothing), but give feedback
+        selected = { r, c };
+        legalDests = [];
+        beep(300, 0.06, 0.06);
+      }
+      render();
+      return;
+    }
+
+    // Tapped empty/invalid with no valid selection action -> clear selection
+    clearSelection();
+    render();
+  }
+
+  let gameOver = false;
+
+  function doMove(fr, fc, dest) {
+    // snapshot for undo
+    history.push(cloneBoard(board));
+    board[fr][fc] = 0;
+    board[dest.midR][dest.midC] = 0;
+    board[dest.r][dest.c] = 1;
+    moves++;
+    clearSelection();
+    beep(440, 0.07, 0.12);
+    setTimeout(() => beep(880, 0.06, 0.10), 60);
+    render();
+    checkEnd();
+  }
+
+  function checkEnd() {
+    const pegs = countPegs();
+    if (pegs === 1) {
+      gameOver = true;
+      const centerWin = board[CENTER.r][CENTER.c] === 1;
+      statusEl.textContent = centerWin ? "Perfect! 1 peg in center 🏆" : "You win! 1 peg left 🎉";
+      winFanfare();
+    } else if (!anyMovesLeft()) {
+      gameOver = true;
+      statusEl.textContent = "Stuck — " + pegs + " pegs left";
+      sadTone();
+    } else {
+      statusEl.textContent = "";
+    }
+  }
+
+  function render() {
+    for (const key in cellEls) {
+      const [r, c] = key.split(",").map(Number);
+      const cell = cellEls[key];
+      const v = board[r][c];
+      cell.classList.remove("selected", "legal");
+      // inner content
+      let inner = cell.firstChild;
+      const wantPeg = v === 1;
+      // rebuild inner
+      cell.innerHTML = "";
+      const node = document.createElement("div");
+      node.className = wantPeg ? "peg" : "hole";
+      cell.appendChild(node);
+
+      if (selected && selected.r === r && selected.c === c) {
+        cell.classList.add("selected");
+      }
+    }
+    // legal highlights
+    for (const d of legalDests) {
+      const cell = cellEls[d.r + "," + d.c];
+      if (cell) cell.classList.add("legal");
+    }
+    pegCountEl.textContent = countPegs();
+    moveCountEl.textContent = moves;
+    undoBtn.disabled = history.length === 0;
+  }
+
+  function newGame() {
+    initBoard();
+    history = [];
+    moves = 0;
+    gameOver = false;
+    clearSelection();
+    statusEl.textContent = "";
+    render();
+  }
+
+  function undo() {
+    if (history.length === 0) return;
+    board = history.pop();
+    moves = Math.max(0, moves - 1);
+    gameOver = false;
+    clearSelection();
+    statusEl.textContent = "";
+    render();
+    beep(520, 0.05, 0.07);
+  }
+
+  // ---- WebAudio ----
+  let audioCtx = null;
+  function ac() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    return audioCtx;
+  }
+  function beep(freq, dur, vol) {
+    const ctx = ac();
+    if (!ctx) return;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "triangle";
+    o.frequency.value = freq;
+    g.gain.value = 0;
+    o.connect(g); g.connect(ctx.destination);
+    const t = ctx.currentTime;
+    g.gain.linearRampToValueAtTime(vol || 0.08, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.1));
+    o.start(t);
+    o.stop(t + (dur || 0.1) + 0.02);
+  }
+  function winFanfare() {
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((f, i) => setTimeout(() => beep(f, 0.18, 0.12), i * 110));
+  }
+  function sadTone() {
+    const notes = [330, 262, 196];
+    notes.forEach((f, i) => setTimeout(() => beep(f, 0.22, 0.1), i * 140));
+  }
+
+  // ---- wire up ----
+  undoBtn.addEventListener("click", undo, false);
+  newBtn.addEventListener("click", newGame, false);
+
+  // prevent double-tap zoom / gesture scroll on board area
+  document.addEventListener("gesturestart", e => e.preventDefault());
+  boardEl.addEventListener("touchmove", e => e.preventDefault(), { passive: false });
+
+  buildBoard();
+  newGame();
+})();
+</script>
+</body>
+</html>

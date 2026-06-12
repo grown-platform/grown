@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b3d2e">
+<title>Mahjong Solitaire</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: #0b3d2e;
+    color: #f0ead6;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+  header {
+    flex: 0 0 auto;
+    padding: 8px 10px 6px;
+    text-align: center;
+    background: linear-gradient(#0e4a37, #0b3d2e);
+    box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    z-index: 5;
+  }
+  h1 {
+    margin: 0 0 6px;
+    font-size: 18px;
+    letter-spacing: .5px;
+    font-weight: 700;
+    color: #ffd36b;
+  }
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+  }
+  .stat {
+    font-size: 13px;
+    background: rgba(0,0,0,.25);
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .stat b { color: #ffd36b; }
+  button {
+    font: inherit;
+    font-size: 13px;
+    color: #0b3d2e;
+    background: #ffd36b;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: translateY(1px); filter: brightness(.95); }
+  button.alt { background: #8fd3b6; }
+  #msg {
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 13px;
+    min-height: 18px;
+    padding: 4px 6px;
+    color: #ffe9a8;
+  }
+  #boardWrap {
+    flex: 1 1 auto;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  #board {
+    position: relative;
+    margin: 6px auto;
+  }
+  .tile {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(155deg, #fffdf5, #e8e0c8);
+    border-radius: 5px;
+    border: 1px solid #b9ad8a;
+    box-shadow:
+      2px 0 0 #c8bd98,
+      0 2px 0 #c8bd98,
+      3px 3px 4px rgba(0,0,0,.35);
+    line-height: 1;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .08s;
+  }
+  .tile .face {
+    pointer-events: none;
+    text-align: center;
+    font-weight: 700;
+  }
+  .tile.blocked {
+    filter: brightness(.78) saturate(.7);
+    cursor: default;
+  }
+  .tile.sel {
+    outline: 3px solid #ff7043;
+    outline-offset: -2px;
+    box-shadow:
+      2px 0 0 #c8bd98,
+      0 2px 0 #c8bd98,
+      0 0 10px 2px #ff7043;
+    z-index: 9999 !important;
+  }
+  .tile.hint {
+    animation: pulse .6s ease-in-out 4;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 2px 0 0 #c8bd98, 0 2px 0 #c8bd98, 3px 3px 4px rgba(0,0,0,.35); }
+    50% { box-shadow: 0 0 12px 4px #4fc3f7; }
+  }
+  .tile.gone { transform: scale(0); opacity: 0; }
+  footer {
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 11px;
+    color: #8fd3b6;
+    padding: 4px 6px 8px;
+    opacity: .7;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/mahjong-solitaire.svg">
+    <link rel="manifest" href="/games/mahjong-solitaire.webmanifest">
+    <meta name="theme-color" content="#166534">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Mahjong Solitaire">
+    <link rel="apple-touch-icon" href="/games/icons/mahjong-solitaire.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#166534;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<header>
+  <h1>Mahjong Solitaire</h1>
+  <div class="bar">
+    <span class="stat">Tiles: <b id="remain">144</b></span>
+    <button id="hintBtn" class="alt">Hint</button>
+    <button id="shuffleBtn" class="alt">Shuffle</button>
+    <button id="newBtn">New Game</button>
+  </div>
+</header>
+<div id="msg">Match two free tiles.</div>
+<div id="boardWrap">
+  <div id="board"></div>
+</div>
+<footer>Free = nothing on top &amp; a clear left or right edge.</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Layout definition (classic "turtle"-style, simplified & symmetric) ----------
+  // Grid uses half-unit coordinates. A tile occupies 2x2 half-cells.
+  // We define slots as {layer, x, y} where x,y are in half-units (tile spans x..x+1, y..y+1).
+  // Total slots must be EVEN (each face appears 4 times -> multiples of 4 ideal; we use 144).
+  // Build a layout generator that yields exactly 144 slots across layers.
+
+  // We'll generate the classic dragon layout via rows-per-layer description.
+  // Each entry: [layer, y, xStart, count]  -> places `count` tiles in a horizontal run,
+  // each tile 2 half-units apart starting at xStart (half-units), all on row y (half-units).
+  // Designed so total = 144.
+  var LAYOUT = [
+    // Layer 0 (bottom) — 87 tiles
+    [0, 0, 2, 12],
+    [0, 2, 6, 8],
+    [0, 4, 4, 10],
+    [0, 6, 2, 12],
+    [0, 8, 2, 12],
+    [0, 10, 4, 10],
+    [0, 12, 6, 8],
+    [0, 14, 2, 12],
+    // left + right wings on middle row (extra tiles to reach 87 on layer0)
+    [0, 6, 0, 1],
+    [0, 8, 0, 1],
+    [0, 6, 26, 1],
+    // Layer 1 — 36 tiles (6x6 centered)
+    [1, 4, 8, 6],
+    [1, 6, 8, 6],
+    [1, 8, 8, 6],
+    [1, 10, 8, 6],
+    [1, 12, 8, 6],
+    [1, 14, 8, 6],
+    // Layer 2 — 16 tiles (4x4 centered)
+    [2, 6, 10, 4],
+    [2, 8, 10, 4],
+    [2, 10, 10, 4],
+    [2, 12, 10, 4],
+    // Layer 3 — 4 tiles (2x2 centered)
+    [3, 8, 12, 2],
+    [3, 10, 12, 2],
+    // Layer 4 — 1 tile (top)
+    [4, 9, 13, 1]
+  ];
+
+  function buildSlots() {
+    var slots = [];
+    var seen = {};
+    for (var i = 0; i < LAYOUT.length; i++) {
+      var row = LAYOUT[i];
+      var layer = row[0], y = row[1], xStart = row[2], count = row[3];
+      for (var c = 0; c < count; c++) {
+        var x = xStart + c * 2;
+        var key = layer + ":" + x + ":" + y;
+        if (seen[key]) continue;
+        seen[key] = true;
+        slots.push({ id: slots.length, layer: layer, x: x, y: y });
+      }
+    }
+    return slots;
+  }
+
+  var SLOTS = buildSlots();
+  // SLOTS.length should be even. If odd, drop the last to keep pairing valid.
+  if (SLOTS.length % 2 === 1) SLOTS.pop();
+
+  // ---------- Geometry / overlap helpers ----------
+  // Two tiles (each spans 2 half-units in x and y) overlap in footprint if their
+  // x ranges overlap AND y ranges overlap.
+  function footprintOverlap(a, b) {
+    return Math.abs(a.x - b.x) < 2 && Math.abs(a.y - b.y) < 2;
+  }
+
+  // Precompute relationships between slots (independent of which tile is where).
+  // covers[i] = list of slot indices on layer+1 that sit directly on top of slot i.
+  // leftNeighbors[i] / rightNeighbors[i] = same-layer slots adjacent on left/right.
+  var coversAbove = [];   // slots above that overlap slot i (i is below)
+  var leftAdj = [];
+  var rightAdj = [];
+  (function precompute() {
+    for (var i = 0; i < SLOTS.length; i++) {
+      coversAbove[i] = [];
+      leftAdj[i] = [];
+      rightAdj[i] = [];
+    }
+    for (var a = 0; a < SLOTS.length; a++) {
+      for (var b = 0; b < SLOTS.length; b++) {
+        if (a === b) continue;
+        var A = SLOTS[a], B = SLOTS[b];
+        if (B.layer === A.layer + 1 && footprintOverlap(A, B)) {
+          coversAbove[a].push(b);
+        }
+        if (B.layer === A.layer && Math.abs(B.y - A.y) < 2) {
+          // adjacent horizontally if exactly 2 half-units apart on x (touching long side)
+          if (B.x === A.x - 2) leftAdj[a].push(b);
+          else if (B.x === A.x + 2) rightAdj[a].push(b);
+        }
+      }
+    }
+  })();
+
+  // ---------- Tile faces ----------
+  // Use Unicode Mahjong tiles where well-supported, plus emoji fallbacks.
+  // Need SLOTS.length/4 distinct faces (each used 4x). 144 -> 36 faces. We provide >=36.
+  var FACES = [
+    "🀇","🀈","🀉","🀊", // 🀇 chars (man 1-4)
+    "🀋","🀌","🀍","🀎","🀏", // man 5-9
+    "🀐","🀑","🀒","🀓","🀔", // sou 1-5
+    "🀕","🀖","🀗","🀘", // sou 6-9
+    "🀙","🀚","🀛","🀜","🀝", // pin 1-5
+    "🀞","🀟","🀠","🀡", // pin 6-9
+    "🀀","🀁","🀂","🀃", // winds E S W N
+    "🀆","🀅","🀄", // dragons
+    "🀢","🀣","🀤","🀥","🀦","🀧" // flowers/seasons
+  ];
+
+  // ---------- State ----------
+  var board = document.getElementById("board");
+  var msgEl = document.getElementById("msg");
+  var remainEl = document.getElementById("remain");
+  var tiles = []; // {slotIdx, face, removed, el}
+  var selected = null; // index into tiles
+  var hintTimer = null;
+
+  // ---------- Sound ----------
+  var AC = null;
+  function actx() {
+    if (!AC) {
+      try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; }
+    }
+    return AC;
+  }
+  function beep(freq, dur, type, vol) {
+    var ac = actx();
+    if (!ac) return;
+    try {
+      var o = ac.createOscillator(), g = ac.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = 0;
+      o.connect(g); g.connect(ac.destination);
+      var t = ac.currentTime;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol || 0.18, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t); o.stop(t + dur + 0.02);
+    } catch (e) {}
+  }
+  function sndSelect() { beep(520, 0.08, "triangle", 0.12); }
+  function sndMatch() { beep(700, 0.09, "sine", 0.16); setTimeout(function(){ beep(950, 0.1, "sine", 0.16); }, 70); }
+  function sndBad() { beep(180, 0.16, "sawtooth", 0.12); }
+  function sndWin() {
+    [523,659,784,1047].forEach(function(f,i){ setTimeout(function(){ beep(f,0.18,"triangle",0.18); }, i*130); });
+  }
+
+  // ---------- Free-tile logic ----------
+  // A tile is FREE if:
+  //  - no non-removed tile occupies any slot directly above it (coversAbove), AND
+  //  - its left side is fully open OR its right side is fully open
+  //    (i.e. no non-removed tile in the adjacent same-layer left/right slot).
+  function slotOccupied(slotIdx) {
+    // tiles array index == slot index (1:1 mapping); occupied if not removed
+    var t = tiles[slotIdx];
+    return t && !t.removed;
+  }
+  function isFreeSlot(slotIdx) {
+    // top check
+    var above = coversAbove[slotIdx];
+    for (var i = 0; i < above.length; i++) {
+      if (slotOccupied(above[i])) return false;
+    }
+    // side check
+    var leftBlocked = false, rightBlocked = false;
+    var L = leftAdj[slotIdx], R = rightAdj[slotIdx];
+    for (var j = 0; j < L.length; j++) { if (slotOccupied(L[j])) { leftBlocked = true; break; } }
+    for (var k = 0; k < R.length; k++) { if (slotOccupied(R[k])) { rightBlocked = true; break; } }
+    return !(leftBlocked && rightBlocked);
+  }
+
+  // ---------- Solvable deal via reverse-removal ----------
+  // Start from a "filled" board (all slots occupied, faces unknown). Repeatedly pick a
+  // PAIR of currently-free occupied slots, assign them the same face, and "remove" them.
+  // Removing in free order guarantees the reverse (placing then matching in that order)
+  // is solvable. Faces are drawn so each face used exactly 4 times (two pairs).
+  function rng(n) { return Math.floor(Math.random() * n); }
+
+  function dealSolvable() {
+    var n = SLOTS.length;
+    // working occupancy: true = occupied
+    var occ = new Array(n);
+    for (var i = 0; i < n; i++) occ[i] = true;
+
+    // local free test against `occ`
+    function freeIn(slotIdx) {
+      var above = coversAbove[slotIdx];
+      for (var a = 0; a < above.length; a++) if (occ[above[a]]) return false;
+      var L = leftAdj[slotIdx], R = rightAdj[slotIdx];
+      var lb = false, rb = false;
+      for (var x = 0; x < L.length; x++) if (occ[L[x]]) { lb = true; break; }
+      for (var y = 0; y < R.length; y++) if (occ[R[y]]) { rb = true; break; }
+      return !(lb && rb);
+    }
+
+    // Build a face multiset: each face x4. Number of pairs = n/2, faces needed = n/4 (rounded).
+    var pairsTotal = n / 2;
+    var faceList = [];
+    var faceCount = Math.ceil(pairsTotal / 2); // each face -> 2 pairs (4 tiles)
+    for (var f = 0; f < faceCount; f++) {
+      faceList.push(FACES[f % FACES.length]);
+      faceList.push(FACES[f % FACES.length]); // two pairs per face
+    }
+    // faceList now has >= pairsTotal entries; trim to exactly pairsTotal
+    faceList.length = pairsTotal;
+    // shuffle faceList so pair assignment order is random
+    for (var s = faceList.length - 1; s > 0; s--) {
+      var r = rng(s + 1); var tmp = faceList[s]; faceList[s] = faceList[r]; faceList[r] = tmp;
+    }
+
+    var assign = new Array(n); // slotIdx -> face
+    var removedCount = 0;
+    var pairIdx = 0;
+
+    while (removedCount < n) {
+      // collect currently free occupied slots
+      var freeSlots = [];
+      for (var idx = 0; idx < n; idx++) {
+        if (occ[idx] && freeIn(idx)) freeSlots.push(idx);
+      }
+      if (freeSlots.length < 2) {
+        // Shouldn't happen with a valid layout, but guard: bail and retry from scratch.
+        return null;
+      }
+      // pick two distinct random free slots
+      var a1 = rng(freeSlots.length);
+      var a2 = rng(freeSlots.length);
+      while (a2 === a1) a2 = rng(freeSlots.length);
+      var s1 = freeSlots[a1], s2 = freeSlots[a2];
+      var face = faceList[pairIdx++];
+      assign[s1] = face; assign[s2] = face;
+      occ[s1] = false; occ[s2] = false;
+      removedCount += 2;
+    }
+    return assign;
+  }
+
+  function makeDeal() {
+    for (var attempt = 0; attempt < 50; attempt++) {
+      var a = dealSolvable();
+      if (a) return a;
+    }
+    return null;
+  }
+
+  // ---------- Build / render ----------
+  var TW = 0, TH = 0, DX = 0, DY = 0; // tile width/height + half-unit step in px
+
+  function computeSize() {
+    // bounds of layout in half-units
+    var maxX = 0, maxY = 0, maxLayer = 0;
+    for (var i = 0; i < SLOTS.length; i++) {
+      if (SLOTS[i].x + 2 > maxX) maxX = SLOTS[i].x + 2;
+      if (SLOTS[i].y + 2 > maxY) maxY = SLOTS[i].y + 2;
+      if (SLOTS[i].layer > maxLayer) maxLayer = SLOTS[i].layer;
+    }
+    // columns = maxX/2 tile-widths wide (since 2 half-units = 1 tile)
+    var cols = maxX / 2;
+    var rows = maxY / 2;
+
+    var wrap = document.getElementById("boardWrap");
+    var availW = wrap.clientWidth - 8;
+    var availH = wrap.clientHeight - 16;
+
+    // include layer offset budget (each layer shifts up-left a bit)
+    var layerOff = 0.16; // fraction of tile for 3D stack offset
+    var tileW = availW / (cols + maxLayer * layerOff);
+    // tile aspect ~ 1.32 tall
+    var tileH = tileW * 1.32;
+    var neededH = tileH * (rows + maxLayer * layerOff);
+    if (neededH > availH) {
+      tileH = availH / (rows + maxLayer * layerOff);
+      tileW = tileH / 1.32;
+    }
+    // clamp min tile so it stays tappable; allow horizontal scroll via board width
+    tileW = Math.max(tileW, 20);
+    tileH = tileW * 1.32;
+
+    TW = tileW;
+    TH = tileH;
+    DX = tileW / 2;   // one half-unit in px (x)
+    DY = tileH / 2;   // one half-unit in px (y)
+
+    var offPxX = TW * layerOff;
+    var offPxY = TH * layerOff;
+    LAYER_OFF_X = offPxX;
+    LAYER_OFF_Y = offPxY;
+
+    board.style.width = (cols * tileW + maxLayer * offPxX + 6) + "px";
+    board.style.height = (rows * tileH + maxLayer * offPxY + 6) + "px";
+  }
+  var LAYER_OFF_X = 0, LAYER_OFF_Y = 0;
+
+  function placeTileEl(t) {
+    var s = SLOTS[t.slotIdx];
+    var el = t.el;
+    // base px: x half-units -> x * DX ; shift up-left as layer increases (stack illusion)
+    var left = s.x * DX + s.layer * LAYER_OFF_X;
+    var top = s.y * DY - s.layer * LAYER_OFF_Y + (LAYER_OFF_Y * maxLayerGlobal);
+    el.style.width = TW + "px";
+    el.style.height = TH + "px";
+    el.style.left = left + "px";
+    el.style.top = top + "px";
+    el.style.zIndex = (s.layer * 1000 + s.y * 10 + s.x);
+    var fs = Math.round(TW * 0.62);
+    el.firstChild.style.fontSize = fs + "px";
+  }
+
+  var maxLayerGlobal = 0;
+
+  function render() {
+    board.innerHTML = "";
+    maxLayerGlobal = 0;
+    for (var i = 0; i < SLOTS.length; i++) if (SLOTS[i].layer > maxLayerGlobal) maxLayerGlobal = SLOTS[i].layer;
+    computeSize();
+    for (var t = 0; t < tiles.length; t++) {
+      var tile = tiles[t];
+      if (tile.removed) continue;
+      var el = document.createElement("div");
+      el.className = "tile";
+      var face = document.createElement("span");
+      face.className = "face";
+      face.textContent = tile.face;
+      el.appendChild(face);
+      tile.el = el;
+      (function (idx) {
+        el.addEventListener("click", function () { onTileTap(idx); });
+      })(t);
+      board.appendChild(el);
+      placeTileEl(tile);
+    }
+    refreshBlocked();
+    updateRemain();
+  }
+
+  function refreshBlocked() {
+    for (var i = 0; i < tiles.length; i++) {
+      var t = tiles[i];
+      if (t.removed || !t.el) continue;
+      if (isFreeSlot(t.slotIdx)) t.el.classList.remove("blocked");
+      else t.el.classList.add("blocked");
+    }
+  }
+
+  function updateRemain() {
+    var c = 0;
+    for (var i = 0; i < tiles.length; i++) if (!tiles[i].removed) c++;
+    remainEl.textContent = c;
+    return c;
+  }
+
+  // ---------- Interaction ----------
+  function clearHintFx() {
+    if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
+    for (var i = 0; i < tiles.length; i++) {
+      if (tiles[i].el) tiles[i].el.classList.remove("hint");
+    }
+  }
+
+  function onTileTap(idx) {
+    var t = tiles[idx];
+    if (!t || t.removed) return;
+    clearHintFx();
+    if (!isFreeSlot(t.slotIdx)) {
+      sndBad();
+      flashMsg("That tile is blocked.");
+      return;
+    }
+    if (selected === idx) {
+      // deselect
+      t.el.classList.remove("sel");
+      selected = null;
+      return;
+    }
+    if (selected === null) {
+      selected = idx;
+      t.el.classList.add("sel");
+      sndSelect();
+      return;
+    }
+    // we have a prior selection
+    var prev = tiles[selected];
+    if (prev.face === t.face) {
+      // match!
+      var pe = prev.el, te = t.el;
+      prev.el.classList.remove("sel");
+      prev.removed = true;
+      t.removed = true;
+      sndMatch();
+      pe.classList.add("gone");
+      te.classList.add("gone");
+      (function (a, b) {
+        setTimeout(function () {
+          if (a && a.parentNode) a.parentNode.removeChild(a);
+          if (b && b.parentNode) b.parentNode.removeChild(b);
+        }, 140);
+      })(pe, te);
+      selected = null;
+      refreshBlocked();
+      var left = updateRemain();
+      if (left === 0) {
+        flashMsg("🎉 You cleared the board! You win!");
+        sndWin();
+      } else {
+        flashMsg("Matched! " + left + " tiles left.");
+        // check stuck
+        if (!hasMove()) {
+          flashMsg("No moves left — try Shuffle.");
+        }
+      }
+    } else {
+      // not a match -> switch selection to new tile
+      prev.el.classList.remove("sel");
+      selected = idx;
+      t.el.classList.add("sel");
+      sndSelect();
+    }
+  }
+
+  var msgTimer = null;
+  function flashMsg(s) {
+    msgEl.textContent = s;
+  }
+
+  // ---------- Hint / move detection ----------
+  function freeOccupiedSlots() {
+    var arr = [];
+    for (var i = 0; i < tiles.length; i++) {
+      if (!tiles[i].removed && isFreeSlot(tiles[i].slotIdx)) arr.push(i);
+    }
+    return arr;
+  }
+  function findPair() {
+    var free = freeOccupiedSlots();
+    for (var i = 0; i < free.length; i++) {
+      for (var j = i + 1; j < free.length; j++) {
+        if (tiles[free[i]].face === tiles[free[j]].face) {
+          return [free[i], free[j]];
+        }
+      }
+    }
+    return null;
+  }
+  function hasMove() { return findPair() !== null; }
+
+  function showHint() {
+    clearHintFx();
+    var p = findPair();
+    if (!p) {
+      flashMsg("No moves available — try Shuffle.");
+      sndBad();
+      return;
+    }
+    var a = tiles[p[0]].el, b = tiles[p[1]].el;
+    if (a) a.classList.add("hint");
+    if (b) b.classList.add("hint");
+    flashMsg("Hint: try these two.");
+    hintTimer = setTimeout(clearHintFx, 2600);
+  }
+
+  // ---------- Shuffle remaining (solvably) ----------
+  // Re-deal faces onto the currently-occupied slots so the result is solvable.
+  function shuffleRemaining() {
+    clearHintFx();
+    if (selected !== null && tiles[selected].el) tiles[selected].el.classList.remove("sel");
+    selected = null;
+
+    var liveSlots = [];
+    for (var i = 0; i < tiles.length; i++) if (!tiles[i].removed) liveSlots.push(tiles[i].slotIdx);
+    var n = liveSlots.length;
+    if (n === 0) return;
+    if (n % 2 === 1) { flashMsg("Cannot shuffle an odd count."); return; }
+
+    // Collect the multiset of faces currently on the board (preserve face identities/counts).
+    var liveFaces = [];
+    for (var k = 0; k < tiles.length; k++) if (!tiles[k].removed) liveFaces.push(tiles[k].face);
+
+    // reverse-removal over the subset of slots that are live.
+    var liveSet = {};
+    for (var q = 0; q < liveSlots.length; q++) liveSet[liveSlots[q]] = true;
+
+    // build occupancy restricted to live slots
+    function freeInSub(slotIdx, occ) {
+      var above = coversAbove[slotIdx];
+      for (var a = 0; a < above.length; a++) if (occ[above[a]]) return false;
+      var L = leftAdj[slotIdx], R = rightAdj[slotIdx];
+      var lb = false, rb = false;
+      for (var x = 0; x < L.length; x++) if (occ[L[x]]) { lb = true; break; }
+      for (var y = 0; y < R.length; y++) if (occ[R[y]]) { rb = true; break; }
+      return !(lb && rb);
+    }
+
+    var best = null;
+    for (var attempt = 0; attempt < 80 && !best; attempt++) {
+      var occ = {};
+      for (var z = 0; z < liveSlots.length; z++) occ[liveSlots[z]] = true;
+      // ordered list of slot-pairs in free-removal order
+      var order = [];
+      var remaining = n;
+      var ok = true;
+      while (remaining > 0) {
+        var fs = [];
+        for (var w = 0; w < liveSlots.length; w++) {
+          var sid = liveSlots[w];
+          if (occ[sid] && freeInSub(sid, occ)) fs.push(sid);
+        }
+        if (fs.length < 2) { ok = false; break; }
+        var i1 = rng(fs.length), i2 = rng(fs.length);
+        while (i2 === i1) i2 = rng(fs.length);
+        order.push([fs[i1], fs[i2]]);
+        occ[fs[i1]] = false; occ[fs[i2]] = false;
+        remaining -= 2;
+      }
+      if (ok) best = order;
+    }
+    if (!best) { flashMsg("Shuffle failed — try again."); return; }
+
+    // Now assign faces: we must place the SAME multiset of faces (liveFaces) such that
+    // each removal pair in `best` shares a face. Group liveFaces into pairs first.
+    var faceBag = {};
+    for (var fi = 0; fi < liveFaces.length; fi++) {
+      faceBag[liveFaces[fi]] = (faceBag[liveFaces[fi]] || 0) + 1;
+    }
+    // build list of face-pairs from the bag (counts are even because removed in pairs)
+    var facePairs = [];
+    for (var fkey in faceBag) {
+      if (!faceBag.hasOwnProperty(fkey)) continue;
+      var cnt = faceBag[fkey];
+      // if odd (shouldn't be), make it even by dropping one — safety only
+      var pairs = Math.floor(cnt / 2);
+      for (var pp = 0; pp < pairs; pp++) facePairs.push(fkey);
+    }
+    // shuffle facePairs
+    for (var sP = facePairs.length - 1; sP > 0; sP--) {
+      var rP = rng(sP + 1); var tP = facePairs[sP]; facePairs[sP] = facePairs[rP]; facePairs[rP] = tP;
+    }
+    if (facePairs.length !== best.length) {
+      // mismatch safety (e.g. an odd face count) — abort gracefully
+      flashMsg("Shuffle failed — try again.");
+      return;
+    }
+
+    // assign
+    var newFace = {};
+    for (var b = 0; b < best.length; b++) {
+      var fc = facePairs[b];
+      newFace[best[b][0]] = fc;
+      newFace[best[b][1]] = fc;
+    }
+    // write back onto tiles
+    for (var ti = 0; ti < tiles.length; ti++) {
+      if (tiles[ti].removed) continue;
+      var sIdx = tiles[ti].slotIdx;
+      if (newFace.hasOwnProperty(sIdx)) {
+        tiles[ti].face = newFace[sIdx];
+        if (tiles[ti].el) tiles[ti].el.firstChild.textContent = newFace[sIdx];
+      }
+    }
+    refreshBlocked();
+    flashMsg("Shuffled! Board is solvable again.");
+    beep(440, 0.08, "triangle", 0.12);
+  }
+
+  // ---------- New game ----------
+  function newGame() {
+    clearHintFx();
+    selected = null;
+    var assign = makeDeal();
+    if (!assign) {
+      flashMsg("Deal error — retrying...");
+      // fallback: simple paired fill (still solvable since reverse-removal is the source)
+      assign = makeDeal();
+    }
+    tiles = [];
+    for (var i = 0; i < SLOTS.length; i++) {
+      tiles.push({
+        slotIdx: i,
+        face: assign ? assign[i] : FACES[i % FACES.length],
+        removed: false,
+        el: null
+      });
+    }
+    render();
+    flashMsg("New game! Match free tiles.");
+  }
+
+  // ---------- Events ----------
+  document.getElementById("newBtn").addEventListener("click", function () { actx(); newGame(); });
+  document.getElementById("hintBtn").addEventListener("click", function () { actx(); showHint(); });
+  document.getElementById("shuffleBtn").addEventListener("click", function () { actx(); shuffleRemaining(); });
+
+  // prevent double-tap zoom / pinch on iOS
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+  var lastTouch = 0;
+  document.addEventListener("touchend", function (e) {
+    var now = Date.now();
+    if (now - lastTouch < 300) { e.preventDefault(); }
+    lastTouch = now;
+  }, { passive: false });
+
+  var rt = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () {
+      // re-render to recompute tile sizes; preserve faces & removed state
+      var sel = selected;
+      render();
+      if (sel !== null && tiles[sel] && !tiles[sel].removed && tiles[sel].el) {
+        selected = sel;
+        tiles[sel].el.classList.add("sel");
+      } else {
+        selected = null;
+      }
+    }, 150);
+  });
+
+  // ---------- Boot ----------
+  newGame();
+})();
+</script>
+</body>
+</html>

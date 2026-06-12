@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Golf Solitaire</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    background: #1b5e3a;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: env(safe-area-inset-top) 6px env(safe-area-inset-bottom);
+  }
+  header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 2px 6px;
+    gap: 6px;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+  #newGame {
+    background: #ffce3a;
+    color: #1b3a2a;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  #newGame:active { transform: scale(0.96); }
+  #stats {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: space-around;
+    font-size: 13px;
+    padding: 2px 0 8px;
+    color: #d6f5e3;
+  }
+  #stats b { color: #ffce3a; font-size: 15px; }
+  /* Card sizing driven by CSS var so we can keep 7 columns on ~360px */
+  #table {
+    flex: 1 1 auto;
+    --gap: 4px;
+    --cw: calc((100% - 6 * var(--gap)) / 7);
+    --ch: calc(var(--cw) * 1.4);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  #tableau {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: var(--gap);
+    align-content: start;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .card {
+    width: 100%;
+    aspect-ratio: 5 / 7;
+    border-radius: 6px;
+    position: relative;
+    background: #fdfdfd;
+    border: 1px solid #00000022;
+    box-shadow: 0 1px 2px #00000033;
+    cursor: default;
+    overflow: hidden;
+  }
+  /* stacked overlap in tableau */
+  .col .card { margin-top: calc(var(--ch) * -0.62); }
+  .col .card:first-child { margin-top: 0; }
+
+  .card .corner {
+    position: absolute;
+    font-weight: 700;
+    line-height: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: clamp(8px, 3.4vw, 15px);
+  }
+  .card .tl { top: 3px; left: 3px; }
+  .card .br { bottom: 3px; right: 3px; transform: rotate(180deg); }
+  .card .pip {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: clamp(12px, 6vw, 26px);
+    line-height: 1;
+  }
+  .card.red { color: #d11e2a; }
+  .card.black { color: #1a1a1a; }
+
+  .card.playable {
+    outline: 3px solid #ffce3a;
+    outline-offset: -1px;
+    cursor: pointer;
+    z-index: 5;
+  }
+  .card.playable:active { transform: translateY(-3px) scale(1.02); }
+
+  .card.empty {
+    background: transparent;
+    border: 2px dashed #ffffff44;
+    box-shadow: none;
+  }
+
+  #bottom {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 10px 0 6px;
+  }
+  .pileWrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .pileWrap .label { font-size: 11px; color: #cfeede; }
+  .pile {
+    width: calc(var(--cw) * 1.25);
+    aspect-ratio: 5 / 7;
+  }
+  #stock.card {
+    background: repeating-linear-gradient(45deg, #14492e, #14492e 6px, #1d6340 6px, #1d6340 12px);
+    border: 1px solid #ffffff33;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #stock.card.disabled { opacity: 0.35; cursor: default; }
+  #stock:active:not(.disabled) { transform: scale(0.97); }
+  #stockCount {
+    background: #00000055;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 3px 7px;
+    border-radius: 10px;
+  }
+  #message {
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    min-height: 22px;
+    padding-bottom: 4px;
+  }
+  #message.win { color: #7CFC9A; }
+  #message.lose { color: #ff9a9a; }
+
+  /* Overlay banner */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: #00000066;
+    z-index: 50;
+  }
+  #overlay.show { display: flex; }
+  #overlay .box {
+    background: #fff;
+    color: #1b3a2a;
+    border-radius: 14px;
+    padding: 22px 26px;
+    text-align: center;
+    max-width: 80%;
+    box-shadow: 0 8px 24px #00000055;
+  }
+  #overlay .box h2 { font-size: 22px; margin-bottom: 6px; }
+  #overlay .box p { font-size: 14px; margin-bottom: 16px; color: #355; }
+  #overlay .box button {
+    background: #1b5e3a;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/golf-solitaire.svg">
+    <link rel="manifest" href="/games/golf-solitaire.webmanifest">
+    <meta name="theme-color" content="#15803D">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Golf Solitaire">
+    <link rel="apple-touch-icon" href="/games/icons/golf-solitaire.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#15803D;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>⛳ Golf Solitaire</h1>
+    <button id="newGame">New Game</button>
+  </header>
+  <div id="stats">
+    <div>Score: <b id="score">0</b></div>
+    <div>Cleared: <b id="cleared">0</b>/35</div>
+  </div>
+  <div id="table">
+    <div id="tableau"></div>
+    <div id="bottom">
+      <div class="pileWrap">
+        <div class="label">Stock</div>
+        <div id="stock" class="card pile"><span id="stockCount">0</span></div>
+      </div>
+      <div class="pileWrap">
+        <div class="label">Waste</div>
+        <div id="waste" class="card pile"></div>
+      </div>
+    </div>
+    <div id="message"></div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="box">
+    <h2 id="ovTitle"></h2>
+    <p id="ovText"></p>
+    <button id="ovBtn">Play Again</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SUITS = [
+    { s: "♠", red: false }, // spades
+    { s: "♥", red: true },  // hearts
+    { s: "♦", red: true },  // diamonds
+    { s: "♣", red: false }  // clubs
+  ];
+  var RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"]; // value = index+1
+
+  var COLS = 7;
+  var ROWS = 5;
+
+  // --- Audio (WebAudio, optional) ---
+  var actx = null;
+  function ac() {
+    if (actx) return actx;
+    try {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (C) actx = new C();
+    } catch (e) { actx = null; }
+    return actx;
+  }
+  function beep(freq, dur, type, vol) {
+    var c = ac();
+    if (!c) return;
+    if (c.state === "suspended") { try { c.resume(); } catch (e) {} }
+    try {
+      var o = c.createOscillator();
+      var g = c.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = 0.0001;
+      o.connect(g); g.connect(c.destination);
+      var t = c.currentTime;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol || 0.12, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.12));
+      o.start(t);
+      o.stop(t + (dur || 0.12) + 0.02);
+    } catch (e) {}
+  }
+  function sndPlay() { beep(620, 0.1, "triangle", 0.12); }
+  function sndDraw() { beep(330, 0.09, "sine", 0.1); }
+  function sndWin()  { beep(523,0.12,"square",0.12); setTimeout(function(){beep(659,0.12,"square",0.12);},120); setTimeout(function(){beep(784,0.18,"square",0.12);},260); }
+  function sndLose() { beep(280,0.18,"sawtooth",0.1); setTimeout(function(){beep(180,0.25,"sawtooth",0.1);},150); }
+
+  // --- State ---
+  var columns;   // array of 7 arrays of card objects {r,suit}
+  var stock;     // array (draw from end)
+  var waste;     // top card object or null
+  var score;
+  var gameOver;
+
+  var elTableau = document.getElementById("tableau");
+  var elStock = document.getElementById("stock");
+  var elStockCount = document.getElementById("stockCount");
+  var elWaste = document.getElementById("waste");
+  var elScore = document.getElementById("score");
+  var elCleared = document.getElementById("cleared");
+  var elMessage = document.getElementById("message");
+  var elOverlay = document.getElementById("overlay");
+  var elOvTitle = document.getElementById("ovTitle");
+  var elOvText = document.getElementById("ovText");
+
+  function makeDeck() {
+    var d = [];
+    for (var si = 0; si < SUITS.length; si++) {
+      for (var r = 1; r <= 13; r++) {
+        d.push({ r: r, suit: si });
+      }
+    }
+    return d;
+  }
+  function shuffle(a) {
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  function newGame() {
+    var deck = shuffle(makeDeck());
+    columns = [[], [], [], [], [], [], []];
+    for (var row = 0; row < ROWS; row++) {
+      for (var c = 0; c < COLS; c++) {
+        columns[c].push(deck.pop());
+      }
+    }
+    // remaining 52 - 35 = 17 cards: 1 to waste, 16 stock
+    waste = deck.pop();
+    stock = deck; // 16 cards remain, draw from end
+    score = 0;
+    gameOver = false;
+    elOverlay.classList.remove("show");
+    elMessage.textContent = "";
+    elMessage.className = "";
+    render();
+  }
+
+  // ±1 no wrap: A(1) and K(13) do not connect
+  function canPlay(card) {
+    if (!card || !waste || gameOver) return false;
+    var diff = Math.abs(card.r - waste.r);
+    return diff === 1;
+  }
+
+  function cardClasses(card) {
+    return SUITS[card.suit].red ? "red" : "black";
+  }
+  function rankLabel(r) { return RANKS[r - 1]; }
+
+  function buildCardEl(card, opts) {
+    opts = opts || {};
+    var el = document.createElement("div");
+    el.className = "card " + cardClasses(card);
+    var suit = SUITS[card.suit].s;
+    var lbl = rankLabel(card.r);
+    el.innerHTML =
+      '<span class="corner tl">' + lbl + '<span>' + suit + '</span></span>' +
+      '<span class="pip">' + suit + '</span>' +
+      '<span class="corner br">' + lbl + '<span>' + suit + '</span></span>';
+    return el;
+  }
+
+  function render() {
+    // Tableau
+    elTableau.innerHTML = "";
+    var anyPlayable = false;
+    for (var c = 0; c < COLS; c++) {
+      var colEl = document.createElement("div");
+      colEl.className = "col";
+      var col = columns[c];
+      if (col.length === 0) {
+        var empty = document.createElement("div");
+        empty.className = "card empty";
+        colEl.appendChild(empty);
+      } else {
+        for (var i = 0; i < col.length; i++) {
+          var card = col[i];
+          var cardEl = buildCardEl(card);
+          var isBottom = (i === col.length - 1);
+          if (isBottom && canPlay(card)) {
+            cardEl.classList.add("playable");
+            anyPlayable = true;
+            (function (colIndex) {
+              cardEl.addEventListener("click", function () { playFromColumn(colIndex); });
+            })(c);
+          }
+          colEl.appendChild(cardEl);
+        }
+      }
+      elTableau.appendChild(colEl);
+    }
+
+    // Waste
+    elWaste.innerHTML = "";
+    elWaste.className = "card pile";
+    if (waste) {
+      var w = buildCardEl(waste);
+      // strip extra .card so styles nest; keep visual
+      w.style.position = "absolute";
+      w.style.inset = "0";
+      elWaste.classList.add(cardClasses(waste));
+      elWaste.innerHTML = w.innerHTML;
+    }
+
+    // Stock
+    elStockCount.textContent = stock.length;
+    if (stock.length === 0) {
+      elStock.classList.add("disabled");
+    } else {
+      elStock.classList.remove("disabled");
+    }
+
+    // Stats
+    var cleared = 35 - remainingTableau();
+    elScore.textContent = score;
+    elCleared.textContent = cleared;
+
+    checkEnd(anyPlayable);
+  }
+
+  function remainingTableau() {
+    var n = 0;
+    for (var c = 0; c < COLS; c++) n += columns[c].length;
+    return n;
+  }
+
+  function playFromColumn(c) {
+    if (gameOver) return;
+    var col = columns[c];
+    if (col.length === 0) return;
+    var card = col[col.length - 1];
+    if (!canPlay(card)) return;
+    col.pop();
+    waste = card;
+    score += 1;
+    sndPlay();
+    render();
+  }
+
+  function drawStock() {
+    if (gameOver) return;
+    if (stock.length === 0) return;
+    waste = stock.pop();
+    sndDraw();
+    render();
+  }
+
+  function checkEnd(anyPlayable) {
+    if (gameOver) return;
+    if (remainingTableau() === 0) {
+      gameOver = true;
+      // bonus for clearing
+      score += 50 + stock.length * 2;
+      elScore.textContent = score;
+      elMessage.textContent = "🎉 You cleared the board!";
+      elMessage.className = "win";
+      sndWin();
+      showOverlay("You Win! 🏆", "Board cleared — final score " + score + ".");
+      return;
+    }
+    if (!anyPlayable && stock.length === 0) {
+      gameOver = true;
+      elMessage.textContent = "No moves left — game over.";
+      elMessage.className = "lose";
+      sndLose();
+      showOverlay("Game Over", remainingTableau() + " cards left. Final score " + score + ".");
+    }
+  }
+
+  function showOverlay(title, text) {
+    elOvTitle.textContent = title;
+    elOvText.textContent = text;
+    elOverlay.classList.add("show");
+  }
+
+  // --- Events ---
+  document.getElementById("newGame").addEventListener("click", newGame);
+  document.getElementById("ovBtn").addEventListener("click", newGame);
+  elStock.addEventListener("click", drawStock);
+  // unlock audio on first touch
+  document.addEventListener("touchstart", function once() {
+    ac(); document.removeEventListener("touchstart", once);
+  }, { passive: true });
+  // prevent double-tap zoom / scroll bounce
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+
+  newGame();
+})();
+</script>
+</body>
+</html>

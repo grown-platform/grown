@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Pyramid Solitaire</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --green: #0b6b3a;
+    --green-d: #064d28;
+    --gold: #f5d142;
+    --red: #d92b2b;
+    --black: #1a1a1a;
+  }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    background: var(--green-d);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: radial-gradient(ellipse at center, var(--green) 0%, var(--green-d) 100%);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  h1 {
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    color: var(--gold);
+    text-shadow: 0 1px 2px rgba(0,0,0,.4);
+    white-space: nowrap;
+  }
+  .stats {
+    display: flex;
+    gap: 10px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .stat b { color: var(--gold); }
+  #newBtn {
+    background: var(--gold);
+    color: #3a2b00;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 2px 0 #b89a1e;
+  }
+  #newBtn:active { transform: translateY(1px); box-shadow: 0 1px 0 #b89a1e; }
+
+  #board {
+    flex: 1 1 auto;
+    position: relative;
+    overflow: hidden;
+  }
+  #pyramid {
+    position: absolute;
+    inset: 0;
+  }
+
+  .card {
+    position: absolute;
+    border-radius: 6px;
+    background: #fefefe;
+    box-shadow: 0 1px 3px rgba(0,0,0,.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transition: transform .12s, opacity .18s, box-shadow .12s;
+  }
+  .card .corner {
+    position: absolute;
+    font-weight: 800;
+    line-height: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .card .corner.tl { top: 6%; left: 7%; }
+  .card .corner.br { bottom: 6%; right: 7%; transform: rotate(180deg); }
+  .card .pip {
+    font-size: 1.5em;
+  }
+  .card.red { color: var(--red); }
+  .card.black { color: var(--black); }
+
+  .card.covered { filter: brightness(.62) saturate(.7); }
+  .card.free { cursor: pointer; }
+  .card.selected {
+    box-shadow: 0 0 0 3px var(--gold), 0 2px 6px rgba(0,0,0,.5);
+    transform: translateY(-4px) scale(1.04);
+    z-index: 50 !important;
+  }
+  .card.removing {
+    opacity: 0;
+    transform: scale(.3) rotate(20deg);
+    pointer-events: none;
+  }
+  .card.back {
+    background: repeating-linear-gradient(45deg, #2a4d8f, #2a4d8f 6px, #1d3a6e 6px, #1d3a6e 12px);
+    border: 2px solid #fff;
+  }
+  .card.empty {
+    background: rgba(255,255,255,.07);
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.18);
+  }
+
+  footer {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  }
+  .pile {
+    position: relative;
+    text-align: center;
+  }
+  .pile .lbl {
+    font-size: 10px;
+    margin-top: 4px;
+    opacity: .85;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+  .pileSlot {
+    position: relative;
+    cursor: pointer;
+  }
+  .redeals {
+    font-size: 11px;
+    opacity: .9;
+    font-weight: 600;
+  }
+
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,.72);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 200;
+    text-align: center;
+    padding: 24px;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 {
+    font-size: 30px;
+    color: var(--gold);
+    text-shadow: 0 2px 6px rgba(0,0,0,.6);
+  }
+  #overlay p { font-size: 15px; opacity: .9; max-width: 280px; }
+  #overlay button {
+    background: var(--gold);
+    color: #3a2b00;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 3px 0 #b89a1e;
+  }
+  #overlay button:active { transform: translateY(2px); box-shadow: 0 1px 0 #b89a1e; }
+
+  #toast {
+    position: absolute;
+    left: 50%;
+    bottom: 86px;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,.8);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity .25s;
+    pointer-events: none;
+    z-index: 150;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/pyramid-solitaire.svg">
+    <link rel="manifest" href="/games/pyramid-solitaire.webmanifest">
+    <meta name="theme-color" content="#B45309">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Pyramid Solitaire">
+    <link rel="apple-touch-icon" href="/games/icons/pyramid-solitaire.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#B45309;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Pyramid Solitaire</h1>
+    <div class="stats">
+      <span class="stat">Score <b id="score">0</b></span>
+    </div>
+    <button id="newBtn">New Game</button>
+  </header>
+
+  <div id="board">
+    <div id="pyramid"></div>
+    <div id="toast"></div>
+    <div id="overlay">
+      <h2 id="ovTitle"></h2>
+      <p id="ovMsg"></p>
+      <button id="ovBtn">New Game</button>
+    </div>
+  </div>
+
+  <footer>
+    <div class="pile">
+      <div class="pileSlot" id="stockSlot"></div>
+      <div class="lbl">Stock <span id="stockCount"></span></div>
+      <div class="redeals" id="redealInfo"></div>
+    </div>
+    <div class="pile">
+      <div class="pileSlot" id="wasteSlot"></div>
+      <div class="lbl">Waste</div>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Audio ----------
+  var actx = null;
+  function audio(){
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch(e){ actx = null; }
+    }
+    if (actx && actx.state === "suspended") actx.resume();
+    return actx;
+  }
+  function beep(freq, dur, type, vol){
+    var ac = audio(); if (!ac) return;
+    var o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || "sine";
+    o.frequency.value = freq;
+    var t = ac.currentTime;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol || 0.18, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.15));
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + (dur || 0.15) + 0.02);
+  }
+  function sndSelect(){ beep(560, 0.08, "triangle", 0.14); }
+  function sndMatch(){ beep(660, 0.1, "sine", 0.18); setTimeout(function(){ beep(880, 0.14, "sine", 0.18); }, 70); }
+  function sndDeal(){ beep(330, 0.06, "square", 0.08); }
+  function sndBad(){ beep(180, 0.16, "sawtooth", 0.14); }
+  function sndWin(){ [523,659,784,1046].forEach(function(f,i){ setTimeout(function(){ beep(f,0.22,"sine",0.2); }, i*120); }); }
+  function sndLose(){ [392,330,262].forEach(function(f,i){ setTimeout(function(){ beep(f,0.28,"triangle",0.18); }, i*150); }); }
+
+  // ---------- Cards ----------
+  var SUITS = [
+    { ch: "♠", color: "black" }, // spade
+    { ch: "♥", color: "red" },   // heart
+    { ch: "♦", color: "red" },   // diamond
+    { ch: "♣", color: "black" }  // club
+  ];
+  var RANK_LABEL = { 1:"A", 11:"J", 12:"Q", 13:"K" };
+  function rankLabel(v){ return RANK_LABEL[v] || String(v); }
+
+  // ---------- State ----------
+  // Pyramid: 7 rows. row r has r+1 cards (r=0..6). Total 28.
+  // Each pyramid card has index 0..27 (row-major).
+  // A card at (r,c) is covered by (r+1,c) and (r+1,c+1).
+  var pyr = [];      // array of card objects {id, rank, suit, row, col, removed, el}
+  var rowStart = []; // index of first card in each row
+  var stock = [];    // array of card objects (face down pile)
+  var waste = [];    // array of card objects (face up, only top playable)
+  var selected = null; // selected card object (pyramid free card or waste top)
+  var selectedSrc = null; // "pyr" or "waste"
+  var score = 0;
+  var redeals = 2;   // 3 passes total through stock (initial + 2 redeals)
+  var gameOver = false;
+
+  var pyramidEl = document.getElementById("pyramid");
+  var scoreEl = document.getElementById("score");
+  var stockSlot = document.getElementById("stockSlot");
+  var wasteSlot = document.getElementById("wasteSlot");
+  var stockCountEl = document.getElementById("stockCount");
+  var redealInfoEl = document.getElementById("redealInfo");
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ovTitle");
+  var ovMsg = document.getElementById("ovMsg");
+  var toastEl = document.getElementById("toast");
+
+  function idAt(r, c){ return rowStart[r] + c; }
+
+  function buildDeck(){
+    var d = [];
+    var id = 0;
+    for (var s = 0; s < 4; s++) {
+      for (var v = 1; v <= 13; v++) {
+        d.push({ id: id++, rank: v, suit: s, removed: false, el: null });
+      }
+    }
+    // shuffle
+    for (var i = d.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = d[i]; d[i] = d[j]; d[j] = t;
+    }
+    return d;
+  }
+
+  function newGame(){
+    gameOver = false;
+    score = 0;
+    redeals = 2;
+    selected = null;
+    selectedSrc = null;
+    pyr = [];
+    stock = [];
+    waste = [];
+    rowStart = [];
+
+    var deck = buildDeck();
+    // 28 to pyramid
+    var idx = 0;
+    var start = 0;
+    for (var r = 0; r < 7; r++) {
+      rowStart[r] = start;
+      for (var c = 0; c <= r; c++) {
+        var card = deck[idx++];
+        card.row = r; card.col = c; card.removed = false;
+        pyr.push(card);
+        start++;
+      }
+    }
+    // rest to stock
+    for (; idx < deck.length; idx++) {
+      stock.push(deck[idx]);
+    }
+
+    overlay.classList.remove("show");
+    render(true);
+  }
+
+  // A pyramid card is free (exposed) if not removed and both children removed (or it's bottom row).
+  function isFree(card){
+    if (card.removed) return false;
+    if (card.row === 6) return true; // bottom row always free
+    var leftChild = pyr[idAt(card.row + 1, card.col)];
+    var rightChild = pyr[idAt(card.row + 1, card.col + 1)];
+    return leftChild.removed && rightChild.removed;
+  }
+
+  function wasteTop(){ return waste.length ? waste[waste.length - 1] : null; }
+
+  // ---------- Rendering ----------
+  function makeCardFace(el, card){
+    el.className = "card " + SUITS[card.suit].color;
+    el.innerHTML = "";
+    var suit = SUITS[card.suit].ch;
+    var lbl = rankLabel(card.rank);
+    var tl = document.createElement("div");
+    tl.className = "corner tl";
+    tl.innerHTML = "<span class='rk'>" + lbl + "</span><span class='su'>" + suit + "</span>";
+    var center = document.createElement("div");
+    center.className = "pip";
+    center.textContent = suit;
+    var br = document.createElement("div");
+    br.className = "corner br";
+    br.innerHTML = "<span class='rk'>" + lbl + "</span><span class='su'>" + suit + "</span>";
+    el.appendChild(tl);
+    el.appendChild(center);
+    el.appendChild(br);
+  }
+
+  var layout = { cw: 40, ch: 56, ox: 0, oy: 0, vgap: 28, hgap: 22, fs: 11 };
+
+  function computeLayout(){
+    var bw = pyramidEl.clientWidth;
+    var bh = pyramidEl.clientHeight;
+    // Bottom row has 7 cards. Width = 7*cw + small spacing. We overlap horizontally per row.
+    // Use horizontal step = cw * 0.78 between cards in a row's neighbors? Standard pyramid:
+    // each card half-overlaps the one above. Simpler: full-width cards side by side in bottom row.
+    // Bottom row: 7 cards across with tiny gap.
+    var gap = 4;
+    var maxCardW = (bw - gap * 8) / 7;
+    var cw = Math.min(maxCardW, 64);
+    var ch = cw * 1.4;
+    // 7 rows overlapping vertically by ~50%
+    var vstep = ch * 0.46;
+    var totalH = ch + vstep * 6;
+    // scale down if too tall
+    var avail = bh - 8;
+    if (totalH > avail) {
+      var sc = avail / totalH;
+      cw *= sc; ch *= sc; vstep *= sc;
+    }
+    layout.cw = cw;
+    layout.ch = ch;
+    layout.vstep = vstep;
+    layout.hstep = cw + gap;
+    layout.fs = cw * 0.28;
+    // center horizontally: bottom row width
+    var bottomW = layout.hstep * 6 + cw;
+    layout.ox = (bw - bottomW) / 2;
+    layout.oy = Math.max(2, (avail - (ch + vstep * 6)) / 2);
+  }
+
+  function render(full){
+    computeLayout();
+    pyramidEl.innerHTML = "";
+    var cw = layout.cw, ch = layout.ch;
+
+    // place pyramid cards
+    for (var i = 0; i < pyr.length; i++) {
+      var card = pyr[i];
+      if (card.removed) continue;
+      var el = document.createElement("div");
+      makeCardFace(el, card);
+      el.style.width = cw + "px";
+      el.style.height = ch + "px";
+      el.style.fontSize = layout.fs + "px";
+      // centered pyramid: row r has r+1 cards; shift so it's centered over bottom row
+      var rowOffset = (6 - card.row) * layout.hstep / 2;
+      var x = layout.ox + rowOffset + card.col * layout.hstep;
+      var y = layout.oy + card.row * layout.vstep;
+      el.style.left = x + "px";
+      el.style.top = y + "px";
+      el.style.zIndex = card.row + 1;
+      var free = isFree(card);
+      if (free) el.classList.add("free");
+      else el.classList.add("covered");
+      if (selected === card && selectedSrc === "pyr") el.classList.add("selected");
+      card.el = el;
+      (function(c){
+        el.addEventListener("click", function(){ onPyrClick(c); });
+      })(card);
+      pyramidEl.appendChild(el);
+    }
+
+    renderPiles();
+    scoreEl.textContent = score;
+  }
+
+  function pileCardEl(card, faceDown){
+    var el = document.createElement("div");
+    var w = Math.min(layout.cw || 48, 52);
+    var h = w * 1.4;
+    el.style.width = w + "px";
+    el.style.height = h + "px";
+    el.style.position = "relative";
+    el.style.fontSize = (w * 0.28) + "px";
+    if (faceDown) {
+      el.className = "card back";
+    } else if (card) {
+      makeCardFace(el, card);
+      el.style.position = "relative";
+    } else {
+      el.className = "card empty";
+    }
+    return el;
+  }
+
+  function renderPiles(){
+    // stock
+    stockSlot.innerHTML = "";
+    var sEl = pileCardEl(null, stock.length > 0);
+    if (stock.length === 0) sEl.className = "card empty";
+    sEl.style.position = "relative";
+    stockSlot.appendChild(sEl);
+    stockCountEl.textContent = "(" + stock.length + ")";
+
+    // waste
+    wasteSlot.innerHTML = "";
+    var top = wasteTop();
+    var wEl;
+    if (top) {
+      wEl = pileCardEl(top, false);
+      if (selected === top && selectedSrc === "waste") wEl.classList.add("selected");
+    } else {
+      wEl = pileCardEl(null, false);
+    }
+    wEl.style.position = "relative";
+    wasteSlot.appendChild(wEl);
+
+    redealInfoEl.textContent = redeals > 0 ? ("Redeals: " + redeals) : "No redeals";
+  }
+
+  // ---------- Interaction ----------
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastEl._t);
+    toastEl._t = setTimeout(function(){ toastEl.classList.remove("show"); }, 1100);
+  }
+
+  function clearSelection(){
+    selected = null;
+    selectedSrc = null;
+  }
+
+  function tryRemoveKing(card, src){
+    if (card.rank !== 13) return false;
+    sndMatch();
+    removeCard(card, src);
+    score += 5;
+    afterMove();
+    return true;
+  }
+
+  function attemptPair(a, aSrc, b, bSrc){
+    if (a.rank + b.rank === 13) {
+      sndMatch();
+      removeCard(a, aSrc);
+      removeCard(b, bSrc);
+      score += 10;
+      clearSelection();
+      afterMove();
+      return true;
+    } else {
+      sndBad();
+      toast("Must sum to 13");
+      return false;
+    }
+  }
+
+  function removeCard(card, src){
+    card.removed = true;
+    if (src === "waste") {
+      // remove top of waste
+      var i = waste.indexOf(card);
+      if (i >= 0) waste.splice(i, 1);
+    }
+    // pyramid removal handled by removed flag
+  }
+
+  function onPyrClick(card){
+    if (gameOver) return;
+    audio();
+    if (!isFree(card)) { sndBad(); toast("Card is covered"); return; }
+
+    // King clears alone
+    if (card.rank === 13) {
+      clearSelection();
+      tryRemoveKing(card, "pyr");
+      return;
+    }
+
+    if (selected === card && selectedSrc === "pyr") {
+      // deselect
+      clearSelection();
+      sndSelect();
+      render();
+      return;
+    }
+
+    if (selected) {
+      // try pair with currently selected card; on success selection is cleared inside.
+      attemptPair(selected, selectedSrc, card, "pyr");
+      if (selected) { clearSelection(); }
+      render();
+      return;
+    }
+
+    // select this card
+    selected = card;
+    selectedSrc = "pyr";
+    sndSelect();
+    render();
+  }
+
+  function onWasteClick(){
+    if (gameOver) return;
+    audio();
+    var top = wasteTop();
+    if (!top) return;
+
+    if (top.rank === 13) {
+      clearSelection();
+      tryRemoveKing(top, "waste");
+      render();
+      return;
+    }
+
+    if (selected === top && selectedSrc === "waste") {
+      clearSelection();
+      sndSelect();
+      render();
+      return;
+    }
+
+    if (selected) {
+      attemptPair(selected, selectedSrc, top, "waste");
+      if (selected) clearSelection();
+      render();
+      return;
+    }
+
+    selected = top;
+    selectedSrc = "waste";
+    sndSelect();
+    render();
+  }
+
+  function onStockClick(){
+    if (gameOver) return;
+    audio();
+    if (stock.length > 0) {
+      var c = stock.pop();
+      waste.push(c);
+      sndDeal();
+      // selecting from stock draw clears pyramid selection? keep selection so player can pair with new waste.
+      render();
+      checkEnd();
+    } else {
+      // redeal: recycle waste back to stock
+      if (redeals > 0 && waste.length > 0) {
+        redeals--;
+        while (waste.length) {
+          stock.push(waste.pop());
+        }
+        // stock now in reverse waste order; that's fine (it was a pile)
+        clearSelection();
+        sndDeal();
+        render();
+        checkEnd();
+      } else {
+        sndBad();
+        toast(redeals > 0 ? "Waste empty" : "No redeals left");
+        checkEnd();
+      }
+    }
+  }
+
+  function afterMove(){
+    render();
+    checkEnd();
+  }
+
+  // ---------- Win / Lose ----------
+  function pyramidCleared(){
+    for (var i = 0; i < pyr.length; i++) {
+      if (!pyr[i].removed) return false;
+    }
+    return true;
+  }
+
+  function freePyrCards(){
+    var arr = [];
+    for (var i = 0; i < pyr.length; i++) {
+      if (isFree(pyr[i])) arr.push(pyr[i]);
+    }
+    return arr;
+  }
+
+  function anyMoveAvailable(){
+    // 1) Any king free in pyramid or on waste top
+    var frees = freePyrCards();
+    var top = wasteTop();
+    var playable = frees.slice();
+    if (top) playable.push(top);
+
+    for (var i = 0; i < playable.length; i++) {
+      if (playable[i].rank === 13) return true;
+    }
+    // 2) Any pair among playable summing to 13
+    for (var a = 0; a < playable.length; a++) {
+      for (var b = a + 1; b < playable.length; b++) {
+        if (playable[a].rank + playable[b].rank === 13) return true;
+      }
+    }
+    // 3) Can we draw/redeal to get new cards?
+    if (stock.length > 0) return true;
+    if (redeals > 0 && waste.length > 0) return true;
+    return false;
+  }
+
+  function checkEnd(){
+    if (gameOver) return;
+    if (pyramidCleared()) {
+      gameOver = true;
+      score += 100 + redeals * 10;
+      scoreEl.textContent = score;
+      sndWin();
+      showOverlay("You Win!", "Cleared the pyramid. Score: " + score);
+      return;
+    }
+    if (!anyMoveAvailable()) {
+      gameOver = true;
+      sndLose();
+      var left = pyr.filter(function(c){ return !c.removed; }).length;
+      showOverlay("No Moves Left", left + " cards remain. Score: " + score);
+    }
+  }
+
+  function showOverlay(title, msg){
+    ovTitle.textContent = title;
+    ovMsg.textContent = msg;
+    overlay.classList.add("show");
+  }
+
+  // ---------- Events ----------
+  document.getElementById("newBtn").addEventListener("click", function(){ audio(); newGame(); });
+  document.getElementById("ovBtn").addEventListener("click", function(){ audio(); newGame(); });
+  stockSlot.addEventListener("click", onStockClick);
+  wasteSlot.addEventListener("click", onWasteClick);
+
+  var rt;
+  window.addEventListener("resize", function(){
+    clearTimeout(rt);
+    rt = setTimeout(function(){ render(); }, 100);
+  });
+  window.addEventListener("orientationchange", function(){
+    setTimeout(function(){ render(); }, 200);
+  });
+
+  // prevent double-tap zoom / scroll
+  document.addEventListener("touchmove", function(e){ e.preventDefault(); }, { passive: false });
+  document.addEventListener("gesturestart", function(e){ e.preventDefault(); });
+
+  newGame();
+})();
+</script>
+</body>
+</html>

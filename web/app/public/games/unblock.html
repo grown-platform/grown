@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Unblock</title>
+<style>
+  :root {
+    --bg: #1a1426;
+    --panel: #271b3a;
+    --board-bg: #d8c9a8;
+    --board-frame: #6b5436;
+    --cell-line: rgba(0,0,0,0.08);
+    --accent: #ff5252;
+    --text: #f3eefc;
+    --muted: #b3a6cf;
+    --btn: #4b3a6e;
+    --btn-active: #6750a0;
+    --win: #4caf50;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+  }
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 10px 24px;
+    gap: 12px;
+  }
+  header {
+    width: 100%;
+    max-width: 440px;
+    text-align: center;
+  }
+  h1 {
+    margin: 0;
+    font-size: 26px;
+    letter-spacing: 2px;
+    font-weight: 800;
+    background: linear-gradient(90deg, #ff5252, #ffb347);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .stats {
+    margin-top: 6px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 6px 12px;
+    font-size: 14px;
+    min-width: 78px;
+  }
+  .stat b { color: #ffb347; font-size: 16px; }
+  .stat span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
+  .board-wrap {
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    justify-content: center;
+  }
+  #board {
+    position: relative;
+    width: min(94vw, 420px);
+    aspect-ratio: 1 / 1;
+    background: var(--board-bg);
+    border: 10px solid var(--board-frame);
+    border-radius: 14px;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 0 0 2px rgba(0,0,0,0.1);
+    overflow: visible;
+  }
+  /* grid lines */
+  #grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  #grid .line {
+    position: absolute;
+    background: var(--cell-line);
+  }
+  /* exit marker on the right side */
+  #exit {
+    position: absolute;
+    right: -12px;
+    width: 12px;
+    background: linear-gradient(90deg, rgba(255,82,82,0), rgba(255,82,82,0.9));
+    border-radius: 0 6px 6px 0;
+    pointer-events: none;
+  }
+  #exit::after {
+    content: "";
+    position: absolute;
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-top: 9px solid transparent;
+    border-bottom: 9px solid transparent;
+    border-left: 11px solid var(--accent);
+    opacity: 0.9;
+  }
+
+  .block {
+    position: absolute;
+    border-radius: 9px;
+    cursor: grab;
+    touch-action: none;
+    background: linear-gradient(160deg, #8a93a6, #5e6779);
+    box-shadow: inset 0 2px 4px rgba(255,255,255,0.35), inset 0 -3px 6px rgba(0,0,0,0.35), 0 3px 6px rgba(0,0,0,0.3);
+    transition: left .12s ease, top .12s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .block.dragging {
+    transition: none;
+    cursor: grabbing;
+    z-index: 50;
+    filter: brightness(1.08);
+  }
+  .block.hero {
+    background: linear-gradient(160deg, #ff7a7a, #d32f2f);
+  }
+  /* little "headlight" hint on hero */
+  .block.hero::after {
+    content: "";
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    transform: translateY(-50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff8c4, #ffd23f);
+    box-shadow: 0 0 8px #ffd23f;
+  }
+  /* grip dots */
+  .block .grip {
+    width: 60%;
+    height: 60%;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 22%;
+    opacity: 0.35;
+    pointer-events: none;
+  }
+  .block .grip i {
+    background: rgba(255,255,255,0.7);
+    border-radius: 50%;
+  }
+
+  .controls {
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+  button {
+    flex: 1;
+    max-width: 160px;
+    padding: 12px 8px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    background: var(--btn);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform .05s ease, background .15s ease;
+  }
+  button:active { transform: scale(0.96); background: var(--btn-active); }
+
+  /* win overlay */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,6,18,0.78);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+  }
+  #overlay.show { display: flex; }
+  .card {
+    background: var(--panel);
+    border-radius: 18px;
+    padding: 26px 24px;
+    text-align: center;
+    max-width: 320px;
+    width: 100%;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    animation: pop .25s ease;
+  }
+  @keyframes pop { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .card h2 { margin: 0 0 6px; font-size: 28px; color: var(--win); }
+  .card p { margin: 4px 0 18px; color: var(--muted); }
+  .card .big { color: #ffb347; font-weight: 800; }
+  .card button { width: 100%; max-width: none; background: var(--win); }
+  .card button:active { background: #3d9140; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/unblock.svg">
+    <link rel="manifest" href="/games/unblock.webmanifest">
+    <meta name="theme-color" content="#DC2626">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Unblock">
+    <link rel="apple-touch-icon" href="/games/icons/unblock.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DC2626;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>UNBLOCK</h1>
+    <div class="stats">
+      <div class="stat"><b id="levelNum">1</b><span>Level</span></div>
+      <div class="stat"><b id="moveNum">0</b><span>Moves</span></div>
+    </div>
+  </header>
+
+  <div class="board-wrap">
+    <div id="board">
+      <div id="grid"></div>
+      <div id="exit"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="resetBtn">Reset</button>
+    <button id="nextBtn">New</button>
+  </div>
+  <div class="hint">Drag the red car to the exit on the right →</div>
+
+  <div id="overlay">
+    <div class="card">
+      <h2>Solved!</h2>
+      <p>Level <span class="big" id="winLevel">1</span> cleared in <span class="big" id="winMoves">0</span> moves.</p>
+      <button id="winNext">Next Level</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var N = 6;            // 6x6 grid
+  var EXIT_ROW = 2;     // hero exits on this row (0-indexed)
+
+  // ---- Levels -------------------------------------------------------------
+  // Each block: id, hero?, orientation ('h'|'v'), len (2|3), row, col (top-left).
+  // Hero is horizontal, must sit on EXIT_ROW. Coordinates are 0-indexed,
+  // row = top->bottom, col = left->right. All levels hand-checked solvable.
+  var LEVELS = [
+    // L1 — gentle intro (2 moves)
+    [
+      { id: 'X', hero: true, o: 'h', len: 2, r: 2, c: 0 },
+      { id: 'a', o: 'v', len: 3, r: 0, c: 3 },
+      { id: 'b', o: 'v', len: 2, r: 3, c: 3 },
+      { id: 'c', o: 'h', len: 2, r: 0, c: 0 },
+      { id: 'd', o: 'v', len: 2, r: 1, c: 5 }
+    ],
+    // L2 — 6 moves
+    [
+      { id: 'X', hero: true, o: 'h', len: 2, r: 2, c: 1 },
+      { id: 'a', o: 'h', len: 3, r: 4, c: 0 },
+      { id: 'b', o: 'h', len: 2, r: 1, c: 0 },
+      { id: 'c', o: 'h', len: 2, r: 0, c: 4 },
+      { id: 'd', o: 'h', len: 2, r: 4, c: 4 },
+      { id: 'e', o: 'v', len: 3, r: 1, c: 5 },
+      { id: 'f', o: 'h', len: 2, r: 5, c: 4 },
+      { id: 'g', o: 'v', len: 3, r: 1, c: 3 },
+      { id: 'h', o: 'v', len: 2, r: 2, c: 4 }
+    ],
+    // L3 — 7 moves
+    [
+      { id: 'X', hero: true, o: 'h', len: 2, r: 2, c: 1 },
+      { id: 'a', o: 'v', len: 2, r: 0, c: 2 },
+      { id: 'b', o: 'v', len: 2, r: 3, c: 3 },
+      { id: 'c', o: 'h', len: 2, r: 1, c: 4 },
+      { id: 'd', o: 'v', len: 2, r: 2, c: 4 },
+      { id: 'e', o: 'h', len: 3, r: 5, c: 1 },
+      { id: 'f', o: 'h', len: 3, r: 0, c: 3 },
+      { id: 'g', o: 'h', len: 2, r: 4, c: 1 },
+      { id: 'h', o: 'h', len: 2, r: 1, c: 0 },
+      { id: 'i', o: 'v', len: 2, r: 4, c: 4 },
+      { id: 'j', o: 'h', len: 2, r: 3, c: 1 }
+    ],
+    // L4 — 9 moves
+    [
+      { id: 'X', hero: true, o: 'h', len: 2, r: 2, c: 0 },
+      { id: 'a', o: 'v', len: 3, r: 0, c: 4 },
+      { id: 'b', o: 'h', len: 3, r: 4, c: 3 },
+      { id: 'c', o: 'h', len: 2, r: 5, c: 0 },
+      { id: 'd', o: 'v', len: 2, r: 4, c: 2 },
+      { id: 'e', o: 'v', len: 2, r: 3, c: 1 },
+      { id: 'f', o: 'v', len: 2, r: 2, c: 3 },
+      { id: 'g', o: 'v', len: 2, r: 2, c: 5 },
+      { id: 'h', o: 'h', len: 2, r: 1, c: 1 },
+      { id: 'i', o: 'h', len: 3, r: 0, c: 1 }
+    ],
+    // L5 — 12 moves
+    [
+      { id: 'X', hero: true, o: 'h', len: 2, r: 2, c: 2 },
+      { id: 'a', o: 'h', len: 3, r: 3, c: 3 },
+      { id: 'b', o: 'v', len: 3, r: 1, c: 0 },
+      { id: 'c', o: 'v', len: 2, r: 1, c: 5 },
+      { id: 'd', o: 'v', len: 3, r: 2, c: 1 },
+      { id: 'e', o: 'h', len: 3, r: 5, c: 3 },
+      { id: 'f', o: 'v', len: 2, r: 0, c: 2 },
+      { id: 'g', o: 'h', len: 3, r: 4, c: 3 },
+      { id: 'h', o: 'h', len: 2, r: 0, c: 0 },
+      { id: 'i', o: 'v', len: 3, r: 0, c: 4 }
+    ],
+    // L6 — challenge (14 moves)
+    [
+      { id: 'X', hero: true, o: 'h', len: 2, r: 2, c: 0 },
+      { id: 'a', o: 'h', len: 2, r: 0, c: 1 },
+      { id: 'b', o: 'h', len: 3, r: 4, c: 0 },
+      { id: 'c', o: 'v', len: 2, r: 2, c: 4 },
+      { id: 'd', o: 'h', len: 2, r: 0, c: 3 },
+      { id: 'e', o: 'h', len: 2, r: 4, c: 3 },
+      { id: 'f', o: 'v', len: 2, r: 0, c: 0 },
+      { id: 'g', o: 'v', len: 2, r: 1, c: 5 },
+      { id: 'h', o: 'v', len: 2, r: 4, c: 5 },
+      { id: 'i', o: 'h', len: 3, r: 5, c: 0 },
+      { id: 'j', o: 'v', len: 2, r: 2, c: 2 }
+    ]
+  ];
+
+  // ---- State --------------------------------------------------------------
+  var board = document.getElementById('board');
+  var gridEl = document.getElementById('grid');
+  var exitEl = document.getElementById('exit');
+  var levelNumEl = document.getElementById('levelNum');
+  var moveNumEl = document.getElementById('moveNum');
+  var overlay = document.getElementById('overlay');
+  var winLevelEl = document.getElementById('winLevel');
+  var winMovesEl = document.getElementById('winMoves');
+
+  var levelIndex = 0;
+  var blocks = [];      // working copy of current level's blocks
+  var moves = 0;
+  var won = false;
+  var cellPx = 0;       // px size of one grid cell (computed on layout)
+
+  // ---- Audio (WebAudio, optional) ----------------------------------------
+  var actx = null;
+  function audio() {
+    if (actx === null) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        actx = AC ? new AC() : false;
+      } catch (e) { actx = false; }
+    }
+    return actx || null;
+  }
+  function beep(freq, dur, type, vol) {
+    var ac = audio();
+    if (!ac) return;
+    if (ac.state === 'suspended') { try { ac.resume(); } catch (e) {} }
+    try {
+      var o = ac.createOscillator();
+      var g = ac.createGain();
+      o.type = type || 'sine';
+      o.frequency.value = freq;
+      g.gain.value = 0.0001;
+      o.connect(g); g.connect(ac.destination);
+      var t = ac.currentTime;
+      g.gain.exponentialRampToValueAtTime(vol || 0.12, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.12));
+      o.start(t);
+      o.stop(t + (dur || 0.12) + 0.02);
+    } catch (e) {}
+  }
+  function sndMove() { beep(330, 0.07, 'triangle', 0.08); }
+  function sndBlocked() { beep(110, 0.09, 'sawtooth', 0.06); }
+  function sndWin() {
+    beep(523, 0.12, 'triangle', 0.12);
+    setTimeout(function () { beep(659, 0.12, 'triangle', 0.12); }, 110);
+    setTimeout(function () { beep(784, 0.20, 'triangle', 0.12); }, 230);
+  }
+
+  // ---- Layout -------------------------------------------------------------
+  function computeCell() {
+    // inner content box width (border is on the box via border-box)
+    var rect = board.getBoundingClientRect();
+    var styles = getComputedStyle(board);
+    var bl = parseFloat(styles.borderLeftWidth) || 0;
+    var br = parseFloat(styles.borderRightWidth) || 0;
+    var inner = rect.width - bl - br;
+    cellPx = inner / N;
+  }
+
+  function buildGrid() {
+    gridEl.innerHTML = '';
+    var i, ln;
+    for (i = 1; i < N; i++) {
+      ln = document.createElement('div');
+      ln.className = 'line';
+      ln.style.left = (i / N * 100) + '%';
+      ln.style.top = '0';
+      ln.style.width = '2px';
+      ln.style.height = '100%';
+      gridEl.appendChild(ln);
+
+      ln = document.createElement('div');
+      ln.className = 'line';
+      ln.style.top = (i / N * 100) + '%';
+      ln.style.left = '0';
+      ln.style.height = '2px';
+      ln.style.width = '100%';
+      gridEl.appendChild(ln);
+    }
+  }
+
+  function positionExit() {
+    // exit spans the hero's row height, on the right edge
+    exitEl.style.top = (EXIT_ROW / N * 100) + '%';
+    exitEl.style.height = (1 / N * 100) + '%';
+  }
+
+  // ---- Occupancy / collision ---------------------------------------------
+  function cellsOf(b) {
+    var arr = [];
+    var i;
+    for (i = 0; i < b.len; i++) {
+      if (b.o === 'h') arr.push({ r: b.r, c: b.c + i });
+      else arr.push({ r: b.r + i, c: b.c });
+    }
+    return arr;
+  }
+
+  // grid of ids, optionally excluding one block
+  function buildOccupancy(exceptId) {
+    var g = [];
+    var r, c;
+    for (r = 0; r < N; r++) { g.push([]); for (c = 0; c < N; c++) g[r].push(null); }
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i];
+      if (b.id === exceptId) continue;
+      var cells = cellsOf(b);
+      for (var j = 0; j < cells.length; j++) g[cells[j].r][cells[j].c] = b.id;
+    }
+    return g;
+  }
+
+  // Given a block and a desired new top-left along its axis, return the
+  // nearest legal position (clamped to free range). occ excludes this block.
+  function legalSlot(b, occ, desired) {
+    var cur = (b.o === 'h') ? b.c : b.r;
+    // find min/max reachable from current position (contiguous free run)
+    var min = cur, max = cur;
+    var i;
+
+    if (b.o === 'h') {
+      // expand left
+      var leftLimit = 0;
+      for (i = cur - 1; i >= 0; i--) {
+        if (occ[b.r][i] != null) { leftLimit = i + 1; break; }
+      }
+      // expand right (cell to the right of the block's right edge)
+      var rightLimit = N - b.len;
+      for (i = cur + 1; i + b.len - 1 < N; i++) {
+        if (occ[b.r][i + b.len - 1] != null) { rightLimit = i - 1; break; }
+      }
+      min = leftLimit;
+      max = rightLimit;
+    } else {
+      var topLimit = 0;
+      for (i = cur - 1; i >= 0; i--) {
+        if (occ[i][b.c] != null) { topLimit = i + 1; break; }
+      }
+      var botLimit = N - b.len;
+      for (i = cur + 1; i + b.len - 1 < N; i++) {
+        if (occ[i + b.len - 1][b.c] != null) { botLimit = i - 1; break; }
+      }
+      min = topLimit;
+      max = botLimit;
+    }
+    var target = Math.round(desired);
+    if (target < min) target = min;
+    if (target > max) target = max;
+    return { target: target, min: min, max: max };
+  }
+
+  // ---- Rendering ----------------------------------------------------------
+  function placeEl(el, b) {
+    var w = (b.o === 'h') ? b.len : 1;
+    var h = (b.o === 'h') ? 1 : b.len;
+    var gap = 0.06; // inset fraction of a cell for nice padding
+    el.style.left = ((b.c + gap) / N * 100) + '%';
+    el.style.top = ((b.r + gap) / N * 100) + '%';
+    el.style.width = ((w - gap * 2) / N * 100) + '%';
+    el.style.height = ((h - gap * 2) / N * 100) + '%';
+  }
+
+  function render() {
+    for (var i = 0; i < blocks.length; i++) {
+      placeEl(blocks[i].el, blocks[i]);
+    }
+  }
+
+  function makeGrip() {
+    var g = document.createElement('div');
+    g.className = 'grip';
+    for (var i = 0; i < 4; i++) g.appendChild(document.createElement('i'));
+    return g;
+  }
+
+  function loadLevel(idx) {
+    levelIndex = ((idx % LEVELS.length) + LEVELS.length) % LEVELS.length;
+    won = false;
+    moves = 0;
+    moveNumEl.textContent = '0';
+    levelNumEl.textContent = String(levelIndex + 1);
+    overlay.classList.remove('show');
+
+    // clear old block elements
+    for (var i = 0; i < blocks.length; i++) {
+      if (blocks[i].el && blocks[i].el.parentNode) blocks[i].el.parentNode.removeChild(blocks[i].el);
+    }
+    blocks = [];
+
+    var src = LEVELS[levelIndex];
+    for (var k = 0; k < src.length; k++) {
+      var s = src[k];
+      var b = { id: s.id, hero: !!s.hero, o: s.o, len: s.len, r: s.r, c: s.c, el: null };
+      var el = document.createElement('div');
+      el.className = 'block' + (b.hero ? ' hero' : '');
+      el.appendChild(makeGrip());
+      board.appendChild(el);
+      b.el = el;
+      blocks.push(b);
+      attachDrag(b);
+    }
+    computeCell();
+    render();
+  }
+
+  // ---- Drag handling ------------------------------------------------------
+  var drag = null; // { b, occ, slot, startPointerPx, startAxisPx, axis }
+
+  function getPointer(e) {
+    if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  function attachDrag(b) {
+    b.el.addEventListener('pointerdown', function (e) { onDown(e, b); });
+  }
+
+  function onDown(e, b) {
+    if (won) return;
+    e.preventDefault();
+    audio(); // unlock on first interaction
+    computeCell();
+    if (cellPx <= 0) return;
+
+    var occ = buildOccupancy(b.id);
+    var p = getPointer(e);
+
+    drag = {
+      b: b,
+      occ: occ,
+      axis: b.o,                  // 'h' -> move cols (x), 'v' -> move rows (y)
+      startPx: (b.o === 'h') ? p.x : p.y,
+      startSlot: (b.o === 'h') ? b.c : b.r,
+      committed: false,
+      lastSlot: (b.o === 'h') ? b.c : b.r
+    };
+
+    b.el.classList.add('dragging');
+    try { b.el.setPointerCapture(e.pointerId); } catch (err) {}
+
+    document.addEventListener('pointermove', onMove, { passive: false });
+    document.addEventListener('pointerup', onUp, { passive: false });
+    document.addEventListener('pointercancel', onUp, { passive: false });
+  }
+
+  function onMove(e) {
+    if (!drag) return;
+    e.preventDefault();
+    var p = getPointer(e);
+    var pos = (drag.axis === 'h') ? p.x : p.y;
+    var deltaCells = (pos - drag.startPx) / cellPx;
+    var desired = drag.startSlot + deltaCells;
+
+    var slot = legalSlot(drag.b, drag.occ, desired);
+    var t = slot.target;
+
+    if (drag.axis === 'h') drag.b.c = t; else drag.b.r = t;
+
+    // live visual: snap to integer slot (clean + collision-safe)
+    placeEl(drag.b.el, drag.b);
+
+    if (t !== drag.lastSlot) {
+      drag.lastSlot = t;
+      drag.committed = true;
+      sndMove();
+    }
+  }
+
+  function onUp(e) {
+    if (!drag) return;
+    e.preventDefault();
+    var b = drag.b;
+    b.el.classList.remove('dragging');
+    try { b.el.releasePointerCapture(e.pointerId); } catch (err) {}
+
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+
+    var finalSlot = (drag.axis === 'h') ? b.c : b.r;
+    if (finalSlot !== drag.startSlot) {
+      moves++;
+      moveNumEl.textContent = String(moves);
+    }
+    placeEl(b.el, b); // ensure snapped
+    drag = null;
+
+    checkWin();
+  }
+
+  // ---- Win check ----------------------------------------------------------
+  function checkWin() {
+    if (won) return;
+    var hero = null;
+    for (var i = 0; i < blocks.length; i++) if (blocks[i].hero) { hero = blocks[i]; break; }
+    if (!hero) return;
+    // hero reaches exit when its right edge is at the last column
+    if (hero.r === EXIT_ROW && hero.c + hero.len - 1 === N - 1) {
+      // ensure path is actually clear (it must be, but double-check)
+      won = true;
+      animateExit(hero);
+    }
+  }
+
+  function animateExit(hero) {
+    // slide hero off the right edge, then show win card
+    sndWin();
+    hero.el.style.transition = 'left .45s cubic-bezier(.4,0,.6,1), opacity .45s ease';
+    hero.el.style.left = '102%';
+    hero.el.style.opacity = '0';
+    setTimeout(function () {
+      winLevelEl.textContent = String(levelIndex + 1);
+      winMovesEl.textContent = String(moves);
+      overlay.classList.add('show');
+    }, 460);
+  }
+
+  // ---- Buttons ------------------------------------------------------------
+  document.getElementById('resetBtn').addEventListener('click', function () {
+    loadLevel(levelIndex);
+  });
+  document.getElementById('nextBtn').addEventListener('click', function () {
+    loadLevel(levelIndex + 1);
+  });
+  document.getElementById('winNext').addEventListener('click', function () {
+    loadLevel(levelIndex + 1);
+  });
+
+  // prevent any stray scroll/zoom gestures starting on the board
+  board.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  board.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+  // block double-tap zoom on controls area
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+
+  // recompute on resize/orientation change
+  var rt = null;
+  window.addEventListener('resize', function () {
+    if (rt) clearTimeout(rt);
+    rt = setTimeout(function () { computeCell(); render(); }, 80);
+  });
+  window.addEventListener('orientationchange', function () {
+    setTimeout(function () { computeCell(); render(); }, 200);
+  });
+
+  // ---- Init ---------------------------------------------------------------
+  buildGrid();
+  positionExit();
+  // wait a frame so the board has measured dimensions
+  requestAnimationFrame(function () {
+    loadLevel(0);
+  });
+})();
+</script>
+</body>
+</html>
