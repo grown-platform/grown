@@ -20,6 +20,3 @@ deploy/process-compose/data
 # Docs / specs / archives not needed at build.
 **/*.md
 !web/app/**
-https://code.pick.haus/grown/grown-workspace
-https://code.pick.haus/pick/spacelight
-https://code.pick.haus/pick/assemble

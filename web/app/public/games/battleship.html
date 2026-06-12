@@ -110,6 +110,61 @@
   .enemy .cell:not(.miss):not(.hit):not(.sunk):active { background: #1c3568; }
   .hidden { display: none !important; }
   .legend { font-size: 10px; color: #7a93c8; text-align: center; }
+  /* Mode menu */
+  #menuControls { flex-direction: column; gap: 12px; margin-top: 24px; }
+  #menuControls button { font-size: 16px; padding: 14px 28px; min-width: 220px; }
+  /* Privacy handoff overlay — fully covers both boards so the player taking
+     the device cannot see the opponent's fleet. */
+  .overlay {
+    position: fixed; inset: 0; z-index: 2147483640;
+    background: #0a1530;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .overlay-card {
+    text-align: center; display: flex; flex-direction: column;
+    gap: 18px; align-items: center;
+  }
+  #handoffTitle { font-size: 24px; font-weight: 700; color: #5fd0ff; text-shadow: 0 0 8px rgba(95,208,255,0.5); }
+  #handoffSub { font-size: 14px; color: #cfe2ff; max-width: 280px; line-height: 1.4; }
+  /* Slide-to-reveal: a deliberate gesture so the board is never exposed by an
+     accidental tap during a handoff. Drag the handle all the way across. */
+  .reveal-track {
+    position: relative;
+    width: min(320px, 78vw);
+    height: 60px;
+    border-radius: 30px;
+    background: #16264f;
+    border: 1px solid #2e4a8a;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  .reveal-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 56px;
+    background: #1f6feb;
+    border-radius: 30px;
+  }
+  .reveal-text {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 600 14px system-ui, sans-serif;
+    color: #9fc0ff;
+    letter-spacing: 1px;
+    pointer-events: none;
+    padding-left: 40px;
+  }
+  .reveal-handle {
+    position: absolute; left: 4px; top: 4px;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: #1f6feb; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+    touch-action: none;
+  }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/battleship.svg">
@@ -125,18 +180,59 @@
     </style>
     <script>
     if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
-    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
-    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    // Back-to-all-games pill (top-left). Positioned with env(safe-area-inset-*)
+    // so it clears the notch / Dynamic Island.
     window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
-    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#1E40AF;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    // Top-right pause/menu button (placed far from gameplay). Opens a top sheet
+    // with high score, Install, Back to games, and Report an issue. Opening the
+    // menu fires a 'grown:pause' event + dims/blocks the screen (soft pause);
+    // closing fires 'grown:resume'. Games can opt in to true pause + scoring via
+    // the window.GrownGame hook (highScore()/setHighScore()).
+    (function(){
+      var ID="battleship",NAME="Battleship",COLOR="#1E40AF",HK='grown-hi-'+ID;
+      window.GrownGame={
+        highScore:function(){return parseInt(localStorage.getItem(HK)||'0',10)||0;},
+        setHighScore:function(n){n=Math.floor(+n||0);try{if(n>this.highScore())localStorage.setItem(HK,String(n));}catch(e){}return this.highScore();}
+      };
+      var dp=null,scrim,sheet,hiEl,installItem,isOpen=false;
+      function css(el,s){el.setAttribute('style',s);}
+      function emit(n){try{window.dispatchEvent(new Event(n));}catch(e){}}
+      window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(installItem)installItem.style.display='';});
+      window.addEventListener('appinstalled',function(){dp=null;if(installItem)installItem.style.display='none';});
+      function item(label,fn){var b=document.createElement('button');b.textContent=label;css(b,'display:block;width:100%;text-align:left;margin:6px 0;padding:12px 14px;border:1px solid #243049;border-radius:10px;background:#16203a;color:#e8eefc;font:600 15px system-ui,sans-serif;cursor:pointer;touch-action:manipulation');b.onclick=fn;return b;}
+      function openMenu(){if(isOpen)return;isOpen=true;hiEl.textContent='High score: '+(window.GrownGame.highScore()||'—');scrim.style.pointerEvents='auto';scrim.style.opacity='1';sheet.style.transform='translateY(0)';emit('grown:pause');}
+      function closeMenu(){if(!isOpen)return;isOpen=false;scrim.style.opacity='0';scrim.style.pointerEvents='none';sheet.style.transform='translateY(-110%)';emit('grown:resume');}
+      function doInstall(){if(!dp)return;var d=dp;dp=null;installItem.style.display='none';d.prompt();d.userChoice.finally(function(){});closeMenu();}
+      function report(){var body='\n\n----\nGame: '+NAME+'\nURL: '+location.href+'\nDevice: '+navigator.userAgent;location.href='mailto:games@pick.haus?subject='+encodeURIComponent('Issue: '+NAME)+'&body='+encodeURIComponent(body);}
+      function build(){
+        var btn=document.createElement('button');btn.setAttribute('aria-label','Menu');btn.textContent='\u23F8';
+        css(btn,'position:fixed;right:calc(env(safe-area-inset-right,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;width:40px;height:40px;padding:0;border:none;border-radius:50%;background:rgba(15,23,42,.6);color:#fff;font-size:17px;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');
+        btn.onclick=openMenu;document.body.appendChild(btn);
+        scrim=document.createElement('div');css(scrim,'position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.55);opacity:0;transition:opacity .18s;pointer-events:none');scrim.onclick=closeMenu;document.body.appendChild(scrim);
+        sheet=document.createElement('div');css(sheet,'position:fixed;left:0;right:0;top:0;z-index:2147483647;transform:translateY(-110%);transition:transform .22s;background:#0f172a;color:#e8eefc;border-bottom-left-radius:16px;border-bottom-right-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.5);padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 16px;max-width:480px;margin:0 auto');document.body.appendChild(sheet);
+        var h=document.createElement('div');css(h,'font-weight:700;font-size:17px;color:'+COLOR);h.textContent=NAME;sheet.appendChild(h);
+        hiEl=document.createElement('div');css(hiEl,'font-size:13px;color:#9fb3d9;margin:2px 0 12px');sheet.appendChild(hiEl);
+        sheet.appendChild(item('\u25B6 Resume',closeMenu));
+        installItem=item('\u2B07 Install app',doInstall);installItem.style.display=dp?'':'none';sheet.appendChild(installItem);
+        sheet.appendChild(item('\u2039 All games',function(){location.href='/games';}));
+        sheet.appendChild(item('\u2691 Report an issue',report));
+      }
+      if(document.body)build();else window.addEventListener('DOMContentLoaded',build);
+    })();
     </script>
     <!-- pwa:end -->
 </head>
 <body>
 <div id="app">
   <h1>BATTLESHIP</h1>
-  <div id="status">Place your fleet</div>
-  <div class="controls" id="placeControls">
+  <div id="status">Choose a mode</div>
+
+  <div class="controls" id="menuControls">
+    <button id="aiBtn" class="primary">🤖 vs Computer</button>
+    <button id="twoBtn" class="primary">👥 2 Players (pass &amp; play)</button>
+  </div>
+
+  <div class="controls hidden" id="placeControls">
     <button id="rotateBtn">Rotate: ↔</button>
     <button id="autoBtn">Auto Place</button>
     <button id="startBtn" class="primary" disabled>Start Battle</button>
@@ -145,16 +241,29 @@
     <button id="newGameBtn" class="primary">New Game</button>
   </div>
 
-  <div class="board-wrap" id="enemyWrap">
-    <div class="board-label">Enemy Waters</div>
+  <div class="board-wrap hidden" id="enemyWrap">
+    <div class="board-label" id="enemyLabel">Enemy Waters</div>
     <div class="grid enemy" id="enemyGrid"></div>
   </div>
 
-  <div class="board-wrap">
-    <div class="board-label" id="myLabel">Your Fleet — placing Carrier (5)</div>
+  <div class="board-wrap hidden" id="playerWrap">
+    <div class="board-label" id="myLabel">Your Fleet</div>
     <div class="grid player" id="playerGrid"></div>
   </div>
-  <div class="legend" id="legend"></div>
+  <div class="legend hidden" id="legend"></div>
+</div>
+
+<!-- Privacy handoff overlay (2-player pass & play) -->
+<div id="handoff" class="overlay hidden">
+  <div class="overlay-card">
+    <div id="handoffTitle">Pass the device</div>
+    <div id="handoffSub"></div>
+    <div id="revealTrack" class="reveal-track">
+      <div id="revealFill" class="reveal-fill"></div>
+      <div id="revealText" class="reveal-text">slide to reveal</div>
+      <div id="revealHandle" class="reveal-handle">›</div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -196,13 +305,32 @@
   function sndPlace(){ beep(440, 0.08, "triangle", 0.1); }
 
   // ---------- State ----------
-  // board: 2D array of cells. Each cell = { ship: shipObj|null, shot: bool }
-  // ship: { name, len, cells:[{r,c}], hits }
-  var player, cpu, phase, currentTurn, placeIndex, horizontal, gameOver;
-  var enemyGridEl = document.getElementById("enemyGrid");
+  // board: { grid:[[{ship,shot}]], ships:[{name,len,cells,hits}] }
+  // mode 'ai': boards[0] = human, boards[1] = computer.
+  // mode '2p': boards[0] = Player 1, boards[1] = Player 2 (pass & play).
+  var mode = null;            // 'ai' | '2p'
+  var boards = [null, null];
+  var phase = "menu";         // 'menu' | 'place' | 'handoff' | 'battle' | 'over'
+  var placingPlayer = 0;      // whose fleet is being placed
+  var placeIndex = 0;
+  var horizontal = true;
+  var active = 0;             // whose turn it is during battle (0 or 1)
+  var currentTurn = "player"; // AI mode input lock ('player' | 'cpu')
+  var gameOver = false;
+  var cpuTargets = [];        // AI: queued candidate cells (target mode)
+  var cpuHits = [];           // AI: confirmed hits on the ship being hunted
+
+  var enemyGridEl  = document.getElementById("enemyGrid");
   var playerGridEl = document.getElementById("playerGrid");
-  var statusEl = document.getElementById("status");
-  var myLabelEl = document.getElementById("myLabel");
+  var enemyWrapEl  = document.getElementById("enemyWrap");
+  var playerWrapEl = document.getElementById("playerWrap");
+  var legendEl     = document.getElementById("legend");
+  var statusEl     = document.getElementById("status");
+  var myLabelEl    = document.getElementById("myLabel");
+  var enemyLabelEl = document.getElementById("enemyLabel");
+  var startBtn     = document.getElementById("startBtn");
+
+  function pname(i){ return "Player " + (i + 1); }
 
   function newBoard(){
     var b = { grid: [], ships: [] };
@@ -257,10 +385,8 @@
 
   // ---------- Rendering ----------
   function computeCellSize(){
-    // Two 10x10 grids stacked + headers/buttons. Constrain by width and height.
     var vw = window.innerWidth, vh = window.innerHeight;
     var byWidth = Math.floor((Math.min(vw, 480) - 16) / 10) - 1;
-    // Reserve ~190px for title/status/buttons/labels/legend, split remaining height across 2 grids
     var avail = vh - 200;
     var byHeight = Math.floor((avail / 2) / 10) - 1;
     var cell = Math.min(byWidth, byHeight);
@@ -283,35 +409,37 @@
 
   function cellEl(el, r, c){ return el.children[r*SIZE + c]; }
 
-  function renderPlayer(){
+  // Render a board the owner sees: ships + shot markers.
+  function renderOwn(el, board){
     for(var r=0;r<SIZE;r++){
       for(var c=0;c<SIZE;c++){
-        var cell = player.grid[r][c];
-        var el = cellEl(playerGridEl, r, c);
-        el.className = "cell";
-        if(cell.ship) el.classList.add("ship");
+        var cell = board.grid[r][c];
+        var dom = cellEl(el, r, c);
+        dom.className = "cell";
+        if(cell.ship) dom.classList.add("ship");
         if(cell.shot){
           if(cell.ship){
-            el.classList.add(cell.ship.hits >= cell.ship.len ? "sunk" : "hit");
+            dom.classList.add(cell.ship.hits >= cell.ship.len ? "sunk" : "hit");
           } else {
-            el.classList.add("miss");
+            dom.classList.add("miss");
           }
         }
       }
     }
   }
 
-  function renderEnemy(){
+  // Render an enemy board: only shot results, never unhit ships.
+  function renderEnemy(el, board){
     for(var r=0;r<SIZE;r++){
       for(var c=0;c<SIZE;c++){
-        var cell = cpu.grid[r][c];
-        var el = cellEl(enemyGridEl, r, c);
-        el.className = "cell";
+        var cell = board.grid[r][c];
+        var dom = cellEl(el, r, c);
+        dom.className = "cell";
         if(cell.shot){
           if(cell.ship){
-            el.classList.add(cell.ship.hits >= cell.ship.len ? "sunk" : "hit");
+            dom.classList.add(cell.ship.hits >= cell.ship.len ? "sunk" : "hit");
           } else {
-            el.classList.add("miss");
+            dom.classList.add("miss");
           }
         }
       }
@@ -328,16 +456,16 @@
     clearPreview();
     if(phase !== "place" || placeIndex >= FLEET.length) return;
     var spec = FLEET[placeIndex];
-    var cells = placementCells(player, r, c, spec.len, horizontal);
+    var board = boards[placingPlayer];
+    var cells = placementCells(board, r, c, spec.len, horizontal);
     if(cells){
       for(var i=0;i<cells.length;i++){
         cellEl(playerGridEl, cells[i].r, cells[i].c).classList.add("preview-ok");
       }
     } else {
-      // show bad preview along the intended line within bounds
-      for(var i=0;i<spec.len;i++){
-        var rr = horizontal ? r : r+i;
-        var cc = horizontal ? c+i : c;
+      for(var j=0;j<spec.len;j++){
+        var rr = horizontal ? r : r+j;
+        var cc = horizontal ? c+j : c;
         if(inBounds(rr,cc)){
           var el = cellEl(playerGridEl, rr, cc);
           if(!el.classList.contains("ship")) el.classList.add("preview-bad");
@@ -346,27 +474,160 @@
     }
   }
 
+  // ---------- UI helpers ----------
+  function showControls(which){
+    ["menuControls","placeControls","battleControls"].forEach(function(id){
+      document.getElementById(id).classList.toggle("hidden", id !== which);
+    });
+  }
+  function showBoards(enemy, player){
+    enemyWrapEl.classList.toggle("hidden", !enemy);
+    playerWrapEl.classList.toggle("hidden", !player);
+    legendEl.classList.toggle("hidden", !player);
+  }
+  function setOverlay(show){
+    document.getElementById("handoff").classList.toggle("hidden", !show);
+  }
+
+  // Full-screen privacy gate between players (2-player mode only).
+  // Revealing requires a deliberate slide-all-the-way gesture, so the board
+  // is never exposed by an accidental tap when handing over the device.
+  var slideMove = null, slideUp = null; // active window listeners (cleaned up on reveal)
+  function showHandoff(toName, subText, cb){
+    phase = "handoff";
+    document.getElementById("handoffTitle").textContent = "Pass to " + toName;
+    document.getElementById("handoffSub").textContent = subText;
+    setOverlay(true);
+    initSlider(function(){ setOverlay(false); cb(); });
+  }
+
+  function initSlider(onReveal){
+    var track  = document.getElementById("revealTrack");
+    var handle = document.getElementById("revealHandle");
+    var fill   = document.getElementById("revealFill");
+    var text   = document.getElementById("revealText");
+    var dragging = false, done = false, grabDX = 0, x = 0, maxX = 0;
+
+    function layout(){ maxX = Math.max(0, track.clientWidth - handle.offsetWidth - 8); }
+    function paint(px){
+      x = Math.max(0, Math.min(maxX, px));
+      handle.style.left = (4 + x) + "px";
+      fill.style.width  = (handle.offsetWidth + 4 + x) + "px";
+      text.style.opacity = maxX ? String(Math.max(0, 1 - x / maxX)) : "1";
+    }
+    function animate(on){
+      handle.style.transition = on ? "left .2s" : "";
+      fill.style.transition   = on ? "width .2s" : "";
+    }
+    function cleanup(){
+      window.removeEventListener("pointermove", slideMove);
+      window.removeEventListener("pointerup", slideUp);
+      window.removeEventListener("pointercancel", slideUp);
+      slideMove = slideUp = null;
+    }
+    function reset(){
+      animate(true); paint(0);
+      setTimeout(function(){ animate(false); }, 210);
+    }
+    function complete(){
+      done = true;
+      animate(true); paint(maxX);
+      cleanup();
+      setTimeout(onReveal, 190);
+    }
+    function ptX(e){ return e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0); }
+
+    function down(e){
+      if(done) return;
+      layout();
+      dragging = true;
+      animate(false);
+      grabDX = ptX(e) - x;
+      e.preventDefault();
+    }
+    slideMove = function(e){
+      if(!dragging || done) return;
+      e.preventDefault();
+      paint(ptX(e) - grabDX);
+    };
+    slideUp = function(){
+      if(!dragging || done) return;
+      dragging = false;
+      if(x >= maxX - 4) complete(); else reset();
+    };
+
+    // Reset any prior state and (re)wire fresh listeners for this handoff.
+    cleanup();
+    done = false; dragging = false;
+    layout(); animate(false); paint(0); text.style.opacity = "1";
+    track.onpointerdown = down;
+    window.addEventListener("pointermove", slideMove, { passive: false });
+    window.addEventListener("pointerup", slideUp);
+    window.addEventListener("pointercancel", slideUp);
+  }
+
+  // ---------- Menu ----------
+  function showMenu(){
+    mode = null;
+    phase = "menu";
+    gameOver = false;
+    setOverlay(false);
+    showControls("menuControls");
+    showBoards(false, false);
+    statusEl.textContent = "Choose a mode";
+  }
+
+  function selectMode(m){
+    mode = m;
+    boards[0] = newBoard();
+    boards[1] = newBoard();
+    gameOver = false;
+    computeCellSize();
+    buildGrid(playerGridEl);
+    buildGrid(enemyGridEl);
+    startPlacement(0);
+  }
+
   // ---------- Placement phase ----------
+  function startPlacement(p){
+    phase = "place";
+    placingPlayer = p;
+    placeIndex = 0;
+    horizontal = true;
+    document.getElementById("rotateBtn").textContent = "Rotate: ↔";
+    // Only the placing player's own board is visible (opponent can't peek).
+    showControls("placeControls");
+    showBoards(false, true);
+    renderOwn(playerGridEl, boards[p]);
+    clearPreview();
+    // Final button label: AI = Start Battle; 2P P1 = Done →; 2P P2 = Start Battle.
+    startBtn.textContent = (mode === "ai" || p === 1) ? "Start Battle" : "Done →";
+    updatePlaceLabel();
+  }
+
   function updatePlaceLabel(){
+    var who = (mode === "2p") ? (pname(placingPlayer) + " Fleet") : "Your Fleet";
     if(placeIndex < FLEET.length){
       var spec = FLEET[placeIndex];
-      myLabelEl.textContent = "Your Fleet — placing " + spec.name + " (" + spec.len + ")";
-      statusEl.textContent = "Tap your grid to place the " + spec.name;
+      myLabelEl.textContent = who + " — placing " + spec.name + " (" + spec.len + ")";
+      statusEl.textContent = (mode === "2p" ? pname(placingPlayer) + ": tap" : "Tap your grid") +
+                             " to place the " + spec.name;
+      startBtn.disabled = true;
     } else {
-      myLabelEl.textContent = "Your Fleet — ready!";
-      statusEl.textContent = "Fleet ready. Press Start Battle.";
+      myLabelEl.textContent = who + " — ready!";
+      statusEl.textContent = "Fleet ready. Press " + startBtn.textContent + ".";
+      startBtn.disabled = false;
     }
-    document.getElementById("startBtn").disabled = (placeIndex < FLEET.length);
   }
 
   function handlePlaceTap(r, c){
     if(placeIndex >= FLEET.length) return;
     var spec = FLEET[placeIndex];
-    var ship = placeShip(player, spec, r, c, horizontal);
+    var ship = placeShip(boards[placingPlayer], spec, r, c, horizontal);
     if(ship){
       sndPlace();
       placeIndex++;
-      renderPlayer();
+      renderOwn(playerGridEl, boards[placingPlayer]);
       clearPreview();
       updatePlaceLabel();
     } else {
@@ -374,9 +635,26 @@
     }
   }
 
+  function donePlacing(){
+    if(placeIndex < FLEET.length) return;
+    if(mode === "ai"){
+      randomPlaceAll(boards[1]);
+      startBattle(0);
+    } else if(placingPlayer === 0){
+      // Hand off so Player 2 can place their fleet privately.
+      showHandoff(pname(1), pname(1) + ": place your fleet. " + pname(0) + ", look away!", function(){
+        startPlacement(1);
+      });
+    } else {
+      // Both fleets placed — hand off to Player 1 to take the first shot.
+      showHandoff(pname(0), "Both fleets ready! " + pname(0) + " fires first.", function(){
+        startBattle(0);
+      });
+    }
+  }
+
   // ---------- Battle phase ----------
   function shipSunkCheck(ship){ return ship.hits >= ship.len; }
-
   function allSunk(board){
     for(var i=0;i<board.ships.length;i++){
       if(board.ships[i].hits < board.ships[i].len) return false;
@@ -384,56 +662,100 @@
     return true;
   }
 
+  function enemyBoardOf(turn){ return boards[ (mode === "2p") ? (1 - turn) : 1 ]; }
+  function ownBoardOf(turn){ return boards[ (mode === "2p") ? turn : 0 ]; }
+
+  function updateBattleLabels(){
+    if(mode === "2p"){
+      enemyLabelEl.textContent = pname(1 - active) + "'s Waters";
+      myLabelEl.textContent = pname(active) + " — Your Fleet";
+    } else {
+      enemyLabelEl.textContent = "Enemy Waters";
+      myLabelEl.textContent = "Your Fleet";
+    }
+  }
+
+  function renderBattle(){
+    renderEnemy(enemyGridEl, enemyBoardOf(active));
+    renderOwn(playerGridEl, ownBoardOf(active));
+    updateBattleLabels();
+  }
+
+  function startBattle(first){
+    phase = "battle";
+    active = first;
+    currentTurn = "player";
+    gameOver = false;
+    cpuTargets = [];
+    cpuHits = [];
+    showControls("battleControls");
+    showBoards(true, true);
+    renderBattle();
+    statusEl.textContent = (mode === "2p")
+      ? pname(active) + ": fire at " + pname(1 - active) + "!"
+      : "Your turn — fire at Enemy Waters!";
+    if(actx && actx.state === "suspended") actx.resume();
+  }
+
+  // A shot taken by the human (AI mode) or the active player (2P mode).
   function playerFire(r, c){
-    if(gameOver || phase !== "battle" || currentTurn !== "player") return;
-    var cell = cpu.grid[r][c];
-    if(cell.shot) return; // already fired
+    if(gameOver || phase !== "battle") return;
+    if(mode === "ai" && currentTurn !== "player") return;
+    var enemy = enemyBoardOf(active);
+    var cell = enemy.grid[r][c];
+    if(cell.shot) return;
     cell.shot = true;
+    renderEnemy(enemyGridEl, enemy);
     if(cell.ship){
       cell.ship.hits++;
-      renderEnemy();
       if(shipSunkCheck(cell.ship)){
         sndSink();
-        statusEl.textContent = "You sank the enemy " + cell.ship.name + "!";
+        statusEl.textContent = "Sank the " +
+          (mode === "2p" ? pname(1 - active) + "'s " : "enemy ") + cell.ship.name + "!";
       } else {
         sndHit();
         statusEl.textContent = "Hit!";
       }
-      if(allSunk(cpu)){
-        endGame(true);
-        return;
-      }
-      // player hit -> player fires again (standard "extra turn on hit" variant kept simple: no extra turn)
-      currentTurn = "cpu";
-      setTimeout(cpuTurn, 650);
     } else {
       sndMiss();
       statusEl.textContent = "Miss.";
-      renderEnemy();
+    }
+    if(allSunk(enemy)){
+      if(mode === "2p") endGame(pname(active) + " wins! 🎉", true);
+      else endGame("🎉 VICTORY! You sank the enemy fleet!", true);
+      return;
+    }
+    // One shot per turn — hand the turn to the opponent.
+    if(mode === "ai"){
       currentTurn = "cpu";
       setTimeout(cpuTurn, 650);
+    } else {
+      // Lock input immediately so a fast double-tap can't fire twice in the
+      // brief window before the privacy overlay appears.
+      phase = "wait";
+      // Let the shooter see the result, then privacy-gate the next player.
+      setTimeout(function(){
+        if(gameOver) return;
+        active = 1 - active;
+        showHandoff(pname(active), pname(active) + ": your turn to fire!", function(){
+          phase = "battle";
+          renderBattle();
+          statusEl.textContent = pname(active) + ": fire at " + pname(1 - active) + "!";
+        });
+      }, 850);
     }
   }
 
-  // ---------- CPU AI ----------
-  var cpuTargets = []; // queue of {r,c} candidates to try (target mode)
-  var cpuHits = [];    // list of confirmed hit cells of the current ship being hunted
-
+  // ---------- CPU AI (AI mode only) ----------
   function neighbors(r,c){
     return [{r:r-1,c:c},{r:r+1,c:c},{r:r,c:c-1},{r:r,c:c+1}];
   }
-
-  function cpuChoose(){
-    // Target mode: use queued targets
+  function cpuChoose(player){
     while(cpuTargets.length){
       var t = cpuTargets.shift();
-      if(inBounds(t.r,t.c) && !player.grid[t.r][t.c].shot){
-        return t;
-      }
+      if(inBounds(t.r,t.c) && !player.grid[t.r][t.c].shot) return t;
     }
-    // Hunt mode: parity-based random among unshot cells
-    var candidates = [];
-    var any = [];
+    var candidates = [], any = [];
     for(var r=0;r<SIZE;r++){
       for(var c=0;c<SIZE;c++){
         if(!player.grid[r][c].shot){
@@ -443,148 +765,94 @@
       }
     }
     var pool = candidates.length ? candidates : any;
+    if(!pool.length) return null;
     return pool[Math.floor(Math.random()*pool.length)];
   }
-
-  function enqueueTargets(){
-    // If we have 2+ hits, follow the line. Else add all neighbors of the hits.
+  function addNeighborTargets(player, h){
+    var ns = neighbors(h.r, h.c);
+    for(var i=0;i<ns.length;i++){
+      var n = ns[i];
+      if(inBounds(n.r,n.c) && !player.grid[n.r][n.c].shot) cpuTargets.push(n);
+    }
+  }
+  function enqueueTargets(player){
     cpuTargets = [];
     if(cpuHits.length >= 2){
-      // determine orientation
       var sameRow = cpuHits.every(function(h){ return h.r === cpuHits[0].r; });
       var sameCol = cpuHits.every(function(h){ return h.c === cpuHits[0].c; });
       if(sameRow){
         var rrow = cpuHits[0].r;
         var cols = cpuHits.map(function(h){ return h.c; });
         var minc = Math.min.apply(null, cols), maxc = Math.max.apply(null, cols);
-        if(inBounds(rrow, minc-1)) cpuTargets.push({r:rrow, c:minc-1});
-        if(inBounds(rrow, maxc+1)) cpuTargets.push({r:rrow, c:maxc+1});
+        if(inBounds(rrow, minc-1) && !player.grid[rrow][minc-1].shot) cpuTargets.push({r:rrow, c:minc-1});
+        if(inBounds(rrow, maxc+1) && !player.grid[rrow][maxc+1].shot) cpuTargets.push({r:rrow, c:maxc+1});
       } else if(sameCol){
         var ccol = cpuHits[0].c;
         var rows = cpuHits.map(function(h){ return h.r; });
         var minr = Math.min.apply(null, rows), maxr = Math.max.apply(null, rows);
-        if(inBounds(minr-1, ccol)) cpuTargets.push({r:minr-1, c:ccol});
-        if(inBounds(maxr+1, ccol)) cpuTargets.push({r:maxr+1, c:ccol});
+        if(inBounds(minr-1, ccol) && !player.grid[minr-1][ccol].shot) cpuTargets.push({r:minr-1, c:ccol});
+        if(inBounds(maxr+1, ccol) && !player.grid[maxr+1][ccol].shot) cpuTargets.push({r:maxr+1, c:ccol});
       } else {
-        // scattered (shouldn't normally happen) fall back to neighbors of last hit
-        addNeighborTargets(cpuHits[cpuHits.length-1]);
+        addNeighborTargets(player, cpuHits[cpuHits.length-1]);
       }
     } else if(cpuHits.length === 1){
-      addNeighborTargets(cpuHits[0]);
-    }
-  }
-
-  function addNeighborTargets(h){
-    var ns = neighbors(h.r, h.c);
-    for(var i=0;i<ns.length;i++){
-      var n = ns[i];
-      if(inBounds(n.r,n.c) && !player.grid[n.r][n.c].shot){
-        cpuTargets.push(n);
-      }
+      addNeighborTargets(player, cpuHits[0]);
     }
   }
 
   function cpuTurn(){
     if(gameOver) return;
-    var t = cpuChoose();
-    if(!t){ return; }
+    var player = boards[0];
+    var t = cpuChoose(player);
+    if(!t) return;
     var cell = player.grid[t.r][t.c];
     cell.shot = true;
     if(cell.ship){
       cell.ship.hits++;
       cpuHits.push({r:t.r, c:t.c});
-      renderPlayer();
+      renderOwn(playerGridEl, player);
       if(shipSunkCheck(cell.ship)){
         sndSink();
         statusEl.textContent = "Enemy sank your " + cell.ship.name + "!";
-        // reset target tracking; remove this ship's hits from cpuHits
-        cpuHits = cpuHits.filter(function(h){
-          return player.grid[h.r][h.c].ship !== cell.ship;
-        });
-        // If other hits remain (rare overlap of tracking), re-enqueue; else clear
-        if(cpuHits.length) enqueueTargets(); else cpuTargets = [];
+        cpuHits = cpuHits.filter(function(h){ return player.grid[h.r][h.c].ship !== cell.ship; });
+        if(cpuHits.length) enqueueTargets(player); else cpuTargets = [];
       } else {
         sndHit();
         statusEl.textContent = "Enemy hit your fleet!";
-        enqueueTargets();
+        enqueueTargets(player);
       }
       if(allSunk(player)){
-        endGame(false);
+        endGame("💥 DEFEAT! Your fleet was destroyed.", false);
         return;
       }
-      // CPU continues firing on a hit
-      setTimeout(cpuTurn, 650);
     } else {
       sndMiss();
-      renderPlayer();
+      renderOwn(playerGridEl, player);
       statusEl.textContent = "Enemy missed.";
-      currentTurn = "player";
     }
-  }
-
-  // ---------- Game flow ----------
-  function startBattle(){
-    if(placeIndex < FLEET.length) return;
-    randomPlaceAll(cpu);
-    phase = "battle";
+    // One shot per turn — back to the human.
     currentTurn = "player";
-    cpuTargets = [];
-    cpuHits = [];
-    document.getElementById("placeControls").classList.add("hidden");
-    document.getElementById("battleControls").classList.remove("hidden");
-    myLabelEl.textContent = "Your Fleet";
-    statusEl.textContent = "Your turn — fire at Enemy Waters!";
-    clearPreview();
-    renderEnemy();
-    renderPlayer();
-    if(actx && actx.state === "suspended") actx.resume();
   }
 
-  function endGame(playerWon){
+  // ---------- Game over ----------
+  function endGame(message, won){
     gameOver = true;
     phase = "over";
-    renderEnemy();
-    renderPlayer();
-    if(playerWon){
-      statusEl.textContent = "🎉 VICTORY! You sank the enemy fleet!";
-      sndWin();
-    } else {
-      statusEl.textContent = "💥 DEFEAT! Your fleet was destroyed.";
-      sndLose();
-    }
-  }
-
-  function newGame(){
-    player = newBoard();
-    cpu = newBoard();
-    phase = "place";
-    placeIndex = 0;
-    horizontal = true;
-    gameOver = false;
-    currentTurn = null;
-    cpuTargets = [];
-    cpuHits = [];
-    document.getElementById("placeControls").classList.remove("hidden");
-    document.getElementById("battleControls").classList.add("hidden");
-    document.getElementById("rotateBtn").textContent = "Rotate: ↔";
-    computeCellSize();
-    buildGrid(playerGridEl);
-    buildGrid(enemyGridEl);
-    renderPlayer();
-    renderEnemy();
-    updatePlaceLabel();
+    setOverlay(false);
+    showControls("battleControls");
+    statusEl.textContent = message;
+    if(won) sndWin(); else sndLose();
   }
 
   // ---------- Event wiring ----------
+  document.getElementById("aiBtn").addEventListener("click", function(){ selectMode("ai"); });
+  document.getElementById("twoBtn").addEventListener("click", function(){ selectMode("2p"); });
+
   playerGridEl.addEventListener("click", function(e){
     var t = e.target.closest(".cell");
     if(!t) return;
-    if(phase === "place"){
-      handlePlaceTap(+t.dataset.r, +t.dataset.c);
-    }
+    if(phase === "place") handlePlaceTap(+t.dataset.r, +t.dataset.c);
   });
-
-  // preview on touch/hover within placement
   playerGridEl.addEventListener("pointermove", function(e){
     if(phase !== "place") return;
     var t = e.target.closest(".cell");
@@ -604,9 +872,7 @@
   enemyGridEl.addEventListener("click", function(e){
     var t = e.target.closest(".cell");
     if(!t) return;
-    if(phase === "battle" && currentTurn === "player"){
-      playerFire(+t.dataset.r, +t.dataset.c);
-    }
+    if(phase === "battle") playerFire(+t.dataset.r, +t.dataset.c);
   });
 
   document.getElementById("rotateBtn").addEventListener("click", function(){
@@ -614,20 +880,18 @@
     this.textContent = "Rotate: " + (horizontal ? "↔" : "↕");
     clearPreview();
   });
-
   document.getElementById("autoBtn").addEventListener("click", function(){
-    randomPlaceAll(player);
+    randomPlaceAll(boards[placingPlayer]);
     placeIndex = FLEET.length;
-    renderPlayer();
+    renderOwn(playerGridEl, boards[placingPlayer]);
     clearPreview();
     updatePlaceLabel();
     sndPlace();
   });
+  startBtn.addEventListener("click", donePlacing);
+  document.getElementById("newGameBtn").addEventListener("click", showMenu);
 
-  document.getElementById("startBtn").addEventListener("click", startBattle);
-  document.getElementById("newGameBtn").addEventListener("click", newGame);
-
-  document.getElementById("legend").textContent = "Carrier 5 · Battleship 4 · Cruiser 3 · Submarine 3 · Destroyer 2";
+  legendEl.textContent = "Carrier 5 · Battleship 4 · Cruiser 3 · Submarine 3 · Destroyer 2";
 
   var resizeTimer;
   window.addEventListener("resize", function(){
@@ -635,13 +899,13 @@
     resizeTimer = setTimeout(computeCellSize, 100);
   });
 
-  // prevent double-tap zoom / scroll
   document.addEventListener("gesturestart", function(e){ e.preventDefault(); });
   document.addEventListener("touchmove", function(e){
     if(e.touches.length > 1) e.preventDefault();
   }, { passive:false });
 
-  newGame();
+  computeCellSize();
+  showMenu();
 })();
 </script>
 </body>

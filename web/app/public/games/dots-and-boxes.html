@@ -135,10 +135,45 @@
     </style>
     <script>
     if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
-    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
-    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    // Back-to-all-games pill (top-left). Positioned with env(safe-area-inset-*)
+    // so it clears the notch / Dynamic Island.
     window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
-    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DB2777;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    // Top-right pause/menu button (placed far from gameplay). Opens a top sheet
+    // with high score, Install, Back to games, and Report an issue. Opening the
+    // menu fires a 'grown:pause' event + dims/blocks the screen (soft pause);
+    // closing fires 'grown:resume'. Games can opt in to true pause + scoring via
+    // the window.GrownGame hook (highScore()/setHighScore()).
+    (function(){
+      var ID="dots-and-boxes",NAME="Dots & Boxes",COLOR="#DB2777",HK='grown-hi-'+ID;
+      window.GrownGame={
+        highScore:function(){return parseInt(localStorage.getItem(HK)||'0',10)||0;},
+        setHighScore:function(n){n=Math.floor(+n||0);try{if(n>this.highScore())localStorage.setItem(HK,String(n));}catch(e){}return this.highScore();}
+      };
+      var dp=null,scrim,sheet,hiEl,installItem,isOpen=false;
+      function css(el,s){el.setAttribute('style',s);}
+      function emit(n){try{window.dispatchEvent(new Event(n));}catch(e){}}
+      window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(installItem)installItem.style.display='';});
+      window.addEventListener('appinstalled',function(){dp=null;if(installItem)installItem.style.display='none';});
+      function item(label,fn){var b=document.createElement('button');b.textContent=label;css(b,'display:block;width:100%;text-align:left;margin:6px 0;padding:12px 14px;border:1px solid #243049;border-radius:10px;background:#16203a;color:#e8eefc;font:600 15px system-ui,sans-serif;cursor:pointer;touch-action:manipulation');b.onclick=fn;return b;}
+      function openMenu(){if(isOpen)return;isOpen=true;hiEl.textContent='High score: '+(window.GrownGame.highScore()||'—');scrim.style.pointerEvents='auto';scrim.style.opacity='1';sheet.style.transform='translateY(0)';emit('grown:pause');}
+      function closeMenu(){if(!isOpen)return;isOpen=false;scrim.style.opacity='0';scrim.style.pointerEvents='none';sheet.style.transform='translateY(-110%)';emit('grown:resume');}
+      function doInstall(){if(!dp)return;var d=dp;dp=null;installItem.style.display='none';d.prompt();d.userChoice.finally(function(){});closeMenu();}
+      function report(){var body='\n\n----\nGame: '+NAME+'\nURL: '+location.href+'\nDevice: '+navigator.userAgent;location.href='mailto:games@pick.haus?subject='+encodeURIComponent('Issue: '+NAME)+'&body='+encodeURIComponent(body);}
+      function build(){
+        var btn=document.createElement('button');btn.setAttribute('aria-label','Menu');btn.textContent='\u23F8';
+        css(btn,'position:fixed;right:calc(env(safe-area-inset-right,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;width:40px;height:40px;padding:0;border:none;border-radius:50%;background:rgba(15,23,42,.6);color:#fff;font-size:17px;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');
+        btn.onclick=openMenu;document.body.appendChild(btn);
+        scrim=document.createElement('div');css(scrim,'position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.55);opacity:0;transition:opacity .18s;pointer-events:none');scrim.onclick=closeMenu;document.body.appendChild(scrim);
+        sheet=document.createElement('div');css(sheet,'position:fixed;left:0;right:0;top:0;z-index:2147483647;transform:translateY(-110%);transition:transform .22s;background:#0f172a;color:#e8eefc;border-bottom-left-radius:16px;border-bottom-right-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.5);padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 16px;max-width:480px;margin:0 auto');document.body.appendChild(sheet);
+        var h=document.createElement('div');css(h,'font-weight:700;font-size:17px;color:'+COLOR);h.textContent=NAME;sheet.appendChild(h);
+        hiEl=document.createElement('div');css(hiEl,'font-size:13px;color:#9fb3d9;margin:2px 0 12px');sheet.appendChild(hiEl);
+        sheet.appendChild(item('\u25B6 Resume',closeMenu));
+        installItem=item('\u2B07 Install app',doInstall);installItem.style.display=dp?'':'none';sheet.appendChild(installItem);
+        sheet.appendChild(item('\u2039 All games',function(){location.href='/games';}));
+        sheet.appendChild(item('\u2691 Report an issue',report));
+      }
+      if(document.body)build();else window.addEventListener('DOMContentLoaded',build);
+    })();
     </script>
     <!-- pwa:end -->
 </head>
