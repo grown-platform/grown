@@ -29,9 +29,9 @@ import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import { Messages } from "./Messages";
 import { AdminArea } from "./AdminArea";
+import { listContacts } from "../contacts/api";
 import {
   getMyExtension,
-  listDirectory,
   listCallHistory,
   logCall,
   openSignalSocket,
@@ -404,9 +404,22 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
   }, []);
 
   // ---- Load initial data ----
+  // The phone directory is sourced from the user's Contacts (not the org's
+  // member list) for now — each contact's first phone number becomes its
+  // dialable "extension".
   const reloadDirectory = useCallback(async () => {
     try {
-      setDirectory(await listDirectory());
+      const contacts = await listContacts();
+      const entries: DirectoryEntry[] = contacts
+        .map((c) => ({
+          user_id: c.id,
+          display_name: c.display_name || c.first_name || c.last_name || "",
+          email: c.emails?.[0] ?? "",
+          extension: c.phones?.[0] ?? "",
+          online: false,
+        }))
+        .filter((e) => e.extension); // only contacts with a number are dialable
+      setDirectory(entries);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -553,20 +566,13 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
 
   const callExtension = useCallback(
     (extension: string) => {
+      // Dial a contact when the number matches one, otherwise dial the raw
+      // number. Contacts aren't presence-tracked, so there's no online gate.
       const entry = (directory ?? []).find((d) => d.extension === extension);
-      if (!entry) {
-        setError(`No member with extension ${extension}.`);
-        return;
-      }
-      if (!entry.online) {
-        setError(`${entry.display_name || entry.email} is offline.`);
-        return;
-      }
-      placeCall(
-        entry.user_id,
-        entry.display_name || entry.email,
-        entry.extension,
-      );
+      const name = entry
+        ? entry.display_name || entry.email || extension
+        : extension;
+      placeCall(entry ? entry.user_id : extension, name, extension);
     },
     [directory, placeCall],
   );
@@ -865,7 +871,7 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
                 borderColor: "divider",
               }}
             >
-              <Typography level="title-sm">Directory</Typography>
+              <Typography level="title-sm">Contacts</Typography>
             </Box>
 
             {directory === null && (
@@ -878,7 +884,7 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
               <Box sx={{ p: 6, textAlign: "center" }}>
                 <PersonIcon sx={{ fontSize: 48, opacity: 0.3, mb: 1 }} />
                 <Typography level="body-lg" sx={{ opacity: 0.7 }}>
-                  No other members in your organization yet.
+                  No contacts yet — add some in the Contacts app.
                 </Typography>
               </Box>
             )}
@@ -936,7 +942,7 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
                   variant="soft"
                   color="success"
                   startDecorator={<CallIcon />}
-                  disabled={callState !== "idle" || !m.online}
+                  disabled={callState !== "idle"}
                   onClick={() =>
                     placeCall(
                       m.user_id,
