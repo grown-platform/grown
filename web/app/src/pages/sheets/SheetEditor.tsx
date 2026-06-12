@@ -39,6 +39,9 @@ import { DataValidationDialog } from "./DataValidationDialog";
 import { ChartDialog } from "./ChartDialog";
 import { ChartsPanel } from "./ChartsPanel";
 import type { ChartConfig } from "./chartData";
+import { PivotDialog } from "./PivotDialog";
+import { PivotPanel } from "./PivotPanel";
+import type { PivotConfig } from "./pivotData";
 import { downloadSheet } from "./export";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
@@ -99,6 +102,10 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [chartsOpen, setChartsOpen] = useState(false);
   const [charts, setCharts] = useState<ChartConfig[]>([]);
   const chartsRef = useRef<ChartConfig[]>([]);
+  const [pivotOpen, setPivotOpen] = useState(false);
+  const [pivotsOpen, setPivotsOpen] = useState(false);
+  const [pivots, setPivots] = useState<PivotConfig[]>([]);
+  const pivotsRef = useRef<PivotConfig[]>([]);
   const dataRef = useRef<any[] | null>(null);
   const ref = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -125,6 +132,11 @@ export function SheetEditor({ user }: SheetEditorProps) {
             : [];
           chartsRef.current = loaded;
           setCharts(loaded);
+          const loadedPivots: PivotConfig[] = Array.isArray(parsed?.[0]?.grownPivots)
+            ? parsed[0].grownPivots
+            : [];
+          pivotsRef.current = loadedPivots;
+          setPivots(loadedPivots);
           dataRef.current = parsed;
           setData(parsed);
         } catch {
@@ -274,26 +286,34 @@ export function SheetEditor({ user }: SheetEditorProps) {
   // withCharts attaches the current chart definitions onto the first sheet so
   // they round-trip through the saved workbook JSON (FortuneSheet ignores the
   // extra field; we read it back on load).
-  function withCharts(d: any[]): any[] {
+  function withExtras(d: any[]): any[] {
     if (!Array.isArray(d) || d.length === 0) return d;
     const copy = d.slice();
-    copy[0] = { ...copy[0], grownCharts: chartsRef.current };
+    copy[0] = { ...copy[0], grownCharts: chartsRef.current, grownPivots: pivotsRef.current };
     return copy;
   }
   function onChange(d: any[]) {
     dataRef.current = d;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      saveSheet(id, JSON.stringify(withCharts(d))).catch(() => {});
+      saveSheet(id, JSON.stringify(withExtras(d))).catch(() => {});
     }, 1500);
   }
-  // persistCharts updates chart state and saves immediately (charts changes
-  // aren't FortuneSheet cell edits, so they won't trigger onChange).
+  // persistExtras saves charts/pivots immediately (they aren't FortuneSheet
+  // cell edits, so they won't trigger onChange).
+  function persistExtras() {
+    const d = dataRef.current;
+    if (d) saveSheet(id, JSON.stringify(withExtras(d))).catch(() => {});
+  }
   function persistCharts(next: ChartConfig[]) {
     chartsRef.current = next;
     setCharts(next);
-    const d = dataRef.current;
-    if (d) saveSheet(id, JSON.stringify(withCharts(d))).catch(() => {});
+    persistExtras();
+  }
+  function persistPivots(next: PivotConfig[]) {
+    pivotsRef.current = next;
+    setPivots(next);
+    persistExtras();
   }
   async function commitTitle() {
     const t = title.trim() || "Untitled spreadsheet";
@@ -392,6 +412,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onNamedRanges={() => setNrOpen(true)}
               onDataValidation={() => setDvOpen(true)}
               onInsertChart={() => setChartOpen(true)}
+              onInsertPivot={() => setPivotOpen(true)}
             />
           </Box>
           <Box sx={{ flex: 1 }} />
@@ -404,6 +425,17 @@ export function SheetEditor({ user }: SheetEditorProps) {
               sx={{ mr: 1 }}
             >
               Charts ({charts.length})
+            </Button>
+          )}
+          {pivots.length > 0 && (
+            <Button
+              size="sm"
+              variant="outlined"
+              startDecorator={<TableChartIcon fontSize="small" />}
+              onClick={() => setPivotsOpen(true)}
+              sx={{ mr: 1 }}
+            >
+              Pivots ({pivots.length})
             </Button>
           )}
           <Box sx={{ display: { xs: "none", sm: "flex" } }}>
@@ -484,6 +516,26 @@ export function SheetEditor({ user }: SheetEditorProps) {
         onNew={() => {
           setChartsOpen(false);
           setChartOpen(true);
+        }}
+      />
+      <PivotDialog
+        open={pivotOpen}
+        onClose={() => setPivotOpen(false)}
+        getWb={() => ref.current}
+        onAdd={(cfg) => {
+          persistPivots([...pivotsRef.current, cfg]);
+          setPivotsOpen(true);
+        }}
+      />
+      <PivotPanel
+        open={pivotsOpen}
+        onClose={() => setPivotsOpen(false)}
+        getWb={() => ref.current}
+        pivots={pivots}
+        onDelete={(pid) => persistPivots(pivotsRef.current.filter((p) => p.id !== pid))}
+        onNew={() => {
+          setPivotsOpen(false);
+          setPivotOpen(true);
         }}
       />
     </Box>

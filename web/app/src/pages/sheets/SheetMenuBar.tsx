@@ -46,6 +46,8 @@ interface SheetMenuBarProps {
   onDataValidation: () => void;
   /** Opens the Insert chart dialog. */
   onInsertChart: () => void;
+  /** Opens the Insert pivot table dialog. */
+  onInsertPivot: () => void;
 }
 
 const menuButtonSx = {
@@ -94,6 +96,7 @@ export function SheetMenuBar({
   onNamedRanges,
   onDataValidation,
   onInsertChart,
+  onInsertPivot,
 }: SheetMenuBarProps) {
   const wb = () => {
     try {
@@ -324,7 +327,7 @@ export function SheetMenuBar({
           <MenuItem disabled>Pre-built tables</MenuItem>
           <MenuItem disabled>Timeline</MenuItem>
           <MenuItem onClick={onInsertChart}>Chart</MenuItem>
-          <MenuItem disabled>Pivot table</MenuItem>
+          <MenuItem onClick={onInsertPivot}>Pivot table</MenuItem>
           <MenuItem disabled>Image{arrow}</MenuItem>
           <MenuItem disabled>Drawing</MenuItem>
           <MenuItem disabled>Function{arrow}</MenuItem>
