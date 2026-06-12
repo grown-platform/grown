@@ -135,6 +135,88 @@
     min-height: 16px;
     margin-top: 6px;
   }
+
+  /* Mode-select / game-over modal overlay (dimmed). */
+  .gf-overlay {
+    position: fixed; inset: 0; z-index: 2147483640;
+    background: rgba(0,0,0,0.6);
+    display: none; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .gf-overlay.show { display: flex; }
+  .gf-modal {
+    background: #0e4a37;
+    border: 1px solid rgba(255,255,255,0.14);
+    padding: 26px 28px;
+    border-radius: 16px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+    max-width: 84vw;
+  }
+  .gf-modal h2 { margin: 0 0 6px; font-size: 22px; color: #ffd76b; }
+  .gf-modal p { margin: 0 0 18px; color: #cdded6; font-size: 14px; }
+  .gf-modal .modebtns { display: flex; flex-direction: column; gap: 12px; }
+  .gf-modal button {
+    font-size: 16px; font-weight: 600; padding: 13px 24px;
+    border: none; border-radius: 10px;
+    background: #ffd76b; color: #0b3d2e; cursor: pointer;
+    touch-action: manipulation; min-width: 220px;
+  }
+  .gf-modal button:active { transform: translateY(1px); }
+
+  /* Privacy handoff overlay — fully OPAQUE so the incoming player can't see
+     the previous player's hand. Below the injected top-right menu. */
+  .gf-handoff {
+    position: fixed; inset: 0; z-index: 2147483640;
+    background: #0b3d2e;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .gf-handoff.hidden { display: none !important; }
+  .gf-handoff-card {
+    text-align: center; display: flex; flex-direction: column;
+    gap: 18px; align-items: center;
+  }
+  #gfHandoffTitle { font-size: 24px; font-weight: 700; color: #ffd76b; }
+  #gfHandoffSub { font-size: 14px; color: #cdded6; max-width: 280px; line-height: 1.4; }
+  /* Slide-to-reveal: a deliberate gesture so the hand is never exposed by an
+     accidental tap during a handoff. Drag the handle all the way across. */
+  .reveal-track {
+    position: relative;
+    width: min(320px, 78vw);
+    height: 60px;
+    border-radius: 30px;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.18);
+    overflow: hidden;
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  .reveal-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 56px;
+    background: #ffd76b;
+    border-radius: 30px;
+  }
+  .reveal-text {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 600 14px system-ui, sans-serif;
+    color: #cdded6;
+    letter-spacing: 1px;
+    pointer-events: none;
+    padding-left: 40px;
+  }
+  .reveal-handle {
+    position: absolute; left: 4px; top: 4px;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: #ffd76b; color: #0b3d2e;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+    touch-action: none;
+  }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/go-fish.svg">
@@ -196,8 +278,8 @@
   <header>
     <h1>Go Fish</h1>
     <div class="scores">
-      <div class="score">You<br><b id="youBooks">0</b> books</div>
-      <div class="score">CPU<br><b id="cpuBooks">0</b> books</div>
+      <div class="score"><span id="youName">You</span><br><b id="youBooks">0</b> books</div>
+      <div class="score"><span id="cpuName">CPU</span><br><b id="cpuBooks">0</b> books</div>
     </div>
     <div class="pondinfo" id="pondInfo">Pond: 0</div>
   </header>
@@ -205,12 +287,39 @@
   <div id="log"></div>
 
   <div id="handArea">
-    <div class="handlabel"><span>Your hand — tap a card to ask for that rank</span><span id="handCount"></span></div>
+    <div class="handlabel"><span id="handLabel">Your hand — tap a card to ask for that rank</span><span id="handCount"></span></div>
     <div id="hand"></div>
     <div class="turnhint" id="turnHint"></div>
     <div class="controls">
       <button class="btn" id="newGameBtn">New Game</button>
       <button class="btn sec" id="soundBtn">Sound: On</button>
+    </div>
+  </div>
+
+  <!-- Mode-select overlay (shown on load + via New Game) -->
+  <div id="gfModeOverlay" class="gf-overlay">
+    <div class="gf-modal">
+      <h2>Go Fish</h2>
+      <p>Choose a mode</p>
+      <div class="modebtns">
+        <button id="gfModeAi">🤖 vs Computer</button>
+        <button id="gfModeTwo">👥 2 Players</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Privacy handoff overlay (2-player pass &amp; play). OPAQUE full-screen
+       cover; the incoming player must slide the handle all the way across to
+       reveal their hand, so an accidental tap can't expose it. -->
+  <div id="gfHandoff" class="gf-handoff hidden">
+    <div class="gf-handoff-card">
+      <div id="gfHandoffTitle">Pass the device</div>
+      <div id="gfHandoffSub"></div>
+      <div id="gfRevealTrack" class="reveal-track">
+        <div id="gfRevealFill" class="reveal-fill"></div>
+        <div id="gfRevealText" class="reveal-text">slide to reveal</div>
+        <div id="gfRevealHandle" class="reveal-handle">›</div>
+      </div>
     </div>
   </div>
 
@@ -260,6 +369,19 @@
   var deck, youHand, cpuHand, youBooks, cpuBooks, gameOver, busy;
   // CPU memory: ranks it has seen you ask for (you likely hold them) -> set of ranks
   var cpuKnowledge;
+
+  // Mode: 'ai' = human ("You") vs computer ("CPU"); '2p' = pass-and-play, where
+  // the "you" seat is Player 1 and the "cpu" seat is Player 2 (a human — AI off).
+  // active: in 2p, which player's hand is shown face-up (0 = P1/"you", 1 = P2/"cpu").
+  var mode = 'ai';
+  var active = 0;
+
+  function is2p() { return mode === '2p'; }
+  // Display name for a seat: 0 = "you" seat, 1 = "cpu"/opponent seat.
+  function sideName(seat) {
+    if (is2p()) return seat === 0 ? "Player 1" : "Player 2";
+    return seat === 0 ? "You" : "CPU";
+  }
 
   function rankValue(r) { return RANKS.indexOf(r); }
 
@@ -315,16 +437,27 @@
     return rank;
   }
 
-  function renderHand() {
-    var handEl = el("hand");
-    handEl.innerHTML = "";
-    // sort by rank value then suit for readability
-    youHand.sort(function (a, b) {
+  // The hand belonging to the active player (face-up) and its book array.
+  function activeHand() { return (is2p() && active === 1) ? cpuHand : youHand; }
+  // The other player's hand (hidden) and its count.
+  function otherHand()  { return (is2p() && active === 1) ? youHand : cpuHand; }
+
+  function sortHand(hand) {
+    hand.sort(function (a, b) {
       var d = rankValue(a.rank) - rankValue(b.rank);
       if (d !== 0) return d;
       return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
     });
-    youHand.forEach(function (card) {
+  }
+
+  function renderHand() {
+    var handEl = el("hand");
+    handEl.innerHTML = "";
+    // Always render from the ACTIVE player's perspective: own hand face-up,
+    // tappable; the opponent's hand never shown here (it's hidden by count).
+    var hand = activeHand();
+    sortHand(hand);
+    hand.forEach(function (card) {
       var c = document.createElement("div");
       c.className = "card" + (RED[card.suit] ? " red" : "") + " askable";
       if (gameOver || busy) c.className += " disabled";
@@ -341,10 +474,15 @@
       c.addEventListener("click", function () { onAsk(card.rank); });
       handEl.appendChild(c);
     });
-    el("handCount").textContent = youHand.length + " cards";
+    el("handCount").textContent = hand.length + " cards";
+    el("handLabel").textContent = is2p()
+      ? sideName(active) + "'s hand — tap a card to ask for that rank"
+      : "Your hand — tap a card to ask for that rank";
   }
 
   function renderScores() {
+    el("youName").textContent = sideName(0);
+    el("cpuName").textContent = sideName(1);
     el("youBooks").textContent = youBooks.length;
     el("cpuBooks").textContent = cpuBooks.length;
     el("pondInfo").textContent = "Pond: " + deck.length +
@@ -362,6 +500,84 @@
 
   function setHint(text) { el("turnHint").textContent = text || ""; }
 
+  // ---- Privacy handoff (2-player pass & play) ----
+  // Full-screen OPAQUE cover between human turns. The incoming player must
+  // slide the handle all the way across to reveal — an accidental tap won't
+  // expose the previous player's hand.
+  var slideMove = null, slideUp = null; // active window listeners
+  function setHandoff(show) {
+    el("gfHandoff").classList.toggle("hidden", !show);
+  }
+  function showHandoff(toName, subText, cb) {
+    el("gfHandoffTitle").textContent = "Pass to " + toName;
+    el("gfHandoffSub").textContent = subText;
+    setHandoff(true);
+    initSlider(function () { setHandoff(false); cb(); });
+  }
+  function initSlider(onReveal) {
+    var track  = el("gfRevealTrack");
+    var handle = el("gfRevealHandle");
+    var fill   = el("gfRevealFill");
+    var text   = el("gfRevealText");
+    var dragging = false, done = false, grabDX = 0, x = 0, maxX = 0;
+
+    function layout() { maxX = Math.max(0, track.clientWidth - handle.offsetWidth - 8); }
+    function paint(px) {
+      x = Math.max(0, Math.min(maxX, px));
+      handle.style.left = (4 + x) + "px";
+      fill.style.width  = (handle.offsetWidth + 4 + x) + "px";
+      text.style.opacity = maxX ? String(Math.max(0, 1 - x / maxX)) : "1";
+    }
+    function animate(on) {
+      handle.style.transition = on ? "left .2s" : "";
+      fill.style.transition   = on ? "width .2s" : "";
+    }
+    function cleanup() {
+      window.removeEventListener("pointermove", slideMove);
+      window.removeEventListener("pointerup", slideUp);
+      window.removeEventListener("pointercancel", slideUp);
+      slideMove = slideUp = null;
+    }
+    function reset() {
+      animate(true); paint(0);
+      setTimeout(function () { animate(false); }, 210);
+    }
+    function complete() {
+      done = true;
+      animate(true); paint(maxX);
+      cleanup();
+      setTimeout(onReveal, 190);
+    }
+    function ptX(e) { return e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0); }
+
+    function down(e) {
+      if (done) return;
+      layout();
+      dragging = true;
+      animate(false);
+      grabDX = ptX(e) - x;
+      e.preventDefault();
+    }
+    slideMove = function (e) {
+      if (!dragging || done) return;
+      e.preventDefault();
+      paint(ptX(e) - grabDX);
+    };
+    slideUp = function () {
+      if (!dragging || done) return;
+      dragging = false;
+      if (x >= maxX - 4) complete(); else reset();
+    };
+
+    cleanup();
+    done = false; dragging = false;
+    layout(); animate(false); paint(0); text.style.opacity = "1";
+    track.onpointerdown = down;
+    window.addEventListener("pointermove", slideMove, { passive: false });
+    window.addEventListener("pointerup", slideUp);
+    window.addEventListener("pointercancel", slideUp);
+  }
+
   // ---- Game flow ----
   function newGame() {
     ensureAudio();
@@ -373,17 +589,18 @@
     cpuKnowledge = {};
     gameOver = false;
     busy = false;
+    active = 0;
     for (var i = 0; i < 7; i++) { youHand.push(deck.pop()); cpuHand.push(deck.pop()); }
     el("log").innerHTML = "";
-    log("New game. You and the CPU each get 7 cards.", "sys");
+    log("New game. " + sideName(0) + " and " + sideName(1) + " each get 7 cards.", "sys");
 
     // Initial books (very unlikely but possible)
-    settleBooks(youHand, youBooks, "You", "you");
-    settleBooks(cpuHand, cpuBooks, "CPU", "cpu");
+    settleBooks(youHand, youBooks, sideName(0), "you");
+    settleBooks(cpuHand, cpuBooks, sideName(1), "cpu");
 
     renderHand();
     renderScores();
-    setHint("Your turn — tap a card to ask.");
+    setHint(is2p() ? sideName(0) + "'s turn — tap a card to ask." : "Your turn — tap a card to ask.");
     checkEnd();
   }
 
@@ -405,60 +622,117 @@
     return card;
   }
 
+  // onAsk handles the active human's ask. In ai mode the active seat is always
+  // 0 ("you") asking the CPU (seat 1). In 2p mode it's the active human seat
+  // asking the other human seat — so everything is phrased relative to `active`.
   function onAsk(rank) {
     if (gameOver || busy) return;
-    if (countRank(youHand, rank) === 0) return; // safety
+    var askHand  = activeHand();      // active player's own hand
+    var targHand = otherHand();       // opponent's (hidden) hand
+    var askBooks = (active === 1) ? cpuBooks : youBooks;
+    var askCls   = (active === 1) ? "cpu" : "you";
+    var askName  = sideName(active);
+    var targName = sideName(1 - active);
+    // Verb forms so log lines read naturally for "You" (ai mode) and named
+    // players (2p mode): "You ask" vs "Player 1 asks".
+    var you = (askName === "You");
+    var vAsk = you ? "ask" : "asks";
+    var vGo  = you ? "go" : "goes";
+    var vDraw = you ? "draw" : "draws";
+    var vGot = you ? "got" : "gets";
+    if (countRank(askHand, rank) === 0) return; // safety
     ensureAudio();
     sndAsk();
-    log("You ask the CPU for " + RANK_NAMES[rank] + ".", "you");
-    var match = takeRank(cpuHand, rank);
+    log(askName + " " + vAsk + " " + targName + " for " + RANK_NAMES[rank] + ".", askCls);
+    var match = takeRank(targHand, rank);
     if (match.length > 0) {
-      for (var i = 0; i < match.length; i++) youHand.push(match[i]);
-      log("CPU hands over " + match.length + " " + (match.length === 1 ? "card" : "cards") +
-          " of " + RANK_NAMES[rank] + ". You go again!", "cpu");
+      for (var i = 0; i < match.length; i++) askHand.push(match[i]);
+      log(targName + " hands over " + match.length + " " + (match.length === 1 ? "card" : "cards") +
+          " of " + RANK_NAMES[rank] + ". " + askName + " " + vGo + " again!", askCls);
       sndGive();
-      settleBooks(youHand, youBooks, "You", "you");
+      settleBooks(askHand, askBooks, askName, askCls);
       renderHand(); renderScores();
       if (checkEnd()) return;
-      // refill if your hand emptied but pond has cards
-      if (youHand.length === 0) {
-        var rc = drawFromPond(youHand);
-        if (rc) { log("Your hand was empty — you draw from the pond.", "sys"); settleBooks(youHand, youBooks, "You", "you"); renderHand(); renderScores(); }
+      // refill if hand emptied but pond has cards
+      if (askHand.length === 0) {
+        var rc = drawFromPond(askHand);
+        if (rc) { log(askName + "'s hand was empty — " + vDraw + " from the pond.", "sys"); settleBooks(askHand, askBooks, askName, askCls); renderHand(); renderScores(); }
         if (checkEnd()) return;
-        if (youHand.length === 0) { passToCpu(); return; }
+        if (askHand.length === 0) { passTurn(); return; }
       }
-      setHint("CPU gave you cards — ask again!");
-      return; // your turn continues
+      setHint(askName + " " + vGot + " cards — ask again!");
+      return; // turn continues, no handoff
     }
     // Go Fish
-    log("CPU says: Go Fish!", "cpu");
+    log(targName + " says: Go Fish!", askCls);
     sndFish();
-    var drawn = drawFromPond(youHand);
+    var drawn = drawFromPond(askHand);
     if (!drawn) {
       log("The pond is empty.", "sys");
       renderHand(); renderScores();
       if (checkEnd()) return;
-      passToCpu();
+      passTurn();
       return;
     }
-    log("You draw a card from the pond.", "sys");
-    var madeBook = settleBooks(youHand, youBooks, "You", "you");
+    log(askName + " " + vDraw + " a card from the pond.", "sys");
+    settleBooks(askHand, askBooks, askName, askCls);
     renderHand(); renderScores();
     if (checkEnd()) return;
     // If you drew the rank you asked for, go again (only if not just booked away all of them)
-    if (drawn.rank === rank && countRank(youHand, rank) > 0) {
-      log("You drew the " + RANK_NAMES[rank].slice(0, -1) + " you asked for — you go again!", "you");
-      if (youHand.length === 0) { passToCpu(); return; }
+    if (drawn.rank === rank && countRank(askHand, rank) > 0) {
+      log(askName + " drew the " + RANK_NAMES[rank].slice(0, -1) + " — " + vGo + " again!", askCls);
+      if (askHand.length === 0) { passTurn(); return; }
       setHint("Lucky draw — ask again!");
       return;
     }
-    if (youHand.length === 0) {
+    if (askHand.length === 0) {
       // empty after fishing into a book; draw to refill if possible
-      var rc2 = drawFromPond(youHand);
-      if (rc2) { log("Your hand was empty — you draw again.", "sys"); settleBooks(youHand, youBooks, "You", "you"); renderHand(); renderScores(); }
+      var rc2 = drawFromPond(askHand);
+      if (rc2) { log(askName + "'s hand was empty — " + vDraw + " again.", "sys"); settleBooks(askHand, askBooks, askName, askCls); renderHand(); renderScores(); }
       if (checkEnd()) return;
     }
-    passToCpu();
+    passTurn();
+  }
+
+  // The active player's turn has ENDED (a Go Fish miss they couldn't continue).
+  // ai mode: hand to the CPU engine. 2p mode: privacy-gate the next human.
+  function passTurn() {
+    if (gameOver) return;
+    if (is2p()) {
+      // Lock input BEFORE the overlay appears so a fast double-tap can't act.
+      busy = true;
+      renderHand();
+      var next = 1 - active;
+      // Cover with the opaque slide-to-reveal overlay; only AFTER the slide
+      // completes do we switch the active player and re-render their hand.
+      showHandoff(sideName(next), sideName(next) + ": your turn. " + sideName(active) + ", look away!", function () {
+        active = next;
+        busy = false;
+        beginActiveTurn();
+      });
+    } else {
+      passToCpu();
+    }
+  }
+
+  // Start the active (human) player's turn after a handoff: draw to refill an
+  // empty hand if possible, then render that player's hand face-up.
+  function beginActiveTurn() {
+    if (gameOver) return;
+    var hand  = activeHand();
+    var books = (active === 1) ? cpuBooks : youBooks;
+    var cls   = (active === 1) ? "cpu" : "you";
+    var name  = sideName(active);
+    if (hand.length === 0 && deck.length > 0) {
+      drawFromPond(hand);
+      log(name + "'s hand was empty — draws from the pond to continue.", "sys");
+      settleBooks(hand, books, name, cls);
+      renderScores();
+      if (checkEnd()) return;
+    }
+    renderHand();
+    renderScores();
+    setHint(name + "'s turn — tap a card to ask.");
   }
 
   function passToCpu() {
@@ -572,7 +846,8 @@
   // We hook this by wrapping onAsk's logging point.
   var _origOnAsk = onAsk;
   onAsk = function (rank) {
-    if (!gameOver && !busy && countRank(youHand, rank) > 0) {
+    // Only the AI tracks this memory; in 2p there is no AI.
+    if (!is2p() && !gameOver && !busy && countRank(youHand, rank) > 0) {
       cpuKnowledge[rank] = true; // you revealed you hold this rank
     }
     _origOnAsk(rank);
@@ -595,12 +870,13 @@
     renderHand();
     renderScores();
     var msg;
+    // Winner is whoever made the most books.
     if (youBooks.length > cpuBooks.length) {
-      msg = "You win " + youBooks.length + " – " + cpuBooks.length + "!";
+      msg = sideName(0) + (is2p() ? " wins " : " win ") + youBooks.length + " – " + cpuBooks.length + "!";
       sndWin();
     } else if (cpuBooks.length > youBooks.length) {
-      msg = "CPU wins " + cpuBooks.length + " – " + youBooks.length + ".";
-      sndLose();
+      msg = sideName(1) + " wins " + cpuBooks.length + " – " + youBooks.length + (is2p() ? "!" : ".");
+      if (is2p()) sndWin(); else sndLose();
     } else {
       msg = "It's a tie, " + youBooks.length + " – " + cpuBooks.length + ".";
     }
@@ -608,8 +884,22 @@
     setHint(msg + " Tap New Game.");
   }
 
+  // ---- Mode select ----
+  function showModeSelect() {
+    setHandoff(false);
+    el("gfModeOverlay").classList.add("show");
+  }
+  function startMode(m) {
+    mode = m;
+    el("gfModeOverlay").classList.remove("show");
+    newGame();
+  }
+
   // ---- Controls ----
-  el("newGameBtn").addEventListener("click", function () { newGame(); });
+  // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  el("newGameBtn").addEventListener("click", showModeSelect);
+  el("gfModeAi").addEventListener("click", function () { startMode("ai"); });
+  el("gfModeTwo").addEventListener("click", function () { startMode("2p"); });
   el("soundBtn").addEventListener("click", function () {
     soundOn = !soundOn;
     el("soundBtn").textContent = "Sound: " + (soundOn ? "On" : "Off");
@@ -623,7 +913,10 @@
     e.preventDefault();
   }, { passive: false });
 
+  // Render an initial (idle) board, then show the mode picker. Default mode is
+  // 'ai' so a vs-computer game is ready the instant the AI option is chosen.
   newGame();
+  showModeSelect();
 })();
 </script>
 </body>

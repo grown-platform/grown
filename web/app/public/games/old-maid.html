@@ -201,6 +201,68 @@
   .overlay .emoji { font-size: 3.4rem; margin-bottom: 8px; }
   .overlay.win h2 { color: #7dffa3; }
   .overlay.lose h2 { color: #ff8a8a; }
+
+  /* Mode-select buttons */
+  #modeOverlay .mode-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 260px;
+  }
+  #modeOverlay .mode-btns button { width: 100%; }
+
+  /* Privacy handoff overlay (2-player pass & play) — fully OPAQUE so the player
+     taking the device cannot glimpse the other hand underneath. Sits below the
+     injected top-right menu (z 2147483646). */
+  .handoff {
+    position: fixed; inset: 0; z-index: 2147483640;
+    background: #0d3322;
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; text-align: center; gap: 18px;
+  }
+  .handoff.show { display: flex; }
+  .handoff h2 { font-size: 1.7rem; color: #ffd34d; }
+  .handoff p { font-size: .95rem; opacity: .9; max-width: 280px; line-height: 1.4; }
+  /* Slide-to-reveal: a deliberate gesture so the hand is never exposed by an
+     accidental tap during a handoff. Drag the handle all the way across. */
+  .reveal-track {
+    position: relative;
+    width: min(320px, 78vw);
+    height: 60px;
+    border-radius: 30px;
+    background: rgba(0,0,0,.35);
+    border: 1px solid rgba(255,211,77,.4);
+    overflow: hidden;
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  .reveal-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 56px;
+    background: #ffd34d;
+    border-radius: 30px;
+  }
+  .reveal-text {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 600 14px system-ui, sans-serif;
+    color: #ffe9a8;
+    letter-spacing: 1px;
+    pointer-events: none;
+    padding-left: 40px;
+  }
+  .reveal-handle {
+    position: absolute; left: 4px; top: 4px;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: #ffd34d; color: #4a2e00;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+    touch-action: none;
+  }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/old-maid.svg">
@@ -289,6 +351,28 @@
     <h2 id="ovTitle"></h2>
     <p id="ovText"></p>
     <button id="ovBtn">Play Again</button>
+  </div>
+
+  <!-- Mode-select overlay (shown on load) -->
+  <div class="overlay" id="modeOverlay">
+    <div class="emoji">👸</div>
+    <h2>Old Maid</h2>
+    <p>Choose a mode</p>
+    <div class="mode-btns">
+      <button id="modeAi">🤖 vs Computer</button>
+      <button id="modeTwo">👥 2 Players</button>
+    </div>
+  </div>
+
+  <!-- Privacy handoff overlay (2-player pass & play) -->
+  <div class="handoff" id="handoff">
+    <h2 id="handoffTitle">Pass the device</h2>
+    <p id="handoffSub"></p>
+    <div class="reveal-track" id="omRevealTrack">
+      <div class="reveal-fill" id="omRevealFill"></div>
+      <div class="reveal-text" id="omRevealText">slide to reveal</div>
+      <div class="reveal-handle" id="omRevealHandle">›</div>
+    </div>
   </div>
 
 <script>
@@ -386,13 +470,28 @@
   }
 
   // ---------- State ----------
+  // Two seats: "you" (Player 1 / bottom) and "cpu" (Player 2 / top).
+  // mode 'ai': "cpu" is the computer (auto-draws). mode '2p': "cpu" is a human
+  // (Player 2) — no AI, turns alternate between humans via a privacy handoff.
+  var mode = "ai";      // 'ai' | '2p'   (DEFAULT 'ai' — must stay unchanged)
   var you = [];
   var cpu = [];
   var youPairs = 0;
   var cpuPairs = 0;
-  var turn = "you";     // "you" | "cpu"
-  var busy = false;     // lock input during animations / CPU turn
+  var turn = "you";     // "you" | "cpu" — the seat whose turn it is
+  // In 2p the device renders from the ACTIVE player's perspective; in ai mode
+  // it is always "you" (the human at the bottom).
+  var view = "you";     // "you" | "cpu" — whose perspective is on screen
+  var busy = false;     // lock input during animations / CPU turn / handoffs
   var gameOver = false;
+
+  // In 2p both seats are human, so the seat to move is always human.
+  function isHumanTurn() { return mode === "2p" ? true : turn === "you"; }
+  // Display name for a seat. ai mode keeps the original "You"/"CPU" wording.
+  function sideName(seat) {
+    if (mode === "2p") return seat === "you" ? "Player 1" : "Player 2";
+    return seat === "you" ? "You" : "CPU";
+  }
 
   // ---------- DOM ----------
   var elCpuHand = document.getElementById("cpuHand");
@@ -404,6 +503,13 @@
   var elOvTitle = document.getElementById("ovTitle");
   var elOvText = document.getElementById("ovText");
   var elOvEmoji = document.getElementById("ovEmoji");
+  var elModeOverlay = document.getElementById("modeOverlay");
+  var elHandoff = document.getElementById("handoff");
+  var elHandoffTitle = document.getElementById("handoffTitle");
+  var elHandoffSub = document.getElementById("handoffSub");
+  // Zone labels (text differs between ai and 2p modes).
+  var elCpuLabel = elCpuHand.parentNode.querySelector(".zone-label");
+  var elYouLabel = elYouHand.parentNode.querySelector(".zone-label");
 
   function logMsg(html, pairsLine) {
     elLog.innerHTML = html + (pairsLine ? '<span class="pairs">' + pairsLine + "</span>" : "");
@@ -433,29 +539,125 @@
     return d;
   }
 
-  function render() {
-    elCpuCount.textContent = cpu.length;
-    elYouCount.textContent = you.length;
-
-    // CPU hand: face DOWN, tappable on your turn
-    elCpuHand.innerHTML = "";
-    var cpuSmall = cpu.length > 9;
-    for (var i = 0; i < cpu.length; i++) {
-      var back = makeBackCard(cpuSmall, i);
-      elCpuHand.appendChild(back);
+  // Set a zone-label's leading text without clobbering its .count child.
+  function setLabelText(labelEl, text) {
+    if (labelEl.firstChild && labelEl.firstChild.nodeType === 3) {
+      labelEl.firstChild.nodeValue = text + " ";
     }
-    var canDraw = (turn === "you" && !busy && !gameOver && cpu.length > 0);
+  }
+
+  // Render from the perspective of `view` (the active player in 2p, always
+  // "you" in ai mode). The viewer's OWN hand is face-up (so they can spot
+  // pairs); the OTHER seat's hand shows only face-down backs to pick from.
+  function render() {
+    // Map the two on-screen zones to seats based on the current viewer.
+    // The viewer always sits at the BOTTOM zone (their own face-up hand);
+    // the opponent occupies the TOP zone (face-down backs).
+    var ownSeat = view;                       // "you" | "cpu"
+    var oppSeat = view === "you" ? "cpu" : "you";
+    var ownArr = ownSeat === "you" ? you : cpu;
+    var oppArr = oppSeat === "you" ? you : cpu;
+
+    // Top zone = opponent (face down). Bottom zone = own (face up).
+    elCpuLabel && setLabelText(elCpuLabel, sideName(oppSeat) + "'s hand");
+    elYouLabel && setLabelText(elYouLabel, (mode === "2p" ? sideName(ownSeat) + "'s hand" : "Your hand"));
+    elCpuCount.textContent = oppArr.length;
+    elYouCount.textContent = ownArr.length;
+
+    // Opponent hand (TOP): face DOWN, tappable when it's the viewer's turn.
+    elCpuHand.innerHTML = "";
+    var oppSmall = oppArr.length > 9;
+    for (var i = 0; i < oppArr.length; i++) {
+      elCpuHand.appendChild(makeBackCard(oppSmall, i));
+    }
+    var canDraw = (turn === view && isHumanTurn() && !busy && !gameOver && oppArr.length > 0);
     elCpuHand.classList.toggle("active", canDraw);
 
-    // Your hand: face UP
+    // Own hand (BOTTOM): face UP, sorted so pairs sit together.
     elYouHand.innerHTML = "";
-    var youSmall = you.length > 9;
-    var sorted = you.slice().sort(function (a, b) {
+    var ownSmall = ownArr.length > 9;
+    var sorted = ownArr.slice().sort(function (a, b) {
       return RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank);
     });
     for (var j = 0; j < sorted.length; j++) {
-      elYouHand.appendChild(makeFaceCard(sorted[j], youSmall, false));
+      elYouHand.appendChild(makeFaceCard(sorted[j], ownSmall, false));
     }
+  }
+
+  // ---------- Privacy handoff (2-player only) ----------
+  // Full-screen OPAQUE gate between humans. Revealing requires a deliberate
+  // slide-all-the-way gesture, so an accidental tap can't expose the new hand.
+  var slideMove = null, slideUp = null; // active window listeners (cleaned on reveal)
+  function showHandoff(toName, subText, cb) {
+    elHandoffTitle.textContent = "Pass to " + toName;
+    elHandoffSub.textContent = subText;
+    elHandoff.classList.add("show");
+    initSlider(function () { elHandoff.classList.remove("show"); cb(); });
+  }
+
+  function initSlider(onReveal) {
+    var track  = document.getElementById("omRevealTrack");
+    var handle = document.getElementById("omRevealHandle");
+    var fill   = document.getElementById("omRevealFill");
+    var text   = document.getElementById("omRevealText");
+    var dragging = false, done = false, grabDX = 0, x = 0, maxX = 0;
+
+    function layout(){ maxX = Math.max(0, track.clientWidth - handle.offsetWidth - 8); }
+    function paint(px){
+      x = Math.max(0, Math.min(maxX, px));
+      handle.style.left = (4 + x) + "px";
+      fill.style.width  = (handle.offsetWidth + 4 + x) + "px";
+      text.style.opacity = maxX ? String(Math.max(0, 1 - x / maxX)) : "1";
+    }
+    function animate(on){
+      handle.style.transition = on ? "left .2s" : "";
+      fill.style.transition   = on ? "width .2s" : "";
+    }
+    function cleanup(){
+      window.removeEventListener("pointermove", slideMove);
+      window.removeEventListener("pointerup", slideUp);
+      window.removeEventListener("pointercancel", slideUp);
+      slideMove = slideUp = null;
+    }
+    function reset(){
+      animate(true); paint(0);
+      setTimeout(function(){ animate(false); }, 210);
+    }
+    function complete(){
+      done = true;
+      animate(true); paint(maxX);
+      cleanup();
+      setTimeout(onReveal, 190);
+    }
+    function ptX(e){ return e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0); }
+
+    function down(e){
+      if(done) return;
+      layout();
+      dragging = true;
+      animate(false);
+      grabDX = ptX(e) - x;
+      e.preventDefault();
+    }
+    slideMove = function(e){
+      if(!dragging || done) return;
+      e.preventDefault();
+      paint(ptX(e) - grabDX);
+    };
+    slideUp = function(){
+      if(!dragging || done) return;
+      dragging = false;
+      if(x >= maxX - 4) complete(); else reset();
+    };
+
+    // Reset any prior state and (re)wire fresh listeners for this handoff.
+    cleanup();
+    done = false; dragging = false;
+    layout(); animate(false); paint(0); text.style.opacity = "1";
+    track.onpointerdown = down;
+    window.addEventListener("pointermove", slideMove, { passive: false });
+    window.addEventListener("pointerup", slideUp);
+    window.addEventListener("pointercancel", slideUp);
   }
 
   // ---------- Game flow ----------
@@ -472,6 +674,8 @@
     cpuPairs = 0;
     gameOver = false;
     busy = true;
+    turn = "you";
+    view = "you";
     elOverlay.className = "overlay";
 
     // initial discards
@@ -480,10 +684,12 @@
     youPairs += yd.length;
     cpuPairs += cd.length;
 
-    var pairsLine = "Starting pairs - You: " + yd.length + " | CPU: " + cd.length;
-    logMsg("Cards dealt! Pairs removed automatically. <b>Your turn</b> - tap a CPU card.", pairsLine);
+    var pairsLine = "Starting pairs - " + sideName("you") + ": " + yd.length +
+                    " | " + sideName("cpu") + ": " + cd.length;
+    logMsg("Cards dealt! Pairs removed automatically. <b>" +
+      (mode === "2p" ? sideName("you") + "'s turn" : "Your turn") +
+      "</b> - tap a face-down card.", pairsLine);
 
-    turn = "you";
     render();
     audio(); // unlock on the New Game tap
     sndDraw();
@@ -518,21 +724,30 @@
     return { paired: false, rank: card.rank };
   }
 
+  // The active human (turn === view) draws a face-down card at `index` from the
+  // opponent's hand (the TOP zone). Used in ai mode (human only) and 2p mode
+  // (both players). `index` is a position into the OPPONENT'S array.
   function youDraw(index) {
-    if (busy || gameOver || turn !== "you") return;
-    if (index < 0 || index >= cpu.length) return;
+    if (busy || gameOver) return;
+    if (turn !== view || !isHumanTurn()) return;
+
+    var drawerArr = turn === "you" ? you : cpu;       // active player's hand
+    var sourceSeat = turn === "you" ? "cpu" : "you";  // opponent seat
+    var sourceArr = sourceSeat === "you" ? you : cpu;
+    if (index < 0 || index >= sourceArr.length) return;
     busy = true;
 
-    var card = cpu.splice(index, 1)[0];
-    var res = takeCard(you, card);
+    var card = sourceArr.splice(index, 1)[0];
+    var res = takeCard(drawerArr, card);
 
+    // The drawer sees the card they pulled (it's now in their own face-up hand).
     if (res.paired) {
-      youPairs++;
+      if (turn === "you") youPairs++; else cpuPairs++;
       sndPair();
-      logMsg("You drew the <b>" + card.rank + card.suit + "</b> and made a pair! 🎉");
+      logMsg("Drew the <b>" + card.rank + card.suit + "</b> and made a pair! 🎉");
     } else {
       sndDraw();
-      logMsg("You drew the <b>" + card.rank + card.suit + "</b>." +
+      logMsg("Drew the <b>" + card.rank + card.suit + "</b>." +
         (isMaid(card) ? " Uh oh, that's the lonely Queen!" : ""));
     }
 
@@ -540,9 +755,33 @@
 
     if (checkEnd()) return;
 
-    turn = "cpu";
-    render();
-    setTimeout(cpuTurn, 850);
+    if (mode === "ai") {
+      // Hand the turn to the computer.
+      turn = "cpu";
+      render();
+      setTimeout(cpuTurn, 850);
+    } else {
+      // 2-player: pass to the other human behind a privacy handoff.
+      passToHuman();
+    }
+  }
+
+  // 2p turn pass: lock input, cover with the opaque slide-to-reveal overlay,
+  // then re-render for the NEW active player only after they slide to reveal.
+  function passToHuman() {
+    busy = true;              // input already locked; keep it locked
+    turn = turn === "you" ? "cpu" : "you";
+    var next = turn;
+    // Brief beat so the previous player sees the result, then cover the screen.
+    setTimeout(function () {
+      if (gameOver) return;
+      showHandoff(sideName(next), sideName(next) + ": your turn — draw a card!", function () {
+        view = next;          // switch perspective only after the slide completes
+        busy = false;
+        render();             // re-render for the new active player
+        logMsg("<b>" + sideName(next) + "'s turn</b> — tap a face-down card.");
+      });
+    }, 700);
   }
 
   function cpuTurn() {
@@ -582,17 +821,31 @@
     if (total <= 1) {
       gameOver = true;
       busy = true;
-      var loserIsYou = you.length === 1;
+      // The seat still holding a card is stuck with the lonely Queen (the loser).
+      var loserSeat = you.length === 1 ? "you" : "cpu";
+      // Drop any privacy gate so the result is visible to both players.
+      elHandoff.classList.remove("show");
+      // Reveal from a neutral perspective (Player 1 / the human seat).
+      view = "you";
       render();
-      finish(loserIsYou);
+      finish(loserSeat);
       return true;
     }
     return false;
   }
 
-  function finish(loserIsYou) {
+  function finish(loserSeat) {
+    var winnerSeat = loserSeat === "you" ? "cpu" : "you";
     setTimeout(function () {
-      if (loserIsYou) {
+      if (mode === "2p") {
+        // Name both: who's stuck with the Old Maid and who won.
+        sndWin();
+        elOverlay.className = "overlay show win";
+        elOvEmoji.textContent = "🎉";
+        elOvTitle.textContent = sideName(winnerSeat) + " Wins!";
+        elOvText.textContent = sideName(loserSeat) + " is the Old Maid — stuck with the lonely Queen!";
+        logMsg(sideName(loserSeat) + " held the Old Maid. " + sideName(winnerSeat) + " wins! 🎊");
+      } else if (loserSeat === "you") {
         sndLose();
         elOverlay.className = "overlay show lose";
         elOvEmoji.textContent = "🙅";
@@ -620,15 +873,30 @@
     if (!isNaN(idx)) youDraw(idx);
   });
 
-  document.getElementById("newGame").addEventListener("click", newGame);
+  // ---------- Mode selection ----------
+  function showModeSelect() {
+    elModeOverlay.className = "overlay show";
+  }
+  function startMode(m) {
+    mode = m;
+    elModeOverlay.className = "overlay";
+    newGame();
+  }
+
+  // "New Game" returns to the mode picker (switch AI / 2-player).
+  document.getElementById("newGame").addEventListener("click", showModeSelect);
+  // "Play Again" from the game-over overlay restarts the SAME mode.
   document.getElementById("ovBtn").addEventListener("click", newGame);
+  document.getElementById("modeAi").addEventListener("click", function () { startMode("ai"); });
+  document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
 
   // Prevent gesture zoom / double-tap zoom leftovers
   document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
   document.addEventListener("dblclick", function (e) { e.preventDefault(); });
 
-  // Initial render (empty)
+  // Initial render (empty) behind the mode picker, then ask for a mode.
   render();
+  showModeSelect();
 })();
 </script>
 </body>

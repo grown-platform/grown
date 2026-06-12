@@ -222,6 +222,9 @@ const TWO_PLAYER_IDS = new Set<string>([
   "battleship", "checkers", "tic-tac-toe", "connect-four", "ultimate-tic-tac-toe",
   "gomoku", "reversi", "chess", "dots-and-boxes", "mancala", "nine-mens-morris",
   "chinese-checkers", "snakes-and-ladders", "ludo", "pong", "pig", "air-hockey",
+  // Hidden-hand card/tile games — 2-player uses a slide-to-reveal privacy
+  // handoff between turns so neither player sees the other's hand.
+  "dominoes", "go-fish", "crazy-eights", "old-maid", "monopoly-deal",
 ]);
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */

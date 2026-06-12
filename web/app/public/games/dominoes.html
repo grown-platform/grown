@@ -278,6 +278,65 @@
     font-size: 16px;
     cursor: pointer;
   }
+
+  /* Mode-select buttons (stacked, in the modal) */
+  .mode-btns { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+  .mode-btns button { margin-top: 0; min-width: 200px; }
+
+  /* Privacy handoff overlay (2-player pass & play). A full-screen OPAQUE cover
+     so the incoming player can't see the previous player's hand. Revealing
+     requires a deliberate slide-all-the-way gesture, so an accidental tap can't
+     expose the hand. z-index sits just below the injected top-right menu. */
+  .handoff {
+    position: fixed; inset: 0; z-index: 2147483640;
+    background: #14532d;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .handoff.show { display: flex; }
+  .handoff-card {
+    text-align: center; display: flex; flex-direction: column;
+    gap: 18px; align-items: center;
+  }
+  #dom_handoffTitle { font-size: 24px; font-weight: 700; color: #fde68a; }
+  #dom_handoffSub { font-size: 14px; color: #d1fae5; max-width: 280px; line-height: 1.4; }
+  .reveal-track {
+    position: relative;
+    width: min(320px, 78vw);
+    height: 60px;
+    border-radius: 30px;
+    background: #0f3d22;
+    border: 1px solid #155e35;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  .reveal-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 56px;
+    background: #f59e0b;
+    border-radius: 30px;
+  }
+  .reveal-text {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 600 14px system-ui, sans-serif;
+    color: #a7f3d0;
+    letter-spacing: 1px;
+    pointer-events: none;
+    padding-left: 40px;
+  }
+  .reveal-handle {
+    position: absolute; left: 4px; top: 4px;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: #f59e0b; color: #1c1917;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+    touch-action: none;
+  }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/dominoes.svg">
@@ -339,9 +398,9 @@
 <header>
   <h1>🁫 Dominoes</h1>
   <div class="topbar">
-    <div class="stat">CPU<b id="cpuCount">7</b></div>
+    <div class="stat" id="cpuStat">CPU<b id="cpuCount">7</b></div>
     <div class="stat">Boneyard<b id="boneCount">14</b></div>
-    <div class="stat">You<b id="youCount">7</b></div>
+    <div class="stat" id="youStat">You<b id="youCount">7</b></div>
     <button class="newgame" id="newBtn">New Game</button>
   </div>
 </header>
@@ -354,7 +413,7 @@
 </div>
 
 <div class="hand-area">
-  <div class="hand-label">YOUR HAND</div>
+  <div class="hand-label" id="handLabel">YOUR HAND</div>
   <div class="hand" id="hand"></div>
   <div class="actions" id="actions"></div>
   <div class="hint" id="hint"></div>
@@ -365,6 +424,31 @@
     <h2 id="modalTitle">Game Over</h2>
     <p id="modalMsg"></p>
     <button id="modalBtn">New Game</button>
+  </div>
+</div>
+
+<!-- Mode-select overlay (shown on load and from New Game) -->
+<div class="overlay" id="modeOverlay">
+  <div class="modal">
+    <h2>🁫 Dominoes</h2>
+    <p>Choose a mode</p>
+    <div class="mode-btns">
+      <button id="modeAi">🤖 vs Computer</button>
+      <button id="modeTwo">👥 2 Players</button>
+    </div>
+  </div>
+</div>
+
+<!-- Privacy handoff overlay (2-player pass & play) -->
+<div class="handoff" id="dom_handoff">
+  <div class="handoff-card">
+    <div id="dom_handoffTitle">Pass the device</div>
+    <div id="dom_handoffSub"></div>
+    <div id="dom_revealTrack" class="reveal-track">
+      <div id="dom_revealFill" class="reveal-fill"></div>
+      <div id="dom_revealText" class="reveal-text">slide to reveal</div>
+      <div id="dom_revealHandle" class="reveal-handle">›</div>
+    </div>
   </div>
 </div>
 
@@ -424,10 +508,34 @@
   // tile = {a, b}  (a,b are 0..6). Each unique unordered pair once.
   var youHand, cpuHand, boneyard, line; // line: array of {a,b} where adjacency: line[i].b === line[i+1].a
   var leftEnd, rightEnd; // open pip values
-  var current; // 'you' | 'cpu'
+  var current; // 'you' | 'cpu'  (the active seat)
   var gameOver;
-  var selectedIdx = -1; // selected tile index in your hand
-  var busy = false; // block input during CPU/animation
+  var selectedIdx = -1; // selected tile index in the active hand
+  var busy = false; // block input during CPU/animation/handoff
+
+  // ---------- Mode + seat helpers ----------
+  // mode 'ai' (DEFAULT): seat 'you' = human (bottom, face-up), seat 'cpu' = AI.
+  // mode '2p': seat 'you' = Player 1, seat 'cpu' = Player 2 — both human. The
+  // ACTIVE seat's tiles render face-up at the bottom; the other seat's tiles
+  // render face-down (count) at the top, since the opponent's hand is secret.
+  var mode = 'ai'; // 'ai' | '2p'  — default MUST stay 'ai'
+  // Display name for a seat, used in labels/status/win text.
+  function sideName(seat){
+    if(mode === '2p') return seat === 'you' ? 'Player 1' : 'Player 2';
+    return seat === 'you' ? 'You' : 'CPU';
+  }
+  function otherSeat(seat){ return seat === 'you' ? 'cpu' : 'you'; }
+  function handOf(seat){ return seat === 'you' ? youHand : cpuHand; }
+  // The hand shown face-up at the bottom: active seat's hand. The hand shown
+  // face-down at the top: the inactive seat's hand.
+  function activeHand(){ return handOf(current); }
+  function inactiveHand(){ return handOf(otherSeat(current)); }
+  // The hand the local human controls right now (the face-up bottom hand). In
+  // 'ai' mode that's always 'you'; in '2p' it's whichever seat is active.
+  function myHand(){ return mode === '2p' ? activeHand() : youHand; }
+  // Is it the local human's turn to provide input? In 'ai' only when seat 'you'
+  // is active; in '2p' the active seat is always the local human.
+  function myInputTurn(){ return mode === '2p' ? true : current === 'you'; }
 
   var el = {
     cpuCount: document.getElementById('cpuCount'),
@@ -444,7 +552,12 @@
     modalTitle: document.getElementById('modalTitle'),
     modalMsg: document.getElementById('modalMsg'),
     modalBtn: document.getElementById('modalBtn'),
-    newBtn: document.getElementById('newBtn')
+    newBtn: document.getElementById('newBtn'),
+    modeOverlay: document.getElementById('modeOverlay'),
+    handoff: document.getElementById('dom_handoff'),
+    cpuCountLabel: document.getElementById('cpuStat'),
+    youCountLabel: document.getElementById('youStat'),
+    handLabel: document.getElementById('handLabel')
   };
 
   function buildDeck(){
@@ -475,6 +588,20 @@
     // Determine first player: highest double, else highest tile. Whoever has it starts by playing it.
     var firstPlayer = decideFirst();
     current = firstPlayer;
+
+    if(mode === '2p'){
+      // Pass-and-play: gate the start so the first player sees their own hand,
+      // then it's their turn (no auto-play — both seats are human).
+      busy = true;
+      render(); // renders from the (about-to-be-active) player's perspective; covered by handoff
+      showHandoff(current, sideName(current) + ' goes first!', function(){
+        busy = false;
+        render();
+        setHint(handHasPlay(activeHand()) ? sideName(current) + ': tap a highlighted tile.' : sideName(current) + ': draw from the boneyard.');
+      });
+      return;
+    }
+
     render();
     if(current === 'cpu'){
       busy = true;
@@ -554,18 +681,28 @@
 
   // ---------- Rendering ----------
   function render(){
-    el.cpuCount.textContent = cpuHand.length;
-    el.youCount.textContent = youHand.length;
+    // Topbar counts: the top stat shows the OPPONENT (inactive seat), the bottom
+    // stat shows the active player whose tiles are face-up. In 'ai' mode the
+    // active player is always 'you', so this matches the original layout exactly.
+    var topSeat = (mode === '2p') ? otherSeat(current) : 'cpu';
+    var botSeat = (mode === '2p') ? current : 'you';
+    el.cpuCount.textContent = handOf(topSeat).length;
+    el.youCount.textContent = handOf(botSeat).length;
     el.boneCount.textContent = boneyard.length;
+    if(el.cpuCountLabel) el.cpuCountLabel.firstChild.textContent = sideName(topSeat);
+    if(el.youCountLabel) el.youCountLabel.firstChild.textContent = sideName(botSeat);
+    if(el.handLabel) el.handLabel.textContent = (mode === '2p' ? sideName(current).toUpperCase() + "'S HAND" : 'YOUR HAND');
     renderCpuHand();
     renderBoard();
     renderHand();
     renderActions();
   }
 
+  // Face-down backs for the inactive seat (the opponent's secret hand).
   function renderCpuHand(){
     el.cpuHand.innerHTML = '';
-    for(var i=0;i<cpuHand.length;i++){
+    var n = (mode === '2p') ? inactiveHand().length : cpuHand.length;
+    for(var i=0;i<n;i++){
       var d = document.createElement('div');
       d.className = 'cpu-tile';
       el.cpuHand.appendChild(d);
@@ -582,8 +719,8 @@
     }
     el.board.className = 'board';
 
-    var canPlayLeft  = (!busy && current==='you' && selectedIdx>=0 && tileFits(youHand[selectedIdx]).left);
-    var canPlayRight = (!busy && current==='you' && selectedIdx>=0 && tileFits(youHand[selectedIdx]).right);
+    var canPlayLeft  = (!busy && myInputTurn() && selectedIdx>=0 && tileFits(myHand()[selectedIdx]).left);
+    var canPlayRight = (!busy && myInputTurn() && selectedIdx>=0 && tileFits(myHand()[selectedIdx]).right);
 
     // Left end tap zone
     if(canPlayLeft){
@@ -622,12 +759,12 @@
 
   function renderHand(){
     el.hand.innerHTML = '';
-    youHand.forEach(function(t, idx){
+    myHand().forEach(function(t, idx){
       var wrap = document.createElement('div');
       wrap.className = 'hand-tile';
       var fits = tileFits(t);
-      var playable = (current==='you' && !busy && !gameOver && (fits.any || fits.left || fits.right));
-      if(current==='you' && !busy && !gameOver){
+      var playable = (myInputTurn() && !busy && !gameOver && (fits.any || fits.left || fits.right));
+      if(myInputTurn() && !busy && !gameOver){
         wrap.classList.add(playable ? 'playable' : 'dead');
       }
       if(idx === selectedIdx) wrap.classList.add('selected');
@@ -642,8 +779,8 @@
 
   function renderActions(){
     el.actions.innerHTML = '';
-    if(gameOver || current !== 'you' || busy) return;
-    var canPlay = handHasPlay(youHand);
+    if(gameOver || !myInputTurn() || busy) return;
+    var canPlay = handHasPlay(myHand());
     if(!canPlay){
       if(boneyard.length > 0){
         var b = document.createElement('button');
@@ -663,7 +800,11 @@
   function setHint(msg){ el.hint.textContent = msg || ''; }
   function setTurnIndicator(){
     if(gameOver) return;
-    if(current === 'you'){
+    if(mode === '2p'){
+      // The active seat is always the face-up bottom player in 2p.
+      el.turnInd.className = 'turn you';
+      el.turnInd.textContent = sideName(current) + "'s turn";
+    } else if(current === 'you'){
       el.turnInd.className = 'turn you';
       el.turnInd.textContent = 'Your turn';
     } else {
@@ -674,8 +815,8 @@
 
   // ---------- Player actions ----------
   function onTileTap(idx){
-    if(busy || gameOver || current !== 'you') return;
-    var t = youHand[idx];
+    if(busy || gameOver || !myInputTurn()) return;
+    var t = myHand()[idx];
     var fits = tileFits(t);
     if(!(fits.any || fits.left || fits.right)){
       // not playable
@@ -707,33 +848,34 @@
   }
 
   function youPlay(side){
-    if(busy || gameOver || current !== 'you' || selectedIdx < 0) return;
+    if(busy || gameOver || !myInputTurn() || selectedIdx < 0) return;
     doYouPlace(side);
   }
 
   function doYouPlace(side){
     var idx = selectedIdx;
     if(idx < 0) return;
-    var ok = placeTile(youHand, idx, side);
+    var ok = placeTile(myHand(), idx, side);
     if(!ok){ setHint("Can't place there."); return; }
     selectedIdx = -1;
     sndPlace();
     setHint('');
     render();
     scrollEnd(side);
-    if(checkWin('you')) return;
+    if(checkWin(current)) return;
     endTurn();
   }
 
   function youDraw(){
-    if(busy || gameOver || current !== 'you') return;
+    if(busy || gameOver || !myInputTurn()) return;
     if(boneyard.length === 0) return;
     var t = boneyard.pop();
-    youHand.push(t);
+    myHand().push(t);
     sndDraw();
     render();
-    if(handHasPlay(youHand)){
-      setHint('You drew a tile that can be played. Tap a highlighted tile.');
+    var who = (mode === '2p') ? sideName(current) + ': you' : 'You';
+    if(handHasPlay(myHand())){
+      setHint(who + ' drew a tile that can be played. Tap a highlighted tile.');
     } else if(boneyard.length === 0){
       setHint('No plays left — you must pass.');
     } else {
@@ -742,9 +884,9 @@
   }
 
   function youPass(){
-    if(busy || gameOver || current !== 'you') return;
+    if(busy || gameOver || !myInputTurn()) return;
     sndPass();
-    setHint('You passed.');
+    setHint(sideName(current) + ' passed.');
     endTurn();
   }
 
@@ -807,6 +949,31 @@
     if(boneyard.length === 0 && !handHasPlay(youHand) && !handHasPlay(cpuHand)){
       return endBlocked();
     }
+
+    // 2-player pass & play: the turn passes between two humans. Lock input
+    // immediately so a fast tap can't act for the wrong player, advance the
+    // active seat, then cover everything with the slide-to-reveal privacy
+    // overlay. Only re-render for the new active player AFTER they finish the
+    // slide — the previous player's hand is never exposed during the handoff.
+    if(mode === '2p'){
+      busy = true;          // input lock during the brief pre-overlay window
+      selectedIdx = -1;
+      current = otherSeat(current);
+      showHandoff(current, sideName(current) + ', your turn!', function(){
+        busy = false;
+        setTurnIndicator();
+        render(); // first render from the NEW active player's perspective
+        if(handHasPlay(activeHand())){
+          setHint(sideName(current) + ': tap a highlighted tile.');
+        } else if(boneyard.length > 0){
+          setHint(sideName(current) + ': no play — draw from the boneyard.');
+        } else {
+          setHint(sideName(current) + ': no play and boneyard empty — pass.');
+        }
+      });
+      return;
+    }
+
     current = (current === 'you') ? 'cpu' : 'you';
     selectedIdx = -1;
     setTurnIndicator();
@@ -831,9 +998,14 @@
     if(hand.length === 0){
       gameOver = true;
       busy = true;
-      if(who === 'you'){
-        var cpuPts = cpuHand.reduce(function(s,t){return s+tilePipSum(t);},0);
-        finish('You Win! 🎉', 'You played all your tiles. CPU held ' + cpuPts + ' pips.', true);
+      var loser = otherSeat(who);
+      var loserPts = handOf(loser).reduce(function(s,t){return s+tilePipSum(t);},0);
+      if(mode === '2p'){
+        finish(sideName(who) + ' Wins! 🎉',
+               sideName(who) + ' played all their tiles. ' + sideName(loser) + ' held ' + loserPts + ' pips.',
+               who === 'you');
+      } else if(who === 'you'){
+        finish('You Win! 🎉', 'You played all your tiles. CPU held ' + loserPts + ' pips.', true);
       } else {
         var youPts = youHand.reduce(function(s,t){return s+tilePipSum(t);},0);
         finish('CPU Wins', 'CPU played all its tiles. You held ' + youPts + ' pips.', false);
@@ -848,11 +1020,12 @@
     busy = true;
     var youPts = youHand.reduce(function(s,t){return s+tilePipSum(t);},0);
     var cpuPts = cpuHand.reduce(function(s,t){return s+tilePipSum(t);},0);
-    var msg = 'Board blocked! Lowest pip count wins.\nYou: ' + youPts + ' pips • CPU: ' + cpuPts + ' pips.';
+    var msg = 'Board blocked! Lowest pip count wins.\n' +
+              sideName('you') + ': ' + youPts + ' pips • ' + sideName('cpu') + ': ' + cpuPts + ' pips.';
     if(youPts < cpuPts){
-      finish('You Win! 🎉', msg, true);
+      finish(sideName('you') + ' Win' + (mode==='2p'?'s':'') + '! 🎉', msg, true);
     } else if(cpuPts < youPts){
-      finish('CPU Wins', msg, false);
+      finish(mode === '2p' ? sideName('cpu') + ' Wins! 🎉' : 'CPU Wins', msg, false);
     } else {
       finish("It's a Tie!", msg, null);
     }
@@ -882,6 +1055,95 @@
     });
   }
 
+  // ---------- Privacy handoff (2-player pass & play) ----------
+  // Full-screen OPAQUE overlay between the two humans. Revealing the next
+  // player's hand requires a deliberate slide-all-the-way gesture, so the hand
+  // is never exposed by an accidental tap when handing over the device.
+  var slideMove = null, slideUp = null; // active window listeners (cleaned up on reveal)
+  function showHandoff(toSeat, subText, cb){
+    document.getElementById('dom_handoffTitle').textContent = 'Pass to ' + sideName(toSeat);
+    document.getElementById('dom_handoffSub').textContent = subText || '';
+    el.handoff.classList.add('show');
+    initSlider(function(){
+      el.handoff.classList.remove('show');
+      cb();
+    });
+  }
+
+  function initSlider(onReveal){
+    var track  = document.getElementById('dom_revealTrack');
+    var handle = document.getElementById('dom_revealHandle');
+    var fill   = document.getElementById('dom_revealFill');
+    var text   = document.getElementById('dom_revealText');
+    var dragging = false, done = false, grabDX = 0, x = 0, maxX = 0;
+
+    function layout(){ maxX = Math.max(0, track.clientWidth - handle.offsetWidth - 8); }
+    function paint(px){
+      x = Math.max(0, Math.min(maxX, px));
+      handle.style.left = (4 + x) + 'px';
+      fill.style.width  = (handle.offsetWidth + 4 + x) + 'px';
+      text.style.opacity = maxX ? String(Math.max(0, 1 - x / maxX)) : '1';
+    }
+    function animate(on){
+      handle.style.transition = on ? 'left .2s' : '';
+      fill.style.transition   = on ? 'width .2s' : '';
+    }
+    function cleanup(){
+      window.removeEventListener('pointermove', slideMove);
+      window.removeEventListener('pointerup', slideUp);
+      window.removeEventListener('pointercancel', slideUp);
+      slideMove = slideUp = null;
+    }
+    function reset(){
+      animate(true); paint(0);
+      setTimeout(function(){ animate(false); }, 210);
+    }
+    function complete(){
+      done = true;
+      animate(true); paint(maxX);
+      cleanup();
+      setTimeout(onReveal, 190);
+    }
+    function ptX(e){ return e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0); }
+
+    function down(e){
+      if(done) return;
+      layout();
+      dragging = true;
+      animate(false);
+      grabDX = ptX(e) - x;
+      e.preventDefault();
+    }
+    slideMove = function(e){
+      if(!dragging || done) return;
+      e.preventDefault();
+      paint(ptX(e) - grabDX);
+    };
+    slideUp = function(){
+      if(!dragging || done) return;
+      dragging = false;
+      if(x >= maxX - 4) complete(); else reset();
+    };
+
+    // Reset any prior state and (re)wire fresh listeners for this handoff.
+    cleanup();
+    done = false; dragging = false;
+    layout(); animate(false); paint(0); text.style.opacity = '1';
+    track.onpointerdown = down;
+    window.addEventListener('pointermove', slideMove, { passive: false });
+    window.addEventListener('pointerup', slideUp);
+    window.addEventListener('pointercancel', slideUp);
+  }
+
+  // ---------- Mode selection ----------
+  function showModeSelect(){ el.modeOverlay.classList.add('show'); }
+  function startMode(m){
+    mode = m;
+    el.modeOverlay.classList.remove('show');
+    el.handoff.classList.remove('show');
+    newGame();
+  }
+
   // Prevent double-tap zoom / pinch while keeping scroll
   document.addEventListener('gesturestart', function(e){ e.preventDefault(); }, {passive:false});
   var lastTouch = 0;
@@ -891,8 +1153,12 @@
     lastTouch = now;
   }, {passive:false});
 
-  el.newBtn.addEventListener('click', newGame);
-  el.modalBtn.addEventListener('click', newGame);
+  // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  el.newBtn.addEventListener('click', showModeSelect);
+  // "Play Again" from the game-over modal restarts the SAME mode.
+  el.modalBtn.addEventListener('click', function(){ el.overlay.classList.remove('show'); newGame(); });
+  document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
+  document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
 
   // unlock audio on first interaction
   document.addEventListener('touchstart', function unlock(){
@@ -904,7 +1170,10 @@
     document.removeEventListener('mousedown', unlockM);
   }, {once:true});
 
+  // Deal an initial (idle) vs-CPU game behind the picker, then ask for a mode.
+  // Default mode stays 'ai'; picking a mode (re)deals via startMode → newGame.
   newGame();
+  showModeSelect();
 })();
 </script>
 </body>

@@ -338,6 +338,69 @@
   #log div { padding:1px 0; border-bottom:1px solid rgba(255,255,255,.04); }
   #log div.you { color:#9fe6c7; }
   #log div.cpu { color:#ffb3bb; }
+
+  /* Mode-select buttons (reuse modal styling) */
+  .mode-opts { display:flex; flex-direction:column; gap:10px; }
+  .mode-opts button {
+    padding:14px 16px; border:1px solid var(--line); border-radius:10px;
+    background: var(--panel2); color: var(--text); font-size:15px; font-weight:700;
+  }
+  .mode-opts button:active { transform: scale(.98); }
+
+  /* Privacy handoff overlay (2-player pass & play). Fully OPAQUE so the player
+     taking the device cannot glimpse the previous player's hidden hand. Sits
+     just below the injected top-right menu (z 2147483646). */
+  #mdHandoff {
+    position: fixed; inset: 0; z-index: 2147483640;
+    background: var(--bg);
+    display: none; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  #mdHandoff.show { display: flex; }
+  .md-handoff-card {
+    text-align: center; display: flex; flex-direction: column;
+    gap: 18px; align-items: center;
+  }
+  #mdHandoffTitle { font-size: 24px; font-weight: 700; color: var(--accent); text-shadow: 0 0 8px rgba(255,207,51,.4); }
+  #mdHandoffSub { font-size: 14px; color: var(--text); max-width: 280px; line-height: 1.4; }
+  /* Slide-to-reveal: a deliberate drag-all-the-way gesture so the hand is never
+     exposed by an accidental tap during a handoff. */
+  .reveal-track {
+    position: relative;
+    width: min(320px, 78vw);
+    height: 60px;
+    border-radius: 30px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    overflow: hidden;
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  .reveal-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 56px;
+    background: var(--accent);
+    border-radius: 30px;
+  }
+  .reveal-text {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font: 600 14px system-ui, sans-serif;
+    color: var(--muted);
+    letter-spacing: 1px;
+    pointer-events: none;
+    padding-left: 40px;
+  }
+  .reveal-handle {
+    position: absolute; left: 4px; top: 4px;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: var(--accent); color: #3a2c00;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+    touch-action: none;
+  }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/monopoly-deal.svg">
@@ -407,21 +470,21 @@
   </div>
 
   <div class="board" id="board">
-    <!-- CPU zone -->
+    <!-- Seat 1 zone (CPU in vs-Computer, Player 2 in 2-player). Public tableau. -->
     <div class="player-zone cpu" id="cpuZone">
       <div class="pz-head">
-        <span class="name cpu">🤖 CPU</span>
-        <span class="pz-stats">Hand: <b id="cpuHandCount">0</b> · Sets: <b id="cpuSets">0</b>/3</span>
+        <span class="name cpu" id="cpuName">🤖 CPU</span>
+        <span class="pz-stats"><span id="cpuHandWrap">Hand: <b id="cpuHandCount">0</b> · </span>Sets: <b id="cpuSets">0</b>/3</span>
       </div>
       <div class="props" id="cpuProps"></div>
       <div class="bank-line"><span class="bank-label">Bank:</span><span id="cpuBank"></span><span class="money-chip" id="cpuBankTotal">$0M</span></div>
     </div>
 
-    <!-- YOU zone -->
+    <!-- Seat 0 zone (You in vs-Computer, Player 1 in 2-player). Public tableau. -->
     <div class="player-zone you" id="youZone">
       <div class="pz-head">
-        <span class="name you">😎 You</span>
-        <span class="pz-stats">Sets: <b id="youSets">0</b>/3</span>
+        <span class="name you" id="youName">😎 You</span>
+        <span class="pz-stats"><span id="youHandWrap" style="display:none">Hand: <b id="youHandCount">0</b> · </span>Sets: <b id="youSets">0</b>/3</span>
       </div>
       <div class="props" id="youProps"></div>
       <div class="bank-line"><span class="bank-label">Bank:</span><span id="youBank"></span><span class="money-chip" id="youBankTotal">$0M</span></div>
@@ -446,6 +509,32 @@
   <!-- Generic choice overlay -->
   <div class="overlay" id="overlay">
     <div class="modal" id="modal"></div>
+  </div>
+
+  <!-- Mode-select overlay (shown on load) -->
+  <div class="overlay" id="modeOverlay">
+    <div class="modal">
+      <h2>Monopoly Deal</h2>
+      <p>Choose a mode</p>
+      <div class="mode-opts">
+        <button id="modeAi">🤖 vs Computer</button>
+        <button id="modeTwo">👥 2 Players (pass &amp; play)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Privacy handoff overlay (2-player pass & play). Opaque; drag the handle
+       all the way across to reveal the next player's hand. -->
+  <div id="mdHandoff">
+    <div class="md-handoff-card">
+      <div id="mdHandoffTitle">Pass the device</div>
+      <div id="mdHandoffSub"></div>
+      <div id="mdRevealTrack" class="reveal-track">
+        <div id="mdRevealFill" class="reveal-fill"></div>
+        <div id="mdRevealText" class="reveal-text">slide to reveal</div>
+        <div id="mdRevealHandle" class="reveal-handle">›</div>
+      </div>
+    </div>
   </div>
 
 <script>
@@ -552,6 +641,26 @@ function buildDeck(){
 
 // ---------- Game State ----------
 let G = null;
+// mode: 'ai' = seat 1 is the CPU (default, unchanged); '2p' = seat 1 is a human
+// (Player 2) taking a full manual pass-and-play turn behind a privacy handoff.
+let mode = 'ai';
+
+// Perspective helpers. In 'ai' mode the human is always seat 0 and the opponent
+// (CPU) is seat 1 — nothing changes. In '2p' mode "me" is whichever seat is to
+// move (always a human at the device) and "opp" is the other player. During a
+// 2p payment the device is temporarily handed to the payer, so viewSeat (when
+// set) overrides whose hand/controls are shown.
+function meSeat(){
+  if(mode !== '2p') return 0;
+  return (G && G.viewSeat != null) ? G.viewSeat : G.turn;
+}
+function oppSeat(){ return 1 - meSeat(); }
+function isHumanSeat(pi){ return mode === '2p' ? true : pi === 0; }
+// Display name for a seat. In 2p both are "Player N"; in ai it's You / CPU.
+function seatName(pi){
+  if(mode === '2p') return 'Player ' + (pi + 1);
+  return pi === 0 ? 'You' : 'CPU';
+}
 
 function freshPlayer(isCPU){
   return {
@@ -564,20 +673,23 @@ function freshPlayer(isCPU){
 
 function newGame(){
   const deck = shuffle(buildDeck());
+  // Seat 1 is a CPU only in 'ai' mode; in '2p' mode it's Player 2 (a human).
   G = {
     deck,
     discard: [],
-    players: [ freshPlayer(false), freshPlayer(true) ], // 0=you, 1=cpu
+    players: [ freshPlayer(false), freshPlayer(mode==='ai') ], // 0=P1/you, 1=P2/cpu
     turn: 0,
     playsLeft: 0,
     drawnThisTurn: false,
     over: false,
     selected: null,
-    busy: false
+    busy: false,
+    viewSeat: null      // 2p: temporary perspective override (e.g. during payment)
   };
+  hideHandoff();
   // deal 5 each
   for(let i=0;i<5;i++){ for(const p of G.players){ p.hand.push(drawCard()); } }
-  log('New game started. You go first!', 'sys');
+  log('New game started. '+seatName(0)+' goes first!', 'sys');
   startTurn(0);
 }
 
@@ -600,11 +712,12 @@ function startTurn(pi){
   G.turn = pi;
   G.playsLeft = 3;
   G.selected = null;
+  G.busy = false;
   const p = G.players[pi];
   const n = (p.hand.length===0) ? 5 : 2;
   for(let i=0;i<n;i++){ const c=drawCard(); if(c) p.hand.push(c); }
-  if(pi===0){
-    setStatus('you', "Your turn — play up to 3 cards.");
+  if(isHumanSeat(pi)){
+    setStatus('you', (mode==='2p' ? seatName(pi)+': ' : 'Your turn — ')+'play up to 3 cards.');
     render();
     if(checkWin()) return;
   } else {
@@ -619,18 +732,10 @@ function startTurn(pi){
 function endTurn(){
   const pi = G.turn;
   const p = G.players[pi];
-  // hand limit 7
+  // hand limit 7 — the active human discards down via the modal.
   if(p.hand.length > 7){
-    if(pi===0){
-      promptDiscard();
-      return;
-    } else {
-      while(p.hand.length>7){
-        // CPU discards lowest-value-ish card
-        let idx = cpuDiscardChoice(p);
-        G.discard.push(p.hand.splice(idx,1)[0]);
-      }
-    }
+    promptDiscard();
+    return;
   }
   finishEndTurn();
 }
@@ -638,7 +743,16 @@ function endTurn(){
 function finishEndTurn(){
   if(checkWin()) return;
   const next = G.turn===0 ? 1 : 0;
-  startTurn(next);
+  if(mode==='2p'){
+    // Lock input and cover the screen BEFORE rendering for the next player, so
+    // the player handing over the device can't glimpse the incoming hand.
+    G.busy = true;
+    showHandoff('Pass to '+seatName(next), seatName(next)+': take the device. '+seatName(G.turn)+', look away!', function(){
+      startTurn(next);
+    });
+  } else {
+    startTurn(next);
+  }
 }
 
 // ---------- Win check ----------
@@ -669,7 +783,11 @@ function checkWin(){
 function setStatus(who, msg){
   const tl = document.getElementById('turnLabel');
   tl.className = 'turn ' + who;
-  tl.textContent = who==='you' ? 'YOUR TURN' : (who==='cpu' ? 'CPU TURN' : '');
+  if(mode==='2p' && (who==='you'||who==='cpu')){
+    tl.textContent = seatName(G.turn).toUpperCase()+' TURN';
+  } else {
+    tl.textContent = who==='you' ? 'YOUR TURN' : (who==='cpu' ? 'CPU TURN' : '');
+  }
   document.getElementById('statusMsg').textContent = msg;
 }
 
@@ -677,13 +795,25 @@ function bankTotal(p){ return p.bank.reduce((s,c)=>s+(c.value||0),0); }
 
 function render(){
   if(!G) return;
-  const you = G.players[0], cpu = G.players[1];
-  // counts
-  document.getElementById('cpuHandCount').textContent = cpu.hand.length;
+  const you = G.players[0], cpu = G.players[1]; // seat 0, seat 1 (public tableaus)
+  const active = meSeat();
+  // Zone labels: in 2p both seats are players; in ai it's You / CPU.
+  document.getElementById('youName').textContent = (mode==='2p' ? '🙂 '+seatName(0) : '😎 You');
+  document.getElementById('cpuName').textContent = (mode==='2p' ? '🙂 '+seatName(1) : '🤖 CPU');
+  // counts (public tableaus are always visible; only the concealed HAND flips).
   document.getElementById('cpuSets').textContent = completeSets(cpu);
   document.getElementById('youSets').textContent = completeSets(you);
-  document.getElementById('handCount').textContent = you.hand.length;
-  document.getElementById('playsLeft').textContent = (G.turn===0 && !G.over) ? G.playsLeft : 0;
+  // Hand counts: show a count badge for the seat whose hand is hidden, and hide
+  // the badge for the active seat (its hand is face-up in the panel below).
+  const cpuHidden = (active !== 1);
+  document.getElementById('cpuHandCount').textContent = cpu.hand.length;
+  document.getElementById('cpuHandWrap').style.display = cpuHidden ? '' : 'none';
+  const youHidden = (active !== 0);
+  document.getElementById('youHandCount').textContent = you.hand.length;
+  document.getElementById('youHandWrap').style.display = (mode==='2p' && youHidden) ? '' : 'none';
+
+  document.getElementById('handCount').textContent = G.players[active].hand.length;
+  document.getElementById('playsLeft').textContent = (!G.over && isHumanSeat(G.turn)) ? G.playsLeft : 0;
 
   renderProps('cpuProps', cpu);
   renderProps('youProps', you);
@@ -756,7 +886,9 @@ function cardLabel(c){
 function renderHand(){
   const el = document.getElementById('hand');
   el.innerHTML = '';
-  const you = G.players[0];
+  const you = G.players[meSeat()]; // active player's hand is face-up here
+  document.querySelector('.hand-info .lbl').textContent =
+    (mode==='2p') ? seatName(meSeat())+"'s Hand" : 'Your Hand';
   you.hand.forEach((c, idx)=>{
     const info = cardLabel(c);
     const card = document.createElement('div');
@@ -787,11 +919,11 @@ function renderHand(){
 
 function selectedCard(){
   if(G.selected==null) return null;
-  return G.players[0].hand.find(c=>c.id===G.selected) || null;
+  return G.players[meSeat()].hand.find(c=>c.id===G.selected) || null;
 }
 
 function onSelectCard(id){
-  if(G.over || G.busy || G.turn!==0) return;
+  if(G.over || G.busy || !isHumanSeat(G.turn)) return;
   G.selected = (G.selected===id) ? null : id;
   renderHand();
   updateActionButtons();
@@ -801,7 +933,7 @@ function updateActionButtons(){
   const playBtn = document.getElementById('playBtn');
   const bankBtn = document.getElementById('bankBtn');
   const endBtn  = document.getElementById('endBtn');
-  const myTurn = (G.turn===0 && !G.over && !G.busy);
+  const myTurn = (isHumanSeat(G.turn) && !G.over && !G.busy);
   const c = selectedCard();
   endBtn.disabled = !myTurn;
   if(!myTurn || !c || G.playsLeft<=0){
@@ -831,10 +963,11 @@ function updateActionButtons(){
 function youBankCard(){
   const c = selectedCard();
   if(!c || G.playsLeft<=0) return;
-  removeFromHand(0, c.id);
-  G.players[0].bank.push(c.type==='action' ? {id:c.id,type:'action',name:c.name,value:c.value,act:c.act} : c);
+  const myPi = meSeat();
+  removeFromHand(myPi, c.id);
+  G.players[myPi].bank.push(c.type==='action' ? {id:c.id,type:'action',name:c.name,value:c.value,act:c.act} : c);
   snd.bank();
-  log('You banked '+c.name+' ($'+(c.value||0)+'M).', 'you');
+  log(seatName(myPi)+' banked '+c.name+' ($'+(c.value||0)+'M).', 'you');
   G.selected = null;
   G.playsLeft--;
   render();
@@ -844,16 +977,17 @@ function youBankCard(){
 function youPlayCard(){
   const c = selectedCard();
   if(!c || G.playsLeft<=0) return;
+  const myPi = meSeat();
   if(c.type==='property'){
-    layProperty(0, c, c.group);
+    layProperty(myPi, c, c.group);
     snd.prop();
-    log('You laid '+GROUPS[c.group].name+' property.', 'you');
+    log(seatName(myPi)+' laid '+GROUPS[c.group].name+' property.', 'you');
     afterYouPlay();
   } else if(c.type==='wildcard'){
     chooseWildGroup(c, (g)=>{
-      layProperty(0, c, g);
+      layProperty(myPi, c, g);
       snd.prop();
-      log('You played wildcard into '+GROUPS[g].name+'.', 'you');
+      log(seatName(myPi)+' played wildcard into '+GROUPS[g].name+'.', 'you');
       afterYouPlay();
     });
   } else if(c.type==='action'){
@@ -883,36 +1017,40 @@ function layProperty(pi, card, group){
   p.props[group].push(stored);
 }
 
-// ---------- Action handling (YOU) ----------
+// ---------- Action handling (active human player) ----------
+// In ai mode the actor is seat 0 ("You") vs seat 1 (CPU). In 2p mode the actor
+// is whichever human seat is to move; opp is the other human seat.
 function playYouAction(c){
-  const opp = G.players[1];
-  const me = G.players[0];
+  const myPi = meSeat(), oppPi = oppSeat();
+  const opp = G.players[oppPi];
+  const me = G.players[myPi];
+  const ME = seatName(myPi), OPP = seatName(oppPi);
   switch(c.act){
     case 'passgo': {
-      removeFromHand(0, c.id);
+      removeFromHand(myPi, c.id);
       G.discard.push(c);
       for(let i=0;i<2;i++){ const d=drawCard(); if(d) me.hand.push(d); }
       snd.action();
-      log('You played Pass Go — drew 2 cards.', 'you');
+      log(ME+' played Pass Go — drew 2 cards.', 'you');
       afterYouPlay();
       break;
     }
     case 'birthday': {
-      removeFromHand(0, c.id);
+      removeFromHand(myPi, c.id);
       G.discard.push(c);
       snd.action();
-      log("You played It's My Birthday — CPU pays $2M.", 'you');
+      log(ME+" played It's My Birthday — "+OPP+" pays $2M.", 'you');
       G.selected=null; G.playsLeft--; render();
-      requestPayment(1, 0, 2, "It's your Birthday", ()=>{ if(!checkWin()) render(); });
+      requestPayment(oppPi, myPi, 2, "It's My Birthday", ()=>{ if(!checkWin()) render(); });
       break;
     }
     case 'debt': {
-      removeFromHand(0, c.id);
+      removeFromHand(myPi, c.id);
       G.discard.push(c);
       snd.action();
-      log('You played Debt Collector — CPU owes $5M.', 'you');
+      log(ME+' played Debt Collector — '+OPP+' owes $5M.', 'you');
       G.selected=null; G.playsLeft--; render();
-      requestPayment(1, 0, 5, 'Debt Collector', ()=>{ if(!checkWin()) render(); });
+      requestPayment(oppPi, myPi, 5, 'Debt Collector', ()=>{ if(!checkWin()) render(); });
       break;
     }
     case 'rent':
@@ -925,23 +1063,23 @@ function playYouAction(c){
         let amount = GROUPS[g].rent[cnt-1] || GROUPS[g].rent[GROUPS[g].rent.length-1];
         // house/hotel bonus
         amount += addonBonus(me.props[g]);
-        removeFromHand(0, c.id);
+        removeFromHand(myPi, c.id);
         G.discard.push(c);
         snd.action();
-        log('You played Rent on '+GROUPS[g].name+' — CPU owes $'+amount+'M.', 'you');
+        log(ME+' played Rent on '+GROUPS[g].name+' — '+OPP+' owes $'+amount+'M.', 'you');
         G.selected=null; G.playsLeft--; render();
-        requestPayment(1, 0, amount, 'Rent ('+GROUPS[g].name+')', ()=>{ if(!checkWin()) render(); });
+        requestPayment(oppPi, myPi, amount, 'Rent ('+GROUPS[g].name+')', ()=>{ if(!checkWin()) render(); });
       });
       break;
     }
     case 'slydeal': {
       // steal a single property from opp (not from a complete set)
       const stealable = stealableProps(opp, false);
-      if(stealable.length===0){ toast('CPU has no stealable property.'); return; }
+      if(stealable.length===0){ toast(OPP+' has no stealable property.'); return; }
       chooseStealTarget(stealable, 'Sly Deal — steal a property', (pick)=>{
-        attemptAction(c, 0, 1, 'Sly Deal', ()=>{
-          doSteal(1, 0, pick.group, pick.card);
-          log('You stole '+GROUPS[pick.group].name+' from CPU.', 'you');
+        attemptAction(c, myPi, oppPi, 'Sly Deal', ()=>{
+          doSteal(oppPi, myPi, pick.group, pick.card);
+          log(ME+' stole '+GROUPS[pick.group].name+' from '+OPP+'.', 'you');
         });
       });
       break;
@@ -951,21 +1089,21 @@ function playYouAction(c){
       const theirs = stealableProps(opp, false);
       if(mine.length===0 || theirs.length===0){ toast('Forced Deal needs a property on each side.'); return; }
       chooseForcedDeal(mine, theirs, (myPick, theirPick)=>{
-        attemptAction(c, 0, 1, 'Forced Deal', ()=>{
-          doSteal(1, 0, theirPick.group, theirPick.card);
-          doSteal(0, 1, myPick.group, myPick.card);
-          log('You swapped properties with CPU.', 'you');
+        attemptAction(c, myPi, oppPi, 'Forced Deal', ()=>{
+          doSteal(oppPi, myPi, theirPick.group, theirPick.card);
+          doSteal(myPi, oppPi, myPick.group, myPick.card);
+          log(ME+' swapped properties with '+OPP+'.', 'you');
         });
       });
       break;
     }
     case 'dealbreaker': {
       const sets = completeSetsList(opp);
-      if(sets.length===0){ toast('CPU has no complete set to steal.'); return; }
+      if(sets.length===0){ toast(OPP+' has no complete set to steal.'); return; }
       chooseSetTarget(sets, (g)=>{
-        attemptAction(c, 0, 1, 'Deal Breaker', ()=>{
-          stealWholeSet(1, 0, g);
-          log('You stole CPU\'s '+GROUPS[g].name+' set!', 'you');
+        attemptAction(c, myPi, oppPi, 'Deal Breaker', ()=>{
+          stealWholeSet(oppPi, myPi, g);
+          log(ME+' stole '+OPP+"'s "+GROUPS[g].name+' set!', 'you');
         });
       });
       break;
@@ -980,18 +1118,18 @@ function playYouAction(c){
         const withHouse = sets.filter(g=> me.props[g].some(x=>x.act==='house'));
         if(withHouse.length===0){ toast('Hotel needs a set that already has a House.'); return; }
         chooseSetTarget(withHouse, (g)=>{
-          removeFromHand(0,c.id);
+          removeFromHand(myPi,c.id);
           me.props[g].push(Object.assign({},c,{assignedGroup:g}));
-          snd.action(); log('You added a Hotel to '+GROUPS[g].name+'.', 'you');
+          snd.action(); log(ME+' added a Hotel to '+GROUPS[g].name+'.', 'you');
           afterYouPlay();
         });
       } else {
         const noHouse = sets.filter(g=> !me.props[g].some(x=>x.act==='house'));
         if(noHouse.length===0){ toast('All your complete sets already have a House.'); return; }
         chooseSetTarget(noHouse, (g)=>{
-          removeFromHand(0,c.id);
+          removeFromHand(myPi,c.id);
           me.props[g].push(Object.assign({},c,{assignedGroup:g}));
-          snd.action(); log('You added a House to '+GROUPS[g].name+'.', 'you');
+          snd.action(); log(ME+' added a House to '+GROUPS[g].name+'.', 'you');
           afterYouPlay();
         });
       }
@@ -1024,7 +1162,7 @@ function attemptAction(card, fromPi, toPi, label, onSuccess){
   const target = G.players[toPi];
   const jsnIdx = target.hand.findIndex(c=>c.act==='sayno');
   if(jsnIdx>=0){
-    if(toPi===1){
+    if(mode==='ai' && toPi===1){
       // CPU decides whether to say no
       if(cpuWantsSayNo(label)){
         const jsn = target.hand.splice(jsnIdx,1)[0];
@@ -1103,19 +1241,36 @@ function requestPayment(payerPi, payeePi, amount, reason, done){
   const payer = G.players[payerPi];
   const totalAssets = bankTotal(payer) + propAssetValue(payer);
   if(amount<=0 || totalAssets===0){
-    log((payerPi===0?'You':'CPU')+' could not pay (no assets).', payerPi===0?'you':'cpu');
+    log(seatName(payerPi)+' could not pay (no assets).', payerPi===0?'you':'cpu');
     if(done) done();
     return;
   }
-  if(payerPi===1){
+  if(mode==='ai' && payerPi===1){
     // CPU auto-pays
     const paid = cpuPay(payer, payeePi, amount);
     log('CPU paid $'+paid+'M for '+reason+'.', 'cpu');
     snd.pay();
     if(done) done();
+  } else if(mode==='2p' && payerPi !== G.turn){
+    // The player who owes is NOT the one at the device. Hand over so they can
+    // choose what to pay privately, then hand back to continue the turn.
+    G.busy = true;
+    showHandoff('Pass to '+seatName(payerPi), seatName(payerPi)+': you owe $'+amount+'M ('+reason+'). Choose what to pay.', function(){
+      G.viewSeat = payerPi;          // show payer's hand/controls
+      render();
+      showPaymentModal(amount, payeePi, reason, function(){
+        // Payment done — hand the device back to the active player.
+        G.viewSeat = null;
+        showHandoff('Pass to '+seatName(G.turn), seatName(G.turn)+': back to your turn.', function(){
+          G.busy = false;
+          render();
+          if(done) done();
+        });
+      }, payerPi);
+    });
   } else {
-    // You choose what to pay
-    showPaymentModal(amount, payeePi, reason, done);
+    // Active human (or ai-mode seat 0) chooses what to pay.
+    showPaymentModal(amount, payeePi, reason, done, payerPi);
   }
 }
 function propAssetValue(p){
@@ -1403,7 +1558,7 @@ function chooseWildGroup(card, cb){
   modal.innerHTML = '<h2>Place Wildcard</h2><p>Choose a color set for this wildcard.</p>';
   const wrap=document.createElement('div'); wrap.className='opts';
   opts.forEach(g=>{
-    const me=G.players[0];
+    const me=G.players[meSeat()];
     const have=me.props[g]?countPropsInGroup(me.props[g]):0;
     const b=document.createElement('button'); b.className='opt';
     b.innerHTML='<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+GROUPS[g].color+';margin-right:6px"></span>'+GROUPS[g].name+' ('+have+'/'+GROUPS[g].req+')';
@@ -1423,9 +1578,9 @@ function chooseWildGroup(card, cb){
 
 function chooseColorForRent(owned, cb){
   let sel=null;
-  modal.innerHTML='<h2>Charge Rent</h2><p>Pick a color you own to charge CPU rent.</p>';
+  modal.innerHTML='<h2>Charge Rent</h2><p>Pick a color you own to charge '+seatName(oppSeat())+' rent.</p>';
   const wrap=document.createElement('div'); wrap.className='opts';
-  const me=G.players[0];
+  const me=G.players[meSeat()];
   owned.forEach(g=>{
     const cnt=Math.min(countPropsInGroup(me.props[g]),GROUPS[g].rent.length);
     const amt=(GROUPS[g].rent[cnt-1]||0)+addonBonus(me.props[g]);
@@ -1447,7 +1602,7 @@ function chooseColorForRent(owned, cb){
 
 function chooseStealTarget(list, title, cb){
   let sel=null;
-  modal.innerHTML='<h2>'+title+'</h2><p>Pick a property to steal from CPU.</p>';
+  modal.innerHTML='<h2>'+title+'</h2><p>Pick a property to steal from '+seatName(oppSeat())+'.</p>';
   const wrap=document.createElement('div'); wrap.className='opts';
   list.forEach((item,i)=>{
     const b=document.createElement('button'); b.className='opt';
@@ -1490,7 +1645,7 @@ function chooseSetTarget(sets, cb){
 
 function chooseForcedDeal(mine, theirs, cb){
   let myPick=null, theirPick=null;
-  modal.innerHTML='<h2>Forced Deal</h2><p>Give one of your properties to get one of CPU\'s.</p>';
+  modal.innerHTML='<h2>Forced Deal</h2><p>Give one of your properties to get one of '+seatName(oppSeat())+"'s.</p>";
   const m1=document.createElement('p'); m1.textContent='Your property to give:'; m1.style.color='#9fe6c7'; m1.style.fontWeight='700';
   modal.appendChild(m1);
   const wrapA=document.createElement('div'); wrapA.className='opts';
@@ -1501,7 +1656,7 @@ function chooseForcedDeal(mine, theirs, cb){
     wrapA.appendChild(b);
   });
   modal.appendChild(wrapA);
-  const m2=document.createElement('p'); m2.textContent="CPU's property to take:"; m2.style.color='#ffb3bb'; m2.style.fontWeight='700';
+  const m2=document.createElement('p'); m2.textContent=seatName(oppSeat())+"'s property to take:"; m2.style.color='#ffb3bb'; m2.style.fontWeight='700';
   modal.appendChild(m2);
   const wrapB=document.createElement('div'); wrapB.className='opts';
   theirs.forEach(item=>{
@@ -1522,9 +1677,10 @@ function chooseForcedDeal(mine, theirs, cb){
   overlay.classList.add('show');
 }
 
-// payment modal (you pay)
-function showPaymentModal(amount, payeePi, reason, done){
-  const me=G.players[0];
+// payment modal (the payer chooses what to pay)
+function showPaymentModal(amount, payeePi, reason, done, payerPi){
+  if(payerPi==null) payerPi = 0;
+  const me=G.players[payerPi];
   const selected = new Set();
   // gather payable items: money bank + property cards
   const items=[];
@@ -1565,11 +1721,11 @@ function showPaymentModal(amount, payeePi, reason, done){
       } else {
         const arr=me.props[it.group];
         const i=arr.findIndex(c=>c.id===it.id);
-        if(i>=0){ doStealCardObj(0, payeePi, it.group, arr[i]); paidProps=true; }
+        if(i>=0){ doStealCardObj(payerPi, payeePi, it.group, arr[i]); paidProps=true; }
       }
     });
     snd.pay();
-    log('You paid $'+[...selected].reduce((s,id)=>{const it=items.find(x=>x.id===id);return s+(it?it.value:0);},0)+'M for '+reason+'.', 'you');
+    log(seatName(payerPi)+' paid $'+[...selected].reduce((s,id)=>{const it=items.find(x=>x.id===id);return s+(it?it.value:0);},0)+'M for '+reason+'.', payerPi===0?'you':'cpu');
     closeModal();
     if(done) done();
   }
@@ -1589,9 +1745,9 @@ function doStealCardObj(fromPi, toPi, group, card){
   to.props[group].push(moved);
 }
 
-// discard modal (you over 7)
+// discard modal (active player over 7)
 function promptDiscard(){
-  const me=G.players[0];
+  const me=G.players[meSeat()];
   const need = me.hand.length-7;
   const sel=new Set();
   function render(){
@@ -1647,16 +1803,29 @@ function askYouCounterNo(yes, no){
 
 // ---------- Win screen ----------
 function showWin(winnerPi){
-  const youWin = winnerPi===0;
-  if(youWin) snd.win(); else snd.lose();
-  setStatus(youWin?'you':'cpu', youWin?'You win! 🎉':'CPU wins.');
-  modal.innerHTML =
-    '<div class="win-emoji">'+(youWin?'🏆':'💀')+'</div>'+
-    '<h2 style="text-align:center">'+(youWin?'You Win!':'CPU Wins')+'</h2>'+
-    '<p style="text-align:center">'+(youWin?'You completed 3 property sets!':'CPU completed 3 property sets first.')+'</p>';
+  hideHandoff();
+  G.viewSeat = null;
+  if(mode==='2p'){
+    snd.win();
+    const wn = seatName(winnerPi);
+    setStatus('you', wn+' wins! 🎉');
+    document.getElementById('turnLabel').textContent = 'GAME OVER';
+    modal.innerHTML =
+      '<div class="win-emoji">🏆</div>'+
+      '<h2 style="text-align:center">'+wn+' Wins!</h2>'+
+      '<p style="text-align:center">'+wn+' completed 3 property sets first.</p>';
+  } else {
+    const youWin = winnerPi===0;
+    if(youWin) snd.win(); else snd.lose();
+    setStatus(youWin?'you':'cpu', youWin?'You win! 🎉':'CPU wins.');
+    modal.innerHTML =
+      '<div class="win-emoji">'+(youWin?'🏆':'💀')+'</div>'+
+      '<h2 style="text-align:center">'+(youWin?'You Win!':'CPU Wins')+'</h2>'+
+      '<p style="text-align:center">'+(youWin?'You completed 3 property sets!':'CPU completed 3 property sets first.')+'</p>';
+  }
   const btns=document.createElement('div'); btns.className='mbtns';
-  const go=document.createElement('button'); go.className='go'; go.textContent='New Game';
-  go.onclick=()=>{ closeModal(); newGame(); };
+  const go=document.createElement('button'); go.className='go'; go.textContent='Play Again';
+  go.onclick=()=>{ closeModal(); newGame(); };  // same mode
   btns.appendChild(go);
   modal.appendChild(btns);
   overlay.classList.add('show');
@@ -1679,21 +1848,86 @@ function log(msg, who){
   while(el.children.length>40) el.removeChild(el.lastChild);
 }
 
+// ---------- Privacy handoff (2-player pass & play) ----------
+// Full-screen OPAQUE overlay covering the board + hand. Revealing the next
+// player's hand requires a deliberate slide-all-the-way gesture, so the hand
+// is never exposed by an accidental tap when handing over the device.
+let slideMove = null, slideUp = null; // active window listeners (cleaned on reveal)
+function showHandoff(title, sub, cb){
+  document.getElementById('mdHandoffTitle').textContent = title;
+  document.getElementById('mdHandoffSub').textContent = sub;
+  document.getElementById('mdHandoff').classList.add('show');
+  initSlider(function(){ hideHandoff(); cb(); });
+}
+function hideHandoff(){
+  document.getElementById('mdHandoff').classList.remove('show');
+}
+function initSlider(onReveal){
+  const track  = document.getElementById('mdRevealTrack');
+  const handle = document.getElementById('mdRevealHandle');
+  const fill   = document.getElementById('mdRevealFill');
+  const text   = document.getElementById('mdRevealText');
+  let dragging = false, done = false, grabDX = 0, x = 0, maxX = 0;
+  function layout(){ maxX = Math.max(0, track.clientWidth - handle.offsetWidth - 8); }
+  function paint(px){
+    x = Math.max(0, Math.min(maxX, px));
+    handle.style.left = (4 + x) + 'px';
+    fill.style.width  = (handle.offsetWidth + 4 + x) + 'px';
+    text.style.opacity = maxX ? String(Math.max(0, 1 - x / maxX)) : '1';
+  }
+  function animate(on){
+    handle.style.transition = on ? 'left .2s' : '';
+    fill.style.transition   = on ? 'width .2s' : '';
+  }
+  function cleanup(){
+    window.removeEventListener('pointermove', slideMove);
+    window.removeEventListener('pointerup', slideUp);
+    window.removeEventListener('pointercancel', slideUp);
+    slideMove = slideUp = null;
+  }
+  function reset(){ animate(true); paint(0); setTimeout(function(){ animate(false); }, 210); }
+  function complete(){ done = true; animate(true); paint(maxX); cleanup(); setTimeout(onReveal, 190); }
+  function ptX(e){ return e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0); }
+  function down(e){ if(done) return; layout(); dragging = true; animate(false); grabDX = ptX(e) - x; e.preventDefault(); }
+  slideMove = function(e){ if(!dragging || done) return; e.preventDefault(); paint(ptX(e) - grabDX); };
+  slideUp = function(){ if(!dragging || done) return; dragging = false; if(x >= maxX - 4) complete(); else reset(); };
+  cleanup();
+  done = false; dragging = false;
+  layout(); animate(false); paint(0); text.style.opacity = '1';
+  track.onpointerdown = down;
+  window.addEventListener('pointermove', slideMove, { passive: false });
+  window.addEventListener('pointerup', slideUp);
+  window.addEventListener('pointercancel', slideUp);
+}
+
+// ---------- Mode selection ----------
+const modeOverlay = document.getElementById('modeOverlay');
+function showModeSelect(){ modeOverlay.classList.add('show'); }
+function startMode(m){
+  mode = m;
+  modeOverlay.classList.remove('show');
+  newGame();
+}
+
 // ---------- Wire up buttons ----------
-document.getElementById('newGameBtn').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); newGame(); });
+// "New Game" returns to the mode picker so you can switch AI / 2-player.
+document.getElementById('newGameBtn').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); showModeSelect(); });
 document.getElementById('playBtn').addEventListener('click', ()=>{ if(!G||G.busy) return; youPlayCard(); });
 document.getElementById('bankBtn').addEventListener('click', ()=>{ if(!G||G.busy) return; youBankCard(); });
-document.getElementById('endBtn').addEventListener('click', ()=>{ if(!G||G.busy||G.turn!==0) return; endTurn(); });
+document.getElementById('endBtn').addEventListener('click', ()=>{ if(!G||G.busy||!isHumanSeat(G.turn)) return; endTurn(); });
 document.getElementById('logToggle').addEventListener('click', (e)=>{
   const el=document.getElementById('log'); el.classList.toggle('show');
   e.target.textContent = el.classList.contains('show')?'hide log':'show log';
 });
+document.getElementById('modeAi').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); startMode('ai'); });
+document.getElementById('modeTwo').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); startMode('2p'); });
 
 // prevent double-tap zoom on buttons
 document.addEventListener('dblclick', e=>e.preventDefault(), {passive:false});
 
-// Start
+// Start: render an idle game behind the picker, then ask for a mode.
 newGame();
+showModeSelect();
 
 })();
 </script>
