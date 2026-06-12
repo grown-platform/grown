@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Flow Connect</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --line: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #2f81f7;
+    --cell: #1c2128;
+    --cell-border: #30363d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+  }
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 12px 24px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 4px 0 0;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+  .sub {
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: -6px;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+  }
+  select, button {
+    font-size: 14px;
+    font-family: inherit;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  button:active { transform: translateY(1px); }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  .status {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .status .item { display: flex; flex-direction: column; align-items: center; flex: 1; }
+  .status .item b { font-size: 16px; }
+  .status .item span { color: var(--muted); font-size: 11px; }
+  .boardWrap {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    position: relative;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    border-radius: 12px;
+    background: var(--cell);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .win {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13, 17, 23, 0.82);
+    border-radius: 12px;
+    gap: 14px;
+    z-index: 5;
+  }
+  .win.show { display: flex; }
+  .win h2 { margin: 0; font-size: 28px; color: #3fb950; }
+  .win p { margin: 0; color: var(--muted); }
+  .hint {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/flow-connect.svg">
+    <link rel="manifest" href="/games/flow-connect.webmanifest">
+    <meta name="theme-color" content="#DB2777">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Flow Connect">
+    <link rel="apple-touch-icon" href="/games/icons/flow-connect.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DB2777;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div class="wrap">
+  <h1>Flow Connect</h1>
+  <div class="sub">Connect matching dots &middot; fill every cell</div>
+
+  <div class="controls">
+    <select id="levelSel" aria-label="Level select"></select>
+    <button id="resetBtn">Reset</button>
+    <button id="nextBtn" class="primary">Next</button>
+  </div>
+
+  <div class="status">
+    <div class="item"><b id="pipesVal">0/0</b><span>Pipes</span></div>
+    <div class="item"><b id="coverVal">0%</b><span>Coverage</span></div>
+    <div class="item"><b id="movesVal">0</b><span>Moves</span></div>
+  </div>
+
+  <div class="boardWrap">
+    <canvas id="board" aria-label="Puzzle board"></canvas>
+    <div class="win" id="winOverlay">
+      <h2>Solved!</h2>
+      <p id="winSub">Nice flow.</p>
+      <button id="winNext" class="primary">Next Puzzle</button>
+    </div>
+  </div>
+
+  <div class="hint">
+    Drag from a colored dot through empty cells to its match.<br>
+    Pipes can't cross. Fill the whole grid to win.
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Levels ----------
+  // Each level: size (NxN) and an array of color pairs as [r,c] endpoints.
+  // The "solution" is implied; we win when all pairs are connected AND every
+  // cell is covered. Levels below are known-solvable (full-coverage) puzzles.
+  var COLORS = [
+    "#ff4d4d", // red
+    "#3fb950", // green
+    "#2f81f7", // blue
+    "#f0b132", // yellow
+    "#d24df0", // magenta
+    "#ff8c42", // orange
+    "#2bd4d4", // cyan
+    "#b87333", // brown
+    "#ffffff"  // white
+  ];
+
+  // endpoints listed as [r,c] pairs; index = color index.
+  // These levels are machine-generated AND verified to each have a full-coverage
+  // solution (every cell reachable), so the "fill the whole grid" win is attainable.
+  var LEVELS = [
+    {
+      name: "5x5 Easy",
+      size: 5,
+      pairs: [
+        [[3,1],[3,4]],
+        [[2,4],[0,4]],
+        [[0,3],[0,2]],
+        [[0,1],[0,0]],
+        [[1,0],[2,0]]
+      ]
+    },
+    {
+      name: "5x5 Two",
+      size: 5,
+      pairs: [
+        [[3,1],[4,4]],
+        [[3,4],[1,4]],
+        [[0,4],[1,2]],
+        [[0,2],[0,1]],
+        [[0,0],[1,1]],
+        [[2,1],[2,0]]
+      ]
+    },
+    {
+      name: "6x6",
+      size: 6,
+      pairs: [
+        [[3,0],[2,5]],
+        [[3,5],[5,5]],
+        [[5,4],[3,3]],
+        [[4,3],[4,2]],
+        [[3,2],[3,1]],
+        [[4,1],[4,0]]
+      ]
+    },
+    {
+      name: "7x7",
+      size: 7,
+      pairs: [
+        [[4,0],[0,6]],
+        [[1,6],[1,1]],
+        [[2,1],[3,5]],
+        [[3,4],[6,3]],
+        [[5,3],[5,2]],
+        [[6,2],[6,1]],
+        [[5,1],[6,0]]
+      ]
+    },
+    {
+      name: "8x8",
+      size: 8,
+      pairs: [
+        [[5,0],[0,2]],
+        [[0,3],[5,4]],
+        [[4,4],[6,7]],
+        [[7,7],[7,6]],
+        [[7,5],[6,5]],
+        [[6,6],[5,5]],
+        [[4,5],[4,6]],
+        [[3,6],[3,5]]
+      ]
+    }
+  ];
+
+  // ---------- State ----------
+  var canvas = document.getElementById("board");
+  var ctx = canvas.getContext("2d");
+  var levelSel = document.getElementById("levelSel");
+  var pipesVal = document.getElementById("pipesVal");
+  var coverVal = document.getElementById("coverVal");
+  var movesVal = document.getElementById("movesVal");
+  var winOverlay = document.getElementById("winOverlay");
+  var winSub = document.getElementById("winSub");
+
+  var level = LEVELS[0];
+  var N = level.size;
+  var endpoints = {};   // "r,c" -> colorIndex (cell is an endpoint)
+  var paths = [];       // paths[colorIndex] = array of [r,c] cells (or null)
+  var moves = 0;
+  var dpr = 1;
+  var cellPx = 0;
+  var won = false;
+
+  // drag state
+  var drag = null; // { color, startedFromEndpoint }
+
+  function key(r, c) { return r + "," + c; }
+
+  function buildLevel(lv) {
+    level = lv;
+    N = lv.size;
+    endpoints = {};
+    paths = [];
+    moves = 0;
+    won = false;
+    winOverlay.classList.remove("show");
+    for (var i = 0; i < lv.pairs.length; i++) {
+      var a = lv.pairs[i][0], b = lv.pairs[i][1];
+      endpoints[key(a[0], a[1])] = i;
+      endpoints[key(b[0], b[1])] = i;
+      paths[i] = null;
+    }
+    resize();
+    updateStatus();
+    draw();
+  }
+
+  // endpoint color at a cell, or -1
+  function endpointColorAt(r, c) {
+    var v = endpoints[key(r, c)];
+    return v === undefined ? -1 : v;
+  }
+
+  // is [r,c] one of the two endpoints of given color
+  function isEndpointOf(r, c, color) {
+    return endpoints[key(r, c)] === color;
+  }
+
+  // find which color's path occupies a cell, and the index within that path
+  function occupant(r, c) {
+    for (var ci = 0; ci < paths.length; ci++) {
+      var p = paths[ci];
+      if (!p) continue;
+      for (var i = 0; i < p.length; i++) {
+        if (p[i][0] === r && p[i][1] === c) return { color: ci, index: i };
+      }
+    }
+    return null;
+  }
+
+  // ---------- Geometry ----------
+  function resize() {
+    var rect = canvas.getBoundingClientRect();
+    var size = Math.max(1, Math.min(rect.width, rect.height));
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    cellPx = (size * dpr) / N;
+  }
+
+  function cellCenter(r, c) {
+    return { x: (c + 0.5) * cellPx, y: (r + 0.5) * cellPx };
+  }
+
+  // convert a pointer event to grid cell, or null if outside
+  function eventCell(ev) {
+    var rect = canvas.getBoundingClientRect();
+    var x = (ev.clientX - rect.left) * (canvas.width / rect.width);
+    var y = (ev.clientY - rect.top) * (canvas.height / rect.height);
+    var c = Math.floor(x / cellPx);
+    var r = Math.floor(y / cellPx);
+    if (r < 0 || r >= N || c < 0 || c >= N) return null;
+    return { r: r, c: c };
+  }
+
+  function adjacent(a, b) {
+    var dr = Math.abs(a[0] - b[0]);
+    var dc = Math.abs(a[1] - b[1]);
+    return (dr + dc) === 1;
+  }
+
+  // ---------- Drawing ----------
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // background cells + grid lines
+    ctx.fillStyle = "#1c2128";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#30363d";
+    ctx.lineWidth = Math.max(1, dpr);
+    for (var i = 0; i <= N; i++) {
+      var p = Math.round(i * cellPx) + 0.5;
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, canvas.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(canvas.width, p); ctx.stroke();
+    }
+
+    // pipes
+    var pipeW = cellPx * 0.42;
+    for (var ci = 0; ci < paths.length; ci++) {
+      var path = paths[ci];
+      if (!path || path.length < 2) continue;
+      ctx.strokeStyle = COLORS[ci % COLORS.length];
+      ctx.lineWidth = pipeW;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      var c0 = cellCenter(path[0][0], path[0][1]);
+      ctx.moveTo(c0.x, c0.y);
+      for (var k = 1; k < path.length; k++) {
+        var cc = cellCenter(path[k][0], path[k][1]);
+        ctx.lineTo(cc.x, cc.y);
+      }
+      ctx.stroke();
+    }
+
+    // endpoint dots
+    var allKeys = Object.keys(endpoints);
+    for (var ek = 0; ek < allKeys.length; ek++) {
+      var parts = allKeys[ek].split(",");
+      var r = +parts[0], c = +parts[1];
+      var color = endpoints[allKeys[ek]];
+      var ctr = cellCenter(r, c);
+      var rad = cellPx * 0.30;
+      ctx.beginPath();
+      ctx.fillStyle = COLORS[color % COLORS.length];
+      ctx.arc(ctr.x, ctr.y, rad, 0, Math.PI * 2);
+      ctx.fill();
+      // inner highlight ring
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.lineWidth = Math.max(1, dpr);
+      ctx.arc(ctr.x, ctr.y, rad * 0.6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // ---------- Path logic ----------
+
+  // Truncate any color's path that occupies (r,c) by removing from that cell
+  // onward, but NEVER remove an endpoint cell (so endpoints persist).
+  // Returns true if something was changed.
+  function eraseFromCell(r, c, exceptColor) {
+    var changed = false;
+    for (var ci = 0; ci < paths.length; ci++) {
+      if (ci === exceptColor) continue;
+      var p = paths[ci];
+      if (!p) continue;
+      for (var i = 0; i < p.length; i++) {
+        if (p[i][0] === r && p[i][1] === c) {
+          // cut this path at i (remove cell i and everything after)
+          p.length = i;
+          if (p.length < 2) paths[ci] = null;
+          changed = true;
+          break;
+        }
+      }
+    }
+    return changed;
+  }
+
+  // Begin a drag at cell (r,c).
+  function startDrag(r, c) {
+    var epColor = endpointColorAt(r, c);
+    var occ = occupant(r, c);
+
+    if (epColor >= 0) {
+      // Start a fresh path from this endpoint. Clear that color's existing path.
+      paths[epColor] = [[r, c]];
+      drag = { color: epColor };
+      // Erase any other color overlapping this very cell (shouldn't happen, endpoints fixed)
+      draw();
+      return;
+    }
+
+    if (occ) {
+      // Grabbed an existing pipe mid-way: resume drawing that color from here,
+      // truncating the path at this cell (we re-extend as we drag).
+      var p = paths[occ.color];
+      p.length = occ.index + 1;
+      drag = { color: occ.color };
+      draw();
+      return;
+    }
+    // empty cell with no endpoint -> nothing to start
+    drag = null;
+  }
+
+  // Extend current drag to neighbor cell (r,c), one step.
+  function stepTo(r, c) {
+    if (!drag) return;
+    var color = drag.color;
+    var p = paths[color];
+    if (!p || p.length === 0) return;
+
+    var tail = p[p.length - 1];
+    if (tail[0] === r && tail[1] === c) return; // same cell
+    if (!adjacent(tail, [r, c])) {
+      // not orthogonally adjacent: try to path along intermediate cells in a straight line
+      // (handles fast drags). Only handle straight runs.
+      var dr = r - tail[0], dc = c - tail[1];
+      if (dr !== 0 && dc !== 0) return; // diagonal jump, ignore
+      var stepR = dr === 0 ? 0 : (dr > 0 ? 1 : -1);
+      var stepC = dc === 0 ? 0 : (dc > 0 ? 1 : -1);
+      var cur = [tail[0], tail[1]];
+      var steps = Math.abs(dr) + Math.abs(dc);
+      for (var s = 0; s < steps; s++) {
+        cur = [cur[0] + stepR, cur[1] + stepC];
+        if (!stepOne(color, cur[0], cur[1])) break;
+      }
+      return;
+    }
+    stepOne(color, r, c);
+  }
+
+  // Try to add a single adjacent cell to the active path.
+  // Returns true if added (or path retracted to this cell).
+  function stepOne(color, r, c) {
+    var p = paths[color];
+    var tail = p[p.length - 1];
+    if (!adjacent(tail, [r, c])) return false;
+
+    // Retract: if moving back onto the previous cell, pop the tail.
+    if (p.length >= 2 && p[p.length - 2][0] === r && p[p.length - 2][1] === c) {
+      p.pop();
+      draw();
+      return true;
+    }
+
+    // Can't enter a cell already in our own path (no self-overlap / loops).
+    for (var i = 0; i < p.length; i++) {
+      if (p[i][0] === r && p[i][1] === c) return false;
+    }
+
+    // Can't enter the OTHER endpoint of a different color.
+    var epc = endpointColorAt(r, c);
+    if (epc >= 0 && epc !== color) {
+      return false;
+    }
+
+    // If it's our own endpoint, allow it (completes the connection) — but only
+    // the matching endpoint that isn't our start.
+    if (epc === color) {
+      // ensure it's not the start cell we already have
+      // (start cell already in path => handled by self-overlap check above)
+      // Erase any other path crossing here first (shouldn't, endpoints are fixed)
+      eraseFromCell(r, c, color);
+      p.push([r, c]);
+      moves++;
+      draw();
+      updateStatus();
+      checkWin();
+      return true;
+    }
+
+    // Entering a cell occupied by another color: truncate that color there.
+    eraseFromCell(r, c, color);
+
+    p.push([r, c]);
+    moves++;
+    draw();
+    updateStatus();
+    checkWin();
+    return true;
+  }
+
+  function endDrag() {
+    drag = null;
+  }
+
+  // ---------- Win / status ----------
+  function pairConnected(color) {
+    var p = paths[color];
+    if (!p || p.length < 2) return false;
+    var a = p[0], b = p[p.length - 1];
+    return isEndpointOf(a[0], a[1], color) &&
+           isEndpointOf(b[0], b[1], color) &&
+           !(a[0] === b[0] && a[1] === b[1]);
+  }
+
+  function connectedCount() {
+    var n = 0;
+    for (var ci = 0; ci < level.pairs.length; ci++) {
+      if (pairConnected(ci)) n++;
+    }
+    return n;
+  }
+
+  function coveredCells() {
+    var seen = {};
+    for (var ci = 0; ci < paths.length; ci++) {
+      var p = paths[ci];
+      if (!p) continue;
+      for (var i = 0; i < p.length; i++) {
+        seen[key(p[i][0], p[i][1])] = true;
+      }
+    }
+    return Object.keys(seen).length;
+  }
+
+  function updateStatus() {
+    var total = level.pairs.length;
+    var conn = connectedCount();
+    var covered = coveredCells();
+    var totalCells = N * N;
+    pipesVal.textContent = conn + "/" + total;
+    coverVal.textContent = Math.round((covered / totalCells) * 100) + "%";
+    movesVal.textContent = moves;
+  }
+
+  function checkWin() {
+    if (won) return;
+    var total = level.pairs.length;
+    if (connectedCount() !== total) return;
+    if (coveredCells() !== N * N) return;
+    won = true;
+    winSub.textContent = "Solved in " + moves + " moves.";
+    winOverlay.classList.add("show");
+    beepWin();
+  }
+
+  // ---------- Sound (WebAudio, optional) ----------
+  var audioCtx = null;
+  function getAudio() {
+    if (audioCtx) return audioCtx;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    } catch (e) { audioCtx = null; }
+    return audioCtx;
+  }
+  function blip(freq, dur, type, vol) {
+    var ac = getAudio();
+    if (!ac) return;
+    if (ac.state === "suspended") { try { ac.resume(); } catch (e) {} }
+    var o = ac.createOscillator();
+    var g = ac.createGain();
+    o.type = type || "sine";
+    o.frequency.value = freq;
+    g.gain.value = vol || 0.05;
+    o.connect(g); g.connect(ac.destination);
+    var t = ac.currentTime;
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t);
+    o.stop(t + dur);
+  }
+  function beepStep() { blip(440, 0.05, "square", 0.03); }
+  function beepConnect() { blip(660, 0.12, "triangle", 0.06); }
+  function beepWin() {
+    blip(523, 0.12, "triangle", 0.07);
+    setTimeout(function () { blip(659, 0.12, "triangle", 0.07); }, 110);
+    setTimeout(function () { blip(784, 0.2, "triangle", 0.07); }, 230);
+  }
+
+  // ---------- Pointer events ----------
+  var activePointer = null;
+
+  function onDown(ev) {
+    ev.preventDefault();
+    if (won) return;
+    getAudio(); // unlock audio on first touch
+    activePointer = ev.pointerId;
+    try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
+    var cell = eventCell(ev);
+    if (!cell) return;
+    var beforeConn = connectedCount();
+    startDrag(cell.r, cell.c);
+    if (connectedCount() > beforeConn) beepConnect();
+  }
+
+  function onMove(ev) {
+    if (activePointer === null || ev.pointerId !== activePointer) return;
+    ev.preventDefault();
+    if (!drag || won) return;
+    var cell = eventCell(ev);
+    if (!cell) return;
+    var beforeConn = connectedCount();
+    var beforeLen = paths[drag.color] ? paths[drag.color].length : 0;
+    stepTo(cell.r, cell.c);
+    var afterLen = paths[drag.color] ? paths[drag.color].length : 0;
+    if (connectedCount() > beforeConn) beepConnect();
+    else if (afterLen !== beforeLen) beepStep();
+  }
+
+  function onUp(ev) {
+    if (activePointer !== null && ev.pointerId === activePointer) {
+      ev.preventDefault();
+      activePointer = null;
+      try { canvas.releasePointerCapture(ev.pointerId); } catch (e) {}
+      endDrag();
+    }
+  }
+
+  canvas.addEventListener("pointerdown", onDown, { passive: false });
+  canvas.addEventListener("pointermove", onMove, { passive: false });
+  canvas.addEventListener("pointerup", onUp, { passive: false });
+  canvas.addEventListener("pointercancel", onUp, { passive: false });
+  // belt-and-suspenders: stop touch scroll/zoom on the board
+  canvas.addEventListener("touchstart", function (e) { e.preventDefault(); }, { passive: false });
+  canvas.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+
+  // ---------- UI wiring ----------
+  function populateLevels() {
+    for (var i = 0; i < LEVELS.length; i++) {
+      var opt = document.createElement("option");
+      opt.value = i;
+      opt.textContent = LEVELS[i].name;
+      levelSel.appendChild(opt);
+    }
+  }
+
+  var currentIdx = 0;
+  levelSel.addEventListener("change", function () {
+    currentIdx = +levelSel.value;
+    buildLevel(LEVELS[currentIdx]);
+  });
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    buildLevel(LEVELS[currentIdx]);
+  });
+  function goNext() {
+    currentIdx = (currentIdx + 1) % LEVELS.length;
+    levelSel.value = currentIdx;
+    buildLevel(LEVELS[currentIdx]);
+  }
+  document.getElementById("nextBtn").addEventListener("click", goNext);
+  document.getElementById("winNext").addEventListener("click", goNext);
+
+  window.addEventListener("resize", function () {
+    resize();
+    draw();
+  });
+  // handle orientation / late layout
+  window.addEventListener("orientationchange", function () {
+    setTimeout(function () { resize(); draw(); }, 200);
+  });
+
+  // ---------- Init ----------
+  populateLevels();
+  // Defer initial sizing until layout settles.
+  requestAnimationFrame(function () {
+    buildLevel(LEVELS[0]);
+  });
+})();
+</script>
+</body>
+</html>

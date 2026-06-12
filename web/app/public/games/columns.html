@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Columns</title>
+<style>
+  :root {
+    --bg: #10131c;
+    --panel: #1b2030;
+    --accent: #ffd23f;
+    --text: #e8ecf5;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: radial-gradient(circle at 50% 0%, #1a2236, #0a0d15);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #app {
+    max-width: 420px;
+    margin: 0 auto;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+  }
+  h1 {
+    font-size: 24px;
+    margin: 4px 0 6px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-shadow: 0 2px 0 #00000060;
+  }
+  #hud {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .stat {
+    flex: 1;
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 6px 8px;
+    text-align: center;
+    box-shadow: inset 0 1px 0 #ffffff10;
+  }
+  .stat .lbl { font-size: 10px; opacity: 0.6; letter-spacing: 1px; text-transform: uppercase; }
+  .stat .val { font-size: 18px; font-weight: 700; color: var(--accent); }
+  #stage {
+    position: relative;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+  canvas {
+    background: #0b0e16;
+    border: 2px solid #2a3147;
+    border-radius: 10px;
+    box-shadow: 0 8px 30px #00000070, inset 0 0 30px #00000080;
+    display: block;
+    width: 100%;
+    max-width: 280px;
+    touch-action: none;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #0a0d15d8;
+    border-radius: 10px;
+    text-align: center;
+    padding: 16px;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 { margin: 0 0 6px; font-size: 28px; color: var(--accent); }
+  #overlay p { margin: 2px 0; font-size: 14px; }
+  #controls {
+    width: 100%;
+    max-width: 320px;
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .btn {
+    appearance: none;
+    border: none;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 22px;
+    padding: 16px 0;
+    border-radius: 14px;
+    box-shadow: 0 4px 0 #0b0e16, inset 0 1px 0 #ffffff14;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #0b0e16; }
+  .btn.cycle { color: var(--accent); }
+  #restart {
+    margin-top: 12px;
+    background: var(--accent);
+    color: #16110a;
+    font-weight: 700;
+    font-size: 15px;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 26px;
+    cursor: pointer;
+    box-shadow: 0 4px 0 #b88f1a;
+  }
+  #restart:active { transform: translateY(3px); box-shadow: 0 1px 0 #b88f1a; }
+  #hint { font-size: 11px; opacity: 0.5; margin-top: 10px; text-align: center; line-height: 1.5; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/columns.svg">
+    <link rel="manifest" href="/games/columns.webmanifest">
+    <meta name="theme-color" content="#7C3AED">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Columns">
+    <link rel="apple-touch-icon" href="/games/icons/columns.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#7C3AED;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <h1>COLUMNS</h1>
+  <div id="hud">
+    <div class="stat"><div class="lbl">Score</div><div class="val" id="score">0</div></div>
+    <div class="stat"><div class="lbl">Level</div><div class="val" id="level">1</div></div>
+    <div class="stat"><div class="lbl">Cleared</div><div class="val" id="cleared">0</div></div>
+  </div>
+  <div id="stage">
+    <canvas id="board" width="240" height="520"></canvas>
+    <div id="overlay">
+      <h2 id="ovTitle">Game Over</h2>
+      <p id="ovScore">Score: 0</p>
+      <p>Tap Restart to play again</p>
+    </div>
+  </div>
+  <div id="controls">
+    <button class="btn" id="bLeft" aria-label="left">◀</button>
+    <button class="btn cycle" id="bCycle" aria-label="cycle">⟳</button>
+    <button class="btn" id="bDrop" aria-label="drop">▼</button>
+    <button class="btn" id="bRight" aria-label="right">▶</button>
+  </div>
+  <button id="restart">Restart</button>
+  <div id="hint">Swipe ◀ ▶ to move · tap to cycle colors · swipe ▼ to drop<br>Keyboard: arrows + space</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Config ----
+  var COLS = 6, ROWS = 13;
+  var GEMS = ["🟥", "🟩", "🟦", "🟨", "🟪", "🟧"]; // emoji gems (fallback drawing below)
+  var COLORS = ["#ff4d5e", "#3ddc84", "#4d9bff", "#ffd23f", "#b86bff", "#ff9f43"];
+  var NUM_COLORS = 6;
+
+  var canvas = document.getElementById("board");
+  var ctx = canvas.getContext("2d");
+  var CELL = canvas.width / COLS; // logical cell size (240/6 = 40)
+
+  // ---- State ----
+  var grid;        // ROWS x COLS, value = color index or -1
+  var piece;       // {col, row, gems:[3 color idx]}  row = top gem row (can be negative while spawning)
+  var score, level, cleared, gameOver, paused;
+  var dropTimer, dropInterval;
+  var animTime = 0; // for clear flash animation
+  var flashing = null; // {cells:[{r,c}], t} during clear animation
+
+  // ---- Audio ----
+  var actx = null;
+  function audio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { actx = null; }
+    }
+    return actx;
+  }
+  function beep(freq, dur, type, vol) {
+    var a = audio();
+    if (!a) return;
+    try {
+      var o = a.createOscillator();
+      var g = a.createGain();
+      o.type = type || "square";
+      o.frequency.value = freq;
+      g.gain.value = vol == null ? 0.06 : vol;
+      o.connect(g); g.connect(a.destination);
+      var now = a.currentTime;
+      g.gain.setValueAtTime(g.gain.value, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.start(now);
+      o.stop(now + dur);
+    } catch (e) {}
+  }
+  function sMove() { beep(330, 0.05, "square", 0.04); }
+  function sCycle() { beep(520, 0.06, "triangle", 0.05); }
+  function sLand() { beep(180, 0.08, "sawtooth", 0.05); }
+  function sClear(combo) { beep(440 + combo * 120, 0.18, "triangle", 0.08); }
+  function sOver() { beep(150, 0.5, "sawtooth", 0.08); }
+
+  // ---- Helpers ----
+  function emptyGrid() {
+    var g = [];
+    for (var r = 0; r < ROWS; r++) {
+      var row = [];
+      for (var c = 0; c < COLS; c++) row.push(-1);
+      g.push(row);
+    }
+    return g;
+  }
+  function randColor() { return Math.floor(Math.random() * NUM_COLORS); }
+
+  function spawnPiece() {
+    piece = {
+      col: Math.floor(COLS / 2),
+      row: -2, // top gem starts above the well; gems at row, row+1, row+2
+      gems: [randColor(), randColor(), randColor()]
+    };
+    // immediate game over check: if landing cell already filled at spawn position
+    // (top column already reaches the top)
+    if (grid[0][piece.col] !== -1) {
+      // can't even place
+      endGame();
+    }
+  }
+
+  // The 3 gem cell rows of the current piece (top, mid, bottom)
+  function pieceCells() {
+    return [
+      { r: piece.row, c: piece.col, color: piece.gems[0] },
+      { r: piece.row + 1, c: piece.col, color: piece.gems[1] },
+      { r: piece.row + 2, c: piece.col, color: piece.gems[2] }
+    ];
+  }
+
+  function cellBlocked(r, c) {
+    if (c < 0 || c >= COLS) return true;
+    if (r >= ROWS) return true;
+    if (r < 0) return false; // above well is open
+    return grid[r][c] !== -1;
+  }
+
+  // can the whole piece exist at (col, row)?
+  function canPlace(col, row) {
+    for (var i = 0; i < 3; i++) {
+      var r = row + i, c = col;
+      if (c < 0 || c >= COLS) return false;
+      if (r >= ROWS) return false;
+      if (r >= 0 && grid[r][c] !== -1) return false;
+    }
+    return true;
+  }
+
+  function moveHoriz(dir) {
+    if (gameOver || paused || !piece) return;
+    if (canPlace(piece.col + dir, piece.row)) {
+      piece.col += dir;
+      sMove();
+    }
+  }
+
+  function cycleColors() {
+    if (gameOver || paused || !piece) return;
+    // rotate the 3 colors downward: bottom moves to top
+    var g = piece.gems;
+    var bottom = g[2];
+    g[2] = g[1];
+    g[1] = g[0];
+    g[0] = bottom;
+    sCycle();
+  }
+
+  function softDrop() {
+    if (gameOver || paused || !piece) return;
+    // move down by one if possible, else lock
+    if (canPlace(piece.col, piece.row + 1)) {
+      piece.row += 1;
+    } else {
+      lockPiece();
+    }
+  }
+
+  function hardDrop() {
+    if (gameOver || paused || !piece) return;
+    while (canPlace(piece.col, piece.row + 1)) {
+      piece.row += 1;
+    }
+    lockPiece();
+  }
+
+  function lockPiece() {
+    var cells = pieceCells();
+    for (var i = 0; i < cells.length; i++) {
+      var cell = cells[i];
+      if (cell.r < 0) {
+        // a gem is locked above the top of the well -> game over
+        // place what we can then end
+        endGame();
+        // still draw the overlap by clamping (optional). We just end.
+      }
+    }
+    // write gems into grid (skip cells above well)
+    for (i = 0; i < cells.length; i++) {
+      var c2 = cells[i];
+      if (c2.r >= 0 && c2.r < ROWS) {
+        grid[c2.r][c2.c] = c2.color;
+      }
+    }
+    sLand();
+    piece = null;
+    // resolve matches + cascades
+    resolveBoard(0);
+  }
+
+  // Find all matching groups (3+ in a line) in 4 directions.
+  function findMatches() {
+    var toClear = [];
+    var mark = [];
+    for (var r = 0; r < ROWS; r++) {
+      var rowm = [];
+      for (var c = 0; c < COLS; c++) rowm.push(false);
+      mark.push(rowm);
+    }
+    // direction vectors: horizontal, vertical, diag down-right, diag down-left
+    var dirs = [
+      { dr: 0, dc: 1 },
+      { dr: 1, dc: 0 },
+      { dr: 1, dc: 1 },
+      { dr: 1, dc: -1 }
+    ];
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        var color = grid[r][c];
+        if (color === -1) continue;
+        for (var d = 0; d < dirs.length; d++) {
+          var dr = dirs[d].dr, dc = dirs[d].dc;
+          // only start a run if the previous cell in this dir is different (run start)
+          var pr = r - dr, pc = c - dc;
+          var prevSame = (pr >= 0 && pr < ROWS && pc >= 0 && pc < COLS && grid[pr][pc] === color);
+          if (prevSame) continue;
+          // count run length
+          var len = 0;
+          var rr = r, cc = c;
+          while (rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS && grid[rr][cc] === color) {
+            len++;
+            rr += dr; cc += dc;
+          }
+          if (len >= 3) {
+            rr = r; cc = c;
+            for (var k = 0; k < len; k++) {
+              mark[rr][cc] = true;
+              rr += dr; cc += dc;
+            }
+          }
+        }
+      }
+    }
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        if (mark[r][c]) toClear.push({ r: r, c: c });
+      }
+    }
+    return toClear;
+  }
+
+  // gravity: let gems fall into empty cells column by column
+  function applyGravity() {
+    for (var c = 0; c < COLS; c++) {
+      var write = ROWS - 1;
+      for (var r = ROWS - 1; r >= 0; r--) {
+        if (grid[r][c] !== -1) {
+          var v = grid[r][c];
+          grid[r][c] = -1;
+          grid[write][c] = v;
+          write--;
+        }
+      }
+    }
+  }
+
+  // Resolve board: find matches, animate flash, clear, gravity, recurse for cascades.
+  function resolveBoard(combo) {
+    var matches = findMatches();
+    if (matches.length === 0) {
+      // nothing to clear -> spawn next piece
+      if (!gameOver) spawnPiece();
+      return;
+    }
+    // scoring: base per gem * (combo multiplier)
+    var gain = matches.length * 10 * (combo + 1);
+    score += gain;
+    cleared += matches.length;
+    sClear(combo);
+    updateHud();
+
+    // start flash animation, then clear
+    flashing = { cells: matches, t: 0, combo: combo };
+    paused = true; // hold input during animation
+  }
+
+  function finishClear() {
+    var matches = flashing.cells;
+    var combo = flashing.combo;
+    for (var i = 0; i < matches.length; i++) {
+      grid[matches[i].r][matches[i].c] = -1;
+    }
+    flashing = null;
+    applyGravity();
+    paused = false;
+    // cascade: check again with higher combo
+    resolveBoard(combo + 1);
+  }
+
+  // ---- Game loop ----
+  function levelSpeed() {
+    // ms per soft-drop step; faster as level increases
+    return Math.max(120, 800 - (level - 1) * 60);
+  }
+
+  function updateLevel() {
+    var newLevel = 1 + Math.floor(cleared / 15);
+    if (newLevel !== level) {
+      level = newLevel;
+      dropInterval = levelSpeed();
+    }
+  }
+
+  var lastTime = 0;
+  function tick(ts) {
+    if (!lastTime) lastTime = ts;
+    var dt = ts - lastTime;
+    lastTime = ts;
+
+    if (!gameOver) {
+      if (flashing) {
+        flashing.t += dt;
+        if (flashing.t >= 260) {
+          finishClear();
+        }
+      } else if (!paused && piece) {
+        dropTimer += dt;
+        if (dropTimer >= dropInterval) {
+          dropTimer = 0;
+          softDrop();
+        }
+      }
+      updateLevel();
+    }
+    draw();
+    requestAnimationFrame(tick);
+  }
+
+  // ---- Rendering ----
+  function drawGem(px, py, size, colorIdx, alpha) {
+    var pad = size * 0.06;
+    var x = px + pad, y = py + pad, s = size - pad * 2;
+    ctx.save();
+    if (alpha != null) ctx.globalAlpha = alpha;
+    var col = COLORS[colorIdx];
+    // rounded gem with gradient + highlight
+    var grad = ctx.createLinearGradient(x, y, x, y + s);
+    grad.addColorStop(0, lighten(col, 0.35));
+    grad.addColorStop(0.5, col);
+    grad.addColorStop(1, darken(col, 0.3));
+    roundRect(x, y, s, s, s * 0.22);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    // border
+    ctx.lineWidth = Math.max(1, s * 0.04);
+    ctx.strokeStyle = darken(col, 0.45);
+    ctx.stroke();
+    // highlight
+    ctx.globalAlpha = (alpha != null ? alpha : 1) * 0.5;
+    roundRect(x + s * 0.16, y + s * 0.12, s * 0.4, s * 0.28, s * 0.14);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function lighten(hex, amt) { return mix(hex, "#ffffff", amt); }
+  function darken(hex, amt) { return mix(hex, "#000000", amt); }
+  function mix(a, b, t) {
+    var ca = hex2rgb(a), cb = hex2rgb(b);
+    var r = Math.round(ca[0] + (cb[0] - ca[0]) * t);
+    var g = Math.round(ca[1] + (cb[1] - ca[1]) * t);
+    var bl = Math.round(ca[2] + (cb[2] - ca[2]) * t);
+    return "rgb(" + r + "," + g + "," + bl + ")";
+  }
+  function hex2rgb(h) {
+    h = h.replace("#", "");
+    return [parseInt(h.substr(0, 2), 16), parseInt(h.substr(2, 2), 16), parseInt(h.substr(4, 2), 16)];
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // grid lines
+    ctx.strokeStyle = "#ffffff08";
+    ctx.lineWidth = 1;
+    for (var c = 0; c <= COLS; c++) {
+      ctx.beginPath();
+      ctx.moveTo(c * CELL, 0);
+      ctx.lineTo(c * CELL, ROWS * CELL);
+      ctx.stroke();
+    }
+    for (var r = 0; r <= ROWS; r++) {
+      ctx.beginPath();
+      ctx.moveTo(0, r * CELL);
+      ctx.lineTo(COLS * CELL, r * CELL);
+      ctx.stroke();
+    }
+
+    // settled gems
+    var flashSet = {};
+    if (flashing) {
+      for (var i = 0; i < flashing.cells.length; i++) {
+        flashSet[flashing.cells[i].r + "_" + flashing.cells[i].c] = true;
+      }
+    }
+    var pulse = flashing ? (0.4 + 0.6 * Math.abs(Math.sin(flashing.t / 50))) : 1;
+
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS; c++) {
+        if (grid[r][c] !== -1) {
+          var a = flashSet[r + "_" + c] ? pulse : 1;
+          drawGem(c * CELL, r * CELL, CELL, grid[r][c], a);
+        }
+      }
+    }
+
+    // falling piece
+    if (piece && !flashing) {
+      var cells = pieceCells();
+      for (i = 0; i < cells.length; i++) {
+        var cell = cells[i];
+        if (cell.r >= 0 && cell.r < ROWS) {
+          drawGem(cell.c * CELL, cell.r * CELL, CELL, cell.color, 1);
+        } else if (cell.r >= -2 && cell.r < 0) {
+          // partially above view: draw clipped near top edge
+          drawGem(cell.c * CELL, cell.r * CELL, CELL, cell.color, 0.85);
+        }
+      }
+    }
+  }
+
+  // ---- HUD ----
+  function updateHud() {
+    document.getElementById("score").textContent = score;
+    document.getElementById("level").textContent = level;
+    document.getElementById("cleared").textContent = cleared;
+  }
+
+  // ---- Game lifecycle ----
+  function endGame() {
+    if (gameOver) return;
+    gameOver = true;
+    piece = null;
+    sOver();
+    var ov = document.getElementById("overlay");
+    document.getElementById("ovTitle").textContent = "Game Over";
+    document.getElementById("ovScore").textContent = "Score: " + score;
+    ov.classList.add("show");
+  }
+
+  function restart() {
+    grid = emptyGrid();
+    score = 0; level = 1; cleared = 0;
+    gameOver = false; paused = false;
+    flashing = null;
+    dropTimer = 0;
+    dropInterval = levelSpeed();
+    document.getElementById("overlay").classList.remove("show");
+    updateHud();
+    spawnPiece();
+  }
+
+  // ---- Input: buttons ----
+  function bindBtn(id, fn) {
+    var el = document.getElementById(id);
+    var handler = function (e) {
+      e.preventDefault();
+      audio();
+      fn();
+    };
+    el.addEventListener("touchstart", handler, { passive: false });
+    el.addEventListener("mousedown", handler);
+    el.addEventListener("click", function (e) { e.preventDefault(); });
+  }
+  bindBtn("bLeft", function () { moveHoriz(-1); });
+  bindBtn("bRight", function () { moveHoriz(1); });
+  bindBtn("bCycle", function () { cycleColors(); });
+  bindBtn("bDrop", function () { hardDrop(); });
+
+  document.getElementById("restart").addEventListener("click", function () {
+    audio();
+    restart();
+  });
+
+  // ---- Input: keyboard ----
+  document.addEventListener("keydown", function (e) {
+    if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "Spacebar"].indexOf(e.key) !== -1) {
+      e.preventDefault();
+    }
+    if (gameOver && (e.key === "Enter" || e.key === " ")) { restart(); return; }
+    switch (e.key) {
+      case "ArrowLeft": moveHoriz(-1); break;
+      case "ArrowRight": moveHoriz(1); break;
+      case "ArrowUp": cycleColors(); break;
+      case "ArrowDown": softDrop(); dropTimer = 0; break;
+      case " ":
+      case "Spacebar": hardDrop(); break;
+    }
+  }, { passive: false });
+
+  // ---- Input: touch swipe on canvas ----
+  var touchStartX = 0, touchStartY = 0, touchStartT = 0, touchMoved = false;
+  var lastSwipeCol = 0;
+  var SWIPE = 24; // px threshold per horizontal step
+
+  canvas.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    audio();
+    var t = e.changedTouches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    touchStartT = Date.now();
+    touchMoved = false;
+    lastSwipeCol = 0;
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+    if (gameOver || !piece) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - touchStartX;
+    var dy = t.clientY - touchStartY;
+    // horizontal stepping
+    var steps = Math.trunc(dx / SWIPE);
+    if (steps !== lastSwipeCol && Math.abs(dx) > Math.abs(dy)) {
+      var diff = steps - lastSwipeCol;
+      var dir = diff > 0 ? 1 : -1;
+      for (var i = 0; i < Math.abs(diff); i++) moveHoriz(dir);
+      lastSwipeCol = steps;
+      touchMoved = true;
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    if (gameOver || !piece) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - touchStartX;
+    var dy = t.clientY - touchStartY;
+    var adx = Math.abs(dx), ady = Math.abs(dy);
+    var dt = Date.now() - touchStartT;
+    // swipe down -> hard drop
+    if (dy > 40 && ady > adx) {
+      hardDrop();
+      return;
+    }
+    // tap (no significant move) -> cycle
+    if (!touchMoved && adx < 14 && ady < 14 && dt < 350) {
+      cycleColors();
+    }
+  }, { passive: false });
+
+  // prevent page gestures
+  document.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+
+  // ---- Boot ----
+  restart();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Monopoly Deal</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #0f1626;
+    --panel: #18233b;
+    --panel2: #1f2c49;
+    --line: #2c3a5c;
+    --text: #e8edf7;
+    --muted: #94a3c4;
+    --accent: #ffcf33;
+    --good: #38d39f;
+    --bad: #ff5d6c;
+  }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    max-width: 520px;
+    margin: 0 auto;
+    height: 100dvh;
+    overflow: hidden;
+  }
+  header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: linear-gradient(90deg,#c0392b,#e74c3c);
+    border-bottom: 2px solid #7a2018;
+  }
+  header h1 {
+    font-size: 16px;
+    letter-spacing: .5px;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.35);
+  }
+  header h1 span { color: var(--accent); }
+  .newbtn {
+    background: #fff;
+    color: #c0392b;
+    border: none;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  .newbtn:active { transform: scale(.95); }
+
+  #status {
+    flex: 0 0 auto;
+    padding: 5px 10px;
+    font-size: 12px;
+    background: var(--panel2);
+    border-bottom: 1px solid var(--line);
+    min-height: 26px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #status .turn { font-weight: 700; }
+  #status .turn.you { color: var(--good); }
+  #status .turn.cpu { color: var(--bad); }
+  #status .msg { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .board {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .player-zone {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 8px;
+  }
+  .player-zone.cpu { border-color: #5b2730; }
+  .player-zone.you { border-color: #2a4f43; }
+  .pz-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .pz-head .name.cpu { color: var(--bad); }
+  .pz-head .name.you { color: var(--good); }
+  .pz-stats { font-size: 11px; color: var(--muted); font-weight: 400; }
+  .pz-stats b { color: var(--accent); }
+  .sets-line { font-size: 11px; color: var(--muted); }
+  .sets-line b { color: var(--good); }
+
+  .props {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-height: 8px;
+  }
+  .pile {
+    display: flex;
+    flex-direction: column;
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,.4);
+    min-width: 34px;
+  }
+  .pile.complete { box-shadow: 0 0 0 2px var(--accent); }
+  .pile-head {
+    font-size: 9px;
+    text-align: center;
+    padding: 1px 2px;
+    color: #fff;
+    font-weight: 700;
+    text-shadow: 0 1px 1px rgba(0,0,0,.5);
+    line-height: 1.3;
+  }
+  .pile-cards { display: flex; flex-direction: column; }
+  .pcard {
+    height: 12px;
+    border-top: 1px solid rgba(255,255,255,.25);
+    position: relative;
+  }
+  .pcard.wild::after {
+    content: "★";
+    position: absolute;
+    right: 1px; top: -2px;
+    font-size: 8px;
+    color: rgba(255,255,255,.85);
+  }
+  .pcard.house::after { content:"H"; position:absolute; left:2px; top:-1px; font-size:8px; color:#fff; font-weight:700;}
+  .pcard.hotel::after { content:"+"; position:absolute; left:2px; top:-2px; font-size:9px; color:#fff; font-weight:700;}
+
+  .bank-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 4px;
+    align-items: center;
+  }
+  .bank-label { font-size: 10px; color: var(--muted); margin-right: 2px; }
+  .money-chip {
+    font-size: 10px;
+    background: #2e7d4f;
+    color: #fff;
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-weight: 700;
+    border: 1px solid #1d5234;
+  }
+  .money-chip.act { background:#5a4b8a; border-color:#3d3263; }
+
+  /* Hand */
+  .hand-panel {
+    flex: 0 0 auto;
+    background: var(--panel2);
+    border-top: 2px solid var(--line);
+    padding: 6px;
+  }
+  .hand-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 5px;
+  }
+  .hand-info .lbl { font-size: 12px; font-weight: 700; }
+  .hand-info .plays { font-size: 11px; color: var(--muted); }
+  .hand-info .plays b { color: var(--accent); }
+  .hand-scroll {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    min-height: 92px;
+  }
+  .card {
+    flex: 0 0 auto;
+    width: 60px;
+    height: 84px;
+    border-radius: 7px;
+    border: 1px solid rgba(0,0,0,.5);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #2a3654;
+    transition: transform .08s;
+    cursor: pointer;
+  }
+  .card:active { transform: translateY(-3px) scale(1.02); }
+  .card.selected { box-shadow: 0 0 0 2px var(--accent); transform: translateY(-5px); }
+  .card .ctop {
+    font-size: 8px;
+    padding: 2px 3px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 1px 1px rgba(0,0,0,.5);
+    line-height: 1.15;
+  }
+  .card .cbody {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2px;
+    font-size: 8px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .card .cval {
+    position: absolute;
+    bottom: 2px; right: 3px;
+    font-size: 9px;
+    font-weight: 800;
+    background: rgba(0,0,0,.45);
+    border-radius: 3px;
+    padding: 0 3px;
+    color: var(--accent);
+  }
+  .card.money { background: linear-gradient(160deg,#2e7d4f,#1d5234); }
+  .card.money .cbody { font-size: 22px; color:#eafff2; }
+  .card.action { background: linear-gradient(160deg,#5a4b8a,#3d3263); }
+  .card.action .cbody { font-size:8px; }
+  .card.prop .cbody { font-size:8px; color:#fff; }
+  .card.wildcard { background: linear-gradient(160deg,#444,#222); }
+
+  /* Action buttons under hand */
+  .actions-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .actions-row button {
+    flex: 1;
+    min-width: 70px;
+    padding: 9px 6px;
+    border: none;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 700;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+  }
+  .actions-row button:active { transform: scale(.97); }
+  .actions-row button.primary { background: var(--accent); color:#3a2c00; border-color:#caa400; }
+  .actions-row button.primary:disabled { opacity:.4; }
+  .actions-row button:disabled { opacity:.4; }
+
+  /* Modal / overlay */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5,8,16,.78);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 50;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    max-width: 380px;
+    width: 100%;
+    max-height: 88dvh;
+    overflow-y: auto;
+  }
+  .modal h2 { font-size: 17px; margin-bottom: 8px; }
+  .modal p { font-size: 13px; color: var(--muted); margin-bottom: 10px; line-height:1.4; }
+  .modal .opts { display: flex; flex-direction: column; gap: 7px; margin-bottom: 10px; }
+  .modal .opt {
+    text-align: left;
+    padding: 10px;
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .modal .opt:active { transform: scale(.98); }
+  .modal .opt.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .modal .mbtns { display:flex; gap:8px; }
+  .modal .mbtns button {
+    flex:1; padding:11px; border:none; border-radius:8px; font-weight:700; font-size:13px;
+  }
+  .modal .mbtns .go { background: var(--accent); color:#3a2c00; }
+  .modal .mbtns .cancel { background: var(--panel2); color: var(--text); border:1px solid var(--line); }
+  .modal .mbtns button:disabled { opacity:.4; }
+
+  .pay-grid { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px; }
+  .pay-item {
+    font-size:11px; padding:6px 8px; border-radius:6px; border:1px solid var(--line);
+    background: var(--panel2); font-weight:700;
+  }
+  .pay-item.sel { border-color: var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .pay-item.money { color:#7bdca8; }
+  .pay-item.prop { color:#ffd; }
+  .pay-total { font-size:13px; margin-bottom:8px; }
+  .pay-total b { color: var(--accent); }
+
+  .win-emoji { font-size: 40px; text-align:center; margin-bottom:8px; }
+
+  .log-toggle {
+    font-size: 10px; color: var(--muted); text-decoration: underline; background:none;
+    border:none; padding:0;
+  }
+  #log {
+    display:none;
+    max-height: 120px; overflow-y:auto; font-size:11px; color:var(--muted);
+    background: var(--bg); border:1px solid var(--line); border-radius:6px; padding:6px; margin-top:6px;
+  }
+  #log.show { display:block; }
+  #log div { padding:1px 0; border-bottom:1px solid rgba(255,255,255,.04); }
+  #log div.you { color:#9fe6c7; }
+  #log div.cpu { color:#ffb3bb; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/monopoly-deal.svg">
+    <link rel="manifest" href="/games/monopoly-deal.webmanifest">
+    <meta name="theme-color" content="#16A34A">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Monopoly Deal">
+    <link rel="apple-touch-icon" href="/games/icons/monopoly-deal.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#16A34A;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>MONOPOLY <span>DEAL</span></h1>
+    <button class="newbtn" id="newGameBtn">New Game</button>
+  </header>
+
+  <div id="status">
+    <span class="turn" id="turnLabel">—</span>
+    <span class="msg" id="statusMsg">Tap New Game to start.</span>
+  </div>
+
+  <div class="board" id="board">
+    <!-- CPU zone -->
+    <div class="player-zone cpu" id="cpuZone">
+      <div class="pz-head">
+        <span class="name cpu">🤖 CPU</span>
+        <span class="pz-stats">Hand: <b id="cpuHandCount">0</b> · Sets: <b id="cpuSets">0</b>/3</span>
+      </div>
+      <div class="props" id="cpuProps"></div>
+      <div class="bank-line"><span class="bank-label">Bank:</span><span id="cpuBank"></span><span class="money-chip" id="cpuBankTotal">$0M</span></div>
+    </div>
+
+    <!-- YOU zone -->
+    <div class="player-zone you" id="youZone">
+      <div class="pz-head">
+        <span class="name you">😎 You</span>
+        <span class="pz-stats">Sets: <b id="youSets">0</b>/3</span>
+      </div>
+      <div class="props" id="youProps"></div>
+      <div class="bank-line"><span class="bank-label">Bank:</span><span id="youBank"></span><span class="money-chip" id="youBankTotal">$0M</span></div>
+    </div>
+    <button class="log-toggle" id="logToggle">show log</button>
+    <div id="log"></div>
+  </div>
+
+  <div class="hand-panel">
+    <div class="hand-info">
+      <span class="lbl">Your Hand</span>
+      <span class="plays">Plays left: <b id="playsLeft">0</b> · Cards: <span id="handCount">0</span>/7</span>
+    </div>
+    <div class="hand-scroll" id="hand"></div>
+    <div class="actions-row">
+      <button id="playBtn" class="primary" disabled>Play Card</button>
+      <button id="bankBtn" disabled>Bank It</button>
+      <button id="endBtn" disabled>End Turn</button>
+    </div>
+  </div>
+
+  <!-- Generic choice overlay -->
+  <div class="overlay" id="overlay">
+    <div class="modal" id="modal"></div>
+  </div>
+
+<script>
+"use strict";
+(function(){
+
+// ---------- Audio ----------
+let audioCtx = null;
+function beep(freq, dur, type, vol){
+  try {
+    if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type||'sine';
+    o.frequency.value = freq;
+    g.gain.value = vol||0.06;
+    o.connect(g); g.connect(audioCtx.destination);
+    const t = audioCtx.currentTime;
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (dur||0.12));
+    o.start(t); o.stop(t + (dur||0.12));
+  } catch(e){}
+}
+const snd = {
+  play:   ()=>beep(520,0.08,'triangle',0.05),
+  bank:   ()=>beep(330,0.10,'sine',0.05),
+  prop:   ()=>beep(440,0.08,'square',0.04),
+  action: ()=>{beep(660,0.07,'sawtooth',0.04); setTimeout(()=>beep(880,0.07,'sawtooth',0.04),70);},
+  pay:    ()=>beep(220,0.14,'sine',0.06),
+  win:    ()=>{[523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,0.18,'triangle',0.07),i*120));},
+  lose:   ()=>{[400,300,200].forEach((f,i)=>setTimeout(()=>beep(f,0.22,'sawtooth',0.06),i*150));},
+  no:     ()=>beep(160,0.18,'square',0.06)
+};
+
+// ---------- Color group definitions ----------
+// req = cards needed for a complete set. rent[] = rent value by # owned.
+const GROUPS = {
+  brown:    {name:'Brown',     color:'#8B4513', req:2, rent:[1,2] },
+  lblue:    {name:'L.Blue',    color:'#87CEEB', req:3, rent:[1,2,3] },
+  pink:     {name:'Pink',      color:'#FF69B4', req:3, rent:[1,2,4] },
+  orange:   {name:'Orange',    color:'#FF8C00', req:3, rent:[1,3,5] },
+  red:      {name:'Red',       color:'#E0152B', req:3, rent:[2,3,6] },
+  yellow:   {name:'Yellow',    color:'#F2C200', req:3, rent:[2,4,6] },
+  green:    {name:'Green',     color:'#1FA84C', req:3, rent:[2,4,7] },
+  blue:     {name:'Blue',      color:'#1E5FD0', req:2, rent:[3,8] },
+  railroad: {name:'Railroad',  color:'#333333', req:4, rent:[1,2,3,4] },
+  utility:  {name:'Utility',   color:'#6B7A3A', req:2, rent:[1,2] }
+};
+const GROUP_KEYS = Object.keys(GROUPS);
+// text color for pile head (dark groups need light text - all use white already, but light-blue/pink/yellow need dark)
+function headTextColor(k){
+  return (['lblue','yellow'].includes(k)) ? '#222' : '#fff';
+}
+
+// ---------- Build deck ----------
+let UID = 1;
+function mk(o){ o.id = UID++; return o; }
+
+function buildDeck(){
+  const deck = [];
+  // Money cards: value:count
+  const money = {1:6, 2:5, 3:3, 4:3, 5:2, 10:1};
+  for(const v in money){
+    for(let i=0;i<money[v];i++) deck.push(mk({type:'money', value:+v, name:'$'+v+'M'}));
+  }
+  // Property cards. value = bank value if used as money.
+  const propVals = { brown:1, lblue:1, pink:2, orange:2, red:3, yellow:3, green:4, blue:4, railroad:2, utility:2 };
+  for(const g of GROUP_KEYS){
+    const cnt = GROUPS[g].req; // one full set's worth per group (enough to win)
+    // add a bit extra so both players can compete: 2 sets worth for smaller groups
+    const total = cnt; // one set each is plenty for 3-set win; we add wildcards for flex
+    for(let i=0;i<total;i++){
+      deck.push(mk({type:'property', group:g, value:propVals[g], name:GROUPS[g].name}));
+    }
+    // add a second copy of each so two players can both build
+    for(let i=0;i<total;i++){
+      deck.push(mk({type:'property', group:g, value:propVals[g], name:GROUPS[g].name}));
+    }
+  }
+  // Property wildcards (any color)
+  for(let i=0;i<4;i++) deck.push(mk({type:'wildcard', groups:'any', value:0, name:'Wild (any)'}));
+  // Dual wildcards (two specific colors)
+  const duals = [['brown','lblue'],['pink','orange'],['red','yellow'],['green','blue'],['railroad','utility'],['lblue','railroad'],['green','railroad']];
+  for(const d of duals){
+    deck.push(mk({type:'wildcard', groups:d, value:0, name:GROUPS[d[0]].name+'/'+GROUPS[d[1]].name}));
+  }
+  // Action cards
+  function action(act, name, value, n, extra){
+    for(let i=0;i<n;i++) deck.push(mk(Object.assign({type:'action', act, name, value}, extra||{})));
+  }
+  action('passgo','Pass Go',1,4);
+  action('rent_any','Rent (any color)',3,2);  // wild rent: any property color
+  action('rent','Rent',1,5);                   // colored rent (we treat all as choose-color)
+  action('debt','Debt Collector',3,3);
+  action('birthday',"It's My Birthday",2,3);
+  action('dealbreaker','Deal Breaker',5,2);
+  action('slydeal','Sly Deal',3,3);
+  action('forceddeal','Forced Deal',3,3);
+  action('sayno','Just Say No',4,3);
+  action('house','House',3,3);
+  action('hotel','Hotel',4,2);
+  return deck;
+}
+
+// ---------- Game State ----------
+let G = null;
+
+function freshPlayer(isCPU){
+  return {
+    cpu: isCPU,
+    hand: [],
+    bank: [],            // money + banked action cards
+    props: {},           // group -> array of cards (property or wildcard assigned)
+  };
+}
+
+function newGame(){
+  const deck = shuffle(buildDeck());
+  G = {
+    deck,
+    discard: [],
+    players: [ freshPlayer(false), freshPlayer(true) ], // 0=you, 1=cpu
+    turn: 0,
+    playsLeft: 0,
+    drawnThisTurn: false,
+    over: false,
+    selected: null,
+    busy: false
+  };
+  // deal 5 each
+  for(let i=0;i<5;i++){ for(const p of G.players){ p.hand.push(drawCard()); } }
+  log('New game started. You go first!', 'sys');
+  startTurn(0);
+}
+
+function shuffle(a){
+  for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+
+function drawCard(){
+  if(G.deck.length===0){
+    if(G.discard.length===0) return null;
+    G.deck = shuffle(G.discard.splice(0));
+    log('Reshuffled discard into deck.', 'sys');
+  }
+  return G.deck.pop();
+}
+
+// ---------- Turn flow ----------
+function startTurn(pi){
+  G.turn = pi;
+  G.playsLeft = 3;
+  G.selected = null;
+  const p = G.players[pi];
+  const n = (p.hand.length===0) ? 5 : 2;
+  for(let i=0;i<n;i++){ const c=drawCard(); if(c) p.hand.push(c); }
+  if(pi===0){
+    setStatus('you', "Your turn — play up to 3 cards.");
+    render();
+    if(checkWin()) return;
+  } else {
+    setStatus('cpu', "CPU is thinking…");
+    render();
+    if(checkWin()) return;
+    G.busy = true;
+    setTimeout(cpuTurn, 700);
+  }
+}
+
+function endTurn(){
+  const pi = G.turn;
+  const p = G.players[pi];
+  // hand limit 7
+  if(p.hand.length > 7){
+    if(pi===0){
+      promptDiscard();
+      return;
+    } else {
+      while(p.hand.length>7){
+        // CPU discards lowest-value-ish card
+        let idx = cpuDiscardChoice(p);
+        G.discard.push(p.hand.splice(idx,1)[0]);
+      }
+    }
+  }
+  finishEndTurn();
+}
+
+function finishEndTurn(){
+  if(checkWin()) return;
+  const next = G.turn===0 ? 1 : 0;
+  startTurn(next);
+}
+
+// ---------- Win check ----------
+function completeSets(p){
+  let c = 0;
+  for(const g of GROUP_KEYS){
+    const arr = p.props[g];
+    if(arr && countPropsInGroup(arr) >= GROUPS[g].req) c++;
+  }
+  return c;
+}
+function countPropsInGroup(arr){
+  // count only property/wildcard cards (exclude house/hotel addons)
+  return arr.filter(c=>c.type==='property'||c.type==='wildcard').length;
+}
+function checkWin(){
+  for(let i=0;i<2;i++){
+    if(completeSets(G.players[i]) >= 3){
+      G.over = true;
+      showWin(i);
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---------- Rendering ----------
+function setStatus(who, msg){
+  const tl = document.getElementById('turnLabel');
+  tl.className = 'turn ' + who;
+  tl.textContent = who==='you' ? 'YOUR TURN' : (who==='cpu' ? 'CPU TURN' : '');
+  document.getElementById('statusMsg').textContent = msg;
+}
+
+function bankTotal(p){ return p.bank.reduce((s,c)=>s+(c.value||0),0); }
+
+function render(){
+  if(!G) return;
+  const you = G.players[0], cpu = G.players[1];
+  // counts
+  document.getElementById('cpuHandCount').textContent = cpu.hand.length;
+  document.getElementById('cpuSets').textContent = completeSets(cpu);
+  document.getElementById('youSets').textContent = completeSets(you);
+  document.getElementById('handCount').textContent = you.hand.length;
+  document.getElementById('playsLeft').textContent = (G.turn===0 && !G.over) ? G.playsLeft : 0;
+
+  renderProps('cpuProps', cpu);
+  renderProps('youProps', you);
+  renderBank('cpuBank','cpuBankTotal', cpu);
+  renderBank('youBank','youBankTotal', you);
+  renderHand();
+  updateActionButtons();
+}
+
+function renderProps(elId, p){
+  const el = document.getElementById(elId);
+  el.innerHTML = '';
+  for(const g of GROUP_KEYS){
+    const arr = p.props[g];
+    if(!arr || arr.length===0) continue;
+    const propCount = countPropsInGroup(arr);
+    const req = GROUPS[g].req;
+    const complete = propCount >= req;
+    const pile = document.createElement('div');
+    pile.className = 'pile' + (complete?' complete':'');
+    const head = document.createElement('div');
+    head.className = 'pile-head';
+    head.style.background = GROUPS[g].color;
+    head.style.color = headTextColor(g);
+    head.textContent = GROUPS[g].name + ' ' + propCount + '/' + req;
+    pile.appendChild(head);
+    const cardsWrap = document.createElement('div');
+    cardsWrap.className = 'pile-cards';
+    for(const c of arr){
+      const pc = document.createElement('div');
+      pc.className = 'pcard';
+      if(c.type==='wildcard') pc.className += ' wild';
+      if(c.type==='action' && c.act==='house') pc.className += ' house';
+      if(c.type==='action' && c.act==='hotel') pc.className += ' hotel';
+      pc.style.background = GROUPS[g].color;
+      cardsWrap.appendChild(pc);
+    }
+    pile.appendChild(cardsWrap);
+    el.appendChild(pile);
+  }
+  if(el.innerHTML===''){
+    el.innerHTML = '<span style="font-size:10px;color:#6b7794">no properties yet</span>';
+  }
+}
+
+function renderBank(listId, totId, p){
+  const el = document.getElementById(listId);
+  el.innerHTML = '';
+  // group money chips compactly
+  for(const c of p.bank){
+    const chip = document.createElement('span');
+    chip.className = 'money-chip' + (c.type==='action'?' act':'');
+    chip.textContent = c.type==='action' ? c.name.split(' ')[0]+'·$'+c.value : '$'+c.value;
+    el.appendChild(chip);
+  }
+  document.getElementById(totId).textContent = '$'+bankTotal(p)+'M';
+}
+
+function cardLabel(c){
+  if(c.type==='money') return {top:'MONEY', body:'$'+c.value+'M', cls:'money', val:''};
+  if(c.type==='property') return {top:GROUPS[c.group].name, body:GROUPS[c.group].name+' property', cls:'prop', val:'$'+c.value+'M', bg:GROUPS[c.group].color};
+  if(c.type==='wildcard'){
+    const txt = c.groups==='any' ? 'WILD\nany color' : c.name;
+    return {top:'WILD', body:txt, cls:'wildcard', val:''};
+  }
+  // action
+  return {top:'ACTION', body:c.name, cls:'action', val:'$'+c.value+'M'};
+}
+
+function renderHand(){
+  const el = document.getElementById('hand');
+  el.innerHTML = '';
+  const you = G.players[0];
+  you.hand.forEach((c, idx)=>{
+    const info = cardLabel(c);
+    const card = document.createElement('div');
+    card.className = 'card ' + info.cls + (G.selected===c.id ? ' selected':'');
+    if(info.bg){ card.style.background = info.bg; }
+    const top = document.createElement('div');
+    top.className = 'ctop';
+    top.textContent = info.top;
+    if(c.type==='property') top.style.background = GROUPS[c.group].color;
+    const body = document.createElement('div');
+    body.className = 'cbody';
+    body.textContent = info.body;
+    card.appendChild(top);
+    card.appendChild(body);
+    if(info.val){
+      const v = document.createElement('div');
+      v.className = 'cval';
+      v.textContent = info.val;
+      card.appendChild(v);
+    }
+    card.addEventListener('click', ()=> onSelectCard(c.id));
+    el.appendChild(card);
+  });
+  if(you.hand.length===0){
+    el.innerHTML = '<span style="font-size:11px;color:#6b7794;align-self:center;padding:30px 8px">Hand empty</span>';
+  }
+}
+
+function selectedCard(){
+  if(G.selected==null) return null;
+  return G.players[0].hand.find(c=>c.id===G.selected) || null;
+}
+
+function onSelectCard(id){
+  if(G.over || G.busy || G.turn!==0) return;
+  G.selected = (G.selected===id) ? null : id;
+  renderHand();
+  updateActionButtons();
+}
+
+function updateActionButtons(){
+  const playBtn = document.getElementById('playBtn');
+  const bankBtn = document.getElementById('bankBtn');
+  const endBtn  = document.getElementById('endBtn');
+  const myTurn = (G.turn===0 && !G.over && !G.busy);
+  const c = selectedCard();
+  endBtn.disabled = !myTurn;
+  if(!myTurn || !c || G.playsLeft<=0){
+    playBtn.disabled = true; bankBtn.disabled = true;
+    // money/property cards can't bank if no plays
+  }
+  if(myTurn && c && G.playsLeft>0){
+    bankBtn.disabled = false; // any card can be banked (money or as money)
+    // play depends on type
+    if(c.type==='money'){
+      playBtn.disabled = true; // money is only banked
+      playBtn.textContent = 'Play Card';
+    } else if(c.type==='property' || c.type==='wildcard'){
+      playBtn.disabled = false;
+      playBtn.textContent = 'Lay Property';
+    } else {
+      playBtn.disabled = false;
+      playBtn.textContent = 'Play Action';
+    }
+  } else {
+    playBtn.textContent = 'Play Card';
+  }
+  // If money card selected, relabel bank? keep "Bank It"
+}
+
+// ---------- Playing cards (YOU) ----------
+function youBankCard(){
+  const c = selectedCard();
+  if(!c || G.playsLeft<=0) return;
+  removeFromHand(0, c.id);
+  G.players[0].bank.push(c.type==='action' ? {id:c.id,type:'action',name:c.name,value:c.value,act:c.act} : c);
+  snd.bank();
+  log('You banked '+c.name+' ($'+(c.value||0)+'M).', 'you');
+  G.selected = null;
+  G.playsLeft--;
+  render();
+  checkWin();
+}
+
+function youPlayCard(){
+  const c = selectedCard();
+  if(!c || G.playsLeft<=0) return;
+  if(c.type==='property'){
+    layProperty(0, c, c.group);
+    snd.prop();
+    log('You laid '+GROUPS[c.group].name+' property.', 'you');
+    afterYouPlay();
+  } else if(c.type==='wildcard'){
+    chooseWildGroup(c, (g)=>{
+      layProperty(0, c, g);
+      snd.prop();
+      log('You played wildcard into '+GROUPS[g].name+'.', 'you');
+      afterYouPlay();
+    });
+  } else if(c.type==='action'){
+    playYouAction(c);
+  }
+}
+
+function afterYouPlay(){
+  G.selected = null;
+  G.playsLeft--;
+  render();
+  if(checkWin()) return;
+}
+
+function removeFromHand(pi, id){
+  const p = G.players[pi];
+  const i = p.hand.findIndex(c=>c.id===id);
+  if(i>=0) p.hand.splice(i,1);
+}
+
+function layProperty(pi, card, group){
+  const p = G.players[pi];
+  removeFromHand(pi, card.id);
+  if(!p.props[group]) p.props[group]=[];
+  // store the card with assigned group (wildcards remember assignment)
+  const stored = Object.assign({}, card, {assignedGroup:group});
+  p.props[group].push(stored);
+}
+
+// ---------- Action handling (YOU) ----------
+function playYouAction(c){
+  const opp = G.players[1];
+  const me = G.players[0];
+  switch(c.act){
+    case 'passgo': {
+      removeFromHand(0, c.id);
+      G.discard.push(c);
+      for(let i=0;i<2;i++){ const d=drawCard(); if(d) me.hand.push(d); }
+      snd.action();
+      log('You played Pass Go — drew 2 cards.', 'you');
+      afterYouPlay();
+      break;
+    }
+    case 'birthday': {
+      removeFromHand(0, c.id);
+      G.discard.push(c);
+      snd.action();
+      log("You played It's My Birthday — CPU pays $2M.", 'you');
+      G.selected=null; G.playsLeft--; render();
+      requestPayment(1, 0, 2, "It's your Birthday", ()=>{ if(!checkWin()) render(); });
+      break;
+    }
+    case 'debt': {
+      removeFromHand(0, c.id);
+      G.discard.push(c);
+      snd.action();
+      log('You played Debt Collector — CPU owes $5M.', 'you');
+      G.selected=null; G.playsLeft--; render();
+      requestPayment(1, 0, 5, 'Debt Collector', ()=>{ if(!checkWin()) render(); });
+      break;
+    }
+    case 'rent':
+    case 'rent_any': {
+      // choose a color you own to charge rent for
+      const owned = GROUP_KEYS.filter(g=> me.props[g] && countPropsInGroup(me.props[g])>0);
+      if(owned.length===0){ toast('You have no properties to charge rent for.'); return; }
+      chooseColorForRent(owned, (g)=>{
+        const cnt = Math.min(countPropsInGroup(me.props[g]), GROUPS[g].rent.length);
+        let amount = GROUPS[g].rent[cnt-1] || GROUPS[g].rent[GROUPS[g].rent.length-1];
+        // house/hotel bonus
+        amount += addonBonus(me.props[g]);
+        removeFromHand(0, c.id);
+        G.discard.push(c);
+        snd.action();
+        log('You played Rent on '+GROUPS[g].name+' — CPU owes $'+amount+'M.', 'you');
+        G.selected=null; G.playsLeft--; render();
+        requestPayment(1, 0, amount, 'Rent ('+GROUPS[g].name+')', ()=>{ if(!checkWin()) render(); });
+      });
+      break;
+    }
+    case 'slydeal': {
+      // steal a single property from opp (not from a complete set)
+      const stealable = stealableProps(opp, false);
+      if(stealable.length===0){ toast('CPU has no stealable property.'); return; }
+      chooseStealTarget(stealable, 'Sly Deal — steal a property', (pick)=>{
+        attemptAction(c, 0, 1, 'Sly Deal', ()=>{
+          doSteal(1, 0, pick.group, pick.card);
+          log('You stole '+GROUPS[pick.group].name+' from CPU.', 'you');
+        });
+      });
+      break;
+    }
+    case 'forceddeal': {
+      const mine = stealableProps(me, false);
+      const theirs = stealableProps(opp, false);
+      if(mine.length===0 || theirs.length===0){ toast('Forced Deal needs a property on each side.'); return; }
+      chooseForcedDeal(mine, theirs, (myPick, theirPick)=>{
+        attemptAction(c, 0, 1, 'Forced Deal', ()=>{
+          doSteal(1, 0, theirPick.group, theirPick.card);
+          doSteal(0, 1, myPick.group, myPick.card);
+          log('You swapped properties with CPU.', 'you');
+        });
+      });
+      break;
+    }
+    case 'dealbreaker': {
+      const sets = completeSetsList(opp);
+      if(sets.length===0){ toast('CPU has no complete set to steal.'); return; }
+      chooseSetTarget(sets, (g)=>{
+        attemptAction(c, 0, 1, 'Deal Breaker', ()=>{
+          stealWholeSet(1, 0, g);
+          log('You stole CPU\'s '+GROUPS[g].name+' set!', 'you');
+        });
+      });
+      break;
+    }
+    case 'house':
+    case 'hotel': {
+      // add to a complete set you own
+      const sets = completeSetsList(me).filter(g=>g!=='railroad' && g!=='utility');
+      if(sets.length===0){ toast((c.act==='house'?'House':'Hotel')+' needs a complete (non-RR/util) set.'); return; }
+      if(c.act==='hotel'){
+        // hotel needs a house already
+        const withHouse = sets.filter(g=> me.props[g].some(x=>x.act==='house'));
+        if(withHouse.length===0){ toast('Hotel needs a set that already has a House.'); return; }
+        chooseSetTarget(withHouse, (g)=>{
+          removeFromHand(0,c.id);
+          me.props[g].push(Object.assign({},c,{assignedGroup:g}));
+          snd.action(); log('You added a Hotel to '+GROUPS[g].name+'.', 'you');
+          afterYouPlay();
+        });
+      } else {
+        const noHouse = sets.filter(g=> !me.props[g].some(x=>x.act==='house'));
+        if(noHouse.length===0){ toast('All your complete sets already have a House.'); return; }
+        chooseSetTarget(noHouse, (g)=>{
+          removeFromHand(0,c.id);
+          me.props[g].push(Object.assign({},c,{assignedGroup:g}));
+          snd.action(); log('You added a House to '+GROUPS[g].name+'.', 'you');
+          afterYouPlay();
+        });
+      }
+      break;
+    }
+    case 'sayno': {
+      toast('Just Say No is played automatically to cancel actions against you.');
+      return;
+    }
+    default:
+      toast('Cannot play that now.');
+  }
+}
+
+function addonBonus(arr){
+  let b=0;
+  for(const c of arr){ if(c.act==='house') b+=3; if(c.act==='hotel') b+=4; }
+  return b;
+}
+
+// attemptAction: handles Just Say No exchange, then onSuccess
+function attemptAction(card, fromPi, toPi, label, onSuccess){
+  // remove card from hand & discard
+  removeFromHand(fromPi, card.id);
+  G.discard.push(card);
+  G.selected = null;
+  G.playsLeft--;
+  snd.action();
+  // does target have Just Say No?
+  const target = G.players[toPi];
+  const jsnIdx = target.hand.findIndex(c=>c.act==='sayno');
+  if(jsnIdx>=0){
+    if(toPi===1){
+      // CPU decides whether to say no
+      if(cpuWantsSayNo(label)){
+        const jsn = target.hand.splice(jsnIdx,1)[0];
+        G.discard.push(jsn);
+        snd.no();
+        log('CPU played Just Say No! Action cancelled.', 'cpu');
+        // you could counter with your own JSN
+        const myJsn = G.players[0].hand.findIndex(c=>c.act==='sayno');
+        if(myJsn>=0){
+          askYouCounterNo(()=>{
+            const j = G.players[0].hand.splice(myJsn,1)[0];
+            G.discard.push(j);
+            snd.no();
+            log('You countered with Just Say No! Action proceeds.', 'you');
+            onSuccess(); render(); checkWin();
+          }, ()=>{ render(); checkWin(); });
+          return;
+        }
+        render(); checkWin();
+        return;
+      }
+    }
+  }
+  onSuccess();
+  render();
+  checkWin();
+}
+
+function cpuWantsSayNo(label){
+  // CPU says no to high-impact actions
+  return ['Deal Breaker','Sly Deal','Forced Deal'].includes(label) || Math.random()<0.4;
+}
+
+// ---------- steal helpers ----------
+function stealableProps(p, fromCompleteOK){
+  // returns [{group, card}] for individual props. Exclude cards in complete sets unless fromCompleteOK.
+  const out=[];
+  for(const g of GROUP_KEYS){
+    const arr=p.props[g];
+    if(!arr) continue;
+    const complete = countPropsInGroup(arr) >= GROUPS[g].req;
+    if(complete && !fromCompleteOK) continue;
+    for(const c of arr){
+      if(c.type==='property'||c.type==='wildcard') out.push({group:g, card:c});
+    }
+  }
+  return out;
+}
+function completeSetsList(p){
+  return GROUP_KEYS.filter(g=> p.props[g] && countPropsInGroup(p.props[g])>=GROUPS[g].req);
+}
+function doSteal(fromPi, toPi, group, card){
+  const from=G.players[fromPi], to=G.players[toPi];
+  const arr=from.props[group];
+  const i=arr.findIndex(c=>c.id===card.id);
+  if(i<0) return;
+  const stolen=arr.splice(i,1)[0];
+  if(arr.length===0) delete from.props[group];
+  // re-assign to same group for receiver (or 'any' for wild keeps flexibility)
+  const targetGroup = group;
+  if(!to.props[targetGroup]) to.props[targetGroup]=[];
+  stolen.assignedGroup=targetGroup;
+  to.props[targetGroup].push(stolen);
+}
+function stealWholeSet(fromPi, toPi, group){
+  const from=G.players[fromPi], to=G.players[toPi];
+  const arr=from.props[group]||[];
+  if(!to.props[group]) to.props[group]=[];
+  for(const c of arr){ c.assignedGroup=group; to.props[group].push(c); }
+  delete from.props[group];
+}
+
+// ---------- Payment ----------
+// payer pays amount to payee, using money bank first; if insufficient money, must give properties.
+function requestPayment(payerPi, payeePi, amount, reason, done){
+  const payer = G.players[payerPi];
+  const totalAssets = bankTotal(payer) + propAssetValue(payer);
+  if(amount<=0 || totalAssets===0){
+    log((payerPi===0?'You':'CPU')+' could not pay (no assets).', payerPi===0?'you':'cpu');
+    if(done) done();
+    return;
+  }
+  if(payerPi===1){
+    // CPU auto-pays
+    const paid = cpuPay(payer, payeePi, amount);
+    log('CPU paid $'+paid+'M for '+reason+'.', 'cpu');
+    snd.pay();
+    if(done) done();
+  } else {
+    // You choose what to pay
+    showPaymentModal(amount, payeePi, reason, done);
+  }
+}
+function propAssetValue(p){
+  let v=0;
+  for(const g of GROUP_KEYS){ if(p.props[g]) for(const c of p.props[g]){ v+=(c.value||0); } }
+  return v;
+}
+
+function cpuPay(payer, payeePi, amount){
+  const payee = G.players[payeePi];
+  let remaining = amount;
+  let paid = 0;
+  // pay with money cards: prefer to overpay minimally — sort ascending, but Monopoly Deal has no change.
+  // Strategy: use smallest combination that meets/exceeds, but keep it simple: sort ascending and add until >=.
+  const moneyCards = payer.bank.filter(c=>true).slice().sort((a,b)=>(a.value||0)-(b.value||0));
+  // Greedy: take from smallest until covered
+  const toGive = [];
+  let acc=0;
+  for(const c of moneyCards){
+    if(acc>=remaining) break;
+    toGive.push(c); acc+=(c.value||0);
+  }
+  if(acc<remaining){
+    // not enough money — give all bank then properties
+  }
+  // transfer chosen money
+  for(const c of toGive){
+    const i=payer.bank.findIndex(x=>x.id===c.id);
+    if(i>=0){ const m=payer.bank.splice(i,1)[0]; payee.bank.push(m); paid+=(m.value||0); }
+  }
+  remaining = amount - paid;
+  if(remaining>0){
+    // give properties (lowest value first, prefer incomplete-set props)
+    let props=[];
+    for(const g of GROUP_KEYS){ if(payer.props[g]) for(const c of payer.props[g]){ if(c.type==='property'||c.type==='wildcard') props.push({g,c}); } }
+    props.sort((a,b)=>(a.c.value||0)-(b.c.value||0));
+    for(const pr of props){
+      if(remaining<=0) break;
+      // move property to payee bank? In real game props given go to property area; simplify: payee receives into props
+      doSteal(1, payeePi, pr.g, pr.c);
+      paid += (pr.c.value||0);
+      remaining -= (pr.c.value||0);
+    }
+  }
+  return paid;
+}
+
+// ---------- CPU TURN ----------
+function cpuTurn(){
+  const cpu = G.players[1];
+  let safety=0;
+  function step(){
+    safety++;
+    if(G.over){ G.busy=false; return; }
+    if(G.playsLeft<=0 || safety>20){ cpuEndTurn(); return; }
+    const move = cpuChooseMove();
+    if(!move){ cpuEndTurn(); return; }
+    cpuDoMove(move, ()=>{
+      render();
+      if(checkWin()){ G.busy=false; return; }
+      setTimeout(step, 650);
+    });
+  }
+  step();
+}
+
+function cpuChooseMove(){
+  const cpu = G.players[1];
+  const you = G.players[0];
+  // priority: win-enabling property plays, deal breaker, then build, rent, bank
+  // 1) Lay properties that progress sets
+  for(const c of cpu.hand){
+    if(c.type==='property'){ return {kind:'lay', card:c, group:c.group}; }
+  }
+  // 2) Wildcards into the most useful group
+  for(const c of cpu.hand){
+    if(c.type==='wildcard'){
+      const g = cpuBestWildGroup(c);
+      return {kind:'lay', card:c, group:g};
+    }
+  }
+  // 3) Deal Breaker if you have a complete set
+  const dbCard = cpu.hand.find(c=>c.act==='dealbreaker');
+  if(dbCard){ const sets=completeSetsList(you); if(sets.length>0) return {kind:'action', card:dbCard, target:sets[0]}; }
+  // 4) Sly Deal a near-complete-set property from you
+  const slyCard = cpu.hand.find(c=>c.act==='slydeal');
+  if(slyCard){ const st=stealableProps(you,false); if(st.length>0) return {kind:'action', card:slyCard, target:bestStealTarget(st)}; }
+  // 5) Rent if profitable
+  const rentCard = cpu.hand.find(c=>c.act==='rent'||c.act==='rent_any');
+  if(rentCard){
+    const owned = GROUP_KEYS.filter(g=> cpu.props[g] && countPropsInGroup(cpu.props[g])>0);
+    if(owned.length>0 && (bankTotal(you)>0 || propAssetValue(you)>0)){
+      // choose highest rent color
+      let best=owned[0], bestAmt=-1;
+      for(const g of owned){
+        const cnt=Math.min(countPropsInGroup(cpu.props[g]),GROUPS[g].rent.length);
+        const amt=(GROUPS[g].rent[cnt-1]||0)+addonBonus(cpu.props[g]);
+        if(amt>bestAmt){bestAmt=amt;best=g;}
+      }
+      return {kind:'action', card:rentCard, rentGroup:best};
+    }
+  }
+  // 6) Debt collector / birthday if you have money
+  const debtCard = cpu.hand.find(c=>c.act==='debt');
+  if(debtCard && (bankTotal(you)>=3 || propAssetValue(you)>=3)) return {kind:'action', card:debtCard};
+  const bdayCard = cpu.hand.find(c=>c.act==='birthday');
+  if(bdayCard && (bankTotal(you)>=2 || propAssetValue(you)>=2)) return {kind:'action', card:bdayCard};
+  // 7) Pass Go to draw
+  const pg = cpu.hand.find(c=>c.act==='passgo');
+  if(pg) return {kind:'action', card:pg};
+  // 8) House/Hotel onto a complete set
+  const houseCard = cpu.hand.find(c=>c.act==='house');
+  if(houseCard){ const s=completeSetsList(cpu).filter(g=>g!=='railroad'&&g!=='utility'&&!cpu.props[g].some(x=>x.act==='house')); if(s.length) return {kind:'addon', card:houseCard, group:s[0]}; }
+  const hotelCard = cpu.hand.find(c=>c.act==='hotel');
+  if(hotelCard){ const s=completeSetsList(cpu).filter(g=>cpu.props[g].some(x=>x.act==='house')&&!cpu.props[g].some(x=>x.act==='hotel')); if(s.length) return {kind:'addon', card:hotelCard, group:s[0]}; }
+  // 9) bank a card (money first, then least-useful action like sayno-keep)
+  let bankCandidate = cpu.hand.find(c=>c.type==='money');
+  if(!bankCandidate){
+    // bank an action we can't use (but keep Just Say No!)
+    bankCandidate = cpu.hand.find(c=>c.type==='action' && c.act!=='sayno');
+  }
+  if(!bankCandidate && cpu.hand.length>0){
+    // last resort, bank anything except keep one sayno
+    bankCandidate = cpu.hand.find(c=>c.act!=='sayno') || null;
+  }
+  if(bankCandidate) return {kind:'bank', card:bankCandidate};
+  return null;
+}
+
+function cpuBestWildGroup(c){
+  const cpu=G.players[1];
+  const opts = c.groups==='any' ? GROUP_KEYS : c.groups;
+  // choose group where CPU is closest to completing (but not already complete)
+  let best=opts[0], bestScore=-1;
+  for(const g of opts){
+    const have = cpu.props[g] ? countPropsInGroup(cpu.props[g]) : 0;
+    if(have>=GROUPS[g].req) continue;
+    const score = have / GROUPS[g].req + (have>0?0.5:0);
+    if(score>bestScore){bestScore=score;best=g;}
+  }
+  return best;
+}
+function bestStealTarget(list){
+  // prefer property in a group where you're close to complete (more valuable to deny)
+  const you=G.players[0];
+  list.sort((a,b)=>{
+    const av=(you.props[a.group]?countPropsInGroup(you.props[a.group]):0);
+    const bv=(you.props[b.group]?countPropsInGroup(you.props[b.group]):0);
+    return bv-av;
+  });
+  return list[0];
+}
+
+function cpuDoMove(move, done){
+  const cpu=G.players[1];
+  if(move.kind==='lay'){
+    layProperty(1, move.card, move.group);
+    snd.prop();
+    log('CPU laid '+GROUPS[move.group].name+' property.', 'cpu');
+    done();
+  } else if(move.kind==='bank'){
+    removeFromHand(1, move.card.id);
+    cpu.bank.push(move.card);
+    snd.bank();
+    log('CPU banked '+move.card.name+'.', 'cpu');
+    done();
+  } else if(move.kind==='addon'){
+    removeFromHand(1, move.card.id);
+    cpu.props[move.group].push(Object.assign({},move.card,{assignedGroup:move.group}));
+    snd.action();
+    log('CPU added '+move.card.name+' to '+GROUPS[move.group].name+'.', 'cpu');
+    done();
+  } else if(move.kind==='action'){
+    cpuDoAction(move, done);
+  } else { done(); }
+}
+
+function cpuDoAction(move, done){
+  const c=move.card;
+  const cpu=G.players[1], you=G.players[0];
+  switch(c.act){
+    case 'passgo':
+      removeFromHand(1,c.id); G.discard.push(c);
+      for(let i=0;i<2;i++){ const d=drawCard(); if(d) cpu.hand.push(d); }
+      G.playsLeft--; snd.action();
+      log('CPU played Pass Go (drew 2).', 'cpu');
+      done(); break;
+    case 'birthday':
+      removeFromHand(1,c.id); G.discard.push(c); G.playsLeft--; snd.action();
+      log("CPU played It's My Birthday — you owe $2M.", 'cpu');
+      render();
+      requestPayment(0,1,2,"CPU's Birthday", done);
+      break;
+    case 'debt':
+      removeFromHand(1,c.id); G.discard.push(c); G.playsLeft--; snd.action();
+      log('CPU played Debt Collector — you owe $5M.', 'cpu');
+      render();
+      requestPayment(0,1,5,'Debt Collector', done);
+      break;
+    case 'rent':
+    case 'rent_any': {
+      const g=move.rentGroup;
+      const cnt=Math.min(countPropsInGroup(cpu.props[g]),GROUPS[g].rent.length);
+      let amt=(GROUPS[g].rent[cnt-1]||0)+addonBonus(cpu.props[g]);
+      removeFromHand(1,c.id); G.discard.push(c); G.playsLeft--; snd.action();
+      log('CPU played Rent on '+GROUPS[g].name+' — you owe $'+amt+'M.', 'cpu');
+      render();
+      requestPayment(0,1,amt,'Rent', done);
+      break;
+    }
+    case 'slydeal':
+      cpuAttempt(c, 'Sly Deal', ()=>{ doSteal(0,1,move.target.group,move.target.card); log('CPU stole your '+GROUPS[move.target.group].name+' property.', 'cpu'); }, done);
+      break;
+    case 'dealbreaker':
+      cpuAttempt(c, 'Deal Breaker', ()=>{ stealWholeSet(0,1,move.target); log('CPU stole your '+GROUPS[move.target].name+' SET!', 'cpu'); }, done);
+      break;
+    default:
+      // shouldn't happen; bank it
+      removeFromHand(1,c.id); cpu.bank.push(c); G.playsLeft--; done();
+  }
+}
+
+// CPU plays an action that YOU might Just Say No to
+function cpuAttempt(card, label, effect, done){
+  removeFromHand(1, card.id);
+  G.discard.push(card);
+  G.playsLeft--;
+  snd.action();
+  const youJsn = G.players[0].hand.findIndex(c=>c.act==='sayno');
+  if(youJsn>=0){
+    askYouSayNo(label, ()=>{
+      // you said no
+      const j=G.players[0].hand.splice(youJsn,1)[0]; G.discard.push(j); snd.no();
+      log('You played Just Say No! CPU action cancelled.', 'you');
+      // CPU might counter
+      const cpuJsn = G.players[1].hand.findIndex(c=>c.act==='sayno');
+      if(cpuJsn>=0 && Math.random()<0.6){
+        const cj=G.players[1].hand.splice(cpuJsn,1)[0]; G.discard.push(cj); snd.no();
+        log('CPU countered with Just Say No! Action proceeds.', 'cpu');
+        effect();
+      }
+      render(); done();
+    }, ()=>{
+      effect(); render(); done();
+    });
+  } else {
+    effect(); render(); done();
+  }
+}
+
+function cpuEndTurn(){
+  const cpu=G.players[1];
+  while(cpu.hand.length>7){
+    const idx=cpuDiscardChoice(cpu);
+    G.discard.push(cpu.hand.splice(idx,1)[0]);
+  }
+  log('CPU ended its turn.', 'cpu');
+  G.busy=false;
+  if(checkWin()) return;
+  startTurn(0);
+}
+
+function cpuDiscardChoice(p){
+  // discard the least useful: prefer low money, then duplicate actions, keep properties & sayno
+  let idx=0, worst=Infinity;
+  p.hand.forEach((c,i)=>{
+    let score;
+    if(c.type==='property'||c.type==='wildcard') score=100;
+    else if(c.act==='sayno') score=90;
+    else if(c.type==='action') score=30+(c.value||0);
+    else score=(c.value||0); // money
+    if(score<worst){worst=score;idx=i;}
+  });
+  return idx;
+}
+
+// ---------- Modals / choices ----------
+const overlay = document.getElementById('overlay');
+const modal = document.getElementById('modal');
+function closeModal(){ overlay.classList.remove('show'); modal.innerHTML=''; }
+
+function chooseWildGroup(card, cb){
+  const opts = card.groups==='any' ? GROUP_KEYS : card.groups;
+  let sel=null;
+  modal.innerHTML = '<h2>Place Wildcard</h2><p>Choose a color set for this wildcard.</p>';
+  const wrap=document.createElement('div'); wrap.className='opts';
+  opts.forEach(g=>{
+    const me=G.players[0];
+    const have=me.props[g]?countPropsInGroup(me.props[g]):0;
+    const b=document.createElement('button'); b.className='opt';
+    b.innerHTML='<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+GROUPS[g].color+';margin-right:6px"></span>'+GROUPS[g].name+' ('+have+'/'+GROUPS[g].req+')';
+    b.onclick=()=>{ sel=g; [...wrap.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); goBtn.disabled=false; };
+    wrap.appendChild(b);
+  });
+  modal.appendChild(wrap);
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const goBtn=document.createElement('button'); goBtn.className='go'; goBtn.textContent='Place'; goBtn.disabled=true;
+  goBtn.onclick=()=>{ closeModal(); cb(sel); };
+  const cancel=document.createElement('button'); cancel.className='cancel'; cancel.textContent='Cancel';
+  cancel.onclick=()=> closeModal();
+  btns.appendChild(goBtn); btns.appendChild(cancel);
+  modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+
+function chooseColorForRent(owned, cb){
+  let sel=null;
+  modal.innerHTML='<h2>Charge Rent</h2><p>Pick a color you own to charge CPU rent.</p>';
+  const wrap=document.createElement('div'); wrap.className='opts';
+  const me=G.players[0];
+  owned.forEach(g=>{
+    const cnt=Math.min(countPropsInGroup(me.props[g]),GROUPS[g].rent.length);
+    const amt=(GROUPS[g].rent[cnt-1]||0)+addonBonus(me.props[g]);
+    const b=document.createElement('button'); b.className='opt';
+    b.innerHTML='<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+GROUPS[g].color+';margin-right:6px"></span>'+GROUPS[g].name+' — rent <b style="color:#ffcf33">$'+amt+'M</b>';
+    b.onclick=()=>{ sel=g; [...wrap.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); goBtn.disabled=false; };
+    wrap.appendChild(b);
+  });
+  modal.appendChild(wrap);
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const goBtn=document.createElement('button'); goBtn.className='go'; goBtn.textContent='Charge'; goBtn.disabled=true;
+  goBtn.onclick=()=>{ closeModal(); cb(sel); };
+  const cancel=document.createElement('button'); cancel.className='cancel'; cancel.textContent='Cancel';
+  cancel.onclick=()=> closeModal();
+  btns.appendChild(goBtn); btns.appendChild(cancel);
+  modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+
+function chooseStealTarget(list, title, cb){
+  let sel=null;
+  modal.innerHTML='<h2>'+title+'</h2><p>Pick a property to steal from CPU.</p>';
+  const wrap=document.createElement('div'); wrap.className='opts';
+  list.forEach((item,i)=>{
+    const b=document.createElement('button'); b.className='opt';
+    const label = item.card.type==='wildcard' ? 'Wildcard' : GROUPS[item.group].name;
+    b.innerHTML='<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+GROUPS[item.group].color+';margin-right:6px"></span>'+label+' (in '+GROUPS[item.group].name+')';
+    b.onclick=()=>{ sel=item; [...wrap.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); goBtn.disabled=false; };
+    wrap.appendChild(b);
+  });
+  modal.appendChild(wrap);
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const goBtn=document.createElement('button'); goBtn.className='go'; goBtn.textContent='Steal'; goBtn.disabled=true;
+  goBtn.onclick=()=>{ closeModal(); cb(sel); };
+  const cancel=document.createElement('button'); cancel.className='cancel'; cancel.textContent='Cancel';
+  cancel.onclick=()=> closeModal();
+  btns.appendChild(goBtn); btns.appendChild(cancel);
+  modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+
+function chooseSetTarget(sets, cb){
+  let sel=null;
+  modal.innerHTML='<h2>Choose Set</h2><p>Pick a complete set.</p>';
+  const wrap=document.createElement('div'); wrap.className='opts';
+  sets.forEach(g=>{
+    const b=document.createElement('button'); b.className='opt';
+    b.innerHTML='<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+GROUPS[g].color+';margin-right:6px"></span>'+GROUPS[g].name+' set';
+    b.onclick=()=>{ sel=g; [...wrap.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); goBtn.disabled=false; };
+    wrap.appendChild(b);
+  });
+  modal.appendChild(wrap);
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const goBtn=document.createElement('button'); goBtn.className='go'; goBtn.textContent='OK'; goBtn.disabled=true;
+  goBtn.onclick=()=>{ closeModal(); cb(sel); };
+  const cancel=document.createElement('button'); cancel.className='cancel'; cancel.textContent='Cancel';
+  cancel.onclick=()=> closeModal();
+  btns.appendChild(goBtn); btns.appendChild(cancel);
+  modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+
+function chooseForcedDeal(mine, theirs, cb){
+  let myPick=null, theirPick=null;
+  modal.innerHTML='<h2>Forced Deal</h2><p>Give one of your properties to get one of CPU\'s.</p>';
+  const m1=document.createElement('p'); m1.textContent='Your property to give:'; m1.style.color='#9fe6c7'; m1.style.fontWeight='700';
+  modal.appendChild(m1);
+  const wrapA=document.createElement('div'); wrapA.className='opts';
+  mine.forEach(item=>{
+    const b=document.createElement('button'); b.className='opt';
+    b.innerHTML='<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+GROUPS[item.group].color+';margin-right:6px"></span>'+GROUPS[item.group].name+(item.card.type==='wildcard'?' (wild)':'');
+    b.onclick=()=>{ myPick=item; [...wrapA.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); upd(); };
+    wrapA.appendChild(b);
+  });
+  modal.appendChild(wrapA);
+  const m2=document.createElement('p'); m2.textContent="CPU's property to take:"; m2.style.color='#ffb3bb'; m2.style.fontWeight='700';
+  modal.appendChild(m2);
+  const wrapB=document.createElement('div'); wrapB.className='opts';
+  theirs.forEach(item=>{
+    const b=document.createElement('button'); b.className='opt';
+    b.innerHTML='<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+GROUPS[item.group].color+';margin-right:6px"></span>'+GROUPS[item.group].name+(item.card.type==='wildcard'?' (wild)':'');
+    b.onclick=()=>{ theirPick=item; [...wrapB.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); upd(); };
+    wrapB.appendChild(b);
+  });
+  modal.appendChild(wrapB);
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const goBtn=document.createElement('button'); goBtn.className='go'; goBtn.textContent='Swap'; goBtn.disabled=true;
+  function upd(){ goBtn.disabled = !(myPick&&theirPick); }
+  goBtn.onclick=()=>{ closeModal(); cb(myPick, theirPick); };
+  const cancel=document.createElement('button'); cancel.className='cancel'; cancel.textContent='Cancel';
+  cancel.onclick=()=> closeModal();
+  btns.appendChild(goBtn); btns.appendChild(cancel);
+  modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+
+// payment modal (you pay)
+function showPaymentModal(amount, payeePi, reason, done){
+  const me=G.players[0];
+  const selected = new Set();
+  // gather payable items: money bank + property cards
+  const items=[];
+  me.bank.forEach(c=> items.push({id:c.id, kind:'bank', value:c.value||0, label:'$'+(c.value||0)+'M'+(c.type==='action'?' ('+c.name.split(' ')[0]+')':'')}));
+  for(const g of GROUP_KEYS){ if(me.props[g]) me.props[g].forEach(c=>{ if(c.type==='property'||c.type==='wildcard') items.push({id:c.id, kind:'prop', group:g, value:c.value||0, label:GROUPS[g].name+(c.type==='wildcard'?'*':'')+' $'+(c.value||0)+'M'}); }); }
+  const totalAvail = items.reduce((s,i)=>s+i.value,0);
+  const mustPay = Math.min(amount, totalAvail);
+
+  function render(){
+    modal.innerHTML='<h2>Pay $'+amount+'M</h2><p>'+reason+' — select cards to pay. You owe <b style="color:#ffcf33">$'+amount+'M</b>.'+(totalAvail<amount?' (You only have $'+totalAvail+'M — pay all.)':'')+'</p>';
+    const grid=document.createElement('div'); grid.className='pay-grid';
+    items.forEach(it=>{
+      const d=document.createElement('button');
+      d.className='pay-item '+(it.kind==='bank'?'money':'prop')+(selected.has(it.id)?' sel':'');
+      d.textContent=it.label;
+      d.onclick=()=>{ if(selected.has(it.id)) selected.delete(it.id); else selected.add(it.id); render(); };
+      grid.appendChild(d);
+    });
+    modal.appendChild(grid);
+    let sum=0; items.forEach(it=>{ if(selected.has(it.id)) sum+=it.value; });
+    const tot=document.createElement('div'); tot.className='pay-total'; tot.innerHTML='Selected: <b>$'+sum+'M</b> / $'+mustPay+'M needed';
+    modal.appendChild(tot);
+    const btns=document.createElement('div'); btns.className='mbtns';
+    const go=document.createElement('button'); go.className='go'; go.textContent='Pay';
+    go.disabled = sum<mustPay;
+    go.onclick=()=>{ doPay(); };
+    btns.appendChild(go);
+    modal.appendChild(btns);
+  }
+  function doPay(){
+    const payee=G.players[payeePi];
+    let paidProps=false;
+    items.forEach(it=>{
+      if(!selected.has(it.id)) return;
+      if(it.kind==='bank'){
+        const i=me.bank.findIndex(c=>c.id===it.id);
+        if(i>=0) payee.bank.push(me.bank.splice(i,1)[0]);
+      } else {
+        const arr=me.props[it.group];
+        const i=arr.findIndex(c=>c.id===it.id);
+        if(i>=0){ doStealCardObj(0, payeePi, it.group, arr[i]); paidProps=true; }
+      }
+    });
+    snd.pay();
+    log('You paid $'+[...selected].reduce((s,id)=>{const it=items.find(x=>x.id===id);return s+(it?it.value:0);},0)+'M for '+reason+'.', 'you');
+    closeModal();
+    if(done) done();
+  }
+  render();
+  overlay.classList.add('show');
+}
+// helper used by payment to move a specific prop card
+function doStealCardObj(fromPi, toPi, group, card){
+  const from=G.players[fromPi], to=G.players[toPi];
+  const arr=from.props[group];
+  const i=arr.findIndex(c=>c.id===card.id);
+  if(i<0) return;
+  const moved=arr.splice(i,1)[0];
+  if(arr.length===0) delete from.props[group];
+  if(!to.props[group]) to.props[group]=[];
+  moved.assignedGroup=group;
+  to.props[group].push(moved);
+}
+
+// discard modal (you over 7)
+function promptDiscard(){
+  const me=G.players[0];
+  const need = me.hand.length-7;
+  const sel=new Set();
+  function render(){
+    modal.innerHTML='<h2>Discard '+need+'</h2><p>Hand limit is 7. Choose '+need+' card(s) to discard.</p>';
+    const grid=document.createElement('div'); grid.className='pay-grid';
+    me.hand.forEach(c=>{
+      const d=document.createElement('button');
+      d.className='pay-item '+(c.type==='money'?'money':'prop')+(sel.has(c.id)?' sel':'');
+      d.textContent=c.name;
+      d.onclick=()=>{ if(sel.has(c.id)) sel.delete(c.id); else if(sel.size<need) sel.add(c.id); render(); };
+      grid.appendChild(d);
+    });
+    modal.appendChild(grid);
+    const tot=document.createElement('div'); tot.className='pay-total'; tot.innerHTML='Selected <b>'+sel.size+'</b> / '+need;
+    modal.appendChild(tot);
+    const btns=document.createElement('div'); btns.className='mbtns';
+    const go=document.createElement('button'); go.className='go'; go.textContent='Discard'; go.disabled=sel.size!==need;
+    go.onclick=()=>{
+      [...sel].forEach(id=>{ const i=me.hand.findIndex(c=>c.id===id); if(i>=0) G.discard.push(me.hand.splice(i,1)[0]); });
+      closeModal(); finishEndTurn();
+    };
+    btns.appendChild(go);
+    modal.appendChild(btns);
+  }
+  render();
+  overlay.classList.add('show');
+}
+
+// You: confirm Just Say No against incoming CPU action
+function askYouSayNo(label, yes, no){
+  modal.innerHTML='<h2>Just Say No?</h2><p>CPU is playing <b>'+label+'</b> against you. Use your Just Say No to cancel it?</p>';
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const y=document.createElement('button'); y.className='go'; y.textContent='Say No!';
+  y.onclick=()=>{ closeModal(); yes(); };
+  const n=document.createElement('button'); n.className='cancel'; n.textContent='Allow';
+  n.onclick=()=>{ closeModal(); no(); };
+  btns.appendChild(y); btns.appendChild(n);
+  modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+// You: counter CPU's say-no with your own
+function askYouCounterNo(yes, no){
+  modal.innerHTML='<h2>Counter?</h2><p>CPU said Just Say No. Use your own Just Say No to force the action through?</p>';
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const y=document.createElement('button'); y.className='go'; y.textContent='Counter!';
+  y.onclick=()=>{ closeModal(); yes(); };
+  const n=document.createElement('button'); n.className='cancel'; n.textContent='Let it go';
+  n.onclick=()=>{ closeModal(); no(); };
+  btns.appendChild(y); btns.appendChild(n);
+  modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+
+// ---------- Win screen ----------
+function showWin(winnerPi){
+  const youWin = winnerPi===0;
+  if(youWin) snd.win(); else snd.lose();
+  setStatus(youWin?'you':'cpu', youWin?'You win! 🎉':'CPU wins.');
+  modal.innerHTML =
+    '<div class="win-emoji">'+(youWin?'🏆':'💀')+'</div>'+
+    '<h2 style="text-align:center">'+(youWin?'You Win!':'CPU Wins')+'</h2>'+
+    '<p style="text-align:center">'+(youWin?'You completed 3 property sets!':'CPU completed 3 property sets first.')+'</p>';
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const go=document.createElement('button'); go.className='go'; go.textContent='New Game';
+  go.onclick=()=>{ closeModal(); newGame(); };
+  btns.appendChild(go);
+  modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+
+// ---------- Toast (brief status) ----------
+let toastTimer=null;
+function toast(msg){
+  document.getElementById('statusMsg').textContent = msg;
+  snd.no();
+}
+
+// ---------- Log ----------
+function log(msg, who){
+  const el=document.getElementById('log');
+  const d=document.createElement('div');
+  if(who==='you'||who==='cpu') d.className=who;
+  d.textContent=msg;
+  el.insertBefore(d, el.firstChild);
+  while(el.children.length>40) el.removeChild(el.lastChild);
+}
+
+// ---------- Wire up buttons ----------
+document.getElementById('newGameBtn').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); newGame(); });
+document.getElementById('playBtn').addEventListener('click', ()=>{ if(!G||G.busy) return; youPlayCard(); });
+document.getElementById('bankBtn').addEventListener('click', ()=>{ if(!G||G.busy) return; youBankCard(); });
+document.getElementById('endBtn').addEventListener('click', ()=>{ if(!G||G.busy||G.turn!==0) return; endTurn(); });
+document.getElementById('logToggle').addEventListener('click', (e)=>{
+  const el=document.getElementById('log'); el.classList.toggle('show');
+  e.target.textContent = el.classList.contains('show')?'hide log':'show log';
+});
+
+// prevent double-tap zoom on buttons
+document.addEventListener('dblclick', e=>e.preventDefault(), {passive:false});
+
+// Start
+newGame();
+
+})();
+</script>
+</body>
+</html>

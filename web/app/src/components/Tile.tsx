@@ -20,18 +20,21 @@ export function Tile({ app }: TileProps) {
 
   return (
     <Box
-      {...(app.externalUrl
-        ? {
-            component: "a" as const,
-            href: app.externalUrl,
-            target: "_blank",
-            rel: "noopener noreferrer",
-          }
-        : {
-            component: RouterLink,
-            to: app.comingSoon ? `/coming-soon/${app.id}` : `/${app.id}`,
-          })}
+      {...(app.comingSoon
+        ? {}
+        : app.externalUrl
+          ? {
+              component: "a" as const,
+              href: app.externalUrl,
+              target: "_blank",
+              rel: "noopener noreferrer",
+            }
+          : {
+              component: RouterLink,
+              to: `/${app.id}`,
+            })}
       data-testid={`tile-${app.id}`}
+      aria-disabled={app.comingSoon || undefined}
       sx={{
         display: "flex",
         flexDirection: "column",
@@ -44,12 +47,13 @@ export function Tile({ app }: TileProps) {
         color: "inherit",
         borderRadius: "md",
         transition: "background-color 120ms",
-        "&:hover": {
-          bgcolor: "background.level1",
-        },
-        "&:hover .grown-tile-icon": {
-          transform: "scale(1.04)",
-        },
+        cursor: app.comingSoon ? "default" : "pointer",
+        opacity: app.comingSoon ? 0.55 : 1,
+        pointerEvents: app.comingSoon ? "none" : "auto",
+        "&:hover": app.comingSoon ? {} : { bgcolor: "background.level1" },
+        "&:hover .grown-tile-icon": app.comingSoon
+          ? {}
+          : { transform: "scale(1.04)" },
       }}
     >
       <Avatar
@@ -80,7 +84,7 @@ export function Tile({ app }: TileProps) {
           level="body-xs"
           sx={{ mt: -0.75, color: "#d97706", fontWeight: 500 }}
         >
-          (soon)
+          (coming soon)
         </Typography>
       )}
     </Box>

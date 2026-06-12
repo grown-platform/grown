@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Crazy Eights</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 30%, #15663a, #0a3d22 70%, #062a17);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    width: 100vw;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  header {
+    flex: 0 0 auto;
+    text-align: center;
+    padding: 8px 8px 4px;
+  }
+  header h1 {
+    font-size: 20px;
+    letter-spacing: 1px;
+    font-weight: 800;
+    text-shadow: 0 2px 4px rgba(0,0,0,.4);
+  }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 12px;
+    font-size: 13px;
+  }
+  .btn {
+    background: #fff;
+    color: #0a3d22;
+    border: none;
+    border-radius: 18px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,.3);
+  }
+  .btn:active { transform: scale(.95); }
+
+  .opp {
+    flex: 0 0 auto;
+    text-align: center;
+    padding: 4px 0;
+  }
+  .opp .cardback-row {
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+    min-height: 46px;
+    align-items: center;
+  }
+  .mini-back {
+    width: 26px;
+    height: 38px;
+    border-radius: 4px;
+    background: repeating-linear-gradient(45deg,#b22,#b22 4px,#811 4px,#811 8px);
+    border: 1.5px solid #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  .opp .label { font-size: 12px; opacity: .85; margin-top: 2px; }
+
+  .middle {
+    flex: 1 1 auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 18px;
+    min-height: 0;
+  }
+  .pile { text-align: center; }
+  .pile .plabel { font-size: 11px; opacity: .8; margin-top: 4px; }
+
+  .card {
+    width: 72px;
+    height: 102px;
+    border-radius: 8px;
+    background: #fff;
+    position: relative;
+    box-shadow: 0 3px 6px rgba(0,0,0,.4);
+    display: inline-block;
+  }
+  .card .corner {
+    position: absolute;
+    font-weight: 800;
+    line-height: 1;
+    text-align: center;
+  }
+  .card .tl { top: 5px; left: 6px; }
+  .card .br { bottom: 5px; right: 6px; transform: rotate(180deg); }
+  .card .rank { font-size: 16px; }
+  .card .suit-sm { font-size: 14px; }
+  .card .center {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 36px;
+  }
+  .red { color: #d11; }
+  .black { color: #111; }
+
+  .cardback {
+    width: 72px;
+    height: 102px;
+    border-radius: 8px;
+    background: repeating-linear-gradient(45deg,#b22,#b22 6px,#811 6px,#811 12px);
+    border: 3px solid #fff;
+    box-shadow: 0 3px 6px rgba(0,0,0,.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .cardback:active { transform: scale(.96); }
+  .cardback .qm { font-size: 30px; color: #fff; text-shadow: 0 1px 2px #000; }
+  .stock-count {
+    font-size: 11px; opacity:.8; margin-top:4px;
+  }
+  .suit-badge {
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .turn {
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 4px 0;
+    min-height: 22px;
+  }
+
+  .hand-wrap {
+    flex: 0 0 auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 8px 10px;
+  }
+  .hand {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+    min-height: 110px;
+    align-content: flex-start;
+  }
+  .hand .card { cursor: pointer; transition: transform .1s; }
+  .hand .card.playable { box-shadow: 0 0 0 3px #ffd54a, 0 3px 6px rgba(0,0,0,.4); }
+  .hand .card.playable:active { transform: translateY(-6px); }
+  .hand .card.dim { opacity: .55; }
+
+  /* overlay */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    padding: 20px;
+  }
+  .overlay.show { display: flex; }
+  .panel {
+    background: #0e4d2c;
+    border: 2px solid #fff;
+    border-radius: 16px;
+    padding: 22px;
+    text-align: center;
+    max-width: 320px;
+    width: 100%;
+    box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  .panel h2 { font-size: 22px; margin-bottom: 8px; }
+  .panel p { font-size: 14px; margin-bottom: 16px; opacity: .9; }
+  .suit-picker {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 6px;
+  }
+  .suit-btn {
+    width: 60px; height: 60px;
+    border-radius: 12px;
+    background: #fff;
+    border: none;
+    font-size: 32px;
+    cursor: pointer;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 2px 5px rgba(0,0,0,.3);
+  }
+  .suit-btn:active { transform: scale(.92); }
+
+  .msg {
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 12px;
+    min-height: 16px;
+    opacity: .9;
+    padding-bottom: 2px;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/crazy-eights.svg">
+    <link rel="manifest" href="/games/crazy-eights.webmanifest">
+    <meta name="theme-color" content="#DC2626">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Crazy Eights">
+    <link rel="apple-touch-icon" href="/games/icons/crazy-eights.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DC2626;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>CRAZY EIGHTS</h1>
+    <div class="topbar">
+      <button class="btn" id="newBtn">New Game</button>
+      <span id="soundToggle" style="cursor:pointer;font-size:18px;">&#128266;</span>
+    </div>
+  </header>
+
+  <div class="opp">
+    <div class="cardback-row" id="oppRow"></div>
+    <div class="label" id="oppLabel">Opponent: 0 cards</div>
+  </div>
+
+  <div class="middle">
+    <div class="pile">
+      <div id="discardTop"></div>
+      <div class="suit-badge" id="suitBadge"></div>
+      <div class="plabel">Discard</div>
+    </div>
+    <div class="pile">
+      <div class="cardback" id="stockPile"><span class="qm">?</span></div>
+      <div class="stock-count" id="stockCount">0 left</div>
+      <div class="plabel">Stock &middot; tap to draw</div>
+    </div>
+  </div>
+
+  <div class="turn" id="turnIndicator">Your turn</div>
+  <div class="msg" id="message"></div>
+
+  <div class="hand-wrap">
+    <div class="hand" id="hand"></div>
+  </div>
+
+  <!-- win / message overlay -->
+  <div class="overlay" id="winOverlay">
+    <div class="panel">
+      <h2 id="winTitle">You Win!</h2>
+      <p id="winText"></p>
+      <button class="btn" id="winNewBtn" style="font-size:15px;padding:10px 20px;">New Game</button>
+    </div>
+  </div>
+
+  <!-- suit picker overlay -->
+  <div class="overlay" id="suitOverlay">
+    <div class="panel">
+      <h2>Choose a suit</h2>
+      <p>You played an 8 &mdash; pick the next suit.</p>
+      <div class="suit-picker" id="suitPicker"></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  var SUITS = ["S","H","D","C"];
+  var SUIT_SYM = { S:"♠", H:"♥", D:"♦", C:"♣" };
+  var SUIT_NAME = { S:"Spades", H:"Hearts", D:"Diamonds", C:"Clubs" };
+  var SUIT_RED = { H:true, D:true };
+  var RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+
+  // ---------- Audio ----------
+  var soundOn = true;
+  var actx = null;
+  function ac(){
+    if(!actx){
+      try { actx = new (window.AudioContext||window.webkitAudioContext)(); }
+      catch(e){ actx = null; }
+    }
+    return actx;
+  }
+  function beep(freq, dur, type, vol){
+    if(!soundOn) return;
+    var c = ac(); if(!c) return;
+    if(c.state === "suspended"){ try{c.resume();}catch(e){} }
+    var o = c.createOscillator();
+    var g = c.createGain();
+    o.type = type || "sine";
+    o.frequency.value = freq;
+    g.gain.value = vol || 0.08;
+    o.connect(g); g.connect(c.destination);
+    var t = c.currentTime;
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (dur||0.12));
+    o.start(t);
+    o.stop(t + (dur||0.12) + 0.02);
+  }
+  var sfx = {
+    play:   function(){ beep(520,0.10,"triangle",0.10); },
+    draw:   function(){ beep(300,0.08,"sine",0.08); },
+    cpu:    function(){ beep(420,0.10,"sine",0.07); },
+    bad:    function(){ beep(150,0.15,"sawtooth",0.07); },
+    win:    function(){ beep(523,0.12,"triangle",0.12); setTimeout(function(){beep(659,0.12,"triangle",0.12);},120); setTimeout(function(){beep(784,0.18,"triangle",0.12);},250); },
+    lose:   function(){ beep(330,0.15,"sine",0.10); setTimeout(function(){beep(220,0.25,"sine",0.10);},150); },
+    wild:   function(){ beep(660,0.08,"square",0.06); setTimeout(function(){beep(880,0.10,"square",0.06);},80); }
+  };
+
+  // ---------- Game state ----------
+  var stock = [];      // draw pile (top = end)
+  var discard = [];    // discard pile (top = last element)
+  var player = [];     // player's hand
+  var cpu = [];        // cpu's hand
+  var activeSuit = null; // current required suit (matters after an 8)
+  var turn = "player"; // "player" | "cpu"
+  var gameOver = false;
+  var busy = false;    // lock input during animations / cpu turn
+  var drewThisTurn = false; // whether player has drawn at least once this turn
+
+  // DOM refs
+  var elHand = document.getElementById("hand");
+  var elOppRow = document.getElementById("oppRow");
+  var elOppLabel = document.getElementById("oppLabel");
+  var elDiscardTop = document.getElementById("discardTop");
+  var elSuitBadge = document.getElementById("suitBadge");
+  var elStockCount = document.getElementById("stockCount");
+  var elStockPile = document.getElementById("stockPile");
+  var elTurn = document.getElementById("turnIndicator");
+  var elMsg = document.getElementById("message");
+  var elWinOverlay = document.getElementById("winOverlay");
+  var elWinTitle = document.getElementById("winTitle");
+  var elWinText = document.getElementById("winText");
+  var elSuitOverlay = document.getElementById("suitOverlay");
+  var elSuitPicker = document.getElementById("suitPicker");
+
+  function buildDeck(){
+    var d = [];
+    for(var s=0;s<SUITS.length;s++){
+      for(var r=0;r<RANKS.length;r++){
+        d.push({ suit: SUITS[s], rank: RANKS[r] });
+      }
+    }
+    return d;
+  }
+  function shuffle(a){
+    for(var i=a.length-1;i>0;i--){
+      var j = Math.floor(Math.random()*(i+1));
+      var t = a[i]; a[i]=a[j]; a[j]=t;
+    }
+    return a;
+  }
+
+  function topCard(){ return discard[discard.length-1]; }
+
+  // can `card` be legally played given top + activeSuit?
+  function canPlay(card){
+    if(card.rank === "8") return true;       // wild
+    var top = topCard();
+    if(card.suit === activeSuit) return true; // matches required suit
+    if(card.rank === top.rank) return true;   // matches rank
+    return false;
+  }
+
+  function ensureStock(){
+    // refill stock from discard (keeping top) if empty
+    if(stock.length === 0 && discard.length > 1){
+      var keep = discard.pop();
+      shuffle(discard);
+      stock = discard;
+      discard = [keep];
+    }
+  }
+
+  function newGame(){
+    stock = shuffle(buildDeck());
+    discard = [];
+    player = [];
+    cpu = [];
+    gameOver = false;
+    busy = false;
+    drewThisTurn = false;
+    elWinOverlay.classList.remove("show");
+    elSuitOverlay.classList.remove("show");
+
+    for(var i=0;i<7;i++){ player.push(stock.pop()); cpu.push(stock.pop()); }
+
+    // flip starter; if it's an 8, just set active suit to its own suit (simple, valid)
+    var starter = stock.pop();
+    discard.push(starter);
+    activeSuit = starter.suit;
+
+    turn = "player";
+    sortHand();
+    setMsg("");
+    render();
+  }
+
+  function sortHand(){
+    player.sort(function(a,b){
+      if(a.suit !== b.suit) return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
+      return RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank);
+    });
+  }
+
+  // ---------- Rendering ----------
+  function cardHTML(card){
+    var red = SUIT_RED[card.suit];
+    var cls = red ? "red" : "black";
+    var sym = SUIT_SYM[card.suit];
+    return '<div class="corner tl '+cls+'"><span class="rank">'+card.rank+'</span><br><span class="suit-sm">'+sym+'</span></div>'+
+           '<div class="center '+cls+'">'+sym+'</div>'+
+           '<div class="corner br '+cls+'"><span class="rank">'+card.rank+'</span><br><span class="suit-sm">'+sym+'</span></div>';
+  }
+
+  function render(){
+    // opponent backs
+    var backs = "";
+    var n = cpu.length;
+    var show = Math.min(n, 8);
+    for(var i=0;i<show;i++){ backs += '<div class="mini-back"></div>'; }
+    elOppRow.innerHTML = backs || '<div style="height:38px;"></div>';
+    elOppLabel.textContent = "Opponent: " + n + (n===1?" card":" cards");
+
+    // discard top
+    var top = topCard();
+    var td = document.createElement("div");
+    td.className = "card";
+    td.innerHTML = cardHTML(top);
+    elDiscardTop.innerHTML = "";
+    elDiscardTop.appendChild(td);
+
+    // active suit badge (show when it differs from top suit, i.e. after a wild 8)
+    if(top.rank === "8" || activeSuit !== top.suit){
+      var red = SUIT_RED[activeSuit];
+      elSuitBadge.innerHTML = 'Suit: <span class="'+(red?"red":"")+'" style="'+(red?"color:#ff8a8a":"color:#fff")+'">'+SUIT_SYM[activeSuit]+" "+SUIT_NAME[activeSuit]+'</span>';
+    } else {
+      elSuitBadge.innerHTML = "";
+    }
+
+    // stock
+    elStockCount.textContent = stock.length + " left";
+
+    // hand
+    elHand.innerHTML = "";
+    var myTurn = (turn === "player" && !gameOver && !busy);
+    var anyPlayable = false;
+    for(var k=0;k<player.length;k++){
+      (function(card){
+        var c = document.createElement("div");
+        c.className = "card";
+        c.innerHTML = cardHTML(card);
+        var playable = canPlay(card);
+        if(myTurn){
+          if(playable){ c.classList.add("playable"); anyPlayable = true; }
+          else { c.classList.add("dim"); }
+        }
+        c.addEventListener("click", function(){ onPlayCard(card); });
+        elHand.appendChild(c);
+      })(player[k]);
+    }
+
+    // turn indicator
+    if(gameOver){
+      elTurn.textContent = "";
+    } else if(turn === "player"){
+      elTurn.textContent = anyPlayable ? "Your turn — play a card" : "Your turn — no plays, draw a card";
+      elTurn.style.color = "#ffd54a";
+    } else {
+      elTurn.textContent = "Opponent's turn…";
+      elTurn.style.color = "#fff";
+    }
+  }
+
+  function setMsg(t){ elMsg.textContent = t; }
+
+  // ---------- Player actions ----------
+  function onPlayCard(card){
+    if(gameOver || busy || turn !== "player") return;
+    if(!canPlay(card)){
+      sfx.bad();
+      setMsg("Can't play that — match suit ("+SUIT_NAME[activeSuit]+") or rank ("+topCard().rank+"), or an 8.");
+      return;
+    }
+    // remove from hand
+    var idx = player.indexOf(card);
+    if(idx < 0) return;
+    player.splice(idx,1);
+    discard.push(card);
+
+    if(card.rank === "8"){
+      // wild: ask for suit
+      sfx.wild();
+      render();
+      openSuitPicker(function(chosen){
+        activeSuit = chosen;
+        afterPlayerPlay();
+      });
+      return;
+    } else {
+      activeSuit = card.suit;
+      sfx.play();
+      afterPlayerPlay();
+    }
+  }
+
+  function afterPlayerPlay(){
+    setMsg("");
+    if(player.length === 0){
+      render();
+      endGame(true);
+      return;
+    }
+    drewThisTurn = false;
+    turn = "cpu";
+    render();
+    busy = true;
+    setTimeout(cpuTurn, 750);
+  }
+
+  function onDraw(){
+    if(gameOver || busy || turn !== "player") return;
+    ensureStock();
+    if(stock.length === 0){
+      // nothing to draw; allow pass
+      setMsg("Stock empty — you pass.");
+      sfx.draw();
+      drewThisTurn = false;
+      turn = "cpu";
+      render();
+      busy = true;
+      setTimeout(cpuTurn, 700);
+      return;
+    }
+    var card = stock.pop();
+    player.push(card);
+    sortHand();
+    drewThisTurn = true;
+    sfx.draw();
+    if(canPlay(card)){
+      setMsg("You drew the "+card.rank+SUIT_SYM[card.suit]+" — you can play it.");
+    } else {
+      setMsg("You drew the "+card.rank+SUIT_SYM[card.suit]+". Draw again or tap a card.");
+    }
+    render();
+  }
+
+  // ---------- Suit picker ----------
+  function openSuitPicker(cb){
+    elSuitPicker.innerHTML = "";
+    SUITS.forEach(function(s){
+      var b = document.createElement("button");
+      b.className = "suit-btn " + (SUIT_RED[s] ? "red":"black");
+      b.textContent = SUIT_SYM[s];
+      b.style.color = SUIT_RED[s] ? "#d11" : "#111";
+      b.addEventListener("click", function(){
+        elSuitOverlay.classList.remove("show");
+        setMsg("You chose "+SUIT_NAME[s]+".");
+        cb(s);
+      });
+      elSuitPicker.appendChild(b);
+    });
+    elSuitOverlay.classList.add("show");
+  }
+
+  // ---------- CPU ----------
+  function cpuPickSuit(){
+    // choose the suit the CPU holds most of (excluding 8s); fallback random
+    var counts = { S:0,H:0,D:0,C:0 };
+    for(var i=0;i<cpu.length;i++){
+      if(cpu[i].rank !== "8") counts[cpu[i].suit]++;
+    }
+    var best = null, bestN = -1;
+    SUITS.forEach(function(s){ if(counts[s] > bestN){ bestN = counts[s]; best = s; } });
+    if(bestN <= 0){ best = SUITS[Math.floor(Math.random()*4)]; }
+    return best;
+  }
+
+  function cpuChooseCard(){
+    // legal non-8 plays preferred; among them prefer matching the active suit,
+    // then highest rank to shed points. Save 8s for when nothing else works.
+    var top = topCard();
+    var nonEights = [];
+    var eights = [];
+    for(var i=0;i<cpu.length;i++){
+      var c = cpu[i];
+      if(c.rank === "8"){ eights.push(c); continue; }
+      if(c.suit === activeSuit || c.rank === top.rank){ nonEights.push(c); }
+    }
+    if(nonEights.length){
+      // prefer ones matching current suit (keeps suit stable), then higher rank
+      nonEights.sort(function(a,b){
+        var as = (a.suit === activeSuit) ? 1 : 0;
+        var bs = (b.suit === activeSuit) ? 1 : 0;
+        if(as !== bs) return bs - as;
+        return RANKS.indexOf(b.rank) - RANKS.indexOf(a.rank);
+      });
+      return nonEights[0];
+    }
+    if(eights.length) return eights[0];
+    return null;
+  }
+
+  function cpuTurn(){
+    if(gameOver){ busy=false; return; }
+    var card = cpuChooseCard();
+    var drawCount = 0;
+    // if no playable card, draw until one is found (or stock truly exhausted)
+    while(!card){
+      ensureStock();
+      if(stock.length === 0){
+        // cannot draw, must pass
+        setMsg("Opponent has no play and passes.");
+        sfx.cpu();
+        finishCpuTurn();
+        return;
+      }
+      var drawn = stock.pop();
+      cpu.push(drawn);
+      drawCount++;
+      sfx.draw();
+      if(canPlay(drawn)) card = drawn;
+      if(drawCount > 60) break; // safety
+    }
+    if(!card){ finishCpuTurn(); return; }
+
+    // play it
+    var idx = cpu.indexOf(card);
+    cpu.splice(idx,1);
+    discard.push(card);
+
+    if(card.rank === "8"){
+      activeSuit = cpuPickSuit();
+      sfx.wild();
+      setMsg("Opponent played an 8 and chose "+SUIT_NAME[activeSuit]+".");
+    } else {
+      activeSuit = card.suit;
+      sfx.cpu();
+      setMsg("Opponent played "+card.rank+SUIT_SYM[card.suit]+(drawCount? " (after drawing "+drawCount+")":"")+".");
+    }
+
+    if(cpu.length === 0){
+      render();
+      endGame(false);
+      return;
+    }
+    finishCpuTurn();
+  }
+
+  function finishCpuTurn(){
+    turn = "player";
+    drewThisTurn = false;
+    busy = false;
+    render();
+  }
+
+  // ---------- End ----------
+  function endGame(playerWon){
+    gameOver = true;
+    busy = false;
+    render();
+    if(playerWon){
+      sfx.win();
+      elWinTitle.textContent = "You Win! \u{1F389}";
+      elWinText.textContent = "You emptied your hand first. Nicely played!";
+    } else {
+      sfx.lose();
+      elWinTitle.textContent = "You Lose";
+      elWinText.textContent = "The opponent emptied their hand first. Try again!";
+    }
+    elWinOverlay.classList.add("show");
+  }
+
+  // ---------- Wiring ----------
+  elStockPile.addEventListener("click", onDraw);
+  document.getElementById("newBtn").addEventListener("click", function(){ try{ac()&&ac().resume();}catch(e){} newGame(); });
+  document.getElementById("winNewBtn").addEventListener("click", newGame);
+
+  var soundEl = document.getElementById("soundToggle");
+  soundEl.addEventListener("click", function(){
+    soundOn = !soundOn;
+    soundEl.innerHTML = soundOn ? "\u{1F50A}" : "\u{1F507}";
+    if(soundOn){ try{ac()&&ac().resume();}catch(e){} beep(440,0.08,"sine",0.08); }
+  });
+
+  // prevent double-tap zoom / context menu
+  document.addEventListener("gesturestart", function(e){ e.preventDefault(); });
+  document.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+
+  newGame();
+})();
+</script>
+</body>
+</html>

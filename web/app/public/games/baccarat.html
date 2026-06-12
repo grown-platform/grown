@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Baccarat</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #1b6b3a 0%, #0c3d20 70%, #07260f 100%);
+    color: #f4f1e0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom);
+    max-width: 460px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 20px;
+    letter-spacing: 2px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #ffd95e;
+    text-shadow: 0 1px 2px rgba(0,0,0,.5);
+    margin: 6px 0 2px;
+  }
+  .sub { font-size: 10px; color: #cbe6cf; margin-bottom: 4px; letter-spacing: .5px; }
+
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    align-items: center;
+    background: rgba(0,0,0,.25);
+    border-radius: 10px;
+    padding: 6px 12px;
+    margin-bottom: 6px;
+  }
+  .stat { text-align: center; }
+  .stat .lbl { font-size: 9px; text-transform: uppercase; color: #9fc7a6; letter-spacing: 1px; }
+  .stat .val { font-size: 17px; font-weight: 700; color: #ffd95e; }
+
+  .table { width: 100%; }
+  .hand {
+    background: rgba(0,0,0,.18);
+    border-radius: 12px;
+    padding: 8px 8px 6px;
+    margin-bottom: 6px;
+    border: 1px solid rgba(255,255,255,.06);
+  }
+  .hand-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+    padding: 0 2px;
+  }
+  .hand-name { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+  .hand-name.player { color: #7fc4ff; }
+  .hand-name.banker { color: #ff9d7a; }
+  .hand-total {
+    font-size: 13px;
+    font-weight: 700;
+    background: rgba(255,255,255,.12);
+    border-radius: 8px;
+    padding: 2px 10px;
+    min-width: 34px;
+    text-align: center;
+  }
+  .cards { display: flex; gap: 6px; min-height: 70px; align-items: center; }
+
+  .card {
+    width: 46px;
+    height: 66px;
+    border-radius: 6px;
+    background: #fdfdf6;
+    color: #1a1a1a;
+    position: relative;
+    box-shadow: 0 2px 5px rgba(0,0,0,.4);
+    flex: 0 0 auto;
+    animation: deal .28s ease;
+  }
+  @keyframes deal {
+    from { transform: translateY(-14px) scale(.85); opacity: 0; }
+    to { transform: none; opacity: 1; }
+  }
+  .card.red { color: #c8102e; }
+  .card .corner {
+    position: absolute;
+    font-weight: 700;
+    line-height: 1;
+    font-size: 12px;
+    text-align: center;
+  }
+  .card .corner.tl { top: 4px; left: 4px; }
+  .card .corner.br { bottom: 4px; right: 4px; transform: rotate(180deg); }
+  .card .corner .r { font-size: 13px; }
+  .card .corner .s { font-size: 11px; }
+  .card .pip {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 26px;
+  }
+
+  .betrow {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    margin: 4px 0 6px;
+  }
+  .bet {
+    flex: 1;
+    background: rgba(255,255,255,.07);
+    border: 2px solid rgba(255,255,255,.15);
+    border-radius: 12px;
+    padding: 8px 4px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform .08s, border-color .12s, background .12s;
+  }
+  .bet:active { transform: scale(.96); }
+  .bet.sel { border-color: #ffd95e; background: rgba(255,217,94,.18); }
+  .bet .nm { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  .bet .pay { font-size: 9px; color: #cbe6cf; margin-top: 2px; }
+  .bet .amt { font-size: 13px; font-weight: 700; color: #ffd95e; margin-top: 3px; min-height: 16px; }
+  .bet.player .nm { color: #7fc4ff; }
+  .bet.banker .nm { color: #ff9d7a; }
+  .bet.tie .nm { color: #d3a4ff; }
+
+  .chiprow {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 6px;
+  }
+  .chip {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: 3px dashed rgba(255,255,255,.55);
+    background: #b3261e;
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform .08s;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4);
+  }
+  .chip:active { transform: scale(.9); }
+  .chip.sel { outline: 2px solid #ffd95e; outline-offset: 2px; }
+  .chip.c1 { background: #2d8f4e; }
+  .chip.c5 { background: #b3261e; }
+  .chip.c25 { background: #2b5fb3; }
+  .chip.c100 { background: #2a2a2a; }
+
+  .actions { display: flex; gap: 8px; width: 100%; }
+  .btn {
+    flex: 1;
+    padding: 12px;
+    border-radius: 12px;
+    border: none;
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    color: #07260f;
+    background: #ffd95e;
+    transition: transform .08s, opacity .12s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn.clear { background: rgba(255,255,255,.18); color: #f4f1e0; }
+  .btn:disabled { opacity: .4; cursor: default; }
+
+  .result {
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    min-height: 34px;
+    padding: 7px;
+    margin-top: 6px;
+    border-radius: 10px;
+    width: 100%;
+    letter-spacing: .5px;
+  }
+  .result.win { background: rgba(60,200,90,.22); color: #aaffba; }
+  .result.lose { background: rgba(220,60,60,.18); color: #ffb3b3; }
+  .result.info { color: #cbe6cf; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/baccarat.svg">
+    <link rel="manifest" href="/games/baccarat.webmanifest">
+    <meta name="theme-color" content="#7C3AED">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Baccarat">
+    <link rel="apple-touch-icon" href="/games/icons/baccarat.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#7C3AED;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <h1>Baccarat</h1>
+  <div class="sub">Punto Banco &middot; Banker pays 0.95:1 (5% commission)</div>
+
+  <div class="topbar">
+    <div class="stat"><div class="lbl">Bankroll</div><div class="val" id="bankroll">$1000</div></div>
+    <div class="stat"><div class="lbl">In Play</div><div class="val" id="inplay">$0</div></div>
+    <div class="stat"><div class="lbl">Chip</div><div class="val" id="chipval">$5</div></div>
+  </div>
+
+  <div class="table">
+    <div class="hand">
+      <div class="hand-head">
+        <span class="hand-name player">Player</span>
+        <span class="hand-total" id="ptotal">-</span>
+      </div>
+      <div class="cards" id="pcards"></div>
+    </div>
+    <div class="hand">
+      <div class="hand-head">
+        <span class="hand-name banker">Banker</span>
+        <span class="hand-total" id="btotal">-</span>
+      </div>
+      <div class="cards" id="bcards"></div>
+    </div>
+  </div>
+
+  <div class="betrow">
+    <div class="bet player" id="bet-player" data-bet="player">
+      <div class="nm">Player</div><div class="pay">1 : 1</div><div class="amt" id="amt-player"></div>
+    </div>
+    <div class="bet tie" id="bet-tie" data-bet="tie">
+      <div class="nm">Tie</div><div class="pay">8 : 1</div><div class="amt" id="amt-tie"></div>
+    </div>
+    <div class="bet banker" id="bet-banker" data-bet="banker">
+      <div class="nm">Banker</div><div class="pay">0.95 : 1</div><div class="amt" id="amt-banker"></div>
+    </div>
+  </div>
+
+  <div class="chiprow">
+    <div class="chip c1" data-val="1">$1</div>
+    <div class="chip c5 sel" data-val="5">$5</div>
+    <div class="chip c25" data-val="25">$25</div>
+    <div class="chip c100" data-val="100">$100</div>
+  </div>
+
+  <div class="actions">
+    <button class="btn clear" id="clearBtn">Clear</button>
+    <button class="btn" id="dealBtn">Deal</button>
+  </div>
+
+  <div class="result info" id="result">Place a bet, then tap Deal.</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- State ----
+  var bankroll = 1000;
+  var chipValue = 5;
+  var bets = { player: 0, banker: 0, tie: 0 };
+  var dealing = false;
+
+  var SUITS = [
+    { ch: "♠", red: false }, // spade
+    { ch: "♥", red: true },  // heart
+    { ch: "♦", red: true },  // diamond
+    { ch: "♣", red: false }  // club
+  ];
+  var RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+
+  // ---- DOM ----
+  var $ = function (id) { return document.getElementById(id); };
+  var bankrollEl = $("bankroll");
+  var inplayEl = $("inplay");
+  var chipvalEl = $("chipval");
+  var ptotalEl = $("ptotal");
+  var btotalEl = $("btotal");
+  var pcardsEl = $("pcards");
+  var bcardsEl = $("bcards");
+  var resultEl = $("result");
+  var dealBtn = $("dealBtn");
+  var clearBtn = $("clearBtn");
+
+  // ---- Audio ----
+  var actx = null;
+  function tone(freq, dur, type, vol) {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      var o = actx.createOscillator();
+      var g = actx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = vol || 0.06;
+      o.connect(g); g.connect(actx.destination);
+      var t = actx.currentTime;
+      o.start(t);
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.stop(t + dur);
+    } catch (e) {}
+  }
+  function sndChip() { tone(660, 0.07, "square", 0.04); }
+  function sndDeal() { tone(420, 0.05, "triangle", 0.05); }
+  function sndWin() { tone(523,0.1,"sine",0.07); setTimeout(function(){tone(784,0.16,"sine",0.07);},90); }
+  function sndLose() { tone(300,0.18,"sawtooth",0.05); }
+  function sndTie() { tone(440,0.12,"sine",0.06); }
+
+  // ---- Card helpers ----
+  function newCard() {
+    var rIdx = Math.floor(Math.random() * 13);
+    var s = SUITS[Math.floor(Math.random() * 4)];
+    return { rank: RANKS[rIdx], rIdx: rIdx, suit: s };
+  }
+  // Baccarat point value: A=1, 2-9 face, 10/J/Q/K=0
+  function cardValue(c) {
+    if (c.rIdx === 0) return 1;          // Ace
+    if (c.rIdx <= 8) return c.rIdx + 1;  // 2..9
+    return 0;                            // 10,J,Q,K
+  }
+  function handTotal(hand) {
+    var s = 0;
+    for (var i = 0; i < hand.length; i++) s += cardValue(hand[i]);
+    return s % 10;
+  }
+
+  function renderCard(c) {
+    var el = document.createElement("div");
+    el.className = "card" + (c.suit.red ? " red" : "");
+    el.innerHTML =
+      '<div class="corner tl"><span class="r">' + c.rank + '</span><br><span class="s">' + c.suit.ch + '</span></div>' +
+      '<div class="pip">' + c.suit.ch + '</div>' +
+      '<div class="corner br"><span class="r">' + c.rank + '</span><br><span class="s">' + c.suit.ch + '</span></div>';
+    return el;
+  }
+
+  // ---- UI refresh ----
+  function fmt(n) { return "$" + n; }
+  function refresh() {
+    bankrollEl.textContent = fmt(bankroll);
+    var inPlay = bets.player + bets.banker + bets.tie;
+    inplayEl.textContent = fmt(inPlay);
+    chipvalEl.textContent = fmt(chipValue);
+    $("amt-player").textContent = bets.player ? fmt(bets.player) : "";
+    $("amt-banker").textContent = bets.banker ? fmt(bets.banker) : "";
+    $("amt-tie").textContent = bets.tie ? fmt(bets.tie) : "";
+    dealBtn.disabled = dealing || inPlay <= 0;
+    clearBtn.disabled = dealing || inPlay <= 0;
+  }
+
+  function clearBets() {
+    if (dealing) return;
+    bankroll += bets.player + bets.banker + bets.tie;
+    bets.player = bets.banker = bets.tie = 0;
+    refresh();
+  }
+
+  function placeBet(which) {
+    if (dealing) return;
+    if (bankroll < chipValue) {
+      flash("Not enough bankroll for that chip.", "lose");
+      sndLose();
+      return;
+    }
+    bankroll -= chipValue;
+    bets[which] += chipValue;
+    sndChip();
+    refresh();
+  }
+
+  function flash(msg, cls) {
+    resultEl.textContent = msg;
+    resultEl.className = "result " + (cls || "info");
+  }
+
+  // ---- Drawing rules (standard Punto Banco) ----
+  // Returns {player:[], banker:[], pTotal, bTotal}
+  function playRound() {
+    var player = [newCard(), newCard()];
+    var banker = [newCard(), newCard()];
+
+    var pt = handTotal(player);
+    var bt = handTotal(banker);
+
+    // Natural: 8 or 9 by either -> stand, no more cards
+    var natural = (pt >= 8 || bt >= 8);
+
+    if (!natural) {
+      var playerThird = null;
+      // Player rule
+      if (pt <= 5) {
+        playerThird = newCard();
+        player.push(playerThird);
+      }
+      pt = handTotal(player);
+
+      // Banker rule
+      var bankerDraws = false;
+      if (playerThird === null) {
+        // Player stood -> Banker draws on 0-5, stands 6-7
+        bankerDraws = (bt <= 5);
+      } else {
+        var v = cardValue(playerThird); // 0..9
+        switch (bt) {
+          case 0: case 1: case 2:
+            bankerDraws = true; break;
+          case 3:
+            bankerDraws = (v !== 8); break;
+          case 4:
+            bankerDraws = (v >= 2 && v <= 7); break;
+          case 5:
+            bankerDraws = (v >= 4 && v <= 7); break;
+          case 6:
+            bankerDraws = (v === 6 || v === 7); break;
+          default: // 7
+            bankerDraws = false;
+        }
+      }
+      if (bankerDraws) banker.push(newCard());
+      bt = handTotal(banker);
+    }
+
+    return { player: player, banker: banker, pTotal: pt, bTotal: bt };
+  }
+
+  // ---- Deal sequence with animation ----
+  function deal() {
+    if (dealing) return;
+    var inPlay = bets.player + bets.banker + bets.tie;
+    if (inPlay <= 0) return;
+
+    dealing = true;
+    refresh();
+    pcardsEl.innerHTML = "";
+    bcardsEl.innerHTML = "";
+    ptotalEl.textContent = "-";
+    btotalEl.textContent = "-";
+    flash("Dealing…", "info");
+
+    var r = playRound();
+
+    // Build deal order: P1, B1, P2, B2, then any thirds (P third before B third)
+    var steps = [];
+    steps.push({ side: "p", card: r.player[0] });
+    steps.push({ side: "b", card: r.banker[0] });
+    steps.push({ side: "p", card: r.player[1] });
+    steps.push({ side: "b", card: r.banker[1] });
+    if (r.player.length > 2) steps.push({ side: "p", card: r.player[2] });
+    if (r.banker.length > 2) steps.push({ side: "b", card: r.banker[2] });
+
+    var i = 0;
+    function nextStep() {
+      if (i >= steps.length) {
+        ptotalEl.textContent = r.pTotal;
+        btotalEl.textContent = r.bTotal;
+        settle(r);
+        return;
+      }
+      var st = steps[i++];
+      (st.side === "p" ? pcardsEl : bcardsEl).appendChild(renderCard(st.card));
+      sndDeal();
+      // show running totals as cards land
+      ptotalEl.textContent = handTotal(cardsIn(pcardsEl, r.player));
+      btotalEl.textContent = handTotal(cardsIn(bcardsEl, r.banker));
+      setTimeout(nextStep, 380);
+    }
+    nextStep();
+  }
+
+  // Map number of rendered cards back to hand slice for running total
+  function cardsIn(container, fullHand) {
+    var n = container.children.length;
+    return fullHand.slice(0, n);
+  }
+
+  // ---- Settle bets ----
+  function settle(r) {
+    var outcome; // "player" | "banker" | "tie"
+    if (r.pTotal > r.bTotal) outcome = "player";
+    else if (r.bTotal > r.pTotal) outcome = "banker";
+    else outcome = "tie";
+
+    var net = 0;          // change to bankroll from this round (stakes already removed)
+    var returned = 0;     // total returned to bankroll
+
+    // PLAYER bet (1:1). On tie, player/banker bets push (returned).
+    if (bets.player > 0) {
+      if (outcome === "player") { returned += bets.player * 2; net += bets.player; }
+      else if (outcome === "tie") { returned += bets.player; }
+      else { net -= bets.player; }
+    }
+    // BANKER bet (0.95:1, 5% commission). Push on tie.
+    if (bets.banker > 0) {
+      if (outcome === "banker") {
+        var winAmt = bets.banker * 0.95;
+        returned += bets.banker + winAmt;
+        net += winAmt;
+      } else if (outcome === "tie") { returned += bets.banker; }
+      else { net -= bets.banker; }
+    }
+    // TIE bet (8:1). Loses unless tie.
+    if (bets.tie > 0) {
+      if (outcome === "tie") { returned += bets.tie * 9; net += bets.tie * 8; }
+      else { net -= bets.tie; }
+    }
+
+    // round returned to cents then to whole-ish: keep 2 decimals for commission
+    returned = Math.round(returned * 100) / 100;
+    bankroll = Math.round((bankroll + returned) * 100) / 100;
+
+    var label = outcome.charAt(0).toUpperCase() + outcome.slice(1);
+    var msg, cls;
+    if (net > 0) {
+      msg = label + " wins! You +$" + (Math.round(net * 100) / 100);
+      cls = "win";
+      sndWin();
+    } else if (net < 0) {
+      msg = label + " wins. You −$" + (Math.round(-net * 100) / 100);
+      cls = "lose";
+      sndLose();
+    } else {
+      msg = outcome === "tie" ? "Tie — bets pushed." : label + " wins (bet pushed).";
+      cls = "info";
+      sndTie();
+    }
+
+    // clear stakes for next round
+    bets.player = bets.banker = bets.tie = 0;
+    dealing = false;
+
+    flash(msg, cls);
+    refresh();
+
+    if (bankroll <= 0) {
+      bankroll = 1000;
+      setTimeout(function () {
+        flash("Out of money — here's $1000 to keep playing.", "info");
+        refresh();
+      }, 1400);
+    }
+  }
+
+  // ---- Wire up events ----
+  var betEls = document.querySelectorAll(".bet");
+  for (var b = 0; b < betEls.length; b++) {
+    (function (el) {
+      el.addEventListener("click", function () {
+        placeBet(el.getAttribute("data-bet"));
+      });
+    })(betEls[b]);
+  }
+
+  var chipEls = document.querySelectorAll(".chip");
+  for (var c = 0; c < chipEls.length; c++) {
+    (function (el) {
+      el.addEventListener("click", function () {
+        if (dealing) return;
+        chipValue = parseInt(el.getAttribute("data-val"), 10);
+        for (var k = 0; k < chipEls.length; k++) chipEls[k].classList.remove("sel");
+        el.classList.add("sel");
+        sndChip();
+        refresh();
+      });
+    })(chipEls[c]);
+  }
+
+  dealBtn.addEventListener("click", deal);
+  clearBtn.addEventListener("click", clearBets);
+
+  // prevent double-tap zoom / scroll bounce
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("touchmove", function (e) {
+    if (e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  refresh();
+})();
+</script>
+</body>
+</html>

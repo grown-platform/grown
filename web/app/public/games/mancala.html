@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Mancala</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #2a3d2f, #16201a 70%);
+    color: #f0e6d2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin: 10px 0 4px;
+    letter-spacing: 2px;
+    text-shadow: 0 2px 4px rgba(0,0,0,.5);
+    color: #ffd98a;
+  }
+  #turn {
+    font-size: .95rem;
+    min-height: 1.2em;
+    margin-bottom: 8px;
+    font-weight: 600;
+    transition: color .2s;
+  }
+  #turn.you { color: #8ee6a0; }
+  #turn.cpu { color: #ffb38a; }
+  #turn.over { color: #ffd98a; }
+
+  #board {
+    width: 100%;
+    max-width: 420px;
+    background: linear-gradient(160deg, #7a4a25, #5a3318);
+    border-radius: 22px;
+    padding: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5), inset 0 1px 2px rgba(255,255,255,.15);
+    display: grid;
+    grid-template-columns: 1fr 4fr 1fr;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .store {
+    border-radius: 40px;
+    background: radial-gradient(circle at 50% 30%, #3d2410, #20120a);
+    box-shadow: inset 0 4px 10px rgba(0,0,0,.6);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 220px;
+  }
+  .store .label {
+    font-size: .6rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: .7;
+    margin-bottom: 4px;
+  }
+  .store .count {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #ffd98a;
+  }
+  .store.flash { animation: flash .4s; }
+  @keyframes flash { 50% { box-shadow: inset 0 0 0 3px #ffd98a, inset 0 4px 10px rgba(0,0,0,.6); } }
+
+  .rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: center;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+  }
+  .pit {
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 30%, #3d2410, #20120a);
+    box-shadow: inset 0 4px 8px rgba(0,0,0,.6);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform .1s, box-shadow .15s;
+  }
+  .pit .num {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f0e6d2;
+    text-shadow: 0 1px 2px #000;
+    z-index: 2;
+  }
+  .stones {
+    position: absolute;
+    inset: 12%;
+    border-radius: 50%;
+    z-index: 1;
+    pointer-events: none;
+  }
+  .stones .stone {
+    position: absolute;
+    width: 22%;
+    height: 22%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff, #9fb8d8 60%, #5a7099);
+    box-shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+  .pit.mine { cursor: pointer; }
+  .pit.playable { box-shadow: inset 0 4px 8px rgba(0,0,0,.6), 0 0 0 3px #8ee6a0; }
+  .pit.playable:active { transform: scale(.93); }
+  .pit.empty .num { opacity: .35; }
+  .pit.sow { animation: pop .25s; }
+  @keyframes pop { 50% { transform: scale(1.15); } }
+
+  #controls {
+    margin-top: 14px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  button {
+    font-family: inherit;
+    font-size: .95rem;
+    font-weight: 600;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(#ffd98a, #e6b860);
+    color: #3a2410;
+    box-shadow: 0 3px 0 #a8823c;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: translateY(2px); box-shadow: 0 1px 0 #a8823c; }
+
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  #overlay.show { display: flex; }
+  #overlay .card {
+    background: linear-gradient(160deg, #2a3d2f, #1a261e);
+    border: 2px solid #ffd98a;
+    border-radius: 18px;
+    padding: 26px 28px;
+    text-align: center;
+    max-width: 300px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.6);
+  }
+  #overlay h2 { font-size: 1.4rem; margin-bottom: 8px; color: #ffd98a; }
+  #overlay p { margin-bottom: 16px; font-size: .95rem; line-height: 1.4; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/mancala.svg">
+    <link rel="manifest" href="/games/mancala.webmanifest">
+    <meta name="theme-color" content="#B45309">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Mancala">
+    <link rel="apple-touch-icon" href="/games/icons/mancala.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#B45309;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <h1>MANCALA</h1>
+  <div id="turn" class="you">Your turn</div>
+
+  <div id="board">
+    <div class="store" id="storeCPU">
+      <div class="label">CPU</div>
+      <div class="count" id="countCPU">0</div>
+    </div>
+    <div class="rows">
+      <div class="row" id="rowCPU"></div>
+      <div class="row" id="rowYou"></div>
+    </div>
+    <div class="store" id="storeYou">
+      <div class="label">You</div>
+      <div class="count" id="countYou">0</div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <button id="newGame">New Game</button>
+  </div>
+
+  <div id="overlay">
+    <div class="card">
+      <h2 id="result"></h2>
+      <p id="resultDetail"></p>
+      <button id="playAgain">Play Again</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Board model ----------------------------------------------------------
+  // 14 cells, sown counterclockwise:
+  //   indices 0..5   = YOU pits (left -> right as displayed)
+  //   index   6      = YOU store
+  //   indices 7..12  = CPU pits
+  //   index   13     = CPU store
+  // Opposite pit of i (a player pit) is 12 - i.
+  var YOU_STORE = 6, CPU_STORE = 13;
+  var board, turn, gameOver, busy;
+
+  function newGame() {
+    board = new Array(14).fill(4);
+    board[YOU_STORE] = 0;
+    board[CPU_STORE] = 0;
+    turn = "you";
+    gameOver = false;
+    busy = false;
+    hideOverlay();
+    render();
+    setTurnText();
+  }
+
+  function isYouPit(i) { return i >= 0 && i <= 5; }
+  function isCpuPit(i) { return i >= 7 && i <= 12; }
+
+  // Perform a move from pit `from` for `player`. Returns { extra: bool }.
+  // Mutates board. Does NOT handle end-of-game sweep (caller does).
+  function applyMove(from, player) {
+    var stones = board[from];
+    board[from] = 0;
+    var myStore = player === "you" ? YOU_STORE : CPU_STORE;
+    var oppStore = player === "you" ? CPU_STORE : YOU_STORE;
+    var i = from;
+    while (stones > 0) {
+      i = (i + 1) % 14;
+      if (i === oppStore) continue; // skip opponent's store
+      board[i]++;
+      stones--;
+    }
+    var last = i;
+    var extra = false;
+
+    if (last === myStore) {
+      extra = true; // landed in own store -> go again
+    } else {
+      // capture: last stone lands in own EMPTY pit (now count 1) and opposite has stones
+      var ownPit = player === "you" ? isYouPit(last) : isCpuPit(last);
+      if (ownPit && board[last] === 1) {
+        var opp = 12 - last;
+        if (board[opp] > 0) {
+          board[myStore] += board[opp] + 1;
+          board[opp] = 0;
+          board[last] = 0;
+        }
+      }
+    }
+    return { extra: extra, last: last };
+  }
+
+  function sideEmpty(player) {
+    var lo = player === "you" ? 0 : 7;
+    for (var i = lo; i < lo + 6; i++) if (board[i] > 0) return false;
+    return true;
+  }
+
+  // If either side is empty, sweep remaining stones into respective store.
+  function checkAndSweep() {
+    if (sideEmpty("you") || sideEmpty("cpu")) {
+      for (var i = 0; i <= 5; i++) { board[YOU_STORE] += board[i]; board[i] = 0; }
+      for (var j = 7; j <= 12; j++) { board[CPU_STORE] += board[j]; board[j] = 0; }
+      return true;
+    }
+    return false;
+  }
+
+  // ---- Rendering ------------------------------------------------------------
+  var rowYou = document.getElementById("rowYou");
+  var rowCPU = document.getElementById("rowCPU");
+  var pitEls = {}; // index -> element
+
+  function buildPits() {
+    rowYou.innerHTML = "";
+    rowCPU.innerHTML = "";
+    pitEls = {};
+    // CPU row displayed left->right as 12,11,10,9,8,7 so it visually mirrors
+    var cpuOrder = [12, 11, 10, 9, 8, 7];
+    cpuOrder.forEach(function (idx) {
+      rowCPU.appendChild(makePit(idx, false));
+    });
+    for (var i = 0; i <= 5; i++) {
+      rowYou.appendChild(makePit(i, true));
+    }
+  }
+
+  function makePit(idx, mine) {
+    var el = document.createElement("div");
+    el.className = "pit" + (mine ? " mine" : "");
+    el.dataset.idx = idx;
+    var stones = document.createElement("div");
+    stones.className = "stones";
+    var num = document.createElement("div");
+    num.className = "num";
+    el.appendChild(stones);
+    el.appendChild(num);
+    if (mine) {
+      el.addEventListener("click", function () { onPitTap(idx); });
+    }
+    pitEls[idx] = el;
+    return el;
+  }
+
+  function renderStones(el, count) {
+    var holder = el.querySelector(".stones");
+    holder.innerHTML = "";
+    var show = Math.min(count, 12);
+    for (var k = 0; k < show; k++) {
+      var s = document.createElement("div");
+      s.className = "stone";
+      // deterministic-ish scatter so it doesn't reshuffle wildly
+      var ang = (k * 137.5) * Math.PI / 180;
+      var rad = 0.30 + (k % 3) * 0.12;
+      var cx = 39 + Math.cos(ang) * rad * 50;
+      var cy = 39 + Math.sin(ang) * rad * 50;
+      s.style.left = cx + "%";
+      s.style.top = cy + "%";
+      holder.appendChild(s);
+    }
+  }
+
+  function render() {
+    for (var i = 0; i <= 12; i++) {
+      if (i === YOU_STORE) continue;
+      var el = pitEls[i];
+      if (!el) continue;
+      var c = board[i];
+      el.querySelector(".num").textContent = c;
+      el.classList.toggle("empty", c === 0);
+      renderStones(el, c);
+      var playable = (turn === "you" && !gameOver && !busy && isYouPit(i) && c > 0);
+      el.classList.toggle("playable", playable);
+    }
+    document.getElementById("countYou").textContent = board[YOU_STORE];
+    document.getElementById("countCPU").textContent = board[CPU_STORE];
+  }
+
+  function setTurnText() {
+    var t = document.getElementById("turn");
+    if (gameOver) { t.className = "over"; return; }
+    if (turn === "you") { t.textContent = "Your turn"; t.className = "you"; }
+    else { t.textContent = "CPU thinking…"; t.className = "cpu"; }
+  }
+
+  // ---- Sound ----------------------------------------------------------------
+  var audioCtx = null;
+  function beep(freq, dur, type, vol) {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = vol == null ? 0.06 : vol;
+      o.connect(g); g.connect(audioCtx.destination);
+      var now = audioCtx.currentTime;
+      g.gain.setValueAtTime(g.gain.value, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.start(now);
+      o.stop(now + dur);
+    } catch (e) {}
+  }
+  function sndSow() { beep(420 + Math.random() * 80, 0.08, "triangle", 0.05); }
+  function sndStore() { beep(660, 0.12, "sine", 0.08); }
+  function sndCapture() { beep(880, 0.16, "square", 0.07); setTimeout(function(){ beep(1180,0.18,"square",0.06); }, 90); }
+  function sndWin() { [523,659,784,1046].forEach(function(f,i){ setTimeout(function(){ beep(f,0.22,"triangle",0.08); }, i*130); }); }
+  function sndLose() { [440,330,247].forEach(function(f,i){ setTimeout(function(){ beep(f,0.28,"sawtooth",0.06); }, i*160); }); }
+
+  // ---- Animated move execution ---------------------------------------------
+  // We animate sowing visually by stepping through, but logic is computed up
+  // front for correctness, then we replay the count changes.
+  function animateMove(from, player, done) {
+    busy = true;
+    render(); // clears playable highlights
+
+    var myStore = player === "you" ? YOU_STORE : CPU_STORE;
+    var oppStore = player === "you" ? CPU_STORE : YOU_STORE;
+
+    var stones = board[from];
+    board[from] = 0;
+    updateCell(from);
+
+    var i = from;
+    var step = function () {
+      if (stones <= 0) {
+        finishMove(player, i, done);
+        return;
+      }
+      i = (i + 1) % 14;
+      if (i === oppStore) { step(); return; }
+      board[i]++;
+      stones--;
+      if (i === myStore) sndStore(); else sndSow();
+      pulseCell(i);
+      updateCell(i);
+      setTimeout(step, 120);
+    };
+    setTimeout(step, 120);
+  }
+
+  function finishMove(player, last, done) {
+    var myStore = player === "you" ? YOU_STORE : CPU_STORE;
+    var extra = false;
+
+    if (last === myStore) {
+      extra = true;
+    } else {
+      var ownPit = player === "you" ? isYouPit(last) : isCpuPit(last);
+      if (ownPit && board[last] === 1) {
+        var opp = 12 - last;
+        if (board[opp] > 0) {
+          board[myStore] += board[opp] + 1;
+          board[opp] = 0;
+          board[last] = 0;
+          updateCell(opp); updateCell(last); updateCell(myStore);
+          sndCapture();
+          flashStore(myStore);
+        }
+      }
+    }
+
+    // End of game?
+    var swept = checkAndSweep();
+    if (swept) {
+      render();
+      busy = false;
+      endGame();
+      return;
+    }
+
+    busy = false;
+    done(extra);
+  }
+
+  function updateCell(i) {
+    if (i === YOU_STORE) { document.getElementById("countYou").textContent = board[YOU_STORE]; return; }
+    if (i === CPU_STORE) { document.getElementById("countCPU").textContent = board[CPU_STORE]; return; }
+    var el = pitEls[i];
+    if (!el) return;
+    el.querySelector(".num").textContent = board[i];
+    el.classList.toggle("empty", board[i] === 0);
+    renderStones(el, board[i]);
+  }
+
+  function pulseCell(i) {
+    var el = pitEls[i];
+    if (!el) return;
+    el.classList.remove("sow");
+    void el.offsetWidth;
+    el.classList.add("sow");
+  }
+
+  function flashStore(storeIdx) {
+    var el = document.getElementById(storeIdx === YOU_STORE ? "storeYou" : "storeCPU");
+    el.classList.remove("flash");
+    void el.offsetWidth;
+    el.classList.add("flash");
+  }
+
+  // ---- Turn flow ------------------------------------------------------------
+  function onPitTap(idx) {
+    if (gameOver || busy || turn !== "you") return;
+    if (!isYouPit(idx) || board[idx] === 0) return;
+    animateMove(idx, "you", function (extra) {
+      if (gameOver) return;
+      if (extra) {
+        setTurnText();
+        render();
+      } else {
+        turn = "cpu";
+        setTurnText();
+        render();
+        setTimeout(cpuTurn, 550);
+      }
+    });
+  }
+
+  function cpuTurn() {
+    if (gameOver) return;
+    if (turn !== "cpu") return;
+    var move = chooseCpuMove();
+    if (move == null) { // no moves (shouldn't normally happen pre-sweep)
+      checkAndSweep(); render(); endGame(); return;
+    }
+    animateMove(move, "cpu", function (extra) {
+      if (gameOver) return;
+      if (extra) {
+        setTurnText();
+        render();
+        setTimeout(cpuTurn, 550);
+      } else {
+        turn = "you";
+        setTurnText();
+        render();
+      }
+    });
+  }
+
+  // CPU heuristic: simulate each legal move, score the resulting position.
+  // Prefer extra turns and captures; value own store; avoid leaving big
+  // captures for the opponent (light 1-ply look).
+  function chooseCpuMove() {
+    var legal = [];
+    for (var i = 7; i <= 12; i++) if (board[i] > 0) legal.push(i);
+    if (legal.length === 0) return null;
+
+    var best = null, bestScore = -Infinity;
+    for (var k = 0; k < legal.length; k++) {
+      var from = legal[k];
+      var snapshot = board.slice();
+      var res = applyMove(from, "cpu"); // mutates board
+      var score = scorePosition(res);
+      board = snapshot; // restore
+      // tiny noise so it's not perfectly deterministic
+      score += Math.random() * 0.01;
+      if (score > bestScore) { bestScore = score; best = from; }
+    }
+    return best;
+  }
+
+  function scorePosition(res) {
+    // From CPU's perspective on the mutated board.
+    var score = (board[CPU_STORE] - board[YOU_STORE]) * 1.0;
+    if (res.extra) score += 2.5; // extra turns are strong
+
+    // Reward stones positioned to land in store next time (rough mobility).
+    var cpuStones = 0;
+    for (var i = 7; i <= 12; i++) cpuStones += board[i];
+    score += cpuStones * 0.05;
+
+    // Penalize exposing a capture to the opponent: if YOU has a pit whose
+    // stones can reach an empty own pit opposite a loaded CPU pit (1-ply).
+    var threat = opponentBestCapture();
+    score -= threat * 0.6;
+
+    // Bonus if this move ends the game favorably.
+    if (sideEmpty("you") || sideEmpty("cpu")) {
+      var y = board[YOU_STORE], c = board[CPU_STORE];
+      for (var a = 0; a <= 5; a++) y += board[a];
+      for (var b = 7; b <= 12; b++) c += board[b];
+      score += (c - y) * 1.0;
+    }
+    return score;
+  }
+
+  // Estimate the largest capture YOU could make on the current board next turn.
+  function opponentBestCapture() {
+    var maxCap = 0;
+    for (var from = 0; from <= 5; from++) {
+      var n = board[from];
+      if (n === 0) continue;
+      // where does the last stone land? (you skips CPU store=13)
+      var i = from, rem = n;
+      while (rem > 0) {
+        i = (i + 1) % 14;
+        if (i === CPU_STORE) continue;
+        rem--;
+      }
+      var last = i;
+      if (isYouPit(last)) {
+        // pit count after landing (only this single move; approximate)
+        var landCount = board[last] + (last === from ? 0 : 1);
+        // If it was empty before and gets exactly 1 -> capture
+        var wasEmpty = (last === from) ? false : (board[last] === 0);
+        if (wasEmpty && landCount === 1) {
+          var opp = 12 - last;
+          if (board[opp] > 0) maxCap = Math.max(maxCap, board[opp] + 1);
+        }
+      }
+    }
+    return maxCap;
+  }
+
+  // ---- End game -------------------------------------------------------------
+  function endGame() {
+    gameOver = true;
+    var y = board[YOU_STORE], c = board[CPU_STORE];
+    var t = document.getElementById("turn");
+    t.className = "over";
+    var resultEl = document.getElementById("result");
+    var detailEl = document.getElementById("resultDetail");
+    if (y > c) {
+      resultEl.textContent = "You Win!";
+      t.textContent = "You win " + y + " – " + c;
+      sndWin();
+    } else if (c > y) {
+      resultEl.textContent = "CPU Wins";
+      t.textContent = "CPU wins " + c + " – " + y;
+      sndLose();
+    } else {
+      resultEl.textContent = "Tie Game";
+      t.textContent = "Tie " + y + " – " + c;
+      beep(440, 0.3, "sine", 0.06);
+    }
+    detailEl.textContent = "You: " + y + "    CPU: " + c;
+    setTimeout(showOverlay, 600);
+  }
+
+  function showOverlay() { document.getElementById("overlay").classList.add("show"); }
+  function hideOverlay() { document.getElementById("overlay").classList.remove("show"); }
+
+  // ---- Wire up --------------------------------------------------------------
+  document.getElementById("newGame").addEventListener("click", function () {
+    if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    newGame();
+  });
+  document.getElementById("playAgain").addEventListener("click", newGame);
+
+  // prevent double-tap zoom / gesture scroll
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("touchmove", function (e) { if (e.scale && e.scale !== 1) e.preventDefault(); }, { passive: false });
+
+  buildPits();
+  newGame();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>FreeCell</title>
+<style>
+  :root{
+    --gap: 4px;
+    --card-w: 40px;
+    --card-h: 56px;
+    --radius: 5px;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:#0b6e3b;
+    color:#fff;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overscroll-behavior:none;
+    touch-action:manipulation;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  #app{
+    display:flex; flex-direction:column;
+    min-height:100%;
+    padding:6px;
+    touch-action:none;
+  }
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:6px; margin-bottom:6px; flex-wrap:wrap;
+  }
+  h1{ font-size:18px; margin:0; font-weight:700; letter-spacing:.5px; }
+  .stats{ font-size:12px; opacity:.9; }
+  .btns{ display:flex; gap:6px; }
+  button{
+    font:inherit; font-size:12px; font-weight:600;
+    background:#0a4f2b; color:#fff; border:1px solid rgba(255,255,255,.25);
+    border-radius:6px; padding:6px 10px; cursor:pointer;
+    touch-action:manipulation;
+  }
+  button:active{ background:#063f22; }
+
+  .top-row{
+    display:flex; gap:var(--gap); justify-content:space-between;
+    margin-bottom:8px;
+  }
+  .cells, .founds{ display:flex; gap:var(--gap); }
+
+  .slot{
+    width:var(--card-w); height:var(--card-h);
+    border-radius:var(--radius);
+    border:1.5px dashed rgba(255,255,255,.35);
+    background:rgba(0,0,0,.12);
+    position:relative;
+    flex:0 0 auto;
+  }
+  .slot.found::after{
+    content:attr(data-suit);
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:calc(var(--card-h) * .45);
+    opacity:.28;
+  }
+
+  .tableau{
+    display:flex; gap:var(--gap);
+    justify-content:space-between;
+    flex:1;
+    align-items:flex-start;
+  }
+  .col{
+    width:var(--card-w);
+    min-height:var(--card-h);
+    position:relative;
+    flex:0 0 auto;
+  }
+  .col .colbase{
+    width:var(--card-w); height:var(--card-h);
+    border-radius:var(--radius);
+    border:1.5px dashed rgba(255,255,255,.18);
+    position:absolute; top:0; left:0;
+  }
+
+  .card{
+    width:var(--card-w); height:var(--card-h);
+    border-radius:var(--radius);
+    background:#fff; color:#222;
+    position:absolute; left:0;
+    box-shadow:0 1px 2px rgba(0,0,0,.35);
+    border:1px solid #d8d8d8;
+    overflow:hidden;
+    will-change:top,left;
+  }
+  /* cards inside free cells / foundations sit at top:0 */
+  .cells .card, .founds .card{ position:absolute; top:0; left:0; }
+
+  .card .corner{
+    position:absolute; top:1px; left:2px;
+    font-weight:700; line-height:1;
+    font-size:calc(var(--card-h) * .26);
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .card .corner .suit{ font-size:calc(var(--card-h) * .24); }
+  .card .pip{
+    position:absolute; right:2px; bottom:0px;
+    font-size:calc(var(--card-h) * .5);
+    line-height:1;
+    opacity:.9;
+  }
+  .card.red{ color:#c61b1b; }
+  .card.black{ color:#1a1a1a; }
+
+  .card.sel{ outline:3px solid #ffd34d; outline-offset:-1px; z-index:50; }
+  .card.hint{ box-shadow:0 0 0 2px #ffd34d, 0 1px 2px rgba(0,0,0,.35); }
+  .card.dragging{ z-index:999; box-shadow:0 6px 14px rgba(0,0,0,.5); }
+
+  .col .card{ cursor:pointer; }
+
+  #win{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,.78);
+    display:none; align-items:center; justify-content:center;
+    flex-direction:column; gap:14px; z-index:1000;
+    text-align:center; padding:20px;
+  }
+  #win.show{ display:flex; }
+  #win h2{ font-size:30px; margin:0; }
+  #win p{ margin:0; opacity:.9; }
+
+  .toast{
+    position:fixed; bottom:14px; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,.8); color:#fff; padding:8px 14px;
+    border-radius:20px; font-size:13px; opacity:0; pointer-events:none;
+    transition:opacity .2s; z-index:900;
+  }
+  .toast.show{ opacity:1; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/freecell.svg">
+    <link rel="manifest" href="/games/freecell.webmanifest">
+    <meta name="theme-color" content="#0D9488">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="FreeCell">
+    <link rel="apple-touch-icon" href="/games/icons/freecell.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#0D9488;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>FreeCell</h1>
+    <div class="stats">Moves: <span id="moves">0</span></div>
+    <div class="btns">
+      <button id="sound" title="Sound">🔊</button>
+      <button id="undo">Undo</button>
+      <button id="new">New Game</button>
+    </div>
+  </header>
+
+  <div class="top-row">
+    <div class="cells" id="cells"></div>
+    <div class="founds" id="founds"></div>
+  </div>
+
+  <div class="tableau" id="tableau"></div>
+</div>
+
+<div id="win">
+  <h2>You Win! 🎉</h2>
+  <p id="winmoves"></p>
+  <button id="winnew">New Game</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+(function(){
+  // ---------- Card model ----------
+  // Suits: 0=spades(black),1=hearts(red),2=clubs(black),3=diamonds(red)
+  const SUITS = ['♠','♥','♣','♦'];
+  const SUIT_RED = [false,true,false,true];
+  const RANKS = ['','A','2','3','4','5','6','7','8','9','10','J','Q','K']; // index = rank (1..13)
+
+  function makeCard(rank, suit){
+    return { rank, suit, id: suit*13 + rank };
+  }
+  function isRed(c){ return SUIT_RED[c.suit]; }
+
+  // ---------- Game state ----------
+  // state: { free:[card|null x4], found:[card[] x4 by suit], cols:[card[] x8] }
+  let state = null;
+  let moves = 0;
+  let history = []; // stack of deep-ish snapshots
+  let soundOn = true;
+
+  // selection: { type:'col'|'free', idx, start } -> a stack of cards
+  let selection = null;
+
+  function deepClone(s){
+    return {
+      free: s.free.map(c => c ? {...c} : null),
+      found: s.found.map(pile => pile.map(c => ({...c}))),
+      cols: s.cols.map(col => col.map(c => ({...c})))
+    };
+  }
+
+  // ---------- Deal ----------
+  function shuffledDeck(){
+    const deck = [];
+    for(let s=0;s<4;s++) for(let r=1;r<=13;r++) deck.push(makeCard(r,s));
+    // Fisher-Yates
+    for(let i=deck.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [deck[i],deck[j]] = [deck[j],deck[i]];
+    }
+    return deck;
+  }
+
+  function newGame(){
+    const deck = shuffledDeck();
+    state = {
+      free: [null,null,null,null],
+      found: [[],[],[],[]],
+      cols: [[],[],[],[],[],[],[],[]]
+    };
+    // deal: first 4 columns get 7, last 4 get 6 (standard FreeCell)
+    for(let i=0;i<deck.length;i++){
+      state.cols[i % 8].push(deck[i]);
+    }
+    moves = 0;
+    history = [];
+    selection = null;
+    hideWin();
+    render();
+  }
+
+  // ---------- Rules ----------
+  function topOfCol(ci){
+    const col = state.cols[ci];
+    return col.length ? col[col.length-1] : null;
+  }
+
+  // is [a] placeable on [b] in tableau (down by rank, alternating color)
+  function canStackTableau(moving, onto){
+    if(!onto) return true; // empty column accepts anything
+    return onto.rank === moving.rank + 1 && isRed(onto) !== isRed(moving);
+  }
+
+  // is a run starting at index i in column ci a valid descending alt-color sequence to the bottom?
+  function isValidRun(col, startIdx){
+    for(let k=startIdx;k<col.length-1;k++){
+      const a = col[k], b = col[k+1];
+      if(!(a.rank === b.rank+1 && isRed(a) !== isRed(b))) return false;
+    }
+    return true;
+  }
+
+  function emptyCols(excludeIdx){
+    let n=0;
+    for(let i=0;i<8;i++){
+      if(i===excludeIdx) continue;
+      if(state.cols[i].length===0) n++;
+    }
+    return n;
+  }
+  function freeCount(){ return state.free.filter(c=>c===null).length; }
+
+  // max cards movable as a supermove.
+  // destEmpty: whether target column is an empty column (it cannot be counted as an empty helper)
+  function maxSupermove(destColIdx, destIsEmpty){
+    const f = freeCount();
+    // empty columns available as intermediate, excluding the destination if it's empty
+    let e = emptyCols(destIsEmpty ? destColIdx : -1);
+    if(destIsEmpty){
+      // destination empty col cannot help itself; already excluded above
+    }
+    return (f + 1) * Math.pow(2, e);
+  }
+
+  function foundationAccepts(suit, card){
+    const pile = state.found[suit];
+    if(card.suit !== suit) return false;
+    if(pile.length === 0) return card.rank === 1;
+    return card.rank === pile[pile.length-1].rank + 1;
+  }
+
+  // ---------- Moves ----------
+  function pushHistory(){
+    history.push({ snap: deepClone(state), moves });
+    if(history.length > 500) history.shift();
+  }
+
+  function commitMove(){
+    moves++;
+    selection = null;
+    render();
+    checkWin();
+    maybeAutoCascade();
+  }
+
+  // Move a single card from a source to foundation if possible. Returns true if moved.
+  function tryFoundationFromTop(srcType, srcIdx){
+    let card;
+    if(srcType==='col'){ card = topOfCol(srcIdx); }
+    else { card = state.free[srcIdx]; }
+    if(!card) return false;
+    if(foundationAccepts(card.suit, card)){
+      pushHistory();
+      if(srcType==='col') state.cols[srcIdx].pop();
+      else state.free[srcIdx] = null;
+      state.found[card.suit].push(card);
+      sound('found');
+      commitMove();
+      return true;
+    }
+    return false;
+  }
+
+  // Move selected stack to a target column. Handles supermove.
+  function moveStackToCol(srcType, srcIdx, startIdx, destCol){
+    let stack;
+    if(srcType==='col'){
+      stack = state.cols[srcIdx].slice(startIdx);
+    } else {
+      stack = [ state.free[srcIdx] ];
+    }
+    if(stack.length===0) return false;
+    const destIsEmpty = state.cols[destCol].length===0;
+    const onto = topOfCol(destCol);
+    if(!canStackTableau(stack[0], onto)) return false;
+
+    // supermove limit
+    const limit = maxSupermove(destCol, destIsEmpty);
+    if(stack.length > limit) return false;
+
+    pushHistory();
+    if(srcType==='col'){ state.cols[srcIdx].splice(startIdx); }
+    else { state.free[srcIdx] = null; }
+    for(const c of stack) state.cols[destCol].push(c);
+    sound('move');
+    commitMove();
+    return true;
+  }
+
+  function moveToFree(srcType, srcIdx, startIdx, freeIdx){
+    if(state.free[freeIdx] !== null) return false;
+    let card;
+    if(srcType==='col'){
+      // only single top card can go to a free cell
+      if(startIdx !== state.cols[srcIdx].length-1) return false;
+      card = state.cols[srcIdx][startIdx];
+    } else {
+      if(srcIdx===freeIdx) return false;
+      card = state.free[srcIdx];
+    }
+    if(!card) return false;
+    pushHistory();
+    if(srcType==='col') state.cols[srcIdx].pop();
+    else state.free[srcIdx] = null;
+    state.free[freeIdx] = card;
+    sound('move');
+    commitMove();
+    return true;
+  }
+
+  function moveToFoundation(srcType, srcIdx, startIdx, suit){
+    let card;
+    if(srcType==='col'){
+      if(startIdx !== state.cols[srcIdx].length-1) return false;
+      card = state.cols[srcIdx][startIdx];
+    } else {
+      card = state.free[srcIdx];
+    }
+    if(!card) return false;
+    if(!foundationAccepts(suit, card)) return false;
+    pushHistory();
+    if(srcType==='col') state.cols[srcIdx].pop();
+    else state.free[srcIdx] = null;
+    state.found[suit].push(card);
+    sound('found');
+    commitMove();
+    return true;
+  }
+
+  function undo(){
+    if(history.length===0){ toast('Nothing to undo'); return; }
+    const h = history.pop();
+    state = h.snap;
+    moves = h.moves;
+    selection = null;
+    hideWin();
+    sound('undo');
+    render();
+  }
+
+  // ---------- Auto cascade ----------
+  // Auto-send obviously-safe cards to foundation (only when no harm: both opposite-color
+  // foundations are at least rank-1 below, classic FreeCell safe autoplay).
+  function safeToAuto(card){
+    const r = card.rank;
+    if(r<=2) return true; // aces & twos always safe
+    // min rank of the two opposite-color foundations
+    const oppA = isRed(card) ? 0 : 1; // a black card's opposite colors are hearts(1)&diamonds(3); pick reds
+    // Determine the two opposite-color suits
+    let opp = isRed(card) ? [0,2] : [1,3];
+    const minOpp = Math.min(state.found[opp[0]].length, state.found[opp[1]].length);
+    // also same-color other suit must be high enough (standard safe rule)
+    let sameOther = (card.suit + 2) % 4; // other suit of same color
+    // safe if both opposite foundations >= r-1
+    return minOpp >= r-1;
+  }
+
+  function maybeAutoCascade(){
+    let changed = true;
+    let did = false;
+    while(changed){
+      changed = false;
+      for(let i=0;i<8;i++){
+        const c = topOfCol(i);
+        if(c && foundationAccepts(c.suit,c) && safeToAuto(c)){
+          state.cols[i].pop();
+          state.found[c.suit].push(c);
+          changed = true; did = true;
+        }
+      }
+      for(let i=0;i<4;i++){
+        const c = state.free[i];
+        if(c && foundationAccepts(c.suit,c) && safeToAuto(c)){
+          state.free[i] = null;
+          state.found[c.suit].push(c);
+          changed = true; did = true;
+        }
+      }
+    }
+    if(did){ sound('found'); render(); checkWin(); }
+  }
+
+  // ---------- Win ----------
+  function checkWin(){
+    const total = state.found.reduce((a,p)=>a+p.length,0);
+    if(total===52){ showWin(); sound('win'); }
+  }
+  function showWin(){
+    document.getElementById('winmoves').textContent = 'Solved in '+moves+' moves';
+    document.getElementById('win').classList.add('show');
+  }
+  function hideWin(){ document.getElementById('win').classList.remove('show'); }
+
+  // ---------- Selection / interaction logic ----------
+  // Clicking a tableau card: if it's the head of a valid run, select that run.
+  function selectColRun(ci, idx){
+    const col = state.cols[ci];
+    if(idx<0 || idx>=col.length) return;
+    if(!isValidRun(col, idx)) {
+      // can only select if it forms a valid descending run to the bottom
+      toast('Not a movable sequence');
+      return;
+    }
+    selection = { type:'col', idx:ci, start:idx };
+    render();
+  }
+
+  function clearSelection(){
+    selection = null;
+    render();
+  }
+
+  // Try to move current selection to a destination descriptor.
+  // dest: {kind:'col', idx} | {kind:'free', idx} | {kind:'found', suit}
+  function applyMoveToDest(dest){
+    if(!selection) return false;
+    const s = selection;
+    if(dest.kind==='col'){
+      // moving a single card from free, or a run from a column
+      if(s.type==='free'){
+        return moveStackToCol('free', s.idx, 0, dest.idx);
+      } else {
+        return moveStackToCol('col', s.idx, s.start, dest.idx);
+      }
+    } else if(dest.kind==='free'){
+      if(s.type==='free'){
+        return moveToFree('free', s.idx, 0, dest.idx);
+      } else {
+        return moveToFree('col', s.idx, s.start, dest.idx);
+      }
+    } else if(dest.kind==='found'){
+      if(s.type==='free'){
+        return moveToFoundation('free', s.idx, 0, dest.suit);
+      } else {
+        return moveToFoundation('col', s.idx, s.start, dest.suit);
+      }
+    }
+    return false;
+  }
+
+  // Auto-move helper: when tapping a card with no selection, try foundation first.
+  function autoMoveFromTap(srcType, srcIdx){
+    // Only auto-move the single top/free card to foundation.
+    return tryFoundationFromTop(srcType, srcIdx);
+  }
+
+  // ---------- Rendering ----------
+  const elCells = document.getElementById('cells');
+  const elFounds = document.getElementById('founds');
+  const elTableau = document.getElementById('tableau');
+  const elMoves = document.getElementById('moves');
+
+  function cardEl(card){
+    const d = document.createElement('div');
+    d.className = 'card ' + (isRed(card) ? 'red':'black');
+    d.dataset.id = card.id;
+    const corner = document.createElement('div');
+    corner.className='corner';
+    const r = document.createElement('span'); r.textContent = RANKS[card.rank];
+    const su = document.createElement('span'); su.className='suit'; su.textContent = SUITS[card.suit];
+    corner.appendChild(r); corner.appendChild(su);
+    const pip = document.createElement('div');
+    pip.className='pip'; pip.textContent = SUITS[card.suit];
+    d.appendChild(corner); d.appendChild(pip);
+    return d;
+  }
+
+  let overlapStep = 16; // computed in computeSizes
+
+  function computeSizes(){
+    // Determine card width from viewport: 8 columns + 7 gaps must fit.
+    const appW = document.getElementById('app').clientWidth - 12; // padding
+    const gap = 4;
+    let cardW = Math.floor((appW - gap*7)/8);
+    cardW = Math.max(30, Math.min(cardW, 64));
+    const cardH = Math.round(cardW * 1.4);
+    document.documentElement.style.setProperty('--card-w', cardW+'px');
+    document.documentElement.style.setProperty('--card-h', cardH+'px');
+    document.documentElement.style.setProperty('--gap', gap+'px');
+    // overlap step: leave room. Use ~ a quarter of card height but cap so tall stacks fit.
+    overlapStep = Math.max(12, Math.round(cardH*0.28));
+  }
+
+  function render(){
+    computeSizes();
+    elMoves.textContent = moves;
+
+    // Free cells
+    elCells.innerHTML='';
+    for(let i=0;i<4;i++){
+      const slot = document.createElement('div');
+      slot.className='slot free';
+      slot.dataset.free = i;
+      if(state.free[i]){
+        const ce = cardEl(state.free[i]);
+        if(selection && selection.type==='free' && selection.idx===i) ce.classList.add('sel');
+        slot.appendChild(ce);
+      }
+      elCells.appendChild(slot);
+    }
+
+    // Foundations
+    elFounds.innerHTML='';
+    for(let s=0;s<4;s++){
+      const slot = document.createElement('div');
+      slot.className='slot found';
+      slot.dataset.found = s;
+      slot.dataset.suit = SUITS[s];
+      const pile = state.found[s];
+      if(pile.length){
+        slot.appendChild(cardEl(pile[pile.length-1]));
+      }
+      elFounds.appendChild(slot);
+    }
+
+    // Tableau
+    elTableau.innerHTML='';
+    const cardH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--card-h'));
+    for(let ci=0;ci<8;ci++){
+      const col = document.createElement('div');
+      col.className='col';
+      col.dataset.col = ci;
+      const base = document.createElement('div');
+      base.className='colbase';
+      col.appendChild(base);
+      const cards = state.cols[ci];
+      let selStart = (selection && selection.type==='col' && selection.idx===ci) ? selection.start : -1;
+      for(let k=0;k<cards.length;k++){
+        const ce = cardEl(cards[k]);
+        ce.style.top = (k*overlapStep)+'px';
+        ce.dataset.col = ci;
+        ce.dataset.k = k;
+        if(selStart>=0 && k>=selStart) ce.classList.add('sel');
+        col.appendChild(ce);
+      }
+      // set column height so flex layout reserves space
+      const h = cards.length>0 ? (cards.length-1)*overlapStep + cardH : cardH;
+      col.style.height = h+'px';
+      elTableau.appendChild(col);
+    }
+  }
+
+  // ---------- Pointer handling (tap + drag) ----------
+  let drag = null; // {srcType, srcIdx, start, els:[], offsetX, offsetY, moved, startX,startY}
+
+  function getCardTarget(e){
+    let t = e.target;
+    while(t && !t.classList.contains('card') && t.id!=='app'){
+      if(t.dataset && (t.dataset.col!==undefined || t.dataset.free!==undefined || t.dataset.found!==undefined || t.dataset.k!==undefined)){
+        break;
+      }
+      t = t.parentElement;
+    }
+    return t;
+  }
+
+  // Determine a logical descriptor for an element under pointer.
+  function describeTarget(el){
+    if(!el) return null;
+    // card in a column
+    if(el.classList.contains('card') && el.dataset.col!==undefined && el.dataset.k!==undefined){
+      return { kind:'colcard', col:+el.dataset.col, k:+el.dataset.k };
+    }
+    // card in free cell
+    let p = el;
+    while(p){
+      if(p.dataset){
+        if(p.dataset.free!==undefined) return { kind:'freeslot', idx:+p.dataset.free };
+        if(p.dataset.found!==undefined) return { kind:'foundslot', suit:+p.dataset.found };
+        if(p.dataset.col!==undefined && p.classList.contains('col')) return { kind:'colslot', col:+p.dataset.col };
+      }
+      p = p.parentElement;
+    }
+    return null;
+  }
+
+  function elementDescriptorAtPoint(x,y){
+    const el = document.elementFromPoint(x,y);
+    if(!el) return null;
+    return describeTarget(el);
+  }
+
+  function onPointerDown(e){
+    if(e.button!==undefined && e.button!==0) return;
+    const el = e.target;
+    const desc = describeTarget(el);
+    if(!desc) return;
+
+    // Begin potential drag from a movable source.
+    let srcType=null, srcIdx=null, start=null, stackCards=null;
+
+    if(desc.kind==='colcard'){
+      const col = state.cols[desc.col];
+      if(isValidRun(col, desc.k)){
+        srcType='col'; srcIdx=desc.col; start=desc.k;
+        stackCards = col.slice(desc.k);
+      } else {
+        // tapping a non-movable card: select nothing draggable, but allow tap selection handling
+      }
+    } else if(desc.kind==='freeslot'){
+      if(state.free[desc.idx]){
+        srcType='free'; srcIdx=desc.idx; start=0;
+        stackCards=[state.free[desc.idx]];
+      }
+    }
+
+    const pt = pointFromEvent(e);
+
+    if(srcType){
+      drag = {
+        srcType, srcIdx, start, stackCards,
+        moved:false,
+        startX:pt.x, startY:pt.y,
+        els:[], offX:0, offY:0
+      };
+    } else {
+      drag = { tapOnly:true, desc, moved:false, startX:pt.x, startY:pt.y };
+    }
+    // prevent scrolling
+    e.preventDefault();
+  }
+
+  function pointFromEvent(e){
+    if(e.touches && e.touches.length) return { x:e.touches[0].clientX, y:e.touches[0].clientY };
+    if(e.changedTouches && e.changedTouches.length) return { x:e.changedTouches[0].clientX, y:e.changedTouches[0].clientY };
+    return { x:e.clientX, y:e.clientY };
+  }
+
+  function beginDragVisual(pt){
+    // gather DOM elements of the stack and lift them.
+    const d = drag;
+    d.els = [];
+    if(d.srcType==='col'){
+      const colEl = elTableau.querySelector('.col[data-col="'+d.srcIdx+'"]');
+      const cardEls = colEl ? Array.from(colEl.querySelectorAll('.card')) : [];
+      for(let k=d.start;k<cardEls.length;k++) d.els.push(cardEls[k]);
+    } else if(d.srcType==='free'){
+      const slot = elCells.querySelector('.slot[data-free="'+d.srcIdx+'"]');
+      const c = slot ? slot.querySelector('.card') : null;
+      if(c) d.els.push(c);
+    }
+    if(d.els.length===0) return;
+    const first = d.els[0];
+    const rect = first.getBoundingClientRect();
+    d.offX = pt.x - rect.left;
+    d.offY = pt.y - rect.top;
+    // move to body for free positioning
+    const stepPx = overlapStep;
+    d.els.forEach((el,i)=>{
+      const r = el.getBoundingClientRect();
+      el.classList.add('dragging');
+      el.style.position='fixed';
+      el.style.width = rect.width+'px';
+      el.style.height = rect.height+'px';
+      el.style.left = (rect.left)+'px';
+      el.style.top = (rect.top + i*stepPx)+'px';
+      el.style.zIndex = 1000+i;
+    });
+  }
+
+  function moveDragVisual(pt){
+    const d = drag;
+    const stepPx = overlapStep;
+    d.els.forEach((el,i)=>{
+      el.style.left = (pt.x - d.offX)+'px';
+      el.style.top = (pt.y - d.offY + i*stepPx)+'px';
+    });
+  }
+
+  function onPointerMove(e){
+    if(!drag) return;
+    const pt = pointFromEvent(e);
+    const dx = pt.x - drag.startX, dy = pt.y - drag.startY;
+    if(!drag.moved && (Math.abs(dx)>6 || Math.abs(dy)>6)){
+      drag.moved = true;
+      if(!drag.tapOnly){ beginDragVisual(pt); }
+    }
+    if(drag.moved && !drag.tapOnly && drag.els && drag.els.length){
+      moveDragVisual(pt);
+      e.preventDefault();
+    }
+  }
+
+  function tryDropAtPoint(pt){
+    const desc = elementDescriptorAtPoint(pt.x, pt.y);
+    if(!desc) return false;
+    // make selection temporarily = drag source then apply
+    const d = drag;
+    selection = { type:d.srcType, idx:d.srcIdx, start:(d.srcType==='col'?d.start:0) };
+    let dest=null;
+    if(desc.kind==='colcard') dest = { kind:'col', idx:desc.col };
+    else if(desc.kind==='colslot') dest = { kind:'col', idx:desc.col };
+    else if(desc.kind==='freeslot') dest = { kind:'free', idx:desc.idx };
+    else if(desc.kind==='foundslot') dest = { kind:'found', suit:desc.suit };
+    if(!dest){ selection=null; return false; }
+    const ok = applyMoveToDest(dest);
+    if(!ok) selection=null;
+    return ok;
+  }
+
+  function onPointerUp(e){
+    if(!drag){ return; }
+    const pt = pointFromEvent(e);
+    const d = drag;
+
+    if(d.tapOnly){
+      handleTap(d.desc, pt);
+      drag=null;
+      return;
+    }
+
+    if(d.moved && d.els && d.els.length){
+      // attempt drop. Temporarily hide dragged els so elementFromPoint sees underneath.
+      d.els.forEach(el=>{ el.style.pointerEvents='none'; });
+      const ok = tryDropAtPoint(pt);
+      if(!ok){
+        // snap back: re-render restores positions
+        render();
+      }
+      drag=null;
+      return;
+    }
+
+    // Not moved -> treat as tap on a movable source.
+    drag=null;
+    handleTapOnSource(d.srcType, d.srcIdx, d.start);
+  }
+
+  // Tap on something that is not a movable source (e.g., a non-head column card, empty slot, foundation)
+  function handleTap(desc, pt){
+    if(!desc) { clearSelection(); return; }
+
+    if(selection){
+      // try to move selection to this destination
+      let dest=null;
+      if(desc.kind==='colcard') dest={kind:'col', idx:desc.col};
+      else if(desc.kind==='colslot') dest={kind:'col', idx:desc.col};
+      else if(desc.kind==='freeslot') dest={kind:'free', idx:desc.idx};
+      else if(desc.kind==='foundslot') dest={kind:'found', suit:desc.suit};
+      if(dest){
+        const ok = applyMoveToDest(dest);
+        if(!ok){ sound('bad'); clearSelection(); }
+        return;
+      }
+      clearSelection();
+      return;
+    }
+
+    // No selection: tapping a non-head card -> try to select a run if valid
+    if(desc.kind==='colcard'){
+      selectColRun(desc.col, desc.k);
+    } else if(desc.kind==='foundslot'){
+      // nothing
+    }
+  }
+
+  // Tap on a movable source card (head of run / free cell card)
+  function handleTapOnSource(srcType, srcIdx, start){
+    if(selection){
+      // If tapping same selection -> auto move to foundation or deselect
+      const same = selection.type===srcType && selection.idx===srcIdx &&
+                   (srcType!=='col' || selection.start===start);
+      if(same){
+        // try auto to foundation, else deselect
+        if(!autoMoveFromTap(srcType, srcIdx)){
+          clearSelection();
+        }
+        return;
+      }
+      // tapping a different source: treat as destination first (e.g., moving onto a column head)
+      if(srcType==='col'){
+        const ok = applyMoveToDest({kind:'col', idx:srcIdx});
+        if(ok) return;
+      } else if(srcType==='free'){
+        const ok = applyMoveToDest({kind:'free', idx:srcIdx});
+        if(ok) return;
+      }
+      // otherwise switch selection to this source
+      if(srcType==='col') selectColRun(srcIdx, start);
+      else { selection={type:'free', idx:srcIdx, start:0}; render(); }
+      return;
+    }
+
+    // No selection: select this source. (single tap selects; user taps dest next)
+    if(srcType==='col'){
+      selectColRun(srcIdx, start);
+    } else {
+      selection = { type:'free', idx:srcIdx, start:0 };
+      render();
+    }
+  }
+
+  // Double-tap detection for quick auto-to-foundation
+  let lastTapTime=0, lastTapKey='';
+  function tapKeyFor(srcType,srcIdx,start){ return srcType+':'+srcIdx+':'+start; }
+
+  // Wire pointer events on the app container
+  const app = document.getElementById('app');
+  // Use touch + mouse
+  app.addEventListener('touchstart', onPointerDown, {passive:false});
+  app.addEventListener('touchmove', onPointerMove, {passive:false});
+  app.addEventListener('touchend', onPointerUp, {passive:false});
+  app.addEventListener('touchcancel', ()=>{ if(drag){ render(); drag=null; } }, {passive:false});
+
+  app.addEventListener('mousedown', onPointerDown);
+  window.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
+
+  // double-tap / double-click on a card -> auto to foundation
+  app.addEventListener('dblclick', (e)=>{
+    const desc = describeTarget(e.target);
+    if(!desc) return;
+    if(desc.kind==='colcard'){
+      const col = state.cols[desc.col];
+      if(desc.k===col.length-1){
+        selection=null;
+        tryFoundationFromTop('col', desc.col) || moveTopToAnyFree('col', desc.col);
+      }
+    } else if(desc.kind==='freeslot'){
+      tryFoundationFromTop('free', desc.idx);
+    }
+  });
+
+  function moveTopToAnyFree(srcType, srcIdx){
+    for(let i=0;i<4;i++){
+      if(state.free[i]===null){
+        return moveToFree(srcType, srcIdx, srcType==='col'?state.cols[srcIdx].length-1:0, i);
+      }
+    }
+    return false;
+  }
+
+  // ---------- Sound (WebAudio) ----------
+  let actx=null;
+  function ac(){
+    if(!actx){
+      try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ actx=null; }
+    }
+    return actx;
+  }
+  function beep(freq, dur, type, vol){
+    if(!soundOn) return;
+    const c = ac(); if(!c) return;
+    if(c.state==='suspended') c.resume();
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = type||'sine';
+    o.frequency.value = freq;
+    g.gain.value = 0;
+    o.connect(g); g.connect(c.destination);
+    const t = c.currentTime;
+    g.gain.linearRampToValueAtTime(vol||0.06, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+(dur||0.12));
+    o.start(t); o.stop(t+(dur||0.12)+0.02);
+  }
+  function sound(kind){
+    switch(kind){
+      case 'move': beep(330,0.08,'triangle',0.05); break;
+      case 'found': beep(660,0.10,'sine',0.06); break;
+      case 'bad': beep(140,0.12,'sawtooth',0.05); break;
+      case 'undo': beep(240,0.08,'square',0.04); break;
+      case 'win': winFanfare(); break;
+    }
+  }
+  function winFanfare(){
+    if(!soundOn) return;
+    const notes=[523,659,784,1047];
+    notes.forEach((f,i)=> setTimeout(()=>beep(f,0.18,'triangle',0.07), i*140));
+  }
+
+  // ---------- Toast ----------
+  let toastTimer=null;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>t.classList.remove('show'), 1400);
+  }
+
+  // ---------- Buttons ----------
+  document.getElementById('new').addEventListener('click', ()=>{ ac(); newGame(); });
+  document.getElementById('winnew').addEventListener('click', ()=>{ newGame(); });
+  document.getElementById('undo').addEventListener('click', ()=>{ undo(); });
+  document.getElementById('sound').addEventListener('click', (e)=>{
+    soundOn = !soundOn;
+    e.target.textContent = soundOn ? '🔊' : '🔇';
+    if(soundOn){ ac(); beep(440,0.08,'sine',0.05); }
+  });
+
+  window.addEventListener('resize', ()=>{ if(state) render(); });
+  window.addEventListener('orientationchange', ()=>{ setTimeout(()=>{ if(state) render(); }, 200); });
+
+  // Prevent gesture zoom / double-tap zoom on iOS
+  document.addEventListener('gesturestart', e=>e.preventDefault());
+  document.addEventListener('dblclick', e=>e.preventDefault(), {passive:false});
+
+  // ---------- Init ----------
+  newGame();
+})();
+</script>
+</body>
+</html>

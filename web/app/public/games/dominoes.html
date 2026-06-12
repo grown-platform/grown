@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Dominoes — vs CPU</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #14532d;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+  }
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  header {
+    padding: 10px 12px 8px;
+    text-align: center;
+    background: #0f3d22;
+    box-shadow: 0 2px 6px rgba(0,0,0,.4);
+    flex-shrink: 0;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 20px;
+    letter-spacing: .5px;
+    font-weight: 700;
+  }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 6px;
+    font-size: 12px;
+    gap: 6px;
+  }
+  .topbar .stat {
+    background: #155e35;
+    border-radius: 8px;
+    padding: 4px 8px;
+    flex: 1;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .topbar .stat b { display: block; font-size: 15px; }
+  button.newgame {
+    background: #f59e0b;
+    color: #1c1917;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.newgame:active { background: #d97706; }
+
+  .turn {
+    text-align: center;
+    font-size: 14px;
+    padding: 6px 8px;
+    min-height: 32px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .turn.you { color: #fde68a; }
+  .turn.cpu { color: #93c5fd; }
+  .turn.win { color: #86efac; font-size: 16px; }
+
+  /* CPU hand (face down) */
+  .cpu-hand {
+    display: flex;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  .cpu-tile {
+    width: 16px; height: 30px;
+    background: #1e3a8a;
+    border: 1px solid #1e40af;
+    border-radius: 4px;
+    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 3px, transparent 3px 6px);
+  }
+
+  /* Board / line of play */
+  .board-wrap {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    background: #0c3a1f;
+    border-top: 2px solid #0a2e18;
+    border-bottom: 2px solid #0a2e18;
+    display: flex;
+    align-items: center;
+    min-height: 90px;
+    touch-action: pan-x;
+  }
+  .board {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 0;
+    margin: auto;
+    min-width: min-content;
+    flex-wrap: nowrap;
+  }
+  .board.empty-msg {
+    color: #6ee7b7;
+    font-style: italic;
+    font-size: 13px;
+    padding: 0 16px;
+  }
+  .end-label {
+    font-size: 11px;
+    color: #fbbf24;
+    align-self: center;
+    padding: 0 2px;
+  }
+
+  /* Played tiles on the line */
+  .line-tile {
+    display: flex;
+    background: #faf7f0;
+    border: 1px solid #1c1917;
+    border-radius: 5px;
+    margin: 2px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    flex-shrink: 0;
+  }
+  /* horizontal orientation: two square halves side by side */
+  .line-tile.horiz { flex-direction: row; }
+  .line-tile.horiz .half { width: 34px; height: 34px; }
+  .line-tile.horiz .divider { width: 0; border-left: 1px solid #1c1917; }
+  /* vertical orientation: stacked */
+  .line-tile.vert { flex-direction: column; }
+  .line-tile.vert .half { width: 34px; height: 34px; }
+  .line-tile.vert .divider { height: 0; border-top: 1px solid #1c1917; }
+
+  /* the open-end tap targets */
+  .endplay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    align-self: stretch;
+    color: #fef08a;
+    font-weight: 700;
+    font-size: 22px;
+    cursor: pointer;
+    border: 2px dashed #fbbf24;
+    border-radius: 8px;
+    margin: 2px;
+    background: rgba(251,191,36,.12);
+    padding: 4px 6px;
+    animation: pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:.55;} 50%{opacity:1;} }
+  .endplay small { display:block; font-size:9px; color:#fde68a; font-weight:600; }
+
+  /* Pip layout */
+  .half {
+    position: relative;
+    background: #faf7f0;
+  }
+  .pip {
+    position: absolute;
+    width: 17%;
+    height: 17%;
+    background: #1c1917;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  /* Your hand */
+  .hand-area {
+    flex-shrink: 0;
+    background: #0f3d22;
+    padding: 8px 6px 12px;
+    box-shadow: 0 -2px 6px rgba(0,0,0,.4);
+  }
+  .hand-label {
+    text-align: center;
+    font-size: 11px;
+    color: #a7f3d0;
+    margin-bottom: 4px;
+    letter-spacing: .5px;
+  }
+  .hand {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 6px 8px;
+    touch-action: pan-x;
+    justify-content: safe center;
+  }
+  .hand-tile {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: #faf7f0;
+    border: 1px solid #1c1917;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4);
+    cursor: pointer;
+    transition: transform .1s;
+  }
+  .hand-tile .half { width: 40px; height: 40px; }
+  .hand-tile .divider { height: 0; border-top: 1px solid #1c1917; }
+  .hand-tile.playable { box-shadow: 0 0 0 2px #34d399, 0 2px 4px rgba(0,0,0,.4); }
+  .hand-tile.dead { opacity: .45; }
+  .hand-tile.selected { transform: translateY(-8px); box-shadow: 0 0 0 3px #f59e0b, 0 4px 8px rgba(0,0,0,.5); }
+
+  .actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 4px;
+    min-height: 36px;
+    align-items: center;
+  }
+  .actions button {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .actions button:active { background: #1d4ed8; }
+  .actions button.pass { background: #6b7280; }
+  .actions button:disabled { opacity: .4; cursor: default; }
+  .hint {
+    text-align:center; font-size:11px; color:#cbd5e1; margin-top:4px; min-height:14px;
+  }
+
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 20px;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: #1e293b;
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    max-width: 320px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.6);
+  }
+  .modal h2 { margin: 0 0 8px; font-size: 22px; }
+  .modal p { margin: 6px 0; font-size: 14px; color: #cbd5e1; }
+  .modal button {
+    margin-top: 16px;
+    background: #f59e0b;
+    color: #1c1917;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-weight: 700;
+    font-size: 16px;
+    cursor: pointer;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/dominoes.svg">
+    <link rel="manifest" href="/games/dominoes.webmanifest">
+    <meta name="theme-color" content="#1F2937">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Dominoes">
+    <link rel="apple-touch-icon" href="/games/icons/dominoes.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#1F2937;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<header>
+  <h1>🁫 Dominoes</h1>
+  <div class="topbar">
+    <div class="stat">CPU<b id="cpuCount">7</b></div>
+    <div class="stat">Boneyard<b id="boneCount">14</b></div>
+    <div class="stat">You<b id="youCount">7</b></div>
+    <button class="newgame" id="newBtn">New Game</button>
+  </div>
+</header>
+
+<div class="cpu-hand" id="cpuHand"></div>
+<div class="turn you" id="turnInd">Your turn — pick a tile</div>
+
+<div class="board-wrap" id="boardWrap">
+  <div class="board empty-msg" id="board">Board is empty — play any tile to start.</div>
+</div>
+
+<div class="hand-area">
+  <div class="hand-label">YOUR HAND</div>
+  <div class="hand" id="hand"></div>
+  <div class="actions" id="actions"></div>
+  <div class="hint" id="hint"></div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="modalTitle">Game Over</h2>
+    <p id="modalMsg"></p>
+    <button id="modalBtn">New Game</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Pip positions (fraction of half, x,y) ----------
+  // 5 column-grid positions reused for all faces
+  var P = {
+    c:[0.5,0.5], tl:[0.27,0.27], tr:[0.73,0.27], bl:[0.27,0.73], br:[0.73,0.73],
+    ml:[0.27,0.5], mr:[0.73,0.5]
+  };
+  var PIPMAP = {
+    0:[], 1:[P.c], 2:[P.tl,P.br], 3:[P.tl,P.c,P.br],
+    4:[P.tl,P.tr,P.bl,P.br], 5:[P.tl,P.tr,P.c,P.bl,P.br],
+    6:[P.tl,P.tr,P.ml,P.mr,P.bl,P.br]
+  };
+
+  function makeHalf(n){
+    var h = document.createElement('div');
+    h.className = 'half';
+    PIPMAP[n].forEach(function(pos){
+      var p = document.createElement('div');
+      p.className = 'pip';
+      p.style.left = (pos[0]*100)+'%';
+      p.style.top  = (pos[1]*100)+'%';
+      h.appendChild(p);
+    });
+    return h;
+  }
+
+  // ---------- Audio ----------
+  var actx = null;
+  function beep(freq, dur, type, vol){
+    try {
+      if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)();
+      if(actx.state === 'suspended') actx.resume();
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = type||'sine'; o.frequency.value = freq;
+      g.gain.value = vol||0.07;
+      o.connect(g); g.connect(actx.destination);
+      var t = actx.currentTime;
+      o.start(t);
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (dur||0.12));
+      o.stop(t + (dur||0.12));
+    } catch(e){}
+  }
+  function sndPlace(){ beep(420,0.09,'triangle',0.09); }
+  function sndDraw(){ beep(260,0.08,'sine',0.07); }
+  function sndPass(){ beep(180,0.18,'sawtooth',0.06); }
+  function sndWin(){ beep(523,0.12,'triangle',0.1); setTimeout(function(){beep(659,0.12,'triangle',0.1);},120); setTimeout(function(){beep(784,0.18,'triangle',0.1);},240); }
+  function sndLose(){ beep(330,0.18,'sawtooth',0.08); setTimeout(function(){beep(220,0.25,'sawtooth',0.08);},160); }
+
+  // ---------- Game state ----------
+  // tile = {a, b}  (a,b are 0..6). Each unique unordered pair once.
+  var youHand, cpuHand, boneyard, line; // line: array of {a,b} where adjacency: line[i].b === line[i+1].a
+  var leftEnd, rightEnd; // open pip values
+  var current; // 'you' | 'cpu'
+  var gameOver;
+  var selectedIdx = -1; // selected tile index in your hand
+  var busy = false; // block input during CPU/animation
+
+  var el = {
+    cpuCount: document.getElementById('cpuCount'),
+    boneCount: document.getElementById('boneCount'),
+    youCount: document.getElementById('youCount'),
+    cpuHand: document.getElementById('cpuHand'),
+    turnInd: document.getElementById('turnInd'),
+    board: document.getElementById('board'),
+    boardWrap: document.getElementById('boardWrap'),
+    hand: document.getElementById('hand'),
+    actions: document.getElementById('actions'),
+    hint: document.getElementById('hint'),
+    overlay: document.getElementById('overlay'),
+    modalTitle: document.getElementById('modalTitle'),
+    modalMsg: document.getElementById('modalMsg'),
+    modalBtn: document.getElementById('modalBtn'),
+    newBtn: document.getElementById('newBtn')
+  };
+
+  function buildDeck(){
+    var d = [];
+    for(var a=0;a<=6;a++){ for(var b=a;b<=6;b++){ d.push({a:a,b:b}); } }
+    return d;
+  }
+  function shuffle(arr){
+    for(var i=arr.length-1;i>0;i--){
+      var j = Math.floor(Math.random()*(i+1));
+      var t = arr[i]; arr[i]=arr[j]; arr[j]=t;
+    }
+    return arr;
+  }
+
+  function newGame(){
+    var deck = shuffle(buildDeck());
+    youHand = deck.slice(0,7);
+    cpuHand = deck.slice(7,14);
+    boneyard = deck.slice(14);
+    line = [];
+    leftEnd = rightEnd = null;
+    gameOver = false;
+    selectedIdx = -1;
+    busy = false;
+    el.overlay.classList.remove('show');
+
+    // Determine first player: highest double, else highest tile. Whoever has it starts by playing it.
+    var firstPlayer = decideFirst();
+    current = firstPlayer;
+    render();
+    if(current === 'cpu'){
+      busy = true;
+      setHint("CPU goes first…");
+      setTimeout(cpuTurn, 700);
+    } else {
+      setHint("Your turn. Tap a green-highlighted tile.");
+    }
+  }
+
+  function tilePipSum(t){ return t.a + t.b; }
+
+  function decideFirst(){
+    // Highest double held starts; if no doubles, highest pip sum.
+    var best = null, bestOwner = null, bestKey = -1;
+    function scan(hand, owner){
+      hand.forEach(function(t){
+        var isDouble = t.a === t.b;
+        // doubles rank above non-doubles; within, higher value wins
+        var key = isDouble ? (100 + t.a) : tilePipSum(t);
+        if(key > bestKey){ bestKey = key; best = t; bestOwner = owner; }
+      });
+    }
+    scan(youHand,'you'); scan(cpuHand,'cpu');
+    return bestOwner || 'you';
+  }
+
+  // ---------- Matching logic ----------
+  // Does a tile fit either open end? returns object describing placements.
+  // When line empty, any tile fits.
+  function tileFits(t){
+    if(line.length === 0){ return { any:true, left:true, right:true }; }
+    var fitsLeft  = (t.a === leftEnd  || t.b === leftEnd);
+    var fitsRight = (t.a === rightEnd || t.b === rightEnd);
+    return { any:false, left:fitsLeft, right:fitsRight };
+  }
+  function handHasPlay(hand){
+    for(var i=0;i<hand.length;i++){
+      var f = tileFits(hand[i]);
+      if(f.any || f.left || f.right) return true;
+    }
+    return false;
+  }
+
+  // Place tile from a hand onto an end. side = 'left'|'right'. Returns true if placed.
+  function placeTile(hand, idx, side){
+    var t = hand[idx];
+    if(line.length === 0){
+      // orient so .a is the left-open value, .b right-open value (arbitrary)
+      line.push({a:t.a, b:t.b});
+      leftEnd = t.a; rightEnd = t.b;
+      hand.splice(idx,1);
+      return true;
+    }
+    if(side === 'left'){
+      var match = leftEnd;
+      // we attach tile to the left; the half touching the line must equal leftEnd,
+      // outer half becomes new leftEnd. Stored {a:outer, b:inner} so b connects to line.
+      var inner, outer;
+      if(t.a === match){ inner = t.a; outer = t.b; }
+      else if(t.b === match){ inner = t.b; outer = t.a; }
+      else return false;
+      line.unshift({a:outer, b:inner}); // b(inner)===old leftEnd
+      leftEnd = outer;
+    } else {
+      var matchR = rightEnd;
+      var innerR, outerR;
+      if(t.a === matchR){ innerR = t.a; outerR = t.b; }
+      else if(t.b === matchR){ innerR = t.b; outerR = t.a; }
+      else return false;
+      line.push({a:innerR, b:outerR}); // a(inner)===old rightEnd
+      rightEnd = outerR;
+    }
+    hand.splice(idx,1);
+    return true;
+  }
+
+  // ---------- Rendering ----------
+  function render(){
+    el.cpuCount.textContent = cpuHand.length;
+    el.youCount.textContent = youHand.length;
+    el.boneCount.textContent = boneyard.length;
+    renderCpuHand();
+    renderBoard();
+    renderHand();
+    renderActions();
+  }
+
+  function renderCpuHand(){
+    el.cpuHand.innerHTML = '';
+    for(var i=0;i<cpuHand.length;i++){
+      var d = document.createElement('div');
+      d.className = 'cpu-tile';
+      el.cpuHand.appendChild(d);
+    }
+  }
+
+  function renderBoard(){
+    el.board.innerHTML = '';
+    if(line.length === 0){
+      el.board.className = 'board empty-msg';
+      el.board.textContent = 'Board is empty — play any tile to start.';
+      // if it's your turn and a tile is selected, allow play (handled via tile tap auto-start)
+      return;
+    }
+    el.board.className = 'board';
+
+    var canPlayLeft  = (!busy && current==='you' && selectedIdx>=0 && tileFits(youHand[selectedIdx]).left);
+    var canPlayRight = (!busy && current==='you' && selectedIdx>=0 && tileFits(youHand[selectedIdx]).right);
+
+    // Left end tap zone
+    if(canPlayLeft){
+      el.board.appendChild(makeEndZone('left', leftEnd));
+    }
+
+    for(var i=0;i<line.length;i++){
+      el.board.appendChild(makeLineTile(line[i], i));
+    }
+
+    if(canPlayRight){
+      el.board.appendChild(makeEndZone('right', rightEnd));
+    }
+  }
+
+  function makeEndZone(side, val){
+    var z = document.createElement('div');
+    z.className = 'endplay';
+    z.innerHTML = '▸<small>play '+val+'</small>';
+    if(side==='left') z.innerHTML = '◂<small>play '+val+'</small>';
+    z.addEventListener('click', function(){ youPlay(side); });
+    return z;
+  }
+
+  function makeLineTile(t, i){
+    // A double is drawn vertical (perpendicular); non-double horizontal along the line.
+    var isDouble = (t.a === t.b);
+    var wrap = document.createElement('div');
+    wrap.className = 'line-tile ' + (isDouble ? 'vert' : 'horiz');
+    var h1 = makeHalf(t.a);
+    var div = document.createElement('div'); div.className='divider';
+    var h2 = makeHalf(t.b);
+    wrap.appendChild(h1); wrap.appendChild(div); wrap.appendChild(h2);
+    return wrap;
+  }
+
+  function renderHand(){
+    el.hand.innerHTML = '';
+    youHand.forEach(function(t, idx){
+      var wrap = document.createElement('div');
+      wrap.className = 'hand-tile';
+      var fits = tileFits(t);
+      var playable = (current==='you' && !busy && !gameOver && (fits.any || fits.left || fits.right));
+      if(current==='you' && !busy && !gameOver){
+        wrap.classList.add(playable ? 'playable' : 'dead');
+      }
+      if(idx === selectedIdx) wrap.classList.add('selected');
+      var h1 = makeHalf(t.a);
+      var div = document.createElement('div'); div.className='divider';
+      var h2 = makeHalf(t.b);
+      wrap.appendChild(h1); wrap.appendChild(div); wrap.appendChild(h2);
+      wrap.addEventListener('click', function(){ onTileTap(idx); });
+      el.hand.appendChild(wrap);
+    });
+  }
+
+  function renderActions(){
+    el.actions.innerHTML = '';
+    if(gameOver || current !== 'you' || busy) return;
+    var canPlay = handHasPlay(youHand);
+    if(!canPlay){
+      if(boneyard.length > 0){
+        var b = document.createElement('button');
+        b.textContent = 'Draw from boneyard';
+        b.addEventListener('click', youDraw);
+        el.actions.appendChild(b);
+      } else {
+        var p = document.createElement('button');
+        p.className = 'pass';
+        p.textContent = 'Pass';
+        p.addEventListener('click', youPass);
+        el.actions.appendChild(p);
+      }
+    }
+  }
+
+  function setHint(msg){ el.hint.textContent = msg || ''; }
+  function setTurnIndicator(){
+    if(gameOver) return;
+    if(current === 'you'){
+      el.turnInd.className = 'turn you';
+      el.turnInd.textContent = 'Your turn';
+    } else {
+      el.turnInd.className = 'turn cpu';
+      el.turnInd.textContent = "CPU's turn…";
+    }
+  }
+
+  // ---------- Player actions ----------
+  function onTileTap(idx){
+    if(busy || gameOver || current !== 'you') return;
+    var t = youHand[idx];
+    var fits = tileFits(t);
+    if(!(fits.any || fits.left || fits.right)){
+      // not playable
+      setHint("That tile doesn't fit either end.");
+      beep(140,0.12,'sawtooth',0.05);
+      return;
+    }
+    // select / toggle
+    if(selectedIdx === idx){ selectedIdx = -1; }
+    else { selectedIdx = idx; }
+
+    if(selectedIdx >= 0){
+      if(fits.any){
+        // first tile of the game — auto place
+        doYouPlace('right');
+        return;
+      }
+      if(fits.left && fits.right){
+        setHint('Tap an end (◂ or ▸) to place this tile.');
+      } else if(fits.left || fits.right){
+        // only one end fits — auto place
+        doYouPlace(fits.left ? 'left' : 'right');
+        return;
+      }
+    } else {
+      setHint('');
+    }
+    render();
+  }
+
+  function youPlay(side){
+    if(busy || gameOver || current !== 'you' || selectedIdx < 0) return;
+    doYouPlace(side);
+  }
+
+  function doYouPlace(side){
+    var idx = selectedIdx;
+    if(idx < 0) return;
+    var ok = placeTile(youHand, idx, side);
+    if(!ok){ setHint("Can't place there."); return; }
+    selectedIdx = -1;
+    sndPlace();
+    setHint('');
+    render();
+    scrollEnd(side);
+    if(checkWin('you')) return;
+    endTurn();
+  }
+
+  function youDraw(){
+    if(busy || gameOver || current !== 'you') return;
+    if(boneyard.length === 0) return;
+    var t = boneyard.pop();
+    youHand.push(t);
+    sndDraw();
+    render();
+    if(handHasPlay(youHand)){
+      setHint('You drew a tile that can be played. Tap a highlighted tile.');
+    } else if(boneyard.length === 0){
+      setHint('No plays left — you must pass.');
+    } else {
+      setHint('Still no play — keep drawing.');
+    }
+  }
+
+  function youPass(){
+    if(busy || gameOver || current !== 'you') return;
+    sndPass();
+    setHint('You passed.');
+    endTurn();
+  }
+
+  // ---------- CPU ----------
+  function cpuTurn(){
+    if(gameOver) return;
+    busy = true;
+    setTurnIndicator();
+    setHint('CPU is thinking…');
+    render();
+
+    // Draw until CPU can play (or boneyard empty)
+    var drewAny = false;
+    while(!handHasPlay(cpuHand) && boneyard.length > 0){
+      cpuHand.push(boneyard.pop());
+      drewAny = true;
+    }
+    if(drewAny){ sndDraw(); render(); }
+
+    if(!handHasPlay(cpuHand)){
+      // CPU passes
+      sndPass();
+      setHint('CPU passed.');
+      busy = false;
+      endTurn();
+      return;
+    }
+
+    var move = chooseCpuMove();
+    setTimeout(function(){
+      placeTile(cpuHand, move.idx, move.side);
+      sndPlace();
+      render();
+      scrollEnd(move.side);
+      if(checkWin('cpu')){ return; }
+      busy = false;
+      endTurn();
+    }, 450);
+  }
+
+  function chooseCpuMove(){
+    // Gather legal moves; prefer playing doubles early and highest-pip tiles to shed points.
+    var moves = [];
+    for(var i=0;i<cpuHand.length;i++){
+      var t = cpuHand[i];
+      var f = tileFits(t);
+      if(f.any){ moves.push({idx:i, side:'right', score: tilePipSum(t) + (t.a===t.b?5:0)}); continue; }
+      if(f.left)  moves.push({idx:i, side:'left',  score: tilePipSum(t) + (t.a===t.b?3:0)});
+      if(f.right) moves.push({idx:i, side:'right', score: tilePipSum(t) + (t.a===t.b?3:0)});
+    }
+    // pick highest score (sheds most pips; slight double preference)
+    moves.sort(function(a,b){ return b.score - a.score; });
+    return moves[0];
+  }
+
+  // ---------- Turn / end conditions ----------
+  function endTurn(){
+    if(gameOver) return;
+    // Check blocked: neither player can play AND boneyard empty
+    if(boneyard.length === 0 && !handHasPlay(youHand) && !handHasPlay(cpuHand)){
+      return endBlocked();
+    }
+    current = (current === 'you') ? 'cpu' : 'you';
+    selectedIdx = -1;
+    setTurnIndicator();
+    render();
+    if(current === 'cpu'){
+      busy = true;
+      setTimeout(cpuTurn, 600);
+    } else {
+      busy = false;
+      if(handHasPlay(youHand)){
+        setHint('Your turn — tap a highlighted tile.');
+      } else if(boneyard.length > 0){
+        setHint('No play — draw from the boneyard.');
+      } else {
+        setHint('No play and boneyard empty — pass.');
+      }
+    }
+  }
+
+  function checkWin(who){
+    var hand = (who==='you') ? youHand : cpuHand;
+    if(hand.length === 0){
+      gameOver = true;
+      busy = true;
+      if(who === 'you'){
+        var cpuPts = cpuHand.reduce(function(s,t){return s+tilePipSum(t);},0);
+        finish('You Win! 🎉', 'You played all your tiles. CPU held ' + cpuPts + ' pips.', true);
+      } else {
+        var youPts = youHand.reduce(function(s,t){return s+tilePipSum(t);},0);
+        finish('CPU Wins', 'CPU played all its tiles. You held ' + youPts + ' pips.', false);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function endBlocked(){
+    gameOver = true;
+    busy = true;
+    var youPts = youHand.reduce(function(s,t){return s+tilePipSum(t);},0);
+    var cpuPts = cpuHand.reduce(function(s,t){return s+tilePipSum(t);},0);
+    var msg = 'Board blocked! Lowest pip count wins.\nYou: ' + youPts + ' pips • CPU: ' + cpuPts + ' pips.';
+    if(youPts < cpuPts){
+      finish('You Win! 🎉', msg, true);
+    } else if(cpuPts < youPts){
+      finish('CPU Wins', msg, false);
+    } else {
+      finish("It's a Tie!", msg, null);
+    }
+  }
+
+  function finish(title, msg, youWon){
+    setTurnIndicatorWin(title);
+    render();
+    el.modalTitle.textContent = title;
+    el.modalMsg.textContent = msg;
+    el.overlay.classList.add('show');
+    if(youWon === true) sndWin();
+    else if(youWon === false) sndLose();
+    else beep(440,0.2,'sine',0.08);
+  }
+  function setTurnIndicatorWin(title){
+    el.turnInd.className = 'turn win';
+    el.turnInd.textContent = title;
+  }
+
+  // ---------- Misc ----------
+  function scrollEnd(side){
+    // After placing, scroll board to the affected end so it's visible.
+    requestAnimationFrame(function(){
+      if(side === 'left'){ el.boardWrap.scrollLeft = 0; }
+      else { el.boardWrap.scrollLeft = el.boardWrap.scrollWidth; }
+    });
+  }
+
+  // Prevent double-tap zoom / pinch while keeping scroll
+  document.addEventListener('gesturestart', function(e){ e.preventDefault(); }, {passive:false});
+  var lastTouch = 0;
+  document.addEventListener('touchend', function(e){
+    var now = Date.now();
+    if(now - lastTouch < 300){ e.preventDefault(); }
+    lastTouch = now;
+  }, {passive:false});
+
+  el.newBtn.addEventListener('click', newGame);
+  el.modalBtn.addEventListener('click', newGame);
+
+  // unlock audio on first interaction
+  document.addEventListener('touchstart', function unlock(){
+    try{ if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); }catch(e){}
+    document.removeEventListener('touchstart', unlock);
+  }, {once:true});
+  document.addEventListener('mousedown', function unlockM(){
+    try{ if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); }catch(e){}
+    document.removeEventListener('mousedown', unlockM);
+  }, {once:true});
+
+  newGame();
+})();
+</script>
+</body>
+</html>

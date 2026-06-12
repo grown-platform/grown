@@ -1,0 +1,25 @@
+{
+  "name": "Flood It",
+  "short_name": "Flood It",
+  "description": "Flood It — play in your browser, online or off.",
+  "start_url": "/games/flood-it.html",
+  "scope": "/games/flood-it.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#EA580C",
+  "icons": [
+    {
+      "src": "/games/icons/flood-it.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/flood-it.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

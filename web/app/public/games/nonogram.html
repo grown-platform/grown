@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Nonogram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #1a1d2e;
+    --panel: #252a41;
+    --cell: #3a4060;
+    --cell-empty: #20243a;
+    --fill: #6c7cff;
+    --mark: #ff6b8a;
+    --clue: #c7cce8;
+    --clue-done: #555a78;
+    --accent: #4ade80;
+    --text: #e8ebff;
+    --grid-line: #161929;
+    --grid-thick: #0a0c16;
+  }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    user-select: none;
+    -webkit-user-select: none;
+    padding: 6px;
+    height: 100dvh;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin: 2px 0 6px;
+    background: linear-gradient(90deg, var(--fill), var(--mark));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .controls {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 6px;
+    width: 100%;
+    max-width: 420px;
+  }
+  select, button {
+    font: inherit;
+    font-size: 13px;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--cell);
+    border-radius: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: scale(0.96); }
+  .status {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 6px;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .status .badge {
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 5px 10px;
+  }
+  .mode-toggle {
+    display: flex;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--cell);
+  }
+  .mode-toggle button {
+    border: none;
+    border-radius: 0;
+    padding: 7px 14px;
+    background: var(--panel);
+    font-weight: 600;
+  }
+  .mode-toggle button.active.fill { background: var(--fill); color: #fff; }
+  .mode-toggle button.active.mark { background: var(--mark); color: #fff; }
+
+  #boardWrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+  }
+  #board {
+    display: grid;
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 4px;
+    position: relative;
+  }
+  .corner { background: transparent; }
+  .colclue, .rowclue {
+    display: flex;
+    color: var(--clue);
+    font-weight: 700;
+    overflow: hidden;
+  }
+  .colclue {
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    padding-bottom: 2px;
+    line-height: 1.05;
+  }
+  .rowclue {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+    padding-right: 3px;
+    gap: 0.35em;
+    line-height: 1;
+  }
+  .colclue span, .rowclue span { transition: color 0.15s, opacity 0.15s; }
+  .colclue span { margin-top: 0.1em; }
+  .clue-done { color: var(--clue-done); opacity: 0.55; }
+  .cells {
+    display: grid;
+    gap: 1px;
+    background: var(--grid-line);
+    border: 1px solid var(--grid-thick);
+  }
+  .cell {
+    background: var(--cell-empty);
+    position: relative;
+    touch-action: manipulation;
+    transition: background 0.08s;
+  }
+  .cell.filled { background: var(--fill); }
+  .cell.marked::before {
+    content: "";
+    position: absolute;
+    inset: 22%;
+    background:
+      linear-gradient(45deg, transparent 43%, var(--mark) 43%, var(--mark) 57%, transparent 57%),
+      linear-gradient(-45deg, transparent 43%, var(--mark) 43%, var(--mark) 57%, transparent 57%);
+  }
+  /* thick separators every 5 cells via box-shadow grid overlay handled in JS sizing */
+  .cell.sepR { box-shadow: inset -1px 0 0 0 var(--grid-thick); }
+  .cell.sepB { box-shadow: inset 0 -1px 0 0 var(--grid-thick); }
+  .cell.sepR.sepB { box-shadow: inset -1px 0 0 0 var(--grid-thick), inset 0 -1px 0 0 var(--grid-thick); }
+
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,12,22,0.85);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    padding: 20px;
+    text-align: center;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 {
+    font-size: 28px;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  #overlay p { margin-bottom: 18px; color: var(--clue); }
+  #revealGrid {
+    display: grid;
+    gap: 2px;
+    margin-bottom: 20px;
+    background: var(--grid-thick);
+    padding: 6px;
+    border-radius: 8px;
+  }
+  #revealGrid div { border-radius: 2px; }
+  .hint { font-size: 11px; color: var(--clue-done); margin-top: 4px; text-align: center; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/nonogram.svg">
+    <link rel="manifest" href="/games/nonogram.webmanifest">
+    <meta name="theme-color" content="#2563EB">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Nonogram">
+    <link rel="apple-touch-icon" href="/games/icons/nonogram.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#2563EB;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <h1>NONOGRAM</h1>
+  <div class="controls">
+    <select id="sizeSel">
+      <option value="5">5 × 5 (Easy)</option>
+      <option value="10" selected>10 × 10 (Medium)</option>
+      <option value="15">15 × 15 (Hard)</option>
+    </select>
+    <div class="mode-toggle">
+      <button id="modeFill" class="active fill">Fill</button>
+      <button id="modeMark" class="mark">Mark&nbsp;✕</button>
+    </div>
+    <button id="newBtn">New Puzzle</button>
+  </div>
+  <div class="status">
+    <span class="badge" id="mistakesBadge">Mistakes: 0</span>
+    <span class="badge" id="progressBadge">0%</span>
+  </div>
+  <div id="boardWrap">
+    <div id="board"></div>
+  </div>
+  <div class="hint">Tap a cell to <b>Fill</b> or <b>✕</b> based on the selected mode.</div>
+
+  <div id="overlay">
+    <h2>Solved! 🎉</h2>
+    <p id="solveMsg">You revealed the picture.</p>
+    <div id="revealGrid"></div>
+    <button id="overlayNew">New Puzzle</button>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- State ----------
+  var N = 10;
+  var solution = [];   // 2D boolean array (true = filled)
+  var state = [];      // 2D int: 0 empty, 1 filled, 2 marked-X
+  var rowClues = [];   // array of arrays of run lengths
+  var colClues = [];
+  var mode = "fill";   // "fill" or "mark"
+  var mistakes = 0;
+  var solved = false;
+  var cellEls = [];    // 2D array of DOM cell elements
+
+  var board = document.getElementById("board");
+  var overlay = document.getElementById("overlay");
+  var mistakesBadge = document.getElementById("mistakesBadge");
+  var progressBadge = document.getElementById("progressBadge");
+
+  // ---------- Audio ----------
+  var actx = null;
+  function audio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { actx = null; }
+    }
+    return actx;
+  }
+  function beep(freq, dur, type, vol) {
+    var a = audio();
+    if (!a) return;
+    if (a.state === "suspended") { try { a.resume(); } catch (e) {} }
+    var o = a.createOscillator();
+    var g = a.createGain();
+    o.type = type || "sine";
+    o.frequency.value = freq;
+    g.gain.value = 0.0001;
+    o.connect(g); g.connect(a.destination);
+    var t = a.currentTime;
+    g.gain.exponentialRampToValueAtTime(vol || 0.12, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+  function sndFill() { beep(520, 0.08, "square", 0.08); }
+  function sndMark() { beep(300, 0.07, "triangle", 0.07); }
+  function sndClear() { beep(200, 0.06, "sine", 0.06); }
+  function sndError() { beep(150, 0.18, "sawtooth", 0.1); }
+  function sndWin() {
+    [523, 659, 784, 1047].forEach(function (f, i) {
+      setTimeout(function () { beep(f, 0.18, "square", 0.1); }, i * 110);
+    });
+  }
+
+  // ---------- Puzzle generation ----------
+  function genSolution(n) {
+    // density tuned so puzzle has a reasonable amount of filled cells
+    var density = n <= 5 ? 0.55 : (n <= 10 ? 0.55 : 0.55);
+    var grid;
+    var tries = 0;
+    do {
+      grid = [];
+      for (var r = 0; r < n; r++) {
+        var row = [];
+        for (var c = 0; c < n; c++) {
+          row.push(Math.random() < density);
+        }
+        grid.push(row);
+      }
+      tries++;
+    } while (!validSolution(grid, n) && tries < 60);
+
+    // ensure every row & column has at least one filled cell (avoid all-empty lines)
+    for (var r2 = 0; r2 < n; r2++) {
+      if (grid[r2].every(function (v) { return !v; })) {
+        grid[r2][Math.floor(Math.random() * n)] = true;
+      }
+    }
+    for (var c2 = 0; c2 < n; c2++) {
+      var anyCol = false;
+      for (var rr = 0; rr < n; rr++) if (grid[rr][c2]) { anyCol = true; break; }
+      if (!anyCol) grid[Math.floor(Math.random() * n)][c2] = true;
+    }
+    return grid;
+  }
+
+  function validSolution(grid, n) {
+    // require a minimum fraction of filled cells so picture isn't trivial/empty
+    var count = 0;
+    for (var r = 0; r < n; r++)
+      for (var c = 0; c < n; c++)
+        if (grid[r][c]) count++;
+    var frac = count / (n * n);
+    return frac >= 0.35 && frac <= 0.7;
+  }
+
+  // Compute run-length clues for a line of booleans.
+  function lineClues(line) {
+    var clues = [];
+    var run = 0;
+    for (var i = 0; i < line.length; i++) {
+      if (line[i]) {
+        run++;
+      } else if (run > 0) {
+        clues.push(run);
+        run = 0;
+      }
+    }
+    if (run > 0) clues.push(run);
+    if (clues.length === 0) clues.push(0); // empty line => "0"
+    return clues;
+  }
+
+  function computeClues() {
+    rowClues = [];
+    for (var r = 0; r < N; r++) {
+      rowClues.push(lineClues(solution[r]));
+    }
+    colClues = [];
+    for (var c = 0; c < N; c++) {
+      var col = [];
+      for (var r2 = 0; r2 < N; r2++) col.push(solution[r2][c]);
+      colClues.push(lineClues(col));
+    }
+  }
+
+  // ---------- Sizing ----------
+  function computeCellSize() {
+    // Determine the clue gutter (number of clue lines) so the whole board fits.
+    var maxRowClues = 1, maxColClues = 1;
+    for (var r = 0; r < N; r++) maxRowClues = Math.max(maxRowClues, rowClues[r].length);
+    for (var c = 0; c < N; c++) maxColClues = Math.max(maxColClues, colClues[c].length);
+
+    var vw = Math.min(window.innerWidth, 480);
+    var vh = window.innerHeight;
+
+    // Available space: subtract chrome (title, controls, status, hint, paddings)
+    var reservedV = 200; // px reserved for everything except the board
+    var availW = vw - 16;
+    var availH = vh - reservedV;
+    availH = Math.max(availH, 220);
+
+    // Total grid columns/rows in pixels = clue gutter + N cells
+    // gutter width is proportional to cell size; we solve for cell size.
+    // Let cell = s. Row clue gutter width ~ maxRowClues * (s*0.62). Col clue gutter height ~ maxColClues * (s*0.62).
+    var rowGutterFactor = Math.max(1.6, maxRowClues * 0.62);
+    var colGutterFactor = Math.max(1.6, maxColClues * 0.62);
+
+    var sByW = availW / (N + rowGutterFactor);
+    var sByH = availH / (N + colGutterFactor);
+    var s = Math.floor(Math.min(sByW, sByH));
+    s = Math.max(14, Math.min(s, 46));
+    return { s: s, rowGutter: Math.ceil(s * rowGutterFactor), colGutter: Math.ceil(s * colGutterFactor) };
+  }
+
+  // ---------- Render ----------
+  function render() {
+    computeClues();
+    var dim = computeCellSize();
+    var s = dim.s;
+    cellEls = [];
+
+    board.innerHTML = "";
+    board.style.display = "grid";
+    board.style.gridTemplateColumns = dim.rowGutter + "px " + (N * s + (N - 1)) + "px";
+    board.style.gridTemplateRows = dim.colGutter + "px " + (N * s + (N - 1)) + "px";
+
+    // corner
+    var corner = document.createElement("div");
+    corner.className = "corner";
+    board.appendChild(corner);
+
+    // column clues container
+    var colClueWrap = document.createElement("div");
+    colClueWrap.style.display = "grid";
+    colClueWrap.style.gridTemplateColumns = "repeat(" + N + ", " + s + "px)";
+    colClueWrap.style.columnGap = "1px";
+    var clueFont = Math.max(9, Math.floor(s * 0.46));
+    for (var c = 0; c < N; c++) {
+      var cc = document.createElement("div");
+      cc.className = "colclue";
+      cc.dataset.col = c;
+      cc.style.fontSize = clueFont + "px";
+      cc.style.width = s + "px";
+      colClues[c].forEach(function (num, idx) {
+        var sp = document.createElement("span");
+        sp.textContent = num;
+        sp.dataset.idx = idx;
+        cc.appendChild(sp);
+      });
+      colClueWrap.appendChild(cc);
+    }
+    board.appendChild(colClueWrap);
+
+    // row clues container
+    var rowClueWrap = document.createElement("div");
+    rowClueWrap.style.display = "grid";
+    rowClueWrap.style.gridTemplateRows = "repeat(" + N + ", " + s + "px)";
+    rowClueWrap.style.rowGap = "1px";
+    for (var r = 0; r < N; r++) {
+      var rc = document.createElement("div");
+      rc.className = "rowclue";
+      rc.dataset.row = r;
+      rc.style.fontSize = clueFont + "px";
+      rc.style.height = s + "px";
+      rowClues[r].forEach(function (num, idx) {
+        var sp = document.createElement("span");
+        sp.textContent = num;
+        sp.dataset.idx = idx;
+        rc.appendChild(sp);
+      });
+      rowClueWrap.appendChild(rc);
+    }
+    board.appendChild(rowClueWrap);
+
+    // cells grid
+    var cellsWrap = document.createElement("div");
+    cellsWrap.className = "cells";
+    cellsWrap.style.gridTemplateColumns = "repeat(" + N + ", " + s + "px)";
+    cellsWrap.style.gridTemplateRows = "repeat(" + N + ", " + s + "px)";
+    for (var r3 = 0; r3 < N; r3++) {
+      cellEls.push([]);
+      for (var c3 = 0; c3 < N; c3++) {
+        var cell = document.createElement("div");
+        cell.className = "cell";
+        if ((c3 + 1) % 5 === 0 && c3 !== N - 1) cell.classList.add("sepR");
+        if ((r3 + 1) % 5 === 0 && r3 !== N - 1) cell.classList.add("sepB");
+        cell.dataset.r = r3;
+        cell.dataset.c = c3;
+        cellsWrap.appendChild(cell);
+        cellEls[r3].push(cell);
+      }
+    }
+    board.appendChild(cellsWrap);
+
+    // attach single delegated handler
+    cellsWrap.addEventListener("pointerdown", onCellPointer);
+
+    refreshAll();
+  }
+
+  function onCellPointer(e) {
+    var t = e.target;
+    if (!t.classList.contains("cell")) return;
+    e.preventDefault();
+    var r = parseInt(t.dataset.r, 10);
+    var c = parseInt(t.dataset.c, 10);
+    handleTap(r, c);
+  }
+
+  // ---------- Game logic ----------
+  function handleTap(r, c) {
+    if (solved) return;
+    var cur = state[r][c];
+    if (mode === "fill") {
+      if (cur === 1) {
+        state[r][c] = 0;
+        sndClear();
+      } else {
+        // attempt to fill
+        if (solution[r][c]) {
+          state[r][c] = 1;
+          sndFill();
+        } else {
+          // wrong fill -> mark as X and count a mistake
+          state[r][c] = 2;
+          mistakes++;
+          sndError();
+          flashError(r, c);
+        }
+      }
+    } else { // mark mode
+      if (cur === 2) {
+        state[r][c] = 0;
+        sndClear();
+      } else {
+        state[r][c] = 2;
+        sndMark();
+      }
+    }
+    updateCell(r, c);
+    updateClueStrike();
+    updateStatus();
+    checkWin();
+  }
+
+  function flashError(r, c) {
+    var el = cellEls[r][c];
+    el.style.transition = "background 0.05s";
+    el.style.background = "#ff3b5c";
+    setTimeout(function () {
+      el.style.background = "";
+      updateCell(r, c);
+    }, 160);
+  }
+
+  function updateCell(r, c) {
+    var el = cellEls[r][c];
+    el.classList.toggle("filled", state[r][c] === 1);
+    el.classList.toggle("marked", state[r][c] === 2);
+  }
+
+  function refreshAll() {
+    for (var r = 0; r < N; r++)
+      for (var c = 0; c < N; c++)
+        updateCell(r, c);
+    updateClueStrike();
+    updateStatus();
+  }
+
+  // A clue line is considered "solved" (for strike display) when the player's
+  // FILLED cells in that line exactly produce the clue numbers.
+  function playerLineRuns(getCell, len) {
+    var runs = [];
+    var run = 0;
+    for (var i = 0; i < len; i++) {
+      if (getCell(i) === 1) run++;
+      else if (run > 0) { runs.push(run); run = 0; }
+    }
+    if (run > 0) runs.push(run);
+    if (runs.length === 0) runs.push(0);
+    return runs;
+  }
+
+  function arraysEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  function updateClueStrike() {
+    // rows
+    var rowWrap = board.querySelector(".rowclue") ? board : board;
+    var rowClueEls = board.querySelectorAll(".rowclue");
+    rowClueEls.forEach(function (rc) {
+      var r = parseInt(rc.dataset.row, 10);
+      var runs = playerLineRuns(function (c) { return state[r][c]; }, N);
+      var done = arraysEqual(runs, rowClues[r]);
+      rc.querySelectorAll("span").forEach(function (sp) {
+        sp.classList.toggle("clue-done", done);
+      });
+    });
+    var colClueEls = board.querySelectorAll(".colclue");
+    colClueEls.forEach(function (cc) {
+      var c = parseInt(cc.dataset.col, 10);
+      var runs = playerLineRuns(function (r) { return state[r][c]; }, N);
+      var done = arraysEqual(runs, colClues[c]);
+      cc.querySelectorAll("span").forEach(function (sp) {
+        sp.classList.toggle("clue-done", done);
+      });
+    });
+  }
+
+  function updateStatus() {
+    mistakesBadge.textContent = "Mistakes: " + mistakes;
+    // progress = correctly filled / total filled-in-solution
+    var total = 0, correct = 0;
+    for (var r = 0; r < N; r++)
+      for (var c = 0; c < N; c++) {
+        if (solution[r][c]) {
+          total++;
+          if (state[r][c] === 1) correct++;
+        }
+      }
+    var pct = total ? Math.round((correct / total) * 100) : 0;
+    progressBadge.textContent = pct + "%";
+  }
+
+  function checkWin() {
+    // Win when every solution-filled cell is filled, and no non-solution cell is filled.
+    for (var r = 0; r < N; r++) {
+      for (var c = 0; c < N; c++) {
+        var shouldFill = solution[r][c];
+        var isFilled = state[r][c] === 1;
+        if (shouldFill !== isFilled) return;
+      }
+    }
+    win();
+  }
+
+  function win() {
+    solved = true;
+    sndWin();
+    buildReveal();
+    overlay.classList.add("show");
+  }
+
+  function buildReveal() {
+    var grid = document.getElementById("revealGrid");
+    grid.innerHTML = "";
+    var rs = Math.max(6, Math.min(18, Math.floor(220 / N)));
+    grid.style.gridTemplateColumns = "repeat(" + N + ", " + rs + "px)";
+    for (var r = 0; r < N; r++) {
+      for (var c = 0; c < N; c++) {
+        var d = document.createElement("div");
+        d.style.width = rs + "px";
+        d.style.height = rs + "px";
+        d.style.background = solution[r][c] ? "var(--fill)" : "var(--cell-empty)";
+        grid.appendChild(d);
+      }
+    }
+  }
+
+  // ---------- New game ----------
+  function newGame() {
+    N = parseInt(document.getElementById("sizeSel").value, 10);
+    solution = genSolution(N);
+    state = [];
+    for (var r = 0; r < N; r++) {
+      var row = [];
+      for (var c = 0; c < N; c++) row.push(0);
+      state.push(row);
+    }
+    mistakes = 0;
+    solved = false;
+    overlay.classList.remove("show");
+    render();
+  }
+
+  // ---------- Mode toggle ----------
+  var modeFill = document.getElementById("modeFill");
+  var modeMark = document.getElementById("modeMark");
+  function setMode(m) {
+    mode = m;
+    modeFill.classList.toggle("active", m === "fill");
+    modeMark.classList.toggle("active", m === "mark");
+  }
+  modeFill.addEventListener("click", function () { setMode("fill"); beep(600, 0.04, "sine", 0.05); });
+  modeMark.addEventListener("click", function () { setMode("mark"); beep(400, 0.04, "sine", 0.05); });
+
+  document.getElementById("newBtn").addEventListener("click", newGame);
+  document.getElementById("overlayNew").addEventListener("click", newGame);
+  document.getElementById("sizeSel").addEventListener("change", newGame);
+
+  // prevent context menu / long-press selection on board
+  board.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+  // re-render on resize/orientation change (preserve state)
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      if (!solved) render();
+    }, 150);
+  });
+
+  // ---------- Init ----------
+  newGame();
+})();
+</script>
+</body>
+</html>

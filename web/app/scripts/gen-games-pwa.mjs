@@ -80,6 +80,22 @@ const CONFIG = [
   { id: "lunar-lander", name: "Lunar Lander", color: "#334155", glyph: "🌙" },
   { id: "match-3", name: "Match 3", color: "#DB2777", glyph: "💎" },
   { id: "centipede", name: "Centipede", color: "#65A30D", glyph: "🐛" },
+  { id: "monopoly-deal", name: "Monopoly Deal", color: "#16A34A", glyph: "🏠" },
+  { id: "spider-solitaire", name: "Spider Solitaire", color: "#047857", glyph: "🕷️" },
+  { id: "freecell", name: "FreeCell", color: "#0D9488", glyph: "🆓" },
+  { id: "crazy-eights", name: "Crazy Eights", color: "#DC2626", glyph: "8️⃣" },
+  { id: "go-fish", name: "Go Fish", color: "#0EA5E9", glyph: "🐟" },
+  { id: "baccarat", name: "Baccarat", color: "#7C3AED", glyph: "💰" },
+  { id: "old-maid", name: "Old Maid", color: "#BE185D", glyph: "👵" },
+  { id: "snap", name: "Snap", color: "#F59E0B", glyph: "👏" },
+  { id: "mancala", name: "Mancala", color: "#B45309", glyph: "🫘" },
+  { id: "battleship", name: "Battleship", color: "#1E40AF", glyph: "🚢" },
+  { id: "nine-mens-morris", name: "Nine Men's Morris", color: "#6D28D9", glyph: "🔵" },
+  { id: "dominoes", name: "Dominoes", color: "#1F2937", glyph: "⬛" },
+  { id: "nonogram", name: "Nonogram", color: "#2563EB", glyph: "🖼️" },
+  { id: "flow-connect", name: "Flow Connect", color: "#DB2777", glyph: "🔗" },
+  { id: "columns", name: "Columns", color: "#7C3AED", glyph: "💠" },
+  { id: "flood-it", name: "Flood It", color: "#EA580C", glyph: "🌊" },
 ];
 
 const iconSvg = (color, glyph) =>

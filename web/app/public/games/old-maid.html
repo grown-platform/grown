@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Old Maid</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, #1b5e3a, #0d3322);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    text-align: center;
+    padding: 8px 6px 4px;
+    flex: 0 0 auto;
+  }
+  h1 {
+    font-size: 1.5rem;
+    letter-spacing: 1px;
+    text-shadow: 0 2px 4px rgba(0,0,0,.4);
+  }
+  h1 .maid { color: #ffd34d; }
+  .subtitle { font-size: .72rem; opacity: .75; margin-top: 2px; }
+
+  .board {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 0;
+    padding: 4px;
+  }
+  .zone {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+  }
+  .zone-label {
+    font-size: .75rem;
+    font-weight: 600;
+    opacity: .9;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .count {
+    background: rgba(0,0,0,.35);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: .7rem;
+    font-weight: 700;
+  }
+  .hand {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 3px;
+    width: 100%;
+    max-width: 360px;
+    align-content: center;
+    min-height: 0;
+  }
+  .hand.opponent.active .card { cursor: pointer; }
+
+  .card {
+    width: 34px;
+    height: 48px;
+    border-radius: 5px;
+    position: relative;
+    flex: 0 0 auto;
+    font-weight: 700;
+    transition: transform .15s, box-shadow .15s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  }
+  .card.small { width: 28px; height: 40px; }
+
+  /* face down */
+  .card.back {
+    background:
+      repeating-linear-gradient(45deg, #2b4a8c 0 6px, #3a5fb0 6px 12px);
+    border: 1px solid #1c2f5c;
+  }
+  .card.back::after {
+    content: "?";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255,255,255,.55);
+    font-size: 1rem;
+  }
+  .hand.opponent.active .card.back:active {
+    transform: translateY(-6px) scale(1.05);
+    box-shadow: 0 6px 10px rgba(0,0,0,.5);
+  }
+  .hand.opponent.active .card.back {
+    animation: glow 1.6s ease-in-out infinite;
+  }
+  @keyframes glow {
+    0%,100% { box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    50% { box-shadow: 0 0 8px 2px rgba(255,211,77,.55); }
+  }
+
+  /* face up */
+  .card.face {
+    background: #fdfdfd;
+    border: 1px solid #d8d8d8;
+    color: #222;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  .card.face .rank { font-size: .95rem; }
+  .card.face .suit { font-size: .85rem; }
+  .card.face.red { color: #d4322c; }
+  .card.face.black { color: #1a1a1a; }
+  .card.face.maid {
+    background: linear-gradient(160deg, #fff6d6, #ffe08a);
+    border-color: #d9af4a;
+  }
+
+  .card.dealt { animation: pop .25s ease; }
+  @keyframes pop {
+    from { transform: scale(.4); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  .center {
+    flex: 0 0 auto;
+    text-align: center;
+    padding: 4px;
+  }
+  .log {
+    background: rgba(0,0,0,.3);
+    border-radius: 8px;
+    margin: 0 auto;
+    max-width: 340px;
+    min-height: 38px;
+    padding: 6px 10px;
+    font-size: .82rem;
+    line-height: 1.25;
+  }
+  .log .pairs { display: block; font-size: .72rem; opacity: .8; margin-top: 2px; }
+
+  footer {
+    flex: 0 0 auto;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    text-align: center;
+  }
+  button {
+    font: inherit;
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 22px;
+    background: #ffd34d;
+    color: #4a2e00;
+    box-shadow: 0 3px 0 #c79b1f;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: translateY(2px); box-shadow: 0 1px 0 #c79b1f; }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.72);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    padding: 20px;
+    text-align: center;
+  }
+  .overlay.show { display: flex; }
+  .overlay h2 { font-size: 2rem; margin-bottom: 10px; }
+  .overlay p { font-size: 1rem; opacity: .9; margin-bottom: 18px; max-width: 280px; }
+  .overlay .emoji { font-size: 3.4rem; margin-bottom: 8px; }
+  .overlay.win h2 { color: #7dffa3; }
+  .overlay.lose h2 { color: #ff8a8a; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/old-maid.svg">
+    <link rel="manifest" href="/games/old-maid.webmanifest">
+    <meta name="theme-color" content="#BE185D">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Old Maid">
+    <link rel="apple-touch-icon" href="/games/icons/old-maid.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#BE185D;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>Old <span class="maid">Maid</span></h1>
+    <div class="subtitle">Don't get stuck with the lonely Queen!</div>
+  </header>
+
+  <div class="board">
+    <div class="zone">
+      <div class="zone-label">CPU's hand <span class="count" id="cpuCount">0</span></div>
+      <div class="hand opponent" id="cpuHand"></div>
+    </div>
+
+    <div class="center">
+      <div class="log" id="log">Tap <b>New Game</b> to start!</div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-label">Your hand <span class="count" id="youCount">0</span></div>
+      <div class="hand you" id="youHand"></div>
+    </div>
+  </div>
+
+  <footer>
+    <button id="newGame">New Game</button>
+  </footer>
+
+  <div class="overlay" id="overlay">
+    <div class="emoji" id="ovEmoji"></div>
+    <h2 id="ovTitle"></h2>
+    <p id="ovText"></p>
+    <button id="ovBtn">Play Again</button>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Audio (WebAudio, no external resources) ----------
+  var actx = null;
+  function audio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { actx = null; }
+    }
+    if (actx && actx.state === "suspended") actx.resume();
+    return actx;
+  }
+  function beep(freq, dur, type, vol) {
+    var a = audio();
+    if (!a) return;
+    var o = a.createOscillator();
+    var g = a.createGain();
+    o.type = type || "sine";
+    o.frequency.value = freq;
+    var now = a.currentTime;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(vol || 0.18, now + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + (dur || 0.15));
+    o.connect(g); g.connect(a.destination);
+    o.start(now); o.stop(now + (dur || 0.15) + 0.02);
+  }
+  function sndDraw()  { beep(440, 0.10, "triangle", 0.16); }
+  function sndPair()  { beep(660, 0.10, "sine", 0.18); setTimeout(function(){ beep(880, 0.12, "sine", 0.18); }, 90); }
+  function sndWin()   { [523,659,784,1047].forEach(function(f,i){ setTimeout(function(){ beep(f,0.16,"triangle",0.2); }, i*130); }); }
+  function sndLose()  { [392,330,262].forEach(function(f,i){ setTimeout(function(){ beep(f,0.22,"sawtooth",0.16); }, i*170); }); }
+
+  // ---------- Deck ----------
+  var SUITS = [
+    { ch: "♠", color: "black" }, // spade
+    { ch: "♥", color: "red" },   // heart
+    { ch: "♦", color: "red" },   // diamond
+    { ch: "♣", color: "black" }  // club
+  ];
+  var RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+  var uid = 0;
+
+  function buildDeck() {
+    var deck = [];
+    for (var r = 0; r < RANKS.length; r++) {
+      for (var s = 0; s < SUITS.length; s++) {
+        deck.push({
+          id: ++uid,
+          rank: RANKS[r],
+          suit: SUITS[s].ch,
+          color: SUITS[s].color
+        });
+      }
+    }
+    // Remove ONE queen -> 51 cards, leaving an unpaired Queen (the Old Maid).
+    // Find a Queen and splice exactly one out.
+    for (var i = 0; i < deck.length; i++) {
+      if (deck[i].rank === "Q") { deck.splice(i, 1); break; }
+    }
+    return deck; // 51 cards: three Queens (one unpaired), all other ranks have 4 = 2 pairs
+  }
+
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+
+  // Remove all pairs from a hand. Returns array of discarded ranks (one entry per pair).
+  function discardPairs(hand) {
+    var byRank = {};
+    for (var i = 0; i < hand.length; i++) {
+      var r = hand[i].rank;
+      (byRank[r] = byRank[r] || []).push(hand[i]);
+    }
+    var discarded = [];
+    var keep = [];
+    for (var rank in byRank) {
+      if (!byRank.hasOwnProperty(rank)) continue;
+      var group = byRank[rank];
+      var pairs = Math.floor(group.length / 2);
+      for (var p = 0; p < pairs; p++) discarded.push(rank);
+      // keep the leftover (0 or 1 card)
+      if (group.length % 2 === 1) keep.push(group[group.length - 1]);
+    }
+    // rewrite hand in place
+    hand.length = 0;
+    for (var k = 0; k < keep.length; k++) hand.push(keep[k]);
+    return discarded;
+  }
+
+  // ---------- State ----------
+  var you = [];
+  var cpu = [];
+  var youPairs = 0;
+  var cpuPairs = 0;
+  var turn = "you";     // "you" | "cpu"
+  var busy = false;     // lock input during animations / CPU turn
+  var gameOver = false;
+
+  // ---------- DOM ----------
+  var elCpuHand = document.getElementById("cpuHand");
+  var elYouHand = document.getElementById("youHand");
+  var elCpuCount = document.getElementById("cpuCount");
+  var elYouCount = document.getElementById("youCount");
+  var elLog = document.getElementById("log");
+  var elOverlay = document.getElementById("overlay");
+  var elOvTitle = document.getElementById("ovTitle");
+  var elOvText = document.getElementById("ovText");
+  var elOvEmoji = document.getElementById("ovEmoji");
+
+  function logMsg(html, pairsLine) {
+    elLog.innerHTML = html + (pairsLine ? '<span class="pairs">' + pairsLine + "</span>" : "");
+  }
+
+  function isMaid(card) { return card.rank === "Q"; }
+
+  function makeFaceCard(card, small, animate) {
+    var d = document.createElement("div");
+    d.className = "card face " + card.color + (small ? " small" : "") + (animate ? " dealt" : "");
+    if (isMaid(card)) d.className += " maid";
+    var rank = document.createElement("span");
+    rank.className = "rank";
+    rank.textContent = card.rank;
+    var suit = document.createElement("span");
+    suit.className = "suit";
+    suit.textContent = card.suit;
+    d.appendChild(rank);
+    d.appendChild(suit);
+    return d;
+  }
+
+  function makeBackCard(small, index) {
+    var d = document.createElement("div");
+    d.className = "card back" + (small ? " small" : "");
+    d.dataset.index = index;
+    return d;
+  }
+
+  function render() {
+    elCpuCount.textContent = cpu.length;
+    elYouCount.textContent = you.length;
+
+    // CPU hand: face DOWN, tappable on your turn
+    elCpuHand.innerHTML = "";
+    var cpuSmall = cpu.length > 9;
+    for (var i = 0; i < cpu.length; i++) {
+      var back = makeBackCard(cpuSmall, i);
+      elCpuHand.appendChild(back);
+    }
+    var canDraw = (turn === "you" && !busy && !gameOver && cpu.length > 0);
+    elCpuHand.classList.toggle("active", canDraw);
+
+    // Your hand: face UP
+    elYouHand.innerHTML = "";
+    var youSmall = you.length > 9;
+    var sorted = you.slice().sort(function (a, b) {
+      return RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank);
+    });
+    for (var j = 0; j < sorted.length; j++) {
+      elYouHand.appendChild(makeFaceCard(sorted[j], youSmall, false));
+    }
+  }
+
+  // ---------- Game flow ----------
+  function newGame() {
+    var deck = shuffle(buildDeck());
+    you = [];
+    cpu = [];
+    // deal alternately
+    for (var i = 0; i < deck.length; i++) {
+      if (i % 2 === 0) you.push(deck[i]);
+      else cpu.push(deck[i]);
+    }
+    youPairs = 0;
+    cpuPairs = 0;
+    gameOver = false;
+    busy = true;
+    elOverlay.className = "overlay";
+
+    // initial discards
+    var yd = discardPairs(you);
+    var cd = discardPairs(cpu);
+    youPairs += yd.length;
+    cpuPairs += cd.length;
+
+    var pairsLine = "Starting pairs - You: " + yd.length + " | CPU: " + cd.length;
+    logMsg("Cards dealt! Pairs removed automatically. <b>Your turn</b> - tap a CPU card.", pairsLine);
+
+    turn = "you";
+    render();
+    audio(); // unlock on the New Game tap
+    sndDraw();
+
+    setTimeout(function () {
+      busy = false;
+      render();
+      checkEnd(); // in case someone already emptied out (unlikely at start)
+    }, 350);
+  }
+
+  // The drawing player takes `card` from the source hand into their hand,
+  // then discards a pair if formed. Returns {paired:bool, rank:string}.
+  function takeCard(drawerHand, card) {
+    drawerHand.push(card);
+    // check if this rank now forms a pair we can discard
+    var same = [];
+    for (var i = 0; i < drawerHand.length; i++) {
+      if (drawerHand[i].rank === card.rank) same.push(drawerHand[i]);
+    }
+    if (same.length >= 2) {
+      // remove two cards of that rank (the just-drawn + one existing)
+      var removed = 0;
+      for (var k = drawerHand.length - 1; k >= 0 && removed < 2; k--) {
+        if (drawerHand[k].rank === card.rank) {
+          drawerHand.splice(k, 1);
+          removed++;
+        }
+      }
+      return { paired: true, rank: card.rank };
+    }
+    return { paired: false, rank: card.rank };
+  }
+
+  function youDraw(index) {
+    if (busy || gameOver || turn !== "you") return;
+    if (index < 0 || index >= cpu.length) return;
+    busy = true;
+
+    var card = cpu.splice(index, 1)[0];
+    var res = takeCard(you, card);
+
+    if (res.paired) {
+      youPairs++;
+      sndPair();
+      logMsg("You drew the <b>" + card.rank + card.suit + "</b> and made a pair! 🎉");
+    } else {
+      sndDraw();
+      logMsg("You drew the <b>" + card.rank + card.suit + "</b>." +
+        (isMaid(card) ? " Uh oh, that's the lonely Queen!" : ""));
+    }
+
+    render();
+
+    if (checkEnd()) return;
+
+    turn = "cpu";
+    render();
+    setTimeout(cpuTurn, 850);
+  }
+
+  function cpuTurn() {
+    if (gameOver) return;
+    if (you.length === 0) { checkEnd(); return; }
+    busy = true;
+
+    var index = Math.floor(Math.random() * you.length);
+    var card = you.splice(index, 1)[0];
+    var res = takeCard(cpu, card);
+
+    if (res.paired) {
+      cpuPairs++;
+      sndPair();
+      logMsg("CPU drew a card and made a pair of <b>" + card.rank + "</b>s.");
+    } else {
+      sndDraw();
+      logMsg("CPU drew one of your cards.");
+    }
+
+    render();
+
+    if (checkEnd()) return;
+
+    turn = "you";
+    busy = false;
+    // append turn prompt to the existing CPU message
+    elLog.innerHTML = elLog.innerHTML + ' <b>Your turn!</b>';
+    render();
+  }
+
+  // Game ends when only the lone Queen remains in play (one player has exactly
+  // the Old Maid and the other is empty).
+  function checkEnd() {
+    var total = you.length + cpu.length;
+    // Normal terminal state: exactly 1 card left total => it's the Old Maid.
+    if (total <= 1) {
+      gameOver = true;
+      busy = true;
+      var loserIsYou = you.length === 1;
+      render();
+      finish(loserIsYou);
+      return true;
+    }
+    return false;
+  }
+
+  function finish(loserIsYou) {
+    setTimeout(function () {
+      if (loserIsYou) {
+        sndLose();
+        elOverlay.className = "overlay show lose";
+        elOvEmoji.textContent = "🙅";
+        elOvTitle.textContent = "You're the Old Maid!";
+        elOvText.textContent = "You got stuck holding the lonely Queen. Better luck next time!";
+        logMsg("Game over - you held the Old Maid. 👸");
+      } else {
+        sndWin();
+        elOverlay.className = "overlay show win";
+        elOvEmoji.textContent = "🎉";
+        elOvTitle.textContent = "You Win!";
+        elOvText.textContent = "The CPU got stuck with the lonely Queen. Well played!";
+        logMsg("You win! The CPU is the Old Maid. 🎊");
+      }
+    }, 500);
+  }
+
+  // ---------- Input ----------
+  elCpuHand.addEventListener("click", function (ev) {
+    var t = ev.target;
+    while (t && t !== elCpuHand && !t.classList.contains("card")) t = t.parentNode;
+    if (!t || !t.classList || !t.classList.contains("card")) return;
+    if (!elCpuHand.classList.contains("active")) return;
+    var idx = parseInt(t.dataset.index, 10);
+    if (!isNaN(idx)) youDraw(idx);
+  });
+
+  document.getElementById("newGame").addEventListener("click", newGame);
+  document.getElementById("ovBtn").addEventListener("click", newGame);
+
+  // Prevent gesture zoom / double-tap zoom leftovers
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); });
+
+  // Initial render (empty)
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Flood It</title>
+<style>
+  :root {
+    --c0: #e74c3c; /* red */
+    --c1: #3498db; /* blue */
+    --c2: #2ecc71; /* green */
+    --c3: #f1c40f; /* yellow */
+    --c4: #9b59b6; /* purple */
+    --c5: #1abc9c; /* teal */
+    --bg: #11151c;
+    --panel: #1b212c;
+    --text: #e8edf4;
+    --muted: #8b96a8;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap {
+    width: 100%;
+    max-width: 460px;
+    padding: 8px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    height: 100%;
+  }
+  h1 {
+    font-size: 1.35rem;
+    margin: 4px 0 0;
+    letter-spacing: 0.5px;
+    background: linear-gradient(90deg, var(--c0), var(--c3), var(--c2), var(--c1), var(--c4));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-weight: 800;
+  }
+  .topbar {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .moves {
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+  .moves .used { color: var(--text); }
+  .moves .sep { color: var(--muted); margin: 0 2px; }
+  .moves .allowed { color: var(--muted); }
+  .moves.warn .used { color: var(--c3); }
+  .moves.danger .used { color: var(--c0); }
+  select, button {
+    font-family: inherit;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    border: 1px solid #2c3543;
+    background: var(--panel);
+    color: var(--text);
+    padding: 7px 10px;
+    touch-action: manipulation;
+  }
+  select { -webkit-appearance: none; appearance: none; padding-right: 24px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 13px) center, calc(100% - 8px) center;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  button.primary {
+    background: linear-gradient(180deg, #2d6cdf, #2457bf);
+    border-color: #2457bf;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button.primary:active { transform: translateY(1px); }
+  .controls { width: 100%; display: flex; gap: 8px; align-items: center; }
+  .controls .grow { flex: 1; }
+
+  .board-shell {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  #board {
+    display: grid;
+    width: min(94vw, 420px, calc(100vh - 250px));
+    aspect-ratio: 1 / 1;
+    gap: 0;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+    background: #000;
+    touch-action: manipulation;
+  }
+  .cell { width: 100%; height: 100%; }
+  .cell.f0 { background: var(--c0); }
+  .cell.f1 { background: var(--c1); }
+  .cell.f2 { background: var(--c2); }
+  .cell.f3 { background: var(--c3); }
+  .cell.f4 { background: var(--c4); }
+  .cell.f5 { background: var(--c5); }
+
+  .swatches {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding-top: 2px;
+  }
+  .swatch {
+    flex: 1 1 0;
+    max-width: 60px;
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+    border: 2px solid rgba(255,255,255,0.12);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.06s ease;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.35);
+  }
+  .swatch:active { transform: scale(0.9); }
+  .swatch.s0 { background: var(--c0); }
+  .swatch.s1 { background: var(--c1); }
+  .swatch.s2 { background: var(--c2); }
+  .swatch.s3 { background: var(--c3); }
+  .swatch.s4 { background: var(--c4); }
+  .swatch.s5 { background: var(--c5); }
+
+  .status {
+    min-height: 1.2em;
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-align: center;
+  }
+  .status.win { color: var(--c2); }
+  .status.lose { color: var(--c0); }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(8,11,16,0.82);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    padding: 24px;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: var(--panel);
+    border: 1px solid #2c3543;
+    border-radius: 16px;
+    padding: 24px 22px;
+    text-align: center;
+    max-width: 320px;
+    width: 100%;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  .modal h2 { margin: 0 0 6px; font-size: 1.6rem; }
+  .modal h2.win { color: var(--c2); }
+  .modal h2.lose { color: var(--c0); }
+  .modal p { margin: 0 0 16px; color: var(--muted); font-size: 0.95rem; }
+  .modal button { width: 100%; padding: 12px; font-size: 1rem; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/flood-it.svg">
+    <link rel="manifest" href="/games/flood-it.webmanifest">
+    <meta name="theme-color" content="#EA580C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Flood It">
+    <link rel="apple-touch-icon" href="/games/icons/flood-it.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#EA580C;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div class="wrap">
+  <h1>Flood It</h1>
+
+  <div class="topbar">
+    <div class="moves" id="moves">
+      <span class="used">0</span><span class="sep">/</span><span class="allowed">25</span> moves
+    </div>
+    <select id="difficulty" aria-label="Difficulty">
+      <option value="10:5:18">Easy (10×10, 5)</option>
+      <option value="14:6:25" selected>Normal (14×14, 6)</option>
+      <option value="18:6:34">Hard (18×18, 6)</option>
+      <option value="22:6:43">Expert (22×22, 6)</option>
+    </select>
+  </div>
+
+  <div class="controls">
+    <button class="primary grow" id="newgame">New Game</button>
+  </div>
+
+  <div class="board-shell">
+    <div id="board"></div>
+  </div>
+
+  <div class="swatches" id="swatches"></div>
+
+  <div class="status" id="status">Flood the board from the top-left!</div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="modalTitle">You Win!</h2>
+    <p id="modalText"></p>
+    <button class="primary" id="modalBtn">Play Again</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var COLOR_COUNT_MAX = 6;
+  var board = document.getElementById("board");
+  var swatchesEl = document.getElementById("swatches");
+  var movesEl = document.getElementById("moves");
+  var statusEl = document.getElementById("status");
+  var difficultyEl = document.getElementById("difficulty");
+  var newGameBtn = document.getElementById("newgame");
+  var overlay = document.getElementById("overlay");
+  var modalTitle = document.getElementById("modalTitle");
+  var modalText = document.getElementById("modalText");
+  var modalBtn = document.getElementById("modalBtn");
+
+  var size = 14;        // grid is size x size
+  var numColors = 6;    // number of colors in play
+  var maxMoves = 25;    // allowed moves
+  var movesUsed = 0;
+  var grid = [];        // grid[r][c] = color index
+  var cells = [];       // cells[r][c] = DOM node
+  var gameOver = false;
+
+  // ---- Audio (WebAudio, optional) ----
+  var audioCtx = null;
+  function ensureAudio() {
+    if (audioCtx) return;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    } catch (e) { audioCtx = null; }
+  }
+  function beep(freq, dur, type, vol) {
+    if (!audioCtx) return;
+    try {
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      var now = audioCtx.currentTime;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(vol || 0.08, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.start(now);
+      o.stop(now + dur + 0.02);
+    } catch (e) {}
+  }
+  function sndMove() { beep(440, 0.08, "triangle", 0.06); }
+  function sndWin() {
+    var notes = [523, 659, 784, 1047];
+    notes.forEach(function (f, i) {
+      setTimeout(function () { beep(f, 0.18, "sine", 0.09); }, i * 110);
+    });
+  }
+  function sndLose() {
+    [330, 247, 165].forEach(function (f, i) {
+      setTimeout(function () { beep(f, 0.22, "sawtooth", 0.07); }, i * 130);
+    });
+  }
+
+  // ---- Game setup ----
+  function parseDifficulty() {
+    var parts = difficultyEl.value.split(":");
+    size = parseInt(parts[0], 10);
+    numColors = parseInt(parts[1], 10);
+    maxMoves = parseInt(parts[2], 10);
+    if (numColors > COLOR_COUNT_MAX) numColors = COLOR_COUNT_MAX;
+  }
+
+  function buildSwatches() {
+    swatchesEl.innerHTML = "";
+    for (var i = 0; i < numColors; i++) {
+      var b = document.createElement("button");
+      b.className = "swatch s" + i;
+      b.setAttribute("data-color", String(i));
+      b.setAttribute("aria-label", "Color " + (i + 1));
+      swatchesEl.appendChild(b);
+    }
+  }
+
+  function buildBoard() {
+    board.style.gridTemplateColumns = "repeat(" + size + ", 1fr)";
+    board.style.gridTemplateRows = "repeat(" + size + ", 1fr)";
+    board.innerHTML = "";
+    cells = [];
+    grid = [];
+    for (var r = 0; r < size; r++) {
+      var rowCells = [];
+      var rowColors = [];
+      for (var c = 0; c < size; c++) {
+        var color = Math.floor(Math.random() * numColors);
+        var div = document.createElement("div");
+        div.className = "cell f" + color;
+        board.appendChild(div);
+        rowCells.push(div);
+        rowColors.push(color);
+      }
+      cells.push(rowCells);
+      grid.push(rowColors);
+    }
+  }
+
+  function paint() {
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        cells[r][c].className = "cell f" + grid[r][c];
+      }
+    }
+  }
+
+  function updateMoves() {
+    movesEl.innerHTML =
+      '<span class="used">' + movesUsed + '</span>' +
+      '<span class="sep">/</span>' +
+      '<span class="allowed">' + maxMoves + '</span> moves';
+    movesEl.classList.remove("warn", "danger");
+    var left = maxMoves - movesUsed;
+    if (left <= 3) movesEl.classList.add("danger");
+    else if (left <= 7) movesEl.classList.add("warn");
+  }
+
+  // Returns array of [r,c] cells currently in the flood region (4-connected,
+  // starting from top-left, all sharing the start color).
+  function getRegion() {
+    var startColor = grid[0][0];
+    var inRegion = [];
+    for (var r = 0; r < size; r++) {
+      inRegion.push(new Array(size).fill(false));
+    }
+    var stack = [[0, 0]];
+    inRegion[0][0] = true;
+    var region = [];
+    while (stack.length) {
+      var cell = stack.pop();
+      var cr = cell[0], cc = cell[1];
+      region.push(cell);
+      var neighbors = [[cr - 1, cc], [cr + 1, cc], [cr, cc - 1], [cr, cc + 1]];
+      for (var i = 0; i < neighbors.length; i++) {
+        var nr = neighbors[i][0], nc = neighbors[i][1];
+        if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
+        if (inRegion[nr][nc]) continue;
+        if (grid[nr][nc] === startColor) {
+          inRegion[nr][nc] = true;
+          stack.push([nr, nc]);
+        }
+      }
+    }
+    return region;
+  }
+
+  function isBoardSolved() {
+    var first = grid[0][0];
+    for (var r = 0; r < size; r++) {
+      for (var c = 0; c < size; c++) {
+        if (grid[r][c] !== first) return false;
+      }
+    }
+    return true;
+  }
+
+  function applyColor(newColor) {
+    if (gameOver) return;
+    ensureAudio();
+    var startColor = grid[0][0];
+    if (newColor === startColor) return; // no-op move; don't waste a turn
+
+    var region = getRegion();
+    for (var i = 0; i < region.length; i++) {
+      grid[region[i][0]][region[i][1]] = newColor;
+    }
+    paint();
+    movesUsed++;
+    updateMoves();
+    sndMove();
+
+    if (isBoardSolved()) {
+      win();
+    } else if (movesUsed >= maxMoves) {
+      lose();
+    }
+  }
+
+  function win() {
+    gameOver = true;
+    statusEl.textContent = "You won in " + movesUsed + " moves!";
+    statusEl.className = "status win";
+    sndWin();
+    showModal(true);
+  }
+
+  function lose() {
+    gameOver = true;
+    statusEl.textContent = "Out of moves! Try again.";
+    statusEl.className = "status lose";
+    sndLose();
+    showModal(false);
+  }
+
+  function showModal(won) {
+    modalTitle.textContent = won ? "You Win!" : "Game Over";
+    modalTitle.className = won ? "win" : "lose";
+    if (won) {
+      modalText.textContent = "Solved in " + movesUsed + " of " + maxMoves + " moves.";
+    } else {
+      modalText.textContent = "Ran out of moves. The board wasn't fully flooded.";
+    }
+    overlay.classList.add("show");
+  }
+
+  function hideModal() {
+    overlay.classList.remove("show");
+  }
+
+  function newGame() {
+    parseDifficulty();
+    movesUsed = 0;
+    gameOver = false;
+    hideModal();
+    buildSwatches();
+    buildBoard();
+    paint();
+    updateMoves();
+    statusEl.textContent = "Flood the board from the top-left!";
+    statusEl.className = "status";
+  }
+
+  // ---- Events ----
+  swatchesEl.addEventListener("click", function (e) {
+    var t = e.target;
+    if (t && t.classList.contains("swatch")) {
+      var color = parseInt(t.getAttribute("data-color"), 10);
+      applyColor(color);
+    }
+  });
+
+  newGameBtn.addEventListener("click", newGame);
+  modalBtn.addEventListener("click", newGame);
+  difficultyEl.addEventListener("change", newGame);
+
+  // Prevent double-tap zoom / gesture scroll on the play area.
+  ["board", "swatches"].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+  });
+
+  newGame();
+})();
+</script>
+</body>
+</html>

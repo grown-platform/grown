@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Spider Solitaire</title>
+<style>
+  :root {
+    --felt: #0b6b3a;
+    --felt2: #0a5e33;
+    --card-bg: #fdfdfb;
+    --red: #c0392b;
+    --black: #1a1a1a;
+    --slot: rgba(0,0,0,0.18);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: radial-gradient(circle at 50% 0%, var(--felt) 0%, var(--felt2) 100%);
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    touch-action: manipulation;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  header {
+    flex: 0 0 auto;
+    padding: 6px 8px 4px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  }
+  h1 {
+    font-size: 16px; margin: 0; font-weight: 700;
+    letter-spacing: 0.3px; flex: 1 1 auto; white-space: nowrap;
+  }
+  .stats { font-size: 12px; opacity: 0.95; display: flex; gap: 10px; }
+  .stats b { font-weight: 700; }
+  .controls {
+    flex: 0 0 auto;
+    padding: 2px 6px 6px;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  }
+  button, select {
+    font: inherit; font-size: 12px;
+    background: rgba(255,255,255,0.14);
+    color: #fff; border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 7px; padding: 6px 9px;
+    cursor: pointer; -webkit-appearance: none; appearance: none;
+  }
+  button:active { background: rgba(255,255,255,0.3); }
+  button:disabled { opacity: 0.4; }
+  select { background: rgba(0,0,0,0.25); }
+  select option { color: #000; }
+  .stockbtn { display: flex; align-items: center; gap: 5px; }
+  .stockpips { display: flex; gap: 2px; }
+  .pip {
+    width: 9px; height: 13px; border-radius: 2px;
+    background: linear-gradient(135deg, #2b4c8c, #16264a);
+    border: 1px solid rgba(255,255,255,0.4);
+  }
+  #board {
+    flex: 1 1 auto; position: relative;
+    overflow: hidden;
+    padding: 4px;
+    touch-action: none;
+  }
+  .col {
+    position: absolute; top: 4px;
+    touch-action: none;
+  }
+  .slot {
+    position: absolute;
+    border-radius: var(--cardr);
+    border: 1.5px dashed var(--slot);
+    background: rgba(0,0,0,0.08);
+  }
+  .card {
+    position: absolute;
+    border-radius: var(--cardr);
+    background: var(--card-bg);
+    color: #000;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    overflow: hidden;
+    will-change: transform;
+  }
+  .card .corner {
+    position: absolute; left: 3px; top: 1px;
+    line-height: 1; display: flex; flex-direction: column; align-items: center;
+    font-weight: 800;
+  }
+  .card .rank { font-size: var(--rankf); }
+  .card .suit { font-size: var(--suitf); margin-top: -1px; }
+  .card .big {
+    position: absolute; right: 4px; bottom: 0px;
+    font-size: var(--bigf); opacity: 0.9; line-height: 1;
+  }
+  .card.red { color: var(--red); }
+  .card.black { color: var(--black); }
+  .card.down {
+    background: repeating-linear-gradient(45deg, #1c3a73 0 6px, #16306a 6px 12px);
+    background-color: #1c3a73;
+    border: 1px solid rgba(255,255,255,0.18);
+  }
+  .card.down .corner, .card.down .big { display: none; }
+  .card.sel { outline: 3px solid #ffd54a; outline-offset: -1px; z-index: 5000 !important; }
+  .card.hint { box-shadow: 0 0 0 3px #7fd0ff, 0 1px 2px rgba(0,0,0,0.35); }
+  .card.drag { z-index: 9000 !important; box-shadow: 0 6px 14px rgba(0,0,0,0.5); }
+  .col.target { outline: 3px solid rgba(255,255,255,0.55); outline-offset: 2px; border-radius: 6px; }
+
+  #overlay {
+    position: absolute; inset: 0;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.6); z-index: 10000; text-align: center;
+  }
+  #overlay.show { display: flex; }
+  .panel {
+    background: #0d7a42; border: 2px solid rgba(255,255,255,0.4);
+    border-radius: 14px; padding: 22px 26px; max-width: 86%;
+  }
+  .panel h2 { margin: 0 0 8px; font-size: 22px; }
+  .panel p { margin: 0 0 14px; font-size: 14px; }
+  .panel button { font-size: 15px; padding: 9px 16px; background: rgba(255,255,255,0.22); }
+  .toast {
+    position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+    background: rgba(0,0,0,0.7); padding: 6px 12px; border-radius: 16px;
+    font-size: 12px; z-index: 11000; pointer-events: none;
+    opacity: 0; transition: opacity 0.25s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/spider-solitaire.svg">
+    <link rel="manifest" href="/games/spider-solitaire.webmanifest">
+    <meta name="theme-color" content="#047857">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Spider Solitaire">
+    <link rel="apple-touch-icon" href="/games/icons/spider-solitaire.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#047857;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🕷 Spider Solitaire</h1>
+    <div class="stats">
+      <span>Score <b id="score">500</b></span>
+      <span>Moves <b id="moves">0</b></span>
+    </div>
+  </header>
+  <div class="controls">
+    <select id="diff" title="Difficulty">
+      <option value="1">1 Suit (Easy)</option>
+      <option value="2">2 Suits</option>
+      <option value="4">4 Suits (Hard)</option>
+    </select>
+    <button id="deal" class="stockbtn">Deal <span class="stockpips" id="pips"></span></button>
+    <button id="undo">↶ Undo</button>
+    <button id="newgame">New Game</button>
+    <button id="hint">Hint</button>
+    <button id="sound">🔊</button>
+  </div>
+  <div id="board">
+    <div id="overlay"><div class="panel">
+      <h2 id="ovTitle">You Win!</h2>
+      <p id="ovMsg"></p>
+      <button id="ovBtn">New Game</button>
+    </div></div>
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function(){
+  // ---------- Constants ----------
+  var SUITS = ["S","H","D","C"];          // spades, hearts, diamonds, clubs
+  var SUIT_GLYPH = {S:"♠", H:"♥", D:"♦", C:"♣"};
+  var SUIT_RED = {S:false, H:true, D:true, C:false};
+  var RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"]; // index+1 = rank value
+  var NCOLS = 10;
+
+  // ---------- State ----------
+  // Each card: {id, suit, rank (1..13), faceUp}
+  var state = null;        // {cols:[[card,...]*10], stock:[[10 cards]*N], completed:int, score, moves, suits}
+  var history = [];        // stack of snapshots for undo
+  var selection = null;    // {col, idx}  (start index of selected run)
+  var soundOn = true;
+
+  // Layout (computed)
+  var L = { cardW:50, cardH:70, gap:6, downStep:8, upStep:18, colW:54 };
+
+  var board = document.getElementById("board");
+  var elScore = document.getElementById("score");
+  var elMoves = document.getElementById("moves");
+  var elPips = document.getElementById("pips");
+  var elDiff = document.getElementById("diff");
+  var overlay = document.getElementById("overlay");
+  var toastEl = document.getElementById("toast");
+
+  // ---------- Audio ----------
+  var actx = null;
+  function ensureAudio(){
+    if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ actx=null; } }
+    if(actx && actx.state === "suspended") actx.resume();
+  }
+  function beep(freq, dur, type, vol){
+    if(!soundOn || !actx) return;
+    try{
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = type||"sine"; o.frequency.value = freq;
+      g.gain.value = vol==null?0.06:vol;
+      o.connect(g); g.connect(actx.destination);
+      var t = actx.currentTime;
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (dur||0.12));
+      o.start(t); o.stop(t + (dur||0.12));
+    }catch(e){}
+  }
+  function sndMove(){ beep(330,0.07,"triangle",0.05); }
+  function sndDeal(){ beep(220,0.06,"square",0.04); }
+  function sndComplete(){ beep(523,0.1,"sine",0.08); setTimeout(function(){beep(659,0.12,"sine",0.08);},90); setTimeout(function(){beep(784,0.16,"sine",0.08);},190); }
+  function sndBad(){ beep(160,0.12,"sawtooth",0.05); }
+  function sndWin(){ var n=[523,587,659,784,880,1047]; n.forEach(function(f,i){ setTimeout(function(){beep(f,0.18,"sine",0.09);}, i*120); }); }
+
+  // ---------- Deck / Deal ----------
+  var idCounter = 0;
+  function makeDeck(numSuits){
+    // Two decks = 104 cards. We use `numSuits` distinct suits, repeated to fill.
+    // Spider with 1 suit = 8 copies of one suit; 2 suits = 4 copies each of 2; 4 suits = 2 copies each.
+    var useSuits = SUITS.slice(0, numSuits);
+    var copies = 8 / numSuits; // 1->8, 2->4, 4->2
+    var deck = [];
+    for(var c=0;c<copies;c++){
+      for(var s=0;s<useSuits.length;s++){
+        for(var r=1;r<=13;r++){
+          deck.push({id: ++idCounter, suit: useSuits[s], rank: r, faceUp:false});
+        }
+      }
+    }
+    return deck; // 104 cards
+  }
+  function shuffle(a){
+    for(var i=a.length-1;i>0;i--){
+      var j = Math.floor(Math.random()*(i+1));
+      var t=a[i]; a[i]=a[j]; a[j]=t;
+    }
+    return a;
+  }
+
+  function newGame(numSuits){
+    var deck = shuffle(makeDeck(numSuits));
+    var cols = [];
+    for(var i=0;i<NCOLS;i++) cols.push([]);
+    // Deal 54 cards to tableau: first 4 columns get 6, remaining 6 get 5.
+    var counts = [6,6,6,6,5,5,5,5,5,5];
+    var p = 0;
+    for(var c=0;c<NCOLS;c++){
+      for(var k=0;k<counts[c];k++){
+        deck[p].faceUp = false;
+        cols[c].push(deck[p]); p++;
+      }
+      cols[c][cols[c].length-1].faceUp = true; // top card face up
+    }
+    // Remaining 50 cards -> 5 stock rows of 10.
+    var stock = [];
+    while(p < deck.length){
+      var row = [];
+      for(var j=0;j<NCOLS;j++){ deck[p].faceUp=false; row.push(deck[p]); p++; }
+      stock.push(row);
+    }
+    state = { cols: cols, stock: stock, completed: 0, score: 500, moves: 0, suits: numSuits, won: false };
+    history = [];
+    selection = null;
+    hideOverlay();
+    relayout();
+    render();
+  }
+
+  // ---------- Snapshot / Undo ----------
+  function snapshot(){
+    // deep-ish clone of mutable state
+    return {
+      cols: state.cols.map(function(col){ return col.map(function(c){ return {id:c.id,suit:c.suit,rank:c.rank,faceUp:c.faceUp}; }); }),
+      stock: state.stock.map(function(row){ return row.map(function(c){ return {id:c.id,suit:c.suit,rank:c.rank,faceUp:c.faceUp}; }); }),
+      completed: state.completed, score: state.score, moves: state.moves, suits: state.suits, won: state.won
+    };
+  }
+  function pushHistory(){ history.push(snapshot()); if(history.length>500) history.shift(); }
+  function undo(){
+    if(!history.length) return;
+    state = history.pop();
+    selection = null;
+    relayout();
+    render();
+    sndMove();
+  }
+
+  // ---------- Move logic ----------
+  // A run starting at index i in a column is "movable" if cards i..end are face-up,
+  // strictly descending by 1, AND all the same suit (required to move as a group).
+  function runLengthFrom(col, i){
+    // returns how many cards from i form a valid same-suit descending sequence (for moving)
+    if(i<0 || i>=col.length) return 0;
+    if(!col[i].faceUp) return 0;
+    var len = 1;
+    for(var k=i; k<col.length-1; k++){
+      var a = col[k], b = col[k+1];
+      if(b.faceUp && a.suit===b.suit && a.rank === b.rank+1) len++;
+      else break;
+    }
+    return len;
+  }
+  // Is index i the start of a movable run reaching the bottom of the column?
+  function isMovableRun(col, i){
+    if(i<0 || i>=col.length) return false;
+    if(!col[i].faceUp) return false;
+    return (i + runLengthFrom(col, i)) === col.length;
+  }
+  // Can the run whose top card is `topCard` (rank) move onto column dc?
+  function canDropOn(dc, topRank){
+    var dcol = state.cols[dc];
+    if(dcol.length === 0) return true; // empty column accepts anything
+    var dest = dcol[dcol.length-1];
+    return dest.faceUp && dest.rank === topRank + 1;
+  }
+
+  function flipExposed(col){
+    if(col.length && !col[col.length-1].faceUp){
+      col[col.length-1].faceUp = true;
+    }
+  }
+
+  // Remove a completed K..A same-suit run from the bottom of a column if present.
+  function checkComplete(colIndex){
+    var col = state.cols[colIndex];
+    if(col.length < 13) return false;
+    var start = col.length - 13;
+    // must be K(13) down to A(1), same suit, all faceUp
+    for(var k=0;k<13;k++){
+      var card = col[start+k];
+      if(!card.faceUp) return false;
+      if(card.rank !== 13 - k) return false;
+      if(card.suit !== col[start].suit) return false;
+    }
+    // remove
+    col.splice(start, 13);
+    state.completed++;
+    state.score += 100;
+    flipExposed(col);
+    return true;
+  }
+
+  // Perform a move of run from (sc, si) to dc. Assumes validity checked. Records history.
+  function doMove(sc, si, dc){
+    pushHistory();
+    var scol = state.cols[sc];
+    var moving = scol.splice(si);   // cards from si..end
+    var dcol = state.cols[dc];
+    for(var i=0;i<moving.length;i++) dcol.push(moving[i]);
+    flipExposed(scol);
+    state.moves++;
+    state.score = Math.max(0, state.score - 1);
+    selection = null;
+    var completed = checkComplete(dc);
+    relayout();
+    render();
+    if(completed){ sndComplete(); } else { sndMove(); }
+    checkWin();
+  }
+
+  function dealStock(){
+    if(!state.stock.length){ toast("No more cards in stock"); sndBad(); return; }
+    // Not allowed if any column is empty
+    for(var c=0;c<NCOLS;c++){
+      if(state.cols[c].length === 0){ toast("Fill all empty columns first"); sndBad(); return; }
+    }
+    pushHistory();
+    var row = state.stock.pop();
+    for(var i=0;i<NCOLS;i++){
+      row[i].faceUp = true;
+      state.cols[i].push(row[i]);
+    }
+    selection = null;
+    // check completions across all columns
+    var any=false;
+    for(var c2=0;c2<NCOLS;c2++){ if(checkComplete(c2)) any=true; }
+    relayout();
+    render();
+    if(any) sndComplete(); else sndDeal();
+    checkWin();
+  }
+
+  function checkWin(){
+    if(state.completed >= 8 && !state.won){
+      state.won = true;
+      state.score += 100; // bonus
+      showOverlay("You Win! 🎉", "Score: " + state.score + " · Moves: " + state.moves);
+      sndWin();
+    }
+  }
+
+  // ---------- Auto-move on tap-destination, with best-target helper ----------
+  // When a run is selected and user taps a column, attempt the move.
+  function attemptMoveTo(dc){
+    if(!selection) return false;
+    var sc = selection.col, si = selection.idx;
+    if(sc === dc){ selection = null; render(); return true; }
+    var scol = state.cols[sc];
+    if(!isMovableRun(scol, si)){ selection=null; render(); return false; }
+    var topRank = scol[si].rank;
+    if(canDropOn(dc, topRank)){
+      doMove(sc, si, dc);
+      return true;
+    } else {
+      sndBad();
+      // reselect on the tapped column's run if valid? No — just clear.
+      selection = null; render();
+      return false;
+    }
+  }
+
+  // ---------- Layout ----------
+  function relayout(){
+    var bw = board.clientWidth;
+    var bh = board.clientHeight;
+    if(bw < 10){ bw = window.innerWidth; }
+    var pad = 3;
+    var gap = bw < 380 ? 2 : 4;
+    var avail = bw - pad*2 - gap*(NCOLS-1);
+    var cw = Math.floor(avail / NCOLS);
+    cw = Math.max(20, cw);
+    var ch = Math.round(cw * 1.4);
+    // fan steps
+    var downStep = Math.max(6, Math.round(ch*0.16));
+    var upStep = Math.max(12, Math.round(ch*0.30));
+    L.cardW = cw; L.cardH = ch; L.gap = gap; L.pad = pad;
+    L.downStep = downStep; L.upStep = upStep;
+    L.colW = cw + gap;
+
+    // adapt up/down step so the tallest column fits vertically; shrink steps if needed
+    var maxNeeded = 0;
+    if(state){
+      for(var c=0;c<NCOLS;c++){
+        var col = state.cols[c];
+        var h = colHeight(col, downStep, upStep) ;
+        if(h>maxNeeded) maxNeeded=h;
+      }
+      var limit = bh - pad*2 - 2;
+      if(maxNeeded > limit && maxNeeded > ch){
+        var scale = (limit - ch) / (maxNeeded - ch);
+        if(scale < 1 && scale > 0.15){
+          L.downStep = Math.max(3, Math.floor(downStep*scale));
+          L.upStep = Math.max(7, Math.floor(upStep*scale));
+        } else if(scale <= 0.15){
+          L.downStep = 3; L.upStep = 7;
+        }
+      }
+    }
+    // font sizes
+    document.documentElement.style.setProperty("--cardr", Math.max(3, Math.round(cw*0.1))+"px");
+    document.documentElement.style.setProperty("--rankf", Math.max(8, Math.round(cw*0.30))+"px");
+    document.documentElement.style.setProperty("--suitf", Math.max(7, Math.round(cw*0.26))+"px");
+    document.documentElement.style.setProperty("--bigf", Math.max(12, Math.round(cw*0.55))+"px");
+  }
+  function colHeight(col, downStep, upStep){
+    var y=0;
+    for(var k=0;k<col.length;k++){
+      if(k>0) y += col[k-1].faceUp ? upStep : downStep;
+    }
+    return y + L.cardH;
+  }
+  function colX(c){ return L.pad + c*(L.cardW + L.gap); }
+  function cardY(col, idx){
+    var y=0;
+    for(var k=0;k<idx;k++){ y += col[k].faceUp ? L.upStep : L.downStep; }
+    return y;
+  }
+
+  // ---------- Render ----------
+  function render(){
+    elScore.textContent = state.score;
+    elMoves.textContent = state.moves;
+    // stock pips
+    var pn = state.stock.length;
+    var html="";
+    for(var i=0;i<pn;i++) html += '<span class="pip"></span>';
+    elPips.innerHTML = html;
+    document.getElementById("deal").disabled = (pn===0);
+
+    // build columns
+    // Clear existing card/col/slot nodes (keep overlay + toast)
+    var keep = {};
+    keep[overlay.id]=1; keep[toastEl.id]=1;
+    var children = Array.prototype.slice.call(board.children);
+    for(var ci=0;ci<children.length;ci++){
+      var ch = children[ci];
+      if(ch===overlay || ch===toastEl) continue;
+      board.removeChild(ch);
+    }
+
+    for(var c=0;c<NCOLS;c++){
+      var x = colX(c);
+      // slot
+      var slot = document.createElement("div");
+      slot.className = "slot";
+      slot.style.left = x+"px"; slot.style.top = "0px";
+      slot.style.width = L.cardW+"px"; slot.style.height = L.cardH+"px";
+      board.appendChild(slot);
+
+      var col = state.cols[c];
+      for(var idx=0; idx<col.length; idx++){
+        var card = col[idx];
+        var el = cardEl(card);
+        el.style.left = x + "px";
+        el.style.top = cardY(col, idx) + "px";
+        el.style.width = L.cardW + "px";
+        el.style.height = L.cardH + "px";
+        el.style.zIndex = (100 + idx);
+        el.dataset.col = c; el.dataset.idx = idx;
+        // selection highlight: selected run = sc, si..end
+        if(selection && selection.col===c && idx>=selection.idx){
+          el.classList.add("sel");
+        }
+        board.appendChild(el);
+      }
+    }
+    // set board min height container via absolute; nothing else needed
+  }
+
+  function cardEl(card){
+    var el = document.createElement("div");
+    el.className = "card " + (card.faceUp ? (SUIT_RED[card.suit] ? "red":"black") : "down");
+    if(card.faceUp){
+      var g = SUIT_GLYPH[card.suit];
+      el.innerHTML =
+        '<div class="corner"><span class="rank">'+RANKS[card.rank-1]+'</span><span class="suit">'+g+'</span></div>'+
+        '<div class="big">'+g+'</div>';
+    }
+    return el;
+  }
+
+  // ---------- Toast / Overlay ----------
+  var toastTimer=null;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove("show"); }, 1400);
+  }
+  function showOverlay(title, msg){
+    document.getElementById("ovTitle").textContent = title;
+    document.getElementById("ovMsg").textContent = msg;
+    overlay.classList.add("show");
+  }
+  function hideOverlay(){ overlay.classList.remove("show"); }
+
+  // ---------- Hint ----------
+  function findHint(){
+    // find any legal move that exposes a card or builds a sequence; prefer same-suit landings
+    var best=null;
+    for(var sc=0; sc<NCOLS; sc++){
+      var scol = state.cols[sc];
+      for(var si=0; si<scol.length; si++){
+        if(!isMovableRun(scol, si)) continue;
+        var topRank = scol[si].rank;
+        for(var dc=0; dc<NCOLS; dc++){
+          if(dc===sc) continue;
+          var dcol = state.cols[dc];
+          if(dcol.length && dcol[dcol.length-1].faceUp && dcol[dcol.length-1].rank===topRank+1){
+            // good landing. Prefer same suit, and prefer one that frees a face-down card.
+            var sameSuit = dcol[dcol.length-1].suit === scol[si].suit;
+            var frees = (si>0 && !scol[si-1].faceUp);
+            var score = (sameSuit?2:0)+(frees?1:0);
+            if(!best || score>best.score){ best={sc:sc,si:si,dc:dc,score:score}; }
+          }
+        }
+      }
+    }
+    // also moving to empty column (only if it frees something) as fallback
+    if(!best){
+      for(var sc2=0; sc2<NCOLS; sc2++){
+        var scol2 = state.cols[sc2];
+        for(var si2=0; si2<scol2.length; si2++){
+          if(!isMovableRun(scol2, si2)) continue;
+          if(si2===0) continue; // moving whole column to empty is pointless
+          for(var dc2=0; dc2<NCOLS; dc2++){
+            if(dc2===sc2) continue;
+            if(state.cols[dc2].length===0){ best={sc:sc2,si:si2,dc:dc2,score:0}; break; }
+          }
+          if(best) break;
+        }
+        if(best) break;
+      }
+    }
+    return best;
+  }
+  function showHint(){
+    var h = findHint();
+    if(!h){ toast("No moves — deal from stock"); sndBad(); return; }
+    // highlight source run
+    var els = board.querySelectorAll(".card");
+    for(var i=0;i<els.length;i++){
+      var e=els[i];
+      var c=+e.dataset.col, ix=+e.dataset.idx;
+      if(c===h.sc && ix>=h.si) e.classList.add("hint");
+    }
+    setTimeout(function(){
+      var es = board.querySelectorAll(".card.hint");
+      for(var j=0;j<es.length;j++) es[j].classList.remove("hint");
+    }, 1100);
+  }
+
+  // ---------- Input: tap + drag ----------
+  var drag = null; // {sc, si, els:[], offsetX, offsetY, startX, startY, moved}
+
+  function cardFromEvent(target){
+    var el = target;
+    while(el && el!==board && !el.classList.contains("card")) el = el.parentNode;
+    if(el && el.classList && el.classList.contains("card")) return el;
+    return null;
+  }
+  function colFromPoint(x, y){
+    // map x to a column index (ignores y; valid for full board)
+    var rel = x - board.getBoundingClientRect().left;
+    for(var c=0;c<NCOLS;c++){
+      var cx = colX(c);
+      if(rel >= cx - L.gap/2 && rel < cx + L.cardW + L.gap/2) return c;
+    }
+    // clamp to nearest
+    if(rel < colX(0)) return 0;
+    return NCOLS-1;
+  }
+
+  function pointerDown(e){
+    ensureAudio();
+    if(overlay.classList.contains("show")) return;
+    var pt = e.touches ? e.touches[0] : e;
+    var cardElm = cardFromEvent(e.target);
+    if(!cardElm) {
+      // tap empty area -> if selection active and tap on a column slot, treat as destination
+      if(selection){
+        var dc0 = colFromPoint(pt.clientX, pt.clientY);
+        attemptMoveTo(dc0);
+      }
+      return;
+    }
+    var sc = +cardElm.dataset.col, si = +cardElm.dataset.idx;
+    var scol = state.cols[sc];
+    var card = scol[si];
+
+    // If there's an active selection and this tap is on a different column -> destination
+    if(selection && selection.col !== sc){
+      // tapping a card in another column = destination
+      e.preventDefault();
+      attemptMoveTo(sc);
+      return;
+    }
+
+    // Tapping a face-down card: only meaningful if it's the top (auto handled by flip already). Ignore.
+    if(!card.faceUp){
+      // tapping a face-down: if selection active treat as dest column
+      if(selection){ attemptMoveTo(sc); }
+      return;
+    }
+
+    // Is this the start of a movable run?
+    if(!isMovableRun(scol, si)){
+      // Not movable as a group. If user tapped a card mid-non-run, maybe they meant the bottom card.
+      // We allow selecting only valid movable run starts. Provide gentle feedback.
+      if(selection && selection.col===sc){ selection=null; render(); return; }
+      // Try: maybe they tapped a card that's movable on its own (single bottom card)
+      sndBad();
+      return;
+    }
+
+    // Begin potential drag; also set as selection candidate.
+    e.preventDefault();
+    var brect = board.getBoundingClientRect();
+    var els = [];
+    var nodeList = board.querySelectorAll('.card');
+    for(var i=0;i<nodeList.length;i++){
+      var nd = nodeList[i];
+      if(+nd.dataset.col===sc && +nd.dataset.idx>=si) els.push(nd);
+    }
+    var topEl = els[0];
+    var topRect = topEl.getBoundingClientRect();
+    drag = {
+      sc:sc, si:si, els:els,
+      offX: pt.clientX - topRect.left,
+      offY: pt.clientY - topRect.top,
+      startX: pt.clientX, startY: pt.clientY,
+      baseLeft: parseFloat(topEl.style.left),
+      baseTop: parseFloat(topEl.style.top),
+      moved:false,
+      brect: brect
+    };
+    // record original tops for offset preservation
+    drag.origTops = els.map(function(el){ return parseFloat(el.style.top); });
+    drag.origLeft = parseFloat(topEl.style.left);
+  }
+
+  function pointerMove(e){
+    if(!drag) return;
+    var pt = e.touches ? e.touches[0] : e;
+    var dx = pt.clientX - drag.startX;
+    var dy = pt.clientY - drag.startY;
+    if(!drag.moved){
+      if(Math.abs(dx) < 6 && Math.abs(dy) < 6) return; // threshold; treat as tap until exceeded
+      drag.moved = true;
+      for(var i=0;i<drag.els.length;i++){ drag.els[i].classList.add("drag"); }
+    }
+    e.preventDefault();
+    for(var j=0;j<drag.els.length;j++){
+      var el = drag.els[j];
+      el.style.left = (drag.origLeft + dx) + "px";
+      el.style.top = (drag.origTops[j] + dy) + "px";
+    }
+    // highlight target column
+    highlightTarget(colFromPoint(pt.clientX, pt.clientY), drag.sc, state.cols[drag.sc][drag.si].rank);
+  }
+
+  function highlightTarget(dc, sc, topRank){
+    // We highlight by toggling a class on a transient overlay div; simpler: outline destination slot
+    clearTargetHighlight();
+    if(dc==null) return;
+    if(dc===sc) return;
+    if(canDropOn(dc, topRank)){
+      // draw outline at column
+      var hl = document.createElement("div");
+      hl.className = "slot";
+      hl.id = "__tgt";
+      hl.style.left = colX(dc)+"px";
+      hl.style.top = "0px";
+      hl.style.width = L.cardW+"px";
+      var col = state.cols[dc];
+      var h = col.length ? (cardY(col, col.length-1)+L.cardH) : L.cardH;
+      hl.style.height = h+"px";
+      hl.style.border = "2px solid #ffd54a";
+      hl.style.background = "rgba(255,213,74,0.12)";
+      hl.style.zIndex = 8000;
+      board.appendChild(hl);
+    }
+  }
+  function clearTargetHighlight(){
+    var t = document.getElementById("__tgt");
+    if(t && t.parentNode) t.parentNode.removeChild(t);
+  }
+
+  function pointerUp(e){
+    if(!drag){ return; }
+    var d = drag; drag = null;
+    clearTargetHighlight();
+    var pt = e.changedTouches ? e.changedTouches[0] : e;
+
+    if(!d.moved){
+      // It's a TAP, not a drag -> selection toggle / move
+      handleTap(d.sc, d.si);
+      return;
+    }
+    // It was a drag -> determine destination column
+    var dc = colFromPoint(pt.clientX, pt.clientY);
+    var scol = state.cols[d.sc];
+    var topRank = scol[d.si].rank;
+    if(dc!=null && dc!==d.sc && canDropOn(dc, topRank)){
+      // valid drop
+      doMove(d.sc, d.si, dc);
+    } else {
+      // invalid -> snap back (re-render restores positions)
+      for(var i=0;i<d.els.length;i++) d.els[i].classList.remove("drag");
+      if(dc!==d.sc) sndBad();
+      render();
+    }
+  }
+
+  function handleTap(sc, si){
+    if(selection){
+      if(selection.col===sc && selection.idx===si){
+        // tap same -> deselect
+        selection = null; render(); return;
+      }
+      if(selection.col===sc){
+        // tapping another card in the same source column -> change selection start
+        selection = {col:sc, idx:si}; render(); return;
+      }
+      // different column handled earlier in pointerDown, but safety:
+      attemptMoveTo(sc); return;
+    }
+    // no selection -> select this run
+    selection = {col:sc, idx:si};
+    render();
+  }
+
+  // Tap on empty column / slot to move selection there.
+  board.addEventListener("click", function(e){
+    if(drag) return;
+    // handled by pointer events mostly; this catches taps on slots when no card under finger
+  });
+
+  // Pointer/touch wiring
+  board.addEventListener("touchstart", pointerDown, {passive:false});
+  board.addEventListener("touchmove", pointerMove, {passive:false});
+  board.addEventListener("touchend", pointerUp, {passive:false});
+  board.addEventListener("touchcancel", function(e){
+    if(drag){ for(var i=0;i<drag.els.length;i++) drag.els[i].classList.remove("drag"); drag=null; clearTargetHighlight(); render(); }
+  }, {passive:false});
+
+  // Mouse (desktop)
+  board.addEventListener("mousedown", function(e){ pointerDown(e); });
+  window.addEventListener("mousemove", function(e){ if(drag) pointerMove(e); });
+  window.addEventListener("mouseup", function(e){ if(drag) pointerUp(e); });
+
+  // ---------- Buttons ----------
+  document.getElementById("deal").addEventListener("click", function(){ ensureAudio(); dealStock(); });
+  document.getElementById("undo").addEventListener("click", function(){ ensureAudio(); undo(); });
+  document.getElementById("newgame").addEventListener("click", function(){ ensureAudio(); newGame(+elDiff.value); });
+  document.getElementById("hint").addEventListener("click", function(){ ensureAudio(); showHint(); });
+  document.getElementById("ovBtn").addEventListener("click", function(){ ensureAudio(); newGame(+elDiff.value); });
+  var sndBtn = document.getElementById("sound");
+  sndBtn.addEventListener("click", function(){ soundOn=!soundOn; sndBtn.textContent = soundOn?"🔊":"🔈"; if(soundOn){ensureAudio();} });
+  elDiff.addEventListener("change", function(){ newGame(+elDiff.value); });
+
+  // Prevent page scroll/zoom gestures on the board
+  board.addEventListener("gesturestart", function(e){ e.preventDefault(); });
+  document.addEventListener("touchmove", function(e){
+    // block document-level scrolling while interacting with board area
+    if(drag) e.preventDefault();
+  }, {passive:false});
+  document.addEventListener("dblclick", function(e){ e.preventDefault(); }, {passive:false});
+
+  // ---------- Resize ----------
+  var resizeTimer=null;
+  window.addEventListener("resize", function(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function(){ if(state){ relayout(); render(); } }, 120);
+  });
+  window.addEventListener("orientationchange", function(){
+    setTimeout(function(){ if(state){ relayout(); render(); } }, 250);
+  });
+
+  // ---------- Boot ----------
+  newGame(1);
+})();
+</script>
+</body>
+</html>

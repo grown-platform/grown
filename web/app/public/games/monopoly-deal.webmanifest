@@ -1,0 +1,25 @@
+{
+  "name": "Monopoly Deal",
+  "short_name": "Monopoly Deal",
+  "description": "Monopoly Deal — play in your browser, online or off.",
+  "start_url": "/games/monopoly-deal.html",
+  "scope": "/games/monopoly-deal.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#16A34A",
+  "icons": [
+    {
+      "src": "/games/icons/monopoly-deal.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/monopoly-deal.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

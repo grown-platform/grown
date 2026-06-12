@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Go Fish</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    background: #0b3d2e;
+    color: #f0f5f2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    max-width: 480px;
+    margin: 0 auto;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  header {
+    flex: 0 0 auto;
+    padding: 8px 10px 6px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+  }
+  h1 {
+    margin: 0;
+    font-size: 20px;
+    letter-spacing: 0.5px;
+    color: #ffd76b;
+  }
+  .scores {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 6px;
+    font-size: 13px;
+  }
+  .score {
+    background: rgba(0,0,0,0.25);
+    border-radius: 8px;
+    padding: 4px 10px;
+    line-height: 1.2;
+  }
+  .score b { color: #ffd76b; font-size: 16px; }
+  .pondinfo {
+    text-align: center;
+    font-size: 12px;
+    color: #b8ccc2;
+    margin-top: 4px;
+  }
+
+  #log {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 10px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .logline { margin: 0 0 3px; padding: 3px 7px; border-radius: 6px; }
+  .logline.you { background: rgba(86,160,255,0.18); }
+  .logline.cpu { background: rgba(255,140,86,0.16); }
+  .logline.book { background: rgba(120,220,150,0.22); font-weight: 600; }
+  .logline.sys  { color: #9fb6ac; }
+  .logline.win  { background: #ffd76b; color: #0b3d2e; font-weight: 700; text-align:center; }
+
+  #handArea {
+    flex: 0 0 auto;
+    padding: 6px 8px 10px;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    background: rgba(0,0,0,0.18);
+  }
+  .handlabel { font-size: 12px; color: #cdded6; margin: 0 2px 5px; display:flex; justify-content:space-between; }
+  #hand {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+  }
+  .card {
+    width: 44px;
+    height: 62px;
+    border-radius: 7px;
+    background: #fff;
+    color: #111;
+    position: relative;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 3px 4px;
+    font-weight: 700;
+  }
+  .card.red { color: #d1342b; }
+  .card:active { transform: translateY(2px); }
+  .card.askable { outline: 2px solid #ffd76b; }
+  .card .corner { font-size: 13px; line-height: 1; }
+  .card .corner.bot { align-self: flex-end; transform: rotate(180deg); }
+  .card .pip { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 22px; }
+  .card.disabled { opacity: 0.45; pointer-events: none; }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 10px;
+  }
+  button.btn {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 9px 16px;
+    border: none;
+    border-radius: 9px;
+    background: #ffd76b;
+    color: #0b3d2e;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button.btn:active { transform: translateY(1px); }
+  button.btn.sec { background: rgba(255,255,255,0.16); color: #f0f5f2; }
+
+  .turnhint {
+    text-align: center;
+    font-size: 12px;
+    color: #ffd76b;
+    min-height: 16px;
+    margin-top: 6px;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/go-fish.svg">
+    <link rel="manifest" href="/games/go-fish.webmanifest">
+    <meta name="theme-color" content="#0EA5E9">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Go Fish">
+    <link rel="apple-touch-icon" href="/games/icons/go-fish.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#0EA5E9;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>Go Fish</h1>
+    <div class="scores">
+      <div class="score">You<br><b id="youBooks">0</b> books</div>
+      <div class="score">CPU<br><b id="cpuBooks">0</b> books</div>
+    </div>
+    <div class="pondinfo" id="pondInfo">Pond: 0</div>
+  </header>
+
+  <div id="log"></div>
+
+  <div id="handArea">
+    <div class="handlabel"><span>Your hand — tap a card to ask for that rank</span><span id="handCount"></span></div>
+    <div id="hand"></div>
+    <div class="turnhint" id="turnHint"></div>
+    <div class="controls">
+      <button class="btn" id="newGameBtn">New Game</button>
+      <button class="btn sec" id="soundBtn">Sound: On</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+  var RANK_NAMES = {A:"Aces","2":"Twos","3":"Threes","4":"Fours","5":"Fives","6":"Sixes","7":"Sevens","8":"Eights","9":"Nines","10":"Tens",J:"Jacks",Q:"Queens",K:"Kings"};
+  var SUITS = ["S","H","D","C"];
+  var SUIT_CHAR = {S:"♠", H:"♥", D:"♦", C:"♣"};
+  var RED = {H:true, D:true};
+
+  // ---- Audio ----
+  var soundOn = true;
+  var actx = null;
+  function ensureAudio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { actx = null; }
+    }
+    if (actx && actx.state === "suspended") actx.resume();
+  }
+  function beep(freq, dur, type, gainVal) {
+    if (!soundOn || !actx) return;
+    try {
+      var o = actx.createOscillator();
+      var g = actx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = 0.0001;
+      o.connect(g); g.connect(actx.destination);
+      var t = actx.currentTime;
+      g.gain.exponentialRampToValueAtTime(gainVal || 0.18, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t); o.stop(t + dur + 0.02);
+    } catch (e) {}
+  }
+  function sndAsk()  { beep(520, 0.12, "triangle", 0.15); }
+  function sndGive() { beep(660, 0.1, "sine", 0.16); setTimeout(function(){ beep(880, 0.12, "sine", 0.16); }, 90); }
+  function sndFish() { beep(300, 0.18, "sawtooth", 0.12); }
+  function sndBook() { beep(523,0.1,"sine",0.18); setTimeout(function(){beep(659,0.1,"sine",0.18);},90); setTimeout(function(){beep(784,0.16,"sine",0.18);},180); }
+  function sndWin()  { [523,659,784,1047].forEach(function(f,i){ setTimeout(function(){ beep(f,0.18,"triangle",0.2); }, i*130); }); }
+  function sndLose() { [392,330,262].forEach(function(f,i){ setTimeout(function(){ beep(f,0.22,"sawtooth",0.14); }, i*150); }); }
+
+  // ---- State ----
+  var deck, youHand, cpuHand, youBooks, cpuBooks, gameOver, busy;
+  // CPU memory: ranks it has seen you ask for (you likely hold them) -> set of ranks
+  var cpuKnowledge;
+
+  function rankValue(r) { return RANKS.indexOf(r); }
+
+  function buildDeck() {
+    var d = [];
+    for (var s = 0; s < SUITS.length; s++) {
+      for (var r = 0; r < RANKS.length; r++) {
+        d.push({ rank: RANKS[r], suit: SUITS[s] });
+      }
+    }
+    // Fisher-Yates
+    for (var i = d.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = d[i]; d[i] = d[j]; d[j] = tmp;
+    }
+    return d;
+  }
+
+  function countRank(hand, rank) {
+    var c = 0;
+    for (var i = 0; i < hand.length; i++) if (hand[i].rank === rank) c++;
+    return c;
+  }
+
+  // Remove and return all cards of a rank from a hand
+  function takeRank(hand, rank) {
+    var taken = [];
+    for (var i = hand.length - 1; i >= 0; i--) {
+      if (hand[i].rank === rank) {
+        taken.push(hand.splice(i, 1)[0]);
+      }
+    }
+    return taken;
+  }
+
+  // Check a hand for any complete book (4 of a rank). Returns array of rank strings newly booked.
+  function extractBooks(hand) {
+    var booked = [];
+    for (var r = 0; r < RANKS.length; r++) {
+      if (countRank(hand, RANKS[r]) === 4) {
+        takeRank(hand, RANKS[r]);
+        booked.push(RANKS[r]);
+      }
+    }
+    return booked;
+  }
+
+  // ---- Rendering ----
+  function el(id) { return document.getElementById(id); }
+
+  function pipLayout(rank) {
+    // big center character: rank for faces/A, suit-ish for number—keep simple: show rank big
+    return rank;
+  }
+
+  function renderHand() {
+    var handEl = el("hand");
+    handEl.innerHTML = "";
+    // sort by rank value then suit for readability
+    youHand.sort(function (a, b) {
+      var d = rankValue(a.rank) - rankValue(b.rank);
+      if (d !== 0) return d;
+      return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
+    });
+    youHand.forEach(function (card) {
+      var c = document.createElement("div");
+      c.className = "card" + (RED[card.suit] ? " red" : "") + " askable";
+      if (gameOver || busy) c.className += " disabled";
+      var top = document.createElement("div");
+      top.className = "corner";
+      top.textContent = card.rank + SUIT_CHAR[card.suit];
+      var pip = document.createElement("div");
+      pip.className = "pip";
+      pip.textContent = SUIT_CHAR[card.suit];
+      var bot = document.createElement("div");
+      bot.className = "corner bot";
+      bot.textContent = card.rank + SUIT_CHAR[card.suit];
+      c.appendChild(top); c.appendChild(pip); c.appendChild(bot);
+      c.addEventListener("click", function () { onAsk(card.rank); });
+      handEl.appendChild(c);
+    });
+    el("handCount").textContent = youHand.length + " cards";
+  }
+
+  function renderScores() {
+    el("youBooks").textContent = youBooks.length;
+    el("cpuBooks").textContent = cpuBooks.length;
+    el("pondInfo").textContent = "Pond: " + deck.length +
+      "  •  Books made: " + (youBooks.length + cpuBooks.length) + " / 13";
+  }
+
+  function log(text, cls) {
+    var d = document.createElement("div");
+    d.className = "logline " + (cls || "sys");
+    d.textContent = text;
+    var logEl = el("log");
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setHint(text) { el("turnHint").textContent = text || ""; }
+
+  // ---- Game flow ----
+  function newGame() {
+    ensureAudio();
+    deck = buildDeck();
+    youHand = [];
+    cpuHand = [];
+    youBooks = [];
+    cpuBooks = [];
+    cpuKnowledge = {};
+    gameOver = false;
+    busy = false;
+    for (var i = 0; i < 7; i++) { youHand.push(deck.pop()); cpuHand.push(deck.pop()); }
+    el("log").innerHTML = "";
+    log("New game. You and the CPU each get 7 cards.", "sys");
+
+    // Initial books (very unlikely but possible)
+    settleBooks(youHand, youBooks, "You", "you");
+    settleBooks(cpuHand, cpuBooks, "CPU", "cpu");
+
+    renderHand();
+    renderScores();
+    setHint("Your turn — tap a card to ask.");
+    checkEnd();
+  }
+
+  function settleBooks(hand, bookArr, who, cls) {
+    var booked = extractBooks(hand);
+    booked.forEach(function (r) {
+      bookArr.push(r);
+      log(who + " completed a book of " + RANK_NAMES[r] + "!", "book");
+      sndBook();
+    });
+    return booked.length > 0;
+  }
+
+  // Draw one card; if hand empty afterwards still ok. Returns drawn card or null.
+  function drawFromPond(hand) {
+    if (deck.length === 0) return null;
+    var card = deck.pop();
+    hand.push(card);
+    return card;
+  }
+
+  function onAsk(rank) {
+    if (gameOver || busy) return;
+    if (countRank(youHand, rank) === 0) return; // safety
+    ensureAudio();
+    sndAsk();
+    log("You ask the CPU for " + RANK_NAMES[rank] + ".", "you");
+    var match = takeRank(cpuHand, rank);
+    if (match.length > 0) {
+      for (var i = 0; i < match.length; i++) youHand.push(match[i]);
+      log("CPU hands over " + match.length + " " + (match.length === 1 ? "card" : "cards") +
+          " of " + RANK_NAMES[rank] + ". You go again!", "cpu");
+      sndGive();
+      settleBooks(youHand, youBooks, "You", "you");
+      renderHand(); renderScores();
+      if (checkEnd()) return;
+      // refill if your hand emptied but pond has cards
+      if (youHand.length === 0) {
+        var rc = drawFromPond(youHand);
+        if (rc) { log("Your hand was empty — you draw from the pond.", "sys"); settleBooks(youHand, youBooks, "You", "you"); renderHand(); renderScores(); }
+        if (checkEnd()) return;
+        if (youHand.length === 0) { passToCpu(); return; }
+      }
+      setHint("CPU gave you cards — ask again!");
+      return; // your turn continues
+    }
+    // Go Fish
+    log("CPU says: Go Fish!", "cpu");
+    sndFish();
+    var drawn = drawFromPond(youHand);
+    if (!drawn) {
+      log("The pond is empty.", "sys");
+      renderHand(); renderScores();
+      if (checkEnd()) return;
+      passToCpu();
+      return;
+    }
+    log("You draw a card from the pond.", "sys");
+    var madeBook = settleBooks(youHand, youBooks, "You", "you");
+    renderHand(); renderScores();
+    if (checkEnd()) return;
+    // If you drew the rank you asked for, go again (only if not just booked away all of them)
+    if (drawn.rank === rank && countRank(youHand, rank) > 0) {
+      log("You drew the " + RANK_NAMES[rank].slice(0, -1) + " you asked for — you go again!", "you");
+      if (youHand.length === 0) { passToCpu(); return; }
+      setHint("Lucky draw — ask again!");
+      return;
+    }
+    if (youHand.length === 0) {
+      // empty after fishing into a book; draw to refill if possible
+      var rc2 = drawFromPond(youHand);
+      if (rc2) { log("Your hand was empty — you draw again.", "sys"); settleBooks(youHand, youBooks, "You", "you"); renderHand(); renderScores(); }
+      if (checkEnd()) return;
+    }
+    passToCpu();
+  }
+
+  function passToCpu() {
+    if (gameOver) return;
+    busy = true;
+    renderHand();
+    setHint("CPU's turn…");
+    setTimeout(cpuTurn, 800);
+  }
+
+  function passToYou() {
+    if (gameOver) return;
+    busy = false;
+    renderHand();
+    if (youHand.length === 0) {
+      // try to refill, else if can't, game likely ends via checkEnd; but if pond has cards draw
+      if (deck.length > 0) {
+        drawFromPond(youHand);
+        log("Your hand was empty — you draw from the pond to continue.", "sys");
+        settleBooks(youHand, youBooks, "You", "you");
+        renderHand(); renderScores();
+        if (checkEnd()) return;
+      }
+    }
+    setHint("Your turn — tap a card to ask.");
+  }
+
+  // CPU picks a rank to ask for, using memory of what you've asked.
+  function cpuChooseRank() {
+    var ownRanks = {};
+    for (var i = 0; i < cpuHand.length; i++) ownRanks[cpuHand[i].rank] = true;
+    var candidates = Object.keys(ownRanks);
+    if (candidates.length === 0) return null;
+    // Prefer a rank the CPU holds AND has seen you ask for (you probably still hold some)
+    var known = candidates.filter(function (r) { return cpuKnowledge[r]; });
+    if (known.length > 0) {
+      // among known, prefer the one where CPU holds the most (closer to a book)
+      known.sort(function (a, b) { return countRank(cpuHand, b) - countRank(cpuHand, a); });
+      return known[0];
+    }
+    // Otherwise prefer rank CPU holds the most of (more likely you have it too / closer to book)
+    candidates.sort(function (a, b) { return countRank(cpuHand, b) - countRank(cpuHand, a); });
+    // small randomness among the top group
+    var topCount = countRank(cpuHand, candidates[0]);
+    var top = candidates.filter(function (r) { return countRank(cpuHand, r) === topCount; });
+    return top[Math.floor(Math.random() * top.length)];
+  }
+
+  function cpuTurn() {
+    if (gameOver) return;
+    if (cpuHand.length === 0) {
+      if (deck.length > 0) {
+        drawFromPond(cpuHand);
+        log("CPU's hand was empty — it draws from the pond.", "sys");
+        settleBooks(cpuHand, cpuBooks, "CPU", "cpu");
+        renderScores();
+        if (checkEnd()) return;
+      }
+      if (cpuHand.length === 0) { passToYou(); return; }
+    }
+    var rank = cpuChooseRank();
+    if (rank == null) { passToYou(); return; }
+    log("CPU asks you for " + RANK_NAMES[rank] + ".", "cpu");
+    sndAsk();
+    var match = takeRank(youHand, rank);
+    if (match.length > 0) {
+      for (var i = 0; i < match.length; i++) cpuHand.push(match[i]);
+      log("You hand over " + match.length + " " + (match.length === 1 ? "card" : "cards") +
+          " of " + RANK_NAMES[rank] + ". CPU goes again.", "you");
+      sndGive();
+      delete cpuKnowledge[rank]; // CPU now holds them, you don't
+      settleBooks(cpuHand, cpuBooks, "CPU", "cpu");
+      renderHand(); renderScores();
+      if (checkEnd()) return;
+      if (cpuHand.length === 0) {
+        var rc = drawFromPond(cpuHand);
+        if (rc) { settleBooks(cpuHand, cpuBooks, "CPU", "cpu"); renderScores(); }
+        if (checkEnd()) return;
+        if (cpuHand.length === 0) { passToYou(); return; }
+      }
+      setTimeout(cpuTurn, 900);
+      return;
+    }
+    // Go Fish for CPU
+    log("Go Fish! (You have no " + RANK_NAMES[rank] + ".)", "you");
+    sndFish();
+    // CPU learns nothing new about you holding this; but it asked, you didn't have it.
+    var drawn = drawFromPond(cpuHand);
+    if (!drawn) {
+      log("The pond is empty.", "sys");
+      renderScores();
+      if (checkEnd()) return;
+      passToYou();
+      return;
+    }
+    log("CPU draws from the pond.", "sys");
+    settleBooks(cpuHand, cpuBooks, "CPU", "cpu");
+    renderScores();
+    if (checkEnd()) return;
+    if (drawn.rank === rank && countRank(cpuHand, rank) > 0) {
+      log("CPU drew what it wanted — it goes again.", "cpu");
+      if (cpuHand.length === 0) { passToYou(); return; }
+      setTimeout(cpuTurn, 900);
+      return;
+    }
+    passToYou();
+  }
+
+  // Record into CPU memory when YOU ask (called from onAsk implicitly): the CPU should
+  // remember ranks you've asked for so it can target them later.
+  // We hook this by wrapping onAsk's logging point.
+  var _origOnAsk = onAsk;
+  onAsk = function (rank) {
+    if (!gameOver && !busy && countRank(youHand, rank) > 0) {
+      cpuKnowledge[rank] = true; // you revealed you hold this rank
+    }
+    _origOnAsk(rank);
+  };
+
+  function checkEnd() {
+    var totalBooks = youBooks.length + cpuBooks.length;
+    var noCards = (deck.length === 0 && youHand.length === 0 && cpuHand.length === 0);
+    if (totalBooks === 13 || noCards) {
+      endGame();
+      return true;
+    }
+    return false;
+  }
+
+  function endGame() {
+    if (gameOver) return;
+    gameOver = true;
+    busy = false;
+    renderHand();
+    renderScores();
+    var msg;
+    if (youBooks.length > cpuBooks.length) {
+      msg = "You win " + youBooks.length + " – " + cpuBooks.length + "!";
+      sndWin();
+    } else if (cpuBooks.length > youBooks.length) {
+      msg = "CPU wins " + cpuBooks.length + " – " + youBooks.length + ".";
+      sndLose();
+    } else {
+      msg = "It's a tie, " + youBooks.length + " – " + cpuBooks.length + ".";
+    }
+    log("Game over. " + msg, "win");
+    setHint(msg + " Tap New Game.");
+  }
+
+  // ---- Controls ----
+  el("newGameBtn").addEventListener("click", function () { newGame(); });
+  el("soundBtn").addEventListener("click", function () {
+    soundOn = !soundOn;
+    el("soundBtn").textContent = "Sound: " + (soundOn ? "On" : "Off");
+    if (soundOn) { ensureAudio(); beep(660, 0.08, "sine", 0.15); }
+  });
+
+  // Prevent double-tap zoom / gesture scroll
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("touchmove", function (e) {
+    if (e.target.closest && e.target.closest("#log")) return; // allow log scroll
+    e.preventDefault();
+  }, { passive: false });
+
+  newGame();
+})();
+</script>
+</body>
+</html>

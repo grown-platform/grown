@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Nine Men's Morris</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  body {
+    background: linear-gradient(160deg, #1b2735 0%, #0f1620 100%);
+    color: #e8edf2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100%;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  header {
+    width: 100%;
+    max-width: 480px;
+    text-align: center;
+    padding: 10px 8px 4px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 1.25rem;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+  }
+  #status {
+    margin: 6px auto 0;
+    font-size: 0.92rem;
+    min-height: 1.3em;
+    color: #9fd0ff;
+    padding: 0 6px;
+  }
+  .scoreboard {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 8px auto 4px;
+    width: 100%;
+    max-width: 480px;
+  }
+  .pscore {
+    flex: 1;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 6px 8px;
+    text-align: center;
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+  .pscore.active {
+    border-color: #4aa3ff;
+    box-shadow: 0 0 0 1px #4aa3ff, 0 0 14px rgba(74,163,255,0.4);
+  }
+  .pscore .name {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    opacity: 0.8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .swatch {
+    width: 12px; height: 12px; border-radius: 50%;
+    display: inline-block;
+  }
+  .swatch.p1 { background: #ff5a6e; box-shadow: 0 0 6px #ff5a6e; }
+  .swatch.p2 { background: #4aa3ff; box-shadow: 0 0 6px #4aa3ff; }
+  .pscore .stat { font-size: 0.78rem; margin-top: 3px; opacity: 0.92; }
+  .pscore .stat b { font-size: 0.95rem; }
+
+  #boardWrap {
+    width: 100%;
+    max-width: 360px;
+    padding: 8px;
+    margin-top: 2px;
+  }
+  #board {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    display: block;
+    touch-action: manipulation;
+  }
+  .line { stroke: #5f7896; stroke-width: 1.4; stroke-linecap: round; }
+  .point-hit { fill: transparent; cursor: pointer; }
+  .point-dot {
+    fill: #3a516b;
+    stroke: #6a87a8;
+    stroke-width: 1;
+    transition: fill 0.12s, r 0.12s;
+    pointer-events: none;
+  }
+  .point-dot.valid { fill: #2e7d52; stroke: #5fe39a; }
+  .point-dot.removable { stroke: #ffd24a; stroke-width: 2.5; }
+  .piece {
+    pointer-events: none;
+    transition: transform 0.12s;
+  }
+  .piece circle { stroke-width: 1.5; }
+  .piece.p1 circle { fill: #ff5a6e; stroke: #b3303f; }
+  .piece.p2 circle { fill: #4aa3ff; stroke: #2367a8; }
+  .piece.selected circle { stroke: #ffffff; stroke-width: 3; }
+  .piece.inmill circle { stroke: #ffd24a; stroke-width: 3; }
+  .piece.selected.inmill circle { stroke: #fff7d6; }
+
+  #controls {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 6px 8px 14px;
+  }
+  button {
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #0f1620;
+    background: linear-gradient(180deg, #6fd1ff, #3a9be0);
+    border: none;
+    border-radius: 10px;
+    padding: 10px 20px;
+    cursor: pointer;
+    touch-action: manipulation;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  button:active { transform: translateY(1px); }
+  .toggle {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.82rem; color: #cfdcec;
+  }
+  .toggle input { width: 18px; height: 18px; }
+
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(8,12,18,0.82);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  #overlay.show { display: flex; }
+  #overlayCard {
+    background: #1c2937;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    padding: 24px 26px;
+    text-align: center;
+    max-width: 280px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  #overlayCard h2 { margin: 0 0 6px; font-size: 1.3rem; }
+  #overlayCard p { margin: 0 0 16px; font-size: 0.9rem; opacity: 0.85; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/nine-mens-morris.svg">
+    <link rel="manifest" href="/games/nine-mens-morris.webmanifest">
+    <meta name="theme-color" content="#6D28D9">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Nine Men's Morris">
+    <link rel="apple-touch-icon" href="/games/icons/nine-mens-morris.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#6D28D9;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>Nine Men's Morris</h1>
+    <div id="status">Tap an empty point to place a piece.</div>
+  </header>
+
+  <div class="scoreboard">
+    <div class="pscore" id="score1">
+      <div class="name"><span class="swatch p1"></span>You</div>
+      <div class="stat">Hand <b id="hand1">9</b> &middot; Board <b id="board1">0</b></div>
+    </div>
+    <div class="pscore" id="score2">
+      <div class="name"><span class="swatch p2"></span>CPU</div>
+      <div class="stat">Hand <b id="hand2">9</b> &middot; Board <b id="board2">0</b></div>
+    </div>
+  </div>
+
+  <div id="boardWrap">
+    <svg id="board" viewBox="0 0 100 100" aria-label="Nine Men's Morris board"></svg>
+  </div>
+
+  <div id="controls">
+    <button id="newGame">New Game</button>
+    <label class="toggle"><input type="checkbox" id="flyToggle" checked>Flying</label>
+  </div>
+
+  <div id="overlay">
+    <div id="overlayCard">
+      <h2 id="overTitle">Game Over</h2>
+      <p id="overText"></p>
+      <button id="overBtn">Play Again</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Board geometry: 24 points ----
+  // Index layout (classic), coordinates in a 0..6 grid mapped to viewBox.
+  // Points: outer square (0-7), middle square (8-15), inner square (16-23).
+  // Ordering per ring: TL, TM, TR, MR, BR, BM, BL, ML  (clockwise from top-left)
+  const G = { min: 8, max: 92 };
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  // ring r=0 outer (offset 0), r=1 middle (offset .25-ish), r=2 inner
+  // We use three nested squares at insets.
+  const insets = [0, 0.2, 0.4]; // fraction toward center for each ring
+  function ringCoord(ring, corner) {
+    const i = insets[ring];
+    const lo = lerp(G.min, G.max, i);
+    const hi = lerp(G.max, G.min, i);
+    const mid = (lo + hi) / 2;
+    // corner: 0 TL,1 TM,2 TR,3 MR,4 BR,5 BM,6 BL,7 ML
+    switch (corner) {
+      case 0: return [lo, lo];
+      case 1: return [mid, lo];
+      case 2: return [hi, lo];
+      case 3: return [hi, mid];
+      case 4: return [hi, hi];
+      case 5: return [mid, hi];
+      case 6: return [lo, hi];
+      case 7: return [lo, mid];
+    }
+  }
+  const POINTS = [];
+  for (let ring = 0; ring < 3; ring++) {
+    for (let c = 0; c < 8; c++) {
+      const [x, y] = ringCoord(ring, c);
+      POINTS.push({ x, y, ring, corner: c });
+    }
+  }
+
+  // ---- Adjacency ----
+  // Within a ring, neighbors are c-1 and c+1 (mod 8) but only along edges,
+  // i.e. each of the 8 positions connects to its sequential neighbors.
+  // Cross-ring connections happen at the midpoints (corners 1,3,5,7).
+  const ADJ = Array.from({ length: 24 }, () => []);
+  function add(a, b) { if (!ADJ[a].includes(b)) ADJ[a].push(b); if (!ADJ[b].includes(a)) ADJ[b].push(a); }
+  for (let ring = 0; ring < 3; ring++) {
+    const base = ring * 8;
+    for (let c = 0; c < 8; c++) {
+      add(base + c, base + ((c + 1) % 8));
+    }
+  }
+  // midpoints connect across rings: outer mid <-> middle mid <-> inner mid
+  [1, 3, 5, 7].forEach(c => {
+    add(0 * 8 + c, 1 * 8 + c); // outer-middle
+    add(1 * 8 + c, 2 * 8 + c); // middle-inner
+  });
+
+  // ---- Mills: all lines of 3 ----
+  // Per ring: three corners along each side: (TL,TM,TR),(TR,MR,BR),(BR,BM,BL),(BL,ML,TL)
+  const MILLS = [];
+  for (let ring = 0; ring < 3; ring++) {
+    const b = ring * 8;
+    MILLS.push([b + 0, b + 1, b + 2]);
+    MILLS.push([b + 2, b + 3, b + 4]);
+    MILLS.push([b + 4, b + 5, b + 6]);
+    MILLS.push([b + 6, b + 7, b + 0]);
+  }
+  // cross-ring mills through midpoints
+  MILLS.push([0 * 8 + 1, 1 * 8 + 1, 2 * 8 + 1]); // top
+  MILLS.push([0 * 8 + 3, 1 * 8 + 3, 2 * 8 + 3]); // right
+  MILLS.push([0 * 8 + 5, 1 * 8 + 5, 2 * 8 + 5]); // bottom
+  MILLS.push([0 * 8 + 7, 1 * 8 + 7, 2 * 8 + 7]); // left
+
+  // mills containing each point (precompute)
+  const MILLS_OF = Array.from({ length: 24 }, () => []);
+  MILLS.forEach((m, mi) => m.forEach(p => MILLS_OF[p].push(mi)));
+
+  // ---- Connecting lines for drawing (edges) ----
+  // We draw each ring as a square, plus the 4 connector segments.
+  // Build unique edges set from ADJ that are geometric segments.
+  const EDGES = [];
+  const seen = new Set();
+  for (let a = 0; a < 24; a++) {
+    for (const b of ADJ[a]) {
+      const key = a < b ? a + "-" + b : b + "-" + a;
+      if (!seen.has(key)) { seen.add(key); EDGES.push([a, b]); }
+    }
+  }
+
+  // ---- Game state ----
+  const HUMAN = 1, CPU = 2;
+  let board, turn, phase, handCount, selected, gameOver, awaitRemoval, flying;
+
+  function newGame() {
+    board = new Array(24).fill(0); // 0 empty, 1 human, 2 cpu
+    turn = HUMAN;
+    phase = "place"; // "place" or "move"
+    handCount = { 1: 9, 2: 9 };
+    selected = null;
+    gameOver = false;
+    awaitRemoval = false;
+    flying = document.getElementById("flyToggle").checked;
+    hideOverlay();
+    render();
+    setStatus("Tap an empty point to place a piece.");
+  }
+
+  function piecesOnBoard(pl) {
+    let n = 0;
+    for (let i = 0; i < 24; i++) if (board[i] === pl) n++;
+    return n;
+  }
+  function totalPieces(pl) {
+    return piecesOnBoard(pl) + handCount[pl];
+  }
+  function opponent(pl) { return pl === 1 ? 2 : 1; }
+
+  // ---- Mill helpers ----
+  // does placing/owning point p complete a mill for player pl?
+  function formsMillAt(p, pl, bd) {
+    bd = bd || board;
+    for (const mi of MILLS_OF[p]) {
+      const m = MILLS[mi];
+      if (bd[m[0]] === pl && bd[m[1]] === pl && bd[m[2]] === pl) return true;
+    }
+    return false;
+  }
+  function pointInMill(p, bd) {
+    bd = bd || board;
+    const pl = bd[p];
+    if (!pl) return false;
+    for (const mi of MILLS_OF[p]) {
+      const m = MILLS[mi];
+      if (bd[m[0]] === pl && bd[m[1]] === pl && bd[m[2]] === pl) return true;
+    }
+    return false;
+  }
+  // list of all currently-formed mills (indices into MILLS) for highlighting
+  function activeMills(bd) {
+    bd = bd || board;
+    const res = [];
+    MILLS.forEach((m, mi) => {
+      if (bd[m[0]] !== 0 && bd[m[0]] === bd[m[1]] && bd[m[1]] === bd[m[2]]) res.push(mi);
+    });
+    return res;
+  }
+
+  // which opponent pieces can be removed by pl (after forming a mill)
+  function removableTargets(pl, bd) {
+    bd = bd || board;
+    const opp = opponent(pl);
+    const all = [];
+    const nonMill = [];
+    for (let i = 0; i < 24; i++) {
+      if (bd[i] === opp) {
+        all.push(i);
+        if (!pointInMill(i, bd)) nonMill.push(i);
+      }
+    }
+    return nonMill.length > 0 ? nonMill : all;
+  }
+
+  // can player make any legal move (in move phase)?
+  function hasLegalMove(pl, bd) {
+    bd = bd || board;
+    if (handCount[pl] > 0) return true; // still placing
+    const canFly = flying && piecesOnBoard(pl) === 3;
+    for (let i = 0; i < 24; i++) {
+      if (bd[i] !== pl) continue;
+      if (canFly) {
+        for (let j = 0; j < 24; j++) if (bd[j] === 0) return true;
+      } else {
+        for (const j of ADJ[i]) if (bd[j] === 0) return true;
+      }
+    }
+    return false;
+  }
+
+  function legalDestinations(from, pl, bd) {
+    bd = bd || board;
+    const canFly = flying && piecesOnBoard(pl) === 3;
+    const dest = [];
+    if (canFly) {
+      for (let j = 0; j < 24; j++) if (bd[j] === 0) dest.push(j);
+    } else {
+      for (const j of ADJ[from]) if (bd[j] === 0) dest.push(j);
+    }
+    return dest;
+  }
+
+  // ---- Win / loss check ----
+  function checkGameEnd() {
+    // Only meaningful once a player has finished placing
+    for (const pl of [HUMAN, CPU]) {
+      if (handCount[pl] === 0 && piecesOnBoard(pl) < 3) {
+        endGame(opponent(pl), "fewer than 3 pieces");
+        return true;
+      }
+    }
+    // No legal move for the player whose turn it is (move phase only)
+    if (phase === "move" && handCount[turn] === 0 && !hasLegalMove(turn)) {
+      endGame(opponent(turn), "no legal moves");
+      return true;
+    }
+    return false;
+  }
+
+  function endGame(winner, reason) {
+    gameOver = true;
+    const won = winner === HUMAN;
+    setStatus((won ? "You win!" : "CPU wins!") + " (" + reason + ")");
+    render();
+    showOverlay(won ? "You Win!" : "CPU Wins", (won ? "You" : "CPU") + " won — " + reason + ".");
+    beep(won ? 660 : 180, 0.25);
+  }
+
+  // ---- Phase update ----
+  function maybeEnterMovePhase() {
+    if (phase === "place" && handCount[1] === 0 && handCount[2] === 0) {
+      phase = "move";
+    }
+  }
+
+  // =========================================================
+  //  Human interaction
+  // =========================================================
+  function onPointTap(p) {
+    if (gameOver) return;
+    if (turn !== HUMAN) return;
+
+    if (awaitRemoval) {
+      // human is removing an opponent piece
+      const targets = removableTargets(HUMAN);
+      if (targets.includes(p)) {
+        board[p] = 0;
+        awaitRemoval = false;
+        beep(520, 0.08);
+        afterMove();
+      }
+      return;
+    }
+
+    if (phase === "place" || handCount[HUMAN] > 0) {
+      // placing
+      if (board[p] === 0) {
+        board[p] = HUMAN;
+        handCount[HUMAN]--;
+        beep(440, 0.06);
+        if (formsMillAt(p, HUMAN)) {
+          render();
+          beginRemoval(HUMAN);
+        } else {
+          afterMove();
+        }
+      }
+      return;
+    }
+
+    // move phase
+    if (selected === null) {
+      if (board[p] === HUMAN) {
+        selected = p;
+        render();
+      }
+    } else {
+      if (p === selected) { selected = null; render(); return; }
+      if (board[p] === HUMAN) { selected = p; render(); return; }
+      const dests = legalDestinations(selected, HUMAN);
+      if (dests.includes(p)) {
+        board[p] = HUMAN;
+        board[selected] = 0;
+        const moved = p;
+        selected = null;
+        beep(400, 0.06);
+        if (formsMillAt(moved, HUMAN)) {
+          render();
+          beginRemoval(HUMAN);
+        } else {
+          afterMove();
+        }
+      }
+    }
+  }
+
+  function beginRemoval(pl) {
+    const targets = removableTargets(pl);
+    if (targets.length === 0) {
+      // nothing to remove
+      afterMove();
+      return;
+    }
+    if (pl === HUMAN) {
+      awaitRemoval = true;
+      setStatus("Mill! Tap a highlighted CPU piece to remove.");
+      beep(700, 0.1);
+      render();
+    } else {
+      // CPU chooses
+      const target = cpuChooseRemoval(targets);
+      board[target] = 0;
+      beep(300, 0.1);
+      afterMove();
+    }
+  }
+
+  // Called after any completed action (place/move + optional removal)
+  function afterMove() {
+    maybeEnterMovePhase();
+    selected = null;
+    if (checkGameEnd()) { render(); return; }
+    // switch turn
+    turn = opponent(turn);
+    // entering move phase may create immediate stalemate for new player
+    if (checkGameEnd()) { render(); return; }
+    render();
+    updateTurnStatus();
+    if (turn === CPU && !gameOver) {
+      setTimeout(cpuTurn, 480);
+    }
+  }
+
+  function updateTurnStatus() {
+    if (gameOver) return;
+    const who = turn === HUMAN ? "Your" : "CPU's";
+    if (phase === "place") {
+      setStatus(who + " turn — placing. " + (turn === HUMAN ? "Tap an empty point." : "thinking…"));
+    } else {
+      const fly = flying && piecesOnBoard(turn) === 3 ? " (flying)" : "";
+      setStatus(who + " turn — moving" + fly + ". " + (turn === HUMAN ? "Tap a piece, then a spot." : "thinking…"));
+    }
+  }
+
+  // =========================================================
+  //  CPU AI (heuristic)
+  // =========================================================
+  function cpuChooseRemoval(targets) {
+    // Prefer removing an opponent piece that is part of (or about to form) a
+    // threatening mill, else one with most adjacency/mill potential.
+    let best = targets[0], bestScore = -Infinity;
+    for (const t of targets) {
+      let s = 0;
+      // count near-mills (2 human + this) the human could complete
+      for (const mi of MILLS_OF[t]) {
+        const m = MILLS[mi];
+        let hu = 0, em = 0;
+        for (const q of m) { if (board[q] === HUMAN) hu++; else if (board[q] === 0) em++; }
+        if (hu === 3) s += 5;            // breaks an existing mill (rare here)
+        else if (hu === 2 && em === 1) s += 4; // human threat
+      }
+      s += ADJ[t].length * 0.3; // central-ish pieces have more adjacency
+      if (s > bestScore) { bestScore = s; best = t; }
+    }
+    return best;
+  }
+
+  function cpuTurn() {
+    if (gameOver || turn !== CPU) return;
+
+    if (phase === "place" || handCount[CPU] > 0) {
+      const p = cpuChoosePlacement();
+      board[p] = CPU;
+      handCount[CPU]--;
+      beep(360, 0.06);
+      if (formsMillAt(p, CPU)) { render(); beginRemoval(CPU); }
+      else afterMove();
+      return;
+    }
+
+    // move phase
+    const mv = cpuChooseMove();
+    if (!mv) {
+      // no move -> loss (should have been caught, but guard)
+      endGame(HUMAN, "no legal moves");
+      return;
+    }
+    board[mv.to] = CPU;
+    board[mv.from] = 0;
+    beep(340, 0.06);
+    if (formsMillAt(mv.to, CPU)) { render(); beginRemoval(CPU); }
+    else afterMove();
+  }
+
+  // score how good it is for CPU to occupy point p (placement)
+  function placementScore(p) {
+    let s = 0;
+    // 1. completes a CPU mill -> huge
+    board[p] = CPU;
+    if (formsMillAt(p, CPU)) s += 100;
+    board[p] = 0;
+    // 2. blocks a human mill (human had 2 in a line through p)
+    for (const mi of MILLS_OF[p]) {
+      const m = MILLS[mi];
+      let hu = 0, cu = 0, em = 0;
+      for (const q of m) {
+        if (board[q] === HUMAN) hu++;
+        else if (board[q] === CPU) cu++;
+        else em++;
+      }
+      if (hu === 2 && em === 1) s += 50; // block imminent human mill
+      if (cu === 2 && em === 1) s += 40; // we already counted via formsMill but reinforce setups via empty
+      if (cu === 1 && em === 2) s += 6;  // build toward our mill
+      if (hu === 1 && em === 2) s += 2;
+    }
+    // 3. positional value: more adjacency = more flexible (midpoints have 4)
+    s += ADJ[p].length * 1.2;
+    return s;
+  }
+
+  function cpuChoosePlacement() {
+    let best = -1, bestScore = -Infinity;
+    for (let i = 0; i < 24; i++) {
+      if (board[i] !== 0) continue;
+      const s = placementScore(i) + Math.random() * 0.5;
+      if (s > bestScore) { bestScore = s; best = i; }
+    }
+    return best;
+  }
+
+  function cpuChooseMove() {
+    const canFly = flying && piecesOnBoard(CPU) === 3;
+    let best = null, bestScore = -Infinity;
+    for (let i = 0; i < 24; i++) {
+      if (board[i] !== CPU) continue;
+      const dests = canFly ? allEmpty() : ADJ[i].filter(j => board[j] === 0);
+      for (const j of dests) {
+        // simulate
+        board[i] = 0; board[j] = CPU;
+        let s = 0;
+        if (formsMillAt(j, CPU)) s += 100;
+        // block: does moving here occupy a square the human needs?
+        for (const mi of MILLS_OF[j]) {
+          const m = MILLS[mi];
+          let hu = 0, em = 0;
+          for (const q of m) { if (board[q] === HUMAN) hu++; else if (board[q] === 0) em++; }
+          if (hu === 2 && em === 1) s += 50;
+        }
+        // avoid breaking our own mill unless it reforms
+        if (pointInMillBefore(i)) s -= 8;
+        // mobility after move
+        s += ADJ[j].length * 0.6;
+        s += Math.random() * 0.5;
+        // restore
+        board[j] = 0; board[i] = CPU;
+        if (s > bestScore) { bestScore = s; best = { from: i, to: j }; }
+      }
+    }
+    return best;
+  }
+  // helper: was point i in a mill in the CURRENT (pre-sim) board?
+  // Note: called inside sim where board[i] temporarily 0; we capture before.
+  function pointInMillBefore(i) {
+    // reconstruct: i currently holds CPU in real state when this is invoked
+    // but during simulation board[i] may be 0. We check mills of i assuming CPU at i.
+    for (const mi of MILLS_OF[i]) {
+      const m = MILLS[mi];
+      let cu = 0;
+      for (const q of m) { if (q === i) cu++; else if (board[q] === CPU) cu++; }
+      if (cu === 3) return true;
+    }
+    return false;
+  }
+  function allEmpty() {
+    const e = [];
+    for (let i = 0; i < 24; i++) if (board[i] === 0) e.push(i);
+    return e;
+  }
+
+  // =========================================================
+  //  Rendering
+  // =========================================================
+  const svg = document.getElementById("board");
+
+  function buildBoardStatic() {
+    // draw edges once
+    let html = "";
+    for (const [a, b] of EDGES) {
+      const A = POINTS[a], B = POINTS[b];
+      html += `<line class="line" x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"/>`;
+    }
+    svg.innerHTML = html;
+    // point dots + hit areas + piece slots
+    for (let i = 0; i < 24; i++) {
+      const P = POINTS[i];
+      const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      dot.setAttribute("cx", P.x); dot.setAttribute("cy", P.y);
+      dot.setAttribute("r", 2.6);
+      dot.setAttribute("class", "point-dot");
+      dot.id = "dot" + i;
+      svg.appendChild(dot);
+    }
+    // pieces layer (drawn above dots)
+    for (let i = 0; i < 24; i++) {
+      const P = POINTS[i];
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.setAttribute("class", "piece");
+      g.id = "piece" + i;
+      g.style.display = "none";
+      const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      c.setAttribute("cx", P.x); c.setAttribute("cy", P.y);
+      c.setAttribute("r", 4.4);
+      g.appendChild(c);
+      svg.appendChild(g);
+    }
+    // hit areas on top
+    for (let i = 0; i < 24; i++) {
+      const P = POINTS[i];
+      const h = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      h.setAttribute("cx", P.x); h.setAttribute("cy", P.y);
+      h.setAttribute("r", 6.5);
+      h.setAttribute("class", "point-hit");
+      h.addEventListener("click", () => onPointTap(i));
+      svg.appendChild(h);
+    }
+  }
+
+  function render() {
+    const mills = activeMills();
+    const inMillSet = new Set();
+    mills.forEach(mi => MILLS[mi].forEach(p => inMillSet.add(p)));
+
+    // valid destinations for highlighting
+    let validSet = new Set();
+    let removeSet = new Set();
+    if (!gameOver && turn === HUMAN) {
+      if (awaitRemoval) {
+        removableTargets(HUMAN).forEach(p => removeSet.add(p));
+      } else if (phase === "place" || handCount[HUMAN] > 0) {
+        for (let i = 0; i < 24; i++) if (board[i] === 0) validSet.add(i);
+      } else if (selected !== null) {
+        legalDestinations(selected, HUMAN).forEach(p => validSet.add(p));
+      }
+    }
+
+    for (let i = 0; i < 24; i++) {
+      const dot = document.getElementById("dot" + i);
+      const piece = document.getElementById("piece" + i);
+      let cls = "point-dot";
+      if (board[i] === 0 && validSet.has(i)) cls += " valid";
+      dot.setAttribute("class", cls);
+
+      if (board[i] === 0) {
+        piece.style.display = "none";
+      } else {
+        piece.style.display = "";
+        let pcls = "piece " + (board[i] === 1 ? "p1" : "p2");
+        if (board[i] === HUMAN && selected === i) pcls += " selected";
+        if (inMillSet.has(i)) pcls += " inmill";
+        if (removeSet.has(i)) {
+          dot.setAttribute("class", "point-dot removable");
+        }
+        piece.setAttribute("class", pcls);
+      }
+    }
+
+    // scoreboard
+    document.getElementById("hand1").textContent = handCount[1];
+    document.getElementById("hand2").textContent = handCount[2];
+    document.getElementById("board1").textContent = piecesOnBoard(1);
+    document.getElementById("board2").textContent = piecesOnBoard(2);
+    document.getElementById("score1").classList.toggle("active", !gameOver && turn === HUMAN);
+    document.getElementById("score2").classList.toggle("active", !gameOver && turn === CPU);
+  }
+
+  function setStatus(t) { document.getElementById("status").textContent = t; }
+
+  // ---- Overlay ----
+  function showOverlay(title, text) {
+    document.getElementById("overTitle").textContent = title;
+    document.getElementById("overText").textContent = text;
+    document.getElementById("overlay").classList.add("show");
+  }
+  function hideOverlay() { document.getElementById("overlay").classList.remove("show"); }
+
+  // ---- Sound (WebAudio) ----
+  let actx = null;
+  function beep(freq, dur) {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") actx.resume();
+      const o = actx.createOscillator();
+      const g = actx.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.15, actx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+      o.connect(g); g.connect(actx.destination);
+      o.start();
+      o.stop(actx.currentTime + dur + 0.02);
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---- Wire up ----
+  document.getElementById("newGame").addEventListener("click", newGame);
+  document.getElementById("overBtn").addEventListener("click", newGame);
+  document.getElementById("flyToggle").addEventListener("change", function () {
+    flying = this.checked;
+  });
+  // prevent double-tap zoom / gestures
+  document.addEventListener("gesturestart", e => e.preventDefault());
+
+  buildBoardStatic();
+  newGame();
+})();
+</script>
+</body>
+</html>
