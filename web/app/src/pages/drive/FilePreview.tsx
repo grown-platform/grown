@@ -1,6 +1,7 @@
 import { Box, Button, Typography } from "@mui/joy";
 import { PdfPreview } from "./PdfPreview";
 import { CsvPreview } from "./CsvPreview";
+import { ImageLocation } from "./ImageLocation";
 import type { DriveFile } from "./types";
 import { downloadURL } from "./api";
 
@@ -23,11 +24,14 @@ export function FilePreview({ file }: FilePreviewProps) {
     >
       {m === "application/pdf" && <PdfPreview url={url} />}
       {m.startsWith("image/") && (
-        <img
-          src={url}
-          alt={file.name}
-          style={{ maxWidth: "100%", display: "block", margin: "0 auto" }}
-        />
+        <>
+          <img
+            src={url}
+            alt={file.name}
+            style={{ maxWidth: "100%", display: "block", margin: "0 auto" }}
+          />
+          <ImageLocation url={url} />
+        </>
       )}
       {m.startsWith("video/") && (
         <video
