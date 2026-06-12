@@ -92,6 +92,7 @@
     var root = document.createElement("div");
     root.className = "gpo-root";
     root.innerHTML =
+      '<div class="gpo-zone" aria-hidden="true"></div>' +
       '<div class="gpo-dpad" aria-hidden="true">' +
       '<div class="gpo-stick"></div>' +
       '<div class="gpo-cross"><span class="gpo-c gpo-u">▲</span><span class="gpo-c gpo-d">▼</span><span class="gpo-c gpo-l">◀</span><span class="gpo-c gpo-r">▶</span></div>' +
@@ -105,6 +106,7 @@
     document.body.appendChild(root);
 
     var dpadEl = root.querySelector(".gpo-dpad");
+    var zoneEl = root.querySelector(".gpo-zone");
     var stickEl = root.querySelector(".gpo-stick");
     var btnsEl = root.querySelector(".gpo-btns");
     var topEl = root.querySelector(".gpo-top");
@@ -135,26 +137,39 @@
       el.addEventListener("pointerleave", up);
     });
 
-    // ---- 8-way thumb d-pad --------------------------------------------------
-    // The touch position within the pad maps to a direction; a small dead zone
-    // in the center releases all directions. Diagonals press two keys.
+    // ---- Floating 8-way thumb stick -----------------------------------------
+    // A "floating origin" joystick (like mobile MOBAs): wherever the thumb
+    // first lands in the lower-left zone becomes the center, and direction is
+    // measured *relative to that point* — so there's no fixed center to fight
+    // and no way to stall in a dead zone while running. The visible base hops
+    // to the thumb on press and returns home on release. Touches are read in
+    // the wide invisible `gpo-zone`, not the small visible ring, so you never
+    // have to aim for the circle.
+    var TRAVEL = 52; // px the stick rides from the origin at full deflection
+    var DEAD = 16; // px dead zone around the origin (neutral)
     var dpadPointer = null;
+    var origin = null; // { x, y } screen point of the active touch-down
+
+    function placeBase(x, y) {
+      dpadEl.classList.add("gpo-float");
+      dpadEl.style.left = x + "px";
+      dpadEl.style.top = y + "px";
+    }
+    function homeBase() {
+      dpadEl.classList.remove("gpo-float");
+      dpadEl.style.left = "";
+      dpadEl.style.top = "";
+      resetStick();
+    }
     function dpadDir(clientX, clientY) {
-      var r = dpadEl.getBoundingClientRect();
-      var cx = r.left + r.width / 2;
-      var cy = r.top + r.height / 2;
-      var dx = clientX - cx;
-      var dy = clientY - cy;
+      var dx = clientX - origin.x;
+      var dy = clientY - origin.y;
       var dist = Math.hypot(dx, dy);
-      var dead = r.width * 0.16;
-      // Move the visual stick.
-      var max = r.width * 0.3;
-      var sx = Math.max(-max, Math.min(max, dx));
-      var sy = Math.max(-max, Math.min(max, dy));
-      stickEl.style.transform = "translate(" + sx + "px," + sy + "px)";
-      if (dist < dead) return { up: false, down: false, left: false, right: false };
-      var ang = Math.atan2(dy, dx); // -PI..PI, 0 = right, PI/2 = down
-      var deg = (ang * 180) / Math.PI;
+      // Ride the visual stick toward the thumb, clamped to TRAVEL.
+      var k = dist > TRAVEL ? TRAVEL / dist : 1;
+      stickEl.style.transform = "translate(" + dx * k + "px," + dy * k + "px)";
+      if (dist < DEAD) return { up: false, down: false, left: false, right: false };
+      var deg = (Math.atan2(dy, dx) * 180) / Math.PI; // 0 = right, 90 = down
       // 8 sectors of 45°, each centered on a cardinal/diagonal.
       var up = deg < -22.5 && deg > -157.5;
       var down = deg > 22.5 && deg < 157.5;
@@ -173,28 +188,28 @@
     }
     function dpadRelease() {
       applyDir({ up: false, down: false, left: false, right: false });
-      resetStick();
+      homeBase();
     }
 
     // --- Touch input (phones) ---
-    // We drive the d-pad from *touch* events rather than pointer events on
-    // purpose. A touch sequence stays bound to the element it started on for
-    // its entire life, so the finger can roam anywhere on screen without
-    // needing setPointerCapture, and `preventDefault()` stops the browser from
-    // reinterpreting the drag as a scroll/zoom. Touch-derived *pointer* events,
-    // by contrast, fire `pointercancel` whenever the UA's gesture recognizer
-    // takes over (common during multi-touch — i.e. moving and firing at once),
-    // which previously released every direction key while the thumb was still
-    // pressed and froze movement until the player lifted and re-touched.
+    // Driven from *touch* events on purpose: a touch sequence stays bound to
+    // the element it started on for its whole life, so the finger can roam
+    // anywhere on screen without setPointerCapture, and `preventDefault()`
+    // stops the browser reinterpreting the drag as a scroll/zoom. Touch-derived
+    // *pointer* events, by contrast, fire `pointercancel` whenever the UA's
+    // gesture recognizer takes over (common during multi-touch — moving and
+    // firing at once), which would release every direction key mid-run.
     var dpadTouchId = null;
-    dpadEl.addEventListener("touchstart", function (e) {
+    zoneEl.addEventListener("touchstart", function (e) {
       if (dpadTouchId !== null) return; // already tracking a finger
       var t = e.changedTouches[0];
       dpadTouchId = t.identifier;
+      origin = { x: t.clientX, y: t.clientY };
+      placeBase(t.clientX, t.clientY);
       e.preventDefault();
-      applyDir(dpadDir(t.clientX, t.clientY));
+      applyDir(dpadDir(t.clientX, t.clientY)); // neutral until the thumb moves
     }, { passive: false });
-    dpadEl.addEventListener("touchmove", function (e) {
+    zoneEl.addEventListener("touchmove", function (e) {
       if (dpadTouchId === null) return;
       for (var i = 0; i < e.touches.length; i++) {
         if (e.touches[i].identifier === dpadTouchId) {
@@ -214,20 +229,22 @@
         }
       }
     };
-    dpadEl.addEventListener("touchend", dpadTouchEnd);
-    dpadEl.addEventListener("touchcancel", dpadTouchEnd);
+    zoneEl.addEventListener("touchend", dpadTouchEnd);
+    zoneEl.addEventListener("touchcancel", dpadTouchEnd);
 
     // --- Mouse input (desktop testing only) ---
     // Touch is handled above; ignore touch-derived pointer events here so the
     // two paths never double-fire.
-    dpadEl.addEventListener("pointerdown", function (e) {
+    zoneEl.addEventListener("pointerdown", function (e) {
       if (e.pointerType === "touch") return;
       e.preventDefault();
-      dpadEl.setPointerCapture && dpadEl.setPointerCapture(e.pointerId);
+      zoneEl.setPointerCapture && zoneEl.setPointerCapture(e.pointerId);
       dpadPointer = e.pointerId;
+      origin = { x: e.clientX, y: e.clientY };
+      placeBase(e.clientX, e.clientY);
       applyDir(dpadDir(e.clientX, e.clientY));
     });
-    dpadEl.addEventListener("pointermove", function (e) {
+    zoneEl.addEventListener("pointermove", function (e) {
       if (e.pointerType === "touch" || dpadPointer !== e.pointerId) return;
       applyDir(dpadDir(e.clientX, e.clientY));
     });
@@ -236,8 +253,8 @@
       dpadPointer = null;
       dpadRelease();
     };
-    dpadEl.addEventListener("pointerup", dpadUp);
-    dpadEl.addEventListener("pointercancel", dpadUp);
+    zoneEl.addEventListener("pointerup", dpadUp);
+    zoneEl.addEventListener("pointercancel", dpadUp);
 
     // Release everything if the page is hidden / loses focus.
     global.addEventListener("blur", releaseAll);
@@ -262,8 +279,15 @@
     ".gpo-root{position:fixed;inset:0;z-index:2147483000;pointer-events:none;" +
     "font:600 16px system-ui,sans-serif;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}" +
     ".gpo-root>*{pointer-events:auto;}" +
+    // Invisible activation area: the whole lower-left quadrant. Touch anywhere
+    // here and the stick floats to your thumb — no need to aim for the ring.
+    ".gpo-zone{position:absolute;left:0;top:18%;width:50%;bottom:0;touch-action:none;background:transparent;}" +
+    // Visible base is a hint only; the zone handles all input (pointer-events:none).
     ".gpo-dpad{position:absolute;left:calc(env(safe-area-inset-left,0px) + 18px);bottom:calc(env(safe-area-inset-bottom,0px) + 22px);" +
-    "width:148px;height:148px;border-radius:50%;background:rgba(20,24,38,.32);border:1px solid rgba(255,255,255,.18);touch-action:none;}" +
+    "width:148px;height:148px;border-radius:50%;background:rgba(20,24,38,.32);border:1px solid rgba(255,255,255,.18);" +
+    "pointer-events:none;opacity:.55;touch-action:none;}" +
+    // While a thumb is down, the base hops to the touch point and brightens.
+    ".gpo-dpad.gpo-float{left:0;top:0;bottom:auto;transform:translate(-50%,-50%);opacity:1;}" +
     ".gpo-stick{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;border-radius:50%;" +
     "background:rgba(230,236,255,.55);border:1px solid rgba(255,255,255,.5);transition:transform .04s;}" +
     ".gpo-cross{position:absolute;inset:0;color:rgba(255,255,255,.5);}" +
