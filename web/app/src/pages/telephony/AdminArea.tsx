@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useMemo } from "react";
 import {
   Box,
   Sheet,
@@ -40,9 +40,19 @@ import BackupIcon from "@mui/icons-material/Backup";
 import HistoryIcon from "@mui/icons-material/History";
 import EmailIcon from "@mui/icons-material/Email";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import PauseIcon from "@mui/icons-material/Pause";
 import DownloadIcon from "@mui/icons-material/Download";
+import SearchIcon from "@mui/icons-material/Search";
 import type { SvgIconComponent } from "@mui/icons-material";
 import type { User } from "../../api/types";
+import {
+  makeRecordingWav,
+  durationToSeconds,
+  recordingBytes,
+  formatSize,
+  downloadBlob,
+} from "./dummyRecording";
+import { useActivityLog, logActivity, clearActivity } from "./activityLog";
 
 // ---------------------------------------------------------------------------
 // AdminArea — PBX administration console scaffold (3CX-style).
@@ -869,7 +879,16 @@ function SettingsSection() {
                 Record all calls passing through the PBX.
               </Typography>
             </Box>
-            <Switch checked={recording} onChange={(e) => setRecording(e.target.checked)} />
+            <Switch
+              checked={recording}
+              onChange={(e) => {
+                setRecording(e.target.checked);
+                logActivity(
+                  "Call recording " + (e.target.checked ? "enabled" : "disabled"),
+                  "Record all calls passing through the PBX",
+                );
+              }}
+            />
           </Box>
         </Box>
       </PanelSheet>
@@ -1328,19 +1347,84 @@ interface RecordingRow {
   date: string;
   parties: string;
   duration: string;
-  size: string;
 }
 
 const MOCK_RECORDINGS: RecordingRow[] = [
-  { date: "2026-06-12 09:14", parties: "+1 (415) 555-0100 → 1001", duration: "04:21", size: "2.1 MB" },
-  { date: "2026-06-12 09:02", parties: "1002 → +1 (650) 555-0190", duration: "01:08", size: "0.6 MB" },
-  { date: "2026-06-12 08:21", parties: "+1 (212) 555-0177 → 1003", duration: "00:32", size: "0.3 MB" },
-  { date: "2026-06-11 16:48", parties: "1004 → +1 (415) 555-0142", duration: "08:55", size: "4.4 MB" },
+  { date: "2026-06-12 09:14", parties: "+1 (415) 555-0100 → 1001", duration: "04:21" },
+  { date: "2026-06-12 09:02", parties: "1002 → +1 (650) 555-0190", duration: "01:08" },
+  { date: "2026-06-12 08:21", parties: "+1 (212) 555-0177 → 1003", duration: "00:32" },
+  { date: "2026-06-11 16:48", parties: "1004 → +1 (415) 555-0142", duration: "08:55" },
 ];
 
+/** Filename-safe slug for a recording's download name. */
+function recordingFilename(r: RecordingRow): string {
+  const date = r.date.replace(/[: ]/g, "-");
+  const parties = r.parties.replace(/[^0-9A-Za-z]+/g, "_").replace(/^_+|_+$/g, "");
+  return `recording-${date}-${parties}.wav`;
+}
+
 function RecordingsSection() {
-  const [rows] = useState(MOCK_RECORDINGS);
+  const [rows, setRows] = useState(MOCK_RECORDINGS);
   const [retention, setRetention] = useState("90");
+  const [playing, setPlaying] = useState<number | null>(null);
+  // One reusable <audio>; blobs synthesized lazily and cached by row key.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const blobCache = useRef<Map<string, Blob>>(new Map());
+
+  function blobFor(r: RecordingRow): Blob {
+    const key = recordingFilename(r);
+    let b = blobCache.current.get(key);
+    if (!b) {
+      // Seed from the row so each recording sounds stable across renders.
+      let seed = 0;
+      for (let i = 0; i < key.length; i++) seed = (seed * 31 + key.charCodeAt(i)) | 0;
+      b = makeRecordingWav(durationToSeconds(r.duration), seed);
+      blobCache.current.set(key, b);
+    }
+    return b;
+  }
+
+  function togglePlay(i: number) {
+    const r = rows[i];
+    let audio = audioRef.current;
+    if (!audio) {
+      audio = new Audio();
+      audio.addEventListener("ended", () => setPlaying(null));
+      audioRef.current = audio;
+    }
+    if (playing === i) {
+      audio.pause();
+      setPlaying(null);
+      return;
+    }
+    audio.src = URL.createObjectURL(blobFor(r));
+    void audio.play();
+    setPlaying(i);
+    logActivity("Recording played", `${r.parties} (${r.duration})`);
+  }
+
+  function download(i: number) {
+    const r = rows[i];
+    downloadBlob(blobFor(r), recordingFilename(r));
+    logActivity("Recording downloaded", `${r.parties} (${r.duration})`);
+  }
+
+  function remove(i: number) {
+    const r = rows[i];
+    if (playing === i) {
+      audioRef.current?.pause();
+      setPlaying(null);
+    }
+    setRows((prev) => prev.filter((_, idx) => idx !== i));
+    logActivity("Recording deleted", `${r.parties} (${r.duration})`);
+  }
+
+  function changeRetention(v: string) {
+    setRetention(v);
+    const label =
+      v === "forever" ? "Keep forever" : v === "365" ? "1 year" : `${v} days`;
+    logActivity("Retention changed", `Recording retention set to ${label}`);
+  }
 
   return (
     <Box>
@@ -1370,7 +1454,7 @@ function RecordingsSection() {
           </Box>
           <FormControl sx={{ maxWidth: 280 }}>
             <FormLabel>Retention period</FormLabel>
-            <Select value={retention} onChange={(_, v) => v && setRetention(v)}>
+            <Select value={retention} onChange={(_, v) => v && changeRetention(v)}>
               <Option value="30">30 days</Option>
               <Option value="90">90 days</Option>
               <Option value="180">180 days</Option>
@@ -1393,21 +1477,50 @@ function RecordingsSection() {
             </tr>
           </thead>
           <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ textAlign: "center", opacity: 0.6, padding: 24 }}>
+                  No recordings.
+                </td>
+              </tr>
+            )}
             {rows.map((r, i) => (
-              <tr key={i}>
+              <tr key={recordingFilename(r)}>
                 <td style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{r.date}</td>
                 <td style={{ fontFamily: "monospace" }}>{r.parties}</td>
                 <td style={{ fontFamily: "monospace" }}>{r.duration}</td>
-                <td>{r.size}</td>
+                <td>{formatSize(recordingBytes(durationToSeconds(r.duration)))}</td>
                 <td>
                   <Box sx={{ display: "flex", gap: 0.5, justifyContent: "flex-end" }}>
-                    <IconButton size="sm" variant="plain" color="neutral" aria-label="Play">
-                      <PlayArrowIcon fontSize="small" />
+                    <IconButton
+                      size="sm"
+                      variant="plain"
+                      color="neutral"
+                      aria-label={playing === i ? "Pause" : "Play"}
+                      onClick={() => togglePlay(i)}
+                    >
+                      {playing === i ? (
+                        <PauseIcon fontSize="small" />
+                      ) : (
+                        <PlayArrowIcon fontSize="small" />
+                      )}
                     </IconButton>
-                    <IconButton size="sm" variant="plain" color="neutral" aria-label="Download">
+                    <IconButton
+                      size="sm"
+                      variant="plain"
+                      color="neutral"
+                      aria-label="Download"
+                      onClick={() => download(i)}
+                    >
                       <DownloadIcon fontSize="small" />
                     </IconButton>
-                    <IconButton size="sm" variant="plain" color="danger" aria-label="Delete">
+                    <IconButton
+                      size="sm"
+                      variant="plain"
+                      color="danger"
+                      aria-label="Delete"
+                      onClick={() => remove(i)}
+                    >
                       <DeleteOutlineIcon fontSize="small" />
                     </IconButton>
                   </Box>
@@ -2049,31 +2162,72 @@ function BackupSection() {
 // 19. Activity Log
 // ===========================================================================
 
-interface ActivityRow {
-  time: string;
-  actor: string;
-  event: string;
-  detail: string;
-}
-
-const MOCK_ACTIVITY: ActivityRow[] = [
-  { time: "2026-06-12 09:20", actor: "admin", event: "Extension created", detail: "Added extension 1005" },
-  { time: "2026-06-12 08:11", actor: "admin", event: "Trunk updated", detail: "Backup-SIP max channels 5 → 8" },
-  { time: "2026-06-11 17:45", actor: "system", event: "IP banned", detail: "203.0.113.45 (auth failures)" },
-  { time: "2026-06-11 02:00", actor: "system", event: "Backup completed", detail: "Scheduled backup 246 MB" },
-  { time: "2026-06-10 14:30", actor: "ada@example.com", event: "Login", detail: "Admin console sign-in" },
-];
-
 function ActivitySection() {
-  const [rows] = useState(MOCK_ACTIVITY);
+  const all = useActivityLog();
+  const [query, setQuery] = useState("");
+  const [actor, setActor] = useState("all");
+
+  const actors = useMemo(
+    () => Array.from(new Set(all.map((r) => r.actor))).sort(),
+    [all],
+  );
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return all.filter((r) => {
+      if (actor !== "all" && r.actor !== actor) return false;
+      if (!q) return true;
+      return (
+        r.event.toLowerCase().includes(q) ||
+        r.detail.toLowerCase().includes(q) ||
+        r.actor.toLowerCase().includes(q) ||
+        r.time.toLowerCase().includes(q)
+      );
+    });
+  }, [all, query, actor]);
 
   return (
     <Box>
       <SectionHeader
         title="Activity Log"
-        description="Audit trail of configuration changes and system events."
+        description="Live audit trail of configuration changes and system events. Actions you take in this console are recorded here and persist on this device."
+        action={
+          <Button
+            startDecorator={<DeleteOutlineIcon />}
+            variant="soft"
+            color="danger"
+            onClick={() => {
+              if (confirm("Clear the entire activity log?")) clearActivity();
+            }}
+          >
+            Clear log
+          </Button>
+        }
       />
+
       <PanelSheet>
+        <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap", p: 2, pb: 1.5 }}>
+          <Input
+            size="sm"
+            placeholder="Search events…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            startDecorator={<SearchIcon fontSize="small" />}
+            sx={{ flex: 1, minWidth: 200 }}
+          />
+          <Select
+            size="sm"
+            value={actor}
+            onChange={(_, v) => v && setActor(v)}
+            sx={{ minWidth: 200 }}
+          >
+            <Option value="all">All actors</Option>
+            {actors.map((a) => (
+              <Option key={a} value={a}>
+                {a}
+              </Option>
+            ))}
+          </Select>
+        </Box>
         <Table hoverRow sx={{ "--TableCell-paddingX": "16px" }}>
           <thead>
             <tr>
@@ -2084,8 +2238,15 @@ function ActivitySection() {
             </tr>
           </thead>
           <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={4} style={{ textAlign: "center", opacity: 0.6, padding: 24 }}>
+                  {all.length === 0 ? "No activity yet." : "No entries match your filter."}
+                </td>
+              </tr>
+            )}
             {rows.map((r, i) => (
-              <tr key={i}>
+              <tr key={r.time + r.event + i}>
                 <td style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>{r.time}</td>
                 <td style={{ fontFamily: "monospace" }}>{r.actor}</td>
                 <td>{r.event}</td>
