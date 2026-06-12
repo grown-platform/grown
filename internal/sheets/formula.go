@@ -407,6 +407,10 @@ type Evaluator struct {
 	grid    *grid
 	results map[cellAddr]value // cached evaluated values
 	now     time.Time
+	// curRow/curCol are the 0-based address of the formula cell currently being
+	// evaluated, so functions like ROW()/COLUMN() with no argument can resolve
+	// "this cell". Set by Recompute before each evalExpr.
+	curRow, curCol int
 }
 
 // NewEvaluator constructs an Evaluator for the given FsSheet celldata.
@@ -439,6 +443,7 @@ func Recompute(data []FsCellData) []FsCellData {
 		if cell == nil || !strings.HasPrefix(cell.F, "=") {
 			continue
 		}
+		ev.curRow, ev.curCol = addr.row, addr.col
 		v := ev.evalExpr(cell.F[1:])
 		ev.results[addr] = v
 	}
@@ -927,21 +932,15 @@ func (p *parser) parseArg() interface{} {
 			a2, ok2 := parseCellRef(t2.val)
 			if ok2 {
 				p.pos += 3 // consume IDENT ':' IDENT
-				var vals []value
-				for r := a1.row; r <= a2.row; r++ {
-					for c := a1.col; c <= a2.col; c++ {
-						vals = append(vals, p.ev.cellValue(cellAddr{row: r, col: c}))
-					}
-				}
-				return vals
+				return p.ev.makeRange(a1, a2)
 			}
 		}
 	}
 	return p.parseExpr()
 }
 
-// flattenArgs flattens function arguments (may contain []value or value) into
-// a flat slice of values, stopping at the first error unless stopOnErr=false.
+// flattenArgs flattens function arguments (value, []value, or rangeVal) into a
+// flat row-major slice of values.
 func flattenArgs(args []interface{}) []value {
 	var out []value
 	for _, a := range args {
@@ -950,56 +949,306 @@ func flattenArgs(args []interface{}) []value {
 			out = append(out, v)
 		case []value:
 			out = append(out, v...)
+		case rangeVal:
+			for _, row := range v.cells {
+				out = append(out, row...)
+			}
 		}
 	}
 	return out
 }
 
+// ---- Range values + function registry --------------------------------------
+//
+// A function argument is one of:
+//   - value     — a scalar (literal, single cell ref, or sub-expression result)
+//   - rangeVal  — a rectangular A1:B3 reference, preserving its rows×cols shape
+//                 (needed by lookup/array functions like VLOOKUP, INDEX, MATCH)
+//
+// New functions are added by writing a file in this package (e.g.
+// formula_text.go) with an init() that calls registerFunc(name, impl). Each
+// impl receives a *callCtx and returns a value. This keeps the function library
+// spread across many files instead of one giant switch.
+
+// rangeVal is a rectangular block of cell values, row-major in cells[r][c].
+type rangeVal struct {
+	rows, cols int
+	cells      [][]value
+}
+
+// makeRange materialises the cells of an A1:B3 range from the grid.
+func (ev *Evaluator) makeRange(a1, a2 cellAddr) rangeVal {
+	if a2.row < a1.row {
+		a1.row, a2.row = a2.row, a1.row
+	}
+	if a2.col < a1.col {
+		a1.col, a2.col = a2.col, a1.col
+	}
+	rows := a2.row - a1.row + 1
+	cols := a2.col - a1.col + 1
+	cells := make([][]value, rows)
+	for r := 0; r < rows; r++ {
+		rowVals := make([]value, cols)
+		for c := 0; c < cols; c++ {
+			rowVals[c] = ev.cellValue(cellAddr{row: a1.row + r, col: a1.col + c})
+		}
+		cells[r] = rowVals
+	}
+	return rangeVal{rows: rows, cols: cols, cells: cells}
+}
+
+// flat returns the range's cells row-major.
+func (rv rangeVal) flat() []value {
+	out := make([]value, 0, rv.rows*rv.cols)
+	for _, row := range rv.cells {
+		out = append(out, row...)
+	}
+	return out
+}
+
+// callCtx is passed to every registered function. args holds the raw arguments
+// (each a value or rangeVal); helpers below cover the common access patterns.
+type callCtx struct {
+	p    *parser
+	ev   *Evaluator
+	args []interface{}
+}
+
+// nargs returns the number of arguments supplied.
+func (c *callCtx) nargs() int { return len(c.args) }
+
+// raw returns argument i as-is (value or rangeVal), or nil if out of range.
+func (c *callCtx) raw(i int) interface{} {
+	if i < 0 || i >= len(c.args) {
+		return nil
+	}
+	return c.args[i]
+}
+
+// flat flattens every argument into one row-major []value (ranges expanded).
+func (c *callCtx) flat() []value { return flattenArgs(c.args) }
+
+// scalar coerces argument i to a single value. A range yields its top-left
+// cell. Out-of-range arguments yield #N/A.
+func (c *callCtx) scalar(i int) value {
+	switch v := c.raw(i).(type) {
+	case value:
+		return v
+	case rangeVal:
+		if v.rows > 0 && v.cols > 0 {
+			return v.cells[0][0]
+		}
+		return errRef
+	}
+	return errNA
+}
+
+// rangeArg returns argument i as a rangeVal. A scalar becomes a 1×1 range.
+// ok is false only when the argument index is absent.
+func (c *callCtx) rangeArg(i int) (rangeVal, bool) {
+	switch v := c.raw(i).(type) {
+	case rangeVal:
+		return v, true
+	case value:
+		return rangeVal{rows: 1, cols: 1, cells: [][]value{{v}}}, true
+	}
+	return rangeVal{}, false
+}
+
+// num returns argument i coerced to a number (ok=false if not numeric).
+func (c *callCtx) num(i int) (float64, bool) { return c.scalar(i).toNum() }
+
+// numOr returns argument i as a number, or def when the argument is absent.
+// ok is false only when the argument is present but non-numeric.
+func (c *callCtx) numOr(i int, def float64) (float64, bool) {
+	if i >= len(c.args) {
+		return def, true
+	}
+	return c.scalar(i).toNum()
+}
+
+// text returns argument i coerced to a string ("" if absent).
+func (c *callCtx) text(i int) string {
+	if i >= len(c.args) {
+		return ""
+	}
+	return c.scalar(i).toStr()
+}
+
+// fnImpl is the signature every registered worksheet function implements.
+type fnImpl func(c *callCtx) value
+
+// funcTable maps an upper-case function name to its implementation. Populated
+// by init() functions across the formula_*.go files via registerFunc.
+var funcTable = map[string]fnImpl{}
+
+// registerFunc adds (or overrides) a worksheet function. Call from an init().
+func registerFunc(name string, f fnImpl) { funcTable[strings.ToUpper(name)] = f }
+
+// ---- Shared helpers for the function library --------------------------------
+
+// excelEpoch is Excel's day-0 (1899-12-30), chosen so serial 1 == 1900-01-01
+// while absorbing Excel's fictitious 1900 leap day for dates from 1900-03-01 on.
+var excelEpoch = time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+
+// serialToTime converts an Excel serial date number to a UTC time. The integer
+// part is whole days since the epoch; the fractional part is the time of day.
+func serialToTime(serial float64) time.Time {
+	days := math.Floor(serial)
+	frac := serial - days
+	secs := math.Round(frac * 86400)
+	return excelEpoch.AddDate(0, 0, int(days)).Add(time.Duration(secs) * time.Second)
+}
+
+// timeToSerial converts a time to an Excel serial date number (days + day frac).
+func timeToSerial(t time.Time) float64 {
+	t = t.UTC()
+	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	days := math.Round(day.Sub(excelEpoch).Hours() / 24)
+	frac := (float64(t.Hour())*3600 + float64(t.Minute())*60 + float64(t.Second())) / 86400.0
+	return days + frac
+}
+
+// criteria represents a parsed COUNTIF/SUMIF-style condition such as ">5",
+// "<>0", "apple", or "a*c" (with * and ? wildcards on equality matches).
+type criteria struct {
+	op    string // one of "=", "<>", ">", ">=", "<", "<="
+	num   float64
+	isNum bool
+	str   string         // upper-cased comparison text (for string/wildcard matches)
+	re    *regexp.Regexp // compiled wildcard pattern when the criterion has * or ?
+}
+
+// parseCriteria interprets a COUNTIF/SUMIF criterion string.
+func parseCriteria(s string) criteria {
+	c := criteria{op: "="}
+	for _, op := range []string{"<=", ">=", "<>", "=", "<", ">"} {
+		if strings.HasPrefix(s, op) {
+			c.op = op
+			s = s[len(op):]
+			break
+		}
+	}
+	if f, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+		c.isNum = true
+		c.num = f
+	}
+	c.str = strings.ToUpper(s)
+	if (c.op == "=" || c.op == "<>") && (strings.ContainsAny(s, "*?")) {
+		c.re = wildcardToRegexp(s)
+	}
+	return c
+}
+
+// wildcardToRegexp turns an Excel wildcard pattern (* ? with ~ escapes) into an
+// anchored, case-insensitive regexp.
+func wildcardToRegexp(pat string) *regexp.Regexp {
+	var b strings.Builder
+	b.WriteString("(?i)^")
+	for i := 0; i < len(pat); i++ {
+		ch := pat[i]
+		switch ch {
+		case '~':
+			if i+1 < len(pat) {
+				b.WriteString(regexp.QuoteMeta(string(pat[i+1])))
+				i++
+			}
+		case '*':
+			b.WriteString(".*")
+		case '?':
+			b.WriteString(".")
+		default:
+			b.WriteString(regexp.QuoteMeta(string(ch)))
+		}
+	}
+	b.WriteString("$")
+	re, err := regexp.Compile(b.String())
+	if err != nil {
+		return nil
+	}
+	return re
+}
+
+// match reports whether a cell value satisfies the criterion.
+func (c criteria) match(v value) bool {
+	// Numeric comparison when both sides are numeric.
+	if c.isNum {
+		if n, ok := v.toNum(); ok {
+			switch c.op {
+			case "=":
+				return n == c.num
+			case "<>":
+				return n != c.num
+			case ">":
+				return n > c.num
+			case ">=":
+				return n >= c.num
+			case "<":
+				return n < c.num
+			case "<=":
+				return n <= c.num
+			}
+		}
+		if c.op == "<>" {
+			return true // non-numeric cell vs numeric "<>" criterion
+		}
+		return false
+	}
+	// Text comparison.
+	vs := strings.ToUpper(v.toStr())
+	switch c.op {
+	case "=":
+		if c.re != nil {
+			return c.re.MatchString(v.toStr())
+		}
+		return vs == c.str
+	case "<>":
+		if c.re != nil {
+			return !c.re.MatchString(v.toStr())
+		}
+		return vs != c.str
+	case ">":
+		return vs > c.str
+	case ">=":
+		return vs >= c.str
+	case "<":
+		return vs < c.str
+	case "<=":
+		return vs <= c.str
+	}
+	return false
+}
+
 // ---- Built-in function implementations -------------------------------------
 
 func (p *parser) callFunc(name string, args []interface{}) value {
-	switch name {
-	case "SUM":
-		return fnSum(flattenArgs(args))
-	case "AVERAGE":
-		return fnAverage(flattenArgs(args))
-	case "MIN":
-		return fnMin(flattenArgs(args))
-	case "MAX":
-		return fnMax(flattenArgs(args))
-	case "COUNT":
-		return fnCount(flattenArgs(args))
-	case "COUNTA":
-		return fnCountA(flattenArgs(args))
-	case "IF":
-		return fnIf(p, args)
-	case "AND":
-		return fnAnd(flattenArgs(args))
-	case "OR":
-		return fnOr(flattenArgs(args))
-	case "NOT":
-		return fnNot(flattenArgs(args))
-	case "ROUND":
-		return fnRound(flattenArgs(args))
-	case "ABS":
-		return fnAbs(flattenArgs(args))
-	case "CONCATENATE":
-		return fnConcatenate(flattenArgs(args))
-	case "LEN":
-		return fnLen(flattenArgs(args))
-	case "LEFT":
-		return fnLeft(flattenArgs(args))
-	case "RIGHT":
-		return fnRight(flattenArgs(args))
-	case "MID":
-		return fnMid(flattenArgs(args))
-	case "TODAY":
-		return fnToday(p.ev.now)
-	case "NOW":
-		return fnNow(p.ev.now)
-	default:
-		return errName
+	if f, ok := funcTable[name]; ok {
+		return f(&callCtx{p: p, ev: p.ev, args: args})
 	}
+	return errName
+}
+
+// Register the core built-ins. Additional categories live in formula_*.go.
+func init() {
+	registerFunc("SUM", func(c *callCtx) value { return fnSum(c.flat()) })
+	registerFunc("AVERAGE", func(c *callCtx) value { return fnAverage(c.flat()) })
+	registerFunc("MIN", func(c *callCtx) value { return fnMin(c.flat()) })
+	registerFunc("MAX", func(c *callCtx) value { return fnMax(c.flat()) })
+	registerFunc("COUNT", func(c *callCtx) value { return fnCount(c.flat()) })
+	registerFunc("COUNTA", func(c *callCtx) value { return fnCountA(c.flat()) })
+	registerFunc("IF", func(c *callCtx) value { return fnIf(c.p, c.args) })
+	registerFunc("AND", func(c *callCtx) value { return fnAnd(c.flat()) })
+	registerFunc("OR", func(c *callCtx) value { return fnOr(c.flat()) })
+	registerFunc("NOT", func(c *callCtx) value { return fnNot(c.flat()) })
+	registerFunc("ROUND", func(c *callCtx) value { return fnRound(c.flat()) })
+	registerFunc("ABS", func(c *callCtx) value { return fnAbs(c.flat()) })
+	registerFunc("CONCATENATE", func(c *callCtx) value { return fnConcatenate(c.flat()) })
+	registerFunc("LEN", func(c *callCtx) value { return fnLen(c.flat()) })
+	registerFunc("LEFT", func(c *callCtx) value { return fnLeft(c.flat()) })
+	registerFunc("RIGHT", func(c *callCtx) value { return fnRight(c.flat()) })
+	registerFunc("MID", func(c *callCtx) value { return fnMid(c.flat()) })
+	registerFunc("TODAY", func(c *callCtx) value { return fnToday(c.ev.now) })
+	registerFunc("NOW", func(c *callCtx) value { return fnNow(c.ev.now) })
 }
 
 func fnSum(vals []value) value {
