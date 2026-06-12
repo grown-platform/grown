@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Color Lines</title>
+<style>
+  :root {
+    --cell: 36px;
+    --gap: 2px;
+    --bg: #1b2030;
+    --panel: #2a3145;
+    --cellbg: #3a425e;
+    --cellbg2: #434c6c;
+    --sel: #ffd54a;
+    --text: #e8ecf5;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 8px 8px env(safe-area-inset-bottom, 8px);
+    gap: 10px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 4px 0 0;
+    letter-spacing: 1px;
+    font-weight: 700;
+  }
+  .topbar {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .score-box { display: flex; flex-direction: column; }
+  .score-label { font-size: 10px; opacity: 0.6; text-transform: uppercase; letter-spacing: 1px; }
+  .score-val { font-size: 24px; font-weight: 700; line-height: 1; }
+  .next-box { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .next-label { font-size: 10px; opacity: 0.6; text-transform: uppercase; letter-spacing: 1px; }
+  .next-balls { display: flex; gap: 6px; }
+  .next-ball {
+    width: 20px; height: 20px; border-radius: 50%;
+    box-shadow: inset -3px -3px 5px rgba(0,0,0,0.35), inset 3px 3px 5px rgba(255,255,255,0.35);
+  }
+  #newBtn {
+    background: var(--sel);
+    color: #1b2030;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  #newBtn:active { transform: scale(0.95); }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(9, var(--cell));
+    grid-template-rows: repeat(9, var(--cell));
+    gap: var(--gap);
+    background: var(--panel);
+    padding: var(--gap);
+    border-radius: 10px;
+    position: relative;
+  }
+  .cell {
+    width: var(--cell);
+    height: var(--cell);
+    background: var(--cellbg);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+  }
+  .cell:nth-child(odd) { background: var(--cellbg2); }
+  .ball {
+    width: 80%;
+    height: 80%;
+    border-radius: 50%;
+    box-shadow: inset -4px -4px 7px rgba(0,0,0,0.4), inset 4px 4px 7px rgba(255,255,255,0.4);
+    transition: transform 0.12s ease;
+  }
+  .ball.small {
+    width: 40%;
+    height: 40%;
+  }
+  .cell.selected .ball {
+    transform: translateY(-3px) scale(1.05);
+    animation: bob 0.5s ease-in-out infinite alternate;
+  }
+  @keyframes bob {
+    from { transform: translateY(-2px) scale(1.04); }
+    to { transform: translateY(-6px) scale(1.08); }
+  }
+  .cell.selected {
+    outline: 3px solid var(--sel);
+    outline-offset: -2px;
+  }
+  .footer {
+    font-size: 12px;
+    opacity: 0.6;
+    text-align: center;
+    max-width: 360px;
+  }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,12,20,0.85);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 10;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 { font-size: 32px; margin: 0; }
+  #overlay p { font-size: 18px; margin: 0; }
+  #overlay button {
+    background: var(--sel);
+    color: #1b2030;
+    border: none;
+    border-radius: 12px;
+    padding: 14px 28px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/color-lines.svg">
+    <link rel="manifest" href="/games/color-lines.webmanifest">
+    <meta name="theme-color" content="#DB2777">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Color Lines">
+    <link rel="apple-touch-icon" href="/games/icons/color-lines.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DB2777;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <h1>COLOR LINES</h1>
+  <div class="topbar">
+    <div class="score-box">
+      <span class="score-label">Score</span>
+      <span class="score-val" id="score">0</span>
+    </div>
+    <div class="next-box">
+      <span class="next-label">Next</span>
+      <div class="next-balls" id="nextBalls"></div>
+    </div>
+    <button id="newBtn">New Game</button>
+  </div>
+  <div id="board"></div>
+  <div class="footer">Tap a ball, then tap an empty cell to move it. Line up 5+ same color (row, column or diagonal) to clear them.</div>
+
+  <div id="overlay">
+    <h2>Game Over</h2>
+    <p id="finalScore">Score: 0</p>
+    <button id="overlayBtn">New Game</button>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SIZE = 9;
+  var COLORS = ["#e74c3c", "#3498db", "#2ecc71", "#f1c40f", "#9b59b6", "#e67e22", "#1abc9c"];
+  var SPAWN = 3;     // balls added per turn
+  var LINE = 5;      // min line length to clear
+
+  var boardEl = document.getElementById("board");
+  var scoreEl = document.getElementById("score");
+  var nextBallsEl = document.getElementById("nextBalls");
+  var overlayEl = document.getElementById("overlay");
+  var finalScoreEl = document.getElementById("finalScore");
+
+  // grid[r][c] = color index (0..COLORS.length-1) or -1 for empty
+  var grid = [];
+  var cellEls = [];     // cellEls[r][c] DOM node
+  var selected = null;  // {r,c} or null
+  var nextColors = [];  // array of SPAWN color indices
+  var score = 0;
+  var gameOver = false;
+
+  // ---- WebAudio (optional, no external files) ----
+  var audioCtx = null;
+  function beep(freq, dur, type) {
+    try {
+      if (!audioCtx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audioCtx = new AC();
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = type || "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, audioCtx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + dur + 0.02);
+    } catch (e) { /* ignore */ }
+  }
+  function sndMove() { beep(330, 0.08, "triangle"); }
+  function sndClear() {
+    beep(523, 0.12, "sine");
+    setTimeout(function () { beep(659, 0.12, "sine"); }, 90);
+    setTimeout(function () { beep(784, 0.16, "sine"); }, 180);
+  }
+  function sndDeny() { beep(140, 0.12, "sawtooth"); }
+  function sndOver() { beep(196, 0.3, "sawtooth"); }
+
+  // ---- Setup DOM grid ----
+  function buildBoard() {
+    boardEl.innerHTML = "";
+    cellEls = [];
+    for (var r = 0; r < SIZE; r++) {
+      cellEls[r] = [];
+      for (var c = 0; c < SIZE; c++) {
+        var cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+        boardEl.appendChild(cell);
+        cellEls[r][c] = cell;
+      }
+    }
+  }
+
+  // ---- Rendering ----
+  function renderCell(r, c) {
+    var cell = cellEls[r][c];
+    cell.classList.remove("selected");
+    // remove existing ball
+    var existing = cell.querySelector(".ball");
+    if (existing) cell.removeChild(existing);
+    var v = grid[r][c];
+    if (v >= 0) {
+      var ball = document.createElement("div");
+      ball.className = "ball";
+      ball.style.background = COLORS[v];
+      cell.appendChild(ball);
+    }
+    if (selected && selected.r === r && selected.c === c) {
+      cell.classList.add("selected");
+    }
+  }
+
+  function renderAll() {
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++)
+        renderCell(r, c);
+  }
+
+  function renderNext() {
+    nextBallsEl.innerHTML = "";
+    for (var i = 0; i < nextColors.length; i++) {
+      var b = document.createElement("div");
+      b.className = "next-ball";
+      b.style.background = COLORS[nextColors[i]];
+      nextBallsEl.appendChild(b);
+    }
+  }
+
+  function renderScore() {
+    scoreEl.textContent = String(score);
+  }
+
+  // ---- Helpers ----
+  function emptyCells() {
+    var list = [];
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++)
+        if (grid[r][c] < 0) list.push({ r: r, c: c });
+    return list;
+  }
+
+  function randColor() {
+    return Math.floor(Math.random() * COLORS.length);
+  }
+
+  function pickNext() {
+    nextColors = [];
+    for (var i = 0; i < SPAWN; i++) nextColors.push(randColor());
+  }
+
+  // ---- BFS path existence between two empty-traversable cells ----
+  // We can pass through empty cells only. Start cell holds the moving ball,
+  // destination must be empty. Path uses 4-directional movement over empties.
+  function pathExists(sr, sc, dr, dc) {
+    if (sr === dr && sc === dc) return false;
+    if (grid[dr][dc] >= 0) return false; // destination must be empty
+    var visited = [];
+    for (var i = 0; i < SIZE; i++) {
+      visited[i] = [];
+      for (var j = 0; j < SIZE; j++) visited[i][j] = false;
+    }
+    var queue = [{ r: sr, c: sc }];
+    visited[sr][sc] = true;
+    var dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    while (queue.length) {
+      var cur = queue.shift();
+      if (cur.r === dr && cur.c === dc) return true;
+      for (var k = 0; k < dirs.length; k++) {
+        var nr = cur.r + dirs[k][0];
+        var nc = cur.c + dirs[k][1];
+        if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+        if (visited[nr][nc]) continue;
+        // Can step into a cell if it is empty. (The start cell is treated
+        // as traversable because the ball will vacate it.)
+        if (grid[nr][nc] >= 0) continue;
+        visited[nr][nc] = true;
+        queue.push({ r: nr, c: nc });
+      }
+    }
+    return false;
+  }
+
+  // ---- Line detection (5+ in a row in 4 directions) ----
+  // Returns a set (object keyed "r,c") of cells to clear; empty if none.
+  // We scan only the 4 unique directions: horizontal, vertical, and both diagonals.
+  function findLines() {
+    var toClear = {};
+    var dirs = [
+      [0, 1],   // horizontal
+      [1, 0],   // vertical
+      [1, 1],   // diagonal down-right
+      [1, -1]   // diagonal down-left
+    ];
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        var color = grid[r][c];
+        if (color < 0) continue;
+        for (var d = 0; d < dirs.length; d++) {
+          var dr = dirs[d][0], dc = dirs[d][1];
+          // Only start a run if the previous cell in this direction is NOT
+          // the same color (so each maximal run is counted once).
+          var pr = r - dr, pc = c - dc;
+          if (pr >= 0 && pr < SIZE && pc >= 0 && pc < SIZE && grid[pr][pc] === color) {
+            continue;
+          }
+          // Count run length forward.
+          var run = [];
+          var nr = r, nc = c;
+          while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && grid[nr][nc] === color) {
+            run.push({ r: nr, c: nc });
+            nr += dr; nc += dc;
+          }
+          if (run.length >= LINE) {
+            for (var i = 0; i < run.length; i++) {
+              toClear[run[i].r + "," + run[i].c] = true;
+            }
+          }
+        }
+      }
+    }
+    return toClear;
+  }
+
+  function clearLines() {
+    var toClear = findLines();
+    var keys = Object.keys(toClear);
+    if (keys.length === 0) return 0;
+    for (var i = 0; i < keys.length; i++) {
+      var parts = keys[i].split(",");
+      var r = parseInt(parts[0], 10);
+      var c = parseInt(parts[1], 10);
+      grid[r][c] = -1;
+    }
+    return keys.length;
+  }
+
+  // Scoring: classic-ish. 5 balls = 10 points, each extra ball worth more.
+  function scoreFor(n) {
+    // 5 -> 10, 6 -> 12, ... plus bonus growth
+    if (n < LINE) return 0;
+    var base = 10;
+    var extra = n - LINE;
+    return base + extra * 2 + (extra > 0 ? extra * (extra + 1) : 0);
+  }
+
+  // ---- Spawning ----
+  function spawnBalls(colors) {
+    var spawned = [];
+    for (var i = 0; i < colors.length; i++) {
+      var empties = emptyCells();
+      if (empties.length === 0) break;
+      var pick = empties[Math.floor(Math.random() * empties.length)];
+      grid[pick.r][pick.c] = colors[i];
+      spawned.push(pick);
+    }
+    return spawned;
+  }
+
+  // ---- Game flow ----
+  function checkGameOver() {
+    if (emptyCells().length === 0) {
+      gameOver = true;
+      finalScoreEl.textContent = "Score: " + score;
+      overlayEl.classList.add("show");
+      sndOver();
+      return true;
+    }
+    return false;
+  }
+
+  // Move ball, then resolve clears/spawns.
+  function doMove(fr, fc, tr, tc) {
+    var color = grid[fr][fc];
+    grid[fr][fc] = -1;
+    grid[tr][tc] = color;
+    selected = null;
+    renderAll();
+    sndMove();
+
+    // Check for lines formed by the move.
+    var cleared = clearLines();
+    if (cleared > 0) {
+      score += scoreFor(cleared);
+      renderScore();
+      renderAll();
+      sndClear();
+      // No new balls this turn when a line forms.
+      checkGameOver();
+      return;
+    }
+
+    // No line: spawn the previewed balls.
+    var spawnColors = nextColors.slice();
+    var spawned = spawnBalls(spawnColors);
+    pickNext();
+    renderNext();
+    renderAll();
+
+    // Spawned balls can also complete lines.
+    if (spawned.length > 0) {
+      var clearedAfter = clearLines();
+      if (clearedAfter > 0) {
+        score += scoreFor(clearedAfter);
+        renderScore();
+        renderAll();
+        sndClear();
+      }
+    }
+
+    checkGameOver();
+  }
+
+  function onCellTap(r, c) {
+    if (gameOver) return;
+
+    var v = grid[r][c];
+
+    if (selected) {
+      if (selected.r === r && selected.c === c) {
+        // Tap same ball: deselect.
+        var pr = selected.r, pc = selected.c;
+        selected = null;
+        renderCell(pr, pc);
+        return;
+      }
+      if (v >= 0) {
+        // Tapped another ball: switch selection.
+        var oldr = selected.r, oldc = selected.c;
+        selected = { r: r, c: c };
+        renderCell(oldr, oldc);
+        renderCell(r, c);
+        return;
+      }
+      // Tapped empty cell: try to move.
+      if (pathExists(selected.r, selected.c, r, c)) {
+        doMove(selected.r, selected.c, r, c);
+      } else {
+        sndDeny();
+        // brief invalid feedback: flash nothing, just keep selection.
+      }
+      return;
+    }
+
+    // Nothing selected: select a ball if present.
+    if (v >= 0) {
+      selected = { r: r, c: c };
+      renderCell(r, c);
+    }
+  }
+
+  // ---- Event wiring (delegated) ----
+  boardEl.addEventListener("click", function (e) {
+    var cell = e.target.closest(".cell");
+    if (!cell) return;
+    var r = parseInt(cell.dataset.r, 10);
+    var c = parseInt(cell.dataset.c, 10);
+    onCellTap(r, c);
+  });
+
+  function newGame() {
+    gameOver = false;
+    score = 0;
+    selected = null;
+    overlayEl.classList.remove("show");
+    grid = [];
+    for (var r = 0; r < SIZE; r++) {
+      grid[r] = [];
+      for (var c = 0; c < SIZE; c++) grid[r][c] = -1;
+    }
+    renderScore();
+    pickNext();
+    // Initial spawn: place a starting batch, then refresh the preview.
+    spawnBalls([randColor(), randColor(), randColor(), randColor(), randColor()]);
+    clearLines(); // guard against an accidental starting line
+    renderNext();
+    renderAll();
+  }
+
+  document.getElementById("newBtn").addEventListener("click", newGame);
+  document.getElementById("overlayBtn").addEventListener("click", newGame);
+
+  buildBoard();
+  newGame();
+})();
+</script>
+</body>
+</html>

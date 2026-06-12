@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Helix Jump</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: #0d0b1a;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #wrap {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    touch-action: none;
+  }
+  header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: linear-gradient(180deg, #1a1530, #0d0b1a);
+    box-shadow: 0 2px 8px rgba(0,0,0,.5);
+    z-index: 5;
+  }
+  #title {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    background: linear-gradient(90deg, #ff5db1, #6dd5ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  #stats { display: flex; gap: 14px; font-size: 13px; }
+  #stats .lbl { opacity: .6; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+  #stats .val { font-size: 16px; font-weight: 700; }
+  #stats .cell { text-align: right; line-height: 1.15; }
+  #canvasHolder {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: rgba(8,6,18,.82);
+    backdrop-filter: blur(3px);
+    text-align: center;
+    padding: 24px;
+    z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h2 { font-size: 28px; font-weight: 800; }
+  #overlay p { font-size: 14px; opacity: .85; max-width: 280px; line-height: 1.45; }
+  #overlay .big { font-size: 40px; font-weight: 800; color: #ffd166; }
+  #overlay .sub { font-size: 13px; opacity: .7; }
+  button {
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    color: #0d0b1a;
+    background: linear-gradient(90deg, #ff5db1, #6dd5ff);
+    border: none;
+    border-radius: 999px;
+    padding: 13px 34px;
+    cursor: pointer;
+    touch-action: manipulation;
+    box-shadow: 0 4px 14px rgba(109,213,255,.35);
+  }
+  button:active { transform: translateY(1px); }
+  #hint { font-size: 12px; opacity: .55; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/helix-jump.svg">
+    <link rel="manifest" href="/games/helix-jump.webmanifest">
+    <meta name="theme-color" content="#7C3AED">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Helix Jump">
+    <link rel="apple-touch-icon" href="/games/icons/helix-jump.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#7C3AED;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <div id="title">HELIX JUMP</div>
+    <div id="stats">
+      <div class="cell"><div class="lbl">Level</div><div class="val" id="scoreVal">0</div></div>
+      <div class="cell"><div class="lbl">Best</div><div class="val" id="bestVal">0</div></div>
+    </div>
+  </header>
+  <div id="canvasHolder">
+    <canvas id="game"></canvas>
+    <div id="overlay">
+      <h2 id="ovTitle">Helix Jump</h2>
+      <p id="ovMsg">Drag left / right (or hold a side, or use ← →) to spin the tower. Line up a gap under the ball so it falls through. Avoid the red danger segments!</p>
+      <button id="startBtn">Play</button>
+      <div id="hint">Tip: long drops earn bonus points</div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Canvas setup ----------
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var holder = document.getElementById("canvasHolder");
+  var DPR = 1;
+  var W = 0, H = 0; // CSS pixels
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    var r = holder.getBoundingClientRect();
+    W = Math.max(1, r.width);
+    H = Math.max(1, r.height);
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () { setTimeout(resize, 100); });
+
+  // ---------- Audio ----------
+  var AC = null;
+  function audio() {
+    if (AC) return AC;
+    try {
+      var Ctor = window.AudioContext || window.webkitAudioContext;
+      if (Ctor) AC = new Ctor();
+    } catch (e) { AC = null; }
+    return AC;
+  }
+  function beep(freq, dur, type, vol) {
+    var a = audio();
+    if (!a) return;
+    if (a.state === "suspended") { try { a.resume(); } catch (e) {} }
+    try {
+      var o = a.createOscillator();
+      var g = a.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      var now = a.currentTime;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(vol || 0.18, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.connect(g); g.connect(a.destination);
+      o.start(now);
+      o.stop(now + dur + 0.02);
+    } catch (e) {}
+  }
+  function sndBounce() { beep(440, 0.08, "sine", 0.14); }
+  function sndPass(combo) { beep(520 + combo * 90, 0.14, "triangle", 0.2); }
+  function sndDie() {
+    var a = audio();
+    if (!a) return;
+    if (a.state === "suspended") { try { a.resume(); } catch (e) {} }
+    try {
+      var o = a.createOscillator(), g = a.createGain(), now = a.currentTime;
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(300, now);
+      o.frequency.exponentialRampToValueAtTime(70, now + 0.5);
+      g.gain.setValueAtTime(0.22, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+      o.connect(g); g.connect(a.destination);
+      o.start(now); o.stop(now + 0.52);
+    } catch (e) {}
+  }
+
+  // ---------- Game constants ----------
+  var TWO_PI = Math.PI * 2;
+  var LEVEL_GAP = 120;          // vertical world distance between rings
+  var SEG_COUNT = 8;            // segments per ring
+  var BALL_RADIUS = 14;
+  var GRAVITY = 1400;           // px / s^2
+  var BOUNCE_VY = -640;         // bounce velocity (world units / s)
+  var MAX_FALL = 1500;          // terminal-ish velocity cap
+
+  var BEST_KEY = "helixJumpBest";
+
+  // ---------- State ----------
+  var state = "menu"; // menu | play | dead
+  var rings = [];     // array of ring definitions
+  var angle = 0;      // current tower rotation (radians)
+  var angleVel = 0;   // for drag inertia
+  var ball;           // { x(centered), worldY, vy, falling }
+  var cameraY = 0;    // world Y at top of view
+  var level = 0;      // levels passed
+  var best = 0;
+  var combo = 0;      // consecutive levels passed in one fall
+  var particles = [];
+  var shake = 0;
+  var ballScreenFrac = 0.30; // ball sits 30% down the screen
+
+  // input
+  var keyLeft = false, keyRight = false;
+  var dragActive = false, lastDragX = 0;
+  var holdDir = 0; // for tap-hold halves when not dragging
+
+  try { best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; } catch (e) { best = 0; }
+
+  var scoreVal = document.getElementById("scoreVal");
+  var bestVal = document.getElementById("bestVal");
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ovTitle");
+  var ovMsg = document.getElementById("ovMsg");
+  var startBtn = document.getElementById("startBtn");
+  bestVal.textContent = best;
+
+  // ---------- Ring generation ----------
+  // Each ring: array of SEG_COUNT segment objects.
+  // type: "solid" (bounce off), "danger" (death), "gap" (fall through)
+  function makeRing(index) {
+    var segs = [];
+    var i;
+    for (i = 0; i < SEG_COUNT; i++) segs.push("solid");
+
+    // Number of gap segments: at least 1, grows slightly then we make sure passable.
+    var gapCount = 1 + (Math.random() < 0.35 ? 1 : 0);
+    // contiguous gap so the ball can pass cleanly
+    var gapStart = Math.floor(Math.random() * SEG_COUNT);
+    var g;
+    for (g = 0; g < gapCount; g++) {
+      segs[(gapStart + g) % SEG_COUNT] = "gap";
+    }
+
+    // Danger segments — more as you go deeper, but never on every solid.
+    if (index > 0) {
+      var dangerChance = Math.min(0.12 + index * 0.012, 0.4);
+      for (i = 0; i < SEG_COUNT; i++) {
+        if (segs[i] === "solid" && Math.random() < dangerChance) {
+          // ensure not ALL solids become danger: keep at least one safe solid
+          segs[i] = "danger";
+        }
+      }
+      // guarantee at least one safe (solid) landing spot besides the gap
+      var hasSafe = false;
+      for (i = 0; i < SEG_COUNT; i++) { if (segs[i] === "solid") { hasSafe = true; break; } }
+      if (!hasSafe) {
+        // turn one danger back to solid (pick one not adjacent to gap ideally)
+        for (i = 0; i < SEG_COUNT; i++) {
+          if (segs[i] === "danger") { segs[i] = "solid"; break; }
+        }
+      }
+    }
+
+    return {
+      segs: segs,
+      worldY: index * LEVEL_GAP,
+      index: index,
+      hueShift: (index * 23) % 360
+    };
+  }
+
+  function ensureRings() {
+    // keep a buffer of rings ahead of the ball
+    var needIndex = Math.floor((ball.worldY) / LEVEL_GAP) + 8;
+    while (rings.length <= needIndex) {
+      rings.push(makeRing(rings.length));
+    }
+  }
+
+  // ---------- Game control ----------
+  function startGame() {
+    state = "play";
+    overlay.classList.add("hidden");
+    rings = [];
+    angle = 0; angleVel = 0;
+    level = 0; combo = 0;
+    particles = [];
+    shake = 0;
+    ball = {
+      worldY: -BALL_RADIUS, // start above ring 0, will bounce onto it
+      vy: 0,
+      falling: true
+    };
+    // Build initial rings. Ring 0 has a gap (so the player can progress) but no
+    // danger, giving a forgiving first bounce.
+    var i;
+    for (i = 0; i < 12; i++) rings.push(makeRing(i));
+    for (i = 0; i < rings[0].segs.length; i++) {
+      if (rings[0].segs[i] === "danger") rings[0].segs[i] = "solid";
+    }
+    cameraY = ball.worldY - H * ballScreenFrac;
+    scoreVal.textContent = "0";
+  }
+
+  function gameOver() {
+    if (state !== "play") return;
+    state = "dead";
+    sndDie();
+    shake = 16;
+    spawnParticles(true);
+    if (level > best) {
+      best = level;
+      bestVal.textContent = best;
+      try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) {}
+    }
+    ovTitle.textContent = "Game Over";
+    ovMsg.innerHTML =
+      '<span class="big">' + level + '</span><br><span class="sub">levels reached &bull; best ' + best + '</span>';
+    startBtn.textContent = "Restart";
+    // small delay before showing overlay so death is visible
+    setTimeout(function () {
+      if (state === "dead") overlay.classList.remove("hidden");
+    }, 650);
+  }
+
+  // ---------- Particles ----------
+  function spawnParticles(deathBurst) {
+    var n = deathBurst ? 26 : 8;
+    var sx = W / 2;
+    var sy = ballScreenY();
+    var i;
+    for (i = 0; i < n; i++) {
+      var a = Math.random() * TWO_PI;
+      var sp = (deathBurst ? 120 : 70) + Math.random() * (deathBurst ? 220 : 120);
+      particles.push({
+        x: sx, y: sy,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp - 40,
+        life: 1,
+        col: deathBurst ? "#ff5d5d" : "#6dd5ff",
+        r: 2 + Math.random() * 3
+      });
+    }
+  }
+
+  // ---------- Geometry helpers ----------
+  function ballScreenY() {
+    return (ball.worldY - cameraY);
+  }
+
+  // which segment index is currently "under" the ball given tower rotation.
+  // The ball is fixed at the front of the tower (angle = -PI/2, i.e. nearest
+  // viewer / bottom-front). We map tower rotation to a segment index.
+  function segUnderBall() {
+    var segAngle = TWO_PI / SEG_COUNT;
+    // front-facing world angle that the ball occupies:
+    var front = Math.PI / 2; // pointing toward viewer (down the screen front)
+    // segment i spans [i*segAngle, (i+1)*segAngle) in ring-local space, rotated by `angle`
+    var rel = front - angle;
+    rel = ((rel % TWO_PI) + TWO_PI) % TWO_PI;
+    var idx = Math.floor(rel / segAngle) % SEG_COUNT;
+    return idx;
+  }
+
+  // ---------- Update ----------
+  var lastT = 0;
+  function frame(t) {
+    if (!lastT) lastT = t;
+    var dt = (t - lastT) / 1000;
+    lastT = t;
+    if (dt > 0.05) dt = 0.05; // clamp big gaps
+    update(dt);
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  function update(dt) {
+    // rotation input
+    if (state === "play") {
+      var rotSpeed = 3.6; // rad/s for key/hold
+      var dir = 0;
+      if (keyLeft) dir -= 1;
+      if (keyRight) dir += 1;
+      if (!dragActive && holdDir !== 0) dir += holdDir;
+      if (dir !== 0) {
+        angle += dir * rotSpeed * dt;
+        angleVel = dir * rotSpeed;
+      } else if (!dragActive) {
+        // inertia decay from drag flick
+        angle += angleVel * dt;
+        angleVel *= Math.pow(0.0001, dt); // strong damping
+        if (Math.abs(angleVel) < 0.01) angleVel = 0;
+      }
+      angle = ((angle % TWO_PI) + TWO_PI) % TWO_PI;
+    }
+
+    // ball physics
+    if (state === "play") {
+      var prevBottom = ball.worldY + BALL_RADIUS;
+      ball.vy += GRAVITY * dt;
+      if (ball.vy > MAX_FALL) ball.vy = MAX_FALL;
+      ball.worldY += ball.vy * dt;
+
+      ensureRings();
+      handleCollisions(prevBottom);
+
+      // camera follows ball
+      var targetCam = ball.worldY - H * ballScreenFrac;
+      cameraY += (targetCam - cameraY) * Math.min(1, dt * 8);
+    }
+
+    // particles
+    var i;
+    for (i = particles.length - 1; i >= 0; i--) {
+      var p = particles[i];
+      p.vy += 400 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt * 1.4;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    if (shake > 0) {
+      shake -= dt * 40;
+      if (shake < 0) shake = 0;
+    }
+  }
+
+  function handleCollisions(prevBottom) {
+    // Collision only when the ball is moving downward and its bottom crosses a
+    // ring plane this frame. We use the previous bottom position so a fast ball
+    // can't tunnel through a solid ring in one step.
+    if (ball.vy <= 0) { ball.falling = true; return; }
+
+    var ballBottom = ball.worldY + BALL_RADIUS;
+
+    // Examine each ring plane the ball's bottom crossed this frame, nearest
+    // first (smallest worldY >= prevBottom), so we resolve the topmost one.
+    var idxLow = Math.floor(prevBottom / LEVEL_GAP) - 1;
+    var idxHigh = Math.floor(ballBottom / LEVEL_GAP) + 1;
+    var ri, r;
+    for (ri = idxLow; ri <= idxHigh; ri++) {
+      if (ri < 0 || ri >= rings.length) continue;
+      r = rings[ri];
+      var plane = r.worldY;
+
+      // did the ball's bottom cross this plane downward this frame?
+      var crossed = (prevBottom <= plane + 0.0001) && (ballBottom >= plane);
+      if (!crossed) continue;
+
+      var seg = segUnderBall();
+      var type = r.segs[seg];
+
+      if (type === "gap") {
+        if (!r.passed) {
+          r.passed = true;
+          level++;
+          combo++;
+          if (combo > 1) {
+            // chained pass without bouncing: small bonus point
+            level += 1;
+          }
+          sndPass(Math.min(combo, 5));
+          spawnParticles(false);
+          scoreVal.textContent = String(level);
+        }
+        // keep falling through this ring; check the next plane below too
+        continue;
+      } else if (type === "danger") {
+        ball.worldY = plane - BALL_RADIUS;
+        ball.vy = 0;
+        gameOver();
+        return;
+      } else {
+        // solid -> bounce off the top face
+        ball.worldY = plane - BALL_RADIUS;
+        ball.vy = BOUNCE_VY;
+        ball.falling = false;
+        combo = 0;
+        sndBounce();
+        r.pulse = 1;
+        scoreVal.textContent = String(level);
+        return;
+      }
+    }
+    // no solid/danger hit this frame => still mid-flight
+    ball.falling = true;
+  }
+
+  // ---------- Render ----------
+  function render() {
+    ctx.save();
+    // background gradient
+    var grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, "#171029");
+    grd.addColorStop(1, "#0a0815");
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, W, H);
+
+    var ox = 0, oy = 0;
+    if (shake > 0) {
+      ox = (Math.random() - 0.5) * shake;
+      oy = (Math.random() - 0.5) * shake;
+    }
+    ctx.translate(ox, oy);
+
+    if (state === "menu") {
+      drawCenterTower();
+      ctx.restore();
+      return;
+    }
+
+    drawTower();
+    drawBall();
+    drawParticles();
+    ctx.restore();
+  }
+
+  // central axis x of the tower on screen
+  function towerCX() { return W / 2; }
+  function towerR() { return Math.min(W * 0.34, 150); }     // visual radius of ring
+  function ringThickness() { return 16; }
+  function ringDepth() { return 26; }  // pseudo-3D vertical "thickness" of a disk
+
+  // Draw a single ring as a set of arc segments using a flattened ellipse
+  // (top-down-ish 2.5D). Front segments drawn on top.
+  function drawRing(r) {
+    var cx = towerCX();
+    var cyTop = (r.worldY - cameraY);
+    if (cyTop < -ringDepth() - 40 || cyTop > H + 60) return;
+
+    var R = towerR();
+    var ry = R * 0.34;       // ellipse vertical radius (flatten for perspective)
+    var depth = ringDepth();
+    var segAngle = TWO_PI / SEG_COUNT;
+    var i;
+
+    // draw each segment. We render back-to-front so front arcs overlap.
+    // Build segment list with their mid-angle (in screen space) for sorting.
+    var order = [];
+    for (i = 0; i < SEG_COUNT; i++) {
+      var a0 = i * segAngle + angle;
+      var mid = a0 + segAngle / 2;
+      // sin(mid) ~ how "front" it is (front = sin positive => lower on screen)
+      order.push({ i: i, front: Math.sin(mid) });
+    }
+    order.sort(function (a, b) { return a.front - b.front; });
+
+    for (var oi = 0; oi < order.length; oi++) {
+      var si = order[oi].i;
+      var type = r.segs[si];
+      if (type === "gap") continue; // gaps are empty
+
+      var start = si * segAngle + angle;
+      var end = start + segAngle;
+
+      // top face path (ellipse arc)
+      var col, side;
+      if (type === "danger") {
+        col = "#ff4d62"; side = "#b81f33";
+      } else {
+        // tint by depth
+        var hue = (210 + r.index * 18) % 360;
+        col = "hsl(" + hue + ",55%,58%)";
+        side = "hsl(" + hue + ",55%,38%)";
+      }
+      if (r.pulse) {
+        var pl = r.pulse;
+        col = type === "danger" ? "#ff7b8a" : "#bfe9ff";
+        r._pdraw = true;
+      }
+
+      drawArcSegment(cx, cyTop, R, ry, start, end, depth, col, side);
+    }
+
+    // decay pulse
+    if (r.pulse) { r.pulse -= 0.06; if (r.pulse <= 0) r.pulse = 0; }
+  }
+
+  function drawArcSegment(cx, cy, R, ry, a0, a1, depth, topCol, sideCol) {
+    var steps = 6;
+    var i, a, x, y;
+
+    // ---- side wall (between top ellipse and bottom ellipse) ----
+    ctx.beginPath();
+    for (i = 0; i <= steps; i++) {
+      a = a0 + (a1 - a0) * (i / steps);
+      x = cx + Math.cos(a) * R;
+      y = cy + Math.sin(a) * ry;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    for (i = steps; i >= 0; i--) {
+      a = a0 + (a1 - a0) * (i / steps);
+      x = cx + Math.cos(a) * R;
+      y = cy + Math.sin(a) * ry + depth;
+      ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = sideCol;
+    ctx.fill();
+
+    // ---- top face ----
+    ctx.beginPath();
+    for (i = 0; i <= steps; i++) {
+      a = a0 + (a1 - a0) * (i / steps);
+      x = cx + Math.cos(a) * R;
+      y = cy + Math.sin(a) * ry;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    // inner radius back along reverse
+    var innerR = R * 0.52, innerRy = ry * 0.52;
+    for (i = steps; i >= 0; i--) {
+      a = a0 + (a1 - a0) * (i / steps);
+      x = cx + Math.cos(a) * innerR;
+      y = cy + Math.sin(a) * innerRy;
+      ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = topCol;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,.18)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  function drawTower() {
+    // central pillar
+    var cx = towerCX();
+    var topY = -40;
+    var botY = H + 40;
+    ctx.fillStyle = "rgba(255,255,255,.05)";
+    ctx.fillRect(cx - 4, topY, 8, botY - topY);
+
+    // draw rings from top of view downward
+    var startIdx = Math.floor(cameraY / LEVEL_GAP) - 1;
+    var endIdx = startIdx + Math.ceil(H / LEVEL_GAP) + 3;
+    var i;
+    // draw far (lower on screen first? we draw top-to-bottom; deeper rings lower)
+    for (i = startIdx; i <= endIdx; i++) {
+      if (i < 0 || i >= rings.length) continue;
+      drawRing(rings[i]);
+    }
+  }
+
+  function drawBall() {
+    var cx = towerCX();
+    var R = towerR();
+    // ball sits at the FRONT of the tower (front = sin(front)=1 => screen down)
+    // front world angle is PI/2 so screen offset uses that.
+    var ry = R * 0.34;
+    var bx = cx + Math.cos(Math.PI / 2) * (R * 0.78); // = cx (cos 90 = 0)
+    var by = ballScreenY();
+
+    // shadow on whatever ring is below
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(cx, by + BALL_RADIUS + 6, BALL_RADIUS * 0.9, BALL_RADIUS * 0.4, 0, 0, TWO_PI);
+    ctx.fill();
+    ctx.restore();
+
+    // ball with gradient
+    var g = ctx.createRadialGradient(cx - 5, by - 6, 2, cx, by, BALL_RADIUS + 2);
+    g.addColorStop(0, "#fff3a8");
+    g.addColorStop(0.4, "#ffd166");
+    g.addColorStop(1, "#ff8f3c");
+    ctx.beginPath();
+    ctx.arc(cx, by, BALL_RADIUS, 0, TWO_PI);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0,0,0,.25)";
+    ctx.stroke();
+  }
+
+  function drawParticles() {
+    var i;
+    for (i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.col;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, TWO_PI);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Menu: just draw a slowly spinning decorative tower
+  var menuAngle = 0;
+  function drawCenterTower() {
+    menuAngle += 0.006;
+    var saveAngle = angle;
+    var saveCam = cameraY;
+    var saveRings = rings;
+    var saveBall = ball;
+
+    // temp scene
+    angle = menuAngle;
+    rings = [];
+    var i;
+    for (i = 0; i < 8; i++) {
+      var r = makeRing(i);
+      r.worldY = i * LEVEL_GAP;
+      rings.push(r);
+    }
+    cameraY = -30;
+    drawTower();
+
+    angle = saveAngle; cameraY = saveCam; rings = saveRings; ball = saveBall;
+  }
+
+  // ---------- Input handling ----------
+  function onKeyDown(e) {
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { keyLeft = true; e.preventDefault(); }
+    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { keyRight = true; e.preventDefault(); }
+    else if ((e.key === " " || e.key === "Enter") && state !== "play") { startGame(); e.preventDefault(); }
+  }
+  function onKeyUp(e) {
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") keyLeft = false;
+    else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") keyRight = false;
+  }
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
+
+  // Pointer / touch on the canvas: drag to rotate; if no horizontal movement
+  // treat as tap-hold on a half.
+  var pointerId = null;
+  var pointerStartX = 0;
+  var movedAsDrag = false;
+
+  function pointerDown(e) {
+    // resume audio on first gesture
+    var a = audio(); if (a && a.state === "suspended") { try { a.resume(); } catch (er) {} }
+    if (state !== "play") return;
+    e.preventDefault();
+    pointerId = e.pointerId != null ? e.pointerId : 0;
+    pointerStartX = clientX(e);
+    lastDragX = pointerStartX;
+    dragActive = true;
+    movedAsDrag = false;
+    angleVel = 0;
+    // set initial hold direction based on which half (used only if it stays a tap-hold)
+    var rect = canvas.getBoundingClientRect();
+    holdDir = (pointerStartX - rect.left) < rect.width / 2 ? -1 : 1;
+  }
+  function pointerMove(e) {
+    if (!dragActive) return;
+    if (pointerId != null && e.pointerId != null && e.pointerId !== pointerId) return;
+    e.preventDefault();
+    var x = clientX(e);
+    var dx = x - lastDragX;
+    lastDragX = x;
+    if (Math.abs(x - pointerStartX) > 6) movedAsDrag = true;
+    // convert horizontal pixels to rotation. Full canvas width ~ ~1.6 turns.
+    var sens = (TWO_PI * 1.6) / Math.max(120, W);
+    angle += dx * sens;
+    angleVel = dx * sens * 60; // approx rad/s for flick inertia
+    angle = ((angle % TWO_PI) + TWO_PI) % TWO_PI;
+  }
+  function pointerUp(e) {
+    if (!dragActive) return;
+    if (pointerId != null && e.pointerId != null && e.pointerId !== pointerId) return;
+    e.preventDefault();
+    dragActive = false;
+    pointerId = null;
+    // if it was just a tap-hold (no real drag), keep holdDir until pointerup -> stop now
+    holdDir = 0;
+    // cap inertia
+    if (angleVel > 12) angleVel = 12;
+    if (angleVel < -12) angleVel = -12;
+  }
+
+  function clientX(e) {
+    if (e.touches && e.touches.length) return e.touches[0].clientX;
+    if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0].clientX;
+    return e.clientX;
+  }
+
+  if (window.PointerEvent) {
+    canvas.addEventListener("pointerdown", pointerDown, { passive: false });
+    canvas.addEventListener("pointermove", pointerMove, { passive: false });
+    window.addEventListener("pointerup", pointerUp, { passive: false });
+    window.addEventListener("pointercancel", pointerUp, { passive: false });
+  } else {
+    canvas.addEventListener("touchstart", pointerDown, { passive: false });
+    canvas.addEventListener("touchmove", pointerMove, { passive: false });
+    window.addEventListener("touchend", pointerUp, { passive: false });
+    canvas.addEventListener("mousedown", pointerDown, { passive: false });
+    window.addEventListener("mousemove", pointerMove, { passive: false });
+    window.addEventListener("mouseup", pointerUp, { passive: false });
+  }
+
+  // prevent scroll/zoom gestures on the whole wrap
+  document.getElementById("wrap").addEventListener("touchmove", function (e) {
+    e.preventDefault();
+  }, { passive: false });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+
+  startBtn.addEventListener("click", function () {
+    var a = audio(); if (a && a.state === "suspended") { try { a.resume(); } catch (er) {} }
+    startGame();
+  });
+
+  // ---------- Boot ----------
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

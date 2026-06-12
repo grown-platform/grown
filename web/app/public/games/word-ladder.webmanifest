@@ -1,0 +1,25 @@
+{
+  "name": "Word Ladder",
+  "short_name": "Word Ladder",
+  "description": "Word Ladder — play in your browser, online or off.",
+  "start_url": "/games/word-ladder.html",
+  "scope": "/games/word-ladder.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0D9488",
+  "icons": [
+    {
+      "src": "/games/icons/word-ladder.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/word-ladder.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

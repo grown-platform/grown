@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Cookie Clicker</title>
+<style>
+  :root {
+    --bg: #1e1410;
+    --panel: #2c1f17;
+    --panel2: #3a2a1f;
+    --accent: #e8a33d;
+    --accent2: #c9822a;
+    --text: #f3e7d3;
+    --muted: #b39b7e;
+    --good: #6fcf6f;
+    --bad: #444;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    overscroll-behavior: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    max-width: 480px;
+    margin: 0 auto;
+    height: 100dvh;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  header {
+    text-align: center;
+    padding: 10px 8px 6px;
+    flex: 0 0 auto;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 22px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+  .stats {
+    margin-top: 4px;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .stats .count {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--accent);
+    display: block;
+    line-height: 1.1;
+  }
+  .stats .cps { color: var(--muted); font-size: 13px; }
+
+  .cookie-area {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 0 14px;
+    position: relative;
+  }
+  #cookie {
+    font-size: 130px;
+    line-height: 1;
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0;
+    transition: transform 0.05s ease;
+    filter: drop-shadow(0 6px 10px rgba(0,0,0,0.5));
+    touch-action: manipulation;
+  }
+  #cookie.pop { transform: scale(0.92); }
+
+  .float {
+    position: absolute;
+    pointer-events: none;
+    font-weight: 700;
+    color: var(--accent);
+    font-size: 20px;
+    text-shadow: 0 1px 2px #000;
+    animation: floatUp 0.9s ease-out forwards;
+    z-index: 5;
+  }
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-60px) scale(1.2); }
+  }
+
+  .shop {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 8px 8px;
+  }
+  .shop h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin: 8px 4px 6px;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    text-align: left;
+    background: var(--panel);
+    border: 1px solid #00000040;
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    color: var(--text);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background 0.1s, transform 0.05s;
+  }
+  .item:active { transform: scale(0.99); }
+  .item:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .item .emoji {
+    font-size: 30px;
+    width: 42px;
+    text-align: center;
+    flex: 0 0 auto;
+  }
+  .item .info {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 8px;
+  }
+  .item .name { font-size: 15px; font-weight: 600; }
+  .item .sub { font-size: 12px; color: var(--muted); }
+  .item .right {
+    flex: 0 0 auto;
+    text-align: right;
+  }
+  .item .cost {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .item .owned {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--muted);
+    min-width: 28px;
+    text-align: right;
+  }
+  .item.affordable .cost { color: var(--good); }
+
+  footer {
+    flex: 0 0 auto;
+    padding: 8px;
+    text-align: center;
+  }
+  #reset {
+    background: var(--panel2);
+    color: var(--muted);
+    border: 1px solid #00000040;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  #reset:active { background: #4a3424; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/cookie-clicker.svg">
+    <link rel="manifest" href="/games/cookie-clicker.webmanifest">
+    <meta name="theme-color" content="#B45309">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Cookie Clicker">
+    <link rel="apple-touch-icon" href="/games/icons/cookie-clicker.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#B45309;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>🍪 Cookie Clicker</h1>
+    <div class="stats">
+      <span class="count" id="count">0 cookies</span>
+      <span class="cps" id="cps">0.0 / sec &middot; +1 / click</span>
+    </div>
+  </header>
+
+  <div class="cookie-area" id="cookieArea">
+    <button id="cookie" aria-label="Cookie">🍪</button>
+  </div>
+
+  <div class="shop" id="shop">
+    <h2>Click Upgrades</h2>
+    <div id="upgrades"></div>
+    <h2>Buildings</h2>
+    <div id="buildings"></div>
+  </div>
+
+  <footer>
+    <button id="reset">Reset Game</button>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var SAVE_KEY = "cookieClickerSave_v1";
+
+  // Building definitions: baseCost rises 15% per purchase, fixed cps each.
+  var BUILDINGS = [
+    { id: "cursor",  name: "Cursor",   emoji: "👆", base: 15,        cps: 0.1 },
+    { id: "grandma", name: "Grandma",  emoji: "👵", base: 100,       cps: 1 },
+    { id: "farm",    name: "Farm",     emoji: "🌾", base: 1100,      cps: 8 },
+    { id: "mine",    name: "Mine",     emoji: "⛏️", base: 12000,     cps: 47 },
+    { id: "factory", name: "Factory",  emoji: "🏭", base: 130000,    cps: 260 },
+    { id: "bank",    name: "Bank",     emoji: "🏦", base: 1400000,   cps: 1400 },
+    { id: "temple",  name: "Temple",   emoji: "🏛️", base: 20000000,  cps: 7800 },
+    { id: "wizard",  name: "Wizard Tower", emoji: "🧙", base: 330000000, cps: 44000 }
+  ];
+
+  // Click upgrades: each multiplies/adds to click power. cost is one-time.
+  var UPGRADES = [
+    { id: "u1", name: "Reinforced Finger", emoji: "💪", cost: 100,     add: 1 },
+    { id: "u2", name: "Carpal Tunnel Prevention", emoji: "🧤", cost: 1000,    add: 3 },
+    { id: "u3", name: "Ambidextrous",      emoji: "✌️", cost: 25000,   add: 10 },
+    { id: "u4", name: "Thousand Fingers",  emoji: "🖐️", cost: 250000,  add: 50 },
+    { id: "u5", name: "Golden Touch",      emoji: "✨", cost: 5000000, add: 250 }
+  ];
+
+  var state = {
+    cookies: 0,
+    totalBaked: 0,
+    clickBase: 1,
+    buildings: {},   // id -> count
+    upgrades: {}     // id -> true
+  };
+  BUILDINGS.forEach(function (b) { state.buildings[b.id] = 0; });
+
+  // ---- Math helpers ----
+  function buildingCost(b) {
+    return Math.ceil(b.base * Math.pow(1.15, state.buildings[b.id]));
+  }
+  function totalCps() {
+    var cps = 0;
+    BUILDINGS.forEach(function (b) {
+      cps += b.cps * state.buildings[b.id];
+    });
+    return cps;
+  }
+  function clickPower() {
+    var p = state.clickBase;
+    UPGRADES.forEach(function (u) {
+      if (state.upgrades[u.id]) p += u.add;
+    });
+    return p;
+  }
+
+  // ---- Number formatting ----
+  function fmt(n) {
+    if (n < 1000) {
+      return (Math.floor(n * 10) / 10).toString().replace(/\.0$/, "");
+    }
+    var units = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"];
+    var i = 0;
+    while (n >= 1000 && i < units.length - 1) { n /= 1000; i++; }
+    return (Math.round(n * 100) / 100) + units[i];
+  }
+  function fmtInt(n) {
+    if (n < 1000) return Math.floor(n).toString();
+    return fmt(n);
+  }
+
+  // ---- Persistence ----
+  function save() {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        cookies: state.cookies,
+        totalBaked: state.totalBaked,
+        clickBase: state.clickBase,
+        buildings: state.buildings,
+        upgrades: state.upgrades,
+        t: Date.now()
+      }));
+    } catch (e) { /* ignore */ }
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return;
+      var d = JSON.parse(raw);
+      if (typeof d.cookies === "number") state.cookies = d.cookies;
+      if (typeof d.totalBaked === "number") state.totalBaked = d.totalBaked;
+      if (typeof d.clickBase === "number") state.clickBase = d.clickBase;
+      if (d.buildings) {
+        BUILDINGS.forEach(function (b) {
+          if (typeof d.buildings[b.id] === "number") {
+            state.buildings[b.id] = d.buildings[b.id];
+          }
+        });
+      }
+      if (d.upgrades) {
+        UPGRADES.forEach(function (u) {
+          if (d.upgrades[u.id]) state.upgrades[u.id] = true;
+        });
+      }
+    } catch (e) { /* ignore corrupt save */ }
+  }
+
+  // ---- WebAudio click sound ----
+  var audioCtx = null;
+  function blip() {
+    try {
+      if (!audioCtx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audioCtx = new AC();
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(420 + Math.random() * 120, audioCtx.currentTime);
+      o.frequency.exponentialRampToValueAtTime(180, audioCtx.currentTime + 0.08);
+      g.gain.setValueAtTime(0.12, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.12);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start();
+      o.stop(audioCtx.currentTime + 0.13);
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---- DOM build ----
+  var elCount = document.getElementById("count");
+  var elCps = document.getElementById("cps");
+  var elCookie = document.getElementById("cookie");
+  var elCookieArea = document.getElementById("cookieArea");
+  var elBuildings = document.getElementById("buildings");
+  var elUpgrades = document.getElementById("upgrades");
+
+  var buildingEls = {};
+  BUILDINGS.forEach(function (b) {
+    var btn = document.createElement("button");
+    btn.className = "item";
+    btn.innerHTML =
+      '<span class="emoji">' + b.emoji + '</span>' +
+      '<span class="info">' +
+        '<span class="name">' + b.name + '</span><br>' +
+        '<span class="sub">' + fmt(b.cps) + ' /sec each</span>' +
+      '</span>' +
+      '<span class="right">' +
+        '<span class="cost" data-cost></span><br>' +
+        '<span class="owned" data-owned>0</span>' +
+      '</span>';
+    btn.addEventListener("click", function () { buyBuilding(b); });
+    elBuildings.appendChild(btn);
+    buildingEls[b.id] = {
+      btn: btn,
+      cost: btn.querySelector("[data-cost]"),
+      owned: btn.querySelector("[data-owned]")
+    };
+  });
+
+  var upgradeEls = {};
+  UPGRADES.forEach(function (u) {
+    var btn = document.createElement("button");
+    btn.className = "item";
+    btn.innerHTML =
+      '<span class="emoji">' + u.emoji + '</span>' +
+      '<span class="info">' +
+        '<span class="name">' + u.name + '</span><br>' +
+        '<span class="sub">+' + u.add + ' per click</span>' +
+      '</span>' +
+      '<span class="right">' +
+        '<span class="cost" data-cost></span>' +
+      '</span>';
+    btn.addEventListener("click", function () { buyUpgrade(u); });
+    elUpgrades.appendChild(btn);
+    upgradeEls[u.id] = { btn: btn, cost: btn.querySelector("[data-cost]") };
+  });
+
+  // ---- Actions ----
+  function buyBuilding(b) {
+    var cost = buildingCost(b);
+    if (state.cookies < cost) return;
+    state.cookies -= cost;
+    state.buildings[b.id] += 1;
+    blip();
+    render();
+    save();
+  }
+
+  function buyUpgrade(u) {
+    if (state.upgrades[u.id]) return;
+    if (state.cookies < u.cost) return;
+    state.cookies -= u.cost;
+    state.upgrades[u.id] = true;
+    blip();
+    render();
+    save();
+  }
+
+  function bake(clientX, clientY) {
+    var gain = clickPower();
+    state.cookies += gain;
+    state.totalBaked += gain;
+    elCookie.classList.add("pop");
+    setTimeout(function () { elCookie.classList.remove("pop"); }, 60);
+    spawnFloat("+" + fmt(gain), clientX, clientY);
+    blip();
+    renderStats();
+  }
+
+  function spawnFloat(text, clientX, clientY) {
+    var f = document.createElement("div");
+    f.className = "float";
+    f.textContent = text;
+    var rect = elCookieArea.getBoundingClientRect();
+    var x, y;
+    if (typeof clientX === "number") {
+      x = clientX - rect.left;
+      y = clientY - rect.top;
+    } else {
+      x = rect.width / 2;
+      y = rect.height / 2;
+    }
+    x += (Math.random() - 0.5) * 30;
+    f.style.left = x + "px";
+    f.style.top = y + "px";
+    f.style.transform = "translate(-50%, -50%)";
+    elCookieArea.appendChild(f);
+    setTimeout(function () {
+      if (f.parentNode) f.parentNode.removeChild(f);
+    }, 900);
+  }
+
+  // Use pointer events; prevent double-fire and default.
+  elCookie.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    bake(e.clientX, e.clientY);
+  });
+  // Fallback for browsers without pointer events
+  if (!window.PointerEvent) {
+    elCookie.addEventListener("click", function (e) {
+      bake(e.clientX, e.clientY);
+    });
+  }
+
+  document.getElementById("reset").addEventListener("click", function () {
+    if (!confirm("Reset all progress? This cannot be undone.")) return;
+    state.cookies = 0;
+    state.totalBaked = 0;
+    state.clickBase = 1;
+    BUILDINGS.forEach(function (b) { state.buildings[b.id] = 0; });
+    state.upgrades = {};
+    try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+    render();
+  });
+
+  // ---- Rendering ----
+  function renderStats() {
+    elCount.textContent = fmtInt(state.cookies) + " cookies";
+    elCps.textContent = fmt(totalCps()) + " / sec · +" + fmt(clickPower()) + " / click";
+  }
+
+  function render() {
+    renderStats();
+    BUILDINGS.forEach(function (b) {
+      var refs = buildingEls[b.id];
+      var cost = buildingCost(b);
+      refs.cost.textContent = fmt(cost);
+      refs.owned.textContent = state.buildings[b.id];
+      var afford = state.cookies >= cost;
+      refs.btn.disabled = !afford;
+      refs.btn.classList.toggle("affordable", afford);
+    });
+    UPGRADES.forEach(function (u) {
+      var refs = upgradeEls[u.id];
+      if (state.upgrades[u.id]) {
+        refs.cost.textContent = "✓ owned";
+        refs.btn.disabled = true;
+        refs.btn.classList.remove("affordable");
+      } else {
+        refs.cost.textContent = fmt(u.cost);
+        var afford = state.cookies >= u.cost;
+        refs.btn.disabled = !afford;
+        refs.btn.classList.toggle("affordable", afford);
+      }
+    });
+  }
+
+  // ---- Game loop ----
+  var lastTick = performance.now();
+  var lastSave = 0;
+  function loop(now) {
+    var dt = (now - lastTick) / 1000;
+    if (dt > 0) {
+      var gain = totalCps() * dt;
+      if (gain > 0) {
+        state.cookies += gain;
+        state.totalBaked += gain;
+      }
+      lastTick = now;
+    }
+    // Refresh button affordability + stats periodically (every frame is fine).
+    render();
+    if (now - lastSave > 5000) {
+      save();
+      lastSave = now;
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ---- Boot ----
+  load();
+  render();
+  save();
+  // Save on background/unload too.
+  window.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") save();
+  });
+  window.addEventListener("pagehide", save);
+  requestAnimationFrame(function (t) { lastTick = t; lastSave = t; requestAnimationFrame(loop); });
+
+})();
+</script>
+</body>
+</html>

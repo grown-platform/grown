@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Cryptogram</title>
+<style>
+  :root {
+    --bg: #11131a;
+    --panel: #1c1f2b;
+    --panel2: #262a3a;
+    --ink: #e9ecf5;
+    --muted: #8b91a7;
+    --accent: #6ea8fe;
+    --good: #4ade80;
+    --bad: #f87171;
+    --hint: #fbbf24;
+    --slot: #2f3447;
+    --sel: #6ea8fe;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    overflow: hidden;
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  #app {
+    display: flex; flex-direction: column;
+    height: 100%; width: 100%;
+    max-width: 560px; margin: 0 auto;
+    padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom) 8px;
+  }
+  header {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 4px 6px;
+  }
+  header h1 {
+    font-size: 20px; margin: 0; letter-spacing: 1px;
+    font-weight: 700;
+  }
+  header h1 span { color: var(--accent); }
+  #status {
+    font-size: 12px; color: var(--muted); text-align: right; line-height: 1.3;
+  }
+  #quoteWrap {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 2px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  #quote {
+    display: flex; flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 2px 0;
+    line-height: 1.1;
+  }
+  .word {
+    display: inline-flex;
+    margin: 4px 7px 4px 0;
+    flex-wrap: nowrap;
+  }
+  .cell {
+    display: inline-flex; flex-direction: column; align-items: center;
+    margin: 0 1px;
+  }
+  .plain {
+    width: 22px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 19px; font-weight: 700;
+    border-bottom: 2px solid var(--slot);
+    border-radius: 3px 3px 0 0;
+    background: var(--panel);
+    color: var(--ink);
+    transition: background .1s, border-color .1s, color .1s;
+  }
+  .cell.punct .plain {
+    border-bottom: none; background: transparent; width: auto; min-width: 8px;
+    color: var(--muted); font-weight: 600;
+  }
+  .cell.selected .plain { border-bottom-color: var(--sel); background: #2b3550; }
+  .cell.samecipher .plain { border-bottom-color: var(--accent); }
+  .cell.wrong .plain { color: var(--bad); }
+  .cell.hinted .plain { color: var(--hint); }
+  .cell.locked .plain { color: var(--good); }
+  .cipher {
+    font-size: 11px; color: var(--muted); margin-top: 2px;
+    font-weight: 600; letter-spacing: .5px;
+  }
+  .cell.punct .cipher { visibility: hidden; height: 11px; }
+  #controls {
+    flex: 0 0 auto;
+    display: flex; gap: 6px; padding: 6px 2px;
+    flex-wrap: wrap; justify-content: center;
+  }
+  button.ctl {
+    flex: 1 1 auto; min-width: 0;
+    padding: 10px 4px; font-size: 13px; font-weight: 600;
+    border: none; border-radius: 8px;
+    background: var(--panel2); color: var(--ink);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button.ctl:active { background: #333a52; }
+  button.ctl.primary { background: var(--accent); color: #0b1020; }
+  button.ctl.primary:active { background: #5a93e8; }
+  #keypad {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 4px;
+    padding: 4px 2px 8px;
+  }
+  .key {
+    padding: 10px 0; font-size: 16px; font-weight: 700;
+    border: none; border-radius: 7px;
+    background: var(--panel2); color: var(--ink);
+    cursor: pointer; touch-action: manipulation;
+    text-align: center;
+  }
+  .key.del { grid-column: span 9; background: #39304a; font-size: 14px; padding: 9px 0; }
+  .key.used { color: var(--muted); background: #20232f; }
+  .key:active { background: #3a425c; }
+  #win {
+    position: fixed; inset: 0;
+    background: rgba(10,12,18,.92);
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; padding: 24px; z-index: 10;
+  }
+  #win.show { display: flex; }
+  #win h2 { font-size: 28px; margin: 0 0 10px; color: var(--good); }
+  #win p { color: var(--ink); font-size: 15px; max-width: 320px; line-height: 1.4; margin: 0 0 6px; }
+  #win .author { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  #win button {
+    padding: 13px 26px; font-size: 16px; font-weight: 700;
+    border: none; border-radius: 10px; background: var(--accent); color: #0b1020;
+    cursor: pointer;
+  }
+  @media (max-width: 359px) {
+    .plain { width: 18px; height: 26px; font-size: 16px; }
+    header h1 { font-size: 17px; }
+    .key { font-size: 14px; padding: 8px 0; }
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/cryptogram.svg">
+    <link rel="manifest" href="/games/cryptogram.webmanifest">
+    <meta name="theme-color" content="#475569">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Cryptogram">
+    <link rel="apple-touch-icon" href="/games/icons/cryptogram.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#475569;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>CRYPTO<span>GRAM</span></h1>
+    <div id="status">Tap a slot, then a letter</div>
+  </header>
+  <div id="quoteWrap"><div id="quote"></div></div>
+  <div id="controls">
+    <button class="ctl" id="btnHint">Hint</button>
+    <button class="ctl" id="btnCheck">Check</button>
+    <button class="ctl" id="btnReveal">Reveal</button>
+    <button class="ctl primary" id="btnNew">New</button>
+  </div>
+  <div id="keypad"></div>
+</div>
+<div id="win">
+  <h2>Solved!</h2>
+  <p id="winQuote"></p>
+  <div class="author" id="winAuthor"></div>
+  <button id="btnWinNew">New Puzzle</button>
+</div>
+<script>
+(function(){
+  "use strict";
+
+  var QUOTES = [
+    {t:"THE ONLY WAY TO DO GREAT WORK IS TO LOVE WHAT YOU DO", a:"Steve Jobs"},
+    {t:"IN THE MIDDLE OF DIFFICULTY LIES OPPORTUNITY", a:"Albert Einstein"},
+    {t:"LIFE IS WHAT HAPPENS WHEN YOU ARE BUSY MAKING OTHER PLANS", a:"John Lennon"},
+    {t:"THE FUTURE BELONGS TO THOSE WHO BELIEVE IN THEIR DREAMS", a:"Eleanor Roosevelt"},
+    {t:"IT ALWAYS SEEMS IMPOSSIBLE UNTIL IT IS DONE", a:"Nelson Mandela"},
+    {t:"BE THE CHANGE THAT YOU WISH TO SEE IN THE WORLD", a:"Mahatma Gandhi"},
+    {t:"THE JOURNEY OF A THOUSAND MILES BEGINS WITH ONE STEP", a:"Lao Tzu"},
+    {t:"WHATEVER YOU ARE BE A GOOD ONE", a:"Abraham Lincoln"},
+    {t:"HAPPINESS DEPENDS UPON OURSELVES", a:"Aristotle"},
+    {t:"DREAM BIG AND DARE TO FAIL", a:"Norman Vaughan"},
+    {t:"WHAT WE THINK WE BECOME", a:"Buddha"},
+    {t:"STAY HUNGRY STAY FOOLISH", a:"Stewart Brand"},
+    {t:"NOT ALL THOSE WHO WANDER ARE LOST", a:"J.R.R. Tolkien"},
+    {t:"THE BEST WAY OUT IS ALWAYS THROUGH", a:"Robert Frost"},
+    {t:"SIMPLICITY IS THE ULTIMATE SOPHISTICATION", a:"Leonardo da Vinci"},
+    {t:"KNOWING YOURSELF IS THE BEGINNING OF ALL WISDOM", a:"Aristotle"},
+    {t:"A JOURNEY IS BEST MEASURED IN FRIENDS RATHER THAN MILES", a:"Tim Cahill"},
+    {t:"COURAGE IS GRACE UNDER PRESSURE", a:"Ernest Hemingway"},
+    {t:"TURN YOUR WOUNDS INTO WISDOM", a:"Oprah Winfrey"},
+    {t:"WELL DONE IS BETTER THAN WELL SAID", a:"Benjamin Franklin"}
+  ];
+
+  var ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+  // ---- state ----
+  var state = null; // {plain, author, enc(cipher str), map(plain->cipher), inv(cipher->plain), guess(cipher->plainGuess), hinted(set cipher), cells:[]}
+  var selectedCipher = null; // currently selected cipher letter
+
+  var quoteEl = document.getElementById("quote");
+  var statusEl = document.getElementById("status");
+  var keypadEl = document.getElementById("keypad");
+  var winEl = document.getElementById("win");
+
+  // ---- audio ----
+  var actx = null;
+  function beep(freq, dur, type, vol){
+    try {
+      if(!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if(actx.state === "suspended") actx.resume();
+      var o = actx.createOscillator();
+      var g = actx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = vol == null ? 0.06 : vol;
+      o.connect(g); g.connect(actx.destination);
+      var now = actx.currentTime;
+      o.start(now);
+      g.gain.setValueAtTime(g.gain.value, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.stop(now + dur + 0.02);
+    } catch(e){}
+  }
+  function sndTap(){ beep(440, 0.05, "triangle", 0.05); }
+  function sndFill(){ beep(620, 0.06, "sine", 0.05); }
+  function sndHint(){ beep(880, 0.12, "sine", 0.06); }
+  function sndBad(){ beep(180, 0.18, "sawtooth", 0.05); }
+  function sndWin(){
+    [523,659,784,1047].forEach(function(f,i){
+      setTimeout(function(){ beep(f, 0.25, "sine", 0.07); }, i*120);
+    });
+  }
+
+  // ---- cipher generation: derangement (no fixed points) ----
+  function buildCipher(){
+    // generate a permutation of ALPHA where perm[i] != ALPHA[i] for all i
+    var perm;
+    do {
+      perm = ALPHA.slice();
+      for(var i = perm.length - 1; i > 0; i--){
+        var j = Math.floor(Math.random() * (i + 1));
+        var tmp = perm[i]; perm[i] = perm[j]; perm[j] = tmp;
+      }
+    } while(!isDerangement(perm));
+    // map[plainLetter] = cipherLetter
+    var map = {}, inv = {};
+    for(var k = 0; k < 26; k++){
+      map[ALPHA[k]] = perm[k];
+      inv[perm[k]] = ALPHA[k];
+    }
+    return {map:map, inv:inv};
+  }
+  function isDerangement(perm){
+    for(var i = 0; i < perm.length; i++){
+      if(perm[i] === ALPHA[i]) return false;
+    }
+    return true;
+  }
+
+  // ---- new puzzle ----
+  function newPuzzle(){
+    var q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+    var cipher = buildCipher();
+    var plain = q.t.toUpperCase();
+    // build encrypted string
+    var enc = "";
+    for(var i = 0; i < plain.length; i++){
+      var ch = plain[i];
+      enc += (cipher.map[ch] !== undefined) ? cipher.map[ch] : ch;
+    }
+    state = {
+      plain: plain,
+      author: q.a,
+      enc: enc,
+      map: cipher.map,
+      inv: cipher.inv,      // inv[cipher] = correct plaintext
+      guess: {},            // guess[cipher] = current plaintext guess
+      hinted: {},           // hinted[cipher] = true
+      cells: []
+    };
+    selectedCipher = null;
+    render();
+    setStatus("Tap a slot, then a letter");
+  }
+
+  // ---- render ----
+  function render(){
+    quoteEl.innerHTML = "";
+    state.cells = [];
+    // split into words on spaces, keep words together for wrapping
+    var words = [];
+    var cur = [];
+    for(var i = 0; i < state.enc.length; i++){
+      var ch = state.enc[i];
+      if(ch === " "){
+        words.push(cur); cur = [];
+      } else {
+        cur.push({ch:ch, idx:i});
+      }
+    }
+    words.push(cur);
+
+    words.forEach(function(word){
+      var wEl = document.createElement("div");
+      wEl.className = "word";
+      word.forEach(function(c){
+        var isLetter = /[A-Z]/.test(c.ch);
+        var cellEl = document.createElement("div");
+        cellEl.className = "cell" + (isLetter ? "" : " punct");
+
+        var plainEl = document.createElement("div");
+        plainEl.className = "plain";
+        var cipherEl = document.createElement("div");
+        cipherEl.className = "cipher";
+
+        if(isLetter){
+          cipherEl.textContent = c.ch;
+          var g = state.guess[c.ch];
+          plainEl.textContent = g || "";
+          (function(cipherLetter, cEl){
+            cEl.addEventListener("click", function(){ selectCipher(cipherLetter); });
+          })(c.ch, cellEl);
+        } else {
+          plainEl.textContent = c.ch;
+          cipherEl.textContent = c.ch;
+        }
+        cellEl.appendChild(plainEl);
+        cellEl.appendChild(cipherEl);
+        wEl.appendChild(cellEl);
+
+        state.cells.push({ch:c.ch, isLetter:isLetter, el:cellEl, plainEl:plainEl});
+      });
+      quoteEl.appendChild(wEl);
+    });
+
+    buildKeypad();
+    refreshCells();
+  }
+
+  function buildKeypad(){
+    keypadEl.innerHTML = "";
+    ALPHA.forEach(function(L){
+      var b = document.createElement("button");
+      b.className = "key";
+      b.textContent = L;
+      b.setAttribute("data-letter", L);
+      b.addEventListener("click", function(){ enterGuess(L); });
+      keypadEl.appendChild(b);
+    });
+    var del = document.createElement("button");
+    del.className = "key del";
+    del.textContent = "⌫  Clear letter";
+    del.addEventListener("click", function(){ enterGuess(null); });
+    keypadEl.appendChild(del);
+  }
+
+  // ---- selection ----
+  function selectCipher(cipherLetter){
+    selectedCipher = cipherLetter;
+    sndTap();
+    refreshCells();
+    var g = state.guess[cipherLetter];
+    setStatus("Selected " + cipherLetter + (g ? (" = " + g) : "") + " — pick a letter");
+  }
+
+  // ---- enter a guess for selected cipher letter ----
+  function enterGuess(plainGuess){
+    if(!selectedCipher){
+      setStatus("Tap a cipher slot first");
+      sndBad();
+      return;
+    }
+    var cipher = selectedCipher;
+
+    if(plainGuess === null){
+      // clear this cipher's guess
+      delete state.guess[cipher];
+      delete state.hinted[cipher];
+      sndTap();
+      refreshCells();
+      checkWin();
+      return;
+    }
+
+    // Remove this guess letter from any OTHER cipher that currently uses it (conflict clear)
+    for(var c in state.guess){
+      if(state.guess.hasOwnProperty(c) && c !== cipher && state.guess[c] === plainGuess){
+        delete state.guess[c];
+        delete state.hinted[c];
+      }
+    }
+    state.guess[cipher] = plainGuess;
+    delete state.hinted[cipher]; // user override clears hint flag (still may be correct)
+    sndFill();
+    refreshCells();
+    checkWin();
+  }
+
+  // ---- refresh display of all cells based on guesses/selection ----
+  function refreshCells(){
+    // clear "wrong" flags on refresh (Check re-applies)
+    state.cells.forEach(function(cell){
+      if(!cell.isLetter) return;
+      var c = cell.ch;
+      var g = state.guess[c];
+      cell.plainEl.textContent = g || "";
+      cell.el.classList.remove("selected","samecipher","hinted","locked");
+      cell.el.classList.remove("wrong"); // wrong only shown right after Check
+      if(state.hinted[c]) cell.el.classList.add("hinted");
+      if(selectedCipher){
+        if(c === selectedCipher) cell.el.classList.add("selected","samecipher");
+      }
+    });
+    refreshKeypadUsed();
+  }
+
+  function refreshKeypadUsed(){
+    var used = {};
+    for(var c in state.guess){
+      if(state.guess.hasOwnProperty(c)) used[state.guess[c]] = true;
+    }
+    var keys = keypadEl.querySelectorAll(".key[data-letter]");
+    for(var i = 0; i < keys.length; i++){
+      var L = keys[i].getAttribute("data-letter");
+      if(used[L]) keys[i].classList.add("used");
+      else keys[i].classList.remove("used");
+    }
+  }
+
+  // ---- Check: flag wrong letters ----
+  function doCheck(){
+    var anyWrong = false, anyFilled = false;
+    state.cells.forEach(function(cell){
+      if(!cell.isLetter) return;
+      var c = cell.ch;
+      var g = state.guess[c];
+      cell.el.classList.remove("wrong");
+      if(g){
+        anyFilled = true;
+        if(g !== state.inv[c]){
+          cell.el.classList.add("wrong");
+          anyWrong = true;
+        }
+      }
+    });
+    if(!anyFilled){
+      setStatus("Nothing to check yet");
+    } else if(anyWrong){
+      setStatus("Red letters are wrong");
+      sndBad();
+    } else {
+      setStatus("All filled letters are correct!");
+      sndFill();
+    }
+  }
+
+  // ---- Hint: reveal one correct letter ----
+  function doHint(){
+    // collect cipher letters used in the puzzle that are not yet correctly guessed
+    var unsolved = [];
+    var seen = {};
+    for(var i = 0; i < state.enc.length; i++){
+      var ch = state.enc[i];
+      if(/[A-Z]/.test(ch) && !seen[ch]){
+        seen[ch] = true;
+        if(state.guess[ch] !== state.inv[ch]){
+          unsolved.push(ch);
+        }
+      }
+    }
+    if(unsolved.length === 0){
+      setStatus("No hints needed — all correct!");
+      return;
+    }
+    // prefer the selected cipher if it's unsolved, else random
+    var pick;
+    if(selectedCipher && unsolved.indexOf(selectedCipher) !== -1){
+      pick = selectedCipher;
+    } else {
+      pick = unsolved[Math.floor(Math.random() * unsolved.length)];
+    }
+    var correct = state.inv[pick];
+    // clear any other cipher currently (wrongly) using that letter
+    for(var c in state.guess){
+      if(state.guess.hasOwnProperty(c) && c !== pick && state.guess[c] === correct){
+        delete state.guess[c];
+        delete state.hinted[c];
+      }
+    }
+    state.guess[pick] = correct;
+    state.hinted[pick] = true;
+    selectedCipher = pick;
+    sndHint();
+    refreshCells();
+    setStatus("Hint: " + pick + " = " + correct);
+    checkWin();
+  }
+
+  // ---- Reveal whole solution ----
+  function doReveal(){
+    for(var i = 0; i < state.enc.length; i++){
+      var ch = state.enc[i];
+      if(/[A-Z]/.test(ch)){
+        state.guess[ch] = state.inv[ch];
+      }
+    }
+    selectedCipher = null;
+    refreshCells();
+    state.cells.forEach(function(cell){
+      if(cell.isLetter) cell.el.classList.add("locked");
+    });
+    setStatus("Revealed");
+  }
+
+  // ---- win check ----
+  function decrypt(){
+    var out = "";
+    for(var i = 0; i < state.enc.length; i++){
+      var ch = state.enc[i];
+      if(/[A-Z]/.test(ch)){
+        out += state.guess[ch] || "_";
+      } else {
+        out += ch;
+      }
+    }
+    return out;
+  }
+  function checkWin(){
+    if(decrypt() === state.plain){
+      onWin();
+      return true;
+    }
+    return false;
+  }
+  function onWin(){
+    state.cells.forEach(function(cell){
+      if(cell.isLetter) cell.el.classList.add("locked");
+    });
+    document.getElementById("winQuote").textContent = "“" + state.plain + "”";
+    document.getElementById("winAuthor").textContent = "— " + state.author;
+    winEl.classList.add("show");
+    sndWin();
+    setStatus("Solved!");
+  }
+
+  // ---- status ----
+  function setStatus(msg){ statusEl.textContent = msg; }
+
+  // ---- buttons ----
+  document.getElementById("btnHint").addEventListener("click", doHint);
+  document.getElementById("btnCheck").addEventListener("click", doCheck);
+  document.getElementById("btnReveal").addEventListener("click", doReveal);
+  document.getElementById("btnNew").addEventListener("click", function(){
+    winEl.classList.remove("show"); newPuzzle();
+  });
+  document.getElementById("btnWinNew").addEventListener("click", function(){
+    winEl.classList.remove("show"); newPuzzle();
+  });
+
+  // ---- physical keyboard (desktop) ----
+  document.addEventListener("keydown", function(e){
+    if(winEl.classList.contains("show")) return;
+    var k = e.key;
+    if(/^[a-zA-Z]$/.test(k)){
+      enterGuess(k.toUpperCase());
+      e.preventDefault();
+    } else if(k === "Backspace" || k === "Delete"){
+      enterGuess(null);
+      e.preventDefault();
+    } else if(k === "ArrowRight" || k === "ArrowLeft" || k === "Tab"){
+      cycleSelection(k === "ArrowLeft" ? -1 : 1);
+      e.preventDefault();
+    }
+  });
+  function cycleSelection(dir){
+    // build ordered unique cipher letters as they appear
+    var order = [];
+    var seen = {};
+    for(var i = 0; i < state.enc.length; i++){
+      var ch = state.enc[i];
+      if(/[A-Z]/.test(ch) && !seen[ch]){ seen[ch] = true; order.push(ch); }
+    }
+    if(order.length === 0) return;
+    var idx = selectedCipher ? order.indexOf(selectedCipher) : -1;
+    idx = (idx + dir + order.length) % order.length;
+    selectCipher(order[idx]);
+  }
+
+  // prevent gesture zoom
+  document.addEventListener("gesturestart", function(e){ e.preventDefault(); });
+  document.addEventListener("dblclick", function(e){ e.preventDefault(); }, {passive:false});
+
+  // init
+  newPuzzle();
+})();
+</script>
+</body>
+</html>

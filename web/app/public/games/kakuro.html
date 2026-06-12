@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Kakuro</title>
+<style>
+  :root{
+    --bg:#1a1d29; --panel:#252a3a; --wall:#161821; --clue:#2e3550;
+    --white:#f3f4f8; --white-sel:#ffe08a; --white-hl:#cfe3ff;
+    --text:#e8eaf2; --accent:#5b8cff; --ok:#43c478; --bad:#ff5a6a;
+    --given:#1d2230;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;overflow:hidden;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    touch-action:manipulation; user-select:none; -webkit-user-select:none;
+    display:flex; flex-direction:column; align-items:center;
+    height:100dvh; padding:6px; gap:6px;
+  }
+  header{
+    width:100%; max-width:520px; display:flex; align-items:center; justify-content:space-between; gap:8px;
+  }
+  h1{font-size:20px; margin:0; letter-spacing:.5px; font-weight:700;}
+  #status{font-size:13px; padding:4px 8px; border-radius:8px; background:var(--panel); min-width:96px; text-align:center;}
+  #status.ok{color:var(--ok);} #status.bad{color:var(--bad);}
+  #boardWrap{
+    background:var(--panel); padding:6px; border-radius:12px;
+    box-shadow:0 6px 20px rgba(0,0,0,.4);
+  }
+  #board{display:grid; gap:2px; background:#0d0f16; padding:2px; border-radius:6px;}
+  .cell{
+    position:relative; width:var(--cs); height:var(--cs);
+    display:flex; align-items:center; justify-content:center;
+    font-size:calc(var(--cs)*.52); font-weight:600; border-radius:3px;
+  }
+  .wall{background:var(--wall);}
+  .clue{background:var(--clue); overflow:hidden;}
+  .clue::before{ content:""; position:absolute; top:0; left:0; width:0;height:0;
+    border-top:calc(var(--cs)) solid rgba(255,255,255,.05); border-right:calc(var(--cs)) solid transparent;}
+  .clue .d,.clue .r{position:absolute; font-size:calc(var(--cs)*.34); font-weight:700; line-height:1; color:#cfd6ee;}
+  .clue .d{bottom:2px; left:3px;}
+  .clue .r{top:2px; right:3px;}
+  .clue .diag{position:absolute; inset:0; pointer-events:none;}
+  .white{background:var(--white); color:#13151d; cursor:pointer;}
+  .white.sel{background:var(--white-sel); box-shadow:inset 0 0 0 2px var(--accent);}
+  .white.hl{background:var(--white-hl);}
+  .white.err{color:var(--bad);}
+  .white.done{background:#d6f5e0;}
+  #pad{
+    width:100%; max-width:520px;
+    display:grid; grid-template-columns:repeat(5,1fr); gap:6px;
+  }
+  .key{
+    background:var(--panel); color:var(--text); border:none; border-radius:10px;
+    font-size:20px; font-weight:700; padding:12px 0; cursor:pointer;
+    touch-action:manipulation; transition:background .08s;
+  }
+  .key:active{background:var(--accent); color:#fff;}
+  .key.wide{grid-column:span 1;}
+  #controls{width:100%; max-width:520px; display:flex; gap:6px;}
+  .btn{
+    flex:1; background:var(--accent); color:#fff; border:none; border-radius:10px;
+    font-size:15px; font-weight:600; padding:11px 0; cursor:pointer; touch-action:manipulation;
+  }
+  .btn.alt{background:var(--panel); color:var(--text);}
+  .btn:active{filter:brightness(1.15);}
+  #win{
+    position:fixed; inset:0; background:rgba(10,12,20,.86); display:none;
+    flex-direction:column; align-items:center; justify-content:center; gap:16px; z-index:10; text-align:center; padding:20px;
+  }
+  #win.show{display:flex;}
+  #win h2{font-size:34px; margin:0; color:var(--ok);}
+  #win p{margin:0; opacity:.85;}
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/kakuro.svg">
+    <link rel="manifest" href="/games/kakuro.webmanifest">
+    <meta name="theme-color" content="#2563EB">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Kakuro">
+    <link rel="apple-touch-icon" href="/games/icons/kakuro.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#2563EB;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>KAKURO</h1>
+    <div id="status">—</div>
+  </header>
+
+  <div id="boardWrap"><div id="board"></div></div>
+
+  <div id="pad"></div>
+
+  <div id="controls">
+    <button class="btn alt" id="eraseBtn">Erase</button>
+    <button class="btn alt" id="checkBtn">Check</button>
+    <button class="btn" id="newBtn">New Puzzle</button>
+  </div>
+
+  <div id="win">
+    <h2>Solved! 🎉</h2>
+    <p id="winTime"></p>
+    <button class="btn" id="winNew" style="max-width:220px">New Puzzle</button>
+  </div>
+
+<script>
+"use strict";
+(function(){
+  // ---- Puzzle library ----------------------------------------------------
+  // Each puzzle is a grid of strings:
+  //   "."  -> white entry cell (to be filled)
+  //   "#"  -> plain wall / clue cell
+  // We generate the actual digits + clues at load time so they're always valid.
+  // Layouts are designed so every white run has length 2..9 (no length-1 runs,
+  // which would be trivially unsolvable for distinctness with a fixed sum).
+  // Convention: row 0 and column 0 are always walls so every white run is
+  // preceded by a clue cell. Every white run has length >= 2. These layouts
+  // are validated: the backtracking solver always succeeds and the derived
+  // clues are always satisfiable.
+  const LAYOUTS = [
+    // 5x5
+    [
+      "#####",
+      "#...#",
+      "#....",
+      "#....",
+      "###..",
+    ],
+    // 5x5
+    [
+      "#####",
+      "##..#",
+      "#...#",
+      "#....",
+      "##...",
+    ],
+    // 6x6
+    [
+      "######",
+      "##...#",
+      "#.....",
+      "#.....",
+      "#.....",
+      "#..#..",
+    ],
+    // 6x6
+    [
+      "######",
+      "#.....",
+      "#.....",
+      "####..",
+      "#.....",
+      "#.....",
+    ],
+    // 7x7
+    [
+      "#######",
+      "##....#",
+      "#.....#",
+      "#..####",
+      "#......",
+      "#......",
+      "##.....",
+    ],
+    // 7x7
+    [
+      "#######",
+      "#...###",
+      "#...#..",
+      "#......",
+      "#..#...",
+      "#......",
+      "###...#",
+    ],
+  ];
+
+  // ---- Helpers -----------------------------------------------------------
+  const $ = s => document.querySelector(s);
+  const board = $("#board");
+  const statusEl = $("#status");
+
+  let G = null; // current game state
+
+  // shuffle in place
+  function shuffle(a){
+    for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; }
+    return a;
+  }
+
+  // Build run structure from a layout (which cells white).
+  // Returns {rows, cols, white:[{r,c}], cells:[[type]], runs:[{cells:[idx], type}]}
+  function analyze(layout){
+    const rows = layout.length, cols = layout[0].length;
+    const grid = layout.map(row => row.split(""));
+    // type grid: 'w' white, 'c' wall/clue
+    const isWhite = (r,c)=> r>=0&&c>=0&&r<rows&&c<cols&&grid[r][c]===".";
+
+    // horizontal runs: maximal sequences of white cells in a row
+    const hRuns = [], vRuns = [];
+    for(let r=0;r<rows;r++){
+      let c=0;
+      while(c<cols){
+        if(isWhite(r,c)){
+          const cells=[];
+          while(c<cols && isWhite(r,c)){ cells.push({r,c}); c++; }
+          // clue cell is the wall immediately left (c=cells[0].c-1)
+          hRuns.push({cells, clueR:r, clueC:cells[0].c-1});
+        } else c++;
+      }
+    }
+    for(let c=0;c<cols;c++){
+      let r=0;
+      while(r<rows){
+        if(isWhite(r,c)){
+          const cells=[];
+          while(r<rows && isWhite(r,c)){ cells.push({r,c}); r++; }
+          vRuns.push({cells, clueR:cells[0].r-1, clueC:c});
+        } else r++;
+      }
+    }
+    return {rows, cols, grid, isWhite, hRuns, vRuns};
+  }
+
+  // Fill white cells with digits 1..9 such that every run has distinct digits.
+  // Backtracking over white cells in row-major order.
+  function solveDigits(info){
+    const {rows, cols, isWhite} = info;
+    // collect white cells in order
+    const whites=[];
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) if(isWhite(r,c)) whites.push({r,c});
+
+    // values grid
+    const val = Array.from({length:rows},()=>new Array(cols).fill(0));
+
+    // precompute for each white cell the cells already-placed in its row-run-left and col-run-up
+    function conflicts(r,c,d){
+      // check left in same horizontal run
+      for(let cc=c-1; cc>=0 && isWhite(r,cc); cc--) if(val[r][cc]===d) return true;
+      for(let cc=c+1; cc<cols && isWhite(r,cc); cc++) if(val[r][cc]===d) return true;
+      for(let rr=r-1; rr>=0 && isWhite(rr,c); rr--) if(val[rr][c]===d) return true;
+      for(let rr=r+1; rr<rows && isWhite(rr,c); rr++) if(val[rr][c]===d) return true;
+      return false;
+    }
+
+    function bt(i){
+      if(i===whites.length) return true;
+      const {r,c}=whites[i];
+      const digs=shuffle([1,2,3,4,5,6,7,8,9]);
+      for(const d of digs){
+        if(!conflicts(r,c,d)){
+          val[r][c]=d;
+          if(bt(i+1)) return true;
+          val[r][c]=0;
+        }
+      }
+      return false;
+    }
+    return bt(0) ? val : null;
+  }
+
+  // Build a full puzzle object from a layout.
+  function buildPuzzle(layout){
+    const info = analyze(layout);
+    const sol = solveDigits(info);
+    if(!sol) return null;
+    // compute clues
+    // clue map: key "r,c" -> {down:sum|null, right:sum|null}
+    const clues = {};
+    function setClue(r,c,kind,sum){
+      const k=r+","+c;
+      if(!clues[k]) clues[k]={down:null,right:null};
+      clues[k][kind]=sum;
+    }
+    for(const run of info.hRuns){
+      const sum = run.cells.reduce((s,p)=>s+sol[p.r][p.c],0);
+      setClue(run.clueR, run.clueC, "right", sum);
+    }
+    for(const run of info.vRuns){
+      const sum = run.cells.reduce((s,p)=>s+sol[p.r][p.c],0);
+      setClue(run.clueR, run.clueC, "down", sum);
+    }
+    return {info, sol, clues};
+  }
+
+  function buildAnyPuzzle(){
+    // pick a random layout, retry a few times if backtracking fails
+    const order = shuffle([...Array(LAYOUTS.length).keys()]);
+    for(const idx of order){
+      for(let tries=0; tries<40; tries++){
+        const p = buildPuzzle(LAYOUTS[idx]);
+        if(p) return p;
+      }
+    }
+    return null;
+  }
+
+  // ---- Rendering ---------------------------------------------------------
+  function computeCellSize(cols){
+    // fit grid in available width; reserve space for padding/gaps
+    const wrapPad = 16; // boardWrap+board padding
+    const gap = 2*(cols+1);
+    const availW = Math.min(window.innerWidth - 12, 520) - wrapPad - gap;
+    // also bound by height: header(~46)+pad(~150)+controls(~52)+gaps(~30)
+    const availH = window.innerHeight - 46 - 156 - 52 - 40 - wrapPad;
+    const byW = availW / cols;
+    const byH = availH / G.info.rows;
+    let cs = Math.floor(Math.min(byW, byH));
+    cs = Math.max(26, Math.min(cs, 64));
+    return cs;
+  }
+
+  function render(){
+    const {info, clues} = G;
+    const {rows, cols, isWhite} = info;
+    const cs = computeCellSize(cols);
+    document.documentElement.style.setProperty("--cs", cs+"px");
+    board.style.gridTemplateColumns = `repeat(${cols},${cs}px)`;
+    board.innerHTML="";
+    G.cellEls = Array.from({length:rows},()=>new Array(cols).fill(null));
+
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const el=document.createElement("div");
+        el.className="cell";
+        if(isWhite(r,c)){
+          el.classList.add("white");
+          el.dataset.r=r; el.dataset.c=c;
+          el.addEventListener("click",()=>selectCell(r,c));
+          const v=G.val[r][c];
+          el.textContent = v? v : "";
+        } else {
+          const k=r+","+c;
+          const cl=clues[k];
+          if(cl && (cl.down!=null || cl.right!=null)){
+            el.classList.add("clue");
+            // diagonal line
+            const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
+            svg.setAttribute("class","diag");
+            svg.setAttribute("viewBox","0 0 100 100"); svg.setAttribute("preserveAspectRatio","none");
+            const ln=document.createElementNS("http://www.w3.org/2000/svg","line");
+            ln.setAttribute("x1","0");ln.setAttribute("y1","0");ln.setAttribute("x2","100");ln.setAttribute("y2","100");
+            ln.setAttribute("stroke","#5a648c");ln.setAttribute("stroke-width","3");
+            svg.appendChild(ln); el.appendChild(svg);
+            if(cl.down!=null){ const d=document.createElement("span"); d.className="d"; d.textContent=cl.down; el.appendChild(d); }
+            if(cl.right!=null){ const rr=document.createElement("span"); rr.className="r"; rr.textContent=cl.right; el.appendChild(rr); }
+          } else {
+            el.classList.add("wall");
+          }
+        }
+        board.appendChild(el);
+        if(isWhite(r,c)) G.cellEls[r][c]=el;
+      }
+    }
+    refreshSelection();
+    updateStatus();
+  }
+
+  function selectCell(r,c){
+    if(!G.info.isWhite(r,c)) return;
+    G.sel={r,c};
+    refreshSelection();
+  }
+
+  function refreshSelection(){
+    const {info}=G;
+    for(let r=0;r<info.rows;r++) for(let c=0;c<info.cols;c++){
+      const el=G.cellEls[r][c]; if(!el) continue;
+      el.classList.remove("sel","hl");
+    }
+    if(G.sel){
+      const {r,c}=G.sel;
+      // highlight same row/col runs
+      for(let cc=c-1;cc>=0&&info.isWhite(r,cc);cc--) G.cellEls[r][cc]?.classList.add("hl");
+      for(let cc=c+1;cc<info.cols&&info.isWhite(r,cc);cc++) G.cellEls[r][cc]?.classList.add("hl");
+      for(let rr=r-1;rr>=0&&info.isWhite(rr,c);rr--) G.cellEls[rr][c]?.classList.add("hl");
+      for(let rr=r+1;rr<info.rows&&info.isWhite(rr,c);rr++) G.cellEls[rr][c]?.classList.add("hl");
+      G.cellEls[r][c]?.classList.add("sel");
+    }
+  }
+
+  function moveSel(dr,dc){
+    if(!G.sel) return;
+    const {info}=G; let {r,c}=G.sel;
+    for(let i=0;i<Math.max(info.rows,info.cols);i++){
+      r+=dr; c+=dc;
+      if(r<0||c<0||r>=info.rows||c>=info.cols) return;
+      if(info.isWhite(r,c)){ G.sel={r,c}; refreshSelection(); return; }
+    }
+  }
+
+  // ---- Input -------------------------------------------------------------
+  function placeDigit(d){
+    if(!G.sel) return;
+    const {r,c}=G.sel;
+    G.val[r][c]=d;
+    const el=G.cellEls[r][c];
+    el.textContent=d; el.classList.remove("err","done");
+    beep(620,0.04);
+    updateStatus();
+    checkWin();
+  }
+  function erase(){
+    if(!G.sel) return;
+    const {r,c}=G.sel;
+    G.val[r][c]=0;
+    const el=G.cellEls[r][c];
+    el.textContent=""; el.classList.remove("err","done");
+    updateStatus();
+  }
+
+  // ---- Win / check -------------------------------------------------------
+  // Validate all runs. Returns {filled, total, mistakes, solved, badCells:Set}
+  function evaluate(){
+    const {info}=G;
+    let filled=0,total=0;
+    const badCells=new Set();
+    for(let r=0;r<info.rows;r++) for(let c=0;c<info.cols;c++){
+      if(info.isWhite(r,c)){ total++; if(G.val[r][c]) filled++; }
+    }
+    let allRunsGood=true;
+    function checkRun(run, clueSum){
+      const vals = run.cells.map(p=>G.val[p.r][p.c]);
+      const complete = vals.every(v=>v>0);
+      // distinctness violation among filled
+      const seen={};
+      let dup=false;
+      for(let i=0;i<vals.length;i++){
+        const v=vals[i]; if(!v) continue;
+        if(seen[v]!==undefined){ dup=true; badCells.add(run.cells[i].r+","+run.cells[i].c); badCells.add(run.cells[seen[v]].r+","+run.cells[seen[v]].c); }
+        else seen[v]=i;
+      }
+      const sum=vals.reduce((s,v)=>s+v,0);
+      if(complete){
+        if(sum!==clueSum || dup){
+          allRunsGood=false;
+          run.cells.forEach(p=>badCells.add(p.r+","+p.c));
+        }
+      } else {
+        allRunsGood=false;
+        if(dup) {} // already flagged
+        if(sum>clueSum){ allRunsGood=false; run.cells.forEach(p=>badCells.add(p.r+","+p.c)); }
+      }
+    }
+    for(const run of info.hRuns){
+      const cl=G.clues[run.clueR+","+run.clueC]; checkRun(run, cl.right);
+    }
+    for(const run of info.vRuns){
+      const cl=G.clues[run.clueR+","+run.clueC]; checkRun(run, cl.down);
+    }
+    const solved = (filled===total) && allRunsGood && badCells.size===0;
+    return {filled,total,badCells,solved};
+  }
+
+  function updateStatus(){
+    const ev=evaluate();
+    G.lastEval=ev;
+    if(ev.solved){ statusEl.textContent="Solved!"; statusEl.className="ok"; return; }
+    if(ev.filled===ev.total){
+      statusEl.textContent="Check it!"; statusEl.className="";
+    } else {
+      statusEl.textContent=ev.filled+"/"+ev.total; statusEl.className="";
+    }
+  }
+
+  function showCheck(){
+    const ev=evaluate();
+    // clear marks
+    for(let r=0;r<G.info.rows;r++)for(let c=0;c<G.info.cols;c++){
+      G.cellEls[r][c]?.classList.remove("err","done");
+    }
+    if(ev.badCells.size===0){
+      statusEl.textContent = ev.filled===ev.total ? "Solved!" : "No errors";
+      statusEl.className = ev.solved?"ok":"";
+      beep(740,0.05);
+    } else {
+      ev.badCells.forEach(k=>{
+        const [r,c]=k.split(",").map(Number);
+        G.cellEls[r][c]?.classList.add("err");
+      });
+      statusEl.textContent = ev.badCells.size+" wrong"; statusEl.className="bad";
+      beep(200,0.08);
+    }
+  }
+
+  function checkWin(){
+    const ev=evaluate();
+    if(ev.solved){
+      // mark all done
+      for(let r=0;r<G.info.rows;r++)for(let c=0;c<G.info.cols;c++){
+        if(G.info.isWhite(r,c)) G.cellEls[r][c]?.classList.add("done");
+      }
+      const secs=Math.round((Date.now()-G.start)/1000);
+      $("#winTime").textContent="Time: "+Math.floor(secs/60)+"m "+(secs%60)+"s";
+      $("#win").classList.add("show");
+      victorySound();
+    }
+  }
+
+  // ---- Sound -------------------------------------------------------------
+  let actx=null;
+  function ac(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return actx; }
+  function beep(freq,dur){
+    const a=ac(); if(!a) return;
+    if(a.state==="suspended") a.resume();
+    const o=a.createOscillator(), g=a.createGain();
+    o.type="square"; o.frequency.value=freq;
+    g.gain.value=0.05; o.connect(g); g.connect(a.destination);
+    const t=a.currentTime; o.start(t); g.gain.setValueAtTime(0.05,t);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.stop(t+dur+0.02);
+  }
+  function victorySound(){
+    [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,0.12),i*120));
+  }
+
+  // ---- New game ----------------------------------------------------------
+  function newGame(){
+    const p=buildAnyPuzzle();
+    if(!p){ statusEl.textContent="gen err"; return; }
+    G={
+      info:p.info, clues:p.clues, sol:p.sol,
+      val: Array.from({length:p.info.rows},()=>new Array(p.info.cols).fill(0)),
+      sel:null, cellEls:null, start:Date.now()
+    };
+    // select first white cell
+    outer: for(let r=0;r<p.info.rows;r++) for(let c=0;c<p.info.cols;c++){ if(p.info.isWhite(r,c)){ G.sel={r,c}; break outer; } }
+    $("#win").classList.remove("show");
+    render();
+  }
+
+  // ---- Keypad UI ---------------------------------------------------------
+  function buildPad(){
+    const pad=$("#pad");
+    pad.innerHTML="";
+    for(let d=1;d<=9;d++){
+      const b=document.createElement("button");
+      b.className="key"; b.textContent=d;
+      b.addEventListener("click",()=>placeDigit(d));
+      pad.appendChild(b);
+    }
+    const er=document.createElement("button");
+    er.className="key"; er.textContent="⌫"; er.title="Erase";
+    er.addEventListener("click",erase);
+    pad.appendChild(er);
+  }
+
+  // ---- Events ------------------------------------------------------------
+  $("#newBtn").addEventListener("click",newGame);
+  $("#winNew").addEventListener("click",newGame);
+  $("#eraseBtn").addEventListener("click",erase);
+  $("#checkBtn").addEventListener("click",showCheck);
+
+  document.addEventListener("keydown",e=>{
+    if(e.key>="1"&&e.key<="9"){ placeDigit(parseInt(e.key,10)); e.preventDefault(); }
+    else if(e.key==="Backspace"||e.key==="Delete"||e.key==="0"){ erase(); e.preventDefault(); }
+    else if(e.key==="ArrowUp"){ moveSel(-1,0); e.preventDefault(); }
+    else if(e.key==="ArrowDown"){ moveSel(1,0); e.preventDefault(); }
+    else if(e.key==="ArrowLeft"){ moveSel(0,-1); e.preventDefault(); }
+    else if(e.key==="ArrowRight"){ moveSel(0,1); e.preventDefault(); }
+  });
+
+  // prevent scroll/zoom gestures
+  document.addEventListener("touchmove",e=>{ if(e.touches.length>1) e.preventDefault(); },{passive:false});
+  document.addEventListener("gesturestart",e=>e.preventDefault());
+  let lastTouch=0;
+  document.addEventListener("touchend",e=>{
+    const now=Date.now(); if(now-lastTouch<300) e.preventDefault(); lastTouch=now;
+  },{passive:false});
+
+  let rzTimer=null;
+  window.addEventListener("resize",()=>{ clearTimeout(rzTimer); rzTimer=setTimeout(()=>{ if(G) render(); },150); });
+
+  // ---- Boot --------------------------------------------------------------
+  buildPad();
+  newGame();
+})();
+</script>
+</body>
+</html>

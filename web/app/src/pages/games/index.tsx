@@ -153,6 +153,13 @@ const GAMES: AppTile[] = [
   arcade("unblock", "Unblock", "#DC2626", "Extension"),
   arcade("pipes", "Pipes", "#0891B2", "Plumbing"),
   arcade("mahjong-solitaire", "Mahjong Solitaire", "#166534", "Style"),
+  arcade("kakuro", "Kakuro", "#2563EB", "GridOn"),
+  arcade("color-lines", "Color Lines", "#DB2777", "BlurOn"),
+  arcade("helix-jump", "Helix Jump", "#7C3AED", "Tornado"),
+  arcade("cryptogram", "Cryptogram", "#475569", "Lock"),
+  arcade("word-ladder", "Word Ladder", "#0D9488", "Stairs"),
+  arcade("dot-to-dot", "Dot to Dot", "#F59E0B", "Gesture"),
+  arcade("cookie-clicker", "Cookie Clicker", "#B45309", "Cookie"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */

@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Dot to Dot</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, #fef9e7 0%, #fde2e4 100%);
+    color: #444;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 8px;
+  }
+  header {
+    text-align: center;
+    flex: 0 0 auto;
+  }
+  h1 {
+    margin: 4px 0;
+    font-size: clamp(22px, 7vw, 34px);
+    color: #ff6b6b;
+    text-shadow: 0 2px 0 #fff;
+    letter-spacing: 1px;
+  }
+  #status {
+    font-size: clamp(15px, 4.5vw, 20px);
+    font-weight: 700;
+    color: #3d8bff;
+    min-height: 24px;
+    margin: 2px 0 6px;
+    transition: color .2s, transform .15s;
+  }
+  #status.pop { transform: scale(1.25); }
+  #status.wrong { color: #ff8c42; }
+  #status.done { color: #2ecc71; }
+  #canvasWrap {
+    flex: 1 1 auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+  }
+  canvas {
+    touch-action: none;
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.12);
+    max-width: 100%;
+    max-height: 100%;
+  }
+  #controls {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 8px;
+    padding: 8px 2px 4px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  select, button {
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    border: none;
+    border-radius: 14px;
+    padding: 12px 16px;
+    cursor: pointer;
+    color: #fff;
+    box-shadow: 0 3px 0 rgba(0,0,0,.15);
+  }
+  select {
+    background: #845ef7;
+    -webkit-appearance: none;
+    appearance: none;
+    padding-right: 16px;
+  }
+  button {
+    background: #ff922b;
+    transition: transform .08s;
+  }
+  button:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,.15); }
+  label { font-weight: 700; color: #555; font-size: 15px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/dot-to-dot.svg">
+    <link rel="manifest" href="/games/dot-to-dot.webmanifest">
+    <meta name="theme-color" content="#F59E0B">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Dot to Dot">
+    <link rel="apple-touch-icon" href="/games/icons/dot-to-dot.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#F59E0B;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Dot to Dot</h1>
+    <div id="status">Tap dot 1</div>
+  </header>
+  <div id="canvasWrap">
+    <canvas id="c"></canvas>
+  </div>
+  <div id="controls">
+    <label for="pic">Picture:</label>
+    <select id="pic"></select>
+    <button id="newBtn">New Picture</button>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  // ---- Pictures: ordered dot lists in a 100x100 design space ----
+  // closed:true means the last dot connects back to dot 1 to close the shape.
+  var PICTURES = {
+    star: {
+      name: "Star",
+      color: "#ffd43b",
+      closed: true,
+      points: [
+        [50, 8], [61, 35], [90, 35], [67, 54],
+        [76, 82], [50, 65], [24, 82], [33, 54],
+        [10, 35], [39, 35]
+      ]
+    },
+    house: {
+      name: "House",
+      color: "#ff8787",
+      closed: true,
+      points: [
+        [22, 45], [50, 18], [78, 45], [70, 45],
+        [70, 82], [55, 82], [55, 60], [40, 60],
+        [40, 82], [30, 82], [30, 45]
+      ]
+    },
+    boat: {
+      name: "Boat",
+      color: "#4dabf7",
+      closed: true,
+      points: [
+        [50, 12], [50, 58], [82, 58], [70, 82],
+        [22, 82], [16, 58], [48, 58], [48, 30], [30, 45], [48, 45]
+      ]
+    },
+    fish: {
+      name: "Fish",
+      color: "#3bc9db",
+      closed: true,
+      points: [
+        [20, 50], [42, 28], [70, 32], [86, 22],
+        [88, 50], [86, 78], [70, 68], [42, 72]
+      ]
+    },
+    rocket: {
+      name: "Rocket",
+      color: "#da77f2",
+      closed: true,
+      points: [
+        [50, 8], [62, 30], [62, 64], [74, 80],
+        [60, 76], [60, 88], [40, 88], [40, 76],
+        [26, 80], [38, 64], [38, 30]
+      ]
+    },
+    cat: {
+      name: "Cat",
+      color: "#ffa94d",
+      closed: true,
+      points: [
+        [28, 24], [38, 42], [62, 42], [72, 24],
+        [78, 50], [78, 74], [62, 86], [38, 86],
+        [22, 74], [22, 50]
+      ]
+    }
+  };
+
+  var ORDER = ["star", "house", "boat", "fish", "rocket", "cat"];
+
+  // ---- DOM ----
+  var canvas = document.getElementById("c");
+  var ctx = canvas.getContext("2d");
+  var statusEl = document.getElementById("status");
+  var picSel = document.getElementById("pic");
+  var newBtn = document.getElementById("newBtn");
+
+  ORDER.forEach(function (key) {
+    var o = document.createElement("option");
+    o.value = key;
+    o.textContent = PICTURES[key].name;
+    picSel.appendChild(o);
+  });
+
+  // ---- Audio (WebAudio) ----
+  var AC = window.AudioContext || window.webkitAudioContext;
+  var audio = AC ? new AC() : null;
+  function beep(freq, dur, type, vol) {
+    if (!audio) return;
+    if (audio.state === "suspended") { try { audio.resume(); } catch (e) {} }
+    try {
+      var o = audio.createOscillator();
+      var g = audio.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = 0;
+      o.connect(g); g.connect(audio.destination);
+      var t = audio.currentTime;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol || 0.18, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t);
+      o.stop(t + dur + 0.02);
+    } catch (e) {}
+  }
+  function correctSound(step) {
+    // rising pitch with progress
+    beep(420 + step * 35, 0.18, "sine", 0.2);
+  }
+  function wrongSound() {
+    beep(180, 0.18, "triangle", 0.14);
+  }
+  function winSound() {
+    var notes = [523, 659, 784, 1047];
+    notes.forEach(function (f, i) {
+      setTimeout(function () { beep(f, 0.28, "sine", 0.22); }, i * 140);
+    });
+  }
+
+  // ---- State ----
+  var curKey = ORDER[0];
+  var pic = PICTURES[curKey];
+  var next = 0;           // index of next dot expected
+  var done = false;
+  var celebrate = 0;      // animation timer for celebration
+  var wrongFlash = -1;    // index of dot flashed as wrong (visual)
+  var wrongTimer = 0;
+
+  // layout (computed in resize): scale design-space -> canvas px
+  var view = { ox: 0, oy: 0, scale: 1, w: 0, h: 0, dotR: 16 };
+
+  function designToPx(p) {
+    return [view.ox + p[0] * view.scale, view.oy + p[1] * view.scale];
+  }
+
+  function loadPicture(key) {
+    curKey = key;
+    pic = PICTURES[key];
+    next = 0;
+    done = false;
+    celebrate = 0;
+    wrongFlash = -1;
+    if (picSel.value !== key) picSel.value = key;
+    layout();
+    updateStatus();
+    draw();
+  }
+
+  function updateStatus() {
+    if (done) {
+      statusEl.textContent = "You did it! ⭐";
+      statusEl.className = "done";
+    } else {
+      statusEl.textContent = "Tap dot " + (next + 1);
+      statusEl.className = "";
+    }
+  }
+
+  function popStatus() {
+    statusEl.classList.add("pop");
+    setTimeout(function () { statusEl.classList.remove("pop"); }, 150);
+  }
+
+  // ---- Sizing / responsive ----
+  function layout() {
+    var wrap = document.getElementById("canvasWrap");
+    var availW = wrap.clientWidth;
+    var availH = wrap.clientHeight;
+    if (availW < 10 || availH < 10) { availW = 320; availH = 320; }
+    // square-ish board
+    var size = Math.min(availW, availH);
+    size = Math.max(220, size);
+
+    var dpr = window.devicePixelRatio || 1;
+    canvas.style.width = size + "px";
+    canvas.style.height = size + "px";
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    view.w = size;
+    view.h = size;
+    // design space is 100x100; leave margin so dots/numbers fit
+    var margin = size * 0.12;
+    var inner = size - margin * 2;
+    view.scale = inner / 100;
+    view.ox = margin;
+    view.oy = margin;
+    view.dotR = Math.max(13, size * 0.052);
+  }
+
+  // ---- Drawing ----
+  function draw() {
+    var w = view.w, h = view.h;
+    ctx.clearRect(0, 0, w, h);
+
+    var pts = pic.points;
+
+    // completed lines (already-connected segments)
+    if (next > 0 || done) {
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = done ? pic.color : "#74c0fc";
+      ctx.lineWidth = Math.max(3, view.dotR * 0.4);
+      ctx.beginPath();
+      var p0 = designToPx(pts[0]);
+      ctx.moveTo(p0[0], p0[1]);
+      var upto = done ? pts.length : next;
+      for (var i = 1; i < upto; i++) {
+        var pp = designToPx(pts[i]);
+        ctx.lineTo(pp[0], pp[1]);
+      }
+      if (done && pic.closed) {
+        ctx.lineTo(p0[0], p0[1]);
+        ctx.closePath();
+      }
+      if (done) {
+        ctx.fillStyle = pic.color;
+        ctx.globalAlpha = 0.45 + 0.15 * Math.sin(celebrate * 0.2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.stroke();
+    }
+
+    // dots
+    for (var d = 0; d < pts.length; d++) {
+      var c = designToPx(pts[d]);
+      var isDone = done || d < next;
+      var isNext = !done && d === next;
+      var isWrong = d === wrongFlash;
+
+      var r = view.dotR;
+      if (isNext) r = view.dotR * (1.0 + 0.18 * Math.abs(Math.sin(celebrate * 0.18 + Date.now() * 0.004)));
+
+      // halo for next dot
+      if (isNext) {
+        ctx.beginPath();
+        ctx.arc(c[0], c[1], r + 8, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255,201,71,0.35)";
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(c[0], c[1], r, 0, Math.PI * 2);
+      if (isWrong) ctx.fillStyle = "#ff8c42";
+      else if (isNext) ctx.fillStyle = "#ffd43b";
+      else if (isDone) ctx.fillStyle = pic.color;
+      else ctx.fillStyle = "#dbe4ff";
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = isNext ? "#f59f00" : "#7a8bbf";
+      ctx.stroke();
+
+      // number
+      ctx.fillStyle = "#1f2d57";
+      ctx.font = "bold " + Math.round(r * 1.05) + "px -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(d + 1), c[0], c[1] + 1);
+    }
+
+    // celebration sparkles
+    if (done) {
+      drawSparkles();
+    }
+  }
+
+  var sparkles = [];
+  function makeSparkles() {
+    sparkles = [];
+    for (var i = 0; i < 28; i++) {
+      sparkles.push({
+        x: Math.random() * view.w,
+        y: Math.random() * view.h,
+        vx: (Math.random() - 0.5) * 2,
+        vy: (Math.random() - 0.5) * 2 - 0.5,
+        life: 1,
+        col: ["#ffd43b", "#ff6b6b", "#4dabf7", "#69db7c", "#da77f2"][i % 5],
+        sz: 4 + Math.random() * 5
+      });
+    }
+  }
+  function drawSparkles() {
+    for (var i = 0; i < sparkles.length; i++) {
+      var s = sparkles[i];
+      ctx.globalAlpha = Math.max(0, s.life);
+      ctx.fillStyle = s.col;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.sz, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  function updateSparkles() {
+    for (var i = 0; i < sparkles.length; i++) {
+      var s = sparkles[i];
+      s.x += s.vx;
+      s.y += s.vy;
+      s.vy += 0.06;
+      s.life -= 0.012;
+      if (s.life <= 0) {
+        s.x = Math.random() * view.w;
+        s.y = -5;
+        s.vy = Math.random() * 1.5;
+        s.vx = (Math.random() - 0.5) * 2;
+        s.life = 1;
+      }
+    }
+  }
+
+  // ---- Animation loop ----
+  function tick() {
+    celebrate++;
+    if (wrongTimer > 0) {
+      wrongTimer--;
+      if (wrongTimer === 0) wrongFlash = -1;
+    }
+    if (done) updateSparkles();
+    // redraw when there is animation (next-dot pulse, celebration, wrong flash)
+    if (!done) {
+      draw();
+    } else {
+      draw();
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // ---- Input ----
+  function getDotAt(px, py) {
+    var pts = pic.points;
+    var hitR = view.dotR * 1.4;
+    var best = -1, bestD = hitR * hitR;
+    for (var i = 0; i < pts.length; i++) {
+      var c = designToPx(pts[i]);
+      var dx = px - c[0], dy = py - c[1];
+      var d2 = dx * dx + dy * dy;
+      if (d2 <= bestD) { bestD = d2; best = i; }
+    }
+    return best;
+  }
+
+  function handlePoint(px, py) {
+    if (done) return;
+    var hit = getDotAt(px, py);
+    if (hit === -1) return;
+
+    if (hit === next) {
+      next++;
+      popStatus();
+      correctSound(next);
+      if (next >= pic.points.length) {
+        done = true;
+        makeSparkles();
+        winSound();
+      }
+      updateStatus();
+      draw();
+    } else {
+      // gentle wrong feedback, no penalty
+      wrongFlash = hit;
+      wrongTimer = 25;
+      wrongSound();
+      statusEl.className = "wrong";
+      statusEl.textContent = "Find dot " + (next + 1);
+      setTimeout(updateStatus, 700);
+      draw();
+    }
+  }
+
+  function canvasPoint(clientX, clientY) {
+    var rect = canvas.getBoundingClientRect();
+    return [clientX - rect.left, clientY - rect.top];
+  }
+
+  canvas.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    if (audio && audio.state === "suspended") { try { audio.resume(); } catch (err) {} }
+    var t = e.changedTouches[0];
+    var p = canvasPoint(t.clientX, t.clientY);
+    handlePoint(p[0], p[1]);
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  canvas.addEventListener("touchend", function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  canvas.addEventListener("mousedown", function (e) {
+    if (audio && audio.state === "suspended") { try { audio.resume(); } catch (err) {} }
+    var p = canvasPoint(e.clientX, e.clientY);
+    handlePoint(p[0], p[1]);
+  });
+
+  // ---- Controls ----
+  picSel.addEventListener("change", function () {
+    loadPicture(picSel.value);
+  });
+  newBtn.addEventListener("click", function () {
+    // pick a different random picture
+    var others = ORDER.filter(function (k) { return k !== curKey; });
+    var pick = others[Math.floor(Math.random() * others.length)] || curKey;
+    loadPicture(pick);
+  });
+
+  // ---- Resize ----
+  var rT;
+  window.addEventListener("resize", function () {
+    clearTimeout(rT);
+    rT = setTimeout(function () { layout(); draw(); }, 80);
+  });
+  window.addEventListener("orientationchange", function () {
+    setTimeout(function () { layout(); draw(); }, 200);
+  });
+
+  // ---- Start ----
+  loadPicture(curKey);
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

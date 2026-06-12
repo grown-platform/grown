@@ -112,6 +112,13 @@ const CONFIG = [
   { id: "unblock", name: "Unblock", color: "#DC2626", glyph: "🚙" },
   { id: "pipes", name: "Pipes", color: "#0891B2", glyph: "🚰" },
   { id: "mahjong-solitaire", name: "Mahjong Solitaire", color: "#166534", glyph: "🀄" },
+  { id: "kakuro", name: "Kakuro", color: "#2563EB", glyph: "➕" },
+  { id: "color-lines", name: "Color Lines", color: "#DB2777", glyph: "🟠" },
+  { id: "helix-jump", name: "Helix Jump", color: "#7C3AED", glyph: "🌀" },
+  { id: "cryptogram", name: "Cryptogram", color: "#475569", glyph: "🔐" },
+  { id: "word-ladder", name: "Word Ladder", color: "#0D9488", glyph: "🪜" },
+  { id: "dot-to-dot", name: "Dot to Dot", color: "#F59E0B", glyph: "✏️" },
+  { id: "cookie-clicker", name: "Cookie Clicker", color: "#B45309", glyph: "🍪" },
 ];
 
 const iconSvg = (color, glyph) =>
