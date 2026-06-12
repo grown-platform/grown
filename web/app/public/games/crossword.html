@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Crossword</title>
+    <style>
+      :root {
+        --bg: #f1f5f9;
+        --card: #ffffff;
+        --ink: #1e293b;
+        --primary: #6741d9;
+        --primary-dark: #5235b8;
+        --line: #cbd5e1;
+        --black: #1e293b;
+        --hl: #ede9fe;
+        --word: #ddd6fe;
+        --sel: #c4b5fd;
+        --good: #16a34a;
+        --bad: #dc2626;
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #app { max-width: 560px; margin: 0 auto; padding: 10px 10px 4px; }
+      header { text-align: center; margin-bottom: 8px; }
+      h1 { margin: 0 0 8px; color: var(--primary); font-size: 1.5rem; }
+      #difficulty { display: flex; gap: 6px; justify-content: center; margin-bottom: 8px; }
+      .diff-btn {
+        padding: 5px 14px; border: 1px solid var(--primary); background: #fff;
+        color: var(--primary); border-radius: 20px; cursor: pointer;
+        font-weight: 600; font-size: 0.8rem; touch-action: manipulation;
+      }
+      .diff-btn.active { background: var(--primary); color: #fff; }
+      #controls { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+      .ctl {
+        padding: 6px 12px; border: none; border-radius: 8px; cursor: pointer;
+        font-weight: 600; font-size: 0.8rem; background: #e2e8f0; color: var(--ink);
+        touch-action: manipulation;
+      }
+      .ctl.primary { background: var(--primary); color: #fff; }
+
+      #grid-wrap { display: flex; justify-content: center; margin: 10px 0; max-width: 100%; overflow-x: auto; }
+      #grid { display: grid; gap: 0; background: var(--black); border: 2px solid var(--black); border-radius: 4px; overflow: hidden; }
+      .cell {
+        position: relative; background: #fff; display: flex; align-items: center;
+        justify-content: center; font-weight: 700; cursor: pointer;
+        border: 0.5px solid var(--line); text-transform: uppercase;
+      }
+      .cell.block { background: var(--black); cursor: default; border-color: var(--black); }
+      .cell.hl { background: var(--word); }
+      .cell.sel { background: var(--sel); }
+      .cell.bad { color: var(--bad); }
+      .cell .num {
+        position: absolute; top: 0px; left: 1px; font-size: 9px; font-weight: 600;
+        color: #475569; line-height: 1; pointer-events: none;
+      }
+
+      #clue-bar {
+        background: var(--primary); color: #fff; border-radius: 8px; padding: 8px 6px;
+        display: flex; align-items: center; gap: 6px; margin: 6px 0; min-height: 44px;
+      }
+      #clue-bar .nav { background: rgba(255,255,255,.2); border: none; color: #fff;
+        width: 30px; height: 30px; border-radius: 6px; font-size: 1rem; cursor: pointer; flex-shrink: 0; touch-action: manipulation; }
+      #clue-text { flex: 1; font-size: 0.9rem; line-height: 1.25; }
+      #clue-text b { margin-right: 4px; }
+
+      #keyboard { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; margin: 8px 0; }
+      .key {
+        padding: 11px 0; border: 1px solid var(--line); background: #fff; border-radius: 6px;
+        font-weight: 700; cursor: pointer; font-size: 0.95rem; text-align: center;
+        user-select: none; touch-action: manipulation;
+      }
+      .key:active { background: var(--word); }
+      .key.wide { grid-column: span 2; }
+
+      #status { text-align: center; font-weight: 700; min-height: 1.2rem; margin: 4px 0; }
+      #status.win { color: var(--good); }
+
+      .clue-cols { display: flex; gap: 12px; margin-top: 8px; }
+      .clue-col { flex: 1; min-width: 0; }
+      .clue-col h3 { font-size: 0.8rem; margin: 0 0 4px; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; }
+      .clue-list { list-style: none; margin: 0; padding: 0; font-size: 0.8rem; }
+      .clue-list li { padding: 3px 4px; border-radius: 4px; cursor: pointer; line-height: 1.2; }
+      .clue-list li.active { background: var(--word); }
+      .clue-list li b { color: #475569; margin-right: 3px; }
+    </style>
+      <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/crossword.svg">
+    <link rel="manifest" href="/games/crossword.webmanifest">
+    <meta name="theme-color" content="#6741D9">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Crossword">
+    <link rel="apple-touch-icon" href="/games/icons/crossword.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#6741D9;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Crossword</h1>
+        <div id="difficulty">
+          <button class="diff-btn" data-diff="easy">Easy</button>
+          <button class="diff-btn active" data-diff="medium">Medium</button>
+          <button class="diff-btn" data-diff="hard">Hard</button>
+        </div>
+        <div id="controls">
+          <button class="ctl primary" id="new-btn">New</button>
+          <button class="ctl" id="check-btn">Check</button>
+          <button class="ctl" id="reveal-btn">Reveal word</button>
+        </div>
+      </header>
+
+      <div id="grid-wrap"><div id="grid"></div></div>
+      <div id="status"></div>
+
+      <div id="clue-bar">
+        <button class="nav" id="prev-clue" aria-label="Previous clue">‹</button>
+        <div id="clue-text">—</div>
+        <button class="nav" id="next-clue" aria-label="Next clue">›</button>
+      </div>
+
+      <div id="keyboard"></div>
+
+      <div class="clue-cols">
+        <div class="clue-col"><h3>Across</h3><ul class="clue-list" id="across-list"></ul></div>
+        <div class="clue-col"><h3>Down</h3><ul class="clue-list" id="down-list"></ul></div>
+      </div>
+    </div>
+
+    <script>
+      // ── Word pools (answer + clue). Difficulty also sets how many words to fit.
+      const POOLS = {
+        easy: [
+          ['CAT','Purring pet'],['DOG','Barking pet'],['SUN','Daytime star'],['MOON','Night-sky orb'],
+          ['STAR','Twinkles above'],['TREE','Leaves and bark'],['BOOK','Pages to read'],['RAIN','Wet weather'],
+          ['CAKE','Sweet birthday treat'],['FISH','Lives in water'],['BIRD','It can fly'],['BOAT','Floats on a lake'],
+          ['DOOR','Open it to enter'],['HAND','Has five fingers'],['LAMP','Gives off light'],['MILK','Cow’s drink'],
+          ['RING','Worn on a finger'],['SNOW','Cold white flakes'],['LEAF','Part of a tree'],['FROG','Hops and croaks'],
+          ['KITE','Flies on a string'],['NEST','Bird’s home'],['SHIP','Big sea vessel'],['CORN','Yellow cob veggie'],
+          ['SOCK','Worn on a foot'],['BELL','It rings'],['ROSE','Thorny red flower'],['MOUSE','Cheese nibbler'],
+        ],
+        medium: [
+          ['PLANET','Earth or Mars'],['ORANGE','Citrus fruit and a color'],['GARDEN','Where flowers grow'],
+          ['ROCKET','Blasts into space'],['WINTER','Coldest season'],['ISLAND','Land ringed by water'],
+          ['DRAGON','Mythical fire-breather'],['PENCIL','You write with it'],['GUITAR','Six-string instrument'],
+          ['MARKET','Place to buy goods'],['BRIDGE','Spans a river'],['CASTLE','Royal fortress'],
+          ['FOREST','Many trees together'],['SILVER','Shiny gray metal'],['MONKEY','Swinging primate'],
+          ['PEPPER','Spicy seasoning'],['CIRCLE','Perfectly round shape'],['CAMERA','Takes photos'],
+          ['JACKET','Light coat'],['BUTTON','Fastens a shirt'],['CANDLE','Wax light'],['TUNNEL','Underground passage'],
+          ['ANCHOR','Holds a ship in place'],['DESERT','Dry sandy region'],
+        ],
+        hard: [
+          ['PYRAMID','Egyptian monument'],['GRAVITY','Pulls things down'],['JOURNEY','A long trip'],
+          ['MYSTERY','A puzzle to solve'],['VOLCANO','Erupts with lava'],['DIAMOND','Hardest gemstone'],
+          ['LIBRARY','Building full of books'],['CAPTAIN','Ship’s leader'],['PENGUIN','Flightless polar bird'],
+          ['COMPASS','Points north'],['HARMONY','Musical agreement'],['ELEPHANT','Largest land animal'],
+          ['UMBRELLA','Keeps the rain off'],['MOUNTAIN','Very tall peak'],['DINOSAUR','Extinct giant reptile'],
+          ['TRIANGLE','Three-sided shape'],['ASTEROID','Orbiting space rock'],['GALLERY','Art display hall'],
+          ['WHISPER','Very quiet speech'],['TREASURE','Pirate’s buried gold'],['ORCHARD','Fruit-tree farm'],
+          ['LANTERN','Portable light'],['CRYSTAL','Faceted mineral'],['VOYAGE','A sea journey'],
+        ],
+      };
+      const DIFF = { easy: { target: 7 }, medium: { target: 10 }, hard: { target: 13 } };
+
+      // ── Generator: greedy interlocking placement ─────────────────────────
+      function shuffle(a) {
+        const r = a.slice();
+        for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; }
+        return r;
+      }
+
+      const N = 40; // working grid
+      function cellsOf(row, col, dir, len) {
+        const out = [];
+        for (let i = 0; i < len; i++) out.push(dir === 'A' ? [row, col + i] : [row + i, col]);
+        return out;
+      }
+      function inB(r, c) { return r >= 0 && r < N && c >= 0 && c < N; }
+
+      function valid(grid, answer, row, col, dir) {
+        const len = answer.length;
+        const cells = cellsOf(row, col, dir, len);
+        for (const [r, c] of cells) if (!inB(r, c)) return -1;
+        const before = dir === 'A' ? [row, col - 1] : [row - 1, col];
+        const after = dir === 'A' ? [row, col + len] : [row + len, col];
+        if (inB(before[0], before[1]) && grid[before[0]][before[1]] !== null) return -1;
+        if (inB(after[0], after[1]) && grid[after[0]][after[1]] !== null) return -1;
+        let crossings = 0;
+        for (let i = 0; i < len; i++) {
+          const [r, c] = cells[i];
+          const cur = grid[r][c];
+          if (cur !== null) {
+            if (cur !== answer[i]) return -1;
+            crossings++;
+          } else {
+            const perp = dir === 'A' ? [[r - 1, c], [r + 1, c]] : [[r, c - 1], [r, c + 1]];
+            for (const [pr, pc] of perp) if (inB(pr, pc) && grid[pr][pc] !== null) return -1;
+          }
+        }
+        return crossings;
+      }
+
+      function place(grid, entry, row, col, dir, placed) {
+        for (let i = 0; i < entry.answer.length; i++) {
+          const [r, c] = dir === 'A' ? [row, col + i] : [row + i, col];
+          grid[r][c] = entry.answer[i];
+        }
+        placed.push({ ...entry, row, col, dir });
+      }
+
+      function findSpot(grid, answer) {
+        let best = null;
+        for (let i = 0; i < answer.length; i++) {
+          for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+            if (grid[r][c] !== answer[i]) continue;
+            const opts = [
+              { row: r - i, col: c, dir: 'D' },
+              { row: r, col: c - i, dir: 'A' },
+            ];
+            for (const o of opts) {
+              const cr = valid(grid, answer, o.row, o.col, o.dir);
+              if (cr > 0 && (!best || cr > best.cr)) best = { ...o, cr };
+            }
+          }
+        }
+        return best;
+      }
+
+      function buildPuzzle(pool, target) {
+        let bestPuzzle = null;
+        for (let attempt = 0; attempt < 60; attempt++) {
+          const words = shuffle(pool).map(([answer, clue]) => ({ answer, clue }));
+          const grid = Array.from({ length: N }, () => Array(N).fill(null));
+          const placed = [];
+          const first = words[0];
+          place(grid, first, Math.floor(N / 2), Math.floor((N - first.answer.length) / 2), 'A', placed);
+          for (let wi = 1; wi < words.length && placed.length < target; wi++) {
+            const spot = findSpot(grid, words[wi].answer);
+            if (spot) place(grid, words[wi], spot.row, spot.col, spot.dir, placed);
+          }
+          if (!bestPuzzle || placed.length > bestPuzzle.placed.length) bestPuzzle = { grid, placed };
+          if (placed.length >= target) break;
+        }
+        return finalize(bestPuzzle.grid, bestPuzzle.placed);
+      }
+
+      // Crop to bounding box and number the start cells.
+      function finalize(grid, placed) {
+        let minR = N, maxR = 0, minC = N, maxC = 0;
+        for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (grid[r][c] !== null) {
+          minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+          minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+        }
+        const rows = maxR - minR + 1, cols = maxC - minC + 1;
+        const g = Array.from({ length: rows }, (_, r) =>
+          Array.from({ length: cols }, (_, c) => grid[r + minR][c + minC]));
+        const nums = Array.from({ length: rows }, () => Array(cols).fill(0));
+        let n = 0;
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+          if (g[r][c] === null) continue;
+          const startA = (c === 0 || g[r][c - 1] === null) && c + 1 < cols && g[r][c + 1] !== null;
+          const startD = (r === 0 || g[r - 1][c] === null) && r + 1 < rows && g[r + 1][c] !== null;
+          if (startA || startD) nums[r][c] = ++n;
+        }
+        const across = [], down = [];
+        for (const p of placed) {
+          const r = p.row - minR, c = p.col - minC;
+          const num = nums[r][c];
+          (p.dir === 'A' ? across : down).push({ num, row: r, col: c, dir: p.dir, answer: p.answer, clue: p.clue });
+        }
+        across.sort((a, b) => a.num - b.num);
+        down.sort((a, b) => a.num - b.num);
+        return { g, nums, rows, cols, across, down };
+      }
+
+      // ── Game state / rendering ───────────────────────────────────────────
+      let difficulty = 'medium';
+      let puzzle = null;
+      let user = [];        // user letters, same shape as g (null for blocks)
+      let sel = null;       // {r,c}
+      let dir = 'A';
+      let clues = [];       // flattened [{...across}, {...down}] for prev/next
+      let won = false;
+
+      const gridEl = document.getElementById('grid');
+      const statusEl = document.getElementById('status');
+      const clueText = document.getElementById('clue-text');
+      const acrossList = document.getElementById('across-list');
+      const downList = document.getElementById('down-list');
+
+      function newGame() {
+        puzzle = buildPuzzle(POOLS[difficulty], DIFF[difficulty].target);
+        user = puzzle.g.map(row => row.map(ch => (ch === null ? null : '')));
+        won = false;
+        statusEl.textContent = '';
+        statusEl.className = '';
+        clues = [...puzzle.across, ...puzzle.down];
+        sel = null; dir = 'A';
+        // select the first across clue's start
+        if (puzzle.across[0]) { sel = { r: puzzle.across[0].row, c: puzzle.across[0].col }; dir = 'A'; }
+        else if (puzzle.down[0]) { sel = { r: puzzle.down[0].row, c: puzzle.down[0].col }; dir = 'D'; }
+        renderGrid();
+        renderClueLists();
+        layout();
+        update();
+      }
+
+      function renderGrid() {
+        gridEl.innerHTML = '';
+        gridEl.style.gridTemplateColumns = `repeat(${puzzle.cols}, var(--cs))`;
+        gridEl.style.gridTemplateRows = `repeat(${puzzle.rows}, var(--cs))`;
+        for (let r = 0; r < puzzle.rows; r++) for (let c = 0; c < puzzle.cols; c++) {
+          const div = document.createElement('div');
+          if (puzzle.g[r][c] === null) { div.className = 'cell block'; }
+          else {
+            div.className = 'cell';
+            div.dataset.r = r; div.dataset.c = c;
+            if (puzzle.nums[r][c]) {
+              const s = document.createElement('span'); s.className = 'num'; s.textContent = puzzle.nums[r][c]; div.appendChild(s);
+            }
+            const t = document.createElement('span'); t.className = 'ltr'; div.appendChild(t);
+            div.addEventListener('click', () => onCellClick(r, c));
+          }
+          gridEl.appendChild(div);
+        }
+      }
+
+      function layout() {
+        const maxW = Math.min(window.innerWidth - 24, 540);
+        const cs = Math.max(18, Math.min(40, Math.floor(maxW / puzzle.cols)));
+        document.documentElement.style.setProperty('--cs', cs + 'px');
+        const fs = Math.round(cs * 0.5);
+        gridEl.querySelectorAll('.ltr').forEach(el => { el.style.fontSize = fs + 'px'; });
+      }
+
+      function wordAt(r, c, d) {
+        // find the clue whose cells include (r,c) in direction d
+        const list = d === 'A' ? puzzle.across : puzzle.down;
+        return list.find(w => {
+          if (d === 'A') return w.row === r && c >= w.col && c < w.col + w.answer.length;
+          return w.col === c && r >= w.row && r < w.row + w.answer.length;
+        });
+      }
+      function cellHasDir(r, c, d) { return !!wordAt(r, c, d); }
+
+      function onCellClick(r, c) {
+        if (sel && sel.r === r && sel.c === c) {
+          // toggle direction if the cell supports both
+          const other = dir === 'A' ? 'D' : 'A';
+          if (cellHasDir(r, c, other)) dir = other;
+        } else {
+          sel = { r, c };
+          if (!cellHasDir(r, c, dir)) dir = dir === 'A' ? 'D' : 'A';
+        }
+        update();
+      }
+
+      function currentWord() { return sel ? wordAt(sel.r, sel.c, dir) : null; }
+
+      function update() {
+        // clear highlight
+        gridEl.querySelectorAll('.cell').forEach(el => el.classList.remove('hl', 'sel'));
+        const w = currentWord();
+        if (w) {
+          for (const [r, c] of cellsOf(w.row, w.col, w.dir, w.answer.length)) {
+            const el = cellEl(r, c); if (el) el.classList.add('hl');
+          }
+          clueText.innerHTML = `<b>${w.num}${w.dir === 'A' ? 'A' : 'D'}</b>${w.clue}`;
+        } else {
+          clueText.textContent = '—';
+        }
+        if (sel) { const el = cellEl(sel.r, sel.c); if (el) el.classList.add('sel'); }
+        // letters
+        for (let r = 0; r < puzzle.rows; r++) for (let c = 0; c < puzzle.cols; c++) {
+          if (puzzle.g[r][c] === null) continue;
+          const el = cellEl(r, c); if (!el) continue;
+          const t = el.querySelector('.ltr'); if (t) t.textContent = user[r][c] || '';
+          el.classList.remove('bad');
+        }
+        // active clue in lists
+        document.querySelectorAll('.clue-list li').forEach(li => li.classList.remove('active'));
+        if (w) { const li = document.querySelector(`.clue-list li[data-key="${w.dir}${w.num}"]`); if (li) li.classList.add('active'); }
+      }
+
+      function cellEl(r, c) { return gridEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`); }
+
+      function enterLetter(ch) {
+        if (won || !sel) return;
+        user[sel.r][sel.c] = ch.toUpperCase();
+        advance(1);
+        update();
+        checkWin();
+      }
+      function backspace() {
+        if (won || !sel) return;
+        if (user[sel.r][sel.c]) { user[sel.r][sel.c] = ''; }
+        else { advance(-1); user[sel.r][sel.c] = ''; }
+        update();
+      }
+      function advance(step) {
+        const w = currentWord(); if (!w) return;
+        if (dir === 'A') {
+          let c = sel.c + step;
+          if (c >= w.col && c < w.col + w.answer.length) sel = { r: sel.r, c };
+        } else {
+          let r = sel.r + step;
+          if (r >= w.row && r < w.row + w.answer.length) sel = { r, c: sel.c };
+        }
+      }
+      function move(dr, dc) {
+        if (!sel) return;
+        let r = sel.r + dr, c = sel.c + dc;
+        while (r >= 0 && r < puzzle.rows && c >= 0 && c < puzzle.cols) {
+          if (puzzle.g[r][c] !== null) { sel = { r, c }; if (dr !== 0 && cellHasDir(r, c, 'D')) dir = 'D'; if (dc !== 0 && cellHasDir(r, c, 'A')) dir = 'A'; update(); return; }
+          r += dr; c += dc;
+        }
+      }
+
+      function gotoClue(w) { sel = { r: w.row, c: w.col }; dir = w.dir; update(); }
+      function cycleClue(step) {
+        const w = currentWord();
+        let idx = w ? clues.findIndex(x => x.dir === w.dir && x.num === w.num) : -1;
+        idx = (idx + step + clues.length) % clues.length;
+        gotoClue(clues[idx]);
+      }
+
+      function renderClueLists() {
+        const fill = (ul, list) => {
+          ul.innerHTML = '';
+          for (const w of list) {
+            const li = document.createElement('li');
+            li.dataset.key = w.dir + w.num;
+            li.innerHTML = `<b>${w.num}</b>${w.clue}`;
+            li.addEventListener('click', () => gotoClue(w));
+            ul.appendChild(li);
+          }
+        };
+        fill(acrossList, puzzle.across);
+        fill(downList, puzzle.down);
+      }
+
+      function checkWin() {
+        for (let r = 0; r < puzzle.rows; r++) for (let c = 0; c < puzzle.cols; c++) {
+          if (puzzle.g[r][c] === null) continue;
+          if (user[r][c] !== puzzle.g[r][c]) return;
+        }
+        won = true;
+        statusEl.textContent = 'Solved! 🎉';
+        statusEl.className = 'win';
+      }
+
+      function checkLetters() {
+        for (let r = 0; r < puzzle.rows; r++) for (let c = 0; c < puzzle.cols; c++) {
+          if (puzzle.g[r][c] === null || !user[r][c]) continue;
+          const el = cellEl(r, c);
+          if (el && user[r][c] !== puzzle.g[r][c]) el.classList.add('bad');
+        }
+      }
+
+      function revealWord() {
+        const w = currentWord(); if (!w) return;
+        for (const [r, c] of cellsOf(w.row, w.col, w.dir, w.answer.length)) user[r][c] = puzzle.g[r][c];
+        update();
+        checkWin();
+      }
+
+      // ── Input wiring ─────────────────────────────────────────────────────
+      const keyboard = document.getElementById('keyboard');
+      function buildKeyboard() {
+        keyboard.innerHTML = '';
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(ch => {
+          const b = document.createElement('div'); b.className = 'key'; b.textContent = ch;
+          b.addEventListener('click', () => enterLetter(ch));
+          keyboard.appendChild(b);
+        });
+        const back = document.createElement('div'); back.className = 'key wide'; back.textContent = '⌫';
+        back.addEventListener('click', backspace);
+        keyboard.appendChild(back);
+      }
+
+      window.addEventListener('keydown', (e) => {
+        if (/^[a-zA-Z]$/.test(e.key)) { enterLetter(e.key); e.preventDefault(); }
+        else if (e.key === 'Backspace') { backspace(); e.preventDefault(); }
+        else if (e.key === 'ArrowLeft') { dir = 'A'; move(0, -1); }
+        else if (e.key === 'ArrowRight') { dir = 'A'; move(0, 1); }
+        else if (e.key === 'ArrowUp') { dir = 'D'; move(-1, 0); }
+        else if (e.key === 'ArrowDown') { dir = 'D'; move(1, 0); }
+      });
+
+      document.getElementById('prev-clue').addEventListener('click', () => cycleClue(-1));
+      document.getElementById('next-clue').addEventListener('click', () => cycleClue(1));
+      document.getElementById('new-btn').addEventListener('click', newGame);
+      document.getElementById('check-btn').addEventListener('click', checkLetters);
+      document.getElementById('reveal-btn').addEventListener('click', revealWord);
+      document.querySelectorAll('.diff-btn').forEach(b => b.addEventListener('click', () => {
+        difficulty = b.dataset.diff;
+        document.querySelectorAll('.diff-btn').forEach(x => x.classList.toggle('active', x === b));
+        newGame();
+      }));
+      window.addEventListener('resize', () => { if (puzzle) layout(); });
+
+      buildKeyboard();
+      newGame();
+    </script>
+  </body>
+</html>

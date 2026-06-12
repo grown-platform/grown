@@ -70,6 +70,7 @@ const GAMES: AppTile[] = [
   arcade("lights-out", "Lights Out", "#F4A261", "Lightbulb"),
   arcade("sliding-puzzle", "Sliding Puzzle", "#5C6BC0", "Extension"),
   arcade("solitaire", "Solitaire", "#0B6E4F", "Style"),
+  arcade("crossword", "Crossword", "#6741D9", "Abc"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */
@@ -139,12 +140,54 @@ function ImportedTile({
   );
 }
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: string }>;
+}
+
 export default function GamesApp({ user }: { user: User | null }) {
   const [imported, setImported] = useState<ImportedGame[]>([]);
   const [playing, setPlaying] = useState<ImportedGame | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+
+  // Make /games installable as its own PWA (own icon) while this page is shown:
+  // point the manifest + theme color at the games-hub manifest, restore on unmount.
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = "/games.webmanifest";
+    const theme = document.createElement("meta");
+    theme.name = "theme-color";
+    theme.content = "#6741d9";
+    const apple = document.createElement("link");
+    apple.rel = "apple-touch-icon";
+    apple.href = "/games-app-icon.svg";
+    document.head.append(link, theme, apple);
+
+    const onBIP = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => setInstallPrompt(null);
+    window.addEventListener("beforeinstallprompt", onBIP);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      link.remove();
+      theme.remove();
+      apple.remove();
+      window.removeEventListener("beforeinstallprompt", onBIP);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  const onInstall = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    setInstallPrompt(null);
+  };
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -221,16 +264,27 @@ export default function GamesApp({ user }: { user: User | null }) {
               Play in your browser — no account required.
             </Typography>
           </Box>
-          {user && (
-            <Button
-              variant="outlined"
-              onClick={onPick}
-              loading={importing}
-              startDecorator={<Icons.UploadFile />}
-            >
-              Import game
-            </Button>
-          )}
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+            {installPrompt && (
+              <Button
+                variant="solid"
+                onClick={onInstall}
+                startDecorator={<Icons.InstallMobile />}
+              >
+                Install app
+              </Button>
+            )}
+            {user && (
+              <Button
+                variant="outlined"
+                onClick={onPick}
+                loading={importing}
+                startDecorator={<Icons.UploadFile />}
+              >
+                Import game
+              </Button>
+            )}
+          </Box>
         </Box>
 
         <TileGrid apps={GAMES} />
