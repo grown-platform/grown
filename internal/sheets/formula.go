@@ -581,13 +581,20 @@ func tokenise(s string) []token {
 			i = j
 			continue
 		}
-		// Identifier / cell ref / function name.
+		// Identifier / cell ref / function name. A '.' is allowed mid-identifier
+		// so modern dotted function names (STDEV.S, NORM.DIST, RANK.EQ) tokenise
+		// as one identifier; a trailing '.' is left out (not part of the name).
 		if ch == '$' || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') {
 			j := i
-			for j < len(s) && (s[j] == '$' || (s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z') || (s[j] >= '0' && s[j] <= '9')) {
+			for j < len(s) && (s[j] == '$' || s[j] == '.' || (s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z') || (s[j] >= '0' && s[j] <= '9')) {
 				j++
 			}
-			tokens = append(tokens, token{kind: tokIdent, val: s[i:j]})
+			name := s[i:j]
+			for len(name) > 0 && name[len(name)-1] == '.' {
+				name = name[:len(name)-1]
+				j--
+			}
+			tokens = append(tokens, token{kind: tokIdent, val: name})
 			i = j
 			continue
 		}
