@@ -4,6 +4,7 @@ import {
   Box,
   Typography,
   Button,
+  Input,
   Modal,
   ModalDialog,
   ModalClose,
@@ -243,6 +244,7 @@ export default function GamesApp({ user }: { user: User | null }) {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   // Make /games installable as its own PWA (own icon) while this page is shown:
@@ -345,6 +347,14 @@ export default function GamesApp({ user }: { user: User | null }) {
     }
   };
 
+  const q = query.trim().toLowerCase();
+  const filteredGames = q
+    ? GAMES.filter((g) => `${g.name} ${g.blurb ?? ""}`.toLowerCase().includes(q))
+    : GAMES;
+  const filteredImported = q
+    ? imported.filter((g) => g.name.toLowerCase().includes(q))
+    : imported;
+
   return (
     <>
       <Header user={user} />
@@ -387,17 +397,47 @@ export default function GamesApp({ user }: { user: User | null }) {
           </Box>
         </Box>
 
-        <TileGrid apps={GAMES} />
+        <Input
+          size="md"
+          placeholder="Search games"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          startDecorator={<Icons.Search />}
+          endDecorator={
+            query ? (
+              <IconButton
+                variant="plain"
+                size="sm"
+                color="neutral"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+              >
+                <Icons.Close />
+              </IconButton>
+            ) : null
+          }
+          sx={{ width: "100%", mb: 3 }}
+          data-testid="games-search"
+        />
+
+        {filteredGames.length > 0 ? (
+          <TileGrid apps={filteredGames} />
+        ) : (
+          <Typography level="body-sm" sx={{ opacity: 0.6 }}>
+            No games match “{query}”.
+          </Typography>
+        )}
 
         {user && (
           <Box sx={{ mt: 4 }}>
             <Typography level="title-md" sx={{ mb: 1.5 }}>
               Imported games
             </Typography>
-            {imported.length === 0 ? (
+            {filteredImported.length === 0 ? (
               <Typography level="body-sm" sx={{ opacity: 0.6 }}>
-                No imported games yet. Use “Import game” to upload a
-                self-contained HTML file.
+                {q
+                  ? `No imported games match “${query}”.`
+                  : "No imported games yet. Use “Import game” to upload a self-contained HTML file."}
               </Typography>
             ) : (
               <Box
@@ -408,7 +448,7 @@ export default function GamesApp({ user }: { user: User | null }) {
                     "repeat(auto-fill, minmax(96px, 1fr))",
                 }}
               >
-                {imported.map((g) => (
+                {filteredImported.map((g) => (
                   <ImportedTile
                     key={g.id}
                     game={g}
