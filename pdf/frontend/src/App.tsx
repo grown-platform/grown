@@ -11,6 +11,7 @@ import {
   ChevronRight,
   BookTemplate,
   FilePenLine,
+  ArrowLeft,
 } from "lucide-react";
 import { useState } from "react";
 import { DocumentsPage } from "./features/documents/pages/DocumentsPage";
@@ -230,6 +231,49 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+// FocusedEditorLayout is a minimal, signing-free shell for the PDF editor: a
+// slim top bar (back to the workspace + a link into the signing app) and a
+// full-width content area — no signing sidebar, so the editor stands on its own.
+function FocusedEditorLayout({ children }: { children: React.ReactNode }) {
+  const { isLoading } = useUser();
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-text-muted">Loading...</div>
+      </div>
+    );
+  }
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="flex items-center justify-between h-12 px-3 bg-surface border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Absolute href leaves the PDF SPA back to the workspace root. */}
+          <a
+            href="/"
+            className="flex items-center gap-1 text-sm text-text-muted hover:text-text"
+            title="Back to workspace"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Workspace</span>
+          </a>
+          <span className="text-border">|</span>
+          <span className="font-semibold flex items-center gap-1.5">
+            <FilePenLine className="w-4 h-4 text-primary" />
+            PDF Editor
+          </span>
+        </div>
+        <Link
+          to="/documents"
+          className="text-sm text-text-muted hover:text-text whitespace-nowrap"
+        >
+          Documents &amp; signing →
+        </Link>
+      </header>
+      <main className="flex-1 min-h-0">{children}</main>
+    </div>
+  );
+}
+
 function App() {
   return (
     <Routes>
@@ -305,9 +349,9 @@ function App() {
       <Route
         path="/editor"
         element={
-          <AuthenticatedLayout>
+          <FocusedEditorLayout>
             <EditorPage />
-          </AuthenticatedLayout>
+          </FocusedEditorLayout>
         }
       />
       <Route
