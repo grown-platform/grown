@@ -45,7 +45,13 @@ func setStaticCache(w http.ResponseWriter, urlPath string) {
 	case base == "sw.js" || base == "service-worker.js":
 		w.Header().Set("Cache-Control", "public, max-age=60")
 	case ext == ".html" || ext == "":
-		// Shells revalidate naturally; don't pin them (avoids stale SPAs).
+		// Standalone game pages are self-contained; cache them an hour so
+		// relaunches don't re-fetch, while updates still propagate quickly.
+		// Other HTML (the SPA shells) is left to revalidate so deploys flow and
+		// users never get a stale shell referencing deleted hashed bundles.
+		if strings.Contains(urlPath, "/games/") {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		}
 	case strings.Contains(urlPath, "/assets/"):
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	default:

@@ -29,6 +29,7 @@ import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import { Messages } from "./Messages";
 import { AdminArea } from "./AdminArea";
+import { adminWhoAmI } from "../admin/usersApi";
 import { listContacts } from "../contacts/api";
 import {
   getMyExtension,
@@ -374,6 +375,9 @@ interface TelephonyAppProps {
 
 export default function TelephonyApp({ user }: TelephonyAppProps) {
   const [section, setSection] = useState<"phone" | "messages" | "admin">("phone");
+  // The PBX admin console is gated to org admins; demo / regular users see the
+  // Admin tab greyed out and never load it.
+  const [isAdmin, setIsAdmin] = useState(false);
   const [myExt, setMyExt] = useState<string | null>(null);
   const [directory, setDirectory] = useState<DirectoryEntry[] | null>(null);
   const [calls, setCalls] = useState<CallRecord[] | null>(null);
@@ -440,6 +444,22 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
     void reloadDirectory();
     void reloadCalls();
   }, [reloadDirectory, reloadCalls]);
+
+  // Resolve admin status for PBX-admin gating (demo users get isAdmin=false).
+  useEffect(() => {
+    let alive = true;
+    adminWhoAmI()
+      .then((w) => alive && setIsAdmin(w.isAdmin))
+      .catch(() => alive && setIsAdmin(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Never leave a non-admin parked on the admin console (e.g. after a refresh).
+  useEffect(() => {
+    if (!isAdmin && section === "admin") setSection("phone");
+  }, [isAdmin, section]);
 
   // ---- Duration timer ----
   useEffect(() => {
@@ -801,19 +821,24 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
               { key: "messages", label: "Messages", icon: <ChatIcon /> },
               { key: "admin", label: "Admin", icon: <AdminPanelSettingsIcon /> },
             ] as const
-          ).map((t) => (
-            <Button
-              key={t.key}
-              size="sm"
-              variant={section === t.key ? "solid" : "outlined"}
-              color={section === t.key ? "primary" : "neutral"}
-              startDecorator={t.icon}
-              onClick={() => setSection(t.key)}
-              data-testid={`telephony-nav-${t.key}`}
-            >
-              {t.label}
-            </Button>
-          ))}
+          ).map((t) => {
+            const adminLocked = t.key === "admin" && !isAdmin;
+            return (
+              <Button
+                key={t.key}
+                size="sm"
+                variant={section === t.key ? "solid" : "outlined"}
+                color={section === t.key ? "primary" : "neutral"}
+                startDecorator={t.icon}
+                disabled={adminLocked}
+                onClick={() => setSection(t.key)}
+                data-testid={`telephony-nav-${t.key}`}
+                title={adminLocked ? "PBX administration — admins only" : undefined}
+              >
+                {t.label}
+              </Button>
+            );
+          })}
         </Box>
 
         {error && (
@@ -971,7 +996,7 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
         {section === "messages" && (
           <Messages user={user} directory={dirWithPresence} />
         )}
-        {section === "admin" && <AdminArea user={user} />}
+        {section === "admin" && isAdmin && <AdminArea user={user} />}
       </Container>
 
       {callState !== "idle" && activeCall && (
