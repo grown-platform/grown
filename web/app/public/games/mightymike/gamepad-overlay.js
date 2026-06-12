@@ -171,21 +171,70 @@
     function resetStick() {
       stickEl.style.transform = "translate(0,0)";
     }
+    function dpadRelease() {
+      applyDir({ up: false, down: false, left: false, right: false });
+      resetStick();
+    }
+
+    // --- Touch input (phones) ---
+    // We drive the d-pad from *touch* events rather than pointer events on
+    // purpose. A touch sequence stays bound to the element it started on for
+    // its entire life, so the finger can roam anywhere on screen without
+    // needing setPointerCapture, and `preventDefault()` stops the browser from
+    // reinterpreting the drag as a scroll/zoom. Touch-derived *pointer* events,
+    // by contrast, fire `pointercancel` whenever the UA's gesture recognizer
+    // takes over (common during multi-touch — i.e. moving and firing at once),
+    // which previously released every direction key while the thumb was still
+    // pressed and froze movement until the player lifted and re-touched.
+    var dpadTouchId = null;
+    dpadEl.addEventListener("touchstart", function (e) {
+      if (dpadTouchId !== null) return; // already tracking a finger
+      var t = e.changedTouches[0];
+      dpadTouchId = t.identifier;
+      e.preventDefault();
+      applyDir(dpadDir(t.clientX, t.clientY));
+    }, { passive: false });
+    dpadEl.addEventListener("touchmove", function (e) {
+      if (dpadTouchId === null) return;
+      for (var i = 0; i < e.touches.length; i++) {
+        if (e.touches[i].identifier === dpadTouchId) {
+          e.preventDefault();
+          applyDir(dpadDir(e.touches[i].clientX, e.touches[i].clientY));
+          return;
+        }
+      }
+    }, { passive: false });
+    var dpadTouchEnd = function (e) {
+      if (dpadTouchId === null) return;
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === dpadTouchId) {
+          dpadTouchId = null;
+          dpadRelease();
+          return;
+        }
+      }
+    };
+    dpadEl.addEventListener("touchend", dpadTouchEnd);
+    dpadEl.addEventListener("touchcancel", dpadTouchEnd);
+
+    // --- Mouse input (desktop testing only) ---
+    // Touch is handled above; ignore touch-derived pointer events here so the
+    // two paths never double-fire.
     dpadEl.addEventListener("pointerdown", function (e) {
+      if (e.pointerType === "touch") return;
       e.preventDefault();
       dpadEl.setPointerCapture && dpadEl.setPointerCapture(e.pointerId);
       dpadPointer = e.pointerId;
       applyDir(dpadDir(e.clientX, e.clientY));
     });
     dpadEl.addEventListener("pointermove", function (e) {
-      if (dpadPointer !== e.pointerId) return;
+      if (e.pointerType === "touch" || dpadPointer !== e.pointerId) return;
       applyDir(dpadDir(e.clientX, e.clientY));
     });
     var dpadUp = function (e) {
-      if (dpadPointer !== e.pointerId) return;
+      if (e.pointerType === "touch" || dpadPointer !== e.pointerId) return;
       dpadPointer = null;
-      applyDir({ up: false, down: false, left: false, right: false });
-      resetStick();
+      dpadRelease();
     };
     dpadEl.addEventListener("pointerup", dpadUp);
     dpadEl.addEventListener("pointercancel", dpadUp);
