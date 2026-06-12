@@ -33,6 +33,7 @@ import { FindReplaceDialog } from "./FindReplaceDialog";
 import { ShareDialog } from "./ShareDialog";
 import { ConditionalFormatDialog } from "./ConditionalFormatDialog";
 import { NamedRangesDialog } from "./NamedRangesDialog";
+import { DataValidationDialog } from "./DataValidationDialog";
 import { downloadSheet } from "./export";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
@@ -88,6 +89,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [cfOpen, setCfOpen] = useState(false);
   const [nrOpen, setNrOpen] = useState(false);
+  const [dvOpen, setDvOpen] = useState(false);
   const ref = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const applyingRemote = useRef(false);
@@ -352,6 +354,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onFindReplace={() => setFindOpen(true)}
               onConditionalFormat={() => setCfOpen(true)}
               onNamedRanges={() => setNrOpen(true)}
+              onDataValidation={() => setDvOpen(true)}
             />
           </Box>
           <Box sx={{ flex: 1 }} />
@@ -408,6 +411,11 @@ export function SheetEditor({ user }: SheetEditorProps) {
       <NamedRangesDialog
         open={nrOpen}
         onClose={() => setNrOpen(false)}
+        getWb={() => ref.current}
+      />
+      <DataValidationDialog
+        open={dvOpen}
+        onClose={() => setDvOpen(false)}
         getWb={() => ref.current}
       />
     </Box>

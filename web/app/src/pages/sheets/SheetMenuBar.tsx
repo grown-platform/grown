@@ -42,6 +42,8 @@ interface SheetMenuBarProps {
   onConditionalFormat: () => void;
   /** Opens the Named ranges dialog. */
   onNamedRanges: () => void;
+  /** Opens the Data validation dialog. */
+  onDataValidation: () => void;
 }
 
 const menuButtonSx = {
@@ -88,6 +90,7 @@ export function SheetMenuBar({
   onFindReplace,
   onConditionalFormat,
   onNamedRanges,
+  onDataValidation,
 }: SheetMenuBarProps) {
   const wb = () => {
     try {
@@ -479,7 +482,7 @@ export function SheetMenuBar({
           </MenuItem>
           <ListDivider />
           <MenuItem disabled>Column stats</MenuItem>
-          <MenuItem disabled>Data validation</MenuItem>
+          <MenuItem onClick={onDataValidation}>Data validation</MenuItem>
           <MenuItem disabled>Data cleanup{arrow}</MenuItem>
           <MenuItem onClick={dataOp((w) => splitTextToColumns(w))}>
             Split text to columns
