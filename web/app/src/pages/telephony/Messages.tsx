@@ -463,9 +463,35 @@ interface ConversationProps {
   onBack: () => void;
 }
 
+// Hidden messages are tracked client-side (per browser) by id.
+const HIDDEN_KEY = "telephony.hiddenMessages";
+function loadHidden(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
 function Conversation({ thread, onSend, onBack }: ConversationProps) {
   const [draft, setDraft] = useState("");
+  const [hidden, setHidden] = useState<Set<string>>(loadHidden);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Right-click a message to hide/unhide it locally (this browser only).
+  const toggleHidden = (id: string) => {
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]));
+      } catch {
+        /* ignore quota/availability */
+      }
+      return next;
+    });
+  };
 
   // Keep the latest message in view whenever the thread changes.
   useEffect(() => {
@@ -548,46 +574,74 @@ function Conversation({ thread, onSend, onBack }: ConversationProps) {
         )}
         {thread.messages.map((m) => {
           const out = m.direction === "out";
+          const isHidden = hidden.has(m.id);
           return (
             <Box
               key={m.id}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                toggleHidden(m.id);
+              }}
+              title={isHidden ? "Right-click to unhide" : "Right-click to hide"}
               sx={{
                 display: "flex",
                 flexDirection: "column",
                 alignItems: out ? "flex-end" : "flex-start",
                 maxWidth: "100%",
+                cursor: "context-menu",
               }}
             >
-              <Sheet
-                variant="soft"
-                sx={{
-                  px: 1.5,
-                  py: 1,
-                  borderRadius: "lg",
-                  maxWidth: "min(78%, 480px)",
-                  bgcolor: out ? TEAL : "background.level2",
-                  color: out ? "#fff" : "inherit",
-                  borderTopRightRadius: out ? "4px" : "lg",
-                  borderTopLeftRadius: out ? "lg" : "4px",
-                }}
-              >
-                <Typography
-                  level="body-sm"
+              {isHidden ? (
+                <Sheet
+                  variant="outlined"
+                  onClick={() => toggleHidden(m.id)}
                   sx={{
-                    color: out ? "#fff" : "inherit",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
+                    px: 1.5,
+                    py: 0.75,
+                    borderRadius: "lg",
+                    borderStyle: "dashed",
+                    cursor: "pointer",
+                    opacity: 0.6,
                   }}
                 >
-                  {m.text}
-                </Typography>
-              </Sheet>
-              <Typography
-                level="body-xs"
-                sx={{ opacity: 0.5, mt: 0.25, px: 0.5 }}
-              >
-                {clockTime(m.at)}
-              </Typography>
+                  <Typography level="body-xs" sx={{ fontStyle: "italic" }}>
+                    Message hidden — click or right-click to unhide
+                  </Typography>
+                </Sheet>
+              ) : (
+                <>
+                  <Sheet
+                    variant="soft"
+                    sx={{
+                      px: 1.5,
+                      py: 1,
+                      borderRadius: "lg",
+                      maxWidth: "min(78%, 480px)",
+                      bgcolor: out ? TEAL : "background.level2",
+                      color: out ? "#fff" : "inherit",
+                      borderTopRightRadius: out ? "4px" : "lg",
+                      borderTopLeftRadius: out ? "lg" : "4px",
+                    }}
+                  >
+                    <Typography
+                      level="body-sm"
+                      sx={{
+                        color: out ? "#fff" : "inherit",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {m.text}
+                    </Typography>
+                  </Sheet>
+                  <Typography
+                    level="body-xs"
+                    sx={{ opacity: 0.5, mt: 0.25, px: 0.5 }}
+                  >
+                    {clockTime(m.at)}
+                  </Typography>
+                </>
+              )}
             </Box>
           );
         })}
