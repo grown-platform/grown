@@ -56,6 +56,7 @@ import (
 	"code.pick.haus/grown/grown/internal/prefs"
 	"code.pick.haus/grown/grown/internal/profile"
 	"code.pick.haus/grown/grown/internal/projects"
+	"code.pick.haus/grown/grown/internal/ratelimit"
 	"code.pick.haus/grown/grown/internal/search"
 	"code.pick.haus/grown/grown/internal/sharing"
 	"code.pick.haus/grown/grown/internal/sheets"
@@ -750,7 +751,12 @@ func New(cfg Config) *Server {
 		})
 	}
 
-	authWrapped := auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg)(apiHandler)
+	// Per-IP API rate limiting (outermost), with a stricter bucket on the auth
+	// endpoints to blunt credential stuffing. Tunable via GROWN_RATELIMIT_*.
+	rateLimiter := ratelimit.FromEnv()
+	authWrapped := rateLimiter.Middleware(
+		auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg)(apiHandler),
+	)
 
 	// Route /api/* and /healthz to the auth-wrapped gateway; everything
 	// else falls through to the static SPA handler.
