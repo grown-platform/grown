@@ -166,6 +166,41 @@ const GAMES: AppTile[] = [
   arcade("catch-phrase", "Catch Phrase", "#DC2626", "RecordVoiceOver"),
 ];
 
+// Category filters for the games grid. Each game has one primary category; the
+// buttons show icon-only on mobile (label hidden) and icon+label on wider screens.
+const CATEGORIES: { key: string; label: string; icon: string }[] = [
+  { key: "All", label: "All", icon: "Apps" },
+  { key: "Arcade", label: "Arcade", icon: "SportsEsports" },
+  { key: "Puzzle", label: "Puzzle", icon: "Extension" },
+  { key: "Card", label: "Card", icon: "Style" },
+  { key: "Board", label: "Board", icon: "Dashboard" },
+  { key: "Word", label: "Word", icon: "Abc" },
+  { key: "Casino", label: "Casino", icon: "Casino" },
+  { key: "Kids", label: "Kids", icon: "ChildCare" },
+  { key: "Speed", label: "Speed", icon: "Bolt" },
+  { key: "Party", label: "Party", icon: "Groups" },
+];
+
+const CATEGORY_IDS: Record<string, string[]> = {
+  Arcade: ["snake", "tetris", "breakout", "pong", "flappy", "bubble-shooter", "tower-stack", "hormuz", "asteroids", "doodle-jump", "space-invaders", "frogger", "tron", "helicopter", "car-dodge", "missile-command", "lunar-lander", "centipede", "galaxian", "pinball", "stacker", "knife-hit", "color-switch", "helix-jump", "air-hockey"],
+  Puzzle: ["2048", "minesweeper", "sudoku", "lights-out", "sliding-puzzle", "water-sort", "sokoban", "nonogram", "flow-connect", "flood-it", "unblock", "pipes", "kakuro", "tower-of-hanoi", "peg-solitaire", "maze", "tilt-maze", "match-3", "columns", "color-lines", "mastermind"],
+  Card: ["solitaire", "spider-solitaire", "freecell", "pyramid-solitaire", "tri-peaks", "golf-solitaire", "war", "crazy-eights", "go-fish", "old-maid", "snap", "higher-lower", "monopoly-deal", "mahjong-solitaire"],
+  Board: ["tic-tac-toe", "connect-four", "reversi", "checkers", "gomoku", "dots-and-boxes", "mancala", "nine-mens-morris", "dominoes", "battleship", "chinese-checkers", "ludo", "snakes-and-ladders", "chess", "ultimate-tic-tac-toe"],
+  Word: ["hangman", "crossword", "word-search", "word-scramble", "wordle", "typing-test", "boggle", "cryptogram", "word-ladder"],
+  Casino: ["blackjack", "video-poker", "baccarat", "slot-machine", "yahtzee", "pig"],
+  Kids: ["memory-game", "whack-a-mole", "simon", "rock-paper-scissors", "coloring", "math-quiz", "balloon-pop", "fruit-catch", "dot-to-dot", "cookie-clicker", "guess-the-number"],
+  Speed: ["reaction-time", "aim-trainer", "piano-tiles"],
+  Party: ["heads-up", "catch-phrase"],
+};
+
+const CATEGORY_OF: Record<string, string> = Object.entries(CATEGORY_IDS).reduce(
+  (acc, [cat, ids]) => {
+    for (const id of ids) acc[id] = cat;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */
 interface ImportedGame {
   id: string;
@@ -245,6 +280,7 @@ export default function GamesApp({ user }: { user: User | null }) {
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
+  const [cat, setCat] = useState("All");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   // Make /games installable as its own PWA (own icon) while this page is shown:
@@ -348,12 +384,18 @@ export default function GamesApp({ user }: { user: User | null }) {
   };
 
   const q = query.trim().toLowerCase();
-  const filteredGames = q
-    ? GAMES.filter((g) => `${g.name} ${g.blurb ?? ""}`.toLowerCase().includes(q))
-    : GAMES;
-  const filteredImported = q
-    ? imported.filter((g) => g.name.toLowerCase().includes(q))
-    : imported;
+  const filteredGames = GAMES.filter(
+    (g) =>
+      (cat === "All" || CATEGORY_OF[g.id] === cat) &&
+      (!q || `${g.name} ${g.blurb ?? ""}`.toLowerCase().includes(q)),
+  );
+  // Imported games are user uploads with no category, so they only appear under "All".
+  const filteredImported =
+    cat !== "All"
+      ? []
+      : q
+        ? imported.filter((g) => g.name.toLowerCase().includes(q))
+        : imported;
 
   return (
     <>
@@ -416,9 +458,46 @@ export default function GamesApp({ user }: { user: User | null }) {
               </IconButton>
             ) : null
           }
-          sx={{ width: "100%", mb: 3 }}
+          sx={{ width: "100%", mb: 1.5 }}
           data-testid="games-search"
         />
+
+        <Box
+          sx={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 0.75,
+            mb: 3,
+          }}
+        >
+          {CATEGORIES.map((c) => {
+            const Icon = (
+              Icons as Record<string, React.ComponentType<{ sx?: object }>>
+            )[c.icon];
+            const active = cat === c.key;
+            return (
+              <Button
+                key={c.key}
+                size="sm"
+                variant={active ? "solid" : "outlined"}
+                color={active ? "primary" : "neutral"}
+                onClick={() => setCat(c.key)}
+                aria-label={c.label}
+                aria-pressed={active}
+                data-testid={`games-cat-${c.key}`}
+                sx={{ px: { xs: 1, sm: 1.5 }, minWidth: 0, gap: 0.5 }}
+              >
+                {Icon ? <Icon sx={{ fontSize: 18 }} /> : null}
+                <Box
+                  component="span"
+                  sx={{ display: { xs: "none", sm: "inline" } }}
+                >
+                  {c.label}
+                </Box>
+              </Button>
+            );
+          })}
+        </Box>
 
         {filteredGames.length > 0 ? (
           <TileGrid apps={filteredGames} />
