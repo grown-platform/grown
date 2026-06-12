@@ -1570,6 +1570,18 @@ func New(cfg Config) *Server {
 			authWrapped.ServeHTTP(w, r)
 			return
 		}
+		// Public documentation site at /docs (no auth). The bare path serves the
+		// docs index; /docs/* files (html, css, images) fall through to static.
+		if r.URL.Path == "/docs" {
+			http.Redirect(w, r, "/docs/", http.StatusMovedPermanently)
+			return
+		}
+		if r.URL.Path == "/docs/" {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/docs/index.html"
+			static.ServeHTTP(w, r2)
+			return
+		}
 		static.ServeHTTP(w, r)
 	})
 
