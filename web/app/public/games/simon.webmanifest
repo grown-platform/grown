@@ -1,0 +1,25 @@
+{
+  "name": "Simon",
+  "short_name": "Simon",
+  "description": "Simon — play in your browser, online or off.",
+  "start_url": "/games/simon.html",
+  "scope": "/games/simon.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#E11D48",
+  "icons": [
+    {
+      "src": "/games/icons/simon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/simon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

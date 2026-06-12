@@ -30,6 +30,14 @@ const CONFIG = [
   { id: "sliding-puzzle", name: "Sliding Puzzle", color: "#5C6BC0", glyph: "🧩" },
   { id: "solitaire", name: "Solitaire", color: "#0B6E4F", glyph: "🃏" },
   { id: "crossword", name: "Crossword", color: "#6741D9", glyph: "📝" },
+  { id: "tetris", name: "Tetris", color: "#7C3AED", glyph: "🟪" },
+  { id: "breakout", name: "Breakout", color: "#0EA5E9", glyph: "🧱" },
+  { id: "pong", name: "Pong", color: "#475569", glyph: "🏓" },
+  { id: "flappy", name: "Flappy", color: "#FACC15", glyph: "🐤" },
+  { id: "whack-a-mole", name: "Whack-a-Mole", color: "#65A30D", glyph: "🔨" },
+  { id: "simon", name: "Simon", color: "#E11D48", glyph: "🎶" },
+  { id: "bubble-shooter", name: "Bubble Shooter", color: "#DB2777", glyph: "🫧" },
+  { id: "tower-stack", name: "Tower Stack", color: "#F59E0B", glyph: "📦" },
 ];
 
 const iconSvg = (color, glyph) =>
@@ -79,12 +87,32 @@ const headBlock = (g) => `<!-- pwa:start -->
     <!-- pwa:end -->`;
 
 // Shared offline service worker (network-first → fresh online, cached offline).
-const SW = `/* grown-workspace games service worker — offline + installability.
-   Network-first so a new deploy is picked up while online, with a cache
-   fallback so installed games keep working offline. Scope: /games/. */
-const CACHE = 'grown-games-v1';
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+// Every game + its assets is precached on install, so the whole /games
+// collection works fully offline even for games never opened — while staying
+// network-first so a new deploy is picked up while online.
+const PRECACHE = [
+  ...CONFIG.flatMap((g) => [
+    `/games/${g.id}.html`,
+    `/games/${g.id}.webmanifest`,
+    `/games/icons/${g.id}.svg`,
+  ]),
+  "/games-app-icon.svg",
+  "/games.webmanifest",
+];
+const SW = `/* grown-workspace games service worker — full offline + installability.
+   Precaches every game on install; network-first at runtime so deploys are
+   picked up online, with cache fallback offline. Scope: /games/. */
+const CACHE = 'grown-games-v2';
+const PRECACHE = ${JSON.stringify(PRECACHE)};
+self.addEventListener('install', (e) => {
+  self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE).catch(() => {})));
+});
+self.addEventListener('activate', (e) => e.waitUntil((async () => {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+  await self.clients.claim();
+})()));
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -97,7 +125,7 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(req)),
+      .catch(() => caches.match(req).then((r) => r || caches.match('/games/' + (new URL(req.url).pathname.split('/').pop())))),
   );
 });
 `;

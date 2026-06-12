@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Simon</title>
+<style>
+  :root {
+    --bg: #0f1220;
+    --panel: #1a1f33;
+    --text: #e7ecff;
+    --muted: #9aa3c7;
+    --accent: #7c5cff;
+    --accent-hover: #927aff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    min-height: 100%;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  h1 {
+    margin: 4px 0 10px;
+    font-size: 26px;
+    letter-spacing: 2px;
+    text-align: center;
+  }
+  .status {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .pill {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 8px 14px;
+    min-width: 92px;
+    text-align: center;
+  }
+  .pill .label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+  }
+  .pill .value {
+    display: block;
+    font-size: 22px;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+  .message {
+    min-height: 22px;
+    margin-bottom: 12px;
+    font-size: 15px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .message.error { color: #ff6b6b; font-weight: 700; }
+
+  /* Board */
+  .board {
+    position: relative;
+    width: min(86vw, 340px);
+    height: min(86vw, 340px);
+    border-radius: 50%;
+    background: #05070f;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .pad {
+    border: none;
+    margin: 0;
+    cursor: pointer;
+    touch-action: manipulation;
+    opacity: 0.55;
+    transition: opacity 0.08s ease, transform 0.05s ease, box-shadow 0.08s ease;
+    min-width: 80px;
+    min-height: 80px;
+    outline: none;
+  }
+  .pad:disabled { cursor: default; }
+  .pad.green  { background: #16a34a; border-radius: 100% 0 0 0; }
+  .pad.red    { background: #dc2626; border-radius: 0 100% 0 0; }
+  .pad.yellow { background: #eab308; border-radius: 0 0 0 100%; }
+  .pad.blue   { background: #2563eb; border-radius: 0 0 100% 0; }
+  .pad.lit {
+    opacity: 1;
+    transform: scale(0.97);
+    box-shadow: 0 0 28px 6px rgba(255,255,255,0.45) inset;
+  }
+  /* Center hub */
+  .hub {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 34%;
+    height: 34%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--bg);
+    border: 6px solid #05070f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    pointer-events: none;
+    text-align: center;
+  }
+
+  .controls {
+    margin-top: 22px;
+    display: flex;
+    gap: 12px;
+  }
+  .btn {
+    border: none;
+    border-radius: 12px;
+    padding: 14px 22px;
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent);
+    cursor: pointer;
+    touch-action: manipulation;
+    min-height: 48px;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn.secondary { background: var(--panel); color: var(--text); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+
+  @media (max-height: 640px) {
+    h1 { font-size: 22px; margin: 2px 0 6px; }
+    .controls { margin-top: 14px; }
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/simon.svg">
+    <link rel="manifest" href="/games/simon.webmanifest">
+    <meta name="theme-color" content="#E11D48">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Simon">
+    <link rel="apple-touch-icon" href="/games/icons/simon.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#E11D48;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <h1>SIMON</h1>
+
+  <div class="status">
+    <div class="pill">
+      <span class="label">Round</span>
+      <span class="value" id="round">0</span>
+    </div>
+    <div class="pill">
+      <span class="label">Score</span>
+      <span class="value" id="score">0</span>
+    </div>
+    <div class="pill">
+      <span class="label">Best</span>
+      <span class="value" id="best">0</span>
+    </div>
+  </div>
+
+  <div class="message" id="message">Press Start to play</div>
+
+  <div class="board" id="board" aria-label="Simon board">
+    <button class="pad green"  type="button" data-color="green"  aria-label="green"></button>
+    <button class="pad red"    type="button" data-color="red"    aria-label="red"></button>
+    <button class="pad yellow" type="button" data-color="yellow" aria-label="yellow"></button>
+    <button class="pad blue"   type="button" data-color="blue"   aria-label="blue"></button>
+    <div class="hub" id="hub">SIMON</div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="startBtn" type="button">Start</button>
+    <button class="btn secondary" id="restartBtn" type="button">Restart</button>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // --- Audio ---------------------------------------------------------------
+  var audioCtx = null;
+  var TONES = { green: 392.00, red: 329.63, yellow: 277.18, blue: 207.65 }; // G4, E4, C#4, G#3
+  var ERROR_TONE = 110.0;
+
+  function ensureAudio() {
+    if (!audioCtx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) { audioCtx = new AC(); }
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  }
+
+  function playTone(freq, durationMs, type) {
+    if (!audioCtx) return;
+    var now = audioCtx.currentTime;
+    var dur = durationMs / 1000;
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.value = freq;
+    // Quick attack, smooth release to avoid clicks.
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+    gain.gain.setValueAtTime(0.25, now + Math.max(0.02, dur - 0.06));
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + dur + 0.02);
+  }
+
+  // --- DOM -----------------------------------------------------------------
+  var boardEl = document.getElementById("board");
+  var roundEl = document.getElementById("round");
+  var scoreEl = document.getElementById("score");
+  var bestEl = document.getElementById("best");
+  var messageEl = document.getElementById("message");
+  var hubEl = document.getElementById("hub");
+  var startBtn = document.getElementById("startBtn");
+  var restartBtn = document.getElementById("restartBtn");
+
+  var pads = {};
+  var padList = boardEl.querySelectorAll(".pad");
+  for (var i = 0; i < padList.length; i++) {
+    pads[padList[i].getAttribute("data-color")] = padList[i];
+  }
+  var COLORS = ["green", "red", "yellow", "blue"];
+
+  // --- State ---------------------------------------------------------------
+  var sequence = [];      // computer's sequence of colors
+  var inputIndex = 0;     // how many correct taps the player has made this round
+  var completed = 0;      // rounds fully repeated (this is the score)
+  var acceptingInput = false;
+  var playing = false;    // a game is in progress
+  var best = 0;
+  var timers = [];        // pending setTimeout ids (for cleanup on restart)
+
+  function clearTimers() {
+    for (var t = 0; t < timers.length; t++) { clearTimeout(timers[t]); }
+    timers = [];
+  }
+  function later(fn, ms) {
+    var id = setTimeout(fn, ms);
+    timers.push(id);
+    return id;
+  }
+
+  function setMessage(text, isError) {
+    messageEl.textContent = text;
+    if (isError) { messageEl.classList.add("error"); }
+    else { messageEl.classList.remove("error"); }
+  }
+
+  function updateScore() {
+    roundEl.textContent = String(sequence.length);
+    scoreEl.textContent = String(completed);
+    bestEl.textContent = String(best);
+  }
+
+  function flashPad(color, durationMs) {
+    var pad = pads[color];
+    if (!pad) return;
+    pad.classList.add("lit");
+    playTone(TONES[color], durationMs, "sine");
+    later(function () { pad.classList.remove("lit"); }, durationMs);
+  }
+
+  // Speed scales gently with progress so kids can keep up early on.
+  function stepDuration() {
+    var len = sequence.length;
+    if (len <= 5) return 600;
+    if (len <= 10) return 500;
+    if (len <= 15) return 420;
+    return 360;
+  }
+
+  function playSequence() {
+    acceptingInput = false;
+    setPadsEnabled(false);
+    hubEl.textContent = "WATCH";
+    var dur = stepDuration();
+    var gap = dur + 200;
+    for (var n = 0; n < sequence.length; n++) {
+      (function (idx) {
+        later(function () {
+          flashPad(sequence[idx], dur);
+        }, idx * gap + 400);
+      })(n);
+    }
+    // After the whole sequence finishes, hand control to the player.
+    later(function () {
+      acceptingInput = true;
+      inputIndex = 0;
+      setPadsEnabled(true);
+      hubEl.textContent = "YOUR TURN";
+      setMessage("Repeat the sequence");
+    }, sequence.length * gap + 400);
+  }
+
+  function setPadsEnabled(enabled) {
+    for (var c = 0; c < COLORS.length; c++) {
+      pads[COLORS[c]].disabled = !enabled;
+    }
+  }
+
+  function nextRound() {
+    var rand = COLORS[Math.floor(Math.random() * COLORS.length)];
+    sequence.push(rand);
+    updateScore();
+    setMessage("Round " + sequence.length);
+    later(playSequence, 700);
+  }
+
+  function startGame() {
+    clearTimers();
+    ensureAudio();
+    sequence = [];
+    inputIndex = 0;
+    completed = 0;
+    playing = true;
+    acceptingInput = false;
+    startBtn.disabled = true;
+    updateScore();
+    setMessage("Get ready...");
+    hubEl.textContent = "SIMON";
+    // Clear any lingering lit state.
+    for (var c = 0; c < COLORS.length; c++) { pads[COLORS[c]].classList.remove("lit"); }
+    later(nextRound, 600);
+  }
+
+  function gameOver() {
+    acceptingInput = false;
+    playing = false;
+    setPadsEnabled(false);
+    startBtn.disabled = false;
+    var finalScore = completed; // rounds fully repeated before the mistake
+    if (finalScore > best) { best = finalScore; }
+    updateScore();
+    hubEl.textContent = "GAME OVER";
+    setMessage("Wrong! Score: " + finalScore + " - press Restart", true);
+    // Buzz.
+    if (audioCtx) { playTone(ERROR_TONE, 600, "sawtooth"); }
+    // Brief flash of the whole board.
+    for (var c = 0; c < COLORS.length; c++) {
+      pads[COLORS[c]].classList.add("lit");
+    }
+    later(function () {
+      for (var k = 0; k < COLORS.length; k++) { pads[COLORS[k]].classList.remove("lit"); }
+    }, 400);
+  }
+
+  function roundComplete() {
+    acceptingInput = false;
+    setPadsEnabled(false);
+    completed = sequence.length;
+    if (completed > best) { best = completed; }
+    updateScore();
+    setMessage("Nice! Round " + completed + " cleared");
+    hubEl.textContent = "GOOD!";
+    later(nextRound, 900);
+  }
+
+  function handlePad(color) {
+    ensureAudio();
+    if (!acceptingInput) return;
+    // Player feedback.
+    flashPad(color, 220);
+
+    if (color === sequence[inputIndex]) {
+      inputIndex++;
+      if (inputIndex >= sequence.length) {
+        // Full sequence repeated correctly.
+        roundComplete();
+      }
+    } else {
+      gameOver();
+    }
+  }
+
+  // --- Events --------------------------------------------------------------
+  // Use pointerdown for snappy, mobile-friendly response. Fall back to click.
+  function bindPad(pad) {
+    var color = pad.getAttribute("data-color");
+    var handled = false;
+    pad.addEventListener("pointerdown", function (e) {
+      e.preventDefault();
+      handled = true;
+      handlePad(color);
+    });
+    pad.addEventListener("click", function (e) {
+      // If pointerdown already fired, ignore the synthetic click.
+      if (handled) { handled = false; return; }
+      handlePad(color);
+    });
+  }
+  for (var p = 0; p < COLORS.length; p++) { bindPad(pads[COLORS[p]]); }
+
+  startBtn.addEventListener("click", function () {
+    ensureAudio();
+    startGame();
+  });
+  restartBtn.addEventListener("click", function () {
+    ensureAudio();
+    startGame();
+  });
+
+  // Prevent double-tap zoom / gesture scroll on the board.
+  boardEl.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+
+  // Initial render.
+  setPadsEnabled(false);
+  updateScore();
+})();
+</script>
+</body>
+</html>

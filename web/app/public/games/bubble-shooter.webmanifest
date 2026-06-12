@@ -1,0 +1,25 @@
+{
+  "name": "Bubble Shooter",
+  "short_name": "Bubble Shooter",
+  "description": "Bubble Shooter — play in your browser, online or off.",
+  "start_url": "/games/bubble-shooter.html",
+  "scope": "/games/bubble-shooter.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#DB2777",
+  "icons": [
+    {
+      "src": "/games/icons/bubble-shooter.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/bubble-shooter.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Whack-a-Mole</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, #7ed0ff 0%, #b6e8ff 45%, #cdeec0 46%, #9bdc7e 100%);
+    color: #2a2a2a;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 8px 8px max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  h1 {
+    margin: 4px 0 0;
+    font-size: clamp(24px, 8vw, 38px);
+    color: #5a3b12;
+    text-shadow: 0 2px 0 #fff5d6, 0 3px 4px rgba(0,0,0,.18);
+    letter-spacing: 1px;
+  }
+  .hud {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .stat {
+    flex: 1;
+    background: rgba(255,255,255,.78);
+    border-radius: 14px;
+    padding: 6px 4px;
+    text-align: center;
+    box-shadow: 0 3px 0 rgba(0,0,0,.12);
+  }
+  .stat .label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #7a6a4a;
+  }
+  .stat .value {
+    font-size: clamp(22px, 7vw, 30px);
+    font-weight: 800;
+    line-height: 1.1;
+    color: #3a2a0a;
+  }
+  #timeStat.low .value { color: #d33; animation: blink .6s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+
+  .board {
+    width: 100%;
+    max-width: 420px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: clamp(8px, 2.5vw, 14px);
+    margin-top: 4px;
+  }
+  .hole {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    background:
+      radial-gradient(ellipse at 50% 38%, #5a3a18 0%, #3e2710 60%, #2c1b0a 100%);
+    box-shadow: inset 0 8px 14px rgba(0,0,0,.55), 0 4px 0 #6c4a22;
+    overflow: hidden;
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  .hole::after {
+    /* dirt rim */
+    content: "";
+    position: absolute;
+    left: 50%; bottom: -6%;
+    width: 116%; height: 40%;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at 50% 0%, #8a5a28 0%, #6c4420 55%, rgba(108,68,32,0) 70%);
+    pointer-events: none;
+  }
+  .mole {
+    position: absolute;
+    left: 50%;
+    bottom: -4%;
+    width: 78%;
+    height: 78%;
+    transform: translate(-50%, 110%);
+    transition: transform .12s ease-out;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0; /* set via .emoji */
+    will-change: transform;
+    pointer-events: none;
+  }
+  .mole.up { transform: translate(-50%, 0%); }
+  .mole.bonk { transform: translate(-50%, 18%) scale(.86); transition: transform .07s ease-in; }
+
+  .critter {
+    width: 100%;
+    height: 100%;
+    border-radius: 50% 50% 46% 46%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(34px, 13vw, 64px);
+    line-height: 1;
+    box-shadow: 0 4px 8px rgba(0,0,0,.3) inset, 0 2px 4px rgba(0,0,0,.25);
+  }
+  .mole.good .critter { background: radial-gradient(circle at 50% 35%, #b98a55, #8a5e2e); }
+  .mole.bomb .critter { background: radial-gradient(circle at 50% 35%, #ff8a8a, #d23b3b); }
+
+  /* floating score popups */
+  .pop {
+    position: absolute;
+    left: 50%;
+    top: 14%;
+    transform: translateX(-50%);
+    font-weight: 900;
+    font-size: clamp(18px, 6vw, 26px);
+    pointer-events: none;
+    text-shadow: 0 2px 2px rgba(0,0,0,.3);
+    animation: floatUp .7s ease-out forwards;
+    z-index: 5;
+  }
+  .pop.plus { color: #ffe14d; }
+  .pop.minus { color: #ff5c5c; }
+  @keyframes floatUp {
+    0% { opacity: 0; transform: translate(-50%, 10px) scale(.6); }
+    20% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -34px) scale(1.2); }
+  }
+
+  .btn {
+    border: none;
+    border-radius: 16px;
+    padding: 14px 26px;
+    font-size: clamp(18px, 5vw, 22px);
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(#ffb13b, #ff8a00);
+    box-shadow: 0 5px 0 #c66a00, 0 6px 10px rgba(0,0,0,.25);
+    touch-action: manipulation;
+    cursor: pointer;
+    transition: transform .05s, box-shadow .05s;
+  }
+  .btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #c66a00, 0 3px 6px rgba(0,0,0,.25); }
+
+  /* overlay (start + end) */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 30, 50, .55);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 20;
+  }
+  .overlay.hidden { display: none; }
+  .card {
+    background: linear-gradient(160deg, #fff7e6, #ffe9c2);
+    border-radius: 22px;
+    padding: 22px 22px 26px;
+    width: 100%;
+    max-width: 340px;
+    text-align: center;
+    box-shadow: 0 12px 30px rgba(0,0,0,.4);
+    border: 3px solid #fff;
+  }
+  .card h2 { margin: 0 0 6px; font-size: 28px; color: #5a3b12; }
+  .card p { margin: 6px 0 16px; font-size: 16px; color: #6a5638; line-height: 1.4; }
+  .card .big { font-size: 44px; font-weight: 900; color: #ff8a00; margin: 4px 0 2px; }
+  .emoji-row { font-size: 38px; margin: 4px 0 10px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/whack-a-mole.svg">
+    <link rel="manifest" href="/games/whack-a-mole.webmanifest">
+    <meta name="theme-color" content="#65A30D">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Whack-a-Mole">
+    <link rel="apple-touch-icon" href="/games/icons/whack-a-mole.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#65A30D;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <h1>Whack-a-Mole</h1>
+
+  <div class="hud">
+    <div class="stat" id="scoreStat">
+      <div class="label">Score</div>
+      <div class="value" id="score">0</div>
+    </div>
+    <div class="stat" id="timeStat">
+      <div class="label">Time</div>
+      <div class="value" id="time">30</div>
+    </div>
+  </div>
+
+  <div class="board" id="board" aria-label="Whack-a-Mole board"></div>
+
+  <!-- Start / End overlay -->
+  <div class="overlay" id="overlay">
+    <div class="card" id="card">
+      <div class="emoji-row" id="cardEmoji">🐹🔨</div>
+      <h2 id="cardTitle">Whack-a-Mole!</h2>
+      <p id="cardText">Tap the moles 🐹 when they pop up.<br>Avoid the bombs 💣 — they cost points!<br>How many can you whack in 30 seconds?</p>
+      <button class="btn" id="startBtn">Start!</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var ROUND_SECONDS = 30;
+  var HOLES = 9;            // 3x3 grid
+  var MOLE = "🐹";
+  var BOMB = "💣";
+
+  var board = document.getElementById("board");
+  var scoreEl = document.getElementById("score");
+  var timeEl = document.getElementById("time");
+  var timeStat = document.getElementById("timeStat");
+  var overlay = document.getElementById("overlay");
+  var cardTitle = document.getElementById("cardTitle");
+  var cardText = document.getElementById("cardText");
+  var cardEmoji = document.getElementById("cardEmoji");
+  var startBtn = document.getElementById("startBtn");
+
+  var holes = [];          // { el, mole, critter, active, isBomb, hideTimer }
+  var running = false;
+  var score = 0;
+  var timeLeft = ROUND_SECONDS;
+  var countdownTimer = null;
+  var spawnTimer = null;
+
+  // ---- build board ----
+  for (var i = 0; i < HOLES; i++) {
+    var hole = document.createElement("div");
+    hole.className = "hole";
+
+    var mole = document.createElement("div");
+    mole.className = "mole";
+
+    var critter = document.createElement("div");
+    critter.className = "critter";
+    mole.appendChild(critter);
+    hole.appendChild(mole);
+    board.appendChild(hole);
+
+    var rec = { el: hole, mole: mole, critter: critter, active: false, isBomb: false, hideTimer: null, idx: i };
+    holes.push(rec);
+
+    (function (r) {
+      // pointerdown gives the snappiest response for tapping.
+      r.el.addEventListener("pointerdown", function (e) {
+        e.preventDefault();
+        whack(r);
+      });
+    })(rec);
+  }
+
+  // ---- WebAudio (created lazily on first user gesture) ----
+  var audioCtx = null;
+  function ensureAudio() {
+    if (audioCtx) return;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    } catch (err) { audioCtx = null; }
+  }
+  function beep(freq, dur, type, vol) {
+    if (!audioCtx) return;
+    try {
+      var now = audioCtx.currentTime;
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = type || "sine";
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(vol || 0.18, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + dur + 0.02);
+    } catch (err) { /* ignore */ }
+  }
+  function soundGood() { beep(660, 0.12, "square", 0.16); setTimeout(function(){ beep(990, 0.12, "square", 0.14); }, 70); }
+  function soundBad() { beep(140, 0.30, "sawtooth", 0.20); }
+  function soundEnd() {
+    beep(523, 0.16, "triangle", 0.18);
+    setTimeout(function(){ beep(659, 0.16, "triangle", 0.18); }, 150);
+    setTimeout(function(){ beep(784, 0.30, "triangle", 0.18); }, 300);
+  }
+
+  // ---- difficulty: mole up-time & gap shrink as time passes ----
+  function progress() {
+    // 0 at start, 1 at end
+    return (ROUND_SECONDS - timeLeft) / ROUND_SECONDS;
+  }
+  function upDuration() {
+    var p = progress();
+    return Math.round(1100 - 620 * p);   // 1100ms -> ~480ms
+  }
+  function spawnGap() {
+    var p = progress();
+    var base = 820 - 470 * p;             // 820ms -> ~350ms
+    var jitter = Math.random() * (380 - 200 * p);
+    return Math.max(180, Math.round(base + jitter));
+  }
+
+  function freeHoles() {
+    var out = [];
+    for (var i = 0; i < holes.length; i++) if (!holes[i].active) out.push(holes[i]);
+    return out;
+  }
+
+  function showPop(rec, text, cls) {
+    var pop = document.createElement("div");
+    pop.className = "pop " + cls;
+    pop.textContent = text;
+    rec.el.appendChild(pop);
+    setTimeout(function () {
+      if (pop.parentNode) pop.parentNode.removeChild(pop);
+    }, 720);
+  }
+
+  function popUp() {
+    if (!running) return;
+    var free = freeHoles();
+    if (free.length) {
+      var rec = free[(Math.random() * free.length) | 0];
+      // After ~30% through the round, occasionally spawn a bomb.
+      var bombChance = progress() > 0.3 ? 0.16 : 0;
+      var isBomb = Math.random() < bombChance;
+
+      rec.active = true;
+      rec.isBomb = isBomb;
+      rec.critter.textContent = isBomb ? BOMB : MOLE;
+      rec.mole.classList.remove("bonk");
+      rec.mole.classList.toggle("bomb", isBomb);
+      rec.mole.classList.toggle("good", !isBomb);
+      // force reflow so the "up" transition runs cleanly after class reset
+      void rec.mole.offsetWidth;
+      rec.mole.classList.add("up");
+
+      var dur = upDuration();
+      rec.hideTimer = setTimeout(function () { duck(rec); }, dur);
+    }
+    spawnTimer = setTimeout(popUp, spawnGap());
+  }
+
+  function duck(rec) {
+    if (rec.hideTimer) { clearTimeout(rec.hideTimer); rec.hideTimer = null; }
+    rec.mole.classList.remove("up");
+    rec.active = false;
+    rec.isBomb = false;
+  }
+
+  function whack(rec) {
+    if (!running || !rec.active) return;
+
+    if (rec.isBomb) {
+      score = Math.max(0, score - 2);
+      updateScore(true);
+      rec.mole.classList.add("bonk");
+      showPop(rec, "-2", "minus");
+      soundBad();
+    } else {
+      score += 1;
+      updateScore(false);
+      rec.mole.classList.add("bonk");
+      showPop(rec, "+1", "plus");
+      soundGood();
+    }
+    // ducked immediately after a hit
+    duck(rec);
+  }
+
+  function updateScore(isPenalty) {
+    scoreEl.textContent = score;
+    scoreEl.style.transform = "scale(1.25)";
+    scoreEl.style.color = isPenalty ? "#d33" : "#3a2a0a";
+    setTimeout(function () {
+      scoreEl.style.transform = "";
+      scoreEl.style.color = "#3a2a0a";
+    }, 130);
+  }
+
+  function tick() {
+    timeLeft -= 1;
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      timeEl.textContent = "0";
+      endRound();
+      return;
+    }
+    timeEl.textContent = timeLeft;
+    if (timeLeft <= 5) timeStat.classList.add("low");
+  }
+
+  function clearTimers() {
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    if (spawnTimer) { clearTimeout(spawnTimer); spawnTimer = null; }
+  }
+
+  function resetHoles() {
+    for (var i = 0; i < holes.length; i++) {
+      if (holes[i].hideTimer) { clearTimeout(holes[i].hideTimer); holes[i].hideTimer = null; }
+      holes[i].mole.classList.remove("up", "bonk");
+      holes[i].active = false;
+      holes[i].isBomb = false;
+    }
+  }
+
+  function startRound() {
+    ensureAudio();
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+
+    clearTimers();
+    resetHoles();
+    running = true;
+    score = 0;
+    timeLeft = ROUND_SECONDS;
+    scoreEl.textContent = "0";
+    timeEl.textContent = timeLeft;
+    timeStat.classList.remove("low");
+    overlay.classList.add("hidden");
+
+    countdownTimer = setInterval(tick, 1000);
+    spawnTimer = setTimeout(popUp, 500);
+  }
+
+  function endRound() {
+    running = false;
+    clearTimers();
+    resetHoles();
+
+    var msg, emoji;
+    if (score >= 25) { msg = "Whacking champion!"; emoji = "🏆🐹"; }
+    else if (score >= 15) { msg = "Awesome job!"; emoji = "🌟🐹"; }
+    else if (score >= 5) { msg = "Nice whacking!"; emoji = "👍🐹"; }
+    else { msg = "Good try!"; emoji = "🙂🐹"; }
+
+    cardEmoji.textContent = emoji;
+    cardTitle.textContent = "Time's Up!";
+    cardText.innerHTML = msg + '<br><span class="big">' + score + '</span><br>points';
+    startBtn.textContent = "Play Again";
+    overlay.classList.remove("hidden");
+    soundEnd();
+  }
+
+  startBtn.addEventListener("click", function () { startRound(); });
+
+  // Pause spawning/ticking if the tab is hidden, resume on return (avoids weird catch-up).
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden && running) {
+      if (spawnTimer) { clearTimeout(spawnTimer); spawnTimer = null; }
+    } else if (!document.hidden && running && !spawnTimer) {
+      spawnTimer = setTimeout(popUp, 400);
+    }
+  });
+
+  // Guard against accidental double-tap zoom on the board even with touch-action set.
+  board.addEventListener("dblclick", function (e) { e.preventDefault(); });
+})();
+</script>
+</body>
+</html>

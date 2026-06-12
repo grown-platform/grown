@@ -71,6 +71,14 @@ const GAMES: AppTile[] = [
   arcade("sliding-puzzle", "Sliding Puzzle", "#5C6BC0", "Extension"),
   arcade("solitaire", "Solitaire", "#0B6E4F", "Style"),
   arcade("crossword", "Crossword", "#6741D9", "Abc"),
+  arcade("tetris", "Tetris", "#7C3AED", "ViewModule"),
+  arcade("breakout", "Breakout", "#0EA5E9", "GridView"),
+  arcade("pong", "Pong", "#475569", "SportsTennis"),
+  arcade("flappy", "Flappy", "#F59E0B", "Air"),
+  arcade("whack-a-mole", "Whack-a-Mole", "#65A30D", "Gavel"),
+  arcade("simon", "Simon", "#E11D48", "MusicNote"),
+  arcade("bubble-shooter", "Bubble Shooter", "#DB2777", "BubbleChart"),
+  arcade("tower-stack", "Tower Stack", "#F59E0B", "Layers"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */
@@ -166,6 +174,14 @@ export default function GamesApp({ user }: { user: User | null }) {
     apple.rel = "apple-touch-icon";
     apple.href = "/games-app-icon.svg";
     document.head.append(link, theme, apple);
+
+    // Register the games service worker so the whole collection is precached and
+    // the installed /games hub works fully offline (no connection required).
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/games/games-sw.js", { scope: "/games/" })
+        .catch(() => {});
+    }
 
     const onBIP = (e: Event) => {
       e.preventDefault();

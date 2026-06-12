@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Pong vs CPU</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #0a0a12;
+    color: #e8e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    padding: 8px;
+    gap: 8px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 640px;
+  }
+  h1 {
+    font-size: clamp(16px, 5vw, 24px);
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #6cf;
+  }
+  #score {
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(16px, 5vw, 22px);
+    font-weight: 700;
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+  }
+  #score .p { color: #6cf; }
+  #score .c { color: #f86; }
+  #score .sep { color: #556; }
+  .wrap {
+    position: relative;
+    line-height: 0;
+  }
+  canvas {
+    background: #11111d;
+    border: 2px solid #2a2a40;
+    border-radius: 10px;
+    touch-action: none;
+    display: block;
+    max-width: 100%;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(8,8,16,0.82);
+    border-radius: 10px;
+    text-align: center;
+    padding: 16px;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h2 {
+    margin: 0;
+    font-size: clamp(20px, 7vw, 32px);
+  }
+  #overlay p {
+    margin: 0;
+    font-size: clamp(12px, 4vw, 15px);
+    color: #99a;
+    max-width: 300px;
+    line-height: 1.4;
+  }
+  button {
+    font: inherit;
+    font-weight: 700;
+    font-size: clamp(14px, 4.5vw, 18px);
+    color: #061018;
+    background: #6cf;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 28px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: scale(0.97); }
+  footer {
+    font-size: clamp(10px, 3vw, 12px);
+    color: #667;
+    text-align: center;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/pong.svg">
+    <link rel="manifest" href="/games/pong.webmanifest">
+    <meta name="theme-color" content="#475569">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Pong">
+    <link rel="apple-touch-icon" href="/games/icons/pong.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#475569;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>PONG</h1>
+    <div id="score">
+      <span class="p" id="ps">0</span>
+      <span class="sep">:</span>
+      <span class="c" id="cs">0</span>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <canvas id="game" width="640" height="400"></canvas>
+    <div id="overlay">
+      <h2 id="ovTitle">PONG</h2>
+      <p id="ovText">Drag on your side (left) to move your paddle. First to 7 wins.</p>
+      <button id="startBtn">Play</button>
+    </div>
+  </div>
+
+  <footer>
+    You = <span style="color:#6cf">blue (left)</span> &nbsp;·&nbsp; CPU = <span style="color:#f86">orange (right)</span>
+    &nbsp;·&nbsp; <button id="restartBtn" style="background:#2a2a40;color:#cdd;padding:6px 14px;font-size:12px;border-radius:8px">Restart</button>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var psEl = document.getElementById("ps");
+  var csEl = document.getElementById("cs");
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ovTitle");
+  var ovText = document.getElementById("ovText");
+  var startBtn = document.getElementById("startBtn");
+  var restartBtn = document.getElementById("restartBtn");
+
+  // Logical (design) resolution. Rendering happens in this coordinate space,
+  // and the canvas is scaled visually via CSS to fit the viewport.
+  var W = 640, H = 400;
+  var TARGET = 7;
+
+  var PADDLE_W = 12, PADDLE_H = 78;
+  var BALL_R = 8;
+  var EDGE = 18; // gap between paddle and wall
+
+  var state = {
+    running: false,
+    over: false,
+    pScore: 0,
+    cScore: 0,
+    playerY: H / 2 - PADDLE_H / 2,
+    cpuY: H / 2 - PADDLE_H / 2,
+    ball: null,
+    targetY: H / 2 // where finger/pointer wants the paddle center
+  };
+
+  // ----- Audio (WebAudio, generated; no external resources) -----
+  var AudioCtx = window.AudioContext || window.webkitAudioContext;
+  var audioCtx = null;
+  function ensureAudio() {
+    if (!AudioCtx) return;
+    if (!audioCtx) {
+      try { audioCtx = new AudioCtx(); } catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  }
+  function beep(freq, dur, type) {
+    if (!audioCtx) return;
+    try {
+      var t = audioCtx.currentTime;
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = type || "square";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.18, t + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + dur + 0.02);
+    } catch (e) { /* ignore */ }
+  }
+
+  // ----- Ball -----
+  function newBall(dir) {
+    // dir: +1 toward CPU (right), -1 toward player (left)
+    var angle = (Math.random() * 0.6 - 0.3); // -0.3..0.3 rad
+    var speed = 5.2;
+    return {
+      x: W / 2,
+      y: H / 2,
+      vx: dir * speed * Math.cos(angle),
+      vy: speed * Math.sin(angle),
+      speed: speed
+    };
+  }
+
+  function resetPositions(serveToPlayer) {
+    state.playerY = H / 2 - PADDLE_H / 2;
+    state.cpuY = H / 2 - PADDLE_H / 2;
+    state.targetY = H / 2;
+    state.ball = newBall(serveToPlayer ? -1 : 1);
+  }
+
+  function fullReset() {
+    state.pScore = 0;
+    state.cScore = 0;
+    state.over = false;
+    state.running = false;
+    resetPositions(Math.random() < 0.5);
+    updateScore();
+  }
+
+  function updateScore() {
+    psEl.textContent = state.pScore;
+    csEl.textContent = state.cScore;
+  }
+
+  function startGame() {
+    ensureAudio();
+    if (state.over) fullReset();
+    overlay.classList.add("hidden");
+    state.running = true;
+  }
+
+  function showOverlay(title, text, btnLabel) {
+    ovTitle.textContent = title;
+    ovText.textContent = text;
+    startBtn.textContent = btnLabel;
+    overlay.classList.remove("hidden");
+  }
+
+  // ----- Input: map a client pointer Y to logical paddle target -----
+  function pointerToLogicalY(clientY) {
+    var rect = canvas.getBoundingClientRect();
+    var rel = (clientY - rect.top) / rect.height; // 0..1
+    return rel * H;
+  }
+
+  function clientXOnPlayerSide(clientX) {
+    // Only steer when touch starts on player's (left) half; once dragging,
+    // we keep following regardless so the finger can roam.
+    var rect = canvas.getBoundingClientRect();
+    return (clientX - rect.left) < rect.width * 0.6;
+  }
+
+  var pointerActive = false;
+
+  function onPointerDown(clientX, clientY) {
+    ensureAudio();
+    if (!state.running) return;
+    if (clientXOnPlayerSide(clientX)) {
+      pointerActive = true;
+      state.targetY = pointerToLogicalY(clientY);
+    }
+  }
+  function onPointerMove(clientY) {
+    if (!state.running || !pointerActive) return;
+    state.targetY = pointerToLogicalY(clientY);
+  }
+  function onPointerUp() {
+    pointerActive = false;
+  }
+
+  // Touch
+  canvas.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    onPointerDown(t.clientX, t.clientY);
+  }, { passive: false });
+  canvas.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    onPointerMove(t.clientY);
+  }, { passive: false });
+  canvas.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    onPointerUp();
+  }, { passive: false });
+  canvas.addEventListener("touchcancel", function (e) {
+    e.preventDefault();
+    onPointerUp();
+  }, { passive: false });
+
+  // Mouse
+  canvas.addEventListener("mousedown", function (e) {
+    onPointerDown(e.clientX, e.clientY);
+  });
+  window.addEventListener("mousemove", function (e) {
+    onPointerMove(e.clientY);
+  });
+  window.addEventListener("mouseup", onPointerUp);
+
+  // Keyboard
+  var keys = { up: false, down: false };
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") { keys.up = true; e.preventDefault(); }
+    else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") { keys.down = true; e.preventDefault(); }
+    else if (e.key === " " || e.key === "Enter") {
+      if (!state.running) { startGame(); e.preventDefault(); }
+    }
+  });
+  window.addEventListener("keyup", function (e) {
+    if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") keys.up = false;
+    else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") keys.down = false;
+  });
+
+  startBtn.addEventListener("click", startGame);
+  restartBtn.addEventListener("click", function () {
+    fullReset();
+    showOverlay("PONG", "Drag on your side (left) to move your paddle. First to " + TARGET + " wins.", "Play");
+  });
+
+  // ----- Physics / update -----
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  function update() {
+    if (!state.running) return;
+    var b = state.ball;
+
+    // Player paddle: keyboard nudges target, pointer sets it directly.
+    var KEY_SPEED = 7.5;
+    if (keys.up) state.targetY -= KEY_SPEED;
+    if (keys.down) state.targetY += KEY_SPEED;
+    state.targetY = clamp(state.targetY, PADDLE_H / 2, H - PADDLE_H / 2);
+
+    // Smoothly move player paddle toward target (feels responsive but not jittery)
+    var desiredPlayerTop = state.targetY - PADDLE_H / 2;
+    state.playerY += (desiredPlayerTop - state.playerY) * 0.55;
+    state.playerY = clamp(state.playerY, 0, H - PADDLE_H);
+
+    // CPU paddle: track ball with lag + imperfection so it's beatable.
+    var cpuCenter = state.cpuY + PADDLE_H / 2;
+    var cpuSpeedCap = 4.6; // slower than ball top speed -> beatable
+    // Only react strongly when ball heads toward CPU; idle-drift to center otherwise.
+    var aim;
+    if (b.vx > 0) {
+      // add a small error band that grows with ball speed
+      var err = (Math.random() - 0.5) * (28 + b.speed * 2.0);
+      aim = b.y + err;
+    } else {
+      aim = H / 2; // drift back to center
+    }
+    var diff = aim - cpuCenter;
+    var move = clamp(diff * 0.10, -cpuSpeedCap, cpuSpeedCap);
+    state.cpuY += move;
+    state.cpuY = clamp(state.cpuY, 0, H - PADDLE_H);
+
+    // Move ball
+    b.x += b.vx;
+    b.y += b.vy;
+
+    // Top / bottom walls
+    if (b.y - BALL_R < 0) {
+      b.y = BALL_R;
+      b.vy = Math.abs(b.vy);
+      beep(220, 0.04, "sine");
+    } else if (b.y + BALL_R > H) {
+      b.y = H - BALL_R;
+      b.vy = -Math.abs(b.vy);
+      beep(220, 0.04, "sine");
+    }
+
+    // Player paddle (left)
+    var pX = EDGE;
+    if (b.vx < 0 &&
+        b.x - BALL_R <= pX + PADDLE_W &&
+        b.x - BALL_R >= pX - 6 &&
+        b.y >= state.playerY - BALL_R &&
+        b.y <= state.playerY + PADDLE_H + BALL_R) {
+      reflect(b, state.playerY, +1);
+    }
+
+    // CPU paddle (right)
+    var cX = W - EDGE - PADDLE_W;
+    if (b.vx > 0 &&
+        b.x + BALL_R >= cX &&
+        b.x + BALL_R <= cX + PADDLE_W + 6 &&
+        b.y >= state.cpuY - BALL_R &&
+        b.y <= state.cpuY + PADDLE_H + BALL_R) {
+      reflect(b, state.cpuY, -1);
+    }
+
+    // Scoring
+    if (b.x + BALL_R < 0) {
+      // passed player -> CPU scores
+      state.cScore++;
+      updateScore();
+      beep(140, 0.18, "sawtooth");
+      pointAfter(false);
+    } else if (b.x - BALL_R > W) {
+      // passed CPU -> player scores
+      state.pScore++;
+      updateScore();
+      beep(660, 0.14, "triangle");
+      pointAfter(true);
+    }
+  }
+
+  function reflect(b, paddleTop, dir) {
+    // dir: +1 ball now goes right (off player), -1 goes left (off cpu)
+    var center = paddleTop + PADDLE_H / 2;
+    var rel = (b.y - center) / (PADDLE_H / 2); // -1..1
+    rel = clamp(rel, -1, 1);
+    var maxBounce = 0.95; // radians-ish steering
+    var angle = rel * maxBounce;
+
+    // Speed up slightly each hit, capped.
+    b.speed = Math.min(b.speed + 0.35, 11);
+
+    var sp = b.speed;
+    b.vx = dir * sp * Math.cos(angle);
+    b.vy = sp * Math.sin(angle);
+
+    // Nudge ball out of paddle to avoid sticking
+    if (dir > 0) b.x = EDGE + PADDLE_W + BALL_R + 0.5;
+    else b.x = W - EDGE - PADDLE_W - BALL_R - 0.5;
+
+    beep(dir > 0 ? 480 : 360, 0.05, "square");
+  }
+
+  function pointAfter(playerScored) {
+    if (state.pScore >= TARGET || state.cScore >= TARGET) {
+      state.running = false;
+      state.over = true;
+      var won = state.pScore > state.cScore;
+      showOverlay(
+        won ? "YOU WIN!" : "CPU WINS",
+        (won ? "Nice — " : "Final ") + state.pScore + " : " + state.cScore + ". Tap Play for a rematch.",
+        "Play again"
+      );
+      beep(won ? 880 : 110, 0.3, won ? "triangle" : "sawtooth");
+    } else {
+      // serve toward whoever just got scored on
+      resetPositions(!playerScored ? true : false);
+    }
+  }
+
+  // ----- Render -----
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // center net
+    ctx.strokeStyle = "#23233a";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 14]);
+    ctx.beginPath();
+    ctx.moveTo(W / 2, 6);
+    ctx.lineTo(W / 2, H - 6);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // player paddle (blue, left)
+    ctx.fillStyle = "#6cf";
+    roundRect(EDGE, state.playerY, PADDLE_W, PADDLE_H, 5);
+    ctx.fill();
+
+    // cpu paddle (orange, right)
+    ctx.fillStyle = "#f86";
+    roundRect(W - EDGE - PADDLE_W, state.cpuY, PADDLE_W, PADDLE_H, 5);
+    ctx.fill();
+
+    // ball
+    var b = state.ball;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // ----- Main loop (fixed-ish timestep) -----
+  var last = 0, acc = 0;
+  var STEP = 1000 / 60;
+  function loop(ts) {
+    if (!last) last = ts;
+    var dt = ts - last;
+    last = ts;
+    if (dt > 100) dt = 100; // avoid huge jumps after tab switch
+    acc += dt;
+    while (acc >= STEP) {
+      update();
+      acc -= STEP;
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ----- Responsive canvas sizing -----
+  function resize() {
+    // Fit canvas into available space while preserving aspect ratio.
+    var app = document.getElementById("app");
+    var availW = app.clientWidth - 16;
+    // Reserve room for header (~46) + footer (~40) + gaps/padding.
+    var availH = app.clientHeight - 120;
+    if (availW < 80) availW = 80;
+    if (availH < 80) availH = 80;
+
+    var aspect = W / H;
+    var cssW = availW;
+    var cssH = cssW / aspect;
+    if (cssH > availH) {
+      cssH = availH;
+      cssW = cssH * aspect;
+    }
+    canvas.style.width = cssW + "px";
+    canvas.style.height = cssH + "px";
+  }
+
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () {
+    setTimeout(resize, 200);
+  });
+
+  // ----- Init -----
+  fullReset();
+  resize();
+  showOverlay("PONG", "Drag on your side (left) to move your paddle. Mouse & ↑↓ keys work too. First to " + TARGET + " wins.", "Play");
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

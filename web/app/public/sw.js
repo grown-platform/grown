@@ -5,18 +5,38 @@ const SHELL_CACHE = "grown-shell-v1";
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  // Only handle top-level navigations; everything else (assets, API) is left to
-  // the browser so the SW never interferes with normal SPA/API behavior.
-  if (req.mode !== "navigate") return;
-  event.respondWith(
-    fetch(req)
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(SHELL_CACHE).then((c) => c.put(req, copy)).catch(() => {});
-        return res;
-      })
-      .catch(() => caches.match(req).then((r) => r || caches.match("/"))),
-  );
+  if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  // Top-level navigations: network-first (fresh online), cached shell offline.
+  if (req.mode === "navigate") {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(SHELL_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          return res;
+        })
+        .catch(() => caches.match(req).then((r) => r || caches.match("/"))),
+    );
+    return;
+  }
+  // Immutable hashed build assets (/assets/*): cache-first so the installed app
+  // shell loads with no connection. Everything else is left to the browser.
+  if (url.origin === self.location.origin && url.pathname.startsWith("/assets/")) {
+    event.respondWith(
+      caches.match(req).then(
+        (hit) =>
+          hit ||
+          fetch(req).then((res) => {
+            if (res && res.ok) {
+              const copy = res.clone();
+              caches.open(SHELL_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+            }
+            return res;
+          }),
+      ),
+    );
+  }
 });
 
 self.addEventListener("push", (event) => {
