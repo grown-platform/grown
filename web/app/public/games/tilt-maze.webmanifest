@@ -1,0 +1,25 @@
+{
+  "name": "Tilt Maze",
+  "short_name": "Tilt Maze",
+  "description": "Tilt Maze — play in your browser, online or off.",
+  "start_url": "/games/tilt-maze.html",
+  "scope": "/games/tilt-maze.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0EA5E9",
+  "icons": [
+    {
+      "src": "/games/icons/tilt-maze.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/games/icons/tilt-maze.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

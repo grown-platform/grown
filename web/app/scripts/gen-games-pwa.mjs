@@ -119,6 +119,9 @@ const CONFIG = [
   { id: "word-ladder", name: "Word Ladder", color: "#0D9488", glyph: "🪜" },
   { id: "dot-to-dot", name: "Dot to Dot", color: "#F59E0B", glyph: "✏️" },
   { id: "cookie-clicker", name: "Cookie Clicker", color: "#B45309", glyph: "🍪" },
+  { id: "tilt-maze", name: "Tilt Maze", color: "#0EA5E9", glyph: "🎱" },
+  { id: "heads-up", name: "Heads Up", color: "#7C3AED", glyph: "🤔" },
+  { id: "catch-phrase", name: "Catch Phrase", color: "#DC2626", glyph: "💬" },
 ];
 
 const iconSvg = (color, glyph) =>

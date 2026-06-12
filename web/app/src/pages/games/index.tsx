@@ -160,6 +160,9 @@ const GAMES: AppTile[] = [
   arcade("word-ladder", "Word Ladder", "#0D9488", "Stairs"),
   arcade("dot-to-dot", "Dot to Dot", "#F59E0B", "Gesture"),
   arcade("cookie-clicker", "Cookie Clicker", "#B45309", "Cookie"),
+  arcade("tilt-maze", "Tilt Maze", "#0EA5E9", "ScreenRotation"),
+  arcade("heads-up", "Heads Up", "#7C3AED", "Face"),
+  arcade("catch-phrase", "Catch Phrase", "#DC2626", "RecordVoiceOver"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */

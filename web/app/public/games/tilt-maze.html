@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Tilt Maze</title>
+    <style>
+      :root { --bg:#0f172a; --panel:#1e293b; --accent:#38bdf8; --ink:#e2e8f0; }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body {
+        margin: 0; min-height: 100%; background: var(--bg); color: var(--ink);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        -webkit-user-select: none; user-select: none; overscroll-behavior: none;
+      }
+      #app { display: flex; flex-direction: column; align-items: center; padding: 8px; gap: 8px; }
+      header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 560px; }
+      h1 { margin: 0; font-size: 1.25rem; color: var(--accent); flex: 1; min-width: 120px; }
+      .pill { background: rgba(255,255,255,.08); padding: 5px 10px; border-radius: 999px; font-size: .82rem; font-variant-numeric: tabular-nums; }
+      select, button.btn {
+        font: inherit; font-size: .82rem; font-weight: 600; color: var(--ink);
+        background: var(--panel); border: 1px solid rgba(255,255,255,.15);
+        border-radius: 8px; padding: 6px 10px; touch-action: manipulation; cursor: pointer;
+      }
+      button.btn.accent { background: var(--accent); color: #06283d; border-color: var(--accent); }
+      #board-wrap { position: relative; touch-action: none; }
+      canvas { display: block; border-radius: 10px; background: #0b1220; box-shadow: 0 8px 24px rgba(0,0,0,.4); touch-action: none; }
+      #overlay {
+        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 14px; background: rgba(8,12,22,.86); border-radius: 10px; text-align: center; padding: 18px;
+      }
+      #overlay.hide { display: none; }
+      #overlay h2 { margin: 0; font-size: 1.3rem; }
+      #overlay p { margin: 0; opacity: .8; font-size: .9rem; max-width: 280px; }
+      #hint { font-size: .78rem; opacity: .75; min-height: 1em; text-align: center; }
+    </style>
+      <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/tilt-maze.svg">
+    <link rel="manifest" href="/games/tilt-maze.webmanifest">
+    <meta name="theme-color" content="#0EA5E9">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Tilt Maze">
+    <link rel="apple-touch-icon" href="/games/icons/tilt-maze.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#0EA5E9;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Tilt Maze</h1>
+        <span class="pill" id="time">0.0s</span>
+        <button class="btn" id="prev">◀</button>
+        <span class="pill" id="lvl">Lvl 1</span>
+        <button class="btn" id="next">▶</button>
+        <button class="btn" id="recenter">Recenter</button>
+        <button class="btn accent" id="new">Restart</button>
+      </header>
+      <div id="board-wrap">
+        <canvas id="cv"></canvas>
+        <div id="overlay">
+          <h2 id="ovTitle">Tilt Maze</h2>
+          <p id="ovText">Tip your phone to roll the marble from the blue start to the green goal. Avoid the holes!</p>
+          <button class="btn accent" id="startBtn" style="font-size:1rem;padding:10px 22px;">Start</button>
+        </div>
+      </div>
+      <div id="hint"></div>
+    </div>
+
+    <script>
+      const cv = document.getElementById("cv");
+      const ctx = cv.getContext("2d");
+      const timeEl = document.getElementById("time");
+      const hintEl = document.getElementById("hint");
+      const overlay = document.getElementById("overlay");
+      const ovTitle = document.getElementById("ovTitle");
+      const ovText = document.getElementById("ovText");
+
+      let C = 9, R = 9;                 // maze cells
+      const TOTAL_LEVELS = 100;
+      let level = 1, maxLevel = 1;
+      try {
+        level = Math.min(TOTAL_LEVELS, Math.max(1, +localStorage.getItem("tiltmaze.level") || 1));
+        maxLevel = Math.min(TOTAL_LEVELS, Math.max(level, +localStorage.getItem("tiltmaze.max") || 1));
+      } catch (_) {}
+      // Seeded RNG so each level number is a fixed, reproducible maze.
+      function mulberry32(a) {
+        return function () {
+          a |= 0; a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      let rng = Math.random;
+      function levelConfig(n) {
+        const f = (n - 1) / (TOTAL_LEVELS - 1);
+        return { size: Math.round(5 + f * 15), holeF: 0.02 + f * 0.08 };
+      }
+      function saveProg() {
+        maxLevel = Math.max(maxLevel, level);
+        try {
+          localStorage.setItem("tiltmaze.level", level);
+          localStorage.setItem("tiltmaze.max", maxLevel);
+        } catch (_) {}
+      }
+      function advanceLevel() {
+        if (level < TOTAL_LEVELS) level++;
+        saveProg();
+        buildLevel();
+      }
+      let solid, GW, GH, cellPx;       // solid grid (2C+1 x 2R+1)
+      let ball, goal, holes = [];
+      let started = false, won = false, lost = false;
+      let startTime = 0, elapsed = 0;
+      let raf = null, lastT = 0;
+
+      // tilt state
+      let haveTilt = false, betaRef = null, gammaRef = 0, ax = 0, ay = 0;
+      const keys = {};
+
+      // ── Maze generation (recursive backtracker) ──────────────────────────
+      function genMaze(C, R) {
+        const walls = Array.from({ length: R * C }, () => ({ N: true, E: true, S: true, W: true }));
+        const visited = new Array(R * C).fill(false);
+        const stack = [0];
+        visited[0] = true;
+        const dirs = [["N", -1, 0], ["S", 1, 0], ["E", 0, 1], ["W", 0, -1]];
+        const opp = { N: "S", S: "N", E: "W", W: "E" };
+        while (stack.length) {
+          const cur = stack[stack.length - 1];
+          const r = Math.floor(cur / C), c = cur % C;
+          const nbrs = [];
+          for (const [d, dr, dc] of dirs) {
+            const nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < R && nc >= 0 && nc < C && !visited[nr * C + nc]) nbrs.push([d, nr, nc]);
+          }
+          if (nbrs.length) {
+            const [d, nr, nc] = nbrs[(rng() * nbrs.length) | 0];
+            walls[cur][d] = false;
+            walls[nr * C + nc][opp[d]] = false;
+            visited[nr * C + nc] = true;
+            stack.push(nr * C + nc);
+          } else stack.pop();
+        }
+        return walls;
+      }
+
+      function buildLevel() {
+        const cfg = levelConfig(level);
+        C = R = cfg.size;
+        rng = mulberry32((0x9e3779b9 ^ Math.imul(level, 2654435761)) >>> 0);
+        document.getElementById("lvl").textContent = "Lvl " + level + "/" + TOTAL_LEVELS;
+        const walls = genMaze(C, R);
+        GW = 2 * C + 1; GH = 2 * R + 1;
+        solid = Array.from({ length: GH }, () => new Array(GW).fill(true));
+        for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+          const gr = 2 * r + 1, gc = 2 * c + 1;
+          solid[gr][gc] = false;
+          const w = walls[r * C + c];
+          if (!w.N) solid[gr - 1][gc] = false;
+          if (!w.S) solid[gr + 1][gc] = false;
+          if (!w.E) solid[gr][gc + 1] = false;
+          if (!w.W) solid[gr][gc - 1] = false;
+        }
+        goal = { gx: 2 * (C - 1) + 1, gy: 2 * (R - 1) + 1 };
+        // Scatter a few holes in open dead-end-ish cells (not start/goal).
+        holes = [];
+        const open = [];
+        for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+          if ((r === 0 && c === 0) || (r === C - 1 && c === R - 1)) continue;
+          if ((r === R - 1 && c === C - 1)) continue;
+          open.push({ gx: 2 * c + 1, gy: 2 * r + 1 });
+        }
+        const nHoles = Math.round(C * R * cfg.holeF);
+        for (let i = 0; i < nHoles && open.length; i++) {
+          const idx = (rng() * open.length) | 0;
+          holes.push(open.splice(idx, 1)[0]);
+        }
+        layout();
+        resetBall();
+      }
+
+      function layout() {
+        const maxW = Math.min(window.innerWidth - 16, 560);
+        const maxH = window.innerHeight - 150;
+        cellPx = Math.max(6, Math.floor(Math.min(maxW / GW, maxH / GH)));
+        cv.width = GW * cellPx;
+        cv.height = GH * cellPx;
+      }
+
+      function resetBall() {
+        ball = { x: 1.5 * cellPx, y: 1.5 * cellPx, vx: 0, vy: 0, rad: cellPx * 0.36 };
+        won = false; lost = false; betaRef = null;
+        startTime = performance.now ? 0 : 0;
+        elapsed = 0;
+      }
+
+      // ── Physics ──────────────────────────────────────────────────────────
+      const GRAV = 2600;     // px/s^2 at full tilt
+      const FRICT = 0.86;    // per-frame damping toward
+      function step(dt) {
+        if (won || lost || !started) { draw(); return; }
+        // input → acceleration
+        let iax = ax, iay = ay;
+        if (keys.l) iax = -1; if (keys.r) iax = 1;
+        if (keys.u) iay = -1; if (keys.d) iay = 1;
+        // substep for stable collisions
+        const SUB = 4;
+        const h = dt / SUB;
+        for (let s = 0; s < SUB; s++) {
+          ball.vx += iax * GRAV * h;
+          ball.vy += iay * GRAV * h;
+          const damp = Math.pow(FRICT, h * 60);
+          ball.vx *= damp; ball.vy *= damp;
+          ball.x += ball.vx * h;
+          ball.y += ball.vy * h;
+          collide();
+        }
+        checkSpecial();
+        elapsed += dt;
+        draw();
+      }
+
+      function collide() {
+        const r = ball.rad;
+        const minGX = Math.floor((ball.x - r) / cellPx), maxGX = Math.floor((ball.x + r) / cellPx);
+        const minGY = Math.floor((ball.y - r) / cellPx), maxGY = Math.floor((ball.y + r) / cellPx);
+        for (let gy = minGY; gy <= maxGY; gy++) for (let gx = minGX; gx <= maxGX; gx++) {
+          if (gy < 0 || gx < 0 || gy >= GH || gx >= GW || !solid[gy][gx]) continue;
+          const rx = gx * cellPx, ry = gy * cellPx;
+          const cx = Math.max(rx, Math.min(ball.x, rx + cellPx));
+          const cy = Math.max(ry, Math.min(ball.y, ry + cellPx));
+          let dx = ball.x - cx, dy = ball.y - cy;
+          let d2 = dx * dx + dy * dy;
+          if (d2 < r * r) {
+            let d = Math.sqrt(d2);
+            let nx, ny;
+            if (d > 0.0001) { nx = dx / d; ny = dy / d; }
+            else { // center inside the cell — push out along nearest face
+              const left = ball.x - rx, right = rx + cellPx - ball.x;
+              const top = ball.y - ry, bot = ry + cellPx - ball.y;
+              const m = Math.min(left, right, top, bot);
+              nx = m === left ? -1 : m === right ? 1 : 0;
+              ny = m === top ? -1 : m === bot ? 1 : 0;
+              d = 0;
+            }
+            const overlap = r - d;
+            ball.x += nx * overlap; ball.y += ny * overlap;
+            const vn = ball.vx * nx + ball.vy * ny;
+            if (vn < 0) { ball.vx -= 1.15 * vn * nx; ball.vy -= 1.15 * vn * ny; }
+          }
+        }
+      }
+
+      function checkSpecial() {
+        // goal
+        const gx = goal.gx * cellPx + cellPx / 2, gy = goal.gy * cellPx + cellPx / 2;
+        if (Math.hypot(ball.x - gx, ball.y - gy) < cellPx * 0.5) { won = true; saveProg(); beep(880, 0.18); return; }
+        // holes
+        for (const h of holes) {
+          const hx = h.gx * cellPx + cellPx / 2, hy = h.gy * cellPx + cellPx / 2;
+          if (Math.hypot(ball.x - hx, ball.y - hy) < cellPx * 0.32) { lost = true; beep(120, 0.3); return; }
+        }
+      }
+
+      // ── Render ───────────────────────────────────────────────────────────
+      function draw() {
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        for (let gy = 0; gy < GH; gy++) for (let gx = 0; gx < GW; gx++) {
+          if (solid[gy][gx]) {
+            ctx.fillStyle = "#334155";
+            ctx.fillRect(gx * cellPx, gy * cellPx, cellPx + 0.5, cellPx + 0.5);
+          }
+        }
+        // start
+        ctx.fillStyle = "rgba(56,189,248,.35)";
+        ctx.fillRect(1 * cellPx, 1 * cellPx, cellPx, cellPx);
+        // goal
+        ctx.fillStyle = "#22c55e";
+        ctx.beginPath();
+        ctx.arc(goal.gx * cellPx + cellPx / 2, goal.gy * cellPx + cellPx / 2, cellPx * 0.42, 0, 7);
+        ctx.fill();
+        // holes
+        for (const h of holes) {
+          ctx.fillStyle = "#0b1220";
+          ctx.beginPath();
+          ctx.arc(h.gx * cellPx + cellPx / 2, h.gy * cellPx + cellPx / 2, cellPx * 0.34, 0, 7);
+          ctx.fill();
+          ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 2; ctx.stroke();
+        }
+        // ball
+        const grd = ctx.createRadialGradient(ball.x - ball.rad * 0.3, ball.y - ball.rad * 0.3, ball.rad * 0.1, ball.x, ball.y, ball.rad);
+        grd.addColorStop(0, "#fff"); grd.addColorStop(1, "#e11d48");
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.rad, 0, 7); ctx.fill();
+
+        if (won || lost) {
+          ovTitle.textContent = won ? "Level " + level + " solved! 🎉" : "Fell in a hole!";
+          ovText.textContent = won
+            ? (level < TOTAL_LEVELS ? `Time: ${elapsed.toFixed(1)}s — tap for Level ${level + 1}.` : `You finished all ${TOTAL_LEVELS} levels! 🏆`)
+            : "Tap to try this level again.";
+          overlay.classList.remove("hide");
+          document.getElementById("startBtn").textContent = won ? (level < TOTAL_LEVELS ? "Next level" : "Play again") : "Retry";
+        }
+        timeEl.textContent = elapsed.toFixed(1) + "s";
+      }
+
+      // ── Loop ─────────────────────────────────────────────────────────────
+      function loop(t) {
+        const dt = Math.min(0.033, (t - lastT) / 1000 || 0);
+        lastT = t;
+        step(dt);
+        raf = requestAnimationFrame(loop);
+      }
+
+      // ── Tilt ─────────────────────────────────────────────────────────────
+      function onOrient(e) {
+        if (e.gamma == null && e.beta == null) return;
+        haveTilt = true;
+        if (betaRef == null) { betaRef = e.beta || 0; gammaRef = e.gamma || 0; }
+        const cl = (v) => Math.max(-1, Math.min(1, v / 40));
+        ax = cl((e.gamma || 0) - gammaRef);
+        ay = cl((e.beta || 0) - betaRef);
+      }
+
+      async function enableTilt() {
+        try {
+          if (typeof DeviceOrientationEvent !== "undefined" &&
+              typeof DeviceOrientationEvent.requestPermission === "function") {
+            const res = await DeviceOrientationEvent.requestPermission();
+            if (res !== "granted") { hintEl.textContent = "Tilt permission denied — use arrow keys."; return; }
+          }
+          window.addEventListener("deviceorientation", onOrient, true);
+          setTimeout(() => {
+            if (!haveTilt) hintEl.textContent = "No tilt sensor — use arrow keys (or WASD) to roll.";
+            else hintEl.textContent = "Tip the phone to roll. ‘Recenter’ sets your neutral hold.";
+          }, 800);
+        } catch (_) {
+          hintEl.textContent = "Tilt unavailable — use arrow keys.";
+        }
+      }
+
+      // ── Audio ────────────────────────────────────────────────────────────
+      let actx = null;
+      function beep(freq, dur) {
+        try {
+          actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+          const o = actx.createOscillator(), g = actx.createGain();
+          o.frequency.value = freq; o.connect(g); g.connect(actx.destination);
+          g.gain.setValueAtTime(0.12, actx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
+          o.start(); o.stop(actx.currentTime + dur);
+        } catch (_) {}
+      }
+
+      // ── Controls / wiring ────────────────────────────────────────────────
+      document.getElementById("startBtn").addEventListener("click", async () => {
+        overlay.classList.add("hide");
+        if (won) advanceLevel(); else if (lost) buildLevel();
+        started = true;
+        await enableTilt();
+        try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.resume) actx.resume(); } catch (_) {}
+      });
+      document.getElementById("new").addEventListener("click", () => { buildLevel(); started = true; overlay.classList.add("hide"); });
+      document.getElementById("recenter").addEventListener("click", () => { betaRef = null; });
+      document.getElementById("prev").addEventListener("click", () => { if (level > 1) { level--; saveProg(); buildLevel(); started = true; overlay.classList.add("hide"); } });
+      document.getElementById("next").addEventListener("click", () => { if (level < TOTAL_LEVELS) { level++; saveProg(); buildLevel(); started = true; overlay.classList.add("hide"); } });
+      // tap the board on win/lose to continue
+      cv.addEventListener("pointerdown", () => { if (won) { advanceLevel(); started = true; overlay.classList.add("hide"); } else if (lost) { buildLevel(); started = true; overlay.classList.add("hide"); } });
+
+      const keymap = { ArrowLeft: "l", ArrowRight: "r", ArrowUp: "u", ArrowDown: "d", a: "l", d: "r", w: "u", s: "d" };
+      window.addEventListener("keydown", (e) => { const k = keymap[e.key]; if (k) { keys[k] = true; e.preventDefault(); } });
+      window.addEventListener("keyup", (e) => { const k = keymap[e.key]; if (k) keys[k] = false; });
+      window.addEventListener("resize", () => { if (solid) { const bx = ball.x / (GW * cellPx), by = ball.y / (GH * cellPx); layout(); ball.x = bx * GW * cellPx; ball.y = by * GH * cellPx; ball.rad = cellPx * 0.36; draw(); } });
+
+      buildLevel();
+      draw();
+      raf = requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>

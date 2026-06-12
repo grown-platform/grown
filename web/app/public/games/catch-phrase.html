@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Catch Phrase</title>
+<style>
+  :root {
+    --bg: #0f1226;
+    --panel: #1a1f3d;
+    --panel2: #232a52;
+    --accent: #ff7a59;
+    --accent2: #ffd166;
+    --teamA: #4ad1c8;
+    --teamB: #f06ed3;
+    --good: #5ee08a;
+    --text: #f2f4ff;
+    --muted: #9aa3c9;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: env(safe-area-inset-top) 14px env(safe-area-inset-bottom) 14px;
+  }
+  .screen {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .screen.active { display: flex; }
+  h1 {
+    text-align: center;
+    font-size: 30px;
+    margin: 14px 0 4px;
+    letter-spacing: 1px;
+    color: var(--accent2);
+    text-shadow: 0 2px 0 rgba(0,0,0,.4);
+  }
+  .subtitle {
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+    margin-bottom: 14px;
+  }
+  .scroll {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1;
+    min-height: 0;
+  }
+  .section-label {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin: 14px 4px 8px;
+  }
+  .cats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .cat {
+    background: var(--panel);
+    border: 2px solid transparent;
+    border-radius: 14px;
+    padding: 16px 10px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    transition: transform .08s, border-color .12s, background .12s;
+  }
+  .cat:active { transform: scale(.96); }
+  .cat.sel {
+    border-color: var(--accent);
+    background: var(--panel2);
+  }
+  .cat .count { display:block; font-size:12px; color: var(--muted); font-weight:400; margin-top:4px; }
+  .teams {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .teamcard {
+    background: var(--panel);
+    border-radius: 14px;
+    padding: 12px;
+    text-align: center;
+  }
+  .teamcard.A { box-shadow: inset 0 0 0 2px var(--teamA); }
+  .teamcard.B { box-shadow: inset 0 0 0 2px var(--teamB); }
+  .teamcard .name { font-weight:700; font-size:16px; }
+  .teamcard.A .name { color: var(--teamA); }
+  .teamcard.B .name { color: var(--teamB); }
+  .teamcard .score { font-size:36px; font-weight:800; line-height:1.1; }
+  .row {
+    display:flex; align-items:center; justify-content:space-between;
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-top: 10px;
+  }
+  .row label { font-size:15px; }
+  .stepper { display:flex; align-items:center; gap:12px; }
+  .stepper button {
+    width:40px; height:40px; border-radius:10px; border:none;
+    background: var(--panel2); color: var(--text); font-size:22px; font-weight:700;
+    cursor:pointer;
+  }
+  .stepper button:active { background: var(--accent); }
+  .stepper .val { min-width:34px; text-align:center; font-size:20px; font-weight:700; }
+  .btn {
+    border: none;
+    border-radius: 16px;
+    padding: 18px;
+    font-size: 20px;
+    font-weight: 800;
+    color: #11132a;
+    cursor: pointer;
+    width: 100%;
+    transition: transform .06s, filter .12s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: linear-gradient(180deg, var(--accent2), var(--accent)); }
+  .btn.big { padding: 26px 18px; font-size: 24px; }
+  .btn.ghost { background: var(--panel2); color: var(--text); }
+  .btn.skip { background: var(--panel2); color: var(--accent2); }
+  .footer-btn { margin-top: 10px; }
+
+  /* PLAY SCREEN */
+  #playScreen { justify-content: space-between; }
+  .play-top {
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 8px 4px 4px;
+  }
+  .miniscore { font-size:15px; font-weight:700; }
+  .miniscore .a { color: var(--teamA); }
+  .miniscore .b { color: var(--teamB); }
+  .turn-banner {
+    text-align:center;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 8px;
+    border-radius: 12px;
+    margin: 6px 0;
+  }
+  .turn-banner.A { background: rgba(74,209,200,.16); color: var(--teamA); }
+  .turn-banner.B { background: rgba(240,110,211,.16); color: var(--teamB); }
+  .wordbox {
+    flex: 1;
+    display:flex;
+    flex-direction: column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    background: radial-gradient(circle at 50% 30%, #2a3266, #161a36);
+    border-radius: 22px;
+    margin: 6px 0;
+    padding: 18px;
+    min-height: 0;
+  }
+  .wordbox .cat-tag {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--accent2);
+    margin-bottom: 14px;
+  }
+  .wordbox .word {
+    font-size: 40px;
+    font-weight: 900;
+    line-height: 1.15;
+    word-break: break-word;
+    text-shadow: 0 3px 0 rgba(0,0,0,.35);
+  }
+  .pulse { animation: pulse 0.5s infinite alternate; }
+  @keyframes pulse { from { color: var(--text);} to { color: var(--accent);} }
+  .play-controls { display:flex; flex-direction:column; gap:10px; padding-bottom:4px; }
+  .play-controls .duo { display:flex; gap:10px; }
+  .play-controls .duo .btn { flex:1; }
+
+  /* OVERLAY screens (round over / game over) */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(8,10,24,.96);
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding: 24px;
+    z-index: 10;
+  }
+  .overlay.active { display:flex; }
+  .overlay h2 { font-size: 30px; margin: 6px 0; }
+  .overlay .big-emoji { font-size: 64px; margin-bottom: 8px; }
+  .overlay p { font-size:18px; color: var(--muted); margin: 6px 0 20px; }
+  .overlay .score-line { font-size:22px; font-weight:800; margin: 4px 0 22px; }
+  .overlay .score-line .a { color: var(--teamA); }
+  .overlay .score-line .b { color: var(--teamB); }
+  .overlay .btn { max-width: 320px; }
+  .hint { color: var(--muted); font-size:13px; text-align:center; margin-top:10px; }
+  .winA { color: var(--teamA); }
+  .winB { color: var(--teamB); }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/catch-phrase.svg">
+    <link rel="manifest" href="/games/catch-phrase.webmanifest">
+    <meta name="theme-color" content="#DC2626">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Catch Phrase">
+    <link rel="apple-touch-icon" href="/games/icons/catch-phrase.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DC2626;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+
+  <!-- SETUP SCREEN -->
+  <div id="setupScreen" class="screen active">
+    <h1>Catch Phrase</h1>
+    <div class="subtitle">Describe it before the buzzer!</div>
+    <div class="scroll">
+      <div class="section-label">Pick categories</div>
+      <div class="cats" id="catList"></div>
+
+      <div class="section-label">Teams</div>
+      <div class="teams">
+        <div class="teamcard A"><div class="name">Team A</div></div>
+        <div class="teamcard B"><div class="name">Team B</div></div>
+      </div>
+
+      <div class="row">
+        <label>Points to win</label>
+        <div class="stepper">
+          <button id="targetDown">−</button>
+          <span class="val" id="targetVal">7</span>
+          <button id="targetUp">+</button>
+        </div>
+      </div>
+
+      <div class="hint">A hidden timer runs each round (≈45–75s). Whoever holds the phone when it buzzes loses the round — the other team scores. Pass after each correct guess!</div>
+    </div>
+    <button class="btn primary footer-btn" id="startGameBtn">Start Game</button>
+  </div>
+
+  <!-- READY / PASS SCREEN -->
+  <div id="readyScreen" class="screen">
+    <div class="play-top">
+      <div class="miniscore"><span class="a" id="rsA">A 0</span> &nbsp;·&nbsp; <span class="b" id="rsB">B 0</span></div>
+      <div class="miniscore" style="color:var(--muted)">to <span id="rsTarget">7</span></div>
+    </div>
+    <div class="wordbox">
+      <div class="cat-tag">Get ready</div>
+      <div class="word" id="readyTeamName">Team A starts</div>
+      <p class="hint" style="margin-top:18px;max-width:300px">Hold the phone. When you tap Start, a hidden timer begins. Describe the word, pass after each correct guess. Don't be holding it at the buzzer!</p>
+    </div>
+    <div class="play-controls">
+      <button class="btn primary big" id="startRoundBtn">Start Round</button>
+    </div>
+  </div>
+
+  <!-- PLAY SCREEN -->
+  <div id="playScreen" class="screen">
+    <div class="play-top">
+      <div class="miniscore"><span class="a" id="psA">A 0</span> &nbsp;·&nbsp; <span class="b" id="psB">B 0</span></div>
+      <div class="miniscore" style="color:var(--muted)">to <span id="psTarget">7</span></div>
+    </div>
+    <div class="turn-banner A" id="turnBanner">Team A — describe it!</div>
+    <div class="wordbox">
+      <div class="cat-tag" id="playCat">Animals</div>
+      <div class="word" id="playWord">—</div>
+    </div>
+    <div class="play-controls">
+      <button class="btn primary big" id="gotItBtn">Got it — Pass &amp; Next</button>
+      <div class="duo">
+        <button class="btn skip" id="skipBtn">Skip word</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROUND OVER OVERLAY -->
+  <div id="roundOverlay" class="overlay">
+    <div class="big-emoji">⏰</div>
+    <h2 id="roundTitle">Buzzer!</h2>
+    <p id="roundDesc">Team A was holding it.</p>
+    <div class="score-line"><span class="a" id="roA">A 0</span> &nbsp;—&nbsp; <span class="b" id="roB">B 0</span></div>
+    <button class="btn primary" id="nextRoundBtn">Next Round</button>
+  </div>
+
+  <!-- GAME OVER OVERLAY -->
+  <div id="gameOverlay" class="overlay">
+    <div class="big-emoji">🏆</div>
+    <h2 id="gameTitle">Team A wins!</h2>
+    <div class="score-line"><span class="a" id="goA">A 0</span> &nbsp;—&nbsp; <span class="b" id="goB">B 0</span></div>
+    <button class="btn primary" id="playAgainBtn">Play Again</button>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------- WORD LISTS ---------------- */
+  var CATEGORIES = {
+    "Animals": ["Elephant","Penguin","Kangaroo","Octopus","Giraffe","Hedgehog","Dolphin","Rhinoceros","Squirrel","Chameleon","Flamingo","Cheetah","Hamster","Jellyfish","Walrus","Koala","Platypus","Peacock","Crocodile","Butterfly","Raccoon","Owl","Bumblebee","Gorilla","Seahorse","Porcupine","Meerkat","Lobster","Tarantula","Armadillo","Sloth","Toucan","Buffalo","Ostrich","Panda","Wolf","Hippopotamus","Scorpion","Starfish","Woodpecker"],
+    "Food": ["Pizza","Spaghetti","Pancake","Avocado","Popcorn","Cheeseburger","Sushi","Watermelon","Doughnut","Pineapple","Taco","Cupcake","Broccoli","Pretzel","Lasagna","Bacon","Marshmallow","Burrito","Cucumber","Croissant","Meatball","Waffle","Omelette","Sandwich","Lollipop","Strawberry","Mushroom","Hot Dog","Cheesecake","Nachos","Dumpling","Smoothie","Gingerbread","Peanut Butter","Macaroni","Cereal","Pickle","Brownie","Coconut","Ice Cream"],
+    "Movies": ["Titanic","Jurassic Park","The Lion King","Star Wars","Frozen","Jaws","The Matrix","Toy Story","Avatar","Shrek","Finding Nemo","Harry Potter","Spider-Man","The Godfather","Forrest Gump","Up","Ghostbusters","Rocky","E.T.","Inception","Cinderella","Aladdin","Pirates of the Caribbean","Batman","The Avengers","Home Alone","Despicable Me","Moana","King Kong","The Incredibles","Mary Poppins","Back to the Future","Iron Man","Beauty and the Beast","The Wizard of Oz","Madagascar","Kung Fu Panda","Ratatouille","Cars","Monsters Inc"],
+    "Sports": ["Basketball","Soccer","Tennis","Bowling","Surfing","Boxing","Golf","Skateboarding","Volleyball","Hockey","Swimming","Karate","Baseball","Cycling","Archery","Skiing","Wrestling","Ping Pong","Badminton","Rugby","Gymnastics","Fencing","Rock Climbing","Horse Racing","Snowboarding","Cricket","Darts","Curling","Marathon","Kayaking","Football","Sumo Wrestling","Figure Skating","Pole Vault","Dodgeball","Water Polo","Hurdles","Diving","Lacrosse","Frisbee"],
+    "Objects": ["Umbrella","Toothbrush","Stapler","Telescope","Backpack","Lighthouse","Sunglasses","Hammer","Vacuum","Compass","Wristwatch","Calculator","Flashlight","Keyboard","Mirror","Scissors","Anchor","Whistle","Ladder","Bicycle","Microscope","Suitcase","Chandelier","Trampoline","Helmet","Magnet","Telescope","Padlock","Thermometer","Wheelbarrow","Parachute","Kettle","Tripod","Saxophone","Binoculars","Skateboard","Lawnmower","Snorkel","Globe","Mailbox"],
+    "Actions": ["Sneezing","Juggling","Whistling","Tiptoeing","Yawning","Hiccupping","Skydiving","Snoring","Wrestling","Tickling","Dancing","Shivering","Stretching","Marching","Swimming","Climbing","Blushing","Stumbling","Knitting","Sketching","Saluting","Bowing","Clapping","Tripping","Hugging","Limping","Wink","Cartwheel","Galloping","Shrugging","Tightrope walking","Hopscotch","Air guitar","Moonwalk","Thumb wrestling","Hula hooping","Belly flop","High five","Fist bump","Somersault"],
+    "Places": ["Beach","Airport","Library","Volcano","Igloo","Castle","Desert","Aquarium","Pyramid","Stadium","Lighthouse","Waterfall","Treehouse","Submarine","Jungle","Glacier","Pharmacy","Vineyard","Carnival","Skyscraper","Cave","Greenhouse","Lighthouse","Harbor","Canyon","Observatory","Bakery","Subway","Campsite","Rainforest","Swamp","Cathedral","Theme park","Ski resort","Farmhouse","Train station","Coral reef","Windmill","Fire station","Zoo"],
+    "Famous People": ["Albert Einstein","Cleopatra","Elvis Presley","William Shakespeare","Abraham Lincoln","Marie Curie","Leonardo da Vinci","Mozart","Napoleon","Charlie Chaplin","Isaac Newton","Mahatma Gandhi","Beethoven","Pablo Picasso","Amelia Earhart","Galileo","Christopher Columbus","Mother Teresa","Walt Disney","Neil Armstrong","Vincent van Gogh","Benjamin Franklin","Joan of Arc","Charles Darwin","Thomas Edison","Florence Nightingale","Genghis Khan","Wolfgang Amadeus","Harriet Tubman","Nikola Tesla"]
+  };
+
+  /* ---------------- STATE ---------------- */
+  var state = {
+    selected: ["Animals", "Food", "Movies"],
+    target: 7,
+    scoreA: 0,
+    scoreB: 0,
+    holder: "A",        // team currently holding when round starts / passing
+    pool: [],           // shuffled non-repeating words for the round
+    poolIndex: 0,
+    used: {},
+    running: false,
+    roundEnded: false
+  };
+
+  /* ---------------- AUDIO ---------------- */
+  var audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AC();
+      } catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+    return audioCtx;
+  }
+
+  function beep(freq, durMs, type, vol) {
+    var ctx = ensureAudio();
+    if (!ctx) return;
+    var t = ctx.currentTime;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = type || "square";
+    osc.frequency.setValueAtTime(freq, t);
+    var v = (vol == null ? 0.18 : vol);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(v, t + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + durMs / 1000);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + durMs / 1000 + 0.02);
+  }
+
+  function buzzer() {
+    var ctx = ensureAudio();
+    if (!ctx) return;
+    var t = ctx.currentTime;
+    // harsh descending buzz, two oscillators detuned
+    for (var k = 0; k < 2; k++) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(220 - k * 8, t);
+      osc.frequency.linearRampToValueAtTime(110 - k * 8, t + 1.1);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.32, t + 0.02);
+      gain.gain.setValueAtTime(0.32, t + 0.9);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 1.25);
+    }
+  }
+
+  function correctChime() {
+    beep(660, 90, "sine", 0.16);
+    setTimeout(function () { beep(990, 120, "sine", 0.16); }, 90);
+  }
+
+  /* ---------------- TIMER ENGINE ----------------
+     A hidden timer counts down a random duration. We schedule
+     ticks whose interval shrinks as time runs out, so the beeping
+     accelerates. At zero -> buzzer -> round over.
+  --------------------------------------------------*/
+  var timer = {
+    endTime: 0,
+    totalMs: 0,
+    tickHandle: null,
+    finishHandle: null
+  };
+
+  function clearTimerHandles() {
+    if (timer.tickHandle) { clearTimeout(timer.tickHandle); timer.tickHandle = null; }
+    if (timer.finishHandle) { clearTimeout(timer.finishHandle); timer.finishHandle = null; }
+  }
+
+  function startTimer() {
+    clearTimerHandles();
+    // random round length 45–75s
+    var lenSec = 45 + Math.random() * 30;
+    timer.totalMs = lenSec * 1000;
+    timer.endTime = Date.now() + timer.totalMs;
+
+    timer.finishHandle = setTimeout(onBuzzer, timer.totalMs);
+    scheduleTick();
+  }
+
+  function remainingMs() {
+    return Math.max(0, timer.endTime - Date.now());
+  }
+
+  // Interval shrinks as remaining time decreases.
+  function tickInterval(remMs) {
+    if (remMs > 30000) return 1500;
+    if (remMs > 20000) return 1000;
+    if (remMs > 12000) return 700;
+    if (remMs > 7000)  return 450;
+    if (remMs > 3500)  return 280;
+    if (remMs > 1500)  return 170;
+    return 110;
+  }
+
+  function scheduleTick() {
+    if (!state.running) return;
+    var rem = remainingMs();
+    if (rem <= 0) return; // buzzer handler will fire
+    // pitch rises as we approach the end
+    var frac = 1 - (rem / timer.totalMs); // 0 at start -> 1 at end
+    var freq = 520 + frac * 620;
+    var vol = 0.10 + frac * 0.14;
+    beep(freq, 60, "square", vol);
+    var iv = tickInterval(rem);
+    timer.tickHandle = setTimeout(scheduleTick, iv);
+  }
+
+  function stopTimer() {
+    clearTimerHandles();
+  }
+
+  /* ---------------- WORD POOL ---------------- */
+  function shuffle(arr) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    }
+    return a;
+  }
+
+  function buildPool() {
+    var words = [];
+    state.selected.forEach(function (cat) {
+      var list = CATEGORIES[cat];
+      if (!list) return;
+      list.forEach(function (w) {
+        words.push({ word: w, cat: cat });
+      });
+    });
+    // de-duplicate (some words repeat across lists)
+    var seen = {};
+    var uniq = [];
+    words.forEach(function (item) {
+      var key = item.word.toLowerCase();
+      if (!seen[key]) { seen[key] = true; uniq.push(item); }
+    });
+    state.pool = shuffle(uniq);
+    state.poolIndex = 0;
+  }
+
+  function nextWord() {
+    if (state.pool.length === 0) buildPool();
+    if (state.poolIndex >= state.pool.length) {
+      // exhausted within a round: reshuffle (non-repeating per pass restart)
+      state.pool = shuffle(state.pool);
+      state.poolIndex = 0;
+    }
+    var item = state.pool[state.poolIndex];
+    state.poolIndex++;
+    return item;
+  }
+
+  /* ---------------- DOM ---------------- */
+  var el = {
+    setup: document.getElementById("setupScreen"),
+    ready: document.getElementById("readyScreen"),
+    play: document.getElementById("playScreen"),
+    catList: document.getElementById("catList"),
+    targetVal: document.getElementById("targetVal"),
+    targetUp: document.getElementById("targetUp"),
+    targetDown: document.getElementById("targetDown"),
+    startGameBtn: document.getElementById("startGameBtn"),
+    rsA: document.getElementById("rsA"),
+    rsB: document.getElementById("rsB"),
+    rsTarget: document.getElementById("rsTarget"),
+    readyTeamName: document.getElementById("readyTeamName"),
+    startRoundBtn: document.getElementById("startRoundBtn"),
+    psA: document.getElementById("psA"),
+    psB: document.getElementById("psB"),
+    psTarget: document.getElementById("psTarget"),
+    turnBanner: document.getElementById("turnBanner"),
+    playCat: document.getElementById("playCat"),
+    playWord: document.getElementById("playWord"),
+    gotItBtn: document.getElementById("gotItBtn"),
+    skipBtn: document.getElementById("skipBtn"),
+    roundOverlay: document.getElementById("roundOverlay"),
+    roundTitle: document.getElementById("roundTitle"),
+    roundDesc: document.getElementById("roundDesc"),
+    roA: document.getElementById("roA"),
+    roB: document.getElementById("roB"),
+    nextRoundBtn: document.getElementById("nextRoundBtn"),
+    gameOverlay: document.getElementById("gameOverlay"),
+    gameTitle: document.getElementById("gameTitle"),
+    goA: document.getElementById("goA"),
+    goB: document.getElementById("goB"),
+    playAgainBtn: document.getElementById("playAgainBtn")
+  };
+
+  function showScreen(name) {
+    el.setup.classList.toggle("active", name === "setup");
+    el.ready.classList.toggle("active", name === "ready");
+    el.play.classList.toggle("active", name === "play");
+  }
+
+  /* ---------------- SETUP UI ---------------- */
+  function renderCategories() {
+    el.catList.innerHTML = "";
+    Object.keys(CATEGORIES).forEach(function (cat) {
+      var div = document.createElement("div");
+      div.className = "cat" + (state.selected.indexOf(cat) >= 0 ? " sel" : "");
+      div.innerHTML = cat + '<span class="count">' + CATEGORIES[cat].length + ' words</span>';
+      div.addEventListener("click", function () {
+        var idx = state.selected.indexOf(cat);
+        if (idx >= 0) {
+          if (state.selected.length > 1) state.selected.splice(idx, 1);
+        } else {
+          state.selected.push(cat);
+        }
+        div.classList.toggle("sel", state.selected.indexOf(cat) >= 0);
+      });
+      el.catList.appendChild(div);
+    });
+  }
+
+  el.targetUp.addEventListener("click", function () {
+    if (state.target < 15) { state.target++; el.targetVal.textContent = state.target; }
+  });
+  el.targetDown.addEventListener("click", function () {
+    if (state.target > 1) { state.target--; el.targetVal.textContent = state.target; }
+  });
+
+  /* ---------------- SCORE DISPLAY ---------------- */
+  function updateScores() {
+    el.rsA.textContent = "A " + state.scoreA;
+    el.rsB.textContent = "B " + state.scoreB;
+    el.psA.textContent = "A " + state.scoreA;
+    el.psB.textContent = "B " + state.scoreB;
+    el.rsTarget.textContent = state.target;
+    el.psTarget.textContent = state.target;
+    el.roA.textContent = "Team A " + state.scoreA;
+    el.roB.textContent = "Team B " + state.scoreB;
+    el.goA.textContent = "Team A " + state.scoreA;
+    el.goB.textContent = "Team B " + state.scoreB;
+  }
+
+  /* ---------------- TURN / BANNER ---------------- */
+  function updateTurnBanner() {
+    var t = state.holder;
+    el.turnBanner.className = "turn-banner " + t;
+    el.turnBanner.textContent = "Team " + t + " — describe it!";
+  }
+
+  function togglePass() {
+    state.holder = (state.holder === "A") ? "B" : "A";
+  }
+
+  /* ---------------- GAME FLOW ---------------- */
+  function startGame() {
+    ensureAudio();
+    state.scoreA = 0;
+    state.scoreB = 0;
+    state.target = parseInt(el.targetVal.textContent, 10) || 7;
+    state.holder = "A";
+    buildPool();
+    updateScores();
+    goToReady();
+  }
+
+  function goToReady() {
+    state.running = false;
+    state.roundEnded = false;
+    stopTimer();
+    el.readyTeamName.textContent = "Team " + state.holder + " starts";
+    updateScores();
+    showScreen("ready");
+  }
+
+  function startRound() {
+    ensureAudio();
+    state.running = true;
+    state.roundEnded = false;
+    // reshuffle pool each round so words are fresh & non-repeating within the round
+    buildPool();
+    showCurrentWord(nextWord());
+    updateTurnBanner();
+    showScreen("play");
+    startTimer();
+  }
+
+  function showCurrentWord(item) {
+    el.playCat.textContent = item.cat;
+    el.playWord.textContent = item.word;
+  }
+
+  function onGotIt() {
+    if (!state.running || state.roundEnded) return;
+    correctChime();
+    // pass device to the OTHER team, then show a new word
+    togglePass();
+    updateTurnBanner();
+    showCurrentWord(nextWord());
+  }
+
+  function onSkip() {
+    if (!state.running || state.roundEnded) return;
+    beep(300, 70, "triangle", 0.12);
+    // skip: new word, SAME holder (no pass)
+    showCurrentWord(nextWord());
+  }
+
+  function onBuzzer() {
+    if (state.roundEnded) return;
+    state.roundEnded = true;
+    state.running = false;
+    stopTimer();
+    buzzer();
+    if (navigator.vibrate) { try { navigator.vibrate([200, 80, 200, 80, 400]); } catch (e) {} }
+
+    // The holder at buzzer LOSES; the other team scores.
+    var loser = state.holder;
+    var winner = (loser === "A") ? "B" : "A";
+    if (winner === "A") state.scoreA++; else state.scoreB++;
+    updateScores();
+
+    if (state.scoreA >= state.target || state.scoreB >= state.target) {
+      showGameOver();
+    } else {
+      showRoundOver(loser, winner);
+    }
+  }
+
+  function showRoundOver(loser, winner) {
+    el.roundTitle.textContent = "Buzzer! Team " + loser + " is caught";
+    el.roundDesc.innerHTML = 'Team <span class="win' + loser + '">' + loser +
+      '</span> held it at the buzzer. Point to Team <span class="win' + winner + '">' +
+      winner + '</span>!';
+    updateScores();
+    el.roundOverlay.classList.add("active");
+  }
+
+  function nextRound() {
+    el.roundOverlay.classList.remove("active");
+    // Loser of the previous round starts holding the next round (fresh pass cycle).
+    // (holder is currently the loser, which is fine.)
+    goToReady();
+  }
+
+  function showGameOver() {
+    var winner = (state.scoreA >= state.target) ? "A" : "B";
+    el.gameTitle.innerHTML = '<span class="win' + winner + '">Team ' + winner + ' wins!</span>';
+    updateScores();
+    el.gameOverlay.classList.add("active");
+  }
+
+  function playAgain() {
+    el.gameOverlay.classList.remove("active");
+    showScreen("setup");
+  }
+
+  /* ---------------- EVENTS ---------------- */
+  el.startGameBtn.addEventListener("click", startGame);
+  el.startRoundBtn.addEventListener("click", startRound);
+  el.gotItBtn.addEventListener("click", onGotIt);
+  el.skipBtn.addEventListener("click", onSkip);
+  el.nextRoundBtn.addEventListener("click", nextRound);
+  el.playAgainBtn.addEventListener("click", playAgain);
+
+  // Prevent double-tap zoom / accidental gestures on the big buttons.
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+
+  // Pause-safe: if tab hidden during a round, keep timing accurate via wall clock.
+  // (Timer uses setTimeout on totalMs which keeps the buzzer roughly on schedule;
+  //  ticks self-correct from remainingMs each step.)
+
+  /* ---------------- INIT ---------------- */
+  renderCategories();
+  updateScores();
+  el.targetVal.textContent = state.target;
+})();
+</script>
+</body>
+</html>

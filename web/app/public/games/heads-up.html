@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Heads Up!</title>
+<style>
+  :root {
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0b1020;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    overscroll-behavior: none;
+  }
+  #app {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: calc(var(--safe-t) + 8px) calc(var(--safe-r) + 8px) calc(var(--safe-b) + 8px) calc(var(--safe-l) + 8px);
+  }
+  .screen { display: none; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .screen.active { display: flex; }
+
+  h1 { font-size: clamp(2rem, 9vw, 5rem); font-weight: 800; letter-spacing: -1px; margin-bottom: .3em; }
+  .sub { font-size: clamp(.9rem, 3.5vw, 1.4rem); opacity: .75; margin-bottom: 1.2em; max-width: 90%; line-height: 1.4; }
+
+  .btn {
+    font-size: clamp(1.1rem, 4vw, 1.8rem);
+    font-weight: 700;
+    padding: .7em 1.6em;
+    border: none; border-radius: 999px;
+    background: #4f7cff; color: #fff;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform .08s ease, background .15s ease;
+    margin: .35em;
+  }
+  .btn:active { transform: scale(.95); }
+  .btn.secondary { background: #2a3350; }
+  .btn.big { font-size: clamp(1.4rem, 6vw, 2.4rem); padding: .8em 2em; }
+
+  /* Category grid */
+  #catGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; max-width: 760px; margin-bottom: 18px; }
+  @media (max-width: 520px) { #catGrid { grid-template-columns: repeat(2, 1fr); } }
+  .cat {
+    font-size: clamp(.9rem, 3.5vw, 1.3rem); font-weight: 700;
+    padding: 1.1em .6em; border-radius: 16px;
+    background: #1a2138; color: #fff; border: 3px solid transparent;
+    cursor: pointer; touch-action: manipulation;
+  }
+  .cat:active { transform: scale(.96); }
+  .cat.selected { border-color: #4f7cff; background: #233056; }
+
+  /* Countdown */
+  #countNum { font-size: clamp(6rem, 40vw, 18rem); font-weight: 900; line-height: 1; }
+  #countMsg { font-size: clamp(1.2rem, 5vw, 2.2rem); margin-top: .3em; opacity: .85; }
+
+  /* Play screen */
+  #playScreen { padding: 0; }
+  #playInner { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; }
+  #topbar {
+    position: absolute; top: calc(var(--safe-t) + 6px); left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 calc(var(--safe-r) + 16px) 0 calc(var(--safe-l) + 16px);
+    font-size: clamp(1.1rem, 5vw, 2rem); font-weight: 800; z-index: 5;
+    pointer-events: none;
+  }
+  #timer { color: #ffd24d; }
+  #score { color: #6effa6; }
+  #wordWrap {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; height: 100%;
+    transition: background .12s ease;
+    background: #0b1020;
+  }
+  #word {
+    font-size: clamp(2.5rem, 14vw, 9rem); font-weight: 900;
+    padding: 0 .3em; line-height: 1.05;
+    word-break: break-word; max-width: 96%;
+  }
+  /* Flash states */
+  #wordWrap.correct { background: #16a34a; }
+  #wordWrap.pass { background: #b45309; }
+  #flashLabel {
+    position: absolute; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    font-size: clamp(3rem, 18vw, 12rem); font-weight: 900; z-index: 6;
+  }
+  #flashLabel.show { display: flex; }
+
+  /* Tap zones (fallback) */
+  #tapZones { position: absolute; inset: 0; display: none; z-index: 4; }
+  #tapZones.show { display: flex; }
+  .zone { flex: 1; display: flex; align-items: flex-end; justify-content: center; padding-bottom: calc(var(--safe-b) + 18px); }
+  .zone span { font-size: clamp(1rem, 4vw, 1.6rem); font-weight: 800; opacity: .55; background: rgba(0,0,0,.25); padding: .4em .9em; border-radius: 999px; }
+  #zonePass { border-right: 2px dashed rgba(255,255,255,.15); }
+
+  .controlsHint { position: absolute; bottom: calc(var(--safe-b) + 6px); left: 0; right: 0; text-align: center; font-size: clamp(.7rem,3vw,1rem); opacity: .45; z-index: 5; pointer-events: none; }
+
+  /* Results */
+  #resultList { width: 100%; max-width: 640px; max-height: 55vh; overflow-y: auto; margin: 14px 0; text-align: left; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+  .resRow { display: flex; justify-content: space-between; padding: 8px 14px; border-radius: 10px; margin-bottom: 6px; font-size: clamp(1rem, 4vw, 1.4rem); font-weight: 600; }
+  .resRow.got { background: rgba(22,163,74,.25); }
+  .resRow.miss { background: rgba(180,83,9,.25); }
+  .resRow .tag { font-weight: 800; }
+  .got .tag { color: #6effa6; }
+  .miss .tag { color: #ffb15a; }
+  #finalScore { font-size: clamp(2rem, 9vw, 4.5rem); font-weight: 900; color: #6effa6; }
+
+  .rotateNote { font-size: clamp(.8rem, 3.2vw, 1.1rem); opacity: .6; margin-top: 1.2em; }
+  .err { color: #ff8080; font-size: clamp(.85rem,3.4vw,1.1rem); margin-top:.8em; max-width:90%; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/heads-up.svg">
+    <link rel="manifest" href="/games/heads-up.webmanifest">
+    <meta name="theme-color" content="#7C3AED">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Heads Up">
+    <link rel="apple-touch-icon" href="/games/icons/heads-up.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#7C3AED;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+
+  <!-- HOME / SETUP -->
+  <section id="homeScreen" class="screen active">
+    <h1>Heads Up!</h1>
+    <div class="sub">Hold the phone on your forehead. Friends shout clues.<br>Tilt <b>DOWN</b> = Correct &nbsp;·&nbsp; Tilt <b>UP</b> = Pass</div>
+    <div id="catGrid"></div>
+    <button id="startBtn" class="btn big">Start Round</button>
+    <div class="rotateNote">Best in landscape — turn your phone sideways.</div>
+    <div id="homeErr" class="err"></div>
+  </section>
+
+  <!-- COUNTDOWN -->
+  <section id="countScreen" class="screen">
+    <div id="countNum">3</div>
+    <div id="countMsg">Put it on your forehead!</div>
+  </section>
+
+  <!-- PLAY -->
+  <section id="playScreen" class="screen">
+    <div id="playInner">
+      <div id="topbar">
+        <div id="timer">60</div>
+        <div id="score">0</div>
+      </div>
+      <div id="wordWrap">
+        <div id="word">—</div>
+      </div>
+      <div id="flashLabel"></div>
+      <div id="tapZones">
+        <div class="zone" id="zonePass"><span>↑ PASS</span></div>
+        <div class="zone" id="zoneCorrect"><span>CORRECT ↓</span></div>
+      </div>
+      <div class="controlsHint" id="ctrlHint">Tilt down = Correct · Tilt up = Pass</div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="resultScreen" class="screen">
+    <h1 style="margin-bottom:.1em;">Time!</h1>
+    <div id="finalScore">0</div>
+    <div class="sub" style="margin:.2em 0 .4em;">words guessed</div>
+    <div id="resultList"></div>
+    <button id="againBtn" class="btn big">Play Again</button>
+    <button id="homeBtn" class="btn secondary">Categories</button>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Word lists ----------
+  var CATEGORIES = {
+    "Animals": ["Elephant","Penguin","Kangaroo","Octopus","Giraffe","Dolphin","Cheetah","Hedgehog","Flamingo","Rhinoceros","Chameleon","Koala","Squirrel","Platypus","Jellyfish","Gorilla","Peacock","Walrus","Tarantula","Hummingbird","Crocodile","Porcupine","Seahorse","Raccoon","Armadillo","Hippopotamus","Chinchilla","Meerkat","Pelican","Wolverine"],
+    "Movies": ["Titanic","Jaws","Frozen","Avatar","Inception","Shrek","Gladiator","Jurassic Park","The Matrix","Toy Story","Star Wars","The Lion King","Up","Finding Nemo","Forrest Gump","The Godfather","Home Alone","Ghostbusters","Pulp Fiction","Mary Poppins","Back to the Future","The Wizard of Oz","Rocky","Aladdin","The Avengers","Pirates of the Caribbean","E.T.","Despicable Me","Indiana Jones","Casablanca"],
+    "Famous People": ["Albert Einstein","Beyoncé","Michael Jackson","Oprah Winfrey","Leonardo da Vinci","Taylor Swift","Barack Obama","Cleopatra","Elvis Presley","Lady Gaga","Abraham Lincoln","William Shakespeare","Marie Curie","Nelson Mandela","Mozart","Steve Jobs","Charlie Chaplin","Princess Diana","Muhammad Ali","Walt Disney","Mahatma Gandhi","Vincent van Gogh","Serena Williams","Stephen Hawking","Madonna","Mark Twain","Frida Kahlo","Bruce Lee","Queen Elizabeth","Pablo Picasso"],
+    "Food": ["Pizza","Spaghetti","Sushi","Tacos","Pancakes","Cheeseburger","Ice Cream","Popcorn","Watermelon","Avocado","Doughnut","Pineapple","Lasagna","Burrito","Cupcake","Pretzel","Hot Dog","Lobster","Croissant","Smoothie","Bacon","Macaroni","Waffles","Mango","Cotton Candy","Dumplings","Nachos","Cheesecake","Omelette","Marshmallow"],
+    "Actions": ["Sneezing","Juggling","Tiptoeing","Yawning","Dancing","Swimming","Snoring","Texting","Skateboarding","Whistling","Climbing","Tickling","Boxing","Knitting","Sneaking","Fishing","Brushing Teeth","Cartwheel","Hiccuping","Stretching","Karate Chop","Air Guitar","Moonwalk","Hula Hoop","Arm Wrestle","Tightrope","Bowling","Jumping Jacks","Shadow Boxing","Limbo"],
+    "Around the House": ["Toaster","Umbrella","Pillow","Blender","Vacuum","Doorbell","Mailbox","Toothbrush","Television","Microwave","Hairdryer","Mousetrap","Candle","Stapler","Thermostat","Refrigerator","Light Switch","Coat Hanger","Frying Pan","Alarm Clock","Bathtub","Broomstick","Flashlight","Remote Control","Ceiling Fan","Coffee Mug","Garden Hose","Welcome Mat","Picture Frame","Laundry Basket"]
+  };
+
+  var ROUND_SECONDS = 60;
+
+  // ---------- DOM ----------
+  var $ = function (id) { return document.getElementById(id); };
+  var screens = { home: $("homeScreen"), count: $("countScreen"), play: $("playScreen"), result: $("resultScreen") };
+  function show(name) {
+    for (var k in screens) screens[k].classList.toggle("active", k === name);
+  }
+
+  // ---------- State ----------
+  var selectedCat = "Animals";
+  var deck = [];
+  var deckIdx = 0;
+  var results = [];        // {word, got:bool}
+  var score = 0;
+  var timeLeft = ROUND_SECONDS;
+  var roundTimer = null;
+  var countTimer = null;
+  var playing = false;
+  var actionLocked = false; // cooldown / neutral-return gate
+  var tiltEnabled = false;
+  var orientHandler = null;
+
+  // Tilt tuning (beta = front/back tilt). When phone is on forehead in landscape,
+  // beta hovers near 0; tilting chin-down pushes beta one way, up the other.
+  var TILT_CORRECT = 35;   // beta beyond this magnitude (down) => correct
+  var TILT_PASS = -35;     // beta beyond this (up) => pass
+  var NEUTRAL = 18;        // must return within +/- this before next action
+
+  // ---------- Build category UI ----------
+  (function buildCats() {
+    var grid = $("catGrid");
+    Object.keys(CATEGORIES).forEach(function (name, i) {
+      var el = document.createElement("button");
+      el.className = "cat" + (i === 0 ? " selected" : "");
+      el.textContent = name;
+      el.addEventListener("click", function () {
+        selectedCat = name;
+        var all = grid.querySelectorAll(".cat");
+        for (var j = 0; j < all.length; j++) all[j].classList.remove("selected");
+        el.classList.add("selected");
+        beep(660, 0.05);
+      });
+      grid.appendChild(el);
+    });
+  })();
+
+  // ---------- Audio ----------
+  var actx = null;
+  function beep(freq, dur, type) {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") actx.resume();
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.25, actx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+      o.connect(g); g.connect(actx.destination);
+      o.start(); o.stop(actx.currentTime + dur + 0.02);
+    } catch (e) {}
+  }
+  function sndCorrect() { beep(880, 0.12); setTimeout(function(){ beep(1320, 0.12); }, 90); }
+  function sndPass() { beep(200, 0.18, "sawtooth"); }
+  function sndTick() { beep(1000, 0.04); }
+  function sndStart() { beep(523, 0.1); }
+  function sndEnd() { beep(440, 0.2); setTimeout(function(){ beep(330, 0.3); }, 180); }
+
+  function vibrate(ms) { if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
+
+  // ---------- Deck ----------
+  function shuffle(a) {
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  function buildDeck() {
+    deck = shuffle((CATEGORIES[selectedCat] || []).slice());
+    deckIdx = 0;
+  }
+  function nextWord() {
+    if (deckIdx >= deck.length) { buildDeck(); } // recycle if they're fast
+    var w = deck[deckIdx++];
+    $("word").textContent = w;
+    return w;
+  }
+
+  // ---------- Orientation permission + listener ----------
+  function needsIOSPermission() {
+    return typeof DeviceOrientationEvent !== "undefined" &&
+           typeof DeviceOrientationEvent.requestPermission === "function";
+  }
+
+  function attachOrientation() {
+    if (orientHandler) return;
+    orientHandler = function (e) {
+      if (!playing) return;
+      if (e.beta === null || e.beta === undefined) return;
+      var beta = e.beta;
+
+      if (actionLocked) {
+        // wait until phone returns roughly to neutral before allowing next action
+        if (Math.abs(beta) < NEUTRAL) actionLocked = false;
+        return;
+      }
+      if (beta >= TILT_CORRECT) { doCorrect(); actionLocked = true; }
+      else if (beta <= TILT_PASS) { doPass(); actionLocked = true; }
+    };
+    window.addEventListener("deviceorientation", orientHandler, true);
+  }
+
+  function enableTilt(cb) {
+    if (needsIOSPermission()) {
+      DeviceOrientationEvent.requestPermission().then(function (resp) {
+        if (resp === "granted") { tiltEnabled = true; attachOrientation(); }
+        else { tiltEnabled = false; }
+        cb();
+      }).catch(function () { tiltEnabled = false; cb(); });
+    } else if (typeof DeviceOrientationEvent !== "undefined") {
+      tiltEnabled = true;
+      attachOrientation();
+      cb();
+    } else {
+      tiltEnabled = false;
+      cb();
+    }
+  }
+
+  // ---------- Flow ----------
+  function startPressed() {
+    $("homeErr").textContent = "";
+    // unlock audio inside the gesture
+    beep(523, 0.001);
+    sndStart();
+    buildDeck();
+    enableTilt(function () {
+      // configure fallback hint/zones based on whether tilt works
+      if (tiltEnabled) {
+        $("tapZones").classList.add("show"); // still show as visual aid + fallback
+        $("ctrlHint").textContent = "Tilt down = Correct · Tilt up = Pass (or tap)";
+      } else {
+        $("tapZones").classList.add("show");
+        $("ctrlHint").textContent = "Tap RIGHT = Correct · Tap LEFT = Pass";
+      }
+      runCountdown();
+    });
+  }
+
+  function runCountdown() {
+    show("count");
+    var n = 3;
+    $("countNum").textContent = n;
+    sndTick();
+    countTimer = setInterval(function () {
+      n--;
+      if (n <= 0) {
+        clearInterval(countTimer);
+        beginRound();
+      } else {
+        $("countNum").textContent = n;
+        sndTick();
+      }
+    }, 1000);
+  }
+
+  function beginRound() {
+    score = 0; results = []; timeLeft = ROUND_SECONDS;
+    deckIdx = 0; actionLocked = false; playing = true;
+    $("score").textContent = "0";
+    $("timer").textContent = ROUND_SECONDS;
+    $("wordWrap").className = "";
+    nextWord();
+    show("play");
+    beep(700, 0.12);
+    roundTimer = setInterval(function () {
+      timeLeft--;
+      $("timer").textContent = timeLeft;
+      if (timeLeft <= 5 && timeLeft > 0) sndTick();
+      if (timeLeft <= 0) endRound();
+    }, 1000);
+  }
+
+  var flashTimer = null;
+  function flash(kind, label) {
+    var wrap = $("wordWrap");
+    var fl = $("flashLabel");
+    wrap.classList.remove("correct", "pass");
+    wrap.classList.add(kind);
+    fl.textContent = label;
+    fl.classList.add("show");
+    $("word").style.visibility = "hidden";
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () {
+      wrap.classList.remove("correct", "pass");
+      fl.classList.remove("show");
+      $("word").style.visibility = "visible";
+    }, 420);
+  }
+
+  function doCorrect() {
+    if (!playing) return;
+    var w = $("word").textContent;
+    results.push({ word: w, got: true });
+    score++;
+    $("score").textContent = score;
+    sndCorrect(); vibrate(40);
+    flash("correct", "✓");
+    nextWord();
+  }
+
+  function doPass() {
+    if (!playing) return;
+    var w = $("word").textContent;
+    results.push({ word: w, got: false });
+    sndPass(); vibrate([20, 40, 20]);
+    flash("pass", "PASS");
+    nextWord();
+  }
+
+  function endRound() {
+    playing = false;
+    clearInterval(roundTimer);
+    clearTimeout(flashTimer);
+    $("wordWrap").className = "";
+    $("flashLabel").classList.remove("show");
+    $("word").style.visibility = "visible";
+    sndEnd(); vibrate([60, 60, 120]);
+    renderResults();
+    show("result");
+  }
+
+  function renderResults() {
+    $("finalScore").textContent = score;
+    var list = $("resultList");
+    list.innerHTML = "";
+    if (!results.length) {
+      var empty = document.createElement("div");
+      empty.className = "resRow miss";
+      empty.innerHTML = "<span>No words this round</span>";
+      list.appendChild(empty);
+      return;
+    }
+    results.forEach(function (r) {
+      var row = document.createElement("div");
+      row.className = "resRow " + (r.got ? "got" : "miss");
+      var name = document.createElement("span");
+      name.textContent = r.word;
+      var tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = r.got ? "GOT IT" : "PASSED";
+      row.appendChild(name); row.appendChild(tag);
+      list.appendChild(row);
+    });
+  }
+
+  // ---------- Fallback tap zones ----------
+  function zoneTap(isCorrect, ev) {
+    if (ev) { ev.preventDefault(); }
+    if (!playing) return;
+    if (isCorrect) doCorrect(); else doPass();
+  }
+  $("zoneCorrect").addEventListener("touchstart", function (e) { zoneTap(true, e); }, { passive: false });
+  $("zonePass").addEventListener("touchstart", function (e) { zoneTap(false, e); }, { passive: false });
+  // mouse/desktop fallback
+  $("zoneCorrect").addEventListener("click", function (e) { if (!("ontouchstart" in window)) zoneTap(true, e); });
+  $("zonePass").addEventListener("click", function (e) { if (!("ontouchstart" in window)) zoneTap(false, e); });
+
+  // ---------- Buttons ----------
+  $("startBtn").addEventListener("click", startPressed);
+  $("againBtn").addEventListener("click", function () {
+    // keep tilt permission/listener; just re-run countdown
+    if (tiltEnabled || $("tapZones").classList.contains("show")) {
+      runCountdown();
+    } else {
+      runCountdown();
+    }
+  });
+  $("homeBtn").addEventListener("click", function () {
+    playing = false;
+    clearInterval(roundTimer); clearInterval(countTimer);
+    show("home");
+  });
+
+  // ---------- Misc guards ----------
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+  // prevent pull-to-refresh / scroll on game screens but allow results scroll
+  document.addEventListener("touchmove", function (e) {
+    var inList = e.target.closest && e.target.closest("#resultList");
+    if (!inList) e.preventDefault();
+  }, { passive: false });
+
+})();
+</script>
+</body>
+</html>
