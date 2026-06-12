@@ -15,6 +15,44 @@ func init() {
 	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 }
 
+// staticAssetsNoCache disables asset caching (Cache-Control: no-store) when
+// STATIC_ASSETS_NO_CACHE is truthy — a deliberate escape hatch for testing.
+var staticAssetsNoCache = func() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("STATIC_ASSETS_NO_CACHE"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}()
+
+// setStaticCache sets a sensible Cache-Control for a static file so browsers and
+// the CDN stop re-downloading unchanging assets on every load (notably large
+// WASM/.data game bundles, which http.ServeFile leaves header-less). The policy:
+//   - service workers: short TTL so updates ship promptly;
+//   - HTML shells: left untouched so deploys revalidate (no stale SPA);
+//   - content-hashed bundles (/assets/...): immutable, one year;
+//   - everything else (wasm, data, js, images, fonts, manifests): one day.
+//
+// Set STATIC_ASSETS_NO_CACHE=1 to serve everything no-store while testing.
+func setStaticCache(w http.ResponseWriter, urlPath string) {
+	if staticAssetsNoCache {
+		w.Header().Set("Cache-Control", "no-store")
+		return
+	}
+	base := strings.ToLower(filepath.Base(urlPath))
+	ext := strings.ToLower(filepath.Ext(urlPath))
+	switch {
+	case base == "sw.js" || base == "service-worker.js":
+		w.Header().Set("Cache-Control", "public, max-age=60")
+	case ext == ".html" || ext == "":
+		// Shells revalidate naturally; don't pin them (avoids stale SPAs).
+	case strings.Contains(urlPath, "/assets/"):
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	default:
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+	}
+}
+
 // StaticHandler serves the built React SPA from `dir`. Behavior:
 //   - GET /api/* always returns 404 (so the gateway mux handles it via the
 //     server's outer routing).
@@ -50,6 +88,7 @@ func StaticHandler(dir string) http.Handler {
 				return
 			}
 			if fi, err := os.Stat(full); err == nil && !fi.IsDir() {
+				setStaticCache(w, r.URL.Path)
 				http.ServeFile(w, r, full)
 				return
 			}
@@ -106,6 +145,7 @@ func PDFStaticHandler(dir string) http.Handler {
 				return
 			}
 			if fi, err := os.Stat(full); err == nil && !fi.IsDir() {
+				setStaticCache(w, rel)
 				http.ServeFile(w, r, full)
 				return
 			}
