@@ -20,6 +20,9 @@ export interface AppTile {
   comingSoon: boolean;
   /** Export name of the @mui/icons-material icon to show in the avatar. */
   iconName: string;
+  /** Optional image URL shown in the avatar instead of the icon (e.g. a game's
+   *  own artwork). Falls back to iconName when absent. */
+  iconUrl?: string;
   /** If set, the tile links out to this URL in a new tab (e.g. an external
    *  git service) instead of an internal route. */
   externalUrl?: string;

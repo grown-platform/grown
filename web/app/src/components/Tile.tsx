@@ -76,7 +76,18 @@ export function Tile({ app }: TileProps) {
           },
         }}
       >
-        {IconComponent ? <IconComponent /> : initial}
+        {app.iconUrl ? (
+          <Box
+            component="img"
+            src={app.iconUrl}
+            alt=""
+            sx={{ width: 64, height: 64, objectFit: "cover", borderRadius: "inherit" }}
+          />
+        ) : IconComponent ? (
+          <IconComponent />
+        ) : (
+          initial
+        )}
       </Avatar>
       <Typography level="body-sm" sx={{ fontWeight: 500 }}>
         {app.name}
