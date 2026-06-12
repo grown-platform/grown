@@ -25,6 +25,9 @@ export interface AppTile {
   externalUrl?: string;
   /** Optional richer "what it will do" bullets shown on the coming-soon page. */
   details?: string[];
+  /** Optional small sub-label under the name (rendered like "(coming soon)"),
+   *  e.g. to indicate the underlying service powering the app. */
+  subLabel?: string;
 }
 
 /** GIT_URL points the Git tile at the org's git service. Override at build time
@@ -275,6 +278,7 @@ export const apps: AppTile[] = [
     id: "crm",
     name: "CRM",
     blurb: "Twenty CRM (OSS).",
+    subLabel: "twenty crm oss",
     accentColor: "#3B5BDB",
     phase: 4,
     comingSoon: false,

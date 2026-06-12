@@ -35,6 +35,8 @@ export function Tile({ app }: TileProps) {
             })}
       data-testid={`tile-${app.id}`}
       aria-disabled={app.comingSoon || undefined}
+      // Native hover tooltip describing what the app is.
+      title={app.blurb ? `${app.name} — ${app.blurb}` : app.name}
       sx={{
         display: "flex",
         flexDirection: "column",
@@ -85,6 +87,14 @@ export function Tile({ app }: TileProps) {
           sx={{ mt: -0.75, color: "#d97706", fontWeight: 500 }}
         >
           (coming soon)
+        </Typography>
+      )}
+      {!app.comingSoon && app.subLabel && (
+        <Typography
+          level="body-xs"
+          sx={{ mt: -0.75, opacity: 0.55, fontWeight: 500 }}
+        >
+          ({app.subLabel})
         </Typography>
       )}
     </Box>
