@@ -79,6 +79,7 @@ const GAMES: AppTile[] = [
   arcade("simon", "Simon", "#E11D48", "MusicNote"),
   arcade("bubble-shooter", "Bubble Shooter", "#DB2777", "BubbleChart"),
   arcade("tower-stack", "Tower Stack", "#F59E0B", "Layers"),
+  arcade("hormuz", "Strait of Hormuz", "#0369A1", "DirectionsBoat"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */

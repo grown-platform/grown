@@ -38,6 +38,7 @@ const CONFIG = [
   { id: "simon", name: "Simon", color: "#E11D48", glyph: "🎶" },
   { id: "bubble-shooter", name: "Bubble Shooter", color: "#DB2777", glyph: "🫧" },
   { id: "tower-stack", name: "Tower Stack", color: "#F59E0B", glyph: "📦" },
+  { id: "hormuz", name: "Strait of Hormuz", color: "#0369A1", glyph: "🚤" },
 ];
 
 const iconSvg = (color, glyph) =>

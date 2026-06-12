@@ -1,0 +1,2341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Strait of Hormuz - Tower Defense</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+}
+#gameContainer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100vw;
+  max-height: 100vh;
+}
+#topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 1000px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #2d2d5e, #1a1a3e);
+  border-radius: 12px 12px 0 0;
+  border: 2px solid #4a4a8a;
+  border-bottom: none;
+  color: #fff;
+  font-size: 15px;
+}
+#topBar .stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#topBar .stat span { font-weight: bold; }
+canvas {
+  border: 2px solid #4a4a8a;
+  border-top: none;
+  cursor: crosshair;
+  display: block;
+}
+#sidebar {
+  position: absolute;
+  right: -220px;
+  top: 0;
+  width: 210px;
+  background: linear-gradient(135deg, #2d2d5e, #1a1a3e);
+  border: 2px solid #4a4a8a;
+  border-radius: 12px;
+  padding: 12px;
+  color: #fff;
+}
+#sidebar h3 {
+  text-align: center;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #aab;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+.tower-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: rgba(255,255,255,0.05);
+  border: 2px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.tower-btn:hover { background: rgba(255,255,255,0.15); border-color: #7a7aff; }
+.tower-btn.selected { background: rgba(100,100,255,0.3); border-color: #7a7aff; }
+.tower-btn.disabled { opacity: 0.4; cursor: not-allowed; }
+.tower-btn .icon { font-size: 22px; }
+.tower-btn .info { display: flex; flex-direction: column; }
+.tower-btn .info .name { font-weight: bold; }
+.tower-btn .info .cost { font-size: 11px; color: #ffd700; }
+.tower-btn .info .desc { font-size: 10px; color: #aaa; }
+#waveBtn {
+  width: 100%;
+  padding: 10px;
+  margin-top: 10px;
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+#waveBtn:hover { transform: scale(1.03); background: linear-gradient(135deg, #ff5544, #e74c3c); }
+#waveBtn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+#upgradePanel {
+  display: none;
+  position: absolute;
+  background: linear-gradient(135deg, #2d2d5e, #1a1a3e);
+  border: 2px solid #7a7aff;
+  border-radius: 10px;
+  padding: 12px;
+  color: #fff;
+  font-size: 12px;
+  z-index: 10;
+  min-width: 160px;
+}
+#upgradePanel h4 { margin-bottom: 6px; }
+#upgradePanel button {
+  display: block;
+  width: 100%;
+  padding: 6px;
+  margin-top: 4px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+#upgradePanel button:hover { background: rgba(255,255,255,0.2); }
+#gameOver {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.9);
+  border: 3px solid #e74c3c;
+  border-radius: 16px;
+  padding: 40px;
+  color: #fff;
+  text-align: center;
+  z-index: 20;
+}
+#gameOver h2 { font-size: 32px; color: #e74c3c; margin-bottom: 10px; }
+#gameOver p { margin-bottom: 20px; color: #aaa; }
+#gameOver button {
+  padding: 12px 32px;
+  background: #e74c3c;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#cancelBtn {
+  padding: 8px 14px;
+  background: rgba(255,60,60,0.3);
+  border: 2px solid rgba(255,60,60,0.5);
+  border-radius: 8px;
+  color: #ff6666;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+}
+#cancelBtn:hover { background: rgba(255,60,60,0.5); }
+
+/* ---- Mobile / responsive ---- */
+@media (max-width: 1250px) {
+  #sidebar {
+    position: fixed;
+    right: 0; left: 0; bottom: 0; top: auto;
+    width: 100%;
+    border-radius: 12px 12px 0 0;
+    padding: 6px 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    justify-content: center;
+    z-index: 15;
+  }
+  #sidebar h3 { display: none; }
+  .tower-btn {
+    width: auto;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 6px;
+    margin-bottom: 0;
+    font-size: 11px;
+    gap: 4px;
+  }
+  .tower-btn .desc { display: none; }
+  .tower-btn .name { display: none; }
+  .tower-btn .icon { font-size: 18px; flex-shrink: 0; }
+  .tower-btn .cost { font-size: 10px; }
+  #waveBtn {
+    margin-top: 0;
+    padding: 8px 12px;
+    flex: 1 1 100%;
+    font-size: 13px;
+  }
+  #cancelBtn { display: none !important; }
+  #cancelBtn.visible { display: block !important; flex: 0 0 auto; }
+  #upgradePanel {
+    left: 50% !important;
+    top: auto !important;
+    bottom: 110px;
+    transform: translateX(-50%);
+    max-width: 90vw;
+  }
+}
+@media (max-width: 1000px) {
+  #topBar {
+    width: 100vw;
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 0;
+  }
+  canvas {
+    width: 100vw;
+    height: auto;
+  }
+  #gameOver { padding: 24px; }
+  #gameOver h2 { font-size: 24px; }
+  .tower-btn { min-height: 40px; }
+  #waveBtn { min-height: 40px; }
+}
+@media (max-width: 600px) {
+  #topBar { font-size: 10px; gap: 2px; padding: 4px 6px; flex-wrap: wrap; justify-content: center; }
+  #topBar .stat { gap: 3px; }
+  .tower-btn .icon { font-size: 16px; }
+  .tower-btn .cost { font-size: 9px; }
+  .tower-btn { padding: 4px 4px; gap: 2px; }
+  #startScreen h1 { font-size: 28px; }
+  #startScreen .instructions { font-size: 12px; padding: 0 16px; }
+  #startScreen button { padding: 10px 30px; font-size: 14px; }
+}
+#startScreen {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0,0,0,0.85);
+  z-index: 30;
+  color: #fff;
+  text-align: center;
+}
+#startScreen h1 {
+  font-size: 42px;
+  margin-bottom: 4px;
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+#startScreen .subtitle {
+  font-size: 16px;
+  color: #888;
+  margin-bottom: 30px;
+  font-style: italic;
+}
+#startScreen .instructions {
+  max-width: 500px;
+  font-size: 14px;
+  color: #bbb;
+  line-height: 1.6;
+  margin-bottom: 30px;
+}
+#startScreen button {
+  padding: 14px 48px;
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+#startScreen button:hover { transform: scale(1.05); }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/hormuz.svg">
+    <link rel="manifest" href="/games/hormuz.webmanifest">
+    <meta name="theme-color" content="#0369A1">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Strait of Hormuz">
+    <link rel="apple-touch-icon" href="/games/icons/hormuz.svg">
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
+    // shown when the browser offers install — Chrome/Android; iOS uses Share →
+    // Add to Home Screen).
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#0369A1;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="gameContainer">
+  <div id="topBar">
+    <div class="stat">&#x1F30A; Wave: <span id="waveNum">0</span></div>
+    <div class="stat">&#x1FA99; Gold: <span id="goldNum">300</span></div>
+    <div class="stat">&#x1F6E2;&#xFE0F; Oil: $<span id="oilNum">80.00</span>/bbl</div>
+    <div class="stat">&#x1F4A5; Score: <span id="scoreNum">0</span></div>
+  </div>
+  <canvas id="game" width="1000" height="650"></canvas>
+  <div id="sidebar">
+    <h3>Towers</h3>
+    <button class="tower-btn" data-tower="rocket" title="Rocket battery">
+      <div class="icon">&#x1F4A5;</div>
+      <div class="info">
+        <div class="name">Rocket Battery</div>
+        <div class="cost">60 gold</div>
+        <div class="desc">Cheap splash rockets</div>
+      </div>
+    </button>
+    <button class="tower-btn" data-tower="mine" title="Sea mine">
+      <div class="icon">&#x1F4A3;</div>
+      <div class="info">
+        <div class="name">Sea Mine</div>
+        <div class="cost">40 gold</div>
+        <div class="desc">One-time water bomb</div>
+      </div>
+    </button>
+    <button class="tower-btn" data-tower="ashore_missile" title="Coastal missile battery">
+      <div class="icon">&#x1F680;</div>
+      <div class="info">
+        <div class="name">Coastal Missile</div>
+        <div class="cost">100 gold</div>
+        <div class="desc">Long range, high damage</div>
+      </div>
+    </button>
+    <button class="tower-btn" data-tower="radar" title="Radar station">
+      <div class="icon">&#x1F4E1;</div>
+      <div class="info">
+        <div class="name">Radar Station</div>
+        <div class="cost">150 gold</div>
+        <div class="desc">Buffs nearby towers</div>
+      </div>
+    </button>
+    <button class="tower-btn" data-tower="fastboat" title="Fast attack base">
+      <div class="icon">&#x1F6A4;</div>
+      <div class="info">
+        <div class="name">Fast Attack Base</div>
+        <div class="cost">200 gold</div>
+        <div class="desc">Launches attack boats</div>
+      </div>
+    </button>
+    <button id="waveBtn">Send Wave!</button>
+    <button id="cancelBtn" style="display:none">&#x2715;</button>
+  </div>
+  <div id="upgradePanel">
+    <h4 id="upgradeName"></h4>
+    <p id="upgradeStats"></p>
+    <button id="upgradeBtn">Upgrade</button>
+    <button id="sellBtn">Sell</button>
+    <button id="closeUpgrade">Close</button>
+  </div>
+  <div id="gameOver">
+    <h2>OIL PRICE CRASHED</h2>
+    <p id="finalScore">Score: 0</p>
+    <button onclick="location.reload()">Play Again</button>
+  </div>
+  <div id="startScreen">
+    <h1>STRAIT OF HORMUZ</h1>
+    <div class="subtitle">A Totally Serious Tower Defense Game</div>
+    <div class="instructions">
+      Block oil tankers and military vessels from passing through the strait to drive up crude prices!<br>
+      Every ship you destroy raises the price of oil. Every ship that gets through lowers it.<br>
+      If oil drops to <b>$65/bbl</b> (last year's average), you lose.<br><br>
+      <b>Click Iran's coast to place defenses. Drop mines in the water. Launch fast attack boats.</b>
+    </div>
+    <button id="startBtn">DEPLOY DEFENSES</button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// STRAIT OF HORMUZ - Tower Defense
+// ============================================================
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// --- Game State ---
+let gold = 300, score = 0, waveNum = 0;
+// Oil price mechanic: starts at $80/barrel. Destroying ships raises it.
+// Ships getting through lower it. You lose if it drops to $65 (last year's avg).
+let oilPrice = 80;
+const OIL_PRICE_FLOOR = 65;  // game over threshold
+const OIL_PRICE_CAP = 200;   // max price
+let enemies = [], towers = [], projectiles = [], particles = [];
+let selectedTowerType = null, selectedTower = null;
+let waveInProgress = false, gameRunning = false, gameOverFlag = false, debugMode = false;
+let hoveredCell = null;
+let waveEnemiesRemaining = 0;
+
+// --- Map / Grid ---
+const CELL = 25;
+const COLS = W / CELL; // 40
+const ROWS = H / CELL; // 26
+let grid = []; // 0=water, 1=land, 2=coast (buildable)
+
+// ---- Strait of Hormuz Geography ----
+// Traced from satellite imagery by hand.
+
+// Iran's coastline - traced from satellite. Includes top edge of canvas.
+// The coast snakes: high on left, dips in center, curves back up, then
+// plunges far south on the right side blocking any straight path through water.
+const iranCoast = [
+  {x:0, y:0}, {x:1000, y:0},
+  // Traced coast from right to left (reversed from user's left-to-right trace)
+  {x:998, y:403}, {x:986, y:401}, {x:970, y:398},
+  {x:957, y:382}, {x:949, y:377}, {x:934, y:384},
+  {x:920, y:387}, {x:917, y:380}, {x:910, y:368},
+  {x:884, y:367}, {x:854, y:361}, {x:831, y:348},
+  {x:827, y:336}, {x:814, y:314}, {x:805, y:306},
+  {x:816, y:278}, {x:797, y:265}, {x:786, y:244},
+  {x:783, y:223}, {x:784, y:206}, {x:786, y:179},
+  {x:776, y:152}, {x:765, y:127}, {x:747, y:103},
+  {x:719, y:79}, {x:690, y:69}, {x:655, y:69},
+  {x:628, y:75}, {x:615, y:69}, {x:594, y:81},
+  {x:554, y:107}, {x:536, y:106}, {x:502, y:119},
+  {x:495, y:136}, {x:486, y:150}, {x:475, y:151},
+  {x:432, y:155}, {x:417, y:168}, {x:412, y:179},
+  {x:372, y:201}, {x:359, y:207}, {x:351, y:206},
+  {x:345, y:206}, {x:331, y:206}, {x:322, y:204},
+  {x:318, y:197}, {x:313, y:190}, {x:303, y:186},
+  {x:286, y:191}, {x:274, y:172}, {x:267, y:162},
+  {x:252, y:162}, {x:235, y:160}, {x:210, y:159},
+  {x:198, y:164}, {x:174, y:162}, {x:149, y:153},
+  {x:122, y:139}, {x:112, y:123}, {x:107, y:108},
+  {x:99, y:106}, {x:75, y:95}, {x:50, y:87},
+  {x:38, y:81}, {x:1, y:66}, {x:0, y:66},
+];
+
+// Musandam Peninsula - traced from satellite. Rises from bottom edge.
+const arabiaCoast = [
+  {x:241, y:649},
+  {x:261, y:633}, {x:286, y:619},
+  {x:324, y:588}, {x:330, y:577},
+  {x:379, y:540}, {x:421, y:506},
+  {x:453, y:457}, {x:468, y:436},
+  {x:503, y:405}, {x:525, y:382},
+  {x:576, y:361}, {x:582, y:346},
+  {x:602, y:313}, {x:615, y:260},
+  {x:624, y:258}, {x:635, y:260},
+  {x:640, y:246}, {x:646, y:235},
+  {x:666, y:232},                      // TIP area
+  {x:676, y:243},
+  {x:668, y:285}, {x:663, y:302},
+  {x:666, y:308}, {x:664, y:320},
+  {x:656, y:337}, {x:660, y:346},
+  {x:647, y:371}, {x:644, y:392},
+  {x:650, y:398}, {x:656, y:420},
+  {x:656, y:447}, {x:656, y:471},
+  {x:657, y:503}, {x:659, y:529},
+  {x:668, y:557}, {x:678, y:577},
+  {x:692, y:599}, {x:707, y:624},
+  {x:719, y:640}, {x:729, y:649},
+];
+
+// Qeshm Island - traced from satellite
+const qeshmIsland = [
+  {x:452, y:199}, {x:481, y:192}, {x:508, y:181},
+  {x:529, y:172}, {x:538, y:171}, {x:544, y:166},
+  {x:559, y:159}, {x:566, y:166}, {x:579, y:165},
+  {x:596, y:152}, {x:607, y:135}, {x:614, y:124},
+  {x:629, y:118}, {x:630, y:112},
+  {x:616, y:106}, {x:577, y:113}, {x:560, y:124},
+  {x:551, y:116}, {x:541, y:115}, {x:534, y:117},
+  {x:538, y:130}, {x:541, y:140}, {x:519, y:146},
+  {x:506, y:156}, {x:474, y:173}, {x:450, y:177},
+  {x:443, y:174}, {x:443, y:183}, {x:451, y:197},
+];
+
+const islands = [
+  { points: qeshmIsland, color: '#c9aa4e' },
+];
+
+// Ship path - curves through the strait between Iran/Qeshm and Musandam
+// Enter from left in open Persian Gulf (below Iran coast ~y=200)
+// Curve NORTH through the gap between Qeshm (y~120) and Musandam (y~232)
+// Then curve SOUTHEAST below Iran's descending right coast into Gulf of Oman
+const pathWaypoints = [
+  {x: -30, y: 310},     // enter from Persian Gulf
+  {x: 70, y: 315},
+  {x: 150, y: 318},
+  {x: 230, y: 315},
+  {x: 310, y: 305},     // heading east
+  {x: 380, y: 285},     // south of Qeshm, curving north
+  {x: 440, y: 260},     // approaching the strait
+  {x: 500, y: 235},     // curving toward the gap
+  {x: 550, y: 215},     // entering the narrows
+  {x: 600, y: 195},     // through the gap (Qeshm ~y=135, Musandam ~y=260)
+  {x: 640, y: 190},     // narrowest point
+  {x: 680, y: 210},     // past chokepoint, curving southeast
+  {x: 720, y: 260},     // east of Musandam, heading south
+  {x: 760, y: 320},     // below Iran's descending coast
+  {x: 800, y: 375},
+  {x: 845, y: 420},
+  {x: 900, y: 460},
+  {x: 960, y: 500},
+  {x: 1040, y: 550},    // exit bottom-right (Gulf of Oman)
+];
+
+const omanCoast = arabiaCoast;
+
+function pointInPolygon(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function buildGrid() {
+  grid = [];
+  for (let r = 0; r < ROWS; r++) {
+    grid[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      const cx = c * CELL + CELL/2, cy = r * CELL + CELL/2;
+      const isIran = pointInPolygon(cx, cy, iranCoast);
+      const isMusandam = pointInPolygon(cx, cy, omanCoast);
+      let isIsland = false;
+      for (const isl of islands) {
+        if (pointInPolygon(cx, cy, isl.points)) isIsland = true;
+      }
+      // 0=water, 1=enemy land (Musandam, non-buildable), 2=friendly land (Iran/Qeshm, all buildable)
+      if (isIran || isIsland) grid[r][c] = 2;
+      else if (isMusandam) grid[r][c] = 1;
+      else grid[r][c] = 0;
+    }
+  }
+}
+
+// --- Tower Definitions ---
+const TOWER_DEFS = {
+  ashore_missile: {
+    name: 'Coastal Missile', cost: 100, range: 180, damage: 50, fireRate: 90,
+    color: '#2a4a2a', barrelColor: '#1a3a1a', sell: 50,
+    upgrades: [{cost:80, damage:75, range:200, name:'Coastal Missile II'},{cost:150, damage:110, range:220, name:'Coastal Missile III'}]
+  },
+  rocket: {
+    name: 'Rocket Battery', cost: 60, range: 100, damage: 12, fireRate: 25,
+    color: '#5a5a2a', barrelColor: '#3a3a1a', sell: 30, splash: 40,
+    upgrades: [{cost:50, damage:18, splash:55, name:'Rocket Battery II'},{cost:100, damage:28, splash:70, name:'Rocket Battery III'}]
+  },
+  mine: {
+    name: 'Sea Mine', cost: 40, range: 35, damage: 120, fireRate: 0,
+    color: '#555', barrelColor: '#333', sell: 0, blastRadius: 60,
+    upgrades: []
+  },
+  fastboat: {
+    name: 'Fast Attack Base', cost: 200, range: 200, damage: 8, fireRate: 150,
+    color: '#2a2a5a', barrelColor: '#1a1a3a', sell: 100, boatSpeed: 1.3, maxHits: 4,
+    upgrades: [{cost:120, damage:12, name:'Fast Attack II', maxHits:6, boatSpeed:1.5},{cost:200, damage:16, name:'Fast Attack III', maxHits:8, boatSpeed:1.8}]
+  },
+  radar: {
+    name: 'Radar Station', cost: 150, range: 130, damage: 0, fireRate: 0,
+    color: '#aaa', barrelColor: '#888', sell: 75, rangeBuff: 0.2, fireRateBuff: 0.15,
+    upgrades: [{cost:100, range:160, rangeBuff:0.25, fireRateBuff:0.2, name:'Radar II'},{cost:180, range:200, rangeBuff:0.35, fireRateBuff:0.3, name:'Radar III'}]
+  }
+};
+
+// --- Enemy Definitions ---
+const ENEMY_TYPES = {
+  tanker: {
+    name: 'Oil Tanker', hp: 80, speed: 0.8, reward: 15, color: '#222',
+    width: 32, height: 14, smokestacks: 1
+  },
+  cargo: {
+    name: 'Cargo Ship', hp: 120, speed: 0.7, reward: 20, color: '#4a6741',
+    width: 36, height: 16, smokestacks: 1
+  },
+  speedboat: {
+    name: 'Speed Boat', hp: 40, speed: 1.8, reward: 12, color: '#ddd',
+    width: 20, height: 8, smokestacks: 0
+  },
+  destroyer: {
+    name: 'Destroyer', hp: 250, speed: 0.6, reward: 35, color: '#556',
+    width: 38, height: 14, smokestacks: 2
+  },
+  submarine: {
+    name: 'Submarine', hp: 180, speed: 0.9, reward: 30, color: '#334',
+    width: 30, height: 10, smokestacks: 0, submerged: true
+  },
+  carrier: {
+    name: 'Aircraft Carrier', hp: 600, speed: 0.35, reward: 80, color: '#445',
+    width: 52, height: 20, smokestacks: 2, boss: true
+  },
+  supertanker: {
+    name: 'Super Tanker', hp: 400, speed: 0.4, reward: 50, color: '#111',
+    width: 48, height: 18, smokestacks: 2, boss: true
+  },
+  neutralship: {
+    name: 'Neutral Vessel', hp: 999999, speed: 1.4, reward: 0, color: '#cc2222',
+    width: 36, height: 16, smokestacks: 1, neutral: true
+  },
+  uswarship: {
+    name: 'US Warship', hp: 1200, speed: 0.3, reward: 120, color: '#7788aa',
+    width: 50, height: 18, smokestacks: 2, boss: true, armed: true,
+    fireRate: 140, fireRange: 180, fireDamage: 1
+  },
+};
+
+// --- Wave Definitions ---
+function getWave(n) {
+  const waves = [
+    // Wave 1-5: Oil tankers and basic ships
+    [{type:'tanker', count:6, interval:50}],
+    [{type:'tanker', count:8, interval:45}, {type:'speedboat', count:2, interval:60}],
+    [{type:'tanker', count:5, interval:40}, {type:'cargo', count:4, interval:50}],
+    [{type:'speedboat', count:8, interval:30}, {type:'tanker', count:4, interval:50}],
+    [{type:'cargo', count:6, interval:40}, {type:'tanker', count:6, interval:40}, {type:'supertanker', count:1, interval:0}],
+    // Wave 6-10: Military enters
+    [{type:'destroyer', count:3, interval:70}, {type:'tanker', count:5, interval:40}],
+    [{type:'speedboat', count:10, interval:20}, {type:'destroyer', count:2, interval:80}],
+    [{type:'submarine', count:4, interval:60}, {type:'cargo', count:5, interval:40}],
+    [{type:'destroyer', count:4, interval:55}, {type:'submarine', count:3, interval:60}, {type:'tanker', count:4, interval:40}],
+    [{type:'carrier', count:1, interval:0}, {type:'destroyer', count:4, interval:50}, {type:'speedboat', count:6, interval:25}],
+    // Wave 11+: Scaling chaos
+    [{type:'supertanker', count:2, interval:100}, {type:'destroyer', count:5, interval:45}, {type:'submarine', count:4, interval:50}],
+    [{type:'carrier', count:2, interval:120}, {type:'speedboat', count:12, interval:15}],
+  ];
+  if (n <= waves.length) return waves[n-1];
+  // Infinite scaling
+  const scale = 1 + (n - waves.length) * 0.3;
+  const wave = [
+    {type:'carrier', count: Math.floor(scale), interval:100},
+    {type:'destroyer', count: Math.floor(4*scale), interval: 40},
+    {type:'submarine', count: Math.floor(3*scale), interval: 45},
+    {type:'speedboat', count: Math.floor(6*scale), interval: 15},
+  ];
+  // US warships arrive starting wave 15, scaling up
+  if (n >= 15) {
+    const usCount = 1 + Math.floor((n - 15) / 3);
+    wave.push({type:'uswarship', count: usCount, interval: 120});
+  }
+  return wave;
+}
+
+// --- Spawning ---
+let spawnQueue = [];
+let spawnTimer = 0;
+
+function startWave() {
+  if (waveInProgress) return;
+  waveNum++;
+  waveInProgress = true;
+  document.getElementById('waveNum').textContent = waveNum;
+  document.getElementById('waveBtn').disabled = true;
+
+  const waveDef = getWave(waveNum);
+  spawnQueue = [];
+  const hpScale = 1 + (waveNum - 1) * 0.15;
+
+  for (const group of waveDef) {
+    for (let i = 0; i < group.count; i++) {
+      spawnQueue.push({type: group.type, delay: group.interval, hpScale});
+    }
+  }
+  waveEnemiesRemaining = spawnQueue.length;
+  spawnTimer = 0;
+
+  // Spawn one neutral vessel per wave with a short delay
+  setTimeout(() => { if (gameRunning) enemies.push(spawnEnemy('neutralship', 1)); }, 500);
+}
+
+function spawnEnemy(typeName, hpScale) {
+  const def = ENEMY_TYPES[typeName];
+  const pathOffset = (Math.random() - 0.5) * 16;
+  // Spawn at random Y along the left edge where there's water
+  // Find water range on left edge (x=0 column)
+  let waterYs = [];
+  for (let r = 0; r < ROWS; r++) {
+    if (grid[r] && grid[r][0] === 0) waterYs.push(r * CELL + CELL/2);
+  }
+  // Pick a random water Y, or fall back to first waypoint
+  const spawnY = waterYs.length > 0
+    ? waterYs[Math.floor(Math.random() * waterYs.length)]
+    : pathWaypoints[0].y;
+  return {
+    type: typeName,
+    x: -20 - Math.random() * 30,  // slightly off-screen left
+    y: spawnY,
+    hp: Math.floor(def.hp * hpScale),
+    maxHp: Math.floor(def.hp * hpScale),
+    speed: def.speed,
+    reward: def.reward,
+    color: def.color,
+    width: def.width,
+    height: def.height,
+    smokestacks: def.smokestacks,
+    boss: def.boss || false,
+    submerged: def.submerged || false,
+    neutral: def.neutral || false,
+    armed: def.armed || false,
+    fireCooldown: 0,
+    fireRate: def.fireRate || 0,
+    fireRange: def.fireRange || 0,
+    fireDamage: def.fireDamage || 0,
+    pathIndex: -1,                   // -1 = converging to path
+    convergeTarget: 2,               // which waypoint index to converge to
+    pathOffset: pathOffset,
+    slowTimer: 0,
+    slowFactor: 1,
+    angle: 0,
+    alive: true,
+    wobble: Math.random() * Math.PI * 2,
+    name: def.name
+  };
+}
+
+// --- Path Following ---
+function moveEnemy(e, dt) {
+  const spd = e.speed * e.slowFactor;
+
+  // Converge phase: ship spawned at random Y, heading toward the shipping lane
+  if (e.pathIndex === -1) {
+    const wp = pathWaypoints[e.convergeTarget];
+    const tx = wp.x, ty = wp.y + e.pathOffset;
+    const dx = tx - e.x, dy = ty - e.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    e.angle = Math.atan2(dy, dx);
+    if (dist < spd * 3) {
+      e.pathIndex = e.convergeTarget; // joined the main path
+    } else {
+      e.x += (dx/dist) * spd;
+      e.y += (dy/dist) * spd;
+    }
+  } else {
+    // Normal path following
+    if (e.pathIndex >= pathWaypoints.length - 1) {
+      e.alive = false;
+      if (e.neutral) return; // neutral vessels pass through without consequence
+      // Ship got through - oil supply flows, price drops
+      const priceDrop = e.boss ? 3.0 : e.type === 'tanker' ? 1.5 : e.type === 'supertanker' ? 2.5 : e.type === 'cargo' ? 1.2 : 0.5;
+      oilPrice = Math.max(0, oilPrice - priceDrop);
+      if (oilPrice <= OIL_PRICE_FLOOR) { oilPrice = OIL_PRICE_FLOOR; endGame(); }
+      updateUI();
+      return;
+    }
+    const target = pathWaypoints[e.pathIndex + 1];
+    const tx = target.x, ty = target.y + e.pathOffset;
+    const dx = tx - e.x, dy = ty - e.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    e.angle = Math.atan2(dy, dx);
+    if (dist < spd * 2) {
+      e.pathIndex++;
+    } else {
+      e.x += (dx/dist) * spd;
+      e.y += (dy/dist) * spd;
+    }
+  }
+
+  if (e.slowTimer > 0) {
+    e.slowTimer--;
+    if (e.slowTimer <= 0) e.slowFactor = 1;
+  }
+  e.wobble += 0.05;
+
+  // Armed enemies (US warships) shoot back at towers
+  if (e.armed && e.alive) {
+    if (e.fireCooldown > 0) { e.fireCooldown--; return; }
+    // Find closest non-dead tower in range
+    let bestTower = null, bestDist = e.fireRange;
+    for (const t of towers) {
+      if (t.dead) continue;
+      const dx = t.x - e.x, dy = t.y - e.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < bestDist) { bestDist = d; bestTower = t; }
+    }
+    if (bestTower) {
+      e.fireCooldown = e.fireRate;
+      projectiles.push({
+        type: 'warship_shell', x: e.x, y: e.y,
+        target: bestTower, speed: 3.5, damage: e.fireDamage, life: 90
+      });
+    }
+  }
+}
+
+// --- Tower Logic ---
+function placeTower(col, row, type) {
+  const def = TOWER_DEFS[type];
+  if (gold < def.cost) return false;
+  // Mines go on water (0), everything else on coast (2)
+  if (type === 'mine') {
+    if (grid[row][col] !== 0) return false;
+  } else {
+    if (grid[row][col] !== 2) return false;
+  }
+  // Check no tower already there
+  for (const t of towers) {
+    if (t.col === col && t.row === row) return false;
+  }
+  gold -= def.cost;
+  const towerObj = {
+    type, col, row,
+    x: col * CELL + CELL/2,
+    y: row * CELL + CELL/2,
+    range: def.range,
+    damage: def.damage,
+    fireRate: def.fireRate,
+    cooldown: 0,
+    level: 0,
+    angle: 0,
+    splash: def.splash || 0,
+    blastRadius: def.blastRadius || 0,
+    totalSpent: def.cost,
+    rangeBonus: 0,
+    fireRateBonus: 0,
+    dead: false
+  };
+  // Fast boat specific
+  if (type === 'fastboat') {
+    towerObj.boat = null;
+    towerObj.maxHits = 3;
+    towerObj.boatSpeed = 4;
+  }
+  // Radar specific
+  if (type === 'radar') {
+    towerObj.rangeBuff = def.rangeBuff;
+    towerObj.fireRateBuff = def.fireRateBuff;
+  }
+  towers.push(towerObj);
+  grid[row][col] = 3; // occupied
+  updateUI();
+  return true;
+}
+
+// BFS pathfind over water cells. Uses parent tracking instead of copying paths.
+function findWaterPath(fromX, fromY, toX, toY) {
+  // Find nearest water cell to destination (tower is on land)
+  let goalR = -1, goalC = -1, bestGD = Infinity;
+  const tRow = Math.floor(toY / CELL), tCol = Math.floor(toX / CELL);
+  for (let dr = -3; dr <= 3; dr++) {
+    for (let dc = -3; dc <= 3; dc++) {
+      const nr = tRow + dr, nc = tCol + dc;
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && grid[nr][nc] === 0) {
+        const d = Math.abs(dr) + Math.abs(dc);
+        if (d < bestGD) { bestGD = d; goalR = nr; goalC = nc; }
+      }
+    }
+  }
+  if (goalR < 0) return null;
+
+  // Find nearest water cell to boat
+  let startR = Math.floor(fromY / CELL), startC = Math.floor(fromX / CELL);
+  if (startR < 0 || startR >= ROWS || startC < 0 || startC >= COLS || grid[startR][startC] !== 0) {
+    let bestSD = Infinity;
+    for (let dr = -3; dr <= 3; dr++) {
+      for (let dc = -3; dc <= 3; dc++) {
+        const nr = startR + dr, nc = startC + dc;
+        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && grid[nr][nc] === 0) {
+          const d = Math.abs(dr) + Math.abs(dc);
+          if (d < bestSD) { bestSD = d; startR = nr; startC = nc; }
+        }
+      }
+    }
+  }
+
+  // BFS with parent tracking (no path copying)
+  const parent = new Map();
+  const queue = [startR * COLS + startC];
+  const goalKey = goalR * COLS + goalC;
+  parent.set(queue[0], -1);
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+  let found = false;
+
+  while (queue.length > 0) {
+    const key = queue.shift();
+    if (key === goalKey) { found = true; break; }
+    const r = Math.floor(key / COLS), c = key % COLS;
+    for (const [dr, dc] of dirs) {
+      const nr = r+dr, nc = c+dc;
+      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+      if (grid[nr][nc] !== 0) continue;
+      const nk = nr * COLS + nc;
+      if (parent.has(nk)) continue;
+      parent.set(nk, key);
+      queue.push(nk);
+    }
+  }
+
+  if (!found) return null;
+
+  // Reconstruct path via parent chain
+  const full = [];
+  let k = goalKey;
+  const startKey = startR * COLS + startC;
+  while (k !== undefined && k !== -1 && k !== startKey && full.length < 500) {
+    const r = Math.floor(k / COLS), c = k % COLS;
+    full.unshift({x: c*CELL+CELL/2, y: r*CELL+CELL/2});
+    k = parent.get(k);
+  }
+  if (full.length === 0) return null;
+  // Simplify: take every 3rd point
+  const simplified = [];
+  for (let i = 0; i < full.length; i += 3) simplified.push(full[i]);
+  if (simplified[simplified.length-1] !== full[full.length-1]) {
+    simplified.push(full[full.length-1]);
+  }
+  return simplified;
+}
+
+function findTarget(tower) {
+  if (tower.type === 'mine' || tower.type === 'radar' || tower.type === 'fastboat') return null;
+  const effectiveRange = tower.range + tower.rangeBonus;
+  let closest = null, minDist = effectiveRange;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (e.neutral) continue; // never target neutral vessels
+    // Subs invisible unless tower is a mine, radar, or buffed by a nearby radar
+    if (e.submerged && tower.type !== 'radar' && tower.type !== 'mine' && tower.rangeBonus === 0) continue;
+    const dx = e.x - tower.x, dy = e.y - tower.y;
+    const d = Math.sqrt(dx*dx + dy*dy);
+    if (d < minDist) { minDist = d; closest = e; }
+  }
+  return closest;
+}
+
+function updateTower(tower) {
+  if (tower.dead) return;
+
+  // --- Mine logic: proximity detonation ---
+  if (tower.type === 'mine') {
+    // Check for chain detonation from another mine
+    let triggered = tower.chainDetonate;
+    if (!triggered) {
+      for (const e of enemies) {
+        if (!e.alive || e.neutral) continue;
+        const dx = e.x - tower.x, dy = e.y - tower.y;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d < tower.range) { triggered = true; break; }
+      }
+    }
+    if (!triggered) return;
+    // --- Mine detonates ---
+    const blastR = tower.blastRadius || 60;
+    // Damage all enemies in blast radius
+    for (const e2 of enemies) {
+      if (!e2.alive || e2.neutral) continue;
+      const d2 = Math.sqrt((e2.x-tower.x)**2 + (e2.y-tower.y)**2);
+      if (d2 < blastR) {
+        const dmg = tower.damage * (1 - d2/blastR * 0.4);
+        e2.hp -= dmg;
+        if (e2.hp <= 0 && e2.alive) killEnemy(e2);
+      }
+    }
+    // Collateral damage: destroy any friendly fast attack boats in blast radius
+    for (const t2 of towers) {
+      if (t2.type === 'fastboat' && t2.boat) {
+        const bd = Math.sqrt((t2.boat.x-tower.x)**2 + (t2.boat.y-tower.y)**2);
+        if (bd < blastR) {
+          t2.boat = null;
+          particles.push({x:tower.x, y:tower.y, life:15, type:'hit', r:8});
+        }
+      }
+    }
+    // Chain detonation: flag nearby mines to detonate next frame
+    for (const t2 of towers) {
+      if (t2.type === 'mine' && t2 !== tower && !t2.dead) {
+        const md = Math.sqrt((t2.x-tower.x)**2 + (t2.y-tower.y)**2);
+        if (md < blastR) {
+          t2.chainDetonate = true;
+        }
+      }
+    }
+    // Explosion particles
+    for (let i = 0; i < 16; i++) {
+      particles.push({
+        x:tower.x, y:tower.y,
+        vx:(Math.random()-0.5)*6, vy:(Math.random()-0.5)*6,
+        life:25+Math.random()*15, type:'explosion', color:'#ff6633', r:5
+      });
+    }
+    for (let i = 0; i < 8; i++) {
+      particles.push({
+        x:tower.x+(Math.random()-0.5)*20, y:tower.y+(Math.random()-0.5)*20,
+        vx:(Math.random()-0.5)*3, vy:-Math.random()*4,
+        life:20+Math.random()*10, type:'splash', r:3+Math.random()*2
+      });
+    }
+    tower.dead = true;
+    return;
+  }
+
+  // --- Radar logic: no attack, just exists ---
+  if (tower.type === 'radar') {
+    tower.angle += 0.03; // slowly rotate dish
+    return;
+  }
+
+  // --- Fast attack boat logic: swarm harassment ---
+  if (tower.type === 'fastboat') {
+    if (tower.boat) {
+      const boat = tower.boat;
+      boat.sortieTimer--;
+
+      // Time's up or no enemies left - head home
+      if (boat.sortieTimer <= 0 && !boat.returning) boat.returning = true;
+
+      if (!boat.returning) {
+        // Find closest enemy to the BOAT (not the tower)
+        if (!boat.target || !boat.target.alive) {
+          let best = null, bd = 200;
+          for (const e of enemies) {
+            if (!e.alive || e.submerged || e.neutral) continue;
+            const d = Math.sqrt((e.x-boat.x)**2 + (e.y-boat.y)**2);
+            if (d < bd) { bd = d; best = e; }
+          }
+          boat.target = best;
+          if (!best) boat.returning = true;
+        }
+
+        if (boat.target && boat.target.alive && !boat.returning) {
+          const dx = boat.target.x - boat.x, dy = boat.target.y - boat.y;
+          const d = Math.sqrt(dx*dx + dy*dy);
+
+          // Orbit behavior: circle around the target at ~40px distance
+          const orbitDist = 40;
+          boat.orbitAngle += 0.06;
+
+          if (d > orbitDist + 20) {
+            // Approach target
+            boat.angle = Math.atan2(dy, dx);
+            boat.x += (dx/d) * boat.speed;
+            boat.y += (dy/d) * boat.speed;
+          } else {
+            // Orbit around target
+            const ox = boat.target.x + Math.cos(boat.orbitAngle) * orbitDist;
+            const oy = boat.target.y + Math.sin(boat.orbitAngle) * orbitDist;
+            const odx = ox - boat.x, ody = oy - boat.y;
+            const od = Math.sqrt(odx*odx + ody*ody);
+            if (od > 1) {
+              boat.angle = Math.atan2(ody, odx);
+              boat.x += (odx/od) * boat.speed;
+              boat.y += (ody/od) * boat.speed;
+            }
+          }
+
+          // Shoot while orbiting (on a cooldown)
+          boat.attackCooldown--;
+          if (boat.attackCooldown <= 0 && d < orbitDist + 30) {
+            boat.target.hp -= tower.damage;
+            if (boat.target.hp <= 0 && boat.target.alive) killEnemy(boat.target);
+            boat.attackCooldown = 20; // frames between shots
+            boat.hits++;
+            // Small muzzle flash particle
+            particles.push({
+              x: boat.x, y: boat.y, life: 6, type: 'hit', r: 4
+            });
+            // Switch to a different target occasionally
+            if (boat.hits % 3 === 0) boat.target = null;
+          }
+        }
+      }
+
+      if (boat.returning) {
+        // BFS pathfind back to tower over water on first frame of return
+        if (!boat.path) {
+          boat.path = findWaterPath(boat.x, boat.y, tower.x, tower.y);
+          boat.pathIdx = 0;
+        }
+        // Follow the path waypoints
+        if (boat.path && boat.pathIdx < boat.path.length && boat.path[boat.pathIdx]) {
+          const wp = boat.path[boat.pathIdx];
+          const dx = wp.x - boat.x, dy = wp.y - boat.y;
+          const d = Math.sqrt(dx*dx + dy*dy);
+          boat.angle = Math.atan2(dy, dx);
+          if (d < 8) {
+            boat.pathIdx++;
+          } else {
+            boat.x += (dx/d) * (boat.speed * 1.5);
+            boat.y += (dy/d) * (boat.speed * 1.5);
+          }
+        } else {
+          // Reached end of path (or no path found) - dock
+          tower.boat = null;
+        }
+      }
+      return;
+    }
+    // Try to launch a new boat
+    if (tower.cooldown > 0) { tower.cooldown--; return; }
+    const effectiveRange = tower.range + tower.rangeBonus;
+    let bestTarget = null, bestDist = effectiveRange;
+    for (const e of enemies) {
+      if (!e.alive || e.submerged || e.neutral) continue;
+      const dx = e.x - tower.x, dy = e.y - tower.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < bestDist) { bestDist = d; bestTarget = e; }
+    }
+    if (bestTarget) {
+      const effectiveFireRate = Math.floor(Math.max(10, tower.fireRate - tower.fireRateBonus));
+      tower.cooldown = effectiveFireRate;
+      tower.boat = {
+        x: tower.x, y: tower.y,
+        target: bestTarget,
+        hits: 0,
+        returning: false,
+        speed: tower.boatSpeed || 2,  // slower than projectiles
+        angle: 0,
+        orbitAngle: Math.random() * Math.PI * 2,
+        attackCooldown: 10,
+        sortieTimer: 300 + (tower.maxHits || 3) * 40, // how long before heading home
+      };
+    }
+    return;
+  }
+
+  // --- Standard tower cooldown ---
+  const effectiveFireRate = Math.floor(Math.max(5, tower.fireRate - tower.fireRateBonus));
+  if (tower.cooldown > 0) { tower.cooldown--; return; }
+  tower.cooldown = 0; // clamp to 0 (prevent negative drift)
+  const target = findTarget(tower);
+  if (!target) return;
+
+  const dx = target.x - tower.x, dy = target.y - tower.y;
+  tower.angle = Math.atan2(dy, dx);
+
+  // Fire
+  tower.cooldown = effectiveFireRate;
+
+  if (tower.type === 'rocket') {
+    // Splash rocket projectile (like old flak)
+    projectiles.push({
+      type:'flak', x:tower.x, y:tower.y,
+      tx:target.x, ty:target.y,
+      speed:5, damage:tower.damage, splash:tower.splash||40, life:60
+    });
+  } else {
+    // Arcing cruise missile - launches up, arcs over, dives at target
+    projectiles.push({
+      type:'cruise', x:tower.x, y:tower.y,
+      tx:target.x, ty:target.y, target:target,
+      speed: 4,
+      damage: tower.damage, life: 120,
+      phase: 'launch',   // launch → cruise → dive
+      launchTimer: 18,    // frames to go up
+      vy: -3.5,           // upward velocity during launch
+      originX: tower.x, originY: tower.y
+    });
+  }
+}
+
+function killEnemy(e) {
+  if (e.neutral) { e.alive = false; return; } // neutral vessels cannot be killed
+  e.alive = false;
+  gold += e.reward;
+  score += e.reward * 2;
+  // Ship destroyed - supply disrupted, price rises
+  const priceGain = e.boss ? 2.0 : e.type === 'tanker' ? 0.8 : e.type === 'supertanker' ? 1.5 : e.type === 'cargo' ? 0.6 : 0.3;
+  oilPrice = Math.min(OIL_PRICE_CAP, oilPrice + priceGain);
+  waveEnemiesRemaining--;
+  // Death particles
+  for (let i = 0; i < 12; i++) {
+    particles.push({
+      x: e.x, y: e.y,
+      vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4,
+      life: 30 + Math.random()*20, type: 'explosion',
+      color: e.boss ? '#ffd700' : '#ff6633',
+      r: e.boss ? 5 : 3
+    });
+  }
+  // Water splash
+  for (let i = 0; i < 6; i++) {
+    particles.push({
+      x: e.x + (Math.random()-0.5)*e.width,
+      y: e.y + (Math.random()-0.5)*e.height,
+      vx: (Math.random()-0.5)*2, vy: -Math.random()*3,
+      life: 20 + Math.random()*15, type: 'splash',
+      r: 2 + Math.random()*2
+    });
+  }
+  updateUI();
+}
+
+// --- Projectile Update ---
+function updateProjectile(p) {
+  p.life--;
+  if (p.type === 'cruise') {
+    // Arcing cruise missile: launch up → cruise → dive at target
+    let tx = p.tx, ty = p.ty;
+    if (p.target && p.target.alive) { tx = p.target.x; ty = p.target.y; }
+
+    if (p.phase === 'launch') {
+      // Go upward with slight drift toward target
+      p.y += p.vy;
+      p.vy += 0.15; // decelerate upward
+      p.x += (tx - p.x) * 0.01; // gentle drift toward target
+      p.launchTimer--;
+      // Smoke trail during launch
+      if (p.launchTimer % 2 === 0) {
+        particles.push({
+          x: p.x + (Math.random()-0.5)*4,
+          y: p.y + 5,
+          vx: (Math.random()-0.5)*1.5, vy: 0.5 + Math.random(),
+          life: 15 + Math.random()*10, type: 'explosion',
+          color: 'rgba(200,200,200,0.6)', r: 3 + Math.random()*2
+        });
+      }
+      if (p.launchTimer <= 0) p.phase = 'cruise';
+    } else if (p.phase === 'cruise') {
+      // Fly toward target, gradually descending
+      const dx = tx - p.x, dy = ty - p.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < 60) {
+        p.phase = 'dive';
+      } else {
+        p.x += (dx/d) * p.speed;
+        p.y += (dy/d) * p.speed;
+      }
+    } else {
+      // Dive phase - home in fast
+      const dx = tx - p.x, dy = ty - p.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < p.speed * 2.5) {
+        // Hit
+        if (p.target && p.target.alive) {
+          p.target.hp -= p.damage;
+          if (p.target.hp <= 0) killEnemy(p.target);
+        }
+        p.life = 0;
+        particles.push({x:p.x,y:p.y,life:10,type:'hit',r:8, maxLife:10});
+        for (let i = 0; i < 6; i++) {
+          particles.push({
+            x:p.x, y:p.y, vx:(Math.random()-0.5)*4, vy:(Math.random()-0.5)*4,
+            life:12+Math.random()*8, type:'explosion', color:'#ff6633', r:3
+          });
+        }
+      } else {
+        p.x += (dx/d) * (p.speed * 1.5);
+        p.y += (dy/d) * (p.speed * 1.5);
+      }
+    }
+  } else if (p.type === 'bullet') {
+    // Generic homing projectile
+    let tx = p.tx, ty = p.ty;
+    if (p.target && p.target.alive) { tx = p.target.x; ty = p.target.y; }
+    const dx = tx - p.x, dy = ty - p.y;
+    const d = Math.sqrt(dx*dx + dy*dy);
+    if (d < p.speed * 2) {
+      if (p.target && p.target.alive) {
+        p.target.hp -= p.damage;
+        if (p.target.hp <= 0) killEnemy(p.target);
+      }
+      p.life = 0;
+      particles.push({x:p.x,y:p.y,life:10,type:'hit',r:6});
+    } else {
+      p.x += (dx/d)*p.speed;
+      p.y += (dy/d)*p.speed;
+    }
+  } else if (p.type === 'flak') {
+    const dx = p.tx - p.x, dy = p.ty - p.y;
+    const d = Math.sqrt(dx*dx + dy*dy);
+    if (d < p.speed * 2) {
+      // Explode
+      for (const e of enemies) {
+        if (!e.alive || e.neutral) continue;
+        const ed = Math.sqrt((e.x-p.x)**2 + (e.y-p.y)**2);
+        if (ed < p.splash) {
+          const dmg = p.damage * (1 - ed/p.splash * 0.5);
+          e.hp -= dmg;
+          if (e.hp <= 0) killEnemy(e);
+        }
+      }
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x:p.x, y:p.y, vx:(Math.random()-0.5)*5, vy:(Math.random()-0.5)*5,
+          life:15+Math.random()*10, type:'explosion', color:'#ffaa33', r:4
+        });
+      }
+      p.life = 0;
+    } else {
+      p.x += (dx/d)*p.speed;
+      p.y += (dy/d)*p.speed;
+    }
+  } else if (p.type === 'warship_shell') {
+    const t = p.target;
+    if (!t || t.dead) { p.life = 0; return; }
+    const dx = t.x - p.x, dy = t.y - p.y;
+    const d = Math.sqrt(dx*dx + dy*dy);
+    if (d < p.speed * 2) {
+      // Hit tower - destroy it
+      t.dead = true;
+      grid[t.row][t.col] = t.type === 'mine' ? 0 : 2; // restore cell
+      for (let i = 0; i < 10; i++) {
+        particles.push({
+          x: t.x, y: t.y,
+          vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5,
+          life: 20+Math.random()*15, type:'explosion', color:'#ff4422', r:4
+        });
+      }
+      p.life = 0;
+    } else {
+      p.x += (dx/d)*p.speed;
+      p.y += (dy/d)*p.speed;
+    }
+  }
+}
+
+// --- Drawing ---
+function drawMap() {
+  // Ocean
+  const waterGrad = ctx.createLinearGradient(0, 100, 0, 550);
+  waterGrad.addColorStop(0, '#1a7a9a');
+  waterGrad.addColorStop(0.5, '#186a88');
+  waterGrad.addColorStop(1, '#14587a');
+  ctx.fillStyle = waterGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle water ripples
+  const t = Date.now() / 1000;
+  ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 18; i++) {
+    ctx.beginPath();
+    for (let x = 0; x < W; x += 5) {
+      const y = 180 + i * 22 + Math.sin(x * 0.012 + t * 0.4 + i * 0.8) * 4;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // --- Iran (top landmass) ---
+  ctx.fillStyle = '#d4b86a';
+  ctx.beginPath();
+  ctx.moveTo(iranCoast[0].x, iranCoast[0].y);
+  for (const p of iranCoast) ctx.lineTo(p.x, p.y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Iran terrain bands
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(iranCoast[0].x, iranCoast[0].y);
+  for (const p of iranCoast) ctx.lineTo(p.x, p.y);
+  ctx.closePath();
+  ctx.clip();
+  ctx.fillStyle = '#c4a555';
+  ctx.beginPath();
+  ctx.moveTo(0,0); ctx.lineTo(1000,0); ctx.lineTo(1000,300);
+  ctx.lineTo(850,250); ctx.lineTo(700,60); ctx.lineTo(500,100);
+  ctx.lineTo(350,150); ctx.lineTo(200,100); ctx.lineTo(0,40);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#b89848';
+  ctx.beginPath();
+  ctx.moveTo(0,0); ctx.lineTo(1000,0); ctx.lineTo(1000,200);
+  ctx.lineTo(850,150); ctx.lineTo(700,40); ctx.lineTo(500,60);
+  ctx.lineTo(350,100); ctx.lineTo(200,60); ctx.lineTo(0,20);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // Iran coast edge
+  ctx.strokeStyle = '#e0cc80';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(iranCoast[iranCoast.length-1].x, iranCoast[iranCoast.length-1].y);
+  for (let i = iranCoast.length - 1; i >= 2; i--) ctx.lineTo(iranCoast[i].x, iranCoast[i].y);
+  ctx.stroke();
+
+  // --- Arabia / Musandam (bottom landmass) ---
+  ctx.fillStyle = '#d4b86a';
+  ctx.beginPath();
+  ctx.moveTo(arabiaCoast[0].x, arabiaCoast[0].y);
+  for (const p of arabiaCoast) ctx.lineTo(p.x, p.y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Arabia terrain
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(arabiaCoast[0].x, arabiaCoast[0].y);
+  for (const p of arabiaCoast) ctx.lineTo(p.x, p.y);
+  ctx.closePath();
+  ctx.clip();
+  // Musandam mountain shading
+  ctx.fillStyle = 'rgba(160,130,70,0.4)';
+  ctx.beginPath();
+  ctx.moveTo(400, 650); ctx.lineTo(560, 380); ctx.lineTo(650, 232);
+  ctx.lineTo(670, 400); ctx.lineTo(720, 650);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // Arabia coast edge
+  ctx.strokeStyle = '#e0cc80';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(arabiaCoast[1].x, arabiaCoast[1].y);
+  for (let i = 2; i < arabiaCoast.length - 1; i++) ctx.lineTo(arabiaCoast[i].x, arabiaCoast[i].y);
+  ctx.stroke();
+
+  // --- Islands ---
+  for (const isl of islands) {
+    ctx.fillStyle = isl.color;
+    ctx.beginPath();
+    ctx.moveTo(isl.points[0].x, isl.points[0].y);
+    for (const p of isl.points) ctx.lineTo(p.x, p.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#b08830';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // --- Hover indicator ---
+  if (selectedTowerType && hoveredCell) {
+    const {col, row} = hoveredCell;
+    const validCell = selectedTowerType === 'mine'
+      ? (grid[row] && grid[row][col] === 0)
+      : (grid[row] && grid[row][col] === 2);
+    if (validCell) {
+      ctx.fillStyle = 'rgba(100, 255, 100, 0.25)';
+      ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
+      const def = TOWER_DEFS[selectedTowerType];
+      ctx.strokeStyle = 'rgba(100, 255, 100, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(col*CELL+CELL/2, row*CELL+CELL/2, def.range, 0, Math.PI*2);
+      ctx.stroke();
+    } else if (grid[row] && grid[row][col] !== 3) {
+      ctx.fillStyle = 'rgba(255, 50, 50, 0.2)';
+      ctx.fillRect(col * CELL, row * CELL, CELL, CELL);
+    }
+  }
+}
+
+function drawShip(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.rotate(e.angle);
+
+  const w = e.width, h = e.height;
+  const wobble = Math.sin(e.wobble) * 1.5;
+  ctx.rotate(wobble * 0.02);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(2, 3, w/2+2, h/2+1, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Hull
+  ctx.fillStyle = e.color;
+  ctx.beginPath();
+  ctx.moveTo(-w/2, -h/2);
+  ctx.lineTo(w/2 - 4, -h/2);
+  ctx.lineTo(w/2 + 4, 0);
+  ctx.lineTo(w/2 - 4, h/2);
+  ctx.lineTo(-w/2, h/2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Deck
+  ctx.fillStyle = lighten(e.color, 30);
+  ctx.fillRect(-w/3, -h/3, w*0.5, h*0.65);
+
+  // Neutral vessel: Chinese flag on deck
+  if (e.neutral) {
+    // Flag background (red panel on the deck area)
+    const fx = -w/3, fy = -h/3, fw = w*0.5, fh = h*0.65;
+    ctx.fillStyle = '#de2910';
+    ctx.fillRect(fx, fy, fw, fh);
+
+    // Helper: draw a 5-pointed star centered at (cx,cy) with outer radius sr
+    function drawStar5(cx, cy, sr) {
+      const ir = sr * 0.382;
+      let r = -Math.PI / 2;
+      const step = Math.PI / 5;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(r)*sr, cy + Math.sin(r)*sr);
+      for (let i = 0; i < 5; i++) {
+        r += step; ctx.lineTo(cx + Math.cos(r)*ir, cy + Math.sin(r)*ir);
+        r += step; ctx.lineTo(cx + Math.cos(r)*sr, cy + Math.sin(r)*sr);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.fillStyle = '#ffde00';
+    // Large star at flag grid (5, 5) scaled to panel
+    const scale = fw / 30;
+    const lx = fx + 5 * scale, ly = fy + 5 * scale;
+    drawStar5(lx, ly, 3.0);
+
+    // Four small stars to the right of the large one (Chinese flag layout, scaled to panel)
+    const smallStars = [
+      [10, 2], [12, 4], [12, 7], [10, 9]  // flag grid coords
+    ];
+    for (const [gx, gy] of smallStars) {
+      drawStar5(fx + gx * scale, fy + gy * scale, 1.1);
+    }
+  }
+
+  // US Warship: American flag on deck
+  if (e.armed) {
+    const fx = -w/3, fy = -h/3, fw = w*0.5, fh = h*0.65;
+    // Stripes (red and white)
+    const stripeH = fh / 7;
+    for (let i = 0; i < 7; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#b22234' : '#fff';
+      ctx.fillRect(fx, fy + i * stripeH, fw, stripeH);
+    }
+    // Blue canton
+    const cantonW = fw * 0.4, cantonH = fh * 0.57;
+    ctx.fillStyle = '#3c3b6e';
+    ctx.fillRect(fx, fy, cantonW, cantonH);
+    // Stars (simplified - small dots)
+    ctx.fillStyle = '#fff';
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        const sx = fx + cantonW * 0.2 + col * (cantonW * 0.3);
+        const sy = fy + cantonH * 0.2 + row * (cantonH * 0.3);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Smokestacks
+  for (let i = 0; i < e.smokestacks; i++) {
+    const sx = -w/4 + i * 12;
+    ctx.fillStyle = '#555';
+    ctx.fillRect(sx-2, -h/2-6, 5, 8);
+    // Puff
+    ctx.fillStyle = 'rgba(180,180,180,0.5)';
+    ctx.beginPath();
+    ctx.arc(sx+1, -h/2-10 - Math.sin(time()*2+i)*3, 4, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Submarine periscope
+  if (e.submerged) {
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(w/4, 0);
+    ctx.lineTo(w/4, -h - 5);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Boss crown
+  if (e.boss) {
+    ctx.fillStyle = '#ffd700';
+    const crownX = 0, crownY = -h/2 - 12;
+    ctx.beginPath();
+    ctx.moveTo(crownX-8, crownY+6);
+    ctx.lineTo(crownX-8, crownY);
+    ctx.lineTo(crownX-4, crownY+3);
+    ctx.lineTo(crownX, crownY-2);
+    ctx.lineTo(crownX+4, crownY+3);
+    ctx.lineTo(crownX+8, crownY);
+    ctx.lineTo(crownX+8, crownY+6);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Googly eyes (cartoonish!)
+  const eyeX1 = w/4, eyeX2 = w/4 + 7;
+  const eyeY = -2;
+  // White
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(eyeX1, eyeY, 4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(eyeX2, eyeY, 3.5, 0, Math.PI*2); ctx.fill();
+  // Pupil (follows forward)
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(eyeX1+1.5, eyeY, 2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(eyeX2+1.5, eyeY, 1.8, 0, Math.PI*2); ctx.fill();
+
+  // Wake
+  ctx.restore();
+  // Draw wake behind ship
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 2;
+  const wakeLen = w * 1.2;
+  const bx = e.x - Math.cos(e.angle) * w/2;
+  const by = e.y - Math.sin(e.angle) * w/2;
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  ctx.lineTo(bx - Math.cos(e.angle-0.3)*wakeLen, by - Math.sin(e.angle-0.3)*wakeLen);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  ctx.lineTo(bx - Math.cos(e.angle+0.3)*wakeLen, by - Math.sin(e.angle+0.3)*wakeLen);
+  ctx.stroke();
+
+  // HP bar
+  if (e.hp < e.maxHp) {
+    const barW = e.width, barH = 4;
+    const bx2 = e.x - barW/2, by2 = e.y - e.height/2 - 10;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(bx2-1, by2-1, barW+2, barH+2);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(bx2, by2, barW, barH);
+    ctx.fillStyle = '#2ecc71';
+    ctx.fillRect(bx2, by2, barW * (e.hp/e.maxHp), barH);
+  }
+
+  // Slow indicator
+  if (e.slowTimer > 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('~slow~', e.x - 14, e.y + e.height/2 + 12);
+  }
+}
+
+function drawTower(t) {
+  const def = TOWER_DEFS[t.type];
+  const x = t.x, y = t.y;
+
+  if (t.type === 'mine') {
+    // Sea mine: spiked circle in water, no base
+    ctx.fillStyle = '#555';
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Spikes
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(a)*7, y + Math.sin(a)*7);
+      ctx.lineTo(x + Math.cos(a)*12, y + Math.sin(a)*12);
+      ctx.stroke();
+      ctx.fillStyle = '#666';
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(a)*12, y + Math.sin(a)*12, 2, 0, Math.PI*2);
+      ctx.fill();
+    }
+    // Red indicator light
+    ctx.fillStyle = '#f44';
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, Math.PI*2);
+    ctx.fill();
+  } else {
+    // Base for non-mine towers
+    ctx.fillStyle = '#8a7a5a';
+    ctx.beginPath();
+    ctx.arc(x, y, 10, 0, Math.PI*2);
+    ctx.fill();
+
+    // Tower body
+    ctx.fillStyle = def.color;
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Level pips
+    for (let i = 0; i < t.level; i++) {
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.arc(x - 6 + i * 6, y + 10, 2, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Type-specific visuals
+    if (t.type === 'ashore_missile') {
+      // TEL (Transporter Erector Launcher) - truck bed with angled launch rail
+      ctx.save();
+      ctx.translate(x, y);
+      // Truck bed
+      ctx.fillStyle = '#3a5a3a';
+      ctx.fillRect(-8, -4, 16, 8);
+      ctx.fillStyle = '#2a4a2a';
+      ctx.fillRect(-9, 2, 18, 4); // chassis
+      // Wheels
+      ctx.fillStyle = '#222';
+      ctx.beginPath(); ctx.arc(-6, 6, 2.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(6, 6, 2.5, 0, Math.PI*2); ctx.fill();
+      // Launch rail - angled upward
+      const railAngle = -Math.PI * 0.35; // ~63 degrees up
+      ctx.strokeStyle = '#556';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -2);
+      ctx.lineTo(Math.cos(railAngle)*14, -2 + Math.sin(railAngle)*14);
+      ctx.stroke();
+      // Missile on the rail (if not recently fired, i.e. cooldown < half)
+      if (t.cooldown < t.fireRate * 0.5) {
+        const mx = Math.cos(railAngle)*10, my = -2 + Math.sin(railAngle)*10;
+        ctx.fillStyle = '#ccc';
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.rotate(railAngle);
+        ctx.fillRect(-5, -1.5, 10, 3);
+        // Red nose
+        ctx.fillStyle = '#c33';
+        ctx.beginPath();
+        ctx.moveTo(5, -1.5); ctx.lineTo(8, 0); ctx.lineTo(5, 1.5);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    } else if (t.type === 'rocket') {
+      // Short wide barrel
+      ctx.strokeStyle = def.barrelColor;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(t.angle)*10, y + Math.sin(t.angle)*10);
+      ctx.stroke();
+    } else if (t.type === 'fastboat') {
+      // Small boat shape on the base
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = '#4a4a8a';
+      ctx.beginPath();
+      ctx.moveTo(-5, -3);
+      ctx.lineTo(6, 0);
+      ctx.lineTo(-5, 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else if (t.type === 'radar') {
+      // Rotating dish
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(t.angle);
+      ctx.strokeStyle = '#ccc';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(10, 0);
+      ctx.stroke();
+      // Dish arc
+      ctx.strokeStyle = '#ddd';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, 10, -0.5, 0.5);
+      ctx.stroke();
+      ctx.restore();
+      // Radar pulse ring
+      const pulseR = ((Date.now() / 20) % 60);
+      ctx.strokeStyle = `rgba(100,255,100,${0.2 - pulseR/300})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(x, y, pulseR, 0, Math.PI*2);
+      ctx.stroke();
+    }
+  }
+
+  // Draw fast attack boat if active
+  if (t.type === 'fastboat' && t.boat) {
+    const b = t.boat;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.angle);
+    // Small triangular boat
+    ctx.fillStyle = '#5555aa';
+    ctx.beginPath();
+    ctx.moveTo(7, 0);
+    ctx.lineTo(-5, -4);
+    ctx.lineTo(-5, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Wake
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-5, -3);
+    ctx.lineTo(-12, -6);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-5, 3);
+    ctx.lineTo(-12, 6);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Selected ring
+  if (selectedTower === t) {
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(x, y, t.range + t.rangeBonus, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawProjectiles() {
+  for (const p of projectiles) {
+    if (p.type === 'cruise') {
+      // Draw cruise missile with orientation
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      let angle;
+      if (p.phase === 'launch') {
+        angle = -Math.PI/2 + (p.launchTimer < 8 ? (18 - p.launchTimer) * 0.08 : 0);
+      } else {
+        const tx = (p.target && p.target.alive) ? p.target.x : p.tx;
+        const ty = (p.target && p.target.alive) ? p.target.y : p.ty;
+        angle = Math.atan2(ty - p.y, tx - p.x);
+      }
+      ctx.rotate(angle);
+      // Missile body
+      ctx.fillStyle = '#ddd';
+      ctx.fillRect(-6, -2, 12, 4);
+      // Nose cone
+      ctx.fillStyle = '#e44';
+      ctx.beginPath();
+      ctx.moveTo(6, -2); ctx.lineTo(10, 0); ctx.lineTo(6, 2);
+      ctx.fill();
+      // Fins
+      ctx.fillStyle = '#999';
+      ctx.fillRect(-5, -4, 3, 2);
+      ctx.fillRect(-5, 2, 3, 2);
+      ctx.restore();
+      // Flame/trail
+      ctx.fillStyle = p.phase === 'launch' ? 'rgba(255,180,0,0.7)' : 'rgba(255,100,0,0.4)';
+      ctx.beginPath();
+      const trailSize = p.phase === 'launch' ? 6 : 4;
+      ctx.arc(p.x - Math.cos(angle||0)*8, p.y - Math.sin(angle||0)*8, trailSize, 0, Math.PI*2);
+      ctx.fill();
+    } else if (p.type === 'bullet') {
+      ctx.fillStyle = '#ffcc00';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+      ctx.fill();
+    } else if (p.type === 'lightning') {
+      ctx.strokeStyle = `rgba(100,200,255,${p.life/8})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.from.x, p.from.y);
+      for (const t of p.targets) {
+        // Zigzag
+        const mx = (ctx._lx || p.from.x + t.x)/2 + (Math.random()-0.5)*15;
+        const my = (ctx._ly || p.from.y + t.y)/2 + (Math.random()-0.5)*15;
+        ctx.lineTo(mx, my);
+        ctx.lineTo(t.x, t.y);
+        ctx._lx = t.x; ctx._ly = t.y;
+      }
+      ctx.stroke();
+      delete ctx._lx; delete ctx._ly;
+    } else if (p.type === 'flak') {
+      ctx.fillStyle = '#ffaa00';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+      ctx.fill();
+    } else if (p.type === 'warship_shell') {
+      ctx.fillStyle = '#ff3300';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3.5, 0, Math.PI*2);
+      ctx.fill();
+      // Smoke trail
+      ctx.fillStyle = 'rgba(255,100,50,0.3)';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 6, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    if (p.type === 'explosion') {
+      ctx.globalAlpha = p.life / 50;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.1, p.r), 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (p.type === 'splash') {
+      ctx.globalAlpha = p.life / 35;
+      ctx.fillStyle = '#8ae0ff';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.1, p.r), 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (p.type === 'hit') {
+      ctx.globalAlpha = Math.min(1, p.life / 10);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.1, p.r * (1 - p.life / (p.maxLife || 10))), 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (p.type === 'slow') {
+      ctx.globalAlpha = p.life / 20 * 0.15;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// --- Utility ---
+function lighten(hex, amt) {
+  let r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  r = Math.min(255, r+amt); g = Math.min(255, g+amt); b = Math.min(255, b+amt);
+  return `rgb(${r},${g},${b})`;
+}
+function time() { return Date.now() / 1000; }
+
+function updateUI() {
+  document.getElementById('goldNum').textContent = gold;
+  const oilEl = document.getElementById('oilNum');
+  oilEl.textContent = oilPrice.toFixed(2);
+  // Color code: green when high, yellow when medium, red when near floor
+  const oilPct = (oilPrice - OIL_PRICE_FLOOR) / (120 - OIL_PRICE_FLOOR);
+  oilEl.style.color = oilPct > 0.5 ? '#2ecc71' : oilPct > 0.2 ? '#f1c40f' : '#e74c3c';
+  document.getElementById('scoreNum').textContent = score;
+
+  // Update tower button states
+  document.querySelectorAll('.tower-btn').forEach(btn => {
+    const type = btn.dataset.tower;
+    if (type) {
+      const def = TOWER_DEFS[type];
+      btn.classList.toggle('disabled', gold < def.cost);
+    }
+  });
+}
+
+// --- Main Loop ---
+function gameLoop() {
+  if (!gameRunning) return;
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+function update() {
+  // Spawn
+  if (spawnQueue.length > 0) {
+    spawnTimer--;
+    if (spawnTimer <= 0) {
+      const next = spawnQueue.shift();
+      enemies.push(spawnEnemy(next.type, next.hpScale));
+      spawnTimer = next.delay;
+    }
+  }
+
+  // Check wave complete
+  if (waveInProgress && spawnQueue.length === 0) {
+    const aliveEnemies = enemies.filter(e => e.alive && !e.neutral);
+    if (aliveEnemies.length === 0) {
+      waveInProgress = false;
+      gold += 25 + waveNum * 5; // Wave bonus
+      oilPrice = Math.min(OIL_PRICE_CAP, oilPrice + 1.0); // market uncertainty bump
+      document.getElementById('waveBtn').disabled = false;
+      updateUI();
+    }
+  }
+
+  // Enemies
+  for (const e of enemies) {
+    if (e.alive) moveEnemy(e, 1);
+  }
+  enemies = enemies.filter(e => e.alive);
+
+  // Reset radar buffs
+  for (const t of towers) {
+    t.rangeBonus = 0;
+    t.fireRateBonus = 0;
+  }
+  // Apply radar buffs
+  for (const t of towers) {
+    if (t.type === 'radar' && !t.dead) {
+      const buffRange = t.range;
+      const rangeBuff = t.rangeBuff || 0.2;
+      const fireRateBuff = t.fireRateBuff || 0.15;
+      for (const other of towers) {
+        if (other === t || other.type === 'radar' || other.type === 'mine') continue;
+        const dx = other.x - t.x, dy = other.y - t.y;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d < buffRange) {
+          other.rangeBonus = Math.max(other.rangeBonus, other.range * rangeBuff);
+          other.fireRateBonus = Math.max(other.fireRateBonus, other.fireRate * fireRateBuff);
+        }
+      }
+    }
+  }
+
+  // Towers
+  for (const t of towers) updateTower(t);
+
+  // Remove dead towers and reset their grid cells
+  for (const t of towers) {
+    if (t.dead) {
+      grid[t.row][t.col] = t.type === 'mine' ? 0 : 2;
+    }
+  }
+  towers = towers.filter(t => !t.dead);
+
+  // Projectiles
+  for (const p of projectiles) updateProjectile(p);
+  projectiles = projectiles.filter(p => p.life > 0);
+
+  // Particles
+  for (const p of particles) {
+    p.life--;
+    if (p.vx) { p.x += p.vx; p.y += p.vy; }
+    if (p.vy) p.vy += 0.1; // gravity
+  }
+  particles = particles.filter(p => p.life > 0);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  drawMap();
+
+  // Towers
+  for (const t of towers) drawTower(t);
+
+  // Enemies (sort by y for crude depth)
+  const sortedEnemies = enemies.filter(e=>e.alive).sort((a,b)=>a.y-b.y);
+  for (const e of sortedEnemies) drawShip(e);
+
+  drawProjectiles();
+  drawParticles();
+
+  // Wave info
+  if (waveInProgress) {
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(`Enemies remaining: ${enemies.filter(e=>e.alive).length + spawnQueue.length}`, 10, H - 10);
+  }
+
+  // Debug mode (toggle with D key)
+  if (debugMode) {
+    for (const t of towers) {
+      if (t.type === 'mine' || t.type === 'radar' || t.type === 'fastboat') continue;
+      const effectiveRange = t.range + t.rangeBonus;
+      // Range circle
+      ctx.strokeStyle = t.cooldown > 0 ? 'rgba(255,0,0,0.3)' : 'rgba(0,255,0,0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, effectiveRange, 0, Math.PI*2);
+      ctx.stroke();
+      // Cooldown text
+      ctx.fillStyle = '#fff';
+      ctx.font = '9px monospace';
+      ctx.fillText(`${t.type} cd:${t.cooldown}`, t.x - 20, t.y - 14);
+      // Line to nearest enemy in range
+      const target = findTarget(t);
+      if (target) {
+        ctx.strokeStyle = 'rgba(255,255,0,0.5)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(t.x, t.y);
+        ctx.lineTo(target.x, target.y);
+        ctx.stroke();
+        const d = Math.sqrt((target.x-t.x)**2 + (target.y-t.y)**2);
+        ctx.fillText(`d:${Math.round(d)}/${Math.round(effectiveRange)}`, t.x - 15, t.y - 24);
+      } else {
+        ctx.fillStyle = 'rgba(255,100,100,0.8)';
+        ctx.fillText('NO TGT', t.x - 15, t.y - 24);
+      }
+    }
+    // Show enemy positions
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = '8px monospace';
+      ctx.fillText(`${Math.round(e.x)},${Math.round(e.y)}`, e.x - 15, e.y - e.height);
+    }
+  }
+}
+
+// --- Input ---
+// Helper: get canvas-space coords from a client event, accounting for CSS scaling
+function canvasCoords(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY
+  };
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  const {x, y} = canvasCoords(e.clientX, e.clientY);
+  hoveredCell = { col: Math.floor(x/CELL), row: Math.floor(y/CELL) };
+});
+
+canvas.addEventListener('mouseleave', () => { hoveredCell = null; });
+
+function handleCanvasTap(clientX, clientY) {
+  const {x: mx, y: my} = canvasCoords(clientX, clientY);
+  const col = Math.floor(mx/CELL), row = Math.floor(my/CELL);
+
+  // Check if clicking on existing tower
+  for (const t of towers) {
+    if (t.col === col && t.row === row) {
+      selectedTower = t;
+      selectedTowerType = null;
+      showUpgradePanel(t, mx, my);
+      document.querySelectorAll('.tower-btn').forEach(b => b.classList.remove('selected'));
+      if (typeof updateCancelBtn === 'function') updateCancelBtn();
+      return;
+    }
+  }
+
+  hideUpgradePanel();
+  selectedTower = null;
+  if (typeof updateCancelBtn === 'function') updateCancelBtn();
+
+  // Place tower
+  if (selectedTowerType && grid[row]) {
+    const validCell = selectedTowerType === 'mine'
+      ? grid[row][col] === 0
+      : grid[row][col] === 2;
+    if (validCell && placeTower(col, row, selectedTowerType)) {
+      // Keep type selected for rapid placement
+    }
+  }
+}
+
+canvas.addEventListener('click', (e) => handleCanvasTap(e.clientX, e.clientY));
+
+// --- Touch handling: drag to preview, lift to place ---
+let touchActive = false;
+let touchOffsetY = -60; // show preview ABOVE finger so you can see it
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  touchActive = true;
+  const touch = e.touches[0];
+  const {x, y} = canvasCoords(touch.clientX, touch.clientY + touchOffsetY);
+  hoveredCell = { col: Math.floor(x/CELL), row: Math.floor(y/CELL) };
+}, {passive: false});
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!touchActive) return;
+  const touch = e.touches[0];
+  const {x, y} = canvasCoords(touch.clientX, touch.clientY + touchOffsetY);
+  hoveredCell = { col: Math.floor(x/CELL), row: Math.floor(y/CELL) };
+}, {passive: false});
+
+canvas.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  touchActive = false;
+  if (e.changedTouches.length > 0) {
+    const touch = e.changedTouches[0];
+    handleCanvasTap(touch.clientX, touch.clientY + touchOffsetY);
+  }
+  // Clear hover after a short delay so player sees the placement
+  setTimeout(() => { if (!touchActive) hoveredCell = null; }, 300);
+}, {passive: false});
+
+canvas.addEventListener('touchcancel', () => {
+  touchActive = false;
+  hoveredCell = null;
+});
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  selectedTowerType = null;
+  selectedTower = null;
+  hideUpgradePanel();
+  document.querySelectorAll('.tower-btn').forEach(b => b.classList.remove('selected'));
+});
+
+// Tower buttons
+document.querySelectorAll('.tower-btn[data-tower]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.dataset.tower;
+    if (gold < TOWER_DEFS[type].cost) return;
+    selectedTowerType = type;
+    selectedTower = null;
+    hideUpgradePanel();
+    document.querySelectorAll('.tower-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    updateCancelBtn();
+  });
+});
+
+document.getElementById('waveBtn').addEventListener('click', startWave);
+
+// Cancel button (visible on mobile when tower is selected)
+const cancelBtn = document.getElementById('cancelBtn');
+cancelBtn.addEventListener('click', () => {
+  selectedTowerType = null;
+  selectedTower = null;
+  hideUpgradePanel();
+  hoveredCell = null;
+  document.querySelectorAll('.tower-btn').forEach(b => b.classList.remove('selected'));
+  cancelBtn.classList.remove('visible');
+});
+function updateCancelBtn() {
+  if (selectedTowerType || selectedTower) cancelBtn.classList.add('visible');
+  else cancelBtn.classList.remove('visible');
+}
+
+// Upgrade panel
+function showUpgradePanel(tower, mx, my) {
+  const panel = document.getElementById('upgradePanel');
+  const def = TOWER_DEFS[tower.type];
+  document.getElementById('upgradeName').textContent = `${def.name} (Lv.${tower.level+1})`;
+  const statsText = tower.type === 'radar'
+    ? `Range: ${tower.range} | Buff: +${Math.round((tower.rangeBuff||0.2)*100)}% rng`
+    : tower.type === 'mine'
+    ? `DMG: ${tower.damage} | Blast: ${tower.blastRadius}`
+    : `DMG: ${tower.damage} | Range: ${tower.range}`;
+  document.getElementById('upgradeStats').textContent = statsText;
+
+  const upBtn = document.getElementById('upgradeBtn');
+  if (tower.level < def.upgrades.length) {
+    const upg = def.upgrades[tower.level];
+    upBtn.textContent = `Upgrade: ${upg.name} (${upg.cost}g)`;
+    upBtn.style.display = 'block';
+    upBtn.disabled = gold < upg.cost;
+    upBtn.onclick = () => upgradeTower(tower);
+  } else {
+    upBtn.style.display = 'none';
+  }
+
+  const sellAmt = Math.floor(tower.totalSpent * 0.6);
+  document.getElementById('sellBtn').textContent = `Sell (${sellAmt}g)`;
+  document.getElementById('sellBtn').onclick = () => sellTower(tower);
+  document.getElementById('closeUpgrade').onclick = () => { hideUpgradePanel(); selectedTower = null; };
+
+  panel.style.display = 'block';
+  // Position near click but keep on screen
+  let px = mx + 20, py = my - 50;
+  if (px + 170 > W) px = mx - 180;
+  if (py < 0) py = 10;
+  panel.style.left = px + 'px';
+  panel.style.top = (py + 42) + 'px'; // account for topBar
+}
+
+function hideUpgradePanel() {
+  document.getElementById('upgradePanel').style.display = 'none';
+}
+
+function upgradeTower(tower) {
+  const def = TOWER_DEFS[tower.type];
+  if (tower.level >= def.upgrades.length) return;
+  const upg = def.upgrades[tower.level];
+  if (gold < upg.cost) return;
+  gold -= upg.cost;
+  tower.totalSpent += upg.cost;
+  tower.level++;
+  if (upg.damage) tower.damage = upg.damage;
+  if (upg.range) tower.range = upg.range;
+  if (upg.splash) tower.splash = upg.splash;
+  if (upg.maxHits) tower.maxHits = upg.maxHits;
+  if (upg.boatSpeed) tower.boatSpeed = upg.boatSpeed;
+  if (upg.rangeBuff) tower.rangeBuff = upg.rangeBuff;
+  if (upg.fireRateBuff) tower.fireRateBuff = upg.fireRateBuff;
+  updateUI();
+  hideUpgradePanel();
+  selectedTower = null;
+}
+
+function sellTower(tower) {
+  const refund = Math.floor(tower.totalSpent * 0.6);
+  gold += refund;
+  grid[tower.row][tower.col] = tower.type === 'mine' ? 0 : 2;
+  towers = towers.filter(t => t !== tower);
+  updateUI();
+  hideUpgradePanel();
+  selectedTower = null;
+}
+
+function endGame() {
+  if (gameOverFlag) return;
+  gameOverFlag = true;
+  document.getElementById('finalScore').textContent = `Oil crashed to $${oilPrice.toFixed(2)}/bbl | Score: ${score} | Waves survived: ${waveNum}`;
+  document.getElementById('gameOver').style.display = 'block';
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'd' || e.key === 'D') { debugMode = !debugMode; }
+  // Debug: skip to wave 20 with 9999 gold
+  if (e.key === 'j' || e.key === 'J') { if (debugMode) { waveNum = 14; gold = 9999; updateUI(); } }
+  if (e.key === 'Escape') {
+    selectedTowerType = null;
+    selectedTower = null;
+    hideUpgradePanel();
+    document.querySelectorAll('.tower-btn').forEach(b => b.classList.remove('selected'));
+  }
+  if (e.key === '1') document.querySelector('[data-tower="rocket"]').click();
+  if (e.key === '2') document.querySelector('[data-tower="mine"]').click();
+  if (e.key === '3') document.querySelector('[data-tower="ashore_missile"]').click();
+  if (e.key === '4') document.querySelector('[data-tower="radar"]').click();
+  if (e.key === '5') document.querySelector('[data-tower="fastboat"]').click();
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    if (!waveInProgress) startWave();
+  }
+});
+
+// --- Start ---
+function startGame() {
+  document.getElementById('startScreen').style.display = 'none';
+  buildGrid();
+  gameRunning = true;
+  updateUI();
+  gameLoop();
+}
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('startBtn').addEventListener('touchend', (e) => {
+  e.preventDefault();
+  startGame();
+});
+</script>
+</body>
+</html>
