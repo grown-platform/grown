@@ -241,8 +241,8 @@
     <h1>Checkers</h1>
     <div id="status" class="status player">Your turn</div>
     <div class="scores">
-      <span class="lbl"><span class="dot p"></span>You: <span id="pScore">12</span></span>
-      <span class="lbl"><span class="dot c"></span>CPU: <span id="cScore">12</span></span>
+      <span class="lbl"><span class="dot p"></span><span id="pName">You</span>: <span id="pScore">12</span></span>
+      <span class="lbl"><span class="dot c"></span><span id="cName">CPU</span>: <span id="cScore">12</span></span>
     </div>
     <div id="board" class="board"></div>
     <div class="controls">
@@ -255,6 +255,17 @@
       <h2 id="modalTitle">Game Over</h2>
       <p id="modalMsg"></p>
       <button id="modalBtn">Play Again</button>
+    </div>
+  </div>
+
+  <div id="modeOverlay" class="overlay">
+    <div class="modal">
+      <h2>Checkers</h2>
+      <p>Choose a mode</p>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <button id="modeAi">🤖 vs Computer</button>
+        <button id="modeTwo">👥 2 Players</button>
+      </div>
     </div>
   </div>
 
@@ -274,14 +285,27 @@
   let mustContinueFrom = null; // {r,c} forced multi-jump continuation
   let gameOver = false;
   let busy = false;        // lock input during CPU/animation
+  let mode = 'ai';         // 'ai' = vs computer, '2p' = pass-and-play hot seat
+  // In 'ai' mode the human controls 'p'; in '2p' mode both sides are human.
 
   const boardEl = document.getElementById('board');
   const statusEl = document.getElementById('status');
   const pScoreEl = document.getElementById('pScore');
   const cScoreEl = document.getElementById('cScore');
+  const pNameEl = document.getElementById('pName');
+  const cNameEl = document.getElementById('cName');
   const overlay = document.getElementById('overlay');
   const modalTitle = document.getElementById('modalTitle');
   const modalMsg = document.getElementById('modalMsg');
+  const modeOverlay = document.getElementById('modeOverlay');
+
+  // Who the human(s) control: in 2p both sides are human, so the side to move
+  // is always human. In ai mode only 'p' is human.
+  function isHumanTurn(){ return mode === '2p' ? true : turn === 'p'; }
+  function sideName(side){
+    if (mode === '2p') return side === 'p' ? 'Red' : 'Black';
+    return side === 'p' ? 'You' : 'CPU';
+  }
 
   // ----- Audio (WebAudio, optional) -----
   let actx = null;
@@ -329,6 +353,8 @@
     gameOver = false;
     busy = false;
     overlay.classList.remove('show');
+    pNameEl.textContent = sideName('p');
+    cNameEl.textContent = sideName('c');
     render();
     updateStatus();
   }
@@ -472,8 +498,8 @@
           cell.classList.add('dest', 'clickable');
           if (destMap[key].capture) cell.classList.add('capture');
         }
-        // Make selectable player pieces look clickable on their turn
-        if (!busy && !gameOver && turn === 'p' && p && p.side === 'p'){
+        // Make the side-to-move's pieces look clickable when it's a human turn.
+        if (!busy && !gameOver && isHumanTurn() && p && p.side === turn){
           cell.classList.add('clickable');
         }
         boardEl.appendChild(cell);
@@ -497,7 +523,11 @@
 
   function updateStatus(){
     if (gameOver) return;
-    if (turn === 'p'){
+    if (mode === '2p'){
+      statusEl.className = 'status ' + (turn === 'p' ? 'player' : 'cpu');
+      const who = sideName(turn);
+      statusEl.textContent = mustContinueFrom ? who + ' — continue your jump!' : who + "'s turn";
+    } else if (turn === 'p'){
       statusEl.className = 'status player';
       statusEl.textContent = mustContinueFrom ? 'Continue your jump!' : 'Your turn';
     } else {
@@ -510,7 +540,7 @@
   boardEl.addEventListener('click', onBoardClick);
 
   function onBoardClick(e){
-    if (busy || gameOver || turn !== 'p') return;
+    if (busy || gameOver || !isHumanTurn()) return;
     const cell = e.target.closest('.cell');
     if (!cell) return;
     const r = parseInt(cell.dataset.r, 10);
@@ -525,9 +555,9 @@
       }
     }
 
-    // Otherwise try to select a player piece (respecting forced-jump piece lock).
+    // Otherwise try to select a piece of the side to move (respecting forced-jump lock).
     const p = board[r][c];
-    if (p && p.side === 'p'){
+    if (p && p.side === turn){
       selectPiece(r, c);
     } else {
       // tapped empty/elsewhere: deselect (unless mid multi-jump, keep locked piece)
@@ -540,7 +570,7 @@
   }
 
   function selectPiece(r, c){
-    const legal = allLegalMoves(board, 'p');
+    const legal = allLegalMoves(board, turn);
     // If a multi-jump continuation is forced, only that piece is selectable.
     if (mustContinueFrom){
       if (r !== mustContinueFrom.r || c !== mustContinueFrom.c) return;
@@ -576,17 +606,26 @@
     }
 
     // Turn ends.
+    const mover = turn;
     mustContinueFrom = null;
     selected = null;
     legalForSelected = [];
     render();
 
-    if (checkGameOver('p')) return;
+    if (checkGameOver(mover)) return;
 
-    turn = 'c';
-    updateStatus();
-    render();
-    setTimeout(cpuTurn, 450);
+    turn = opp(mover);
+    if (mode === 'ai' && turn === 'c'){
+      // Hand off to the computer (input stays locked via busy).
+      updateStatus();
+      render();
+      setTimeout(cpuTurn, 450);
+    } else {
+      // Pass-and-play: the other human moves next.
+      busy = false;
+      updateStatus();
+      render();
+    }
   }
 
   // ----- Game over checks -----
@@ -598,7 +637,13 @@
     if (nextCount === 0 || nextMoves.length === 0){
       gameOver = true;
       busy = true;
-      if (next === 'c'){ // CPU cannot move -> player wins
+      const winner = sideThatJustMoved; // the side still able to play wins
+      if (mode === '2p'){
+        statusEl.className = 'status win';
+        statusEl.textContent = sideName(winner) + ' wins!';
+        sWin();
+        showModal(sideName(winner) + ' Wins!', sideName(next) + ' has no moves left.');
+      } else if (next === 'c'){ // CPU cannot move -> player wins
         statusEl.className = 'status win';
         statusEl.textContent = 'You win!';
         sWin();
@@ -782,14 +827,28 @@
     updateStatus();
   }
 
+  // ----- Mode selection -----
+  function showModeSelect(){ modeOverlay.classList.add('show'); }
+  function startMode(m){
+    mode = m;
+    modeOverlay.classList.remove('show');
+    newGame();
+  }
+
   // ----- Controls -----
-  document.getElementById('newGame').addEventListener('click', newGame);
+  // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  document.getElementById('newGame').addEventListener('click', showModeSelect);
+  // "Play Again" from the game-over modal restarts the same mode.
   document.getElementById('modalBtn').addEventListener('click', newGame);
+  document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
+  document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
 
   // Prevent double-tap zoom / scroll on the board explicitly.
   boardEl.addEventListener('touchend', function(e){ /* click handles logic */ }, {passive:true});
 
+  // Render an initial (idle) board behind the mode picker, then ask for a mode.
   newGame();
+  showModeSelect();
 })();
 </script>
 </body>
