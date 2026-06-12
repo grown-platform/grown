@@ -2016,7 +2016,7 @@ function AuditSection() {
     setError(null);
     setForbidden(false);
     try {
-      const rows = await listAuditEvents({ service, actor, limit: 200 });
+      const rows = await listAuditEvents({ service, actor, limit: 1000 });
       setEvents(rows);
     } catch (e) {
       if (e instanceof AuditForbiddenError) {
@@ -2120,7 +2120,9 @@ function AuditSection() {
         <Box sx={{ flex: 1, minWidth: 180 }}>
           <Typography level="h4">Audit log</Typography>
           <Typography level="body-sm" sx={{ opacity: 0.7 }}>
-            Recent activity across every service in your organization.
+            All activity across every service in your organization
+            {events ? ` — ${events.length} event${events.length === 1 ? "" : "s"}` : ""}
+            . Filter by service or actor email below when you need to.
           </Typography>
         </Box>
       </Box>
