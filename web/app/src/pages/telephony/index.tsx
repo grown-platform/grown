@@ -23,8 +23,12 @@ import MicIcon from "@mui/icons-material/Mic";
 import MicOffIcon from "@mui/icons-material/MicOff";
 import BackspaceIcon from "@mui/icons-material/Backspace";
 import PersonIcon from "@mui/icons-material/Person";
+import ChatIcon from "@mui/icons-material/ChatBubbleOutline";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
+import { Messages } from "./Messages";
+import { AdminArea } from "./AdminArea";
 import {
   getMyExtension,
   listDirectory,
@@ -369,6 +373,7 @@ interface TelephonyAppProps {
 }
 
 export default function TelephonyApp({ user }: TelephonyAppProps) {
+  const [section, setSection] = useState<"phone" | "messages" | "admin">("phone");
   const [myExt, setMyExt] = useState<string | null>(null);
   const [directory, setDirectory] = useState<DirectoryEntry[] | null>(null);
   const [calls, setCalls] = useState<CallRecord[] | null>(null);
@@ -781,6 +786,30 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
           )}
         </Box>
 
+        {/* Section nav: the softphone is the default; Messages is the
+            Google-Voice-style texting area; Admin opens the PBX console. */}
+        <Box sx={{ display: "flex", gap: 1, mb: 3, flexWrap: "wrap" }}>
+          {(
+            [
+              { key: "phone", label: "Phone", icon: <DialpadIcon /> },
+              { key: "messages", label: "Messages", icon: <ChatIcon /> },
+              { key: "admin", label: "Admin", icon: <AdminPanelSettingsIcon /> },
+            ] as const
+          ).map((t) => (
+            <Button
+              key={t.key}
+              size="sm"
+              variant={section === t.key ? "solid" : "outlined"}
+              color={section === t.key ? "primary" : "neutral"}
+              startDecorator={t.icon}
+              onClick={() => setSection(t.key)}
+              data-testid={`telephony-nav-${t.key}`}
+            >
+              {t.label}
+            </Button>
+          ))}
+        </Box>
+
         {error && (
           <Sheet
             color="danger"
@@ -807,6 +836,8 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
           </Sheet>
         )}
 
+        {section === "phone" && (
+          <>
         <Box
           sx={{
             display: "grid",
@@ -928,6 +959,13 @@ export default function TelephonyApp({ user }: TelephonyAppProps) {
             between members.
           </Typography>
         </Box>
+          </>
+        )}
+
+        {section === "messages" && (
+          <Messages user={user} directory={dirWithPresence} />
+        )}
+        {section === "admin" && <AdminArea user={user} />}
       </Container>
 
       {callState !== "idle" && activeCall && (
