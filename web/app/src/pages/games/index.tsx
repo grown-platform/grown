@@ -58,6 +58,16 @@ const GAMES: AppTile[] = [
     iconName: "LocalCafe",
     externalUrl: "https://coffetable.pick.haus",
   },
+  {
+    id: "mightymike",
+    name: "Mighty Mike",
+    blurb: "Run-and-gun arcade — a native game port (Pangea's Power Pete).",
+    accentColor: "#C2410C",
+    phase: 4,
+    comingSoon: false,
+    iconName: "SportsEsports",
+    externalUrl: "/games/mightymike/",
+  },
   arcade("2048", "2048", "#EDC22E", "GridOn"),
   arcade("snake", "Snake", "#43A047", "Timeline"),
   arcade("minesweeper", "Minesweeper", "#455A64", "Flag"),
@@ -180,7 +190,16 @@ const CATEGORIES: { key: string; label: string; icon: string }[] = [
   { key: "Speed", label: "Speed", icon: "Bolt" },
   { key: "Group", label: "Group", icon: "Groups" },
   { key: "2-Player", label: "2-Player", icon: "People" },
+  { key: "Adventure", label: "Adventure", icon: "Explore" },
+  { key: "Port", label: "Port", icon: "ImportExport" },
 ];
+
+// Games that carry several category tags rather than one primary category
+// (e.g. native game ports tagged "Port" plus their genres). matchesCat below
+// consults this in addition to the single-category CATEGORY_OF map.
+const EXTRA_CATS: Record<string, string[]> = {
+  mightymike: ["Port", "Puzzle", "Adventure", "Arcade"],
+};
 
 const CATEGORY_IDS: Record<string, string[]> = {
   Arcade: ["snake", "tetris", "breakout", "pong", "flappy", "bubble-shooter", "tower-stack", "hormuz", "asteroids", "doodle-jump", "space-invaders", "frogger", "tron", "helicopter", "car-dodge", "missile-command", "lunar-lander", "centipede", "galaxian", "pinball", "stacker", "knife-hit", "color-switch", "helix-jump", "air-hockey"],
@@ -416,7 +435,7 @@ export default function GamesApp({ user }: { user: User | null }) {
       ? GROUP_IDS.has(id)
       : cat === "2-Player"
         ? TWO_PLAYER_IDS.has(id)
-        : CATEGORY_OF[id] === cat);
+        : CATEGORY_OF[id] === cat || (EXTRA_CATS[id]?.includes(cat) ?? false));
   const filteredGames = GAMES.filter(
     (g) =>
       matchesCat(g.id) &&
