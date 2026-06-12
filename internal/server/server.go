@@ -37,6 +37,7 @@ import (
 	"code.pick.haus/grown/grown/internal/docs"
 	"code.pick.haus/grown/grown/internal/drive"
 	"code.pick.haus/grown/grown/internal/email"
+	"code.pick.haus/grown/grown/internal/eventmeet"
 	"code.pick.haus/grown/grown/internal/forms"
 	"code.pick.haus/grown/grown/internal/games"
 	"code.pick.haus/grown/grown/internal/groups"
@@ -421,6 +422,7 @@ func New(cfg Config) *Server {
 	var meetSvc *meet.Service
 	var meetHub *meet.Hub
 	var meetCodes *meet.CodesHandler
+	var eventMeetHTTP *eventmeet.HTTPHandler
 	if cfg.MeetRepo != nil {
 		meetSvc = meet.NewService(cfg.MeetRepo)
 		meetHub = meet.NewHub()
@@ -442,6 +444,58 @@ func New(cfg Config) *Server {
 				return u.ID, true
 			},
 		)
+
+		// Per-event meeting links (calendar ↔ meet), plus first-join alerts to
+		// invited attendees not yet in the call. Pure HTTP + SQL — no change to
+		// the protobuf calendar Event.
+		if cfg.Pool != nil {
+			emRepo := eventmeet.NewRepository(cfg.Pool)
+			eventMeetHTTP = eventmeet.NewHTTPHandler(
+				emRepo,
+				func(r *http.Request) (string, bool) {
+					org, ok := auth.OrgFromContext(r.Context())
+					if !ok {
+						return "", false
+					}
+					return org.ID, true
+				},
+				func(r *http.Request) (string, bool) {
+					u, ok := auth.UserFromContext(r.Context())
+					if !ok {
+						return "", false
+					}
+					return u.ID, true
+				},
+			)
+			if cfg.NotificationsRepo != nil {
+				notifRepo := cfg.NotificationsRepo
+				meetHub.OnFirstJoin = func(roomID, joinerID, joinerName string) {
+					ctx := context.Background()
+					info, err := emRepo.JoinNotify(ctx, roomID)
+					if err != nil {
+						return // room not tied to an event, or lookup failed
+					}
+					title := info.EventTitle
+					if title == "" {
+						title = "the meeting"
+					}
+					for _, uid := range info.TargetUserIDs {
+						if uid == joinerID {
+							continue
+						}
+						_, _ = notifRepo.Create(ctx, notifications.CreateParams{
+							OrgID:       info.OrgID,
+							UserID:      uid,
+							Type:        "meet_join",
+							ActorUserID: joinerID,
+							Title:       "Meeting started",
+							Body:        joinerName + " joined “" + title + "”",
+							TargetURL:   "/meet/" + info.Code,
+						})
+					}
+				}
+			}
+		}
 	}
 
 	var telephonySvc *telephony.Service
@@ -1479,6 +1533,14 @@ func New(cfg Config) *Server {
 		if meetCodes != nil {
 			if _, ok := meetCodes.Match(r.URL.Path); ok {
 				driveAuthWrap(meetCodes).ServeHTTP(w, r)
+				return
+			}
+		}
+		// Per-event meeting link surface (/calendar/events/{id}/meet) — must be
+		// matched before the grpc-gateway, which has no route for this path.
+		if eventMeetHTTP != nil {
+			if _, ok := eventMeetHTTP.Match(r.URL.Path); ok {
+				driveAuthWrap(eventMeetHTTP).ServeHTTP(w, r)
 				return
 			}
 		}

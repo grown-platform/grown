@@ -82,6 +82,12 @@ type callRoom struct {
 type Hub struct {
 	mu    sync.Mutex
 	rooms map[string]*callRoom
+
+	// OnFirstJoin, if set, is invoked (in its own goroutine) when a peer joins a
+	// room that was previously empty — i.e. the meeting just started. Used to
+	// alert invited-but-absent attendees. roomID is the meet room id; peerID is
+	// the joiner's user id.
+	OnFirstJoin func(roomID, peerID, displayName string)
 }
 
 // NewHub constructs a signaling Hub.
@@ -130,7 +136,13 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, roomID, peerID, disp
 	cr := h.getOrCreate(roomID)
 	cr.mu.Lock()
 	cr.peers[peerID] = self
+	firstJoin := len(cr.peers) == 1
 	cr.mu.Unlock()
+
+	// Meeting just started (empty → first participant): fire the join hook.
+	if firstJoin && h.OnFirstJoin != nil {
+		go h.OnFirstJoin(roomID, peerID, displayName)
+	}
 
 	defer func() {
 		cr.mu.Lock()

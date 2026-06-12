@@ -45,7 +45,19 @@ import {
   type RecurrenceKind,
   type CustomFreq,
 } from "./recurrence";
-import { listAttendees, addAttendee, removeAttendee, setRSVP } from "./api";
+import {
+  listAttendees,
+  addAttendee,
+  removeAttendee,
+  setRSVP,
+  getEventMeet,
+  setEventMeet,
+  clearEventMeet,
+  type EventMeet,
+} from "./api";
+import { createMeeting, listRooms } from "../meet/api";
+import type { MeetRoom } from "../meet/types";
+import VideocamIcon from "@mui/icons-material/Videocam";
 
 const REMINDER_OPTIONS: { label: string; minutes: number }[] = [
   { label: "At time of event", minutes: 0 },
@@ -165,6 +177,11 @@ export function EventDialog({
   const [attendeesLoading, setAttendeesLoading] = useState(false);
   const [rsvpSaving, setRsvpSaving] = useState(false);
 
+  // Meet video meeting attached to this event.
+  const [meet, setMeet] = useState<EventMeet | null>(null);
+  const [meetBusy, setMeetBusy] = useState(false);
+  const [rooms, setRooms] = useState<MeetRoom[]>([]);
+
   // For a recurring instance: "This event" vs "All events" scope.
   const isRecurringInstance = !!event?.recurring_event_id;
   const [editScope, setEditScope] = useState<number>(SCOPE_ALL);
@@ -180,6 +197,63 @@ export function EventDialog({
       })
       .finally(() => setAttendeesLoading(false));
   }, [event?.id]);
+
+  // Load the event's attached meeting (and pickable rooms) for existing events.
+  useEffect(() => {
+    if (!event?.id) {
+      setMeet(null);
+      return;
+    }
+    getEventMeet(event.id)
+      .then(setMeet)
+      .catch(() => setMeet(null));
+    listRooms()
+      .then((rs) => setRooms(rs.filter((r) => r.code)))
+      .catch(() => {
+        /* picker is optional */
+      });
+  }, [event?.id]);
+
+  async function createMeetingForEvent() {
+    if (!event?.id) return;
+    setMeetBusy(true);
+    try {
+      const room = await createMeeting(title || "Meeting");
+      if (!room.code) return;
+      setMeet(await setEventMeet(event.id, { room_id: room.id, code: room.code }));
+    } catch {
+      /* ignore */
+    } finally {
+      setMeetBusy(false);
+    }
+  }
+
+  async function attachRoom(roomId: string) {
+    if (!event?.id) return;
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room?.code) return;
+    setMeetBusy(true);
+    try {
+      setMeet(await setEventMeet(event.id, { room_id: room.id, code: room.code }));
+    } catch {
+      /* ignore */
+    } finally {
+      setMeetBusy(false);
+    }
+  }
+
+  async function removeMeeting() {
+    if (!event?.id) return;
+    setMeetBusy(true);
+    try {
+      await clearEventMeet(event.id);
+      setMeet(null);
+    } catch {
+      /* ignore */
+    } finally {
+      setMeetBusy(false);
+    }
+  }
 
   // The note shown when editing a single occurrence of a recurring series.
   const recurrenceString = useMemo(() => {
@@ -545,6 +619,77 @@ export function EventDialog({
               onChange={(e) => setLocation(e.target.value)}
             />
           </FormControl>
+
+          {/* Video meeting (Meet) */}
+          <FormControl>
+            <FormLabel>Video meeting</FormLabel>
+            {!event?.id ? (
+              <Typography level="body-sm" sx={{ opacity: 0.6 }}>
+                Save the event first, then reopen it to add a video meeting.
+              </Typography>
+            ) : meet ? (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                <Button
+                  component="a"
+                  href={`/meet/${meet.code}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  size="sm"
+                  color="success"
+                  variant="solid"
+                  startDecorator={<VideocamIcon />}
+                >
+                  Join
+                </Button>
+                <Typography
+                  level="body-sm"
+                  sx={{ fontFamily: "monospace", opacity: 0.7, wordBreak: "break-all" }}
+                >
+                  {`${window.location.origin}/meet/${meet.code}`}
+                </Typography>
+                <Button
+                  size="sm"
+                  variant="plain"
+                  color="danger"
+                  onClick={removeMeeting}
+                  disabled={meetBusy}
+                >
+                  Remove
+                </Button>
+              </Box>
+            ) : (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                <Button
+                  size="sm"
+                  variant="soft"
+                  startDecorator={<VideocamIcon />}
+                  onClick={createMeetingForEvent}
+                  disabled={meetBusy}
+                >
+                  New meeting
+                </Button>
+                {rooms.length > 0 && (
+                  <Select<string>
+                    size="sm"
+                    placeholder="Add existing room"
+                    value={null}
+                    onChange={(_, v) => {
+                      if (v) void attachRoom(v);
+                    }}
+                    disabled={meetBusy}
+                    sx={{ minWidth: 200 }}
+                  >
+                    {rooms.map((r) => (
+                      <Option key={r.id} value={r.id}>
+                        {r.name || r.code}
+                      </Option>
+                    ))}
+                  </Select>
+                )}
+              </Box>
+            )}
+          </FormControl>
+
           <FormControl>
             <FormLabel>Description</FormLabel>
             <Textarea

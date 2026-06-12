@@ -109,3 +109,41 @@ export function setRSVP(
     }),
   });
 }
+
+// ---- Meeting (Meet video link) APIs ----
+
+export interface EventMeet {
+  room_id: string;
+  code: string;
+}
+
+/** Returns the meeting attached to an event, or null if none. */
+export async function getEventMeet(eventId: string): Promise<EventMeet | null> {
+  const resp = await fetch(`${API_BASE}/calendar/events/${eventId}/meet`, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  });
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return (await resp.json()) as EventMeet;
+}
+
+/** Attaches (or replaces) the meeting for an event. */
+export function setEventMeet(
+  eventId: string,
+  meet: EventMeet,
+): Promise<EventMeet> {
+  return jsonFetch<EventMeet>(`/calendar/events/${eventId}/meet`, {
+    method: "PUT",
+    body: JSON.stringify(meet),
+  });
+}
+
+/** Detaches the meeting from an event. */
+export async function clearEventMeet(eventId: string): Promise<void> {
+  const resp = await fetch(`${API_BASE}/calendar/events/${eventId}/meet`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  if (!resp.ok && resp.status !== 404) throw new Error(`HTTP ${resp.status}`);
+}
