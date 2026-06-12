@@ -407,6 +407,7 @@
       score += Math.round(dy);
       if (score < 0) score = 0;
       scoreEl.textContent = score;
+      if (window.GrownGame) window.GrownGame.setHighScore(score);
     }
 
     // spawn new platforms above and recycle ones below the screen.
@@ -433,6 +434,7 @@
       saveBest(best);
       bestEl.textContent = best;
     }
+    if (window.GrownGame) window.GrownGame.setHighScore(score);
   }
 
   // ---- render ------------------------------------------------------------
@@ -589,7 +591,9 @@
   var lastTime = 0;
   var acc = 0;
   var STEP = 1000 / 60;
+  var paused = false, rafId = 0;
   function loop(t) {
+    if (paused) return;
     if (!lastTime) lastTime = t;
     var dt = t - lastTime;
     lastTime = t;
@@ -602,8 +606,19 @@
       guard++;
     }
     render();
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
+  window.addEventListener('grown:pause', function () {
+    paused = true;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener('grown:resume', function () {
+    if (paused) {
+      paused = false;
+      lastTime = 0; // reset delta so no time jump
+      rafId = requestAnimationFrame(loop);
+    }
+  });
 
   // ---- input handling ----------------------------------------------------
   function setHalfFromX(clientX) {
@@ -699,7 +714,7 @@
   // ---- boot --------------------------------------------------------------
   fitCanvas();
   reset();
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 })();
 </script>
 </body>

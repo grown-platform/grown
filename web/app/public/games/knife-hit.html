@@ -264,6 +264,7 @@
   var particles = [];
 
   var lastTime = 0;
+  var running = true, rafId = null;
 
   // Each stage config drives difficulty.
   function configForStage(s) {
@@ -344,6 +345,7 @@
   }
 
   function refreshHUD() {
+    if (window.GrownGame) window.GrownGame.setHighScore(score);
     stageV.textContent = String(stage);
     scoreV.textContent = String(score);
     knivesV.textContent = String(knivesLeft);
@@ -368,6 +370,7 @@
   function throwKnife() {
     if (state !== "ready") return;
     if (knivesLeft <= 0) return;
+    if (!running) return;
     state = "throwing";
     var startY = H * 0.92;
     flying = { y: startY, vy: -Math.max(1100, H * 2.6) };
@@ -766,19 +769,32 @@
 
   // ---- Main loop ----
   function loop(ts) {
+    if (!running) return;
     if (!lastTime) lastTime = ts;
     var dt = (ts - lastTime) / 1000;
     lastTime = ts;
     if (dt > 0.05) dt = 0.05; // clamp
     update(dt);
     draw();
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
+
+  window.addEventListener("grown:pause", function () {
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener("grown:resume", function () {
+    if (!running && state !== "over") {
+      running = true;
+      lastTime = 0;
+      rafId = requestAnimationFrame(loop);
+    }
+  });
 
   // ---- Boot ----
   resize();
   startGame();
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 
   // re-layout after fonts/orientation settle
   window.addEventListener("orientationchange", function () {

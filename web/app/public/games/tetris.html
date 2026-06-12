@@ -497,6 +497,7 @@
 
   function endGame() {
     gameOver = true;
+    if (window.GrownGame) window.GrownGame.setHighScore(score);
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
     overlayTitle.textContent = "Game Over";
     overlayMsg.textContent = "Score: " + score + " • Lines: " + lines;
@@ -652,7 +653,7 @@
 
   // ---- Loop ----
   function update(time) {
-    if (gameOver) return;
+    if (gameOver || paused) return;
     time = time || 0;
     var delta = time - lastTime;
     lastTime = time;
@@ -784,9 +785,24 @@
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
 
+  // Pause/resume from the shared menu.
+  window.addEventListener("grown:pause", function () {
+    paused = true;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  });
+  window.addEventListener("grown:resume", function () {
+    if (paused && !gameOver) {
+      paused = false;
+      lastTime = performance.now();
+      rafId = requestAnimationFrame(update);
+    } else {
+      paused = false;
+    }
+  });
+
   function startGame() {
     grid = makeGrid();
-    score = 0; lines = 0; level = 1; gameOver = false;
+    score = 0; lines = 0; level = 1; gameOver = false; paused = false;
     dropInterval = 1000; dropCounter = 0; lastTime = 0;
     refillBag();
     nextType = nextFromBag();

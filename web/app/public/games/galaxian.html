@@ -641,6 +641,7 @@
           a2.alive = false;
           var pts = a2.baseScore * (a2.diving ? 2 : 1);
           score += pts;
+          if (window.GrownGame) window.GrownGame.setHighScore(score);
           explode(a2.x, a2.y, a2.diving ? "#ffd86b" : "#74f0ff", a2.diving ? 20 : 14);
           sfxExplode();
           hit = true;
@@ -721,6 +722,7 @@
     updateHUD();
     if (lives <= 0) {
       state = STATE.OVER;
+      if (window.GrownGame) window.GrownGame.setHighScore(score);
       showOverlay("GAME OVER", "Final score: <span class='big'>" + score + "</span><br>Wave reached: " + wave,
         "PLAY AGAIN");
     } else {
@@ -891,7 +893,9 @@
 
   // ---------- Main loop ----------
   var last = 0;
+  var paused = false, rafId = 0;
   function loop(ts) {
+    if (paused) return;
     if (!last) last = ts;
     var dt = (ts - last) / 1000;
     last = ts;
@@ -902,8 +906,19 @@
     else update(dt); // keep stars moving on menu/over
 
     render();
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
+  window.addEventListener('grown:pause', function () {
+    paused = true;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener('grown:resume', function () {
+    if (paused) {
+      paused = false;
+      last = 0; // reset delta so no time jump
+      rafId = requestAnimationFrame(loop);
+    }
+  });
 
   // ---------- Boot ----------
   function boot() {
@@ -920,7 +935,7 @@
     showOverlay("GALAXIAN",
       "Drag to move your ship &mdash; it auto-fires.<br>Destroy the alien formation. <b>Diving aliens score double!</b>",
       "START");
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
 
   boot();

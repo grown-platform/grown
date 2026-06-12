@@ -360,6 +360,7 @@
       ob.passed = true;
       score++;
       scoreEl.textContent = score;
+      if (window.GrownGame) window.GrownGame.setHighScore(score);
       beep(660, 0.07, "triangle", 0.1);
     }
 
@@ -482,7 +483,9 @@
   }
 
   // ---- Loop ----
+  var paused = false;
   function loop() {
+    if (paused) return;
     update();
     draw();
     requestAnimationFrame(loop);
@@ -512,6 +515,11 @@
   // block gesture scroll/zoom
   document.addEventListener("touchmove", function(e){ e.preventDefault(); }, { passive: false });
   document.addEventListener("gesturestart", function(e){ e.preventDefault(); }, { passive: false });
+
+  window.addEventListener("grown:pause", function(){ paused = true; });
+  window.addEventListener("grown:resume", function(){
+    if (paused) { paused = false; requestAnimationFrame(loop); }
+  });
 
   // ---- Boot ----
   resize();

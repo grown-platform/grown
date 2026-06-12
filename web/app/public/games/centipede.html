@@ -541,7 +541,7 @@ function killSegment(idx){
 }
 
 // ---------- Scoring / lives ----------
-function addScore(n){ score += n; scoreEl.textContent = 'SCORE ' + score; }
+function addScore(n){ score += n; scoreEl.textContent = 'SCORE ' + score; if (window.GrownGame) window.GrownGame.setHighScore(score); }
 function setLivesHud(){
   var s = '';
   for (var i = 0; i < lives; i++) s += '▲';
@@ -555,6 +555,7 @@ function loseLife(){
   bullets = [];
   if (lives <= 0){
     state = STATE_OVER;
+    if (window.GrownGame) window.GrownGame.setHighScore(score);
     showOverlay('GAME OVER', 'Final score: ' + score + '<br>Tap RESTART to play again.', 'PLAY AGAIN');
   } else {
     state = STATE_DEAD;
@@ -672,7 +673,9 @@ fireBtn.addEventListener('touchend', function(e){ e.preventDefault(); fireHeld =
 
 // ---------- Loop ----------
 var last = 0;
+var paused = false, rafId = 0;
 function loop(ts){
+  if (paused) return;
   if (!last) last = ts;
   var dt = (ts - last) / 1000;
   if (dt > 0.05) dt = 0.05; // clamp big frames
@@ -680,8 +683,19 @@ function loop(ts){
 
   update(dt);
   render();
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 }
+window.addEventListener('grown:pause', function(){
+  paused = true;
+  if (rafId) cancelAnimationFrame(rafId);
+});
+window.addEventListener('grown:resume', function(){
+  if (paused){
+    paused = false;
+    last = 0; // reset delta so no time jump
+    rafId = requestAnimationFrame(loop);
+  }
+});
 
 function update(dt){
   if (state === STATE_PLAY){
@@ -864,7 +878,7 @@ function boot(){
   showOverlay('CENTIPEDE',
     'Drag your finger near the bottom to move &mdash; it auto-fires.<br>Desktop: Arrow keys / WASD + Space.<br>Shoot every segment to clear the wave!',
     'START');
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 }
 boot();
 

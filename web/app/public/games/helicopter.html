@@ -433,6 +433,7 @@
     if (speed > 360) speed = 360;
     scrollX += speed * dt;
     distance += (speed * dt) / 10; // 10px = 1 meter
+    if (window.GrownGame) window.GrownGame.setHighScore(Math.floor(distance));
 
     // Extend / trim cave segments
     var lastSeg = segments[segments.length - 1];
@@ -691,18 +692,33 @@
   }
 
   // ---- Main loop ----
+  var running = true, rafId = null;
   function frame(t) {
+    if (!running) return;
     if (!lastTime) lastTime = t;
     var dt = (t - lastTime) / 1000;
     lastTime = t;
     if (dt > 0.05) dt = 0.05; // clamp big jumps
     update(dt);
     draw();
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
   }
 
+  window.addEventListener("grown:pause", function () {
+    running = false;
+    holding = false;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener("grown:resume", function () {
+    if (!running) {
+      running = true;
+      lastTime = 0;
+      rafId = requestAnimationFrame(frame);
+    }
+  });
+
   reset();
-  requestAnimationFrame(frame);
+  rafId = requestAnimationFrame(frame);
 })();
 </script>
 </body>

@@ -315,6 +315,7 @@
       addFloater(b.x, b.y, "+1", "#fff");
       pop(rand(500, 800), "sine");
     }
+    if(window.GrownGame)window.GrownGame.setHighScore(score);
     updateHud();
   }
 
@@ -449,15 +450,29 @@
     }
   }
 
+  var paused = false, rafId = null;
   function loop(ts) {
+    if (paused) return;
     if (!lastTs) lastTs = ts;
     var dt = (ts - lastTs) / 1000;
     lastTs = ts;
     if (dt > 0.1) dt = 0.1; // clamp
     update(dt);
     render();
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
+
+  window.addEventListener('grown:pause', function () {
+    paused = true;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener('grown:resume', function () {
+    if (paused) {
+      paused = false;
+      lastTs = performance.now();
+      rafId = requestAnimationFrame(loop);
+    }
+  });
 
   // ---- Input ----
   function hitTest(px, py) {
@@ -529,6 +544,7 @@
 
   function endRound() {
     running = false;
+    if(window.GrownGame)window.GrownGame.setHighScore(score);
     timeEl.classList.remove("low");
     ovTitle.textContent = "⏰ Time's Up!";
     ovText.textContent = "Your score:";
@@ -543,7 +559,7 @@
   // init
   resize();
   updateHud();
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 })();
 </script>
 </body>

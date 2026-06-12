@@ -332,6 +332,7 @@
       bestEl.textContent = best;
       try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) {}
     }
+    if (window.GrownGame) window.GrownGame.setHighScore(score);
     hintEl.textContent = "Tap to play again";
   }
 
@@ -591,7 +592,9 @@
 
   // ----- Main loop (fixed-ish timestep via dt clamp) -----
   var lastTime = 0;
+  var paused = false, rafId = null;
   function loop(ts) {
+    if (paused) { rafId = null; return; }
     if (!lastTime) lastTime = ts;
     var dt = (ts - lastTime) / 1000;
     lastTime = ts;
@@ -602,11 +605,24 @@
     maybeSpawn();
     render();
 
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
 
+  // Pause/resume from the shared menu.
+  window.addEventListener("grown:pause", function () {
+    paused = true;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  });
+  window.addEventListener("grown:resume", function () {
+    if (paused) {
+      paused = false;
+      lastTime = 0; // resync clock so there's no giant dt jump
+      if (!rafId) rafId = requestAnimationFrame(loop);
+    }
+  });
+
   reset();
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 })();
 </script>
 </body>

@@ -574,6 +574,7 @@
       beep(160, 0.25, "sawtooth", 0.18);
       if (lives <= 0) {
         state = STATE_OVER;
+        if (window.GrownGame) window.GrownGame.setHighScore(score);
         showOverlay("GAME OVER", "Final score: " + score, "Play Again", "lose");
       } else {
         resetPaddle();
@@ -589,6 +590,7 @@
       beep(880, 0.12, "triangle", 0.16);
       if (level >= 5) {
         state = STATE_WIN;
+        if (window.GrownGame) window.GrownGame.setHighScore(score);
         showOverlay("YOU WIN!", "You cleared all levels! Score: " + score, "Play Again", "win");
       } else {
         nextLevel();
@@ -673,11 +675,25 @@
   }
 
   // ---- Main loop ----
+  var paused = false, rafId = null;
   function loop() {
+    if (paused) { rafId = null; return; }
     update();
     draw();
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
+
+  // Pause/resume from the shared menu.
+  window.addEventListener("grown:pause", function () {
+    paused = true;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  });
+  window.addEventListener("grown:resume", function () {
+    if (paused) {
+      paused = false;
+      if (!rafId) rafId = requestAnimationFrame(loop);
+    }
+  });
 
   // ---- Boot ----
   function onResize() {
@@ -692,7 +708,7 @@
   fitCanvas();
   applyAspect();
   newGame();
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 })();
 </script>
 </body>

@@ -413,6 +413,7 @@
     state.over = true;
     state.win = win;
     running = false;
+    if (window.GrownGame) window.GrownGame.setHighScore(state.score);
     if (win) {
       ovTitle.textContent = 'YOU WIN!';
       ovMsg.textContent = 'Final score: ' + state.score;
@@ -524,6 +525,7 @@
         if (al.alive && hit(bl, al)) {
           al.alive = false;
           state.score += al.pts;
+          if (window.GrownGame) window.GrownGame.setHighScore(state.score);
           updateHUD();
           beep(220 + al.row * 60, 0.1, 'square', 0.06);
           struck = true;
@@ -631,15 +633,28 @@
   }
 
   // ---- Main loop ----
+  var paused = false, rafId = 0;
   function loop(ts) {
+    if (paused) return;
     if (!lastTime) lastTime = ts;
     var dt = (ts - lastTime) / 1000;
     lastTime = ts;
     if (dt > 0.05) dt = 0.05; // clamp big gaps
     update(dt);
     render();
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
+  window.addEventListener('grown:pause', function () {
+    paused = true;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener('grown:resume', function () {
+    if (paused) {
+      paused = false;
+      lastTime = 0; // reset delta so no time jump
+      rafId = requestAnimationFrame(loop);
+    }
+  });
 
   // ---- Input: keyboard ----
   window.addEventListener('keydown', function (e) {
@@ -726,7 +741,7 @@
 
   // ---- Start ----
   resetGame();
-  requestAnimationFrame(loop);
+  rafId = requestAnimationFrame(loop);
 })();
 </script>
 </body>

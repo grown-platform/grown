@@ -289,6 +289,7 @@
 
   function addScore(n) {
     score += n;
+    if (window.GrownGame) window.GrownGame.setHighScore(score);
     updateHUD();
   }
 
@@ -763,7 +764,9 @@
   // ---- Loop (fixed timestep accumulator) ----
   let lastT = performance.now(), acc = 0;
   const STEP = 1000 / 60;
+  let running = true, rafId = null;
   function frame(now) {
+    if (!running) return;
     let dt = now - lastT; lastT = now;
     if (dt > 100) dt = 100; // avoid spiral after tab switch
     acc += dt;
@@ -774,12 +777,25 @@
       acc -= STEP; guard++;
     }
     draw();
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
   }
+
+  window.addEventListener("grown:pause", function () {
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener("grown:resume", function () {
+    if (!running) {
+      running = true;
+      lastT = performance.now();
+      acc = 0;
+      rafId = requestAnimationFrame(frame);
+    }
+  });
 
   updateHUD();
   newBall();
-  requestAnimationFrame(frame);
+  rafId = requestAnimationFrame(frame);
 })();
 </script>
 </body>

@@ -447,6 +447,7 @@
         betweenTimer = 1.6;
         showToast('Wave ' + wave + ' clear! +' + (aliveCities() * 25));
         score += aliveCities() * 25;
+        if(window.GrownGame)window.GrownGame.setHighScore(score);
         updateHud();
       }
     } else {
@@ -508,6 +509,7 @@
       }
       if (killed) {
         score += 25;
+        if(window.GrownGame)window.GrownGame.setHighScore(score);
         sndKill();
         for (var p = 0; p < 6; p++) {
           var a2 = Math.random() * Math.PI * 2;
@@ -666,19 +668,34 @@
 
   // ---- Loop ----
   var last = 0;
+  var paused = false;
+  var rafId = null;
   function frame(ts) {
+    if (paused) return;
     if (!last) last = ts;
     var dt = (ts - last) / 1000;
     last = ts;
     if (dt > 0.05) dt = 0.05; // clamp
     update(dt);
     draw();
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
   }
+
+  window.addEventListener('grown:pause', function () {
+    paused = true;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener('grown:resume', function () {
+    if (paused) {
+      paused = false;
+      last = performance.now();
+      rafId = requestAnimationFrame(frame);
+    }
+  });
 
   resize();
   newGame();
-  requestAnimationFrame(frame);
+  rafId = requestAnimationFrame(frame);
 })();
 </script>
 </body>

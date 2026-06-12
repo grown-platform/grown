@@ -272,6 +272,7 @@
 
   function gameOver() {
     state = "over";
+    if(window.GrownGame)window.GrownGame.setHighScore(score);
     soundBomb();
     overlay.classList.remove("hidden");
     overlay.querySelector("h2").textContent = "Game Over";
@@ -353,6 +354,7 @@
             if (state !== "playing") return; // game ended
           } else {
             score += 1;
+            if(window.GrownGame)window.GrownGame.setHighScore(score);
             updateHud();
             soundCatch();
           }
@@ -461,7 +463,9 @@
   }
 
   // ---------- Loop ----------
+  var paused = false;
   function loop(now) {
+    if (paused) return;
     if (state !== "playing") { draw(); return; }
     var dt = (now - lastTime) / 1000;
     lastTime = now;
@@ -470,6 +474,20 @@
     if (state === "playing") draw();
     rafId = requestAnimationFrame(loop);
   }
+
+  window.addEventListener('grown:pause', function () {
+    paused = true;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener('grown:resume', function () {
+    if (paused) {
+      paused = false;
+      if (state === "playing") {
+        lastTime = performance.now();
+        rafId = requestAnimationFrame(loop);
+      }
+    }
+  });
 
   // ---------- Input ----------
   var keyLeft = false, keyRight = false;

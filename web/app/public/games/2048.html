@@ -295,6 +295,7 @@
                     bestScore = score;
                     localStorage.setItem('bestScore', bestScore);
                 }
+                if(window.GrownGame)window.GrownGame.setHighScore(score);
                 render();
                 if (checkWin()) {
                     showOverlay("You Win!");

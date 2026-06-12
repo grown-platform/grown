@@ -316,6 +316,7 @@
     els.rowNum.textContent = Math.min(currentRow + 1, ROWS);
     els.height.textContent = lockedHeight();
     els.best.textContent = best;
+    if (window.GrownGame) window.GrownGame.setHighScore(lockedHeight());
   }
   function lockedHeight() {
     var h = 0;
@@ -562,6 +563,17 @@
 
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
+
+  window.addEventListener("grown:pause", function () {
+    running = false; // loop self-stops on next frame
+  });
+  window.addEventListener("grown:resume", function () {
+    if (!running && gameState === "play") {
+      running = true;
+      lastTime = 0; // reset delta clock
+      requestAnimationFrame(loop);
+    }
+  });
 
   // ---- Boot ----
   resize();

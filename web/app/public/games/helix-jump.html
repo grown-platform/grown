@@ -418,7 +418,9 @@
 
   // ---------- Update ----------
   var lastT = 0;
+  var paused = false;
   function frame(t) {
+    if (paused) return;
     if (!lastT) lastT = t;
     var dt = (t - lastT) / 1000;
     lastT = t;
@@ -517,6 +519,7 @@
           sndPass(Math.min(combo, 5));
           spawnParticles(false);
           scoreVal.textContent = String(level);
+          if (window.GrownGame) window.GrownGame.setHighScore(level);
         }
         // keep falling through this ring; check the next plane below too
         continue;
@@ -855,6 +858,17 @@
   startBtn.addEventListener("click", function () {
     var a = audio(); if (a && a.state === "suspended") { try { a.resume(); } catch (er) {} }
     startGame();
+  });
+
+  window.addEventListener("grown:pause", function () {
+    paused = true;
+  });
+  window.addEventListener("grown:resume", function () {
+    if (paused) {
+      paused = false;
+      lastT = 0; // reset delta clock so physics doesn't jump
+      requestAnimationFrame(frame);
+    }
   });
 
   // ---------- Boot ----------

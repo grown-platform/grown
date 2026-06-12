@@ -431,6 +431,7 @@
       soundBad();
     } else {
       score += 1;
+      if(window.GrownGame)window.GrownGame.setHighScore(score);
       updateScore(false);
       rec.mole.classList.add("bonk");
       showPop(rec, "+1", "plus");
@@ -496,6 +497,7 @@
 
   function endRound() {
     running = false;
+    if(window.GrownGame)window.GrownGame.setHighScore(score);
     clearTimers();
     resetHoles();
 
@@ -526,6 +528,22 @@
 
   // Guard against accidental double-tap zoom on the board even with touch-action set.
   board.addEventListener("dblclick", function (e) { e.preventDefault(); });
+
+  // Shared pause/resume: stop both the countdown interval and the spawn chain.
+  var pausedRound = false;
+  window.addEventListener('grown:pause', function () {
+    if (running) {
+      pausedRound = true;
+      clearTimers();
+    }
+  });
+  window.addEventListener('grown:resume', function () {
+    if (pausedRound && running) {
+      pausedRound = false;
+      countdownTimer = setInterval(tick, 1000);
+      spawnTimer = setTimeout(popUp, spawnGap());
+    }
+  });
 })();
 </script>
 </body>

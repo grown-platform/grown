@@ -359,6 +359,7 @@
 
   function addScore() {
     score++;
+    if (window.GrownGame) window.GrownGame.setHighScore(score);
     scoreEl.textContent = score;
     // ramp speed up gradually, capped
     speed = baseSpeed + Math.min(score * 6.5, 360);
@@ -510,6 +511,26 @@
   // ---------- Buttons ----------
   ovBtn.addEventListener("click", startGame);
   restartTop.addEventListener("click", function () { startGame(); });
+
+  // ---------- Pause / resume ----------
+  var pausedByMenu = false;
+  window.addEventListener("grown:pause", function () {
+    if (running) {
+      pausedByMenu = true;
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+    }
+  });
+  window.addEventListener("grown:resume", function () {
+    if (pausedByMenu && started && !gameOver) {
+      pausedByMenu = false;
+      running = true;
+      lastTime = performance.now();
+      rafId = requestAnimationFrame(loop);
+    } else {
+      pausedByMenu = false;
+    }
+  });
 
   // ---------- Resize ----------
   window.addEventListener("resize", resize);

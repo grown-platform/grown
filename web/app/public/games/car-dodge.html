@@ -396,6 +396,7 @@
     scrollY = (scrollY + speed * dt) % 80;
     distance += speed * dt * 0.06;
     scoreEl.textContent = Math.floor(distance);
+    if (window.GrownGame) window.GrownGame.setHighScore(Math.floor(distance));
 
     // player steering
     var minX = roadX + player.w / 2;
@@ -588,7 +589,9 @@
   }
 
   // ---- loop ----
+  var running = true, rafId = null;
   function frame(now) {
+    if (!running) return;
     if (!lastTime) lastTime = now;
     var dt = (now - lastTime) / 1000;
     lastTime = now;
@@ -605,8 +608,20 @@
       }
     }
     draw();
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
   }
+
+  window.addEventListener("grown:pause", function () {
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener("grown:resume", function () {
+    if (!running) {
+      running = true;
+      lastTime = 0;
+      rafId = requestAnimationFrame(frame);
+    }
+  });
 
   // ---- start ----
   function startGame() {
@@ -626,7 +641,7 @@
   resize();
   resetGame();
   draw();
-  requestAnimationFrame(frame);
+  rafId = requestAnimationFrame(frame);
 })();
 </script>
 </body>

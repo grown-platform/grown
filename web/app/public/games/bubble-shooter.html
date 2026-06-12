@@ -221,6 +221,7 @@
   var gameOver = false;
   var shooterX = 0, shooterY = 0;
   var rafId = null;
+  var paused = false;
 
   // ---- Grid geometry helpers ----
   // Even rows (0,2,...) start flush left and have COLS bubbles.
@@ -341,7 +342,7 @@
     if(!rafId) loop();
   }
 
-  function updateScore(){ scoreEl.textContent = score; }
+  function updateScore(){ scoreEl.textContent = score; if(window.GrownGame)window.GrownGame.setHighScore(score); }
 
   // ---- Shooting ----
   function shoot(){
@@ -684,6 +685,7 @@
 
   // ---- Main loop ----
   function loop(){
+    if(paused){ rafId = null; return; }
     rafId = requestAnimationFrame(loop);
     if(shot && !gameOver){
       stepShot();
@@ -744,6 +746,14 @@
 
   document.getElementById('restart').addEventListener('click', newGame);
   document.getElementById('ov-btn').addEventListener('click', newGame);
+
+  window.addEventListener('grown:pause', function(){
+    paused = true;
+    if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+  });
+  window.addEventListener('grown:resume', function(){
+    if(paused){ paused = false; if(!rafId) loop(); }
+  });
 
   window.addEventListener('resize', function(){
     layout();

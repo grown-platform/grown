@@ -282,6 +282,7 @@
       frog.col = SLOT_COLS[best]; // snap into the slot
       slots[best] = true;
       score += 100 + level * 10;
+      if(window.GrownGame)window.GrownGame.setHighScore(score);
       sWin();
       winTimer = 0.35;
       // Check level complete
@@ -568,18 +569,33 @@
 
   function endGame() {
     gameOver = true;
+    if(window.GrownGame)window.GrownGame.setHighScore(score);
     showOverlay("Game Over", "Final score: " + score + "  ·  Level " + level);
   }
 
   // ---- Loop ------------------------------------------------------------
+  var paused = false, rafId = null;
   function frame(ts) {
+    if (paused) return;
     if (!lastTime) lastTime = ts;
     var dt = Math.min(0.05, (ts - lastTime) / 1000);
     lastTime = ts;
     if (!gameOver) update(dt);
     draw();
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
   }
+
+  window.addEventListener('grown:pause', function () {
+    paused = true;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  window.addEventListener('grown:resume', function () {
+    if (paused) {
+      paused = false;
+      lastTime = performance.now();
+      rafId = requestAnimationFrame(frame);
+    }
+  });
 
   // ---- Resize ----------------------------------------------------------
   function resize() {
@@ -666,7 +682,7 @@
 
   resize();
   reset(true);
-  requestAnimationFrame(frame);
+  rafId = requestAnimationFrame(frame);
 })();
 </script>
 </body>
