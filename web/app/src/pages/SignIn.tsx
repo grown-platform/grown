@@ -118,8 +118,10 @@ export function SignIn() {
       sx={{
         minHeight: "100vh",
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
+        gap: 1.5,
         bgcolor: "background.body",
         p: 2,
       }}
@@ -243,6 +245,18 @@ export function SignIn() {
           </Button>
         </CardContent>
       </Card>
+      <Typography
+        component="a"
+        href="/docs"
+        level="body-sm"
+        sx={{
+          color: "text.tertiary",
+          textDecoration: "none",
+          "&:hover": { textDecoration: "underline" },
+        }}
+      >
+        Documentation
+      </Typography>
     </Box>
   );
 }
