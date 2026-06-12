@@ -4,6 +4,7 @@ import {
   Box,
   Input,
   IconButton,
+  Button,
   Sheet as JoySheet,
   Divider,
   CircularProgress,
@@ -14,6 +15,7 @@ import {
 } from "@mui/joy";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import TableChartIcon from "@mui/icons-material/TableChart";
+import BarChartIcon from "@mui/icons-material/BarChart";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — FortuneSheet ships its own types; we use loose typing here.
 import { Workbook } from "@fortune-sheet/react";
@@ -34,6 +36,9 @@ import { ShareDialog } from "./ShareDialog";
 import { ConditionalFormatDialog } from "./ConditionalFormatDialog";
 import { NamedRangesDialog } from "./NamedRangesDialog";
 import { DataValidationDialog } from "./DataValidationDialog";
+import { ChartDialog } from "./ChartDialog";
+import { ChartsPanel } from "./ChartsPanel";
+import type { ChartConfig } from "./chartData";
 import { downloadSheet } from "./export";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
@@ -90,6 +95,11 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [cfOpen, setCfOpen] = useState(false);
   const [nrOpen, setNrOpen] = useState(false);
   const [dvOpen, setDvOpen] = useState(false);
+  const [chartOpen, setChartOpen] = useState(false);
+  const [chartsOpen, setChartsOpen] = useState(false);
+  const [charts, setCharts] = useState<ChartConfig[]>([]);
+  const chartsRef = useRef<ChartConfig[]>([]);
+  const dataRef = useRef<any[] | null>(null);
   const ref = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const applyingRemote = useRef(false);
@@ -108,7 +118,15 @@ export function SheetEditor({ user }: SheetEditorProps) {
         if (cancelled) return;
         setTitle(s.title);
         try {
-          setData(s.data ? JSON.parse(s.data) : DEFAULT_DATA);
+          const parsed = s.data ? JSON.parse(s.data) : DEFAULT_DATA;
+          // Charts persist on the first sheet under `grownCharts`.
+          const loaded: ChartConfig[] = Array.isArray(parsed?.[0]?.grownCharts)
+            ? parsed[0].grownCharts
+            : [];
+          chartsRef.current = loaded;
+          setCharts(loaded);
+          dataRef.current = parsed;
+          setData(parsed);
         } catch {
           setData(DEFAULT_DATA);
         }
@@ -253,11 +271,29 @@ export function SheetEditor({ user }: SheetEditorProps) {
     )
       ws.send(JSON.stringify(ops));
   }
+  // withCharts attaches the current chart definitions onto the first sheet so
+  // they round-trip through the saved workbook JSON (FortuneSheet ignores the
+  // extra field; we read it back on load).
+  function withCharts(d: any[]): any[] {
+    if (!Array.isArray(d) || d.length === 0) return d;
+    const copy = d.slice();
+    copy[0] = { ...copy[0], grownCharts: chartsRef.current };
+    return copy;
+  }
   function onChange(d: any[]) {
+    dataRef.current = d;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      saveSheet(id, JSON.stringify(d)).catch(() => {});
+      saveSheet(id, JSON.stringify(withCharts(d))).catch(() => {});
     }, 1500);
+  }
+  // persistCharts updates chart state and saves immediately (charts changes
+  // aren't FortuneSheet cell edits, so they won't trigger onChange).
+  function persistCharts(next: ChartConfig[]) {
+    chartsRef.current = next;
+    setCharts(next);
+    const d = dataRef.current;
+    if (d) saveSheet(id, JSON.stringify(withCharts(d))).catch(() => {});
   }
   async function commitTitle() {
     const t = title.trim() || "Untitled spreadsheet";
@@ -355,9 +391,21 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onConditionalFormat={() => setCfOpen(true)}
               onNamedRanges={() => setNrOpen(true)}
               onDataValidation={() => setDvOpen(true)}
+              onInsertChart={() => setChartOpen(true)}
             />
           </Box>
           <Box sx={{ flex: 1 }} />
+          {charts.length > 0 && (
+            <Button
+              size="sm"
+              variant="outlined"
+              startDecorator={<BarChartIcon fontSize="small" />}
+              onClick={() => setChartsOpen(true)}
+              sx={{ mr: 1 }}
+            >
+              Charts ({charts.length})
+            </Button>
+          )}
           <Box sx={{ display: { xs: "none", sm: "flex" } }}>
             <AvatarGroup size="sm">
               {peerList.map((p) => (
@@ -417,6 +465,26 @@ export function SheetEditor({ user }: SheetEditorProps) {
         open={dvOpen}
         onClose={() => setDvOpen(false)}
         getWb={() => ref.current}
+      />
+      <ChartDialog
+        open={chartOpen}
+        onClose={() => setChartOpen(false)}
+        getWb={() => ref.current}
+        onAdd={(cfg) => {
+          persistCharts([...chartsRef.current, cfg]);
+          setChartsOpen(true);
+        }}
+      />
+      <ChartsPanel
+        open={chartsOpen}
+        onClose={() => setChartsOpen(false)}
+        getWb={() => ref.current}
+        charts={charts}
+        onDelete={(cid) => persistCharts(chartsRef.current.filter((c) => c.id !== cid))}
+        onNew={() => {
+          setChartsOpen(false);
+          setChartOpen(true);
+        }}
       />
     </Box>
   );
