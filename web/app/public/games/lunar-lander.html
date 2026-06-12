@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Lunar Lander</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #05060c;
+    color: #cfe6ff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    touch-action: none;
+  }
+  header {
+    flex: 0 0 auto;
+    padding: 6px 10px 4px;
+    text-align: center;
+  }
+  header h1 {
+    font-size: 16px; font-weight: 700; letter-spacing: 2px;
+    color: #8fd3ff; text-transform: uppercase;
+  }
+  #hud {
+    flex: 0 0 auto;
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px;
+    padding: 4px 8px 6px;
+    font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  #hud .stat { display: flex; gap: 5px; }
+  #hud .lbl { color: #6a86a8; }
+  #hud .val { color: #d8ecff; font-weight: 600; min-width: 42px; text-align: right; }
+  #hud .val.warn { color: #ff5a52; }
+  #hud .val.good { color: #5cff9a; }
+  #stage {
+    flex: 1 1 auto;
+    position: relative;
+    min-height: 0;
+  }
+  canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+    touch-action: none;
+  }
+  #msg {
+    position: absolute; left: 50%; top: 42%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+    display: none;
+    width: 90%;
+  }
+  #msg.show { display: block; }
+  #msg .big { font-size: 26px; font-weight: 800; letter-spacing: 2px; }
+  #msg .big.win { color: #5cff9a; text-shadow: 0 0 16px rgba(92,255,154,.5); }
+  #msg .big.lose { color: #ff5a52; text-shadow: 0 0 16px rgba(255,90,82,.5); }
+  #msg .sub { margin-top: 6px; font-size: 13px; color: #aac6e2; }
+  #controls {
+    flex: 0 0 auto;
+    display: flex; gap: 8px;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    touch-action: none;
+  }
+  .btn {
+    flex: 1 1 0;
+    height: 74px;
+    border: 1px solid #2a4868;
+    border-radius: 14px;
+    background: linear-gradient(#13203a, #0c1526);
+    color: #bfe0ff;
+    font-size: 13px; font-weight: 700; letter-spacing: 1px;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    transition: background .05s, transform .05s;
+  }
+  .btn.thrust { flex: 1.4 1 0; }
+  .btn.active { background: linear-gradient(#2c70c8, #1b4f9b); color: #fff; transform: translateY(1px); border-color: #5aa0ff; }
+  #restart {
+    position: absolute; right: 10px; top: 6px;
+    z-index: 5;
+    padding: 6px 12px;
+    font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    background: #16263f; color: #bfe0ff;
+    border: 1px solid #2a4868; border-radius: 8px;
+    touch-action: manipulation;
+  }
+  #restart:active { background: #21406b; }
+  .hint { font-size: 10px; color: #4f6f92; text-align:center; margin-top:2px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/lunar-lander.svg">
+    <link rel="manifest" href="/games/lunar-lander.webmanifest">
+    <meta name="theme-color" content="#334155">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Lunar Lander">
+    <link rel="apple-touch-icon" href="/games/icons/lunar-lander.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#334155;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="wrap">
+  <button id="restart">RESTART</button>
+  <header>
+    <h1>Lunar Lander</h1>
+  </header>
+  <div id="hud">
+    <div class="stat"><span class="lbl">FUEL</span><span class="val" id="vFuel">100</span></div>
+    <div class="stat"><span class="lbl">ALT</span><span class="val" id="vAlt">0</span></div>
+    <div class="stat"><span class="lbl">VSPD</span><span class="val" id="vVy">0</span></div>
+    <div class="stat"><span class="lbl">HSPD</span><span class="val" id="vVx">0</span></div>
+    <div class="stat"><span class="lbl">SCORE</span><span class="val" id="vScore">0</span></div>
+  </div>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="msg">
+      <div class="big" id="msgBig"></div>
+      <div class="sub" id="msgSub"></div>
+    </div>
+  </div>
+  <div id="controls">
+    <button class="btn" id="bLeft" aria-label="rotate left">&#8634; LEFT</button>
+    <button class="btn thrust" id="bThrust" aria-label="thrust">&#9650; THRUST</button>
+    <button class="btn" id="bRight" aria-label="rotate right">RIGHT &#8635;</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Canvas / DPR ----------
+  var canvas = document.getElementById("cv");
+  var ctx = canvas.getContext("2d");
+  var stage = document.getElementById("stage");
+  var W = 360, H = 480, DPR = 1;
+
+  function resize() {
+    var r = stage.getBoundingClientRect();
+    W = Math.max(200, Math.round(r.width));
+    H = Math.max(200, Math.round(r.height));
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", function () { resize(); buildIfNeeded(); });
+
+  // ---------- Audio ----------
+  var AC = null, thrustOsc = null, thrustGain = null;
+  function audioCtx() {
+    if (!AC) {
+      try { AC = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { AC = null; }
+    }
+    if (AC && AC.state === "suspended") AC.resume();
+    return AC;
+  }
+  function beep(freq, dur, type, vol) {
+    var ac = audioCtx(); if (!ac) return;
+    var o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || "sine"; o.frequency.value = freq;
+    g.gain.value = 0.0001;
+    o.connect(g); g.connect(ac.destination);
+    var t = ac.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function startThrustSound() {
+    var ac = audioCtx(); if (!ac || thrustOsc) return;
+    thrustOsc = ac.createOscillator();
+    thrustGain = ac.createGain();
+    var nOsc = ac.createOscillator();
+    thrustOsc.type = "sawtooth"; thrustOsc.frequency.value = 80;
+    nOsc.type = "square"; nOsc.frequency.value = 38;
+    thrustGain.gain.value = 0.0001;
+    thrustOsc.connect(thrustGain); nOsc.connect(thrustGain);
+    thrustGain.connect(ac.destination);
+    thrustGain.gain.exponentialRampToValueAtTime(0.12, ac.currentTime + 0.05);
+    thrustOsc.start(); nOsc.start();
+    thrustOsc._n = nOsc;
+  }
+  function stopThrustSound() {
+    if (!thrustOsc || !AC) return;
+    var t = AC.currentTime;
+    try {
+      thrustGain.gain.cancelScheduledValues(t);
+      thrustGain.gain.setValueAtTime(thrustGain.gain.value, t);
+      thrustGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+      thrustOsc.stop(t + 0.1);
+      thrustOsc._n.stop(t + 0.1);
+    } catch (e) {}
+    thrustOsc = null; thrustGain = null;
+  }
+
+  // ---------- Game constants ----------
+  var GRAV = 22;            // px/s^2 (world units), scaled below
+  var THRUST_ACC = 60;      // px/s^2 along facing
+  var ROT_SPEED = 2.6;      // rad/s
+  var FUEL_BURN = 16;       // fuel/s while thrusting
+  var SAFE_VY = 28;         // max safe vertical speed (units/s)
+  var SAFE_VX = 18;         // max safe horizontal speed
+  var SAFE_ANG = 0.18;      // max tilt from upright (rad)
+
+  // Logical world is in pixels matching canvas size. Physics scaled by min dim
+  // so feel is consistent across screen sizes.
+  var scale = 1;
+
+  var state = {
+    x: 0, y: 0, vx: 0, vy: 0, ang: 0,
+    fuel: 100, score: 0, level: 1,
+    status: "play", // play | landed | crashed
+    terrain: [], pads: [], groundFn: null,
+    particles: [], stars: [], landedTimer: 0
+  };
+
+  var LANDER_R = 12; // visual radius-ish (half-width)
+
+  var input = { thrust: false, left: false, right: false };
+
+  // ---------- Terrain generation ----------
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function buildTerrain() {
+    scale = Math.min(W, H) / 480; // base feel tuned for ~480px
+
+    var pts = [];
+    var segCount = Math.max(8, Math.floor(W / 42));
+    var maxY = H * 0.92;
+    var minY = H * 0.45;
+    var x = 0;
+    var step = W / segCount;
+    var y = rand(minY, maxY);
+    for (var i = 0; i <= segCount; i++) {
+      pts.push({ x: i * step, y: y });
+      var dy = rand(-1, 1) * (H * 0.16);
+      y = Math.max(minY, Math.min(maxY, y + dy));
+    }
+    pts[pts.length - 1].x = W;
+
+    // Choose 1-3 landing pads depending on level difficulty.
+    var padCount = state.level <= 1 ? 2 : (Math.random() < 0.5 ? 1 : 2);
+    var pads = [];
+    var usable = [];
+    for (var j = 0; j < pts.length - 1; j++) usable.push(j);
+    // shuffle
+    for (var s = usable.length - 1; s > 0; s--) {
+      var k = Math.floor(Math.random() * (s + 1));
+      var tmp = usable[s]; usable[s] = usable[k]; usable[k] = tmp;
+    }
+    var chosen = usable.slice(0, padCount).sort(function (a, b) { return a - b; });
+
+    chosen.forEach(function (idx) {
+      // Pad width: narrower = harder = more points. Higher levels narrower.
+      var baseW = step * (state.level <= 1 ? 1.4 : 1.0);
+      var pw = Math.max(38, baseW * rand(0.7, 1.2) - state.level * 3);
+      var cx = pts[idx].x + step / 2;
+      var py = (pts[idx].y + pts[idx + 1].y) / 2;
+      py = Math.min(maxY, py);
+      var px0 = cx - pw / 2;
+      var px1 = cx + pw / 2;
+      // Flatten terrain points falling within the pad.
+      for (var p = 0; p < pts.length; p++) {
+        if (pts[p].x >= px0 - step * 0.6 && pts[p].x <= px1 + step * 0.6) {
+          // snap nearby vertices to pad level around the edges
+        }
+      }
+      pads.push({ x0: px0, x1: px1, y: py, w: pw });
+    });
+
+    // Rebuild a flat polyline that incorporates the pads precisely.
+    // Construct ordered terrain by walking x and inserting pad endpoints.
+    var poly = [];
+    function terrainYAt(px) {
+      for (var t = 0; t < pts.length - 1; t++) {
+        if (px >= pts[t].x && px <= pts[t + 1].x) {
+          var f = (px - pts[t].x) / (pts[t + 1].x - pts[t].x || 1);
+          return pts[t].y + f * (pts[t + 1].y - pts[t].y);
+        }
+      }
+      return pts[pts.length - 1].y;
+    }
+    // Build list of x breakpoints
+    var brk = [];
+    for (var b2 = 0; b2 < pts.length; b2++) brk.push({ x: pts[b2].x, pad: null });
+    pads.forEach(function (pad) {
+      brk.push({ x: pad.x0, pad: pad, edge: 0 });
+      brk.push({ x: pad.x1, pad: pad, edge: 1 });
+    });
+    brk.sort(function (a, b) { return a.x - b.x; });
+
+    // Now create poly with pad segments flat.
+    poly.push({ x: 0, y: terrainYAt(0) });
+    for (var b3 = 0; b3 < brk.length; b3++) {
+      var bp = brk[b3];
+      var inPad = null;
+      for (var pi = 0; pi < pads.length; pi++) {
+        if (bp.x >= pads[pi].x0 - 0.01 && bp.x <= pads[pi].x1 + 0.01) { inPad = pads[pi]; break; }
+      }
+      var yy = inPad ? inPad.y : terrainYAt(bp.x);
+      if (bp.x > poly[poly.length - 1].x) poly.push({ x: bp.x, y: yy });
+      else poly[poly.length - 1].y = yy;
+    }
+    if (poly[poly.length - 1].x < W) poly.push({ x: W, y: terrainYAt(W) });
+
+    state.terrain = poly;
+    state.pads = pads;
+    state.groundFn = function (px) {
+      px = Math.max(0, Math.min(W, px));
+      for (var t = 0; t < poly.length - 1; t++) {
+        if (px >= poly[t].x && px <= poly[t + 1].x) {
+          var seg = poly[t + 1].x - poly[t].x || 1;
+          var f = (px - poly[t].x) / seg;
+          return poly[t].y + f * (poly[t + 1].y - poly[t].y);
+        }
+      }
+      return poly[poly.length - 1].y;
+    };
+
+    // Stars
+    state.stars = [];
+    var sc = Math.floor((W * H) / 9000);
+    for (var st2 = 0; st2 < sc; st2++) {
+      state.stars.push({ x: Math.random() * W, y: Math.random() * H * 0.7, r: Math.random() * 1.3 + 0.2, a: Math.random() * 0.6 + 0.2 });
+    }
+  }
+
+  function padScore(pad) {
+    // Narrower pads score more. Reference width ~ 120 -> 100 pts.
+    var base = Math.round(8000 / pad.w);
+    return Math.max(50, base) * 10;
+  }
+
+  // ---------- Reset / spawn ----------
+  function spawn() {
+    state.x = W * rand(0.2, 0.8);
+    state.y = H * 0.12;
+    state.vx = rand(-10, 10);
+    state.vy = rand(2, 10);
+    state.ang = rand(-0.25, 0.25);
+    state.status = "play";
+    state.particles = [];
+    state.landedTimer = 0;
+    hideMsg();
+  }
+
+  function newGame() {
+    state.score = 0;
+    state.level = 1;
+    state.fuel = 100;
+    buildTerrain();
+    spawn();
+  }
+
+  function nextLevel() {
+    state.level++;
+    state.fuel = Math.min(100, state.fuel + 30);
+    buildTerrain();
+    spawn();
+  }
+
+  var needBuild = false;
+  function buildIfNeeded() {
+    // Rebuild terrain proportionally on resize so it still fits.
+    resize();
+    buildTerrain();
+    // Clamp lander inside new bounds.
+    state.x = Math.max(LANDER_R, Math.min(W - LANDER_R, state.x));
+  }
+
+  // ---------- Particles ----------
+  function emitExhaust(px, py, dx, dy) {
+    for (var i = 0; i < 2; i++) {
+      state.particles.push({
+        x: px, y: py,
+        vx: dx + rand(-25, 25), vy: dy + rand(-25, 25),
+        life: rand(0.25, 0.5), max: 0.5,
+        col: Math.random() < 0.5 ? "#ffd36b" : "#ff8a3c", r: rand(1.2, 2.6)
+      });
+    }
+  }
+  function emitExplosion(px, py) {
+    for (var i = 0; i < 60; i++) {
+      var a = Math.random() * Math.PI * 2;
+      var sp = rand(40, 220);
+      state.particles.push({
+        x: px, y: py,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30,
+        life: rand(0.5, 1.3), max: 1.3,
+        col: ["#ff5a52", "#ffae42", "#ffd36b", "#ffffff"][Math.floor(Math.random() * 4)],
+        r: rand(1.5, 4)
+      });
+    }
+  }
+
+  // ---------- Update ----------
+  var lastT = 0;
+  function frame(now) {
+    if (!lastT) lastT = now;
+    var dt = (now - lastT) / 1000;
+    lastT = now;
+    if (dt > 0.05) dt = 0.05; // clamp big gaps
+    update(dt);
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  function update(dt) {
+    // particles always update
+    for (var i = state.particles.length - 1; i >= 0; i--) {
+      var p = state.particles[i];
+      p.life -= dt;
+      if (p.life <= 0) { state.particles.splice(i, 1); continue; }
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vy += 60 * dt * scale;
+    }
+
+    if (state.status !== "play") {
+      stopThrustSound();
+      return;
+    }
+
+    // Rotation
+    if (input.left) state.ang -= ROT_SPEED * dt;
+    if (input.right) state.ang += ROT_SPEED * dt;
+
+    // Thrust
+    var thrusting = input.thrust && state.fuel > 0;
+    if (thrusting) {
+      // facing up = -y when ang=0. Thrust pushes opposite engine, i.e. up along facing.
+      var ax = Math.sin(state.ang) * THRUST_ACC * scale;
+      var ay = -Math.cos(state.ang) * THRUST_ACC * scale;
+      state.vx += ax * dt;
+      state.vy += ay * dt;
+      state.fuel -= FUEL_BURN * dt;
+      if (state.fuel < 0) state.fuel = 0;
+      // exhaust from bottom of lander (opposite facing)
+      var ex = state.x - Math.sin(state.ang) * LANDER_R;
+      var ey = state.y + Math.cos(state.ang) * LANDER_R;
+      emitExhaust(ex, ey, -ax * 0.18, -ay * 0.18 + 20);
+      startThrustSound();
+    } else {
+      stopThrustSound();
+    }
+
+    // Gravity
+    state.vy += GRAV * scale * dt;
+
+    // Integrate
+    state.x += state.vx * dt;
+    state.y += state.vy * dt;
+
+    // Walls (soft bounce / clamp)
+    if (state.x < LANDER_R) { state.x = LANDER_R; state.vx = Math.abs(state.vx) * 0.3; }
+    if (state.x > W - LANDER_R) { state.x = W - LANDER_R; state.vx = -Math.abs(state.vx) * 0.3; }
+    if (state.y < LANDER_R) { state.y = LANDER_R; if (state.vy < 0) state.vy = 0; }
+
+    // Ground collision: feet of lander
+    var groundY = state.groundFn(state.x);
+    var feetY = state.y + LANDER_R; // approx bottom
+    if (feetY >= groundY) {
+      // place exactly
+      state.y = groundY - LANDER_R;
+      handleTouchdown(groundY);
+    }
+  }
+
+  function onPad(px) {
+    for (var i = 0; i < state.pads.length; i++) {
+      var pad = state.pads[i];
+      if (px >= pad.x0 && px <= pad.x1) return pad;
+    }
+    return null;
+  }
+
+  function angDiffFromUpright() {
+    // normalize ang to [-PI, PI]
+    var a = state.ang % (Math.PI * 2);
+    if (a > Math.PI) a -= Math.PI * 2;
+    if (a < -Math.PI) a += Math.PI * 2;
+    return Math.abs(a);
+  }
+
+  function handleTouchdown(groundY) {
+    var pad = onPad(state.x);
+    var vy = state.vy, vx = state.vx;
+    var tilt = angDiffFromUpright();
+    var safe = pad &&
+      vy <= SAFE_VY * scale &&
+      Math.abs(vx) <= SAFE_VX * scale &&
+      tilt <= SAFE_ANG;
+
+    stopThrustSound();
+    if (safe) {
+      state.status = "landed";
+      state.vy = 0; state.vx = 0;
+      var gained = padScore(pad) + Math.round(state.fuel * 5) + state.level * 100;
+      state.score += gained;
+      beep(660, 0.12, "sine", 0.25);
+      setTimeout(function () { beep(880, 0.16, "sine", 0.25); }, 120);
+      setTimeout(function () { beep(1180, 0.2, "sine", 0.22); }, 280);
+      showMsg(true, "LANDED!", "+" + gained + " pts  -  tap RESTART or wait for next site");
+      setTimeout(function () { if (state.status === "landed") nextLevel(); }, 1900);
+    } else {
+      state.status = "crashed";
+      emitExplosion(state.x, state.y);
+      beep(120, 0.5, "sawtooth", 0.3);
+      setTimeout(function () { beep(70, 0.6, "square", 0.28); }, 60);
+      var reason = !pad ? "Missed the landing pad" :
+        (vy > SAFE_VY * scale ? "Came down too fast" :
+        (Math.abs(vx) > SAFE_VX * scale ? "Too much sideways speed" : "Not upright on touchdown"));
+      showMsg(false, "CRASHED", reason + "  -  tap RESTART");
+    }
+  }
+
+  // ---------- Render ----------
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    // sky gradient
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#05060c");
+    g.addColorStop(1, "#0b1326");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    // stars
+    for (var i = 0; i < state.stars.length; i++) {
+      var s = state.stars[i];
+      ctx.globalAlpha = s.a;
+      ctx.fillStyle = "#cfe6ff";
+      ctx.fillRect(s.x, s.y, s.r, s.r);
+    }
+    ctx.globalAlpha = 1;
+
+    drawTerrain();
+    drawParticles();
+    if (state.status !== "crashed") drawLander();
+
+    updateHud();
+  }
+
+  function drawTerrain() {
+    var poly = state.terrain;
+    if (!poly.length) return;
+    ctx.beginPath();
+    ctx.moveTo(poly[0].x, poly[0].y);
+    for (var i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+    ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+    var g = ctx.createLinearGradient(0, H * 0.4, 0, H);
+    g.addColorStop(0, "#1b2440");
+    g.addColorStop(1, "#0a1020");
+    ctx.fillStyle = g; ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(poly[0].x, poly[0].y);
+    for (var j = 1; j < poly.length; j++) ctx.lineTo(poly[j].x, poly[j].y);
+    ctx.strokeStyle = "#5a7fb0"; ctx.lineWidth = 2; ctx.stroke();
+
+    // pads highlighted
+    for (var p = 0; p < state.pads.length; p++) {
+      var pad = state.pads[p];
+      ctx.beginPath();
+      ctx.moveTo(pad.x0, pad.y);
+      ctx.lineTo(pad.x1, pad.y);
+      ctx.strokeStyle = "#5cff9a"; ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.lineCap = "butt";
+      // multiplier marker
+      var mult = Math.round(padScore(pad) / 10);
+      ctx.fillStyle = "#5cff9a";
+      ctx.font = "bold 10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(mult + "x", (pad.x0 + pad.x1) / 2, pad.y - 8);
+      // legs
+      ctx.fillStyle = "rgba(92,255,154,0.25)";
+      ctx.fillRect(pad.x0, pad.y, 3, Math.min(40, H - pad.y));
+      ctx.fillRect(pad.x1 - 3, pad.y, 3, Math.min(40, H - pad.y));
+    }
+  }
+
+  function drawParticles() {
+    for (var i = 0; i < state.particles.length; i++) {
+      var p = state.particles[i];
+      ctx.globalAlpha = Math.max(0, p.life / p.max);
+      ctx.fillStyle = p.col;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawLander() {
+    ctx.save();
+    ctx.translate(state.x, state.y);
+    ctx.rotate(state.ang);
+    var r = LANDER_R;
+
+    // landing legs
+    ctx.strokeStyle = "#9fb6d6"; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.55, r * 0.4); ctx.lineTo(-r * 0.95, r * 1.05);
+    ctx.moveTo(r * 0.55, r * 0.4); ctx.lineTo(r * 0.95, r * 1.05);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.15, r * 1.05); ctx.lineTo(-r * 0.75, r * 1.05);
+    ctx.moveTo(r * 1.15, r * 1.05); ctx.lineTo(r * 0.75, r * 1.05);
+    ctx.stroke();
+
+    // body
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.8, -r * 0.1);
+    ctx.lineTo(r * 0.6, r * 0.5);
+    ctx.lineTo(-r * 0.6, r * 0.5);
+    ctx.lineTo(-r * 0.8, -r * 0.1);
+    ctx.closePath();
+    var lg = ctx.createLinearGradient(-r, -r, r, r);
+    lg.addColorStop(0, "#e8eefc");
+    lg.addColorStop(1, "#9aa9c4");
+    ctx.fillStyle = lg; ctx.fill();
+    ctx.strokeStyle = "#5a6e8c"; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // cockpit
+    ctx.beginPath();
+    ctx.arc(0, -r * 0.1, r * 0.34, 0, Math.PI * 2);
+    ctx.fillStyle = "#7fd0ff"; ctx.fill();
+    ctx.strokeStyle = "#3a6e9c"; ctx.lineWidth = 1; ctx.stroke();
+
+    // thrust flame
+    if (input.thrust && state.fuel > 0 && state.status === "play") {
+      var fl = r * (0.9 + Math.random() * 0.8);
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.35, r * 0.5);
+      ctx.lineTo(r * 0.35, r * 0.5);
+      ctx.lineTo(0, r * 0.5 + fl);
+      ctx.closePath();
+      ctx.fillStyle = "#ffd36b"; ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.18, r * 0.5);
+      ctx.lineTo(r * 0.18, r * 0.5);
+      ctx.lineTo(0, r * 0.5 + fl * 0.6);
+      ctx.closePath();
+      ctx.fillStyle = "#fff4c2"; ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ---------- HUD ----------
+  var elFuel = document.getElementById("vFuel");
+  var elAlt = document.getElementById("vAlt");
+  var elVy = document.getElementById("vVy");
+  var elVx = document.getElementById("vVx");
+  var elScore = document.getElementById("vScore");
+
+  function updateHud() {
+    var groundY = state.groundFn ? state.groundFn(state.x) : H;
+    var alt = Math.max(0, groundY - (state.y + LANDER_R));
+    elFuel.textContent = Math.ceil(state.fuel);
+    elFuel.className = "val" + (state.fuel <= 20 ? " warn" : "");
+    elAlt.textContent = Math.round(alt / scale);
+    var vyU = state.vy / scale, vxU = state.vx / scale;
+    elVy.textContent = vyU.toFixed(0);
+    elVy.className = "val" + (state.vy > SAFE_VY * scale ? " warn" : (state.status === "play" ? " good" : ""));
+    elVx.textContent = (vxU >= 0 ? "" : "-") + Math.abs(vxU).toFixed(0);
+    elVx.className = "val" + (Math.abs(state.vx) > SAFE_VX * scale ? " warn" : (state.status === "play" ? " good" : ""));
+    elScore.textContent = state.score;
+  }
+
+  // ---------- Messages ----------
+  var msg = document.getElementById("msg");
+  var msgBig = document.getElementById("msgBig");
+  var msgSub = document.getElementById("msgSub");
+  function showMsg(win, big, sub) {
+    msgBig.textContent = big;
+    msgBig.className = "big " + (win ? "win" : "lose");
+    msgSub.textContent = sub;
+    msg.classList.add("show");
+  }
+  function hideMsg() { msg.classList.remove("show"); }
+
+  // ---------- Input ----------
+  function setBtn(el, active) { if (active) el.classList.add("active"); else el.classList.remove("active"); }
+  var bThrust = document.getElementById("bThrust");
+  var bLeft = document.getElementById("bLeft");
+  var bRight = document.getElementById("bRight");
+
+  function bindHold(el, onDown, onUp) {
+    function down(e) {
+      e.preventDefault();
+      audioCtx();
+      onDown();
+    }
+    function up(e) {
+      if (e) e.preventDefault();
+      onUp();
+    }
+    el.addEventListener("touchstart", down, { passive: false });
+    el.addEventListener("touchend", up, { passive: false });
+    el.addEventListener("touchcancel", up, { passive: false });
+    el.addEventListener("mousedown", down);
+    el.addEventListener("mouseup", up);
+    el.addEventListener("mouseleave", function () { up(); });
+    // prevent context menu / selection on long press
+    el.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  }
+
+  bindHold(bThrust, function () { input.thrust = true; setBtn(bThrust, true); },
+                    function () { input.thrust = false; setBtn(bThrust, false); });
+  bindHold(bLeft, function () { input.left = true; setBtn(bLeft, true); },
+                  function () { input.left = false; setBtn(bLeft, false); });
+  bindHold(bRight, function () { input.right = true; setBtn(bRight, true); },
+                   function () { input.right = false; setBtn(bRight, false); });
+
+  // Keyboard
+  window.addEventListener("keydown", function (e) {
+    if (e.repeat) return;
+    var k = e.key;
+    if (k === "ArrowUp" || k === "w" || k === "W" || k === " ") { input.thrust = true; setBtn(bThrust, true); e.preventDefault(); audioCtx(); }
+    else if (k === "ArrowLeft" || k === "a" || k === "A") { input.left = true; setBtn(bLeft, true); e.preventDefault(); }
+    else if (k === "ArrowRight" || k === "d" || k === "D") { input.right = true; setBtn(bRight, true); e.preventDefault(); }
+    else if (k === "r" || k === "R") { restart(); }
+  });
+  window.addEventListener("keyup", function (e) {
+    var k = e.key;
+    if (k === "ArrowUp" || k === "w" || k === "W" || k === " ") { input.thrust = false; setBtn(bThrust, false); e.preventDefault(); }
+    else if (k === "ArrowLeft" || k === "a" || k === "A") { input.left = false; setBtn(bLeft, false); e.preventDefault(); }
+    else if (k === "ArrowRight" || k === "d" || k === "D") { input.right = false; setBtn(bRight, false); e.preventDefault(); }
+  });
+
+  // Restart button: restarts whole game (score reset)
+  var restartBtn = document.getElementById("restart");
+  function restart() {
+    input.thrust = input.left = input.right = false;
+    setBtn(bThrust, false); setBtn(bLeft, false); setBtn(bRight, false);
+    stopThrustSound();
+    newGame();
+  }
+  restartBtn.addEventListener("click", function (e) { e.preventDefault(); restart(); });
+  restartBtn.addEventListener("touchend", function (e) { e.preventDefault(); restart(); });
+
+  // Block scroll / zoom gestures globally on the play area.
+  document.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); });
+
+  // ---------- Boot ----------
+  resize();
+  newGame();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

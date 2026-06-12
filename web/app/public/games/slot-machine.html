@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Lucky Spin Slots</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #3a1c71 0%, #1a0b3d 55%, #0a0420 100%);
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100%;
+  }
+  #app {
+    width: 100%;
+    max-width: 420px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  header { text-align: center; }
+  h1 {
+    font-size: clamp(22px, 7vw, 30px);
+    font-weight: 900;
+    letter-spacing: 1px;
+    background: linear-gradient(180deg, #ffe680, #ffb700 60%, #ff8a00);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.35);
+    filter: drop-shadow(0 1px 0 rgba(255,255,255,0.15));
+  }
+  .subtitle { font-size: 11px; opacity: 0.65; letter-spacing: 2px; text-transform: uppercase; margin-top: 2px; }
+
+  .stats {
+    display: flex;
+    gap: 8px;
+  }
+  .stat {
+    flex: 1;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+  .stat .label { font-size: 10px; opacity: 0.6; text-transform: uppercase; letter-spacing: 1px; }
+  .stat .value { font-size: clamp(18px, 6vw, 24px); font-weight: 800; margin-top: 2px; }
+  #credits { color: #7CFC9A; }
+  #lastWin { color: #ffd34d; }
+
+  .machine {
+    background: linear-gradient(160deg, #5b2a8a, #2a1452);
+    border: 3px solid rgba(255,215,128,0.55);
+    border-radius: 18px;
+    padding: 14px 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45), inset 0 0 30px rgba(0,0,0,0.35);
+  }
+  .reels {
+    display: flex;
+    gap: 8px;
+    background: #0c0820;
+    border-radius: 12px;
+    padding: 8px;
+    border: 2px solid rgba(0,0,0,0.5);
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+  }
+  .reel {
+    flex: 1;
+    height: 88px;
+    background: linear-gradient(180deg, #fffef5, #e9e4d6);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: inset 0 6px 10px rgba(0,0,0,0.25), inset 0 -6px 10px rgba(0,0,0,0.25);
+  }
+  /* fade top/bottom to suggest a wheel */
+  .reel::before, .reel::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    height: 26px;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .reel::before { top: 0; background: linear-gradient(180deg, rgba(0,0,0,0.28), transparent); }
+  .reel::after { bottom: 0; background: linear-gradient(0deg, rgba(0,0,0,0.28), transparent); }
+  .reel .strip {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    display: flex;
+    flex-direction: column;
+    will-change: transform;
+  }
+  .reel .cell {
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 46px;
+    line-height: 1;
+  }
+  /* center payline marker */
+  .payline {
+    position: absolute;
+    left: 4px; right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 90px;
+    border-radius: 8px;
+    border: 2px solid rgba(255,179,0,0.0);
+    pointer-events: none;
+    z-index: 3;
+    transition: border-color 0.2s;
+  }
+  .machine.win .payline { border-color: rgba(255,215,0,0.9); box-shadow: 0 0 18px rgba(255,215,0,0.6); }
+
+  .result {
+    text-align: center;
+    min-height: 22px;
+    font-size: 14px;
+    font-weight: 700;
+    margin-top: 10px;
+    letter-spacing: 0.5px;
+  }
+  .result.win { color: #ffd34d; animation: pop 0.4s ease; }
+  .result.lose { color: #c9b8ff; opacity: 0.8; }
+  @keyframes pop { 0%{transform:scale(0.6);opacity:0;} 60%{transform:scale(1.15);} 100%{transform:scale(1);opacity:1;} }
+
+  .controls {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .bet {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px;
+    padding: 6px 8px;
+    min-width: 116px;
+  }
+  .bet .blabel { font-size: 10px; opacity: 0.6; text-transform: uppercase; letter-spacing: 1px; }
+  .bet-row { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .bet-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: none;
+    font-size: 22px;
+    font-weight: 900;
+    color: #1a0b3d;
+    background: linear-gradient(180deg, #ffe680, #ffb700);
+    box-shadow: 0 3px 0 #b87b00;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bet-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #b87b00; }
+  .bet-btn:disabled { opacity: 0.4; box-shadow: none; }
+  #betValue { font-size: 22px; font-weight: 900; min-width: 30px; text-align: center; }
+
+  #spinBtn {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    color: #2a0a00;
+    text-transform: uppercase;
+    background: linear-gradient(180deg, #6bff8e, #16c93f 70%, #0fa030);
+    box-shadow: 0 5px 0 #0a7322, 0 8px 18px rgba(0,0,0,0.4);
+    cursor: pointer;
+  }
+  #spinBtn:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 2px 0 #0a7322; }
+  #spinBtn:disabled { background: linear-gradient(180deg,#7a7a7a,#555); box-shadow: 0 5px 0 #333; color: rgba(255,255,255,0.5); cursor: default; }
+
+  .bottom-row { display: flex; gap: 10px; align-items: center; }
+  .small-btn {
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+    border-radius: 12px;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .small-btn:active { background: rgba(255,255,255,0.12); }
+  .maxbet { flex: 1; }
+
+  .paytable {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 10px 12px;
+  }
+  .paytable h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    opacity: 0.7;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  .pt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+  .pt-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+  .pt-sym { font-size: 18px; }
+  .pt-pay { font-weight: 800; color: #ffd34d; font-size: 13px; }
+  .pt-note { grid-column: 1 / -1; text-align: center; font-size: 11px; opacity: 0.6; margin-top: 4px; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(0,0,0,0.85);
+    color: #ffd34d;
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 14px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 50;
+    border: 1px solid rgba(255,215,77,0.4);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-height: 680px) {
+    .reel { height: 76px; }
+    .reel .cell { height: 76px; font-size: 40px; }
+    .payline { height: 78px; }
+    h1 { font-size: 24px; }
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/slot-machine.svg">
+    <link rel="manifest" href="/games/slot-machine.webmanifest">
+    <meta name="theme-color" content="#B91C1C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Slot Machine">
+    <link rel="apple-touch-icon" href="/games/icons/slot-machine.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#B91C1C;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🎰 Lucky Spin</h1>
+    <div class="subtitle">Play-Money Slots</div>
+  </header>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="label">Credits</div>
+      <div class="value" id="credits">100</div>
+    </div>
+    <div class="stat">
+      <div class="label">Last Win</div>
+      <div class="value" id="lastWin">0</div>
+    </div>
+  </div>
+
+  <div class="machine" id="machine">
+    <div class="reels">
+      <div class="reel"><div class="strip" id="strip0"></div></div>
+      <div class="reel"><div class="strip" id="strip1"></div></div>
+      <div class="reel"><div class="strip" id="strip2"></div></div>
+      <div class="payline"></div>
+    </div>
+    <div class="result" id="result">Press SPIN to play!</div>
+  </div>
+
+  <div class="controls">
+    <div class="bet">
+      <div class="blabel">Bet</div>
+      <div class="bet-row">
+        <button class="bet-btn" id="betDown" aria-label="Decrease bet">−</button>
+        <span id="betValue">5</span>
+        <button class="bet-btn" id="betUp" aria-label="Increase bet">+</button>
+      </div>
+    </div>
+    <button id="spinBtn">Spin</button>
+  </div>
+
+  <div class="bottom-row">
+    <button class="small-btn maxbet" id="maxBet">Max Bet</button>
+    <button class="small-btn" id="resetBtn">Reset Credits</button>
+  </div>
+
+  <div class="paytable">
+    <h2>Paytable (× bet)</h2>
+    <div class="pt-grid" id="ptGrid"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Config ----
+  // Symbols on the reels. Order also = how often they appear (we build a weighted strip).
+  // 3-of-a-kind multipliers (× bet). Two-of-a-kind pays a small amount for select symbols.
+  var SYMBOLS = [
+    { e: "7️⃣", name: "Seven",   three: 50, two: 5, weight: 1 },
+    { e: "💎", name: "Diamond", three: 25, two: 4, weight: 2 },
+    { e: "⭐", name: "Star",    three: 15, two: 3, weight: 3 },
+    { e: "🔔", name: "Bell",    three: 10, two: 2, weight: 4 },
+    { e: "🍇", name: "Grapes",  three: 6,  two: 0, weight: 5 },
+    { e: "🍋", name: "Lemon",   three: 4,  two: 0, weight: 6 },
+    { e: "🍒", name: "Cherry",  three: 3,  two: 1, weight: 7 }
+  ];
+
+  var BET_STEPS = [1, 2, 5, 10, 25, 50];
+  var START_CREDITS = 100;
+  var TOPUP = 100; // given when broke
+
+  // ---- State ----
+  var credits = START_CREDITS;
+  var betIndex = 2; // -> 5
+  var spinning = false;
+
+  // Build a weighted pool used both to render strips and to pick results.
+  var POOL = [];
+  SYMBOLS.forEach(function (s, i) {
+    for (var w = 0; w < s.weight; w++) POOL.push(i);
+  });
+
+  // ---- DOM ----
+  var els = {
+    credits: document.getElementById("credits"),
+    lastWin: document.getElementById("lastWin"),
+    betValue: document.getElementById("betValue"),
+    spin: document.getElementById("spinBtn"),
+    betUp: document.getElementById("betUp"),
+    betDown: document.getElementById("betDown"),
+    maxBet: document.getElementById("maxBet"),
+    reset: document.getElementById("resetBtn"),
+    result: document.getElementById("result"),
+    machine: document.getElementById("machine"),
+    ptGrid: document.getElementById("ptGrid"),
+    toast: document.getElementById("toast"),
+    strips: [
+      document.getElementById("strip0"),
+      document.getElementById("strip1"),
+      document.getElementById("strip2")
+    ]
+  };
+
+  var CELL_H = 88; // fallback only; real height is measured live (respects short-screen media query)
+
+  // Each reel strip is a long sequence of symbols. We keep the final visible symbol
+  // (center) tracked separately so payout logic never depends on animation pixels.
+  var STRIP_LEN = 30; // symbols per strip for the spin illusion
+  var stripSymbols = [[], [], []]; // arrays of symbol indices currently rendered
+  var centerResult = [0, 0, 0]; // symbol index showing on the payline for each reel
+
+  // ---- Audio (WebAudio, no files) ----
+  var AC = null;
+  function ac() {
+    if (!AC) {
+      try { AC = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { AC = null; }
+    }
+    if (AC && AC.state === "suspended") AC.resume();
+    return AC;
+  }
+  function tone(freq, dur, type, vol, when) {
+    var a = ac();
+    if (!a) return;
+    var t0 = a.currentTime + (when || 0);
+    var osc = a.createOscillator();
+    var g = a.createGain();
+    osc.type = type || "square";
+    osc.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol || 0.12, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g); g.connect(a.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }
+  function sndTick() { tone(220 + Math.random() * 60, 0.04, "square", 0.05); }
+  function sndStop() { tone(160, 0.09, "sine", 0.14); }
+  function sndSpin() { tone(330, 0.12, "triangle", 0.1); tone(440, 0.12, "triangle", 0.08, 0.06); }
+  function sndLose() { tone(200, 0.18, "sawtooth", 0.06); }
+  function sndWin(big) {
+    var notes = big ? [523, 659, 784, 1047, 1319] : [523, 659, 784];
+    notes.forEach(function (f, i) { tone(f, 0.18, "square", 0.12, i * 0.09); });
+  }
+
+  // ---- Helpers ----
+  function pickSymbol() { return POOL[(Math.random() * POOL.length) | 0]; }
+
+  function render() {
+    els.credits.textContent = credits;
+    els.betValue.textContent = BET_STEPS[betIndex];
+    var bet = BET_STEPS[betIndex];
+    els.betUp.disabled = spinning || betIndex >= BET_STEPS.length - 1;
+    els.betDown.disabled = spinning || betIndex <= 0;
+    els.maxBet.disabled = spinning;
+    els.reset.disabled = spinning;
+    els.spin.disabled = spinning || credits < bet;
+    els.spin.textContent = spinning ? "..." : "Spin";
+  }
+
+  function buildPaytable() {
+    var html = "";
+    SYMBOLS.forEach(function (s) {
+      var two = s.two > 0 ? '<span style="opacity:.6;font-size:11px">(×2 = ' + s.two + ')</span>' : "";
+      html +=
+        '<div class="pt-row"><span class="pt-sym">' + s.e + s.e + s.e + "</span>" +
+        '<span class="pt-pay">' + s.three + "× " + two + "</span></div>";
+    });
+    html += '<div class="pt-note">Match 3 on the center line. ' +
+            'Two matching “pay symbols” (7️⃣💎⭐🔔🍒) win small. Payouts × your bet.</div>';
+    els.ptGrid.innerHTML = html;
+  }
+
+  // Render a strip whose LAST cell is the desired center symbol, preceded by random symbols.
+  function fillStrip(reel, finalSymbol) {
+    var arr = [];
+    for (var i = 0; i < STRIP_LEN - 1; i++) arr.push(pickSymbol());
+    arr.push(finalSymbol); // bottom-most = lands on payline
+    stripSymbols[reel] = arr;
+    var html = "";
+    for (var j = 0; j < arr.length; j++) {
+      html += '<div class="cell">' + SYMBOLS[arr[j]].e + "</div>";
+    }
+    els.strips[reel].innerHTML = html;
+  }
+
+  // Initial idle display: show 3 stacked symbols with the middle one on the payline.
+  function initIdle() {
+    for (var r = 0; r < 3; r++) {
+      var top = pickSymbol(), mid = pickSymbol(), bot = pickSymbol();
+      centerResult[r] = mid;
+      els.strips[r].innerHTML =
+        '<div class="cell">' + SYMBOLS[top].e + "</div>" +
+        '<div class="cell">' + SYMBOLS[mid].e + "</div>" +
+        '<div class="cell">' + SYMBOLS[bot].e + "</div>";
+      // The reel window is one cell tall. Center the middle cell (index 1) on the payline:
+      //   offset = -(index * cellH) + (reelH - cellH) / 2
+      var ch = els.strips[r].querySelector(".cell").offsetHeight || CELL_H;
+      var reelH = els.strips[r].parentElement.offsetHeight;
+      var off = -(1 * ch) + (reelH - ch) / 2;
+      els.strips[r].style.transition = "none";
+      els.strips[r].style.transform = "translateY(" + off + "px)";
+    }
+  }
+
+  // Animate one reel: it scrolls many cells then settles with the LAST cell on the payline.
+  function spinReel(reel, finalSymbol, durationMs) {
+    return new Promise(function (resolve) {
+      fillStrip(reel, finalSymbol);
+      var strip = els.strips[reel];
+      var ch = strip.querySelector(".cell").offsetHeight || CELL_H;
+      var reelH = strip.parentElement.offsetHeight;
+      var lastIndex = STRIP_LEN - 1;
+
+      // Start position: top of strip visible (translateY 0-ish, slightly above)
+      strip.style.transition = "none";
+      strip.style.transform = "translateY(" + (-(0) + (reelH - ch) / 2) + "px)";
+      // (this centers cell 0 to start)
+
+      // Force reflow so the next transition applies.
+      // eslint-disable-next-line no-unused-expressions
+      strip.offsetHeight;
+
+      // End position: center the LAST cell on the payline.
+      var endOffset = -(lastIndex * ch) + (reelH - ch) / 2;
+
+      // ticking sound during travel
+      var ticks = 0;
+      var tickTimer = setInterval(function () {
+        sndTick();
+        ticks++;
+        if (ticks > 24) clearInterval(tickTimer);
+      }, 70);
+
+      strip.style.transition = "transform " + durationMs + "ms cubic-bezier(0.18, 0.85, 0.25, 1)";
+      strip.style.transform = "translateY(" + endOffset + "px)";
+
+      var done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        clearInterval(tickTimer);
+        centerResult[reel] = finalSymbol;
+        sndStop();
+        resolve();
+      }
+      strip.addEventListener("transitionend", finish, { once: true });
+      // Safety fallback in case transitionend doesn't fire.
+      setTimeout(finish, durationMs + 120);
+    });
+  }
+
+  // ---- Payout logic (clear & independent of animation) ----
+  function evaluate(c, bet) {
+    // c = [i0,i1,i2] symbol indices on payline.
+    var a = c[0], b = c[1], d = c[2];
+    if (a === b && b === d) {
+      var s = SYMBOLS[a];
+      return { win: s.three * bet, kind: "three", sym: a };
+    }
+    // Two of a kind: any two matching among the three (must be a symbol that pays 2-of-a-kind).
+    // Find a symbol that appears at least twice.
+    var counts = {};
+    [a, b, d].forEach(function (x) { counts[x] = (counts[x] || 0) + 1; });
+    var bestSym = -1;
+    Object.keys(counts).forEach(function (key) {
+      var idx = parseInt(key, 10);
+      if (counts[key] >= 2 && SYMBOLS[idx].two > 0) {
+        if (bestSym === -1 || SYMBOLS[idx].two > SYMBOLS[bestSym].two) bestSym = idx;
+      }
+    });
+    if (bestSym !== -1) {
+      return { win: SYMBOLS[bestSym].two * bet, kind: "two", sym: bestSym };
+    }
+    return { win: 0, kind: "none", sym: -1 };
+  }
+
+  function showToast(msg) {
+    els.toast.textContent = msg;
+    els.toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function () {
+      els.toast.classList.remove("show");
+    }, 1600);
+  }
+
+  // ---- Spin sequence ----
+  function doSpin() {
+    if (spinning) return;
+    var bet = BET_STEPS[betIndex];
+    if (credits < bet) return;
+
+    ac(); // unlock audio on user gesture
+    spinning = true;
+    credits -= bet;
+    els.lastWin.textContent = "0";
+    els.result.textContent = "Spinning...";
+    els.result.className = "result";
+    els.machine.classList.remove("win");
+    render();
+    sndSpin();
+
+    // Decide results up front (weighted random per reel).
+    var finals = [pickSymbol(), pickSymbol(), pickSymbol()];
+
+    var durations = [900, 1150, 1450];
+    spinReel(0, finals[0], durations[0])
+      .then(function () { return spinReel(1, finals[1], durations[1]); })
+      .then(function () { return spinReel(2, finals[2], durations[2]); })
+      .then(function () {
+        var outcome = evaluate(centerResult, bet);
+        if (outcome.win > 0) {
+          credits += outcome.win;
+          els.lastWin.textContent = outcome.win;
+          var s = SYMBOLS[outcome.sym];
+          if (outcome.kind === "three") {
+            els.result.textContent = "🎉 " + s.e + s.e + s.e + "  +" + outcome.win + " credits!";
+            els.machine.classList.add("win");
+            sndWin(outcome.win >= bet * 15);
+            showToast("BIG WIN +" + outcome.win + "!");
+          } else {
+            els.result.textContent = "✨ Two " + s.e + "  +" + outcome.win + " credits";
+            els.machine.classList.add("win");
+            sndWin(false);
+          }
+          els.result.className = "result win";
+        } else {
+          els.result.textContent = "No match — try again!";
+          els.result.className = "result lose";
+          sndLose();
+        }
+
+        spinning = false;
+
+        // Top up if broke (can't afford the smallest bet).
+        if (credits < BET_STEPS[0]) {
+          credits += TOPUP;
+          showToast("Out of credits — +" + TOPUP + " bonus!");
+          els.result.textContent = "Out of credits! Topped up +" + TOPUP + ".";
+        }
+        // If current bet now unaffordable, drop to a bet we can afford.
+        while (betIndex > 0 && credits < BET_STEPS[betIndex]) betIndex--;
+
+        render();
+      });
+  }
+
+  // ---- Controls ----
+  function changeBet(dir) {
+    if (spinning) return;
+    var ni = betIndex + dir;
+    if (ni < 0 || ni >= BET_STEPS.length) return;
+    if (BET_STEPS[ni] > credits) { showToast("Not enough credits for that bet"); return; }
+    betIndex = ni;
+    tone(dir > 0 ? 520 : 360, 0.05, "square", 0.08);
+    render();
+  }
+
+  els.spin.addEventListener("click", doSpin);
+  els.betUp.addEventListener("click", function () { changeBet(1); });
+  els.betDown.addEventListener("click", function () { changeBet(-1); });
+  els.maxBet.addEventListener("click", function () {
+    if (spinning) return;
+    var i = BET_STEPS.length - 1;
+    while (i > 0 && BET_STEPS[i] > credits) i--;
+    betIndex = i;
+    tone(660, 0.07, "square", 0.1);
+    render();
+  });
+  els.reset.addEventListener("click", function () {
+    if (spinning) return;
+    credits = START_CREDITS;
+    betIndex = 2;
+    els.lastWin.textContent = "0";
+    els.result.textContent = "Credits reset to " + START_CREDITS + ".";
+    els.result.className = "result";
+    els.machine.classList.remove("win");
+    showToast("Credits reset");
+    render();
+  });
+
+  // Keyboard convenience (desktop): space/enter to spin.
+  document.addEventListener("keydown", function (e) {
+    if (e.code === "Space" || e.code === "Enter") {
+      e.preventDefault();
+      doSpin();
+    }
+  });
+
+  // Prevent double-tap zoom / pinch.
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+
+  // ---- Init ----
+  buildPaytable();
+  render();
+  // Wait a frame so layout/heights are known before centering idle reels.
+  requestAnimationFrame(initIdle);
+  window.addEventListener("resize", function () { if (!spinning) initIdle(); });
+})();
+</script>
+</body>
+</html>

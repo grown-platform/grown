@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Gem Match-3</title>
+<style>
+  :root {
+    --bg: #1a1033;
+    --panel: #2a1a52;
+    --accent: #ffcc00;
+    --gap: 4px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: linear-gradient(160deg, #1a1033, #0d0820);
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;
+  }
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 6px 0 8px;
+    letter-spacing: 1px;
+    background: linear-gradient(90deg, #ff7ab8, #ffcc00, #7ad9ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-align: center;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .hud {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .stat {
+    flex: 1;
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 6px 4px;
+    text-align: center;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+  }
+  .stat .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: .65;
+  }
+  .stat .value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  #board {
+    position: relative;
+    width: 100%;
+    max-width: 380px;
+    aspect-ratio: 1 / 1;
+    background: var(--panel);
+    border-radius: 14px;
+    padding: var(--gap);
+    box-shadow: 0 8px 24px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.06);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .gem {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 26px;
+    line-height: 1;
+    transition: left .18s ease, top .18s ease, transform .12s ease, opacity .18s ease;
+    will-change: left, top, transform, opacity;
+    box-shadow: inset 0 -3px 6px rgba(0,0,0,.35), inset 0 3px 6px rgba(255,255,255,.25);
+  }
+  .gem.sel {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 3px #fff, inset 0 -3px 6px rgba(0,0,0,.35);
+    z-index: 5;
+  }
+  .gem.clearing {
+    transform: scale(0.1);
+    opacity: 0;
+  }
+  /* gem color backgrounds */
+  .c0 { background: radial-gradient(circle at 35% 30%, #ff9aa2, #e23744); }
+  .c1 { background: radial-gradient(circle at 35% 30%, #ffe08a, #f5a300); }
+  .c2 { background: radial-gradient(circle at 35% 30%, #b6f5a0, #2bb24c); }
+  .c3 { background: radial-gradient(circle at 35% 30%, #9ad4ff, #1f7fe0); }
+  .c4 { background: radial-gradient(circle at 35% 30%, #d6a8ff, #8a3ff0); }
+  .c5 { background: radial-gradient(circle at 35% 30%, #fff0a8, #d9c200); }
+  .controls {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    background: var(--accent);
+    color: #2a1a52;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 3px 0 #b88f00;
+    transition: transform .08s;
+  }
+  button:active { transform: translateY(2px); box-shadow: 0 1px 0 #b88f00; }
+  .mode-toggle {
+    display: flex;
+    background: var(--panel);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+  }
+  .mode-toggle button {
+    background: transparent;
+    color: #fff;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: .55;
+  }
+  .mode-toggle button.active {
+    background: var(--accent);
+    color: #2a1a52;
+    opacity: 1;
+  }
+  .mode-toggle button:active { transform: none; }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(13,8,32,.88);
+    border-radius: 14px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    z-index: 20;
+    padding: 16px;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 {
+    font-size: 28px;
+    margin: 0 0 8px;
+    color: var(--accent);
+  }
+  #overlay p { font-size: 16px; margin: 4px 0 16px; }
+  .hint {
+    font-size: 11px;
+    opacity: .55;
+    margin-top: 10px;
+    text-align: center;
+    max-width: 340px;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/match-3.svg">
+    <link rel="manifest" href="/games/match-3.webmanifest">
+    <meta name="theme-color" content="#DB2777">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Match 3">
+    <link rel="apple-touch-icon" href="/games/icons/match-3.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DB2777;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div class="wrap">
+  <h1>✦ Gem Match-3 ✦</h1>
+  <div class="hud">
+    <div class="stat"><div class="label">Score</div><div class="value" id="scoreEl">0</div></div>
+    <div class="stat"><div class="label" id="counterLabel">Moves</div><div class="value" id="counterEl">25</div></div>
+    <div class="stat"><div class="label">Best</div><div class="value" id="bestEl">0</div></div>
+  </div>
+  <div id="board">
+    <div id="overlay">
+      <h2 id="ovTitle">Game Over</h2>
+      <p id="ovMsg">Final score: 0</p>
+      <button id="ovBtn">Play Again</button>
+    </div>
+  </div>
+  <div class="controls">
+    <div class="mode-toggle">
+      <button id="modeMoves" class="active">25 Moves</button>
+      <button id="modeTime">60s Timed</button>
+    </div>
+    <button id="newGameBtn">New Game</button>
+  </div>
+  <div class="hint">Swipe a gem into a neighbor, or tap one then tap an adjacent gem to swap. Match 3+ in a row or column.</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SIZE = 8;
+  var COLORS = 6;
+  var EMOJI = ["💎", "🔶", "🟢", "🔷", "🟣", "⭐"]; // visual flavor (color via CSS class)
+
+  var boardEl = document.getElementById("board");
+  var scoreEl = document.getElementById("scoreEl");
+  var counterEl = document.getElementById("counterEl");
+  var counterLabel = document.getElementById("counterLabel");
+  var bestEl = document.getElementById("bestEl");
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ovTitle");
+  var ovMsg = document.getElementById("ovMsg");
+  var ovBtn = document.getElementById("ovBtn");
+  var newGameBtn = document.getElementById("newGameBtn");
+  var modeMovesBtn = document.getElementById("modeMoves");
+  var modeTimeBtn = document.getElementById("modeTime");
+
+  var grid = [];        // grid[r][c] = color index (0..5) or -1 empty
+  var cells = [];       // cells[r][c] = DOM element
+  var score = 0;
+  var best = 0;
+  var mode = "moves";   // "moves" | "time"
+  var movesLeft = 25;
+  var timeLeft = 60;
+  var timerId = null;
+  var busy = false;     // animating / resolving; block input
+  var gameOver = false;
+  var selected = null;  // {r,c} of currently selected gem
+
+  // ---------- Audio (WebAudio, optional) ----------
+  var audioCtx = null;
+  function ensureAudio() {
+    if (audioCtx) return;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    } catch (e) { audioCtx = null; }
+  }
+  function beep(freq, dur, type, vol) {
+    if (!audioCtx) return;
+    try {
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = type || "sine";
+      o.frequency.value = freq;
+      g.gain.value = vol == null ? 0.08 : vol;
+      o.connect(g); g.connect(audioCtx.destination);
+      var t = audioCtx.currentTime;
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t);
+      o.stop(t + dur);
+    } catch (e) {}
+  }
+  function sndSwap() { beep(420, 0.10, "triangle", 0.06); }
+  function sndBad()  { beep(180, 0.16, "sawtooth", 0.05); }
+  function sndClear(combo) {
+    var f = 520 + Math.min(combo, 6) * 90;
+    beep(f, 0.14, "square", 0.05);
+    beep(f * 1.5, 0.10, "sine", 0.04);
+  }
+  function sndOver() { beep(300, 0.3, "sine", 0.07); setTimeout(function(){ beep(200, 0.4, "sine", 0.07); }, 120); }
+
+  // ---------- Layout helpers ----------
+  // We position gems absolutely as a percentage of the board's inner area.
+  // Inner area uses padding = var(--gap). We compute geometry from element rect.
+  function gemPx() {
+    // returns {pad, cell} in pixels based on current board size
+    var rect = boardEl.getBoundingClientRect();
+    var style = getComputedStyle(boardEl);
+    var pad = parseFloat(style.paddingLeft) || 4;
+    var inner = rect.width - pad * 2;
+    var cell = inner / SIZE;
+    return { pad: pad, cell: cell };
+  }
+  function placeGem(el, r, c) {
+    var g = gemPx();
+    var gap = 2; // visual inset gap inside each cell
+    var size = g.cell - gap * 2;
+    el.style.width = size + "px";
+    el.style.height = size + "px";
+    el.style.left = (g.pad + c * g.cell + gap) + "px";
+    el.style.top = (g.pad + r * g.cell + gap) + "px";
+  }
+  function relayoutAll() {
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        if (cells[r][c]) placeGem(cells[r][c], r, c);
+      }
+    }
+  }
+  window.addEventListener("resize", relayoutAll);
+
+  // ---------- Board generation ----------
+  function randColor() { return Math.floor(Math.random() * COLORS); }
+
+  // Build a grid with no initial matches. Then ensure at least one move exists.
+  function generateGrid() {
+    var g;
+    var tries = 0;
+    do {
+      g = [];
+      for (var r = 0; r < SIZE; r++) {
+        g[r] = [];
+        for (var c = 0; c < SIZE; c++) {
+          var col;
+          var attempt = 0;
+          do {
+            col = randColor();
+            attempt++;
+          } while (attempt < 30 && createsMatchAt(g, r, c, col));
+          g[r][c] = col;
+        }
+      }
+      tries++;
+    } while (tries < 50 && !hasAnyMove(g));
+    return g;
+  }
+
+  // Would placing `col` at (r,c) create a horizontal/vertical run of 3
+  // using only already-filled cells to the left / above?
+  function createsMatchAt(g, r, c, col) {
+    if (c >= 2 && g[r][c-1] === col && g[r][c-2] === col) return true;
+    if (r >= 2 && g[r-1][c] === col && g[r-2][c] === col) return true;
+    return false;
+  }
+
+  // ---------- Match detection ----------
+  // Returns a 2D boolean array marking all gems part of any 3+ line.
+  function findMatches(g) {
+    var marked = [];
+    var any = false;
+    for (var r = 0; r < SIZE; r++) {
+      marked[r] = [];
+      for (var c = 0; c < SIZE; c++) marked[r][c] = false;
+    }
+    // horizontal runs
+    for (var r = 0; r < SIZE; r++) {
+      var runStart = 0;
+      for (var c = 1; c <= SIZE; c++) {
+        var same = c < SIZE && g[r][c] !== -1 && g[r][c] === g[r][runStart];
+        if (!same) {
+          var len = c - runStart;
+          if (g[r][runStart] !== -1 && len >= 3) {
+            for (var k = runStart; k < c; k++) { marked[r][k] = true; any = true; }
+          }
+          runStart = c;
+        }
+      }
+    }
+    // vertical runs
+    for (var c = 0; c < SIZE; c++) {
+      var rs = 0;
+      for (var r = 1; r <= SIZE; r++) {
+        var same2 = r < SIZE && g[r][c] !== -1 && g[r][c] === g[rs][c];
+        if (!same2) {
+          var len2 = r - rs;
+          if (g[rs][c] !== -1 && len2 >= 3) {
+            for (var k2 = rs; k2 < r; k2++) { marked[k2][c] = true; any = true; }
+          }
+          rs = r;
+        }
+      }
+    }
+    return any ? marked : null;
+  }
+
+  // ---------- "Has any move?" detection ----------
+  // Try every adjacent swap on a copy; if it yields a match, a move exists.
+  function hasAnyMove(g) {
+    function swapCheck(r1, c1, r2, c2) {
+      var t = g[r1][c1]; g[r1][c1] = g[r2][c2]; g[r2][c2] = t;
+      var m = findMatches(g);
+      var t2 = g[r1][c1]; g[r1][c1] = g[r2][c2]; g[r2][c2] = t2;
+      return !!m;
+    }
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        if (c + 1 < SIZE && swapCheck(r, c, r, c + 1)) return true;
+        if (r + 1 < SIZE && swapCheck(r, c, r + 1, c)) return true;
+      }
+    }
+    return false;
+  }
+
+  // ---------- DOM rendering ----------
+  function makeGemEl(color) {
+    var el = document.createElement("div");
+    el.className = "gem c" + color;
+    el.textContent = EMOJI[color];
+    return el;
+  }
+
+  function renderFresh() {
+    // clear existing gem elements (keep overlay)
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        if (cells[r] && cells[r][c] && cells[r][c].parentNode) {
+          cells[r][c].parentNode.removeChild(cells[r][c]);
+        }
+      }
+    }
+    cells = [];
+    for (var r2 = 0; r2 < SIZE; r2++) {
+      cells[r2] = [];
+      for (var c2 = 0; c2 < SIZE; c2++) {
+        var el = makeGemEl(grid[r2][c2]);
+        boardEl.appendChild(el);
+        cells[r2][c2] = el;
+        placeGem(el, r2, c2);
+      }
+    }
+  }
+
+  // ---------- Swap mechanics ----------
+  function inBounds(r, c) { return r >= 0 && r < SIZE && c >= 0 && c < SIZE; }
+  function isAdjacent(a, b) {
+    var dr = Math.abs(a.r - b.r), dc = Math.abs(a.c - b.c);
+    return (dr + dc) === 1;
+  }
+
+  function swapData(r1, c1, r2, c2) {
+    var t = grid[r1][c1]; grid[r1][c1] = grid[r2][c2]; grid[r2][c2] = t;
+    var te = cells[r1][c1]; cells[r1][c1] = cells[r2][c2]; cells[r2][c2] = te;
+  }
+
+  function animateSwap(r1, c1, r2, c2) {
+    placeGem(cells[r1][c1], r1, c1);
+    placeGem(cells[r2][c2], r2, c2);
+  }
+
+  function clearSelection() {
+    if (selected && cells[selected.r] && cells[selected.r][selected.c]) {
+      cells[selected.r][selected.c].classList.remove("sel");
+    }
+    selected = null;
+  }
+
+  function attemptSwap(a, b) {
+    if (busy || gameOver) return;
+    if (!isAdjacent(a, b)) return;
+    busy = true;
+    clearSelection();
+    ensureAudio();
+    sndSwap();
+
+    swapData(a.r, a.c, b.r, b.c);
+    animateSwap(a.r, a.c, b.r, b.c);
+
+    setTimeout(function () {
+      var matches = findMatches(grid);
+      if (matches) {
+        // valid move
+        if (mode === "moves") {
+          movesLeft--;
+          updateHud();
+        }
+        resolveCascades(0);
+      } else {
+        // swap back
+        sndBad();
+        swapData(a.r, a.c, b.r, b.c);
+        animateSwap(a.r, a.c, b.r, b.c);
+        setTimeout(function () { busy = false; }, 200);
+      }
+    }, 200);
+  }
+
+  // Resolve all cascading matches starting from current grid state.
+  function resolveCascades(combo) {
+    var matches = findMatches(grid);
+    if (!matches) {
+      // done cascading
+      busy = false;
+      checkEndConditions();
+      ensureSolvable();
+      return;
+    }
+
+    combo++;
+    sndClear(combo);
+
+    // count + animate clearing
+    var cleared = 0;
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        if (matches[r][c]) {
+          cleared++;
+          if (cells[r][c]) cells[r][c].classList.add("clearing");
+          grid[r][c] = -1;
+        }
+      }
+    }
+    // scoring: base 10 per gem, combo multiplier
+    var gained = cleared * 10 * combo;
+    score += gained;
+    if (score > best) { best = score; saveBest(); }
+    updateHud();
+
+    // remove cleared DOM after animation, then gravity + refill
+    setTimeout(function () {
+      for (var r = 0; r < SIZE; r++) {
+        for (var c = 0; c < SIZE; c++) {
+          if (cells[r][c] && cells[r][c].classList.contains("clearing")) {
+            if (cells[r][c].parentNode) cells[r][c].parentNode.removeChild(cells[r][c]);
+            cells[r][c] = null;
+          }
+        }
+      }
+      applyGravityAndRefill();
+      // wait for fall animation, then check for new cascades
+      setTimeout(function () { resolveCascades(combo); }, 220);
+    }, 190);
+  }
+
+  // Drop existing gems down to fill gaps, then spawn new ones at the top.
+  function applyGravityAndRefill() {
+    for (var c = 0; c < SIZE; c++) {
+      // compact column: collect existing gems bottom-up
+      var write = SIZE - 1;
+      for (var r = SIZE - 1; r >= 0; r--) {
+        if (grid[r][c] !== -1) {
+          if (write !== r) {
+            grid[write][c] = grid[r][c];
+            grid[r][c] = -1;
+            cells[write][c] = cells[r][c];
+            cells[r][c] = null;
+            placeGem(cells[write][c], write, c);
+          }
+          write--;
+        }
+      }
+      // fill the rest (rows 0..write) with new gems, dropping from above
+      for (var nr = write; nr >= 0; nr--) {
+        var color = randColor();
+        grid[nr][c] = color;
+        var el = makeGemEl(color);
+        boardEl.appendChild(el);
+        cells[nr][c] = el;
+        // start above the board for a fall-in effect
+        placeGem(el, nr - (write + 1), c);
+        // force reflow so transition applies, then move to target
+        // eslint-disable-next-line no-unused-expressions
+        el.offsetHeight;
+        placeGem(el, nr, c);
+      }
+    }
+  }
+
+  // ---------- Solvability guard ----------
+  // If after a settle there are no moves left, reshuffle (rare).
+  function ensureSolvable() {
+    if (gameOver) return;
+    if (hasAnyMove(grid)) return;
+    // reshuffle existing colors until a move exists and no instant match
+    var colorsList = [];
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++) colorsList.push(grid[r][c]);
+    var tries = 0;
+    do {
+      // Fisher-Yates
+      for (var i = colorsList.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = colorsList[i]; colorsList[i] = colorsList[j]; colorsList[j] = t;
+      }
+      var idx = 0;
+      for (var r2 = 0; r2 < SIZE; r2++)
+        for (var c2 = 0; c2 < SIZE; c2++) grid[r2][c2] = colorsList[idx++];
+      tries++;
+    } while (tries < 80 && (findMatches(grid) || !hasAnyMove(grid)));
+    // if reshuffle accidentally created matches, just resolve them
+    relayoutColors();
+    if (findMatches(grid)) {
+      busy = true;
+      resolveCascades(0);
+    }
+  }
+
+  // re-sync DOM emoji/color to grid after a reshuffle
+  function relayoutColors() {
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        var el = cells[r][c];
+        if (el) {
+          el.className = "gem c" + grid[r][c];
+          el.textContent = EMOJI[grid[r][c]];
+          placeGem(el, r, c);
+        }
+      }
+    }
+  }
+
+  // ---------- HUD / state ----------
+  function updateHud() {
+    scoreEl.textContent = score;
+    bestEl.textContent = best;
+    if (mode === "moves") {
+      counterLabel.textContent = "Moves";
+      counterEl.textContent = movesLeft;
+    } else {
+      counterLabel.textContent = "Time";
+      counterEl.textContent = timeLeft + "s";
+    }
+  }
+
+  function checkEndConditions() {
+    if (gameOver) return;
+    if (mode === "moves" && movesLeft <= 0) {
+      endGame();
+    }
+  }
+
+  function endGame() {
+    gameOver = true;
+    busy = true;
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    sndOver();
+    ovTitle.textContent = "Time's Up!";
+    if (mode === "moves") ovTitle.textContent = "Out of Moves!";
+    var record = (score >= best) ? "  ★ New Best!" : "";
+    ovMsg.textContent = "Final score: " + score + record;
+    overlay.classList.add("show");
+  }
+
+  function startTimer() {
+    if (timerId) clearInterval(timerId);
+    timerId = setInterval(function () {
+      if (gameOver) return;
+      timeLeft--;
+      if (timeLeft <= 0) { timeLeft = 0; updateHud(); endGame(); return; }
+      updateHud();
+    }, 1000);
+  }
+
+  // ---------- Persistence (best score) ----------
+  function saveBest() {
+    try { localStorage.setItem("match3_best", String(best)); } catch (e) {}
+  }
+  function loadBest() {
+    try {
+      var v = localStorage.getItem("match3_best");
+      best = v ? (parseInt(v, 10) || 0) : 0;
+    } catch (e) { best = 0; }
+  }
+
+  // ---------- New game ----------
+  function newGame() {
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    gameOver = false;
+    busy = false;
+    selected = null;
+    score = 0;
+    movesLeft = 25;
+    timeLeft = 60;
+    overlay.classList.remove("show");
+    grid = generateGrid();
+    renderFresh();
+    updateHud();
+    if (mode === "time") startTimer();
+  }
+
+  // ---------- Input handling (tap + swipe) ----------
+  function eventCellFromPoint(clientX, clientY) {
+    var g = gemPx();
+    var rect = boardEl.getBoundingClientRect();
+    var x = clientX - rect.left - g.pad;
+    var y = clientY - rect.top - g.pad;
+    var c = Math.floor(x / g.cell);
+    var r = Math.floor(y / g.cell);
+    if (!inBounds(r, c)) return null;
+    return { r: r, c: c };
+  }
+
+  var pointerDown = null;   // {r,c,x,y}
+  var SWIPE_THRESHOLD = 14; // px before counting as a swipe
+
+  function onDown(clientX, clientY) {
+    if (busy || gameOver) return;
+    var cell = eventCellFromPoint(clientX, clientY);
+    if (!cell) return;
+    ensureAudio();
+    pointerDown = { r: cell.r, c: cell.c, x: clientX, y: clientY, swiped: false };
+
+    // tap-select logic
+    if (selected) {
+      if (selected.r === cell.r && selected.c === cell.c) {
+        // tapping same gem deselects
+        clearSelection();
+        pointerDown.handled = true;
+      } else if (isAdjacent(selected, cell)) {
+        var a = selected;
+        attemptSwap(a, cell);
+        pointerDown.handled = true;
+      } else {
+        // select new gem
+        clearSelection();
+        selectGem(cell);
+      }
+    } else {
+      selectGem(cell);
+    }
+  }
+
+  function selectGem(cell) {
+    selected = { r: cell.r, c: cell.c };
+    if (cells[cell.r] && cells[cell.r][cell.c]) {
+      cells[cell.r][cell.c].classList.add("sel");
+    }
+  }
+
+  function onMove(clientX, clientY) {
+    if (!pointerDown || pointerDown.handled || pointerDown.swiped) return;
+    if (busy || gameOver) return;
+    var dx = clientX - pointerDown.x;
+    var dy = clientY - pointerDown.y;
+    if (Math.abs(dx) < SWIPE_THRESHOLD && Math.abs(dy) < SWIPE_THRESHOLD) return;
+    // determine swipe direction
+    var target;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      target = { r: pointerDown.r, c: pointerDown.c + (dx > 0 ? 1 : -1) };
+    } else {
+      target = { r: pointerDown.r + (dy > 0 ? 1 : -1), c: pointerDown.c };
+    }
+    pointerDown.swiped = true;
+    if (inBounds(target.r, target.c)) {
+      attemptSwap({ r: pointerDown.r, c: pointerDown.c }, target);
+    } else {
+      clearSelection();
+    }
+  }
+
+  function onUp() {
+    pointerDown = null;
+  }
+
+  // Touch events
+  boardEl.addEventListener("touchstart", function (e) {
+    if (e.target === ovBtn) return;
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    onDown(t.clientX, t.clientY);
+  }, { passive: false });
+  boardEl.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    onMove(t.clientX, t.clientY);
+  }, { passive: false });
+  boardEl.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    onUp();
+  }, { passive: false });
+  boardEl.addEventListener("touchcancel", function (e) {
+    e.preventDefault();
+    onUp();
+  }, { passive: false });
+
+  // Mouse events (desktop)
+  var mouseIsDown = false;
+  boardEl.addEventListener("mousedown", function (e) {
+    if (e.target === ovBtn) return;
+    e.preventDefault();
+    mouseIsDown = true;
+    onDown(e.clientX, e.clientY);
+  });
+  boardEl.addEventListener("mousemove", function (e) {
+    if (!mouseIsDown) return;
+    onMove(e.clientX, e.clientY);
+  });
+  window.addEventListener("mouseup", function () {
+    if (!mouseIsDown) return;
+    mouseIsDown = false;
+    onUp();
+  });
+
+  // prevent context menu / double-tap zoom on board
+  boardEl.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+
+  // ---------- Controls wiring ----------
+  newGameBtn.addEventListener("click", function () { newGame(); });
+  ovBtn.addEventListener("click", function () { newGame(); });
+
+  function setMode(m) {
+    if (mode === m) return;
+    mode = m;
+    modeMovesBtn.classList.toggle("active", m === "moves");
+    modeTimeBtn.classList.toggle("active", m === "time");
+    newGame();
+  }
+  modeMovesBtn.addEventListener("click", function () { setMode("moves"); });
+  modeTimeBtn.addEventListener("click", function () { setMode("time"); });
+
+  // ---------- Boot ----------
+  loadBest();
+  newGame();
+  // re-layout once after first paint in case fonts/size shift
+  setTimeout(relayoutAll, 50);
+})();
+</script>
+</body>
+</html>

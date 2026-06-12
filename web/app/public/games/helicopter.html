@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Helicopter</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0e17;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    background: #0a0e17;
+    touch-action: none;
+  }
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none;
+    color: #cfe8ff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    font-size: 14px; line-height: 1.3;
+  }
+  #title { font-weight: 700; letter-spacing: 0.5px; color: #7fd0ff; }
+  #scores { text-align: right; font-variant-numeric: tabular-nums; }
+  #scores b { color: #fff; font-size: 18px; }
+  #restartBtn {
+    position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+    pointer-events: auto;
+    background: rgba(40,60,90,0.7);
+    color: #cfe8ff; border: 1px solid rgba(120,180,255,0.4);
+    border-radius: 8px; padding: 6px 14px; font-size: 13px;
+    cursor: pointer; -webkit-appearance: none;
+  }
+  #restartBtn:active { background: rgba(60,90,130,0.9); }
+  #overlay {
+    position: fixed; inset: 0;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(5,8,15,0.78);
+    color: #fff; text-align: center;
+    pointer-events: none;
+    padding: 20px;
+  }
+  #overlay.show { display: flex; }
+  #overlay h1 { font-size: 28px; margin-bottom: 8px; color: #ff8a7a; }
+  #overlay .big { font-size: 40px; font-weight: 800; margin: 6px 0; }
+  #overlay .sub { font-size: 15px; opacity: 0.85; margin-bottom: 4px; }
+  #overlay .hint { margin-top: 18px; font-size: 16px; color: #7fd0ff; animation: pulse 1.2s ease-in-out infinite; }
+  #start {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(5,8,15,0.6);
+    color: #fff; text-align: center;
+    pointer-events: none; padding: 20px;
+  }
+  #start.hide { display: none; }
+  #start h1 { font-size: 30px; color: #7fd0ff; margin-bottom: 10px; }
+  #start p { font-size: 15px; opacity: 0.9; max-width: 320px; line-height: 1.5; }
+  #start .hint { margin-top: 20px; font-size: 18px; color: #ffd27f; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/helicopter.svg">
+    <link rel="manifest" href="/games/helicopter.webmanifest">
+    <meta name="theme-color" content="#0EA5E9">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Helicopter">
+    <link rel="apple-touch-icon" href="/games/icons/helicopter.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#0EA5E9;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="wrap"><canvas id="game"></canvas></div>
+<div id="hud">
+  <div id="title">HELICOPTER</div>
+  <div id="scores"><b id="dist">0</b> m<br>best <span id="best">0</span> m</div>
+</div>
+<button id="restartBtn">Restart</button>
+<div id="start">
+  <h1>HELICOPTER</h1>
+  <p>Hold to fly up, release to drop. Dodge the cave walls and blocks. How far can you go?</p>
+  <div class="hint">Tap &amp; hold to start</div>
+</div>
+<div id="overlay">
+  <h1>CRASHED</h1>
+  <div class="sub">Distance</div>
+  <div class="big" id="finalDist">0</div>
+  <div class="sub">Best <span id="finalBest">0</span> m</div>
+  <div class="hint">Tap to restart</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var distEl = document.getElementById("dist");
+  var bestEl = document.getElementById("best");
+  var finalDistEl = document.getElementById("finalDist");
+  var finalBestEl = document.getElementById("finalBest");
+  var overlay = document.getElementById("overlay");
+  var startScreen = document.getElementById("start");
+  var restartBtn = document.getElementById("restartBtn");
+
+  // ---- Display / sizing ----
+  var DPR = Math.min(window.devicePixelRatio || 1, 2);
+  var W = 360, H = 640; // logical (CSS) pixels
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // ---- Persistent best ----
+  var BEST_KEY = "helicopter_best_v1";
+  var best = 0;
+  try { best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; } catch (e) { best = 0; }
+  bestEl.textContent = best;
+
+  // ---- Audio (WebAudio, no assets) ----
+  var actx = null;
+  function audioCtx() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { actx = null; }
+    }
+    if (actx && actx.state === "suspended") { actx.resume(); }
+    return actx;
+  }
+  function beep(freq, dur, type, vol) {
+    var a = audioCtx();
+    if (!a) return;
+    var o = a.createOscillator();
+    var g = a.createGain();
+    o.type = type || "square";
+    o.frequency.value = freq;
+    g.gain.value = 0.0001;
+    o.connect(g); g.connect(a.destination);
+    var t = a.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol || 0.08, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+  function crashSound() {
+    var a = audioCtx();
+    if (!a) return;
+    var o = a.createOscillator();
+    var g = a.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(300, a.currentTime);
+    o.frequency.exponentialRampToValueAtTime(40, a.currentTime + 0.4);
+    g.gain.setValueAtTime(0.18, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + 0.45);
+    o.connect(g); g.connect(a.destination);
+    o.start();
+    o.stop(a.currentTime + 0.45);
+  }
+
+  // ---- Game state ----
+  var STATE_START = 0, STATE_PLAY = 1, STATE_DEAD = 2;
+  var state = STATE_START;
+
+  var holding = false;
+
+  // World scrolls in logical pixels. Heli x is fixed on screen.
+  var heli, scrollX, speed, gap, baseY, amp, freq, segments, obstacles;
+  var distance, bumpTimer, nextObstacle, lastTime, smokeTimer, smoke;
+  var dyingTimer;
+
+  function reset() {
+    var hx = Math.min(W * 0.28, 120);
+    heli = {
+      x: hx,
+      y: H * 0.5,
+      vy: 0,
+      w: 34, h: 16
+    };
+    scrollX = 0;
+    speed = 150;          // px/sec horizontal
+    distance = 0;
+    smoke = [];
+    smokeTimer = 0;
+    dyingTimer = 0;
+
+    // Cave parameters
+    gap = Math.min(H * 0.55, 280);   // vertical gap between walls
+    baseY = H * 0.5;
+    amp = 30;
+    freq = 0.004;
+    bumpTimer = 0;
+
+    // Build initial wall segments. The cave is defined by a center line + gap.
+    // We store sampled center/gap points spaced by SEG px.
+    segments = [];
+    var x = 0;
+    while (x < W + 400) {
+      segments.push(sampleCave(x));
+      x += SEG;
+    }
+
+    obstacles = [];
+    nextObstacle = 1200; // distance (world px) until first obstacle
+
+    lastTime = 0;
+  }
+
+  var SEG = 12; // sampling resolution for cave walls
+
+  // Deterministic-ish smooth cave generation based on world x.
+  // Returns {x, cy, half} where cy is center, half is half-gap.
+  function sampleCave(worldX) {
+    // progress 0..1+ scales difficulty
+    var prog = worldX; // already in world px
+    // gap narrows with distance
+    var dGap = gap - Math.min(gap * 0.45, prog * 0.012);
+    if (dGap < 90) dGap = 90;
+    // bumpiness grows
+    var dAmp = amp + Math.min(120, prog * 0.018);
+    var dFreq = freq + Math.min(0.006, prog * 0.0000012);
+    // layered sines for organic, increasingly bumpy walls
+    var cy = baseY
+      + Math.sin(prog * dFreq) * dAmp
+      + Math.sin(prog * dFreq * 2.7 + 1.3) * (dAmp * 0.4)
+      + Math.sin(prog * dFreq * 6.1 + 0.5) * (dAmp * 0.18 + Math.min(40, prog * 0.006));
+    // keep cave on screen-ish
+    var half = dGap / 2;
+    var margin = half + 10;
+    if (cy < margin) cy = margin;
+    if (cy > H - margin) cy = H - margin;
+    return { x: worldX, cy: cy, half: half };
+  }
+
+  // Get interpolated cave top/bottom at a given screen x.
+  function caveAt(screenX) {
+    var worldX = scrollX + screenX;
+    // find bracketing segments
+    // segments are ordered by .x ascending
+    for (var i = 0; i < segments.length - 1; i++) {
+      var a = segments[i], b = segments[i + 1];
+      if (worldX >= a.x && worldX <= b.x) {
+        var t = (worldX - a.x) / (b.x - a.x);
+        var cy = a.cy + (b.cy - a.cy) * t;
+        var half = a.half + (b.half - a.half) * t;
+        return { top: cy - half, bottom: cy + half };
+      }
+    }
+    // fallback: compute directly
+    var s = sampleCave(worldX);
+    return { top: s.cy - s.half, bottom: s.cy + s.half };
+  }
+
+  // ---- Input ----
+  function pressDown() {
+    if (state === STATE_START) {
+      startGame();
+    } else if (state === STATE_DEAD) {
+      // allow restart after small delay handled in update
+      if (dyingTimer > 0.4) startGame();
+      return;
+    }
+    holding = true;
+  }
+  function pressUp() {
+    holding = false;
+  }
+
+  // Pointer / touch
+  function onTouchStart(e) {
+    e.preventDefault();
+    audioCtx();
+    pressDown();
+  }
+  function onTouchEnd(e) {
+    e.preventDefault();
+    pressUp();
+  }
+  document.addEventListener("touchstart", onTouchStart, { passive: false });
+  document.addEventListener("touchend", onTouchEnd, { passive: false });
+  document.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+  document.addEventListener("mousedown", function (e) {
+    if (e.target === restartBtn) return;
+    e.preventDefault();
+    audioCtx();
+    pressDown();
+  });
+  document.addEventListener("mouseup", function (e) {
+    pressUp();
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.code === "Space" || e.key === " ") {
+      e.preventDefault();
+      if (!holding) { audioCtx(); pressDown(); }
+    }
+  });
+  document.addEventListener("keyup", function (e) {
+    if (e.code === "Space" || e.key === " ") {
+      e.preventDefault();
+      pressUp();
+    }
+  });
+
+  restartBtn.addEventListener("click", function (e) {
+    e.preventDefault();
+    audioCtx();
+    startGame();
+  });
+
+  // Prevent scroll/zoom gestures
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); });
+  window.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+  // ---- Game flow ----
+  function startGame() {
+    reset();
+    state = STATE_PLAY;
+    holding = false;
+    overlay.classList.remove("show");
+    startScreen.classList.add("hide");
+  }
+
+  function die() {
+    if (state !== STATE_PLAY) return;
+    state = STATE_DEAD;
+    holding = false;
+    dyingTimer = 0;
+    crashSound();
+    var d = Math.floor(distance);
+    if (d > best) {
+      best = d;
+      try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) {}
+    }
+    bestEl.textContent = best;
+    finalDistEl.textContent = d;
+    finalBestEl.textContent = best;
+    overlay.classList.add("show");
+  }
+
+  // ---- Update ----
+  var GRAVITY = 900;     // px/s^2 downward
+  var LIFT = -1500;      // px/s^2 while holding
+  var MAX_VY = 520;
+
+  function update(dt) {
+    if (state !== STATE_PLAY) {
+      if (state === STATE_DEAD) dyingTimer += dt;
+      return;
+    }
+
+    // Physics
+    heli.vy += (holding ? LIFT : GRAVITY) * dt;
+    if (heli.vy > MAX_VY) heli.vy = MAX_VY;
+    if (heli.vy < -MAX_VY) heli.vy = -MAX_VY;
+    heli.y += heli.vy * dt;
+
+    // Scroll world; ramp up speed slowly
+    speed += 4 * dt; // gentle acceleration
+    if (speed > 360) speed = 360;
+    scrollX += speed * dt;
+    distance += (speed * dt) / 10; // 10px = 1 meter
+
+    // Extend / trim cave segments
+    var lastSeg = segments[segments.length - 1];
+    while (lastSeg.x < scrollX + W + 400) {
+      var nx = lastSeg.x + SEG;
+      var s = sampleCave(nx);
+      segments.push(s);
+      lastSeg = s;
+    }
+    // remove off-screen-left segments (keep a couple behind)
+    while (segments.length > 2 && segments[1].x < scrollX - SEG) {
+      segments.shift();
+    }
+
+    // Obstacles
+    nextObstacle -= speed * dt;
+    if (nextObstacle <= 0) {
+      spawnObstacle();
+      // spacing shrinks slightly with distance
+      var spacing = 900 - Math.min(450, distance * 0.5);
+      if (spacing < 420) spacing = 420;
+      nextObstacle = spacing + Math.random() * 300;
+    }
+    for (var i = obstacles.length - 1; i >= 0; i--) {
+      if (obstacles[i].x + obstacles[i].w < scrollX - 50) {
+        obstacles.splice(i, 1);
+      }
+    }
+
+    // Smoke particles
+    smokeTimer -= dt;
+    if (smokeTimer <= 0) {
+      smokeTimer = 0.04;
+      smoke.push({
+        x: heli.x - heli.w / 2,
+        y: heli.y,
+        r: 4 + Math.random() * 3,
+        life: 0.5,
+        max: 0.5
+      });
+    }
+    for (var j = smoke.length - 1; j >= 0; j--) {
+      var p = smoke[j];
+      p.life -= dt;
+      p.x -= speed * dt; // drifts back with world
+      p.r += 18 * dt;
+      if (p.life <= 0) smoke.splice(j, 1);
+    }
+
+    // Collision
+    checkCollision();
+  }
+
+  function spawnObstacle() {
+    // place a floating block within the cave gap, somewhere ahead
+    var aheadX = scrollX + W + 40;
+    var c = sampleCave(aheadX);
+    var top = c.cy - c.half;
+    var bot = c.cy + c.half;
+    var bw = 22 + Math.random() * 26;
+    var bh = 36 + Math.random() * Math.min(90, 30 + distance * 0.05);
+    var space = bot - top;
+    if (bh > space - 70) bh = Math.max(28, space - 70);
+    // vertical position: leave passable room above or below
+    var minY = top + 8;
+    var maxY = bot - bh - 8;
+    if (maxY < minY) maxY = minY;
+    var by = minY + Math.random() * (maxY - minY);
+    obstacles.push({ x: aheadX, y: by, w: bw, h: bh });
+  }
+
+  function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  function checkCollision() {
+    var hx = heli.x - heli.w / 2;
+    var hy = heli.y - heli.h / 2;
+    var hw = heli.w, hh = heli.h;
+    // inset a touch for fairer feel
+    var pad = 3;
+    hx += pad; hy += pad; hw -= pad * 2; hh -= pad * 2;
+
+    // Walls: sample cave at heli's left, center, right
+    var samples = [heli.x - heli.w / 2, heli.x, heli.x + heli.w / 2];
+    for (var i = 0; i < samples.length; i++) {
+      var c = caveAt(samples[i]);
+      if (hy < c.top || hy + hh > c.bottom) {
+        die();
+        return;
+      }
+    }
+
+    // Obstacles (convert world x to screen x)
+    for (var k = 0; k < obstacles.length; k++) {
+      var o = obstacles[k];
+      var ox = o.x - scrollX;
+      if (rectsOverlap(hx, hy, hw, hh, ox, o.y, o.w, o.h)) {
+        die();
+        return;
+      }
+    }
+  }
+
+  // ---- Render ----
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // Background gradient + parallax stripes
+    var bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#0c1320");
+    bg.addColorStop(1, "#060a12");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    drawCave();
+    drawObstacles();
+    drawSmoke();
+    drawHeli();
+
+    // distance HUD update
+    distEl.textContent = Math.floor(distance);
+  }
+
+  function drawCave() {
+    // Build top and bottom polylines across the screen
+    var step = SEG;
+    ctx.fillStyle = "#1a3a2e";
+    // TOP wall
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    for (var x = 0; x <= W + step; x += step) {
+      var c = caveAt(x);
+      ctx.lineTo(x, c.top);
+    }
+    ctx.lineTo(W + step, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // BOTTOM wall
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (var x2 = 0; x2 <= W + step; x2 += step) {
+      var c2 = caveAt(x2);
+      ctx.lineTo(x2, c2.bottom);
+    }
+    ctx.lineTo(W + step, H);
+    ctx.closePath();
+    ctx.fill();
+
+    // Glowing edges
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#3fae7a";
+    ctx.beginPath();
+    for (var xa = 0; xa <= W + step; xa += step) {
+      var ca = caveAt(xa);
+      if (xa === 0) ctx.moveTo(xa, ca.top); else ctx.lineTo(xa, ca.top);
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    for (var xb = 0; xb <= W + step; xb += step) {
+      var cb = caveAt(xb);
+      if (xb === 0) ctx.moveTo(xb, cb.bottom); else ctx.lineTo(xb, cb.bottom);
+    }
+    ctx.stroke();
+  }
+
+  function drawObstacles() {
+    for (var k = 0; k < obstacles.length; k++) {
+      var o = obstacles[k];
+      var ox = o.x - scrollX;
+      if (ox > W + 60 || ox + o.w < -10) continue;
+      ctx.fillStyle = "#6b4a8f";
+      ctx.fillRect(ox, o.y, o.w, o.h);
+      ctx.fillStyle = "#9b76c4";
+      ctx.fillRect(ox, o.y, o.w, 4);
+      ctx.strokeStyle = "#caa8ec";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(ox + 0.5, o.y + 0.5, o.w - 1, o.h - 1);
+    }
+  }
+
+  function drawSmoke() {
+    for (var j = 0; j < smoke.length; j++) {
+      var p = smoke[j];
+      var a = (p.life / p.max) * 0.4;
+      ctx.fillStyle = "rgba(180,200,220," + a.toFixed(3) + ")";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawHeli() {
+    var x = heli.x, y = heli.y;
+    var tilt = Math.max(-0.4, Math.min(0.4, heli.vy / 900));
+    if (state === STATE_DEAD) tilt = 0.6;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(tilt);
+
+    // body
+    ctx.fillStyle = state === STATE_DEAD ? "#aa3322" : "#ffcf3f";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 17, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // cockpit
+    ctx.fillStyle = "#bfe8ff";
+    ctx.beginPath();
+    ctx.ellipse(7, -1, 6, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // tail
+    ctx.fillStyle = state === STATE_DEAD ? "#882211" : "#e6b020";
+    ctx.fillRect(-26, -3, 16, 5);
+    // tail fin
+    ctx.beginPath();
+    ctx.moveTo(-26, -3);
+    ctx.lineTo(-30, -12);
+    ctx.lineTo(-22, -3);
+    ctx.closePath();
+    ctx.fill();
+
+    // main rotor (spinning blur)
+    ctx.strokeStyle = "rgba(220,230,240,0.85)";
+    ctx.lineWidth = 2.5;
+    var spin = (performance.now() / 30) % (Math.PI * 2);
+    var rlen = 22;
+    ctx.beginPath();
+    ctx.moveTo(-Math.cos(spin) * rlen, -10);
+    ctx.lineTo(Math.cos(spin) * rlen, -10);
+    ctx.stroke();
+    // rotor mast
+    ctx.fillStyle = "#555";
+    ctx.fillRect(-1.5, -11, 3, 4);
+
+    // tail rotor
+    ctx.beginPath();
+    var tspin = (performance.now() / 18) % (Math.PI * 2);
+    ctx.strokeStyle = "rgba(220,230,240,0.7)";
+    ctx.lineWidth = 2;
+    ctx.moveTo(-30, -3 - Math.cos(tspin) * 6);
+    ctx.lineTo(-30, -3 + Math.cos(tspin) * 6);
+    ctx.stroke();
+
+    // skids
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-12, 9); ctx.lineTo(12, 9);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // ---- Main loop ----
+  function frame(t) {
+    if (!lastTime) lastTime = t;
+    var dt = (t - lastTime) / 1000;
+    lastTime = t;
+    if (dt > 0.05) dt = 0.05; // clamp big jumps
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

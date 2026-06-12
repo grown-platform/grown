@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Car Dodge</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #0b0d12;
+    color: #e8edf2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center;
+  }
+  #hud {
+    width: 100%;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px;
+    gap: 10px;
+    z-index: 5;
+  }
+  #title { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; color: #ffd34d; }
+  .stat { font-size: 13px; line-height: 1.2; text-align: right; }
+  .stat b { font-size: 16px; color: #fff; }
+  .stat span { opacity: 0.65; }
+  #stage {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    display: block;
+    touch-action: none;
+    background: #20242c;
+    box-shadow: 0 0 40px rgba(0,0,0,0.6);
+  }
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    background: rgba(8,10,15,0.78);
+    backdrop-filter: blur(2px);
+    z-index: 10;
+    padding: 20px;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 { font-size: 30px; margin-bottom: 6px; color: #ffd34d; }
+  #overlay p { font-size: 15px; opacity: 0.85; margin-bottom: 4px; max-width: 300px; }
+  #overlay .big { font-size: 22px; color: #fff; margin: 10px 0; }
+  button {
+    margin-top: 18px;
+    font-size: 18px; font-weight: 700;
+    color: #0b0d12; background: #ffd34d;
+    border: none; border-radius: 40px;
+    padding: 14px 38px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: scale(0.96); }
+  .hint { margin-top: 14px; font-size: 12px; opacity: 0.55; max-width: 280px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/car-dodge.svg">
+    <link rel="manifest" href="/games/car-dodge.webmanifest">
+    <meta name="theme-color" content="#F59E0B">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Car Dodge">
+    <link rel="apple-touch-icon" href="/games/icons/car-dodge.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#F59E0B;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div id="title">CAR DODGE</div>
+    <div class="stat"><span>SCORE</span> <b id="score">0</b> &nbsp; <span>BEST</span> <b id="best">0</b></div>
+  </div>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="overlay">
+      <h1>CAR DODGE</h1>
+      <p>Dodge the traffic. Survive as long as you can.</p>
+      <div class="big" id="ovScore"></div>
+      <button id="startBtn">START</button>
+      <div class="hint">Drag your finger to steer, or tap left / right. Desktop: ← → keys.</div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+
+  var canvas = document.getElementById("cv");
+  var ctx = canvas.getContext("2d");
+  var scoreEl = document.getElementById("score");
+  var bestEl = document.getElementById("best");
+  var overlay = document.getElementById("overlay");
+  var ovScore = document.getElementById("ovScore");
+  var startBtn = document.getElementById("startBtn");
+  var stage = document.getElementById("stage");
+
+  // ---- logical resolution (portrait road) ----
+  var W = 360, H = 640;       // logical units we draw in
+  var dpr = 1;
+  var cssW = 360, cssH = 640;
+
+  // ---- road layout ----
+  var LANES = 4;
+  var roadMargin = 26;        // shoulder on each side
+  var roadX = roadMargin;
+  var roadW = W - roadMargin * 2;
+  var laneW = roadW / LANES;
+
+  function laneCenter(i) { return roadX + laneW * (i + 0.5); }
+
+  // ---- best score ----
+  var best = 0;
+  try { best = parseInt(localStorage.getItem("carDodgeBest") || "0", 10) || 0; } catch (e) {}
+  bestEl.textContent = best;
+
+  // ---- game state ----
+  var state = "menu";  // menu | playing | over
+  var player, enemies, bonuses, particles;
+  var scrollY, baseSpeed, distance, spawnTimer, spawnGap, difficulty;
+  var targetX = null;     // finger/drag target x in logical units
+  var lastTime = 0;
+
+  var ENEMY_COLORS = ["#e94f4f", "#4f8fe9", "#7be94f", "#e9c84f", "#c94fe9", "#4fe9d6"];
+
+  function resetGame() {
+    player = {
+      x: laneCenter(Math.floor(LANES / 2)),
+      y: H - 110,
+      w: 34, h: 60,
+      speed: 0
+    };
+    enemies = [];
+    bonuses = [];
+    particles = [];
+    scrollY = 0;
+    baseSpeed = 220;       // px/s scroll
+    distance = 0;
+    spawnTimer = 0;
+    spawnGap = 1.0;
+    difficulty = 0;
+    targetX = null;
+  }
+
+  // ---- responsive sizing ----
+  function resize() {
+    var availW = stage.clientWidth;
+    var availH = stage.clientHeight;
+    if (availW <= 0 || availH <= 0) return;
+    var aspect = W / H;
+    var w = availW, h = availW / aspect;
+    if (h > availH) { h = availH; w = availH * aspect; }
+    cssW = w; cssH = h;
+    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
+
+  // ---- input: map client coords to logical x ----
+  function clientToLogicalX(clientX) {
+    var rect = canvas.getBoundingClientRect();
+    var rx = (clientX - rect.left) / rect.width;   // 0..1
+    return rx * W;
+  }
+
+  function onPointerMove(clientX) {
+    if (state !== "playing") return;
+    targetX = clientToLogicalX(clientX);
+  }
+
+  // tap left/right half = nudge one lane toward that side
+  function onTap(clientX) {
+    if (state !== "playing") return;
+    var lx = clientToLogicalX(clientX);
+    var dir = lx < W / 2 ? -1 : 1;
+    targetX = clamp(player.x + dir * laneW, roadX + player.w / 2, roadX + roadW - player.w / 2);
+  }
+
+  var dragging = false, moved = false, startX = 0;
+
+  canvas.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    if (state !== "playing") return;
+    var t = e.touches[0];
+    dragging = true; moved = false; startX = t.clientX;
+    targetX = clientToLogicalX(t.clientX);
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+    if (!dragging) return;
+    var t = e.touches[0];
+    if (Math.abs(t.clientX - startX) > 6) moved = true;
+    onPointerMove(t.clientX);
+  }, { passive: false });
+
+  canvas.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    if (dragging && !moved) onTap(startX);
+    dragging = false;
+  }, { passive: false });
+
+  // mouse (desktop convenience)
+  canvas.addEventListener("mousedown", function (e) {
+    if (state !== "playing") return;
+    dragging = true; moved = false; startX = e.clientX;
+    targetX = clientToLogicalX(e.clientX);
+  });
+  window.addEventListener("mousemove", function (e) {
+    if (dragging) { moved = true; onPointerMove(e.clientX); }
+  });
+  window.addEventListener("mouseup", function (e) {
+    if (dragging && !moved) onTap(e.clientX);
+    dragging = false;
+  });
+
+  // keyboard
+  var keyLeft = false, keyRight = false;
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowLeft") { keyLeft = true; targetX = null; e.preventDefault(); }
+    else if (e.key === "ArrowRight") { keyRight = true; targetX = null; e.preventDefault(); }
+    else if ((e.key === " " || e.key === "Enter") && state !== "playing") { startGame(); e.preventDefault(); }
+  });
+  window.addEventListener("keyup", function (e) {
+    if (e.key === "ArrowLeft") keyLeft = false;
+    else if (e.key === "ArrowRight") keyRight = false;
+  });
+
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  // ---- WebAudio ----
+  var audioCtx = null;
+  function initAudio() {
+    if (audioCtx) return;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    } catch (e) {}
+  }
+  function beep(freq, dur, type, vol) {
+    if (!audioCtx) return;
+    try {
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = type || "square";
+      o.frequency.value = freq;
+      g.gain.value = vol == null ? 0.06 : vol;
+      o.connect(g); g.connect(audioCtx.destination);
+      var t = audioCtx.currentTime;
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t); o.stop(t + dur);
+    } catch (e) {}
+  }
+  function crashSound() {
+    if (!audioCtx) return;
+    try {
+      var dur = 0.5;
+      var buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+      var src = audioCtx.createBufferSource();
+      var g = audioCtx.createGain();
+      g.gain.value = 0.25;
+      src.buffer = buf; src.connect(g); g.connect(audioCtx.destination);
+      src.start();
+    } catch (e) {}
+  }
+  function bonusSound() { beep(660, 0.08, "sine", 0.08); setTimeout(function(){ beep(990, 0.1, "sine", 0.08); }, 70); }
+
+  // ---- spawning (fair: always leave a gap) ----
+  function spawnRow() {
+    // choose how many enemies in this row (never block all lanes)
+    var maxBlock = Math.min(LANES - 1, 1 + Math.floor(difficulty));
+    var count = 1 + Math.floor(Math.random() * maxBlock);
+    if (count >= LANES) count = LANES - 1;
+
+    // pick distinct lanes
+    var laneList = [0, 1, 2, 3];
+    for (var s = laneList.length - 1; s > 0; s--) {
+      var j = Math.floor(Math.random() * (s + 1));
+      var tmp = laneList[s]; laneList[s] = laneList[j]; laneList[j] = tmp;
+    }
+    var chosen = laneList.slice(0, count);
+
+    var rowSpeedBonus = 30 + Math.random() * (40 + difficulty * 20);
+    for (var k = 0; k < chosen.length; k++) {
+      var lane = chosen[k];
+      enemies.push({
+        x: laneCenter(lane),
+        y: -70 - Math.random() * 40,
+        w: 34, h: 60,
+        vy: rowSpeedBonus * (0.8 + Math.random() * 0.5),
+        color: ENEMY_COLORS[(Math.random() * ENEMY_COLORS.length) | 0],
+        lane: lane
+      });
+    }
+
+    // occasional bonus in an OPEN lane
+    if (Math.random() < 0.28) {
+      var openLanes = [];
+      for (var li = 0; li < LANES; li++) if (chosen.indexOf(li) === -1) openLanes.push(li);
+      if (openLanes.length) {
+        var bl = openLanes[(Math.random() * openLanes.length) | 0];
+        bonuses.push({ x: laneCenter(bl), y: -50, r: 11, t: 0 });
+      }
+    }
+  }
+
+  function addCrashParticles(x, y) {
+    for (var i = 0; i < 26; i++) {
+      var a = Math.random() * Math.PI * 2;
+      var sp = 40 + Math.random() * 200;
+      particles.push({
+        x: x, y: y,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: 0.5 + Math.random() * 0.5,
+        max: 1,
+        color: Math.random() < 0.5 ? "#ff8a3d" : "#ffd34d",
+        size: 2 + Math.random() * 3
+      });
+    }
+  }
+
+  // ---- update ----
+  function update(dt) {
+    difficulty += dt * 0.05;
+    var speed = baseSpeed + difficulty * 30;
+    scrollY = (scrollY + speed * dt) % 80;
+    distance += speed * dt * 0.06;
+    scoreEl.textContent = Math.floor(distance);
+
+    // player steering
+    var minX = roadX + player.w / 2;
+    var maxX = roadX + roadW - player.w / 2;
+    if (keyLeft || keyRight) {
+      var kdir = (keyRight ? 1 : 0) - (keyLeft ? 1 : 0);
+      player.x = clamp(player.x + kdir * 340 * dt, minX, maxX);
+    } else if (targetX != null) {
+      var goal = clamp(targetX, minX, maxX);
+      // smooth follow
+      var diff = goal - player.x;
+      player.x += diff * Math.min(1, dt * 14);
+      if (Math.abs(diff) < 0.5) player.x = goal;
+    }
+
+    // enemies
+    spawnTimer += dt;
+    spawnGap = Math.max(0.42, 1.05 - difficulty * 0.05);
+    if (spawnTimer >= spawnGap) {
+      spawnTimer -= spawnGap;
+      spawnRow();
+    }
+
+    for (var i = enemies.length - 1; i >= 0; i--) {
+      var en = enemies[i];
+      en.y += (speed + en.vy) * dt;
+      if (en.y - en.h / 2 > H + 20) { enemies.splice(i, 1); continue; }
+      if (collide(player, en)) {
+        crash();
+        return;
+      }
+    }
+
+    // bonuses
+    for (var b = bonuses.length - 1; b >= 0; b--) {
+      var bo = bonuses[b];
+      bo.y += speed * dt;
+      bo.t += dt;
+      if (bo.y - bo.r > H + 20) { bonuses.splice(b, 1); continue; }
+      var dx = bo.x - player.x, dy = bo.y - player.y;
+      if (Math.abs(dx) < player.w / 2 + bo.r && Math.abs(dy) < player.h / 2 + bo.r) {
+        bonuses.splice(b, 1);
+        distance += 50;
+        bonusSound();
+        for (var p = 0; p < 8; p++) {
+          var ang = Math.random() * Math.PI * 2;
+          particles.push({ x: bo.x, y: bo.y, vx: Math.cos(ang)*80, vy: Math.sin(ang)*80,
+            life: 0.4, max: 0.4, color: "#7be94f", size: 2 + Math.random()*2 });
+        }
+      }
+    }
+
+    // particles
+    for (var q = particles.length - 1; q >= 0; q--) {
+      var pa = particles[q];
+      pa.life -= dt;
+      if (pa.life <= 0) { particles.splice(q, 1); continue; }
+      pa.x += pa.vx * dt; pa.y += pa.vy * dt;
+      pa.vy += 120 * dt;
+    }
+  }
+
+  function collide(a, b) {
+    return Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 6 &&
+           Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 6;
+  }
+
+  function crash() {
+    state = "over";
+    addCrashParticles(player.x, player.y);
+    crashSound();
+    var sc = Math.floor(distance);
+    if (sc > best) {
+      best = sc;
+      try { localStorage.setItem("carDodgeBest", String(best)); } catch (e) {}
+    }
+    bestEl.textContent = best;
+    // brief delay before showing overlay so explosion is visible
+    setTimeout(function () {
+      if (state !== "over") return;
+      ovScore.innerHTML = "Distance: <b>" + sc + "</b><br>Best: " + best;
+      overlay.querySelector("h1").textContent = "CRASH!";
+      overlay.querySelector("p").textContent = "Your run ended.";
+      startBtn.textContent = "RESTART";
+      overlay.classList.remove("hidden");
+    }, 650);
+  }
+
+  // ---- draw ----
+  function drawCar(x, y, w, h, color, isPlayer) {
+    var rx = x - w / 2, ry = y - h / 2;
+    // body
+    ctx.fillStyle = color;
+    roundRect(rx, ry, w, h, 7);
+    ctx.fill();
+    // roof / windshield
+    ctx.fillStyle = "rgba(20,28,40,0.85)";
+    roundRect(rx + 5, ry + h * 0.22, w - 10, h * 0.26, 4); ctx.fill();
+    roundRect(rx + 5, ry + h * 0.56, w - 10, h * 0.22, 4); ctx.fill();
+    // headlights / taillights
+    if (isPlayer) {
+      ctx.fillStyle = "#fff7c2";
+      ctx.fillRect(rx + 4, ry + 2, 6, 4);
+      ctx.fillRect(rx + w - 10, ry + 2, 6, 4);
+    } else {
+      ctx.fillStyle = "#ff5a5a";
+      ctx.fillRect(rx + 4, ry + h - 6, 6, 4);
+      ctx.fillRect(rx + w - 10, ry + h - 6, 6, 4);
+    }
+    // wheels hint
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(rx - 2, ry + 8, 3, 12);
+    ctx.fillRect(rx + w - 1, ry + 8, 3, 12);
+    ctx.fillRect(rx - 2, ry + h - 20, 3, 12);
+    ctx.fillRect(rx + w - 1, ry + h - 20, 3, 12);
+  }
+
+  function roundRect(x, y, w, h, r) {
+    if (r > w / 2) r = w / 2; if (r > h / 2) r = h / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function draw() {
+    // grass / background
+    ctx.fillStyle = "#1c3a24";
+    ctx.fillRect(0, 0, W, H);
+
+    // road
+    ctx.fillStyle = "#2a2e36";
+    ctx.fillRect(roadX, 0, roadW, H);
+
+    // shoulder edges
+    ctx.fillStyle = "#d9d9d9";
+    ctx.fillRect(roadX - 4, 0, 4, H);
+    ctx.fillRect(roadX + roadW, 0, 4, H);
+
+    // lane markings (dashed), scrolling
+    ctx.fillStyle = "rgba(255,221,77,0.9)";
+    var dashH = 40, gap = 40;
+    for (var l = 1; l < LANES; l++) {
+      var lx = roadX + laneW * l;
+      for (var y = -dashH + scrollY; y < H; y += dashH + gap) {
+        ctx.fillRect(lx - 2.5, y, 5, dashH);
+      }
+    }
+
+    // bonuses (coins)
+    for (var b = 0; b < bonuses.length; b++) {
+      var bo = bonuses[b];
+      var pulse = 1 + Math.sin(bo.t * 8) * 0.12;
+      ctx.save();
+      ctx.translate(bo.x, bo.y);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = "#ffd34d";
+      ctx.beginPath(); ctx.arc(0, 0, bo.r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#b8860b";
+      ctx.beginPath(); ctx.arc(0, 0, bo.r * 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ffe98a";
+      ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("$", 0, 1);
+      ctx.restore();
+    }
+
+    // enemies
+    for (var i = 0; i < enemies.length; i++) {
+      var en = enemies[i];
+      drawCar(en.x, en.y, en.w, en.h, en.color, false);
+    }
+
+    // player
+    if (state !== "over") {
+      drawCar(player.x, player.y, player.w, player.h, "#ffd34d", true);
+    }
+
+    // particles
+    for (var q = 0; q < particles.length; q++) {
+      var pa = particles[q];
+      ctx.globalAlpha = Math.max(0, pa.life / pa.max);
+      ctx.fillStyle = pa.color;
+      ctx.fillRect(pa.x - pa.size / 2, pa.y - pa.size / 2, pa.size, pa.size);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- loop ----
+  function frame(now) {
+    if (!lastTime) lastTime = now;
+    var dt = (now - lastTime) / 1000;
+    lastTime = now;
+    if (dt > 0.05) dt = 0.05;  // clamp for tab switches
+
+    if (state === "playing") update(dt);
+    else {
+      // keep particles animating on game-over screen
+      for (var q = particles.length - 1; q >= 0; q--) {
+        var pa = particles[q];
+        pa.life -= dt;
+        if (pa.life <= 0) { particles.splice(q, 1); continue; }
+        pa.x += pa.vx * dt; pa.y += pa.vy * dt; pa.vy += 120 * dt;
+      }
+    }
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // ---- start ----
+  function startGame() {
+    initAudio();
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    resetGame();
+    scoreEl.textContent = "0";
+    overlay.classList.add("hidden");
+    state = "playing";
+    beep(440, 0.08, "sine", 0.07);
+  }
+
+  startBtn.addEventListener("click", startGame);
+  startBtn.addEventListener("touchend", function (e) { e.preventDefault(); startGame(); }, { passive: false });
+
+  // init
+  resize();
+  resetGame();
+  draw();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

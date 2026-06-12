@@ -64,6 +64,22 @@ const CONFIG = [
   { id: "aim-trainer", name: "Aim Trainer", color: "#E11D48", glyph: "🎯" },
   { id: "guess-the-number", name: "Guess the Number", color: "#2563EB", glyph: "❓" },
   { id: "higher-lower", name: "Higher or Lower", color: "#7C3AED", glyph: "🎴" },
+  { id: "video-poker", name: "Video Poker", color: "#166534", glyph: "♣️" },
+  { id: "war", name: "War", color: "#7F1D1D", glyph: "⚔️" },
+  { id: "slot-machine", name: "Slot Machine", color: "#B91C1C", glyph: "🎰" },
+  { id: "yahtzee", name: "Yahtzee", color: "#4F46E5", glyph: "🎲" },
+  { id: "pig", name: "Pig", color: "#DB2777", glyph: "🐷" },
+  { id: "word-scramble", name: "Word Scramble", color: "#0D9488", glyph: "🔡" },
+  { id: "wordle", name: "Wordle", color: "#16A34A", glyph: "🟩" },
+  { id: "typing-test", name: "Typing Test", color: "#475569", glyph: "⌨️" },
+  { id: "boggle", name: "Boggle", color: "#CA8A04", glyph: "🔠" },
+  { id: "tron", name: "Tron", color: "#06B6D4", glyph: "🏍️" },
+  { id: "helicopter", name: "Helicopter", color: "#0EA5E9", glyph: "🚁" },
+  { id: "car-dodge", name: "Car Dodge", color: "#F59E0B", glyph: "🚗" },
+  { id: "missile-command", name: "Missile Command", color: "#DC2626", glyph: "🚀" },
+  { id: "lunar-lander", name: "Lunar Lander", color: "#334155", glyph: "🌙" },
+  { id: "match-3", name: "Match 3", color: "#DB2777", glyph: "💎" },
+  { id: "centipede", name: "Centipede", color: "#65A30D", glyph: "🐛" },
 ];
 
 const iconSvg = (color, glyph) =>
@@ -102,13 +118,15 @@ const headBlock = (g) => `<!-- pwa:start -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="${g.name}">
     <link rel="apple-touch-icon" href="/games/icons/${g.id}.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
     <script>
     if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
-    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right,
-    // shown when the browser offers install — Chrome/Android; iOS uses Share →
-    // Add to Home Screen).
-    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:10px;top:10px;z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
-    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:12px;bottom:12px;z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:${g.color};color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:${g.color};color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
     </script>
     <!-- pwa:end -->`;
 
@@ -157,6 +175,13 @@ self.addEventListener('fetch', (e) => {
 `;
 
 function injectHead(html, g) {
+  // Opt the viewport into the display safe-area so env(safe-area-inset-*) works
+  // (needed for the notch / camera-island handling). Idempotent.
+  html = html.replace(
+    /(<meta\s+name=["']viewport["']\s+content=["'])([^"']*)(["'])/i,
+    (m, a, content, c) =>
+      /viewport-fit/.test(content) ? m : `${a}${content.replace(/\s+$/, "")}, viewport-fit=cover${c}`,
+  );
   const block = headBlock(g);
   if (html.includes("<!-- pwa:start -->")) {
     return html.replace(/<!-- pwa:start -->[\s\S]*?<!-- pwa:end -->/, block);

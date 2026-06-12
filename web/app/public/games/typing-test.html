@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Typing Test</title>
+<style>
+  :root {
+    --bg: #14151a;
+    --panel: #1d1f27;
+    --panel2: #262934;
+    --text: #e6e8ee;
+    --muted: #8b90a0;
+    --caret: #5aa9ff;
+    --ok: #5ad17a;
+    --err: #ff6b6b;
+    --accent: #5aa9ff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 16px 14px 28px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+  }
+  .mode-toggle {
+    display: flex;
+    background: var(--panel);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #2c2f3a;
+  }
+  .mode-toggle button {
+    background: transparent;
+    color: var(--muted);
+    border: 0;
+    padding: 7px 11px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .mode-toggle button.active {
+    background: var(--accent);
+    color: #06203d;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid #2c2f3a;
+    border-radius: 12px;
+    padding: 10px 6px;
+    text-align: center;
+  }
+  .stat .val {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+  .stat .lbl {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-top: 2px;
+  }
+  .text-area {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid #2c2f3a;
+    border-radius: 14px;
+    padding: 18px 16px;
+    font-size: 21px;
+    line-height: 1.7;
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    cursor: text;
+    min-height: 140px;
+    flex: 1;
+    word-break: break-word;
+    transition: border-color 0.15s;
+  }
+  .text-area.focused {
+    border-color: var(--accent);
+  }
+  .ch { position: relative; color: var(--muted); white-space: pre-wrap; }
+  .ch.ok { color: var(--ok); }
+  .ch.err { color: var(--err); background: rgba(255,107,107,0.12); border-radius: 3px; }
+  .ch.err.space { background: rgba(255,107,107,0.28); }
+  .ch.cur::before {
+    content: "";
+    position: absolute;
+    left: -1px;
+    top: 0.12em;
+    bottom: 0.12em;
+    width: 2px;
+    background: var(--caret);
+    border-radius: 2px;
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .tap-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-family: -apple-system, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    background: rgba(29,31,39,0.85);
+    border-radius: 14px;
+    pointer-events: none;
+  }
+  .text-area.focused .tap-hint { display: none; }
+  /* hidden input — must keep font-size >=16px to stop iOS zoom */
+  #hidden-input {
+    position: absolute;
+    opacity: 0;
+    height: 1px;
+    width: 1px;
+    padding: 0;
+    border: 0;
+    font-size: 16px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .controls {
+    margin-top: 16px;
+    display: flex;
+    gap: 10px;
+  }
+  .btn {
+    flex: 1;
+    background: var(--accent);
+    color: #06203d;
+    border: 0;
+    border-radius: 12px;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn.secondary {
+    background: var(--panel2);
+    color: var(--text);
+    border: 1px solid #353948;
+  }
+  .btn:active { transform: translateY(1px); }
+  /* Results overlay */
+  .results {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,11,15,0.82);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    z-index: 10;
+  }
+  .results.show { display: flex; }
+  .results-card {
+    background: var(--panel);
+    border: 1px solid #2c2f3a;
+    border-radius: 18px;
+    padding: 24px 22px;
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+  }
+  .results-card h2 { margin: 0 0 4px; font-size: 22px; }
+  .results-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .big-wpm { font-size: 56px; font-weight: 800; color: var(--accent); line-height: 1; }
+  .big-wpm small { font-size: 16px; color: var(--muted); font-weight: 600; }
+  .res-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 18px 0 20px;
+  }
+  .res-grid .stat { background: var(--panel2); }
+  @media (max-width: 360px) {
+    .text-area { font-size: 19px; }
+    .stat .val { font-size: 21px; }
+    h1 { font-size: 18px; }
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/typing-test.svg">
+    <link rel="manifest" href="/games/typing-test.webmanifest">
+    <meta name="theme-color" content="#475569">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Typing Test">
+    <link rel="apple-touch-icon" href="/games/icons/typing-test.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#475569;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Typing Test</h1>
+    <div class="mode-toggle" id="modeToggle">
+      <button data-mode="passage" class="active">Passage</button>
+      <button data-mode="timed">30s</button>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="val" id="statWpm">0</div><div class="lbl">WPM</div></div>
+    <div class="stat"><div class="val" id="statAcc">100%</div><div class="lbl">Accuracy</div></div>
+    <div class="stat"><div class="val" id="statTime">0.0s</div><div class="lbl" id="timeLbl">Time</div></div>
+  </div>
+
+  <div class="text-area" id="textArea">
+    <span id="textInner"></span>
+    <div class="tap-hint">Tap to start typing</div>
+  </div>
+  <input id="hidden-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="typing input">
+
+  <div class="controls">
+    <button class="btn secondary" id="restartBtn">Restart</button>
+    <button class="btn" id="newBtn">New Passage</button>
+  </div>
+</div>
+
+<div class="results" id="results">
+  <div class="results-card">
+    <h2 id="resTitle">Test Complete</h2>
+    <div class="sub" id="resSub"></div>
+    <div class="big-wpm"><span id="resWpm">0</span><small> WPM</small></div>
+    <div class="res-grid">
+      <div class="stat"><div class="val" id="resAcc">100%</div><div class="lbl">Accuracy</div></div>
+      <div class="stat"><div class="val" id="resTime">0s</div><div class="lbl">Time</div></div>
+      <div class="stat"><div class="val" id="resChars">0</div><div class="lbl">Chars</div></div>
+    </div>
+    <div class="controls" style="margin-top:0">
+      <button class="btn" id="againBtn">Try Again</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Passage set (built-in, offline) ----
+  var PASSAGES = [
+    "The quick brown fox jumps over the lazy dog while the sun sets behind the hills.",
+    "Practice makes perfect, so keep your hands steady and your eyes on the screen.",
+    "A journey of a thousand miles begins with a single step taken with confidence.",
+    "Reading good books opens new worlds and fills the mind with curious wonders.",
+    "The early bird catches the worm, but the second mouse gets the cheese instead.",
+    "Coding is the art of telling a machine exactly what you want it to do for you.",
+    "Bright stars scattered across the night sky like grains of silver on velvet.",
+    "She sells seashells by the seashore and counts each one with quiet patience.",
+    "Every small effort adds up over time and shapes the person you slowly become.",
+    "The gentle rain fell softly on the rooftops as the city drifted off to sleep.",
+    "Curiosity drives discovery, and questions are the seeds of every great idea.",
+    "Wind whispered through the tall pines as travelers paused to rest their feet.",
+    "Good habits are built one day at a time with patience and a little courage.",
+    "The ocean waves rolled in with a steady rhythm that calmed the restless mind.",
+    "Learning to type quickly takes focus, repetition, and a willingness to fail."
+  ];
+  // For timed mode, a long word stream
+  var WORD_BANK = ("the quick brown fox jumps over a lazy dog while sun sets behind hills practice makes perfect keep your hands steady eyes on screen journey thousand miles begins single step reading good books opens new worlds fills mind curious wonders early bird catches worm second mouse gets cheese coding art telling machine what you want bright stars night sky silver velvet effort adds up time shapes person you become gentle rain fell softly rooftops city sleep curiosity drives discovery questions seeds great idea wind whispered tall pines travelers rest feet habits built day patience courage ocean waves rolled rhythm calmed restless learning typing fast focus repetition willing fail water light music garden river mountain bridge window letter morning coffee paper pencil simple clever bright quiet").split(" ");
+
+  var TIMED_SECONDS = 30;
+
+  // ---- State ----
+  var mode = "passage";       // "passage" | "timed"
+  var target = "";            // string to type
+  var typed = 0;              // index of next char to type
+  var correctChars = 0;       // cumulative correct keystrokes
+  var totalChars = 0;         // cumulative keystrokes (for accuracy)
+  var startTime = 0;          // ms timestamp of first keystroke
+  var running = false;
+  var finished = false;
+  var tickTimer = null;
+  var charEls = [];
+
+  // ---- DOM ----
+  var input = document.getElementById("hidden-input");
+  var textArea = document.getElementById("textArea");
+  var textInner = document.getElementById("textInner");
+  var statWpm = document.getElementById("statWpm");
+  var statAcc = document.getElementById("statAcc");
+  var statTime = document.getElementById("statTime");
+  var timeLbl = document.getElementById("timeLbl");
+  var results = document.getElementById("results");
+
+  // ---- Sound (WebAudio, optional) ----
+  var audioCtx = null;
+  function beep(freq, dur, vol) {
+    try {
+      if (!audioCtx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audioCtx = new AC();
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.value = vol;
+      o.connect(g); g.connect(audioCtx.destination);
+      var t = audioCtx.currentTime;
+      o.start(t);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.stop(t + dur);
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---- Build target ----
+  function pickPassage() {
+    return PASSAGES[Math.floor(Math.random() * PASSAGES.length)];
+  }
+  function buildTimedStream() {
+    // enough words that 30s won't run out even for fast typists
+    var words = [];
+    for (var i = 0; i < 120; i++) {
+      words.push(WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)]);
+    }
+    return words.join(" ");
+  }
+
+  // ---- Render ----
+  function renderText() {
+    textInner.innerHTML = "";
+    charEls = [];
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < target.length; i++) {
+      var c = target.charAt(i);
+      var span = document.createElement("span");
+      span.className = "ch";
+      // use a visible representation but keep real char for compare via data
+      span.textContent = c;
+      frag.appendChild(span);
+      charEls.push(span);
+    }
+    textInner.appendChild(frag);
+    updateCharClasses();
+  }
+
+  function updateCharClasses() {
+    for (var i = 0; i < charEls.length; i++) {
+      var el = charEls[i];
+      var cls = "ch";
+      if (i < typed) {
+        // already typed: determine ok/err from stored state
+        cls += (el.dataset.state === "err") ? " err" : " ok";
+        if (target.charAt(i) === " " && el.dataset.state === "err") cls += " space";
+      }
+      if (i === typed) cls += " cur";
+      el.className = cls;
+    }
+  }
+
+  // ---- Stats ----
+  function elapsedMs() {
+    if (!startTime) return 0;
+    var end = finished && finishTime ? finishTime : Date.now();
+    return end - startTime;
+  }
+  var finishTime = 0;
+
+  function liveStats() {
+    var ms = elapsedMs();
+    var mins = ms / 60000;
+    var wpm = mins > 0 ? Math.round((correctChars / 5) / mins) : 0;
+    var acc = totalChars > 0 ? Math.round((correctChars / totalChars) * 100) : 100;
+    return { wpm: wpm, acc: acc, ms: ms };
+  }
+
+  function refreshStats() {
+    var s = liveStats();
+    statWpm.textContent = s.wpm;
+    statAcc.textContent = s.acc + "%";
+    if (mode === "timed") {
+      var remain = Math.max(0, TIMED_SECONDS - s.ms / 1000);
+      statTime.textContent = remain.toFixed(1) + "s";
+    } else {
+      statTime.textContent = (s.ms / 1000).toFixed(1) + "s";
+    }
+  }
+
+  function tick() {
+    refreshStats();
+    if (mode === "timed" && running && startTime) {
+      if (Date.now() - startTime >= TIMED_SECONDS * 1000) {
+        finish();
+      }
+    }
+  }
+
+  // ---- Typing handling ----
+  function handleKeyChar(ch) {
+    if (finished) return;
+    if (typed >= target.length) {
+      if (mode === "timed") {
+        // extend stream if somehow exhausted
+        target += " " + buildTimedStream();
+        renderText();
+      } else {
+        return;
+      }
+    }
+    if (!running) startTest();
+
+    var expected = target.charAt(typed);
+    var ok = (ch === expected);
+    totalChars++;
+    if (ok) {
+      correctChars++;
+      charEls[typed].dataset.state = "ok";
+    } else {
+      charEls[typed].dataset.state = "err";
+    }
+    typed++;
+    updateCharClasses();
+
+    if (ok) beep(660, 0.03, 0.04); else beep(180, 0.05, 0.06);
+
+    // ensure caret visible (scroll into view inside area)
+    var curEl = charEls[typed];
+    if (curEl && curEl.scrollIntoView) {
+      // only nudge vertically within container
+      var top = curEl.offsetTop;
+      var areaH = textArea.clientHeight;
+      if (top > textArea.scrollTop + areaH - 40) {
+        textArea.scrollTop = top - areaH + 60;
+      }
+    }
+
+    refreshStats();
+
+    if (mode === "passage" && typed >= target.length) {
+      finish();
+    }
+  }
+
+  function handleBackspace() {
+    if (finished || typed === 0) return;
+    typed--;
+    // do not un-count totalChars/correctChars for accuracy honesty?
+    // Standard typing tests count corrections; we keep totals but allow re-type.
+    var el = charEls[typed];
+    if (el.dataset.state === "ok") {
+      correctChars = Math.max(0, correctChars - 1);
+    }
+    totalChars = Math.max(0, totalChars - 1);
+    delete el.dataset.state;
+    updateCharClasses();
+    refreshStats();
+  }
+
+  // ---- Test lifecycle ----
+  function startTest() {
+    if (running) return;
+    running = true;
+    startTime = Date.now();
+    finishTime = 0;
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(tick, 100);
+  }
+
+  function finish() {
+    if (finished) return;
+    finished = true;
+    running = false;
+    finishTime = Date.now();
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    refreshStats();
+
+    var s = liveStats();
+    document.getElementById("resWpm").textContent = s.wpm;
+    document.getElementById("resAcc").textContent = s.acc + "%";
+    document.getElementById("resTime").textContent = (s.ms / 1000).toFixed(1) + "s";
+    document.getElementById("resChars").textContent = correctChars;
+    if (mode === "timed") {
+      document.getElementById("resTitle").textContent = "Time's Up!";
+      var words = (correctChars / 5);
+      document.getElementById("resSub").textContent =
+        "You typed about " + words.toFixed(0) + " words in " + TIMED_SECONDS + " seconds.";
+    } else {
+      document.getElementById("resTitle").textContent = "Passage Complete!";
+      document.getElementById("resSub").textContent =
+        "You finished the passage. Try for a higher WPM!";
+    }
+    results.classList.add("show");
+    input.blur();
+    beep(880, 0.12, 0.05);
+    setTimeout(function () { beep(1100, 0.14, 0.05); }, 120);
+  }
+
+  function reset(newText) {
+    finished = false;
+    running = false;
+    typed = 0;
+    correctChars = 0;
+    totalChars = 0;
+    startTime = 0;
+    finishTime = 0;
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    if (newText || !target) {
+      target = (mode === "timed") ? buildTimedStream() : pickPassage();
+    }
+    input.value = "";
+    renderText();
+    timeLbl.textContent = (mode === "timed") ? "Left" : "Time";
+    refreshStats();
+    results.classList.remove("show");
+  }
+
+  // ---- Input events ----
+  // We drive purely off keydown for physical keyboards AND use input event
+  // for mobile/IME. To unify, listen to "input" and diff the value.
+  input.addEventListener("keydown", function (e) {
+    // Let printable chars flow through input event on mobile; but handle
+    // special keys here for physical keyboards.
+    if (e.key === "Backspace") {
+      e.preventDefault();
+      handleBackspace();
+      input.value = "";
+      return;
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      return;
+    }
+    // Printable single character via physical keyboard
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      handleKeyChar(e.key);
+      input.value = "";
+    }
+  });
+
+  // Mobile: some keyboards do not emit usable keydown for letters; use input.
+  input.addEventListener("input", function () {
+    var v = input.value;
+    if (!v) return;
+    // process each newly entered char
+    for (var i = 0; i < v.length; i++) {
+      handleKeyChar(v.charAt(i));
+    }
+    input.value = "";
+  });
+
+  // Focus management
+  function focusInput() {
+    input.focus({ preventScroll: false });
+  }
+  textArea.addEventListener("mousedown", function (e) {
+    // prevent losing focus weirdness; focus the input
+    e.preventDefault();
+    focusInput();
+  });
+  textArea.addEventListener("touchstart", function () {
+    focusInput();
+  }, { passive: true });
+
+  input.addEventListener("focus", function () {
+    textArea.classList.add("focused");
+  });
+  input.addEventListener("blur", function () {
+    textArea.classList.remove("focused");
+  });
+
+  // ---- Buttons ----
+  document.getElementById("restartBtn").addEventListener("click", function () {
+    reset(false);          // same text
+    focusInput();
+  });
+  document.getElementById("newBtn").addEventListener("click", function () {
+    reset(true);           // new text
+    focusInput();
+  });
+  document.getElementById("againBtn").addEventListener("click", function () {
+    reset(true);
+    focusInput();
+  });
+
+  // Mode toggle
+  document.getElementById("modeToggle").addEventListener("click", function (e) {
+    var btn = e.target.closest("button");
+    if (!btn) return;
+    var m = btn.getAttribute("data-mode");
+    if (m === mode) return;
+    mode = m;
+    var btns = this.querySelectorAll("button");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle("active", btns[i] === btn);
+    }
+    reset(true);
+    focusInput();
+  });
+
+  // Global key: if results showing, Enter starts again
+  document.addEventListener("keydown", function (e) {
+    if (results.classList.contains("show") && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      reset(true);
+      focusInput();
+    } else if (document.activeElement !== input && e.key.length === 1) {
+      // typing anywhere refocuses input then feeds char
+      focusInput();
+    }
+  });
+
+  // ---- Init ----
+  reset(true);
+})();
+</script>
+</body>
+</html>

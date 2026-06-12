@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Pig — Dice vs CPU</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, #1d2540 0%, #0f1322 100%);
+    color: #f2f4fb;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .app {
+    width: 100%;
+    max-width: 440px;
+    height: 100%;
+    max-height: 760px;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 16px;
+    gap: 12px;
+  }
+  h1 {
+    text-align: center;
+    font-size: clamp(22px, 7vw, 30px);
+    font-weight: 800;
+    letter-spacing: 1px;
+  }
+  h1 .sub {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: #8893b8;
+    margin-top: 2px;
+  }
+  .scores {
+    display: flex;
+    gap: 10px;
+  }
+  .player {
+    flex: 1;
+    background: rgba(255,255,255,0.05);
+    border: 2px solid rgba(255,255,255,0.07);
+    border-radius: 16px;
+    padding: 12px 10px;
+    text-align: center;
+    transition: border-color .2s, background .2s, transform .2s;
+  }
+  .player.active {
+    border-color: #ffd24a;
+    background: rgba(255,210,74,0.10);
+    transform: translateY(-2px);
+  }
+  .player .name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #9fa9cf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .player.active .name { color: #ffd24a; }
+  .player .score {
+    font-size: clamp(38px, 13vw, 52px);
+    font-weight: 800;
+    line-height: 1.05;
+  }
+  .player .target { font-size: 11px; color: #6f7aa0; }
+  .stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+  .turn-line {
+    font-size: 14px;
+    font-weight: 600;
+    min-height: 20px;
+    text-align: center;
+    color: #c5ccea;
+  }
+  .turn-line b { color: #ffd24a; }
+  .dieWrap {
+    width: 96px;
+    height: 96px;
+    perspective: 400px;
+  }
+  .die {
+    width: 96px;
+    height: 96px;
+    background: linear-gradient(145deg, #ffffff, #dfe3f0);
+    border-radius: 18px;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.4), inset 0 -4px 8px rgba(0,0,0,0.12);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    padding: 14px;
+    gap: 2px;
+  }
+  .die .pip {
+    width: 16px;
+    height: 16px;
+    background: radial-gradient(circle at 35% 30%, #4a5070, #15182a);
+    border-radius: 50%;
+    align-self: center;
+    justify-self: center;
+    visibility: hidden;
+  }
+  /* pip layout positions (1..9 grid) */
+  .die .p1 { grid-area: 1 / 1; }
+  .die .p2 { grid-area: 1 / 3; }
+  .die .p3 { grid-area: 2 / 1; }
+  .die .p4 { grid-area: 2 / 2; }
+  .die .p5 { grid-area: 2 / 3; }
+  .die .p6 { grid-area: 3 / 1; }
+  .die .p7 { grid-area: 3 / 3; }
+  .die.show-1 .c { visibility: visible; }
+  .die.show-2 .p1, .die.show-2 .p7 { visibility: visible; }
+  .die.show-3 .p1, .die.show-3 .c, .die.show-3 .p7 { visibility: visible; }
+  .die.show-4 .p1, .die.show-4 .p2, .die.show-4 .p6, .die.show-4 .p7 { visibility: visible; }
+  .die.show-5 .p1, .die.show-5 .p2, .die.show-5 .c, .die.show-5 .p6, .die.show-5 .p7 { visibility: visible; }
+  .die.show-6 .p1, .die.show-6 .p2, .die.show-6 .p3, .die.show-6 .p5, .die.show-6 .p6, .die.show-6 .p7 { visibility: visible; }
+  /* center pip uses p4 */
+  .die .c { grid-area: 2 / 2; }
+  .die.rolling { animation: rollSpin .5s ease; }
+  .die.bust { animation: bustShake .5s ease; }
+  @keyframes rollSpin {
+    0% { transform: rotate(0) scale(1); }
+    50% { transform: rotate(180deg) scale(.85); }
+    100% { transform: rotate(360deg) scale(1); }
+  }
+  @keyframes bustShake {
+    0%,100% { transform: translateX(0); }
+    20% { transform: translateX(-9px) rotate(-6deg); }
+    40% { transform: translateX(9px) rotate(6deg); }
+    60% { transform: translateX(-7px) rotate(-4deg); }
+    80% { transform: translateX(7px) rotate(4deg); }
+  }
+  .turnTotal {
+    background: rgba(255,210,74,0.12);
+    border: 1px solid rgba(255,210,74,0.3);
+    border-radius: 14px;
+    padding: 8px 18px;
+    text-align: center;
+    min-width: 150px;
+  }
+  .turnTotal .lbl { font-size: 11px; letter-spacing: 1px; color: #c9b675; text-transform: uppercase; }
+  .turnTotal .val { font-size: 30px; font-weight: 800; color: #ffd24a; }
+  .risk { font-size: 11px; color: #ff7a7a; min-height: 14px; }
+  .controls { display: flex; gap: 12px; }
+  button {
+    flex: 1;
+    border: none;
+    border-radius: 18px;
+    padding: 18px 8px;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: #fff;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform .08s, filter .15s, opacity .15s;
+  }
+  button:active { transform: scale(0.96); }
+  .btn-roll { background: linear-gradient(145deg, #ff6b6b, #e23a3a); box-shadow: 0 6px 14px rgba(226,58,58,0.4); }
+  .btn-hold { background: linear-gradient(145deg, #2ec27e, #15a463); box-shadow: 0 6px 14px rgba(21,164,99,0.4); }
+  button:disabled { opacity: 0.4; filter: grayscale(0.4); cursor: default; transform: none; }
+  .newgame {
+    background: rgba(255,255,255,0.08);
+    box-shadow: none;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 12px;
+    color: #c5ccea;
+  }
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(8,10,20,0.86);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: center;
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+  .overlay h2 { font-size: 34px; font-weight: 800; }
+  .overlay .emoji { font-size: 56px; }
+  .overlay p { color: #aab2d8; }
+  .overlay button {
+    flex: none;
+    width: 100%;
+    max-width: 260px;
+    background: linear-gradient(145deg, #6c8cff, #4361ee);
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/pig.svg">
+    <link rel="manifest" href="/games/pig.webmanifest">
+    <meta name="theme-color" content="#DB2777">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Pig">
+    <link rel="apple-touch-icon" href="/games/icons/pig.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DB2777;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <div class="app">
+    <h1>PIG<span class="sub">FIRST TO 100 WINS</span></h1>
+
+    <div class="scores">
+      <div class="player" id="pYou">
+        <div class="name">You</div>
+        <div class="score" id="scoreYou">0</div>
+        <div class="target">/ 100</div>
+      </div>
+      <div class="player" id="pCpu">
+        <div class="name">CPU</div>
+        <div class="score" id="scoreCpu">0</div>
+        <div class="target">/ 100</div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="turn-line" id="turnLine">Your turn — roll the die!</div>
+      <div class="dieWrap">
+        <div class="die show-1" id="die" aria-label="die">
+          <span class="pip p1"></span>
+          <span class="pip p2"></span>
+          <span class="pip p3"></span>
+          <span class="pip c"></span>
+          <span class="pip p5"></span>
+          <span class="pip p6"></span>
+          <span class="pip p7"></span>
+        </div>
+      </div>
+      <div class="turnTotal">
+        <div class="lbl">Turn Total</div>
+        <div class="val" id="turnVal">0</div>
+      </div>
+      <div class="risk" id="risk"></div>
+    </div>
+
+    <div class="controls">
+      <button class="btn-roll" id="btnRoll">🎲 Roll</button>
+      <button class="btn-hold" id="btnHold">✋ Hold</button>
+    </div>
+    <button class="newgame" id="btnNew">New Game</button>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="emoji" id="winEmoji">🏆</div>
+    <h2 id="winTitle">You Win!</h2>
+    <p id="winText"></p>
+    <button id="btnPlayAgain">Play Again</button>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var WIN = 100;
+  var CPU_HOLD_AT = 20;
+
+  var scores = { you: 0, cpu: 0 };
+  var turnTotal = 0;
+  var current = "you";   // whose turn
+  var busy = false;      // true while animating / CPU thinking
+  var gameOver = false;
+
+  var el = {
+    scoreYou: document.getElementById("scoreYou"),
+    scoreCpu: document.getElementById("scoreCpu"),
+    pYou: document.getElementById("pYou"),
+    pCpu: document.getElementById("pCpu"),
+    turnLine: document.getElementById("turnLine"),
+    turnVal: document.getElementById("turnVal"),
+    risk: document.getElementById("risk"),
+    die: document.getElementById("die"),
+    btnRoll: document.getElementById("btnRoll"),
+    btnHold: document.getElementById("btnHold"),
+    btnNew: document.getElementById("btnNew"),
+    overlay: document.getElementById("overlay"),
+    winTitle: document.getElementById("winTitle"),
+    winText: document.getElementById("winText"),
+    winEmoji: document.getElementById("winEmoji"),
+    btnPlayAgain: document.getElementById("btnPlayAgain")
+  };
+
+  // ---- Sound (WebAudio) ----
+  var actx = null;
+  function audio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { actx = null; }
+    }
+    return actx;
+  }
+  function beep(freq, dur, type, vol) {
+    var a = audio();
+    if (!a) return;
+    if (a.state === "suspended") { try { a.resume(); } catch (e) {} }
+    var osc = a.createOscillator();
+    var g = a.createGain();
+    osc.type = type || "sine";
+    osc.frequency.value = freq;
+    var v = (vol == null ? 0.18 : vol);
+    g.gain.setValueAtTime(0, a.currentTime);
+    g.gain.linearRampToValueAtTime(v, a.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+    osc.connect(g); g.connect(a.destination);
+    osc.start();
+    osc.stop(a.currentTime + dur + 0.02);
+  }
+  function sndRoll() { beep(420 + Math.random() * 120, 0.08, "triangle", 0.14); }
+  function sndBust() { beep(180, 0.25, "sawtooth", 0.22); setTimeout(function(){ beep(120, 0.3, "sawtooth", 0.2); }, 120); }
+  function sndHold() { beep(520, 0.1, "sine", 0.16); setTimeout(function(){ beep(700, 0.14, "sine", 0.16); }, 90); }
+  function sndWin() {
+    [523, 659, 784, 1046].forEach(function (f, i) {
+      setTimeout(function () { beep(f, 0.18, "triangle", 0.2); }, i * 130);
+    });
+  }
+
+  // ---- Rendering ----
+  function showFace(n) {
+    el.die.className = "die show-" + n;
+  }
+  function render() {
+    el.scoreYou.textContent = scores.you;
+    el.scoreCpu.textContent = scores.cpu;
+    el.turnVal.textContent = turnTotal;
+    el.pYou.classList.toggle("active", current === "you" && !gameOver);
+    el.pCpu.classList.toggle("active", current === "cpu" && !gameOver);
+
+    var youTurn = current === "you" && !busy && !gameOver;
+    el.btnRoll.disabled = !youTurn;
+    el.btnHold.disabled = !youTurn || turnTotal === 0;
+
+    if (gameOver) {
+      el.risk.textContent = "";
+      return;
+    }
+    if (current === "you") {
+      el.turnLine.innerHTML = "Your turn — roll or hold <b>" + turnTotal + "</b>";
+    } else {
+      el.turnLine.innerHTML = "CPU is playing… (turn <b>" + turnTotal + "</b>)";
+    }
+    // risk warning
+    if (current === "you" && turnTotal > 0) {
+      el.risk.textContent = "⚠ Roll a 1 and you lose " + turnTotal + " this turn";
+    } else {
+      el.risk.textContent = "";
+    }
+  }
+
+  // ---- Game flow ----
+  function rollDie() {
+    return 1 + Math.floor(Math.random() * 6);
+  }
+
+  function animateRoll(finalValue, cb) {
+    var ticks = 0;
+    var maxTicks = 6;
+    el.die.classList.remove("bust");
+    var iv = setInterval(function () {
+      var n = rollDie();
+      showFace(n);
+      sndRoll();
+      ticks++;
+      if (ticks >= maxTicks) {
+        clearInterval(iv);
+        showFace(finalValue);
+        el.die.classList.remove("rolling");
+        void el.die.offsetWidth;
+        el.die.classList.add("rolling");
+        cb();
+      }
+    }, 70);
+  }
+
+  function doRoll(who, after) {
+    busy = true;
+    render();
+    var value = rollDie();
+    animateRoll(value, function () {
+      if (value === 1) {
+        // bust
+        el.die.classList.remove("rolling");
+        void el.die.offsetWidth;
+        el.die.classList.add("bust");
+        sndBust();
+        turnTotal = 0;
+        el.turnVal.textContent = "0";
+        el.turnLine.innerHTML = (who === "you" ? "You rolled a 1 — turn lost!" : "CPU rolled a 1 — turn lost!");
+        setTimeout(function () {
+          turnTotal = 0;
+          switchTurn();
+          busy = false;
+          afterTurnSettled();
+          if (after) after(true, 1);
+        }, 800);
+      } else {
+        turnTotal += value;
+        el.turnVal.textContent = turnTotal;
+        el.turnLine.innerHTML = (who === "you" ? "You rolled " : "CPU rolled ") + value + " — total <b>" + turnTotal + "</b>";
+        busy = false;
+        if (after) after(false, value);
+        else render();
+      }
+    });
+  }
+
+  function doHold(who) {
+    if (turnTotal === 0) return;
+    sndHold();
+    scores[who] += turnTotal;
+    turnTotal = 0;
+    if (scores[who] >= WIN) {
+      endGame(who);
+      return;
+    }
+    switchTurn();
+    afterTurnSettled();
+  }
+
+  function switchTurn() {
+    current = current === "you" ? "cpu" : "you";
+    turnTotal = 0;
+  }
+
+  // called after a turn has fully passed to a new player
+  function afterTurnSettled() {
+    render();
+    if (gameOver) return;
+    if (current === "cpu") {
+      busy = true;
+      render();
+      setTimeout(cpuStep, 700);
+    }
+  }
+
+  // ---- CPU AI ----
+  function cpuStep() {
+    if (gameOver || current !== "cpu") { busy = false; render(); return; }
+
+    // Decision: should CPU hold now?
+    var projected = scores.cpu + turnTotal;
+    var shouldHold = false;
+
+    if (projected >= WIN) {
+      shouldHold = true; // would win by holding
+    } else if (turnTotal >= CPU_HOLD_AT) {
+      shouldHold = true;
+    } else if (scores.you >= WIN - 15 && scores.cpu + turnTotal >= WIN - 5 && turnTotal >= 10) {
+      // opponent about to win: push a bit but bank decent gains
+      shouldHold = true;
+    }
+
+    // If opponent is very close to winning and CPU is behind, be greedier (chase)
+    if (scores.you >= 80 && projected < WIN) {
+      shouldHold = false;
+    }
+    if (projected >= WIN) shouldHold = true;
+
+    if (shouldHold && turnTotal > 0) {
+      // animate the hold
+      el.turnLine.innerHTML = "CPU holds with <b>" + turnTotal + "</b>";
+      sndHold();
+      scores.cpu += turnTotal;
+      turnTotal = 0;
+      render();
+      setTimeout(function () {
+        if (scores.cpu >= WIN) { endGame("cpu"); return; }
+        switchTurn();
+        busy = false;
+        afterTurnSettled();
+      }, 700);
+    } else {
+      // roll again
+      doRoll("cpu", function (busted) {
+        if (busted) return; // doRoll handled turn switch
+        render();
+        setTimeout(cpuStep, 750);
+      });
+    }
+  }
+
+  function endGame(who) {
+    gameOver = true;
+    busy = false;
+    render();
+    var win = who === "you";
+    el.winEmoji.textContent = win ? "🏆" : "🤖";
+    el.winTitle.textContent = win ? "You Win!" : "CPU Wins";
+    el.winText.textContent = "Final score — You " + scores.you + " · CPU " + scores.cpu;
+    el.overlay.classList.add("show");
+    if (win) sndWin(); else { beep(200, 0.3, "sawtooth", 0.2); }
+  }
+
+  function newGame() {
+    scores.you = 0;
+    scores.cpu = 0;
+    turnTotal = 0;
+    current = "you";
+    busy = false;
+    gameOver = false;
+    el.overlay.classList.remove("show");
+    el.die.className = "die show-1";
+    el.turnLine.innerHTML = "Your turn — roll the die!";
+    render();
+  }
+
+  // ---- Events ----
+  el.btnRoll.addEventListener("click", function () {
+    if (busy || gameOver || current !== "you") return;
+    audio();
+    doRoll("you", function (busted) {
+      if (busted) return;
+      render();
+    });
+  });
+
+  el.btnHold.addEventListener("click", function () {
+    if (busy || gameOver || current !== "you" || turnTotal === 0) return;
+    audio();
+    doHold("you");
+  });
+
+  el.btnNew.addEventListener("click", function () {
+    audio();
+    newGame();
+  });
+  el.btnPlayAgain.addEventListener("click", function () {
+    audio();
+    newGame();
+  });
+
+  // prevent double-tap zoom / gesture scroll
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); });
+  document.addEventListener("touchmove", function (e) {
+    if (e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  newGame();
+})();
+</script>
+</body>
+</html>

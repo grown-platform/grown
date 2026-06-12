@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Word Scramble</title>
+<style>
+  :root{
+    --bg:#0f172a;
+    --panel:#1e293b;
+    --panel2:#273449;
+    --accent:#38bdf8;
+    --accent2:#22d3ee;
+    --good:#34d399;
+    --warn:#fbbf24;
+    --text:#e2e8f0;
+    --muted:#94a3b8;
+    --tile:#334155;
+    --tile-edge:#475569;
+    --slot:#0b1220;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 700px at 50% -10%,#1b2a4a 0%,var(--bg) 60%);
+    color:var(--text);
+    min-height:100vh;
+    min-height:100dvh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    touch-action:manipulation;
+    -webkit-user-select:none;
+    user-select:none;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap{
+    width:100%;
+    max-width:460px;
+    padding:14px 14px 28px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .title{
+    font-size:22px;
+    font-weight:800;
+    letter-spacing:.5px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+  }
+  .stats{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .chip{
+    background:var(--panel);
+    border:1px solid var(--tile-edge);
+    border-radius:999px;
+    padding:6px 12px;
+    font-size:13px;
+    font-weight:700;
+    line-height:1;
+    display:flex;
+    align-items:center;
+    gap:5px;
+  }
+  .chip span{color:var(--muted);font-weight:600;}
+  .card{
+    background:var(--panel);
+    border:1px solid var(--tile-edge);
+    border-radius:18px;
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  .meta{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .cat{
+    font-size:14px;
+    font-weight:800;
+    color:var(--accent2);
+    text-transform:uppercase;
+    letter-spacing:1px;
+  }
+  .len{font-size:12px;color:var(--muted);font-weight:700;}
+  .hint{
+    font-size:15px;
+    color:var(--text);
+    background:var(--slot);
+    border:1px dashed var(--tile-edge);
+    border-radius:12px;
+    padding:10px 12px;
+    min-height:42px;
+    display:flex;
+    align-items:center;
+    line-height:1.35;
+  }
+  .hint b{color:var(--warn);}
+  /* answer slots */
+  .answer{
+    display:flex;
+    flex-wrap:wrap;
+    gap:7px;
+    justify-content:center;
+    min-height:52px;
+    padding:6px 0;
+  }
+  .answer.shake{animation:shake .42s;}
+  .answer.win{animation:pop .5s;}
+  .slot{
+    width:42px;
+    height:50px;
+    border-radius:10px;
+    background:var(--slot);
+    border:2px solid var(--tile-edge);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:24px;
+    font-weight:800;
+    color:var(--text);
+    transition:transform .08s ease,border-color .15s,background .15s;
+  }
+  .slot.filled{
+    background:linear-gradient(180deg,#3b82f6,#2563eb);
+    border-color:#60a5fa;
+    cursor:pointer;
+    box-shadow:0 3px 0 #1d4ed8;
+  }
+  .slot.filled:active{transform:translateY(2px);box-shadow:0 1px 0 #1d4ed8;}
+  .slot.correct{
+    background:linear-gradient(180deg,#34d399,#10b981);
+    border-color:#6ee7b7;
+    box-shadow:0 3px 0 #059669;
+  }
+  /* tile tray */
+  .tray{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    justify-content:center;
+    min-height:54px;
+  }
+  .tile{
+    width:46px;
+    height:52px;
+    border-radius:12px;
+    background:linear-gradient(180deg,var(--tile-edge),var(--tile));
+    border:none;
+    color:var(--text);
+    font-size:25px;
+    font-weight:800;
+    cursor:pointer;
+    box-shadow:0 4px 0 #1e293b;
+    transition:transform .07s ease,box-shadow .07s ease,opacity .18s;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:inherit;
+    touch-action:manipulation;
+  }
+  .tile:active{transform:translateY(3px);box-shadow:0 1px 0 #1e293b;}
+  .tile.used{
+    opacity:.22;
+    pointer-events:none;
+    transform:scale(.9);
+  }
+  /* buttons */
+  .controls{
+    display:flex;
+    gap:10px;
+  }
+  .btn{
+    flex:1;
+    border:none;
+    border-radius:14px;
+    padding:13px 10px;
+    font-size:15px;
+    font-weight:800;
+    color:var(--text);
+    cursor:pointer;
+    font-family:inherit;
+    background:var(--panel2);
+    border:1px solid var(--tile-edge);
+    box-shadow:0 4px 0 rgba(0,0,0,.3);
+    transition:transform .07s,box-shadow .07s;
+    touch-action:manipulation;
+  }
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.3);}
+  .btn.primary{
+    background:linear-gradient(180deg,var(--accent),#0ea5e9);
+    border-color:#7dd3fc;
+    color:#06283d;
+    box-shadow:0 4px 0 #0369a1;
+  }
+  .btn.warn{
+    background:linear-gradient(180deg,#fbbf24,#f59e0b);
+    border-color:#fcd34d;
+    color:#3a2400;
+    box-shadow:0 4px 0 #b45309;
+  }
+  .toast{
+    position:fixed;
+    left:50%;
+    bottom:26px;
+    transform:translateX(-50%) translateY(20px);
+    background:linear-gradient(180deg,#34d399,#10b981);
+    color:#04261a;
+    font-weight:800;
+    padding:12px 22px;
+    border-radius:14px;
+    font-size:17px;
+    box-shadow:0 12px 30px rgba(0,0,0,.4);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .2s,transform .2s;
+    z-index:50;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .footer{
+    text-align:center;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .soundtog{
+    background:var(--panel);
+    border:1px solid var(--tile-edge);
+    color:var(--text);
+    border-radius:999px;
+    width:34px;height:34px;
+    font-size:16px;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  @keyframes shake{
+    0%,100%{transform:translateX(0);}
+    20%{transform:translateX(-8px);}
+    40%{transform:translateX(8px);}
+    60%{transform:translateX(-6px);}
+    80%{transform:translateX(6px);}
+  }
+  @keyframes pop{
+    0%{transform:scale(1);}
+    35%{transform:scale(1.08);}
+    100%{transform:scale(1);}
+  }
+  @media (max-width:340px){
+    .tile{width:40px;height:48px;font-size:22px;}
+    .slot{width:37px;height:46px;font-size:21px;}
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/word-scramble.svg">
+    <link rel="manifest" href="/games/word-scramble.webmanifest">
+    <meta name="theme-color" content="#0D9488">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Word Scramble">
+    <link rel="apple-touch-icon" href="/games/icons/word-scramble.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#0D9488;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title">Word Scramble</div>
+    <button class="soundtog" id="soundBtn" aria-label="Toggle sound">&#128266;</button>
+  </header>
+
+  <div class="stats">
+    <div class="chip">Score <span id="score">0</span></div>
+    <div class="chip">Streak <span id="streak">0</span></div>
+    <div class="chip">Best <span id="best">0</span></div>
+  </div>
+
+  <div class="card">
+    <div class="meta">
+      <div class="cat" id="cat">Animals</div>
+      <div class="len" id="len">5 letters</div>
+    </div>
+    <div class="hint" id="hint">Hint goes here</div>
+
+    <div class="answer" id="answer" aria-label="Your answer"></div>
+    <div class="tray" id="tray" aria-label="Letter tiles"></div>
+
+    <div class="controls">
+      <button class="btn" id="shuffleBtn">&#x1F500; Shuffle</button>
+      <button class="btn warn" id="hintBtn">&#x1F4A1; Hint</button>
+      <button class="btn" id="skipBtn">Skip &#9654;</button>
+    </div>
+  </div>
+
+  <div class="footer">Tap letters to spell the word. Tap a placed tile to remove it.</div>
+</div>
+
+<div class="toast" id="toast">Nice!</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Word data: grouped by theme ----------
+  var WORDS = {
+    "Animals":[
+      ["tiger","A big striped wild cat."],
+      ["dolphin","A smart sea mammal that leaps from waves."],
+      ["panda","A black-and-white bear that loves bamboo."],
+      ["eagle","A powerful bird that soars high."],
+      ["rabbit","A hoppy animal with long ears."],
+      ["octopus","A sea creature with eight arms."],
+      ["giraffe","The tallest animal, with a long neck."],
+      ["penguin","A bird that swims but cannot fly."],
+      ["hedgehog","A small spiky animal that curls into a ball."],
+      ["zebra","A horse-like animal with stripes."]
+    ],
+    "Food":[
+      ["pizza","A cheesy round meal with toppings."],
+      ["banana","A long yellow fruit you peel."],
+      ["pancake","A flat breakfast cake with syrup."],
+      ["noodle","Long thin strands you slurp."],
+      ["cookie","A sweet baked treat, often with chips."],
+      ["mango","A juicy tropical orange fruit."],
+      ["popcorn","A movie snack that pops when heated."],
+      ["waffle","A breakfast grid you fill with syrup."],
+      ["pretzel","A salty twisted baked snack."],
+      ["avocado","A green fruit used to make guacamole."]
+    ],
+    "Space":[
+      ["planet","A large world orbiting a star."],
+      ["rocket","A vehicle that blasts into space."],
+      ["galaxy","A huge swirl of billions of stars."],
+      ["comet","An icy object with a glowing tail."],
+      ["saturn","The planet famous for its rings."],
+      ["asteroid","A rocky chunk floating in space."],
+      ["meteor","A shooting streak across the night sky."],
+      ["orbit","The path a moon takes around a planet."],
+      ["nebula","A colorful cloud where stars are born."],
+      ["astronaut","A person who travels into space."]
+    ],
+    "Nature":[
+      ["river","Flowing water that runs to the sea."],
+      ["mountain","A very tall rocky peak."],
+      ["rainbow","Colorful arc after the rain."],
+      ["forest","A place full of many trees."],
+      ["volcano","A mountain that can erupt lava."],
+      ["thunder","The loud boom after lightning."],
+      ["island","Land surrounded by water."],
+      ["desert","A dry sandy place with little rain."],
+      ["glacier","A slow-moving river of ice."],
+      ["waterfall","Water tumbling down a cliff."]
+    ],
+    "Sports":[
+      ["soccer","A game where you kick a ball into a goal."],
+      ["tennis","A racket game with a net and yellow ball."],
+      ["hockey","Played on ice with sticks and a puck."],
+      ["cricket","A bat-and-ball game with wickets."],
+      ["surfing","Riding ocean waves on a board."],
+      ["boxing","A sport of punches inside a ring."],
+      ["skating","Gliding on ice or wheels."],
+      ["archery","Shooting arrows at a target."],
+      ["cycling","Racing or riding on a bicycle."],
+      ["swimming","Moving through water using your arms and legs."]
+    ],
+    "Music":[
+      ["guitar","A six-stringed instrument you strum."],
+      ["piano","Black and white keys make its sound."],
+      ["violin","A small instrument played with a bow."],
+      ["drums","You hit these to keep the beat."],
+      ["trumpet","A brass horn you blow into."],
+      ["melody","A pleasing series of musical notes."],
+      ["singer","A person who performs songs."],
+      ["concert","A live show by musicians."],
+      ["rhythm","The steady beat in music."],
+      ["flute","A slender wind instrument you blow across."]
+    ]
+  };
+
+  // ---------- State ----------
+  var categories = Object.keys(WORDS);
+  var score = 0, streak = 0, best = 0;
+  var current = null;        // {word, hint, category}
+  var tiles = [];            // [{id, ch, used}]
+  var placed = [];           // array of tile ids in slot order
+  var hintLevel = 0;         // letters revealed by hint button
+  var locked = false;        // during win animation
+  var soundOn = true;
+  var queue = [];            // flattened, shuffled play order to avoid repeats
+  var qIndex = 0;
+
+  // ---------- Elements ----------
+  var $ = function(id){return document.getElementById(id);};
+  var elScore=$("score"), elStreak=$("streak"), elBest=$("best");
+  var elCat=$("cat"), elLen=$("len"), elHint=$("hint");
+  var elAnswer=$("answer"), elTray=$("tray"), elToast=$("toast");
+
+  // ---------- Persistence ----------
+  try{
+    var b = localStorage.getItem("ws_best");
+    if(b!==null){ best = parseInt(b,10)||0; }
+    var s = localStorage.getItem("ws_sound");
+    if(s!==null){ soundOn = (s==="1"); }
+  }catch(e){}
+
+  function saveBest(){ try{ localStorage.setItem("ws_best",String(best)); }catch(e){} }
+  function saveSound(){ try{ localStorage.setItem("ws_sound",soundOn?"1":"0"); }catch(e){} }
+
+  // ---------- Audio (WebAudio, no external files) ----------
+  var actx = null;
+  function audioCtx(){
+    if(!soundOn) return null;
+    try{
+      if(!actx){ actx = new (window.AudioContext||window.webkitAudioContext)(); }
+      if(actx.state==="suspended"){ actx.resume(); }
+      return actx;
+    }catch(e){ return null; }
+  }
+  function beep(freq,dur,type,vol){
+    var ctx=audioCtx(); if(!ctx) return;
+    try{
+      var o=ctx.createOscillator(), g=ctx.createGain();
+      o.type=type||"sine";
+      o.frequency.value=freq;
+      g.gain.value=0.0001;
+      o.connect(g); g.connect(ctx.destination);
+      var t=ctx.currentTime;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(vol||0.18,t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      o.start(t);
+      o.stop(t+dur+0.02);
+    }catch(e){}
+  }
+  function sndTap(){ beep(420,0.08,"triangle",0.12); }
+  function sndBack(){ beep(260,0.08,"sine",0.1); }
+  function sndWin(){
+    beep(523,0.12,"triangle",0.18);
+    setTimeout(function(){beep(659,0.12,"triangle",0.18);},110);
+    setTimeout(function(){beep(784,0.20,"triangle",0.2);},230);
+  }
+  function sndWrong(){ beep(160,0.18,"sawtooth",0.12); }
+  function sndShuffle(){ beep(500,0.06,"square",0.08); setTimeout(function(){beep(620,0.06,"square",0.08);},70); }
+
+  // ---------- Utilities ----------
+  function shuffleArr(a){
+    for(var i=a.length-1;i>0;i--){
+      var j=Math.floor(Math.random()*(i+1));
+      var t=a[i]; a[i]=a[j]; a[j]=t;
+    }
+    return a;
+  }
+
+  function buildQueue(){
+    queue=[];
+    for(var c=0;c<categories.length;c++){
+      var cat=categories[c];
+      var list=WORDS[cat];
+      for(var i=0;i<list.length;i++){
+        queue.push({word:list[i][0], hint:list[i][1], category:cat});
+      }
+    }
+    shuffleArr(queue);
+    qIndex=0;
+  }
+
+  function nextEntry(){
+    if(qIndex>=queue.length){ buildQueue(); }
+    return queue[qIndex++];
+  }
+
+  // Scramble letters; ensure the scrambled order differs from the answer
+  // (only attempt that when the word has >1 distinct letter arrangement).
+  function scrambleLetters(word){
+    var letters=word.split("");
+    if(letters.length<2) return letters;
+    var attempt=0, out;
+    do{
+      out=shuffleArr(letters.slice());
+      attempt++;
+    }while(out.join("")===word && attempt<20);
+    return out;
+  }
+
+  // ---------- Rendering ----------
+  function newWord(entry){
+    current = entry || nextEntry();
+    hintLevel = 0;
+    locked = false;
+    placed = [];
+    var scrambled = scrambleLetters(current.word);
+    tiles = scrambled.map(function(ch,i){
+      return { id:i, ch:ch, used:false };
+    });
+    elCat.textContent = current.category;
+    var n = current.word.length;
+    elLen.textContent = n + (n===1?" letter":" letters");
+    elHint.innerHTML = current.hint;
+    renderTray();
+    renderAnswer();
+  }
+
+  function renderTray(){
+    elTray.innerHTML="";
+    for(var i=0;i<tiles.length;i++){
+      (function(tile){
+        var b=document.createElement("button");
+        b.className="tile"+(tile.used?" used":"");
+        b.type="button";
+        b.textContent=tile.ch.toUpperCase();
+        b.setAttribute("aria-label","Letter "+tile.ch);
+        b.addEventListener("click",function(){ placeTile(tile.id); });
+        elTray.appendChild(b);
+      })(tiles[i]);
+    }
+  }
+
+  function renderAnswer(){
+    elAnswer.innerHTML="";
+    var n=current.word.length;
+    for(var i=0;i<n;i++){
+      var slot=document.createElement("div");
+      slot.className="slot";
+      if(i<placed.length){
+        var tile=tiles[placed[i]];
+        slot.textContent=tile.ch.toUpperCase();
+        slot.className+=" filled";
+        (function(pos){
+          slot.addEventListener("click",function(){ removeAt(pos); });
+        })(i);
+      }
+      elAnswer.appendChild(slot);
+    }
+  }
+
+  // ---------- Interactions ----------
+  function placeTile(id){
+    if(locked) return;
+    var tile=tiles[id];
+    if(!tile || tile.used) return;
+    if(placed.length>=current.word.length) return;
+    tile.used=true;
+    placed.push(id);
+    sndTap();
+    renderTray();
+    renderAnswer();
+    if(placed.length===current.word.length){
+      checkAnswer();
+    }
+  }
+
+  function removeAt(pos){
+    if(locked) return;
+    if(pos<0 || pos>=placed.length) return;
+    var id=placed[pos];
+    if(tiles[id]) tiles[id].used=false;
+    placed.splice(pos,1);
+    sndBack();
+    renderTray();
+    renderAnswer();
+  }
+
+  function currentGuess(){
+    var s="";
+    for(var i=0;i<placed.length;i++){ s+=tiles[placed[i]].ch; }
+    return s;
+  }
+
+  function checkAnswer(){
+    var guess=currentGuess();
+    if(guess===current.word){
+      win();
+    }else{
+      // wrong - shake then clear
+      locked=true;
+      sndWrong();
+      elAnswer.classList.add("shake");
+      streak=0;
+      elStreak.textContent=streak;
+      setTimeout(function(){
+        elAnswer.classList.remove("shake");
+        // send all tiles back
+        for(var i=0;i<tiles.length;i++){ tiles[i].used=false; }
+        placed=[];
+        locked=false;
+        renderTray();
+        renderAnswer();
+      },460);
+    }
+  }
+
+  function win(){
+    locked=true;
+    sndWin();
+    // mark slots correct
+    var slots=elAnswer.querySelectorAll(".slot");
+    for(var i=0;i<slots.length;i++){
+      slots[i].classList.remove("filled");
+      slots[i].classList.add("correct");
+    }
+    elAnswer.classList.add("win");
+
+    // scoring: base + length bonus + streak bonus, minus hint penalty
+    var base=10;
+    var lenBonus=current.word.length*2;
+    var streakBonus=streak*5;
+    var hintPenalty=hintLevel*4;
+    var gained=Math.max(2, base+lenBonus+streakBonus-hintPenalty);
+    score+=gained;
+    streak+=1;
+    if(score>best){ best=score; saveBest(); }
+    elScore.textContent=score;
+    elStreak.textContent=streak;
+    elBest.textContent=best;
+
+    showToast(praise()+" +"+gained);
+
+    setTimeout(function(){
+      elAnswer.classList.remove("win");
+      newWord();
+    },780);
+  }
+
+  var PRAISE=["Nice!","Great!","Awesome!","Perfect!","Brilliant!","Yes!","Sweet!","Word wizard!"];
+  function praise(){ return PRAISE[Math.floor(Math.random()*PRAISE.length)]; }
+
+  var toastTimer=null;
+  function showToast(msg){
+    elToast.textContent=msg;
+    elToast.classList.add("show");
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer=setTimeout(function(){ elToast.classList.remove("show"); },1100);
+  }
+
+  function shuffleTiles(){
+    if(locked) return;
+    // Reorder only the unused tiles' display; keep ids/state intact.
+    // Simplest robust approach: re-scramble the underlying tray letters of
+    // tiles not currently placed, preserving used flags by rebuilding.
+    var unusedChars=[];
+    for(var i=0;i<tiles.length;i++){
+      if(!tiles[i].used) unusedChars.push(tiles[i].ch);
+    }
+    shuffleArr(unusedChars);
+    var u=0;
+    for(var j=0;j<tiles.length;j++){
+      if(!tiles[j].used){ tiles[j].ch=unusedChars[u++]; }
+    }
+    sndShuffle();
+    renderTray();
+  }
+
+  function giveHint(){
+    if(locked) return;
+    var n=current.word.length;
+    if(hintLevel>=n) return;
+    // Reveal the next correct letter into the answer:
+    // clear current placement, then place the first (hintLevel+1) correct letters.
+    hintLevel++;
+    // reset placement
+    for(var i=0;i<tiles.length;i++){ tiles[i].used=false; }
+    placed=[];
+    // place each required letter by finding an unused tile with that char
+    for(var p=0;p<hintLevel && p<n;p++){
+      var need=current.word.charAt(p);
+      var foundId=-1;
+      for(var t=0;t<tiles.length;t++){
+        if(!tiles[t].used && tiles[t].ch===need){ foundId=t; break; }
+      }
+      if(foundId>=0){
+        tiles[foundId].used=true;
+        placed.push(foundId);
+      }
+    }
+    sndTap();
+    streak=0;
+    elStreak.textContent=streak;
+    renderTray();
+    renderAnswer();
+    if(placed.length===n){ checkAnswer(); }
+  }
+
+  function skipWord(){
+    if(locked) return;
+    streak=0;
+    elStreak.textContent=streak;
+    sndShuffle();
+    newWord();
+  }
+
+  // ---------- Wire up controls ----------
+  $("shuffleBtn").addEventListener("click",shuffleTiles);
+  $("hintBtn").addEventListener("click",giveHint);
+  $("skipBtn").addEventListener("click",skipWord);
+
+  var soundBtn=$("soundBtn");
+  function paintSound(){ soundBtn.innerHTML = soundOn ? "&#128266;" : "&#128263;"; }
+  soundBtn.addEventListener("click",function(){
+    soundOn=!soundOn;
+    saveSound();
+    paintSound();
+    if(soundOn){ audioCtx(); sndTap(); }
+  });
+
+  // Prevent double-tap zoom edge cases on iOS for buttons
+  document.addEventListener("touchstart",function(){ /* unlock audio on first touch */ if(soundOn) audioCtx(); },{once:true,passive:true});
+
+  // ---------- Init ----------
+  elBest.textContent=best;
+  paintSound();
+  buildQueue();
+  newWord();
+})();
+</script>
+</body>
+</html>

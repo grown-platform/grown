@@ -105,6 +105,22 @@ const GAMES: AppTile[] = [
   arcade("aim-trainer", "Aim Trainer", "#E11D48", "GpsFixed"),
   arcade("guess-the-number", "Guess the Number", "#2563EB", "QuestionMark"),
   arcade("higher-lower", "Higher or Lower", "#7C3AED", "SwapVert"),
+  arcade("video-poker", "Video Poker", "#166534", "Style"),
+  arcade("war", "War", "#7F1D1D", "Style"),
+  arcade("slot-machine", "Slot Machine", "#B91C1C", "Casino"),
+  arcade("yahtzee", "Yahtzee", "#4F46E5", "Casino"),
+  arcade("pig", "Pig", "#DB2777", "Casino"),
+  arcade("word-scramble", "Word Scramble", "#0D9488", "Shuffle"),
+  arcade("wordle", "Wordle", "#16A34A", "Apps"),
+  arcade("typing-test", "Typing Test", "#475569", "Keyboard"),
+  arcade("boggle", "Boggle", "#CA8A04", "Abc"),
+  arcade("tron", "Tron", "#06B6D4", "TwoWheeler"),
+  arcade("helicopter", "Helicopter", "#0EA5E9", "Flight"),
+  arcade("car-dodge", "Car Dodge", "#F59E0B", "DirectionsCar"),
+  arcade("missile-command", "Missile Command", "#DC2626", "RocketLaunch"),
+  arcade("lunar-lander", "Lunar Lander", "#334155", "DarkMode"),
+  arcade("match-3", "Match 3", "#DB2777", "Diamond"),
+  arcade("centipede", "Centipede", "#65A30D", "BugReport"),
 ];
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */

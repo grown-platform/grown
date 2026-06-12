@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Missile Command</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #05060a;
+    color: #cfe8ff;
+    font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+  }
+  header {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    background: linear-gradient(#0a1020, #060912);
+    border-bottom: 1px solid #15223a;
+  }
+  header h1 {
+    font-size: 15px; letter-spacing: 1px;
+    color: #6ff0c8; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  #stats {
+    font-size: 12px; text-align: right; line-height: 1.4;
+    white-space: nowrap;
+  }
+  #stats b { color: #ffd56b; }
+  #cityrow { color: #6ff0c8; }
+  #restart {
+    flex: 0 0 auto;
+    background: #15314a; color: #cfe8ff;
+    border: 1px solid #2a5078; border-radius: 8px;
+    font-size: 13px; padding: 7px 12px;
+    cursor: pointer;
+  }
+  #restart:active { background: #1e4467; }
+  #stage {
+    flex: 1 1 auto; position: relative;
+    overflow: hidden;
+  }
+  canvas { display: block; position: absolute; inset: 0; }
+  #overlay {
+    position: absolute; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px;
+    background: rgba(3,5,10,0.72);
+    text-align: center; padding: 24px;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 { font-size: 26px; color: #ff7a7a; letter-spacing: 1px; }
+  #overlay.win h2 { color: #6ff0c8; }
+  #overlay p { font-size: 14px; color: #9fb6d0; }
+  #overlay button {
+    background: #6ff0c8; color: #04201a;
+    border: none; border-radius: 10px;
+    font-size: 16px; font-weight: 700;
+    padding: 12px 26px; cursor: pointer;
+  }
+  #toast {
+    position: absolute; top: 10px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10,18,32,0.85);
+    border: 1px solid #2a5078; border-radius: 20px;
+    padding: 6px 16px; font-size: 13px; color: #ffd56b;
+    pointer-events: none; opacity: 0;
+    transition: opacity .25s;
+  }
+  #toast.show { opacity: 1; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/missile-command.svg">
+    <link rel="manifest" href="/games/missile-command.webmanifest">
+    <meta name="theme-color" content="#DC2626">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Missile Command">
+    <link rel="apple-touch-icon" href="/games/icons/missile-command.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#DC2626;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <h1>Missile Command</h1>
+    <div id="stats">
+      Score <b id="score">0</b> &nbsp; Wave <b id="wave">1</b><br>
+      <span id="cityrow">Cities: </span> &nbsp; Ammo <b id="ammo">10</b>
+    </div>
+    <button id="restart">Restart</button>
+  </header>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="toast"></div>
+    <div id="overlay">
+      <h2 id="ovTitle">Game Over</h2>
+      <p id="ovText"></p>
+      <button id="ovBtn">Play Again</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d');
+  var stage = document.getElementById('stage');
+
+  var elScore = document.getElementById('score');
+  var elWave  = document.getElementById('wave');
+  var elAmmo  = document.getElementById('ammo');
+  var elCityRow = document.getElementById('cityrow');
+  var overlay = document.getElementById('overlay');
+  var ovTitle = document.getElementById('ovTitle');
+  var ovText  = document.getElementById('ovText');
+  var ovBtn   = document.getElementById('ovBtn');
+  var toastEl = document.getElementById('toast');
+
+  // Logical canvas size (CSS px). Updated on resize.
+  var W = 360, H = 480;
+  var DPR = 1;
+
+  function resize() {
+    var r = stage.getBoundingClientRect();
+    W = Math.max(240, Math.floor(r.width));
+    H = Math.max(240, Math.floor(r.height));
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width  = Math.floor(W * DPR);
+    cv.height = Math.floor(H * DPR);
+    cv.style.width = W + 'px';
+    cv.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    layoutCities();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---- Audio (WebAudio, lazy) ----
+  var actx = null;
+  function audio() {
+    if (actx) return actx;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      actx = new AC();
+    } catch (e) { actx = null; }
+    return actx;
+  }
+  function beep(type, freq, dur, vol) {
+    var a = audio(); if (!a) return;
+    if (a.state === 'suspended') { try { a.resume(); } catch (e) {} }
+    var t = a.currentTime;
+    var o = a.createOscillator();
+    var g = a.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function sndFire()  { beep('square', 660, 0.12, 0.06); }
+  function sndBoom()  { beep('sawtooth', 140, 0.30, 0.10); }
+  function sndCity()  { beep('sawtooth', 70, 0.45, 0.16); }
+  function sndKill()  { beep('triangle', 880, 0.10, 0.05); }
+
+  // ---- Game state ----
+  var CITY_COUNT = 6;
+  var cities = [];        // {x, y, alive}
+  var enemies = [];       // {x,y, vx,vy, tx,ty}  (incoming)
+  var interceptors = [];  // {x,y, vx,vy, tx,ty}  (player missiles flying to detonation)
+  var blasts = [];        // {x,y, r, max, growing}
+  var particles = [];
+
+  var score = 0;
+  var wave = 1;
+  var ammo = 0;
+  var ammoMax = 10;
+  var running = false;
+  var spawnQueue = 0;     // enemies left to spawn this wave
+  var spawnTimer = 0;
+  var spawnInterval = 1.0;
+  var enemySpeed = 40;    // px/sec base
+  var waveBetween = false;
+  var betweenTimer = 0;
+
+  var GROUND = 0; // y of ground line, set in layout
+
+  function layoutCities() {
+    GROUND = H - 28;
+    // distribute cities across the ground, leaving margins
+    var n = cities.length || CITY_COUNT;
+    var margin = Math.min(40, W * 0.08);
+    var usable = W - margin * 2;
+    for (var i = 0; i < cities.length; i++) {
+      var t = (cities.length === 1) ? 0.5 : i / (cities.length - 1);
+      cities[i].x = margin + usable * t;
+      cities[i].y = GROUND;
+    }
+  }
+
+  function newGame() {
+    cities = [];
+    for (var i = 0; i < CITY_COUNT; i++) cities.push({ x: 0, y: 0, alive: true });
+    layoutCities();
+    enemies.length = 0;
+    interceptors.length = 0;
+    blasts.length = 0;
+    particles.length = 0;
+    score = 0;
+    wave = 1;
+    running = true;
+    overlay.classList.remove('show', 'win');
+    startWave(wave);
+    updateHud();
+  }
+
+  function startWave(w) {
+    waveBetween = false;
+    ammoMax = 10;
+    ammo = ammoMax;
+    spawnQueue = 4 + Math.floor(w * 1.6);
+    enemySpeed = 36 + w * 7;
+    spawnInterval = Math.max(0.28, 1.05 - w * 0.06);
+    spawnTimer = 0.6;
+    updateHud();
+    showToast('Wave ' + w);
+  }
+
+  function aliveCities() {
+    var c = 0;
+    for (var i = 0; i < cities.length; i++) if (cities[i].alive) c++;
+    return c;
+  }
+
+  function spawnEnemy() {
+    // origin near top, target an alive city (or random ground point)
+    var sx = Math.random() * W;
+    var sy = -10;
+    var targets = [];
+    for (var i = 0; i < cities.length; i++) if (cities[i].alive) targets.push(cities[i]);
+    var tx, ty;
+    if (targets.length) {
+      var tgt = targets[(Math.random() * targets.length) | 0];
+      tx = tgt.x + (Math.random() * 16 - 8);
+    } else {
+      tx = Math.random() * W;
+    }
+    ty = GROUND;
+    var dx = tx - sx, dy = ty - sy;
+    var len = Math.hypot(dx, dy) || 1;
+    var spd = enemySpeed * (0.85 + Math.random() * 0.4);
+    enemies.push({
+      x: sx, y: sy,
+      vx: dx / len * spd, vy: dy / len * spd,
+      tx: tx, ty: ty,
+      trail: []
+    });
+  }
+
+  function fireAt(px, py) {
+    if (!running) return;
+    if (ammo <= 0) { showToast('No ammo!'); return; }
+    // launch from nearest battery point (center-bottom default).
+    // Use a launch origin: middle of the ground.
+    var ox = W * 0.5, oy = GROUND;
+    // Don't aim below ground / behind launcher
+    py = Math.min(py, GROUND - 4);
+    var dx = px - ox, dy = py - oy;
+    var len = Math.hypot(dx, dy) || 1;
+    var spd = 460;
+    interceptors.push({
+      x: ox, y: oy,
+      vx: dx / len * spd, vy: dy / len * spd,
+      tx: px, ty: py,
+      trail: []
+    });
+    ammo--;
+    updateHud();
+    sndFire();
+  }
+
+  function detonate(x, y) {
+    blasts.push({ x: x, y: y, r: 2, max: 46, growing: true });
+    sndBoom();
+    for (var i = 0; i < 8; i++) {
+      var a = Math.random() * Math.PI * 2;
+      var s = 30 + Math.random() * 70;
+      particles.push({ x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5 + Math.random() * 0.4, t: 0, col: '#ffd56b' });
+    }
+  }
+
+  function destroyCity(c) {
+    if (!c.alive) return;
+    c.alive = false;
+    sndCity();
+    for (var i = 0; i < 16; i++) {
+      var a = Math.random() * Math.PI * 2;
+      var s = 40 + Math.random() * 90;
+      particles.push({ x: c.x, y: c.y - 6, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 30, life: 0.6 + Math.random() * 0.5, t: 0, col: '#ff7a7a' });
+    }
+    updateHud();
+    if (aliveCities() === 0) endGame(false);
+  }
+
+  function endGame(win) {
+    running = false;
+    overlay.classList.add('show');
+    if (win) {
+      overlay.classList.add('win');
+      ovTitle.textContent = 'You Survived!';
+      ovText.textContent = 'Wave ' + wave + ' cleared. Final score: ' + score;
+      ovBtn.textContent = 'Play Again';
+    } else {
+      overlay.classList.remove('win');
+      ovTitle.textContent = 'Game Over';
+      ovText.textContent = 'All cities destroyed. Reached wave ' + wave + '. Score: ' + score;
+      ovBtn.textContent = 'Try Again';
+    }
+  }
+
+  // ---- HUD ----
+  function updateHud() {
+    elScore.textContent = score;
+    elWave.textContent = wave;
+    elAmmo.textContent = ammo;
+    var s = '';
+    for (var i = 0; i < cities.length; i++) s += cities[i].alive ? '▲' : '·';
+    elCityRow.textContent = 'Cities: ' + s + ' (' + aliveCities() + ')';
+  }
+
+  var toastTimer = 0;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    toastTimer = 1.4;
+  }
+
+  // ---- Input ----
+  function pointerFire(clientX, clientY) {
+    var r = cv.getBoundingClientRect();
+    var x = clientX - r.left;
+    var y = clientY - r.top;
+    fireAt(x, y);
+  }
+
+  cv.addEventListener('touchstart', function (e) {
+    e.preventDefault();
+    audio();
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      pointerFire(t.clientX, t.clientY);
+    }
+  }, { passive: false });
+
+  cv.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+
+  cv.addEventListener('mousedown', function (e) {
+    e.preventDefault();
+    audio();
+    pointerFire(e.clientX, e.clientY);
+  });
+
+  document.getElementById('restart').addEventListener('click', function () { audio(); newGame(); });
+  ovBtn.addEventListener('click', function () { audio(); newGame(); });
+
+  // ---- Update ----
+  function update(dt) {
+    // toast fade
+    if (toastTimer > 0) {
+      toastTimer -= dt;
+      if (toastTimer <= 0) toastEl.classList.remove('show');
+    }
+
+    if (!running) return;
+
+    // wave spawning
+    if (!waveBetween) {
+      if (spawnQueue > 0) {
+        spawnTimer -= dt;
+        if (spawnTimer <= 0) {
+          spawnEnemy();
+          spawnQueue--;
+          spawnTimer = spawnInterval * (0.7 + Math.random() * 0.6);
+        }
+      } else if (enemies.length === 0) {
+        // wave cleared
+        waveBetween = true;
+        betweenTimer = 1.6;
+        showToast('Wave ' + wave + ' clear! +' + (aliveCities() * 25));
+        score += aliveCities() * 25;
+        updateHud();
+      }
+    } else {
+      betweenTimer -= dt;
+      if (betweenTimer <= 0) {
+        wave++;
+        startWave(wave);
+      }
+    }
+
+    // interceptors
+    for (var i = interceptors.length - 1; i >= 0; i--) {
+      var m = interceptors[i];
+      var prevX = m.x, prevY = m.y;
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      m.trail.push({ x: m.x, y: m.y });
+      if (m.trail.length > 12) m.trail.shift();
+      // reached target? check if we passed it (dot product sign change)
+      var toTargetX = m.tx - m.x, toTargetY = m.ty - m.y;
+      var moveX = m.x - prevX, moveY = m.y - prevY;
+      var passed = (toTargetX * moveX + toTargetY * moveY) <= 0;
+      var close = Math.hypot(m.tx - m.x, m.ty - m.y) < 6;
+      if (passed || close) {
+        detonate(m.tx, m.ty);
+        interceptors.splice(i, 1);
+      }
+    }
+
+    // blasts
+    for (var b = blasts.length - 1; b >= 0; b--) {
+      var bl = blasts[b];
+      if (bl.growing) {
+        bl.r += 130 * dt;
+        if (bl.r >= bl.max) { bl.r = bl.max; bl.growing = false; }
+      } else {
+        bl.r -= 70 * dt;
+        if (bl.r <= 0) { blasts.splice(b, 1); continue; }
+      }
+    }
+
+    // enemies
+    for (var e = enemies.length - 1; e >= 0; e--) {
+      var en = enemies[e];
+      en.x += en.vx * dt;
+      en.y += en.vy * dt;
+      en.trail.push({ x: en.x, y: en.y });
+      if (en.trail.length > 40) en.trail.shift();
+
+      // collision with any blast
+      var killed = false;
+      for (var b2 = 0; b2 < blasts.length; b2++) {
+        var bb = blasts[b2];
+        var d = Math.hypot(en.x - bb.x, en.y - bb.y);
+        if (d <= bb.r) {
+          killed = true;
+          break;
+        }
+      }
+      if (killed) {
+        score += 25;
+        sndKill();
+        for (var p = 0; p < 6; p++) {
+          var a2 = Math.random() * Math.PI * 2;
+          var s2 = 20 + Math.random() * 50;
+          particles.push({ x: en.x, y: en.y, vx: Math.cos(a2) * s2, vy: Math.sin(a2) * s2, life: 0.4 + Math.random() * 0.3, t: 0, col: '#9ff' });
+        }
+        enemies.splice(e, 1);
+        updateHud();
+        continue;
+      }
+
+      // reached ground / city
+      if (en.y >= en.ty || en.y >= GROUND) {
+        // find nearest city to impact point
+        var hit = null, best = 22;
+        for (var c = 0; c < cities.length; c++) {
+          if (!cities[c].alive) continue;
+          var cd = Math.abs(cities[c].x - en.x);
+          if (cd < best) { best = cd; hit = cities[c]; }
+        }
+        if (hit) destroyCity(hit);
+        else {
+          // ground impact splash
+          for (var pp = 0; pp < 5; pp++) {
+            var a3 = Math.random() * Math.PI;
+            particles.push({ x: en.x, y: GROUND, vx: Math.cos(a3) * 50, vy: -Math.abs(Math.sin(a3)) * 60, life: 0.4, t: 0, col: '#888' });
+          }
+        }
+        enemies.splice(e, 1);
+        continue;
+      }
+    }
+
+    // particles
+    for (var q = particles.length - 1; q >= 0; q--) {
+      var pt = particles[q];
+      pt.t += dt;
+      if (pt.t >= pt.life) { particles.splice(q, 1); continue; }
+      pt.vy += 120 * dt;
+      pt.x += pt.vx * dt;
+      pt.y += pt.vy * dt;
+    }
+  }
+
+  // ---- Render ----
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // sky gradient
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#070b16');
+    g.addColorStop(1, '#0d1424');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // stars
+    ctx.fillStyle = 'rgba(120,160,220,0.25)';
+    for (var s = 0; s < 26; s++) {
+      var sx = ((s * 9973) % W);
+      var sy = ((s * 7919) % (GROUND - 20));
+      ctx.fillRect(sx, sy, 1, 1);
+    }
+
+    // ground
+    ctx.fillStyle = '#14283c';
+    ctx.fillRect(0, GROUND, W, H - GROUND);
+    ctx.strokeStyle = '#2a5078';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, GROUND + 0.5); ctx.lineTo(W, GROUND + 0.5); ctx.stroke();
+
+    // launcher (center)
+    ctx.fillStyle = '#3a6f9c';
+    ctx.beginPath();
+    ctx.moveTo(W * 0.5 - 10, GROUND);
+    ctx.lineTo(W * 0.5 + 10, GROUND);
+    ctx.lineTo(W * 0.5 + 5, GROUND - 12);
+    ctx.lineTo(W * 0.5 - 5, GROUND - 12);
+    ctx.closePath();
+    ctx.fill();
+
+    // cities
+    for (var i = 0; i < cities.length; i++) {
+      var c = cities[i];
+      if (c.alive) {
+        ctx.fillStyle = '#6ff0c8';
+        // little building cluster
+        var bx = c.x;
+        ctx.fillRect(bx - 9, GROUND - 10, 6, 10);
+        ctx.fillRect(bx - 2, GROUND - 16, 5, 16);
+        ctx.fillRect(bx + 4, GROUND - 8, 6, 8);
+        ctx.fillStyle = 'rgba(111,240,200,0.25)';
+        ctx.fillRect(bx - 11, GROUND - 18, 23, 18);
+      } else {
+        ctx.fillStyle = '#3a2a2a';
+        ctx.fillRect(c.x - 9, GROUND - 4, 18, 4);
+      }
+    }
+
+    // enemy trails + heads
+    for (var e = 0; e < enemies.length; e++) {
+      var en = enemies[e];
+      ctx.strokeStyle = 'rgba(255,90,90,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (var t = 0; t < en.trail.length; t++) {
+        var p = en.trail[t];
+        if (t === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+      }
+      ctx.lineTo(en.x, en.y);
+      ctx.stroke();
+      ctx.fillStyle = '#ff5a5a';
+      ctx.beginPath(); ctx.arc(en.x, en.y, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // interceptor trails + heads
+    for (var m = 0; m < interceptors.length; m++) {
+      var it = interceptors[m];
+      ctx.strokeStyle = 'rgba(120,255,200,0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (var tt = 0; tt < it.trail.length; tt++) {
+        var pp = it.trail[tt];
+        if (tt === 0) ctx.moveTo(pp.x, pp.y); else ctx.lineTo(pp.x, pp.y);
+      }
+      ctx.lineTo(it.x, it.y);
+      ctx.stroke();
+      // target marker
+      ctx.strokeStyle = 'rgba(120,255,200,0.4)';
+      ctx.beginPath(); ctx.arc(it.tx, it.ty, 4, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#aeffe0';
+      ctx.beginPath(); ctx.arc(it.x, it.y, 2, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // blasts
+    for (var b = 0; b < blasts.length; b++) {
+      var bl = blasts[b];
+      var alpha = bl.growing ? 0.9 : (bl.r / bl.max) * 0.9;
+      var rg = ctx.createRadialGradient(bl.x, bl.y, 0, bl.x, bl.y, bl.r);
+      rg.addColorStop(0, 'rgba(255,255,200,' + alpha + ')');
+      rg.addColorStop(0.6, 'rgba(255,180,90,' + (alpha * 0.7) + ')');
+      rg.addColorStop(1, 'rgba(255,120,60,0)');
+      ctx.fillStyle = rg;
+      ctx.beginPath(); ctx.arc(bl.x, bl.y, bl.r, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // particles
+    for (var q = 0; q < particles.length; q++) {
+      var pt = particles[q];
+      var a = 1 - (pt.t / pt.life);
+      ctx.globalAlpha = a < 0 ? 0 : a;
+      ctx.fillStyle = pt.col;
+      ctx.fillRect(pt.x - 1, pt.y - 1, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- Loop ----
+  var last = 0;
+  function frame(ts) {
+    if (!last) last = ts;
+    var dt = (ts - last) / 1000;
+    last = ts;
+    if (dt > 0.05) dt = 0.05; // clamp
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  resize();
+  newGame();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

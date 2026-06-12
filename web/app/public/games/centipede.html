@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Centipede</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: #0a0a14;
+    color: #e8e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+  }
+  header {
+    width: 100%;
+    padding: 6px 10px 4px;
+    text-align: center;
+  }
+  h1 {
+    font-size: 18px;
+    letter-spacing: 3px;
+    color: #7cff7c;
+    text-shadow: 0 0 8px rgba(124,255,124,0.5);
+    font-weight: 700;
+  }
+  #hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-top: 4px;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  #hud .item { display: flex; gap: 5px; align-items: center; }
+  #lives { color: #ff7c9c; letter-spacing: 2px; }
+  #score { color: #ffe07c; }
+  #wave { color: #7cc8ff; }
+  #stage {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+  }
+  canvas {
+    display: block;
+    background: #06060f;
+    border: 1px solid #1c1c30;
+    touch-action: none;
+    image-rendering: pixelated;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(6,6,15,0.82);
+    text-align: center;
+    padding: 16px;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h2 {
+    font-size: 26px;
+    color: #7cff7c;
+    letter-spacing: 2px;
+  }
+  #overlay p { font-size: 14px; color: #b8b8d0; line-height: 1.5; max-width: 300px; }
+  button {
+    font-family: inherit;
+    font-size: 16px;
+    padding: 12px 26px;
+    background: #1b6b1b;
+    color: #eaffea;
+    border: 1px solid #7cff7c;
+    border-radius: 8px;
+    cursor: pointer;
+    letter-spacing: 1px;
+  }
+  button:active { background: #2a8a2a; }
+  #controls {
+    width: 100%;
+    padding: 8px 10px 12px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
+  #fireBtn {
+    background: #6b1b3b;
+    border-color: #ff7c9c;
+    color: #ffeaf0;
+    flex: 1;
+    max-width: 200px;
+  }
+  #restartBtn {
+    background: #2a2a44;
+    border-color: #7cc8ff;
+    color: #eaf4ff;
+    font-size: 14px;
+    padding: 12px 18px;
+  }
+  .hint { font-size: 11px; color: #6a6a88; margin-top: 2px; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/centipede.svg">
+    <link rel="manifest" href="/games/centipede.webmanifest">
+    <meta name="theme-color" content="#65A30D">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Centipede">
+    <link rel="apple-touch-icon" href="/games/icons/centipede.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#65A30D;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <h1>CENTIPEDE</h1>
+    <div id="hud">
+      <div class="item" id="score">SCORE 0</div>
+      <div class="item" id="wave">WAVE 1</div>
+      <div class="item" id="lives">&#9650;&#9650;&#9650;</div>
+    </div>
+  </header>
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <div id="overlay">
+      <h2 id="ovTitle">CENTIPEDE</h2>
+      <p id="ovText">Drag your finger near the bottom to move. It auto-fires.<br>Desktop: Arrow keys / WASD to move, Space to fire.<br>Shoot every segment to clear the wave!</p>
+      <button id="startBtn">START</button>
+    </div>
+  </div>
+  <div id="controls">
+    <button id="fireBtn">FIRE</button>
+    <button id="restartBtn">RESTART</button>
+  </div>
+</div>
+<script>
+(function(){
+"use strict";
+
+// ---------- Grid / layout ----------
+var COLS = 15;          // logical columns
+var ROWS = 20;          // logical rows
+var cell = 24;          // pixel size of a cell (recomputed on resize)
+var W = COLS * cell;
+var H = ROWS * cell;
+var PLAYER_ROWS = 4;    // bottom rows the shooter may roam in
+
+var canvas = document.getElementById('game');
+var ctx = canvas.getContext('2d');
+
+// ---------- DOM ----------
+var scoreEl = document.getElementById('score');
+var waveEl  = document.getElementById('wave');
+var livesEl = document.getElementById('lives');
+var overlay = document.getElementById('overlay');
+var ovTitle = document.getElementById('ovTitle');
+var ovText  = document.getElementById('ovText');
+var startBtn = document.getElementById('startBtn');
+var fireBtn  = document.getElementById('fireBtn');
+var restartBtn = document.getElementById('restartBtn');
+
+// ---------- Game state ----------
+var STATE_MENU = 0, STATE_PLAY = 1, STATE_WAVECLEAR = 2, STATE_DEAD = 3, STATE_OVER = 4;
+var state = STATE_MENU;
+
+var score = 0;
+var lives = 3;
+var wave = 1;
+
+var mushrooms;   // 2D array [ROWS][COLS] -> health 0..4 (0 = none)
+var segments;    // array of centipede segments
+var bullets;     // array of bullets
+var player;      // shooter
+var waveTimer = 0;
+var deadTimer = 0;
+var floatTexts = [];
+
+// ---------- Sizing ----------
+function resize(){
+  var stage = document.getElementById('stage');
+  var availW = stage.clientWidth;
+  var availH = stage.clientHeight;
+  // pick cell so the COLSxROWS grid fits both dimensions
+  var cw = Math.floor(availW / COLS);
+  var ch = Math.floor(availH / ROWS);
+  cell = Math.max(8, Math.min(cw, ch));
+  W = COLS * cell;
+  H = ROWS * cell;
+  // device pixel ratio for crispness
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (player) {
+    // keep player within new bounds
+    player.x = clamp(player.x, cell*0.5, W - cell*0.5);
+    player.y = clamp(player.y, H - PLAYER_ROWS*cell + cell*0.5, H - cell*0.5);
+  }
+}
+window.addEventListener('resize', resize);
+
+function clamp(v, a, b){ return v < a ? a : (v > b ? b : v); }
+
+// ---------- Audio ----------
+var actx = null;
+function audio(){
+  if (!actx) {
+    try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch(e){ actx = null; }
+  }
+  return actx;
+}
+function beep(freq, dur, type, vol){
+  var a = audio();
+  if (!a) return;
+  if (a.state === 'suspended') { try { a.resume(); } catch(e){} }
+  var o = a.createOscillator();
+  var g = a.createGain();
+  o.type = type || 'square';
+  o.frequency.value = freq;
+  g.gain.value = 0.0001;
+  o.connect(g); g.connect(a.destination);
+  var t = a.currentTime;
+  var v = vol == null ? 0.08 : vol;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(v, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+}
+function sFire(){ beep(880, 0.06, 'square', 0.05); }
+function sHitMush(){ beep(180, 0.05, 'square', 0.04); }
+function sKillSeg(){ beep(330, 0.08, 'square', 0.07); beep(440,0.08,'square',0.05); }
+function sDie(){ beep(120, 0.5, 'sawtooth', 0.1); beep(80,0.5,'sawtooth',0.08); }
+function sWave(){ beep(523,0.1,'triangle',0.08); beep(659,0.12,'triangle',0.08); beep(784,0.16,'triangle',0.08); }
+
+// ---------- Mushroom helpers ----------
+function newMushrooms(){
+  var m = [];
+  for (var r = 0; r < ROWS; r++){
+    m[r] = [];
+    for (var c = 0; c < COLS; c++) m[r][c] = 0;
+  }
+  // random field, but not in top 2 rows (spawn) nor bottom player zone
+  var count = 18 + wave * 2;
+  var tries = 0;
+  var placed = 0;
+  while (placed < count && tries < 400){
+    tries++;
+    var rr = 2 + Math.floor(Math.random() * (ROWS - 2 - PLAYER_ROWS));
+    var cc = Math.floor(Math.random() * COLS);
+    if (m[rr][cc] === 0){ m[rr][cc] = 4; placed++; }
+  }
+  return m;
+}
+function mushAt(r, c){
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return 0;
+  return mushrooms[r][c];
+}
+
+// ---------- Centipede ----------
+// Model: discrete grid steps on a timer. Each segment occupies an integer
+// (col,row). The chain is an ordered list head-first. On each step we compute
+// the head's next cell (turn + drop on wall/mushroom), then every body segment
+// moves into the cell its predecessor occupied BEFORE the step (true follow).
+// rowF is a render-only smoothed position for vertical drops; movement logic is
+// purely grid-based so following/splitting/collisions stay exact.
+
+var stepInterval = 0.18;   // seconds per grid step (set by wave)
+var stepAccum = 0;
+var enteringTimer = 0;     // staggered entry from the top edge
+
+function spawnCentipede(){
+  segments = [];
+  var len = 9 + Math.min(wave, 6);                 // grows a little with waves
+  stepInterval = Math.max(0.05, 0.18 - (wave - 1) * 0.018); // faster each wave
+  stepAccum = 0;
+  enteringTimer = 0;
+  // Build chain head-first. Head starts just off the left edge on row 0, moving
+  // right; the body trails off-screen to the left so they march in one by one.
+  for (var i = 0; i < len; i++){
+    segments.push({
+      col: -1 - i,        // off-screen to the left initially
+      row: 0,
+      dir: 1,             // 1 = right, -1 = left
+      isHead: (i === 0),
+      alive: true,
+      rowF: 0,            // render-smoothed row
+      colF: -1 - i,       // render-smoothed col
+      enteredYet: false
+    });
+  }
+}
+
+// Determine whether grid cell (r,c) blocks the centipede (wall or mushroom).
+function cellBlocked(r, c){
+  if (c < 0 || c >= COLS) return true;     // wall
+  if (r >= ROWS) return true;              // floor (shouldn't reach here)
+  if (mushAt(r, c) > 0) return true;       // mushroom
+  return false;
+}
+
+// Advance the centipede by exactly one grid step.
+function gridStep(){
+  // Compact to the live chain, preserving head-first order.
+  var chain = segments;   // head-first ordered chain (killed segments are spliced out)
+  if (chain.length === 0) return;
+
+  // Remember each segment's pre-step cell for following.
+  var prev = [];
+  for (var p = 0; p < chain.length; p++){ prev.push({ col: chain[p].col, row: chain[p].row, dir: chain[p].dir }); }
+
+  // ----- Move heads -----
+  // Any segment flagged isHead leads its own sub-chain. We move each head by its
+  // own rule, then trail its followers into predecessor cells. Because a split
+  // creates a second head mid-list, we walk the chain and treat each isHead as a
+  // new leader for the following run until the next isHead.
+  var leaderIndices = [];
+  for (var li = 0; li < chain.length; li++){ if (chain[li].isHead) leaderIndices.push(li); }
+  if (leaderIndices.length === 0){ chain[0].isHead = true; leaderIndices = [0]; }
+
+  for (var g = 0; g < leaderIndices.length; g++){
+    var start = leaderIndices[g];
+    var end = (g + 1 < leaderIndices.length) ? leaderIndices[g + 1] : chain.length; // exclusive
+    var head = chain[start];
+
+    // --- compute head's next cell ---
+    var nc = head.col + head.dir;
+    var nr = head.row;
+    // While still entering from off the left edge, march freely until on-grid.
+    var entering = (head.col < 0 && head.dir > 0 && nc <= 0);
+    var ahead = entering ? false : cellBlocked(head.row, nc);
+    if (ahead){
+      // reverse horizontally and drop one row
+      head.dir = -head.dir;
+      nc = head.col + head.dir;
+      nr = head.row + 1;
+      // if the cell we'd drop into is blocked by a mushroom, eat through by
+      // dropping straight down anyway (classic behavior: drop has priority).
+      if (nr >= ROWS){
+        // reached the bottom row -> costs a life
+        nr = ROWS - 1;
+        head.row = nr;
+        if (state === STATE_PLAY){ loseLife(); }
+        return;
+      }
+      // if reversed-into cell is also a wall (corner), just drop straight down
+      if (nc < 0 || nc >= COLS) nc = head.col;
+    } else {
+      // also: if at bottom and somehow moving down — handled above
+    }
+    head.col = nc;
+    head.row = nr;
+
+    // --- trail followers of THIS sub-chain into predecessor cells ---
+    for (var f = start + 1; f < end; f++){
+      chain[f].col = prev[f - 1].col;
+      chain[f].row = prev[f - 1].row;
+      chain[f].dir = prev[f - 1].dir;
+    }
+  }
+
+  // Player / bottom collision check after the step.
+  if (state === STATE_PLAY){
+    var prow = Math.floor(player.y / cell);
+    var pcol = Math.floor(player.x / cell);
+    for (var k = 0; k < chain.length; k++){
+      var s = chain[k];
+      if (s.row >= ROWS - 1){ loseLife(); return; }
+      if (s.row === prow && s.col === pcol){ loseLife(); return; }
+    }
+  }
+}
+
+function stepCentipede(dt){
+  if (segments.length === 0) return;
+  stepAccum += dt;
+  while (stepAccum >= stepInterval){
+    stepAccum -= stepInterval;
+    gridStep();
+    if (state !== STATE_PLAY) { stepAccum = 0; break; }
+  }
+  // smooth render positions toward grid cells
+  var lerp = Math.min(1, dt / stepInterval);
+  for (var i = 0; i < segments.length; i++){
+    var s = segments[i];
+    // Snap (don't lerp) across a horizontal wrap so a split head doesn't streak.
+    if (Math.abs(s.col - s.colF) > 1.5) s.colF = s.col;
+    if (Math.abs(s.row - s.rowF) > 1.5) s.rowF = s.row;
+    s.colF += (s.col - s.colF) * lerp;
+    s.rowF += (s.row - s.rowF) * lerp;
+  }
+}
+
+// ---------- Player ----------
+function newPlayer(){
+  return {
+    x: W * 0.5,
+    y: H - cell * 1.2,
+    w: cell * 0.8,
+    speed: 6 * cell,   // px per second (desktop keys)
+    cooldown: 0
+  };
+}
+
+// ---------- Bullets ----------
+function fire(){
+  if (state !== STATE_PLAY) return;
+  if (player.cooldown > 0) return;
+  bullets.push({ x: player.x, y: player.y - cell*0.5, speed: 14 * cell });
+  player.cooldown = 0.16;
+  sFire();
+}
+
+function stepBullets(dt){
+  for (var i = bullets.length - 1; i >= 0; i--){
+    var b = bullets[i];
+    b.y -= b.speed * dt;
+    if (b.y < -cell){ bullets.splice(i,1); continue; }
+    var c = Math.floor(b.x / cell);
+    var r = Math.floor(b.y / cell);
+    // hit mushroom?
+    if (r >= 0 && r < ROWS && c >= 0 && c < COLS && mushrooms[r][c] > 0){
+      mushrooms[r][c]--;
+      if (mushrooms[r][c] === 0){ addScore(1); }
+      sHitMush();
+      bullets.splice(i,1);
+      continue;
+    }
+    // hit segment? (use smoothed render position so it matches the visuals)
+    var hit = -1;
+    for (var j = 0; j < segments.length; j++){
+      var s = segments[j];
+      var sx = (s.colF + 0.5) * cell;
+      var sy = (s.rowF + 0.5) * cell;
+      if (Math.abs(b.x - sx) < cell*0.5 && Math.abs(b.y - sy) < cell*0.5){
+        hit = j; break;
+      }
+    }
+    if (hit >= 0){
+      killSegment(hit);
+      bullets.splice(i,1);
+    }
+  }
+}
+
+// Shooting a segment: it turns into a mushroom and the chain splits there.
+// segments[] is head-first order; killing one and removing it from the array
+// means the segment that followed it (now first of the trailing run) becomes a
+// new head.
+function killSegment(idx){
+  var s = segments[idx];
+  var wasHead = s.isHead;
+  // turn into a mushroom at its grid cell
+  var gr = clamp(s.row, 0, ROWS-1);
+  var gc = clamp(s.col, 0, COLS-1);
+  if (mushrooms[gr][gc] === 0) mushrooms[gr][gc] = 4;
+  addScore(wasHead ? 100 : 10);
+  floatTexts.push({ x:(gc+0.5)*cell, y:(gr+0.5)*cell, t:0.7, v: wasHead?100:10 });
+  sKillSeg();
+
+  // Remove it from the ordered chain. The follower (if any) becomes a head.
+  segments.splice(idx, 1);
+  if (idx < segments.length){
+    segments[idx].isHead = true;       // new head of the trailing piece
+    // it should turn down/around like a fresh head; keep its current dir but it
+    // will resolve naturally on the next grid step against walls/mushrooms.
+  }
+  if (segments.length > 0) segments[0].isHead = true;
+
+  if (segments.length === 0){ winWave(); }
+}
+
+// ---------- Scoring / lives ----------
+function addScore(n){ score += n; scoreEl.textContent = 'SCORE ' + score; }
+function setLivesHud(){
+  var s = '';
+  for (var i = 0; i < lives; i++) s += '▲';
+  livesEl.textContent = s;
+}
+
+function loseLife(){
+  lives--;
+  setLivesHud();
+  sDie();
+  bullets = [];
+  if (lives <= 0){
+    state = STATE_OVER;
+    showOverlay('GAME OVER', 'Final score: ' + score + '<br>Tap RESTART to play again.', 'PLAY AGAIN');
+  } else {
+    state = STATE_DEAD;
+    deadTimer = 1.0;
+  }
+}
+
+function reviveAfterDeath(){
+  // Reset centipede & player for the current wave (mushrooms persist).
+  spawnCentipede();
+  player = newPlayer();
+  state = STATE_PLAY;
+}
+
+function winWave(){
+  state = STATE_WAVECLEAR;
+  waveTimer = 1.4;
+  sWave();
+  addScore(50);
+}
+
+function nextWave(){
+  wave++;
+  waveEl.textContent = 'WAVE ' + wave;
+  // add a few mushrooms, keep existing
+  var add = 6;
+  var tries = 0;
+  while (add > 0 && tries < 200){
+    tries++;
+    var rr = 2 + Math.floor(Math.random() * (ROWS - 2 - PLAYER_ROWS));
+    var cc = Math.floor(Math.random() * COLS);
+    if (mushrooms[rr][cc] === 0){ mushrooms[rr][cc] = 4; add--; }
+  }
+  spawnCentipede();
+  player = newPlayer();
+  bullets = [];
+  state = STATE_PLAY;
+}
+
+// ---------- Game flow ----------
+function startGame(){
+  resize();
+  score = 0; lives = 3; wave = 1;
+  scoreEl.textContent = 'SCORE 0';
+  waveEl.textContent = 'WAVE 1';
+  setLivesHud();
+  mushrooms = newMushrooms();
+  bullets = [];
+  floatTexts = [];
+  spawnCentipede();
+  player = newPlayer();
+  state = STATE_PLAY;
+  hideOverlay();
+  beep(660,0.08,'triangle',0.06);
+}
+
+function showOverlay(title, text, btn){
+  ovTitle.textContent = title;
+  ovText.innerHTML = text;
+  startBtn.textContent = btn || 'START';
+  overlay.classList.remove('hidden');
+}
+function hideOverlay(){ overlay.classList.add('hidden'); }
+
+// ---------- Input ----------
+var keys = {};
+window.addEventListener('keydown', function(e){
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Spacebar'].indexOf(e.key) >= 0) e.preventDefault();
+  keys[e.key] = true;
+  if (e.key === ' ' || e.key === 'Spacebar') fire();
+  if ((e.key === 'Enter') && (state === STATE_MENU || state === STATE_OVER)) startGame();
+});
+window.addEventListener('keyup', function(e){ keys[e.key] = false; });
+
+// Touch / pointer drag to move the shooter
+var dragging = false;
+function pointerMove(clientX, clientY){
+  if (state !== STATE_PLAY) return;
+  var rect = canvas.getBoundingClientRect();
+  var x = (clientX - rect.left);
+  var y = (clientY - rect.top);
+  player.x = clamp(x, cell*0.5, W - cell*0.5);
+  // allow vertical movement only within the bottom player zone
+  var minY = H - PLAYER_ROWS * cell + cell*0.5;
+  var maxY = H - cell*0.5;
+  player.y = clamp(y, minY, maxY);
+}
+
+canvas.addEventListener('touchstart', function(e){
+  e.preventDefault();
+  dragging = true;
+  audio();
+  if (e.touches.length){ pointerMove(e.touches[0].clientX, e.touches[0].clientY); }
+}, { passive:false });
+canvas.addEventListener('touchmove', function(e){
+  e.preventDefault();
+  if (e.touches.length){ pointerMove(e.touches[0].clientX, e.touches[0].clientY); }
+}, { passive:false });
+canvas.addEventListener('touchend', function(e){ e.preventDefault(); dragging = false; }, { passive:false });
+canvas.addEventListener('touchcancel', function(e){ e.preventDefault(); dragging = false; }, { passive:false });
+
+// Mouse drag (desktop optional)
+canvas.addEventListener('mousedown', function(e){ dragging = true; audio(); pointerMove(e.clientX, e.clientY); });
+window.addEventListener('mousemove', function(e){ if (dragging) pointerMove(e.clientX, e.clientY); });
+window.addEventListener('mouseup', function(){ dragging = false; });
+
+// Buttons
+startBtn.addEventListener('click', function(){ audio(); startGame(); });
+restartBtn.addEventListener('click', function(){ audio(); startGame(); });
+fireBtn.addEventListener('click', function(){ audio(); fire(); });
+// hold-to-fire on fire button (touch)
+var fireHeld = false;
+fireBtn.addEventListener('touchstart', function(e){ e.preventDefault(); fireHeld = true; audio(); fire(); }, { passive:false });
+fireBtn.addEventListener('touchend', function(e){ e.preventDefault(); fireHeld = false; }, { passive:false });
+
+// ---------- Loop ----------
+var last = 0;
+function loop(ts){
+  if (!last) last = ts;
+  var dt = (ts - last) / 1000;
+  if (dt > 0.05) dt = 0.05; // clamp big frames
+  last = ts;
+
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+function update(dt){
+  if (state === STATE_PLAY){
+    // desktop keyboard movement
+    if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.x -= player.speed * dt;
+    if (keys['ArrowRight']|| keys['d'] || keys['D']) player.x += player.speed * dt;
+    if (keys['ArrowUp']   || keys['w'] || keys['W']) player.y -= player.speed * dt;
+    if (keys['ArrowDown'] || keys['s'] || keys['S']) player.y += player.speed * dt;
+    player.x = clamp(player.x, cell*0.5, W - cell*0.5);
+    player.y = clamp(player.y, H - PLAYER_ROWS*cell + cell*0.5, H - cell*0.5);
+
+    if (player.cooldown > 0) player.cooldown -= dt;
+
+    // Auto-fire continuously during play (fire() self-throttles via cooldown).
+    // dragging / fireHeld are still honored but auto-fire keeps it always firing.
+    fire();
+
+    stepBullets(dt);
+    stepCentipede(dt);
+  } else if (state === STATE_DEAD){
+    deadTimer -= dt;
+    if (deadTimer <= 0) reviveAfterDeath();
+  } else if (state === STATE_WAVECLEAR){
+    waveTimer -= dt;
+    if (waveTimer <= 0) nextWave();
+  }
+
+  // float texts
+  for (var i = floatTexts.length - 1; i >= 0; i--){
+    floatTexts[i].t -= dt;
+    floatTexts[i].y -= 20 * dt;
+    if (floatTexts[i].t <= 0) floatTexts.splice(i,1);
+  }
+}
+
+// ---------- Render ----------
+function render(){
+  ctx.clearRect(0,0,W,H);
+  // subtle field background grid
+  ctx.fillStyle = '#06060f';
+  ctx.fillRect(0,0,W,H);
+
+  // player-zone tint
+  ctx.fillStyle = 'rgba(40,40,80,0.18)';
+  ctx.fillRect(0, H - PLAYER_ROWS*cell, W, PLAYER_ROWS*cell);
+
+  drawMushrooms();
+  drawSegments();
+  drawBullets();
+  if (state === STATE_PLAY || state === STATE_DEAD || state === STATE_WAVECLEAR) drawPlayer();
+  drawFloatTexts();
+
+  if (state === STATE_WAVECLEAR){
+    bannerText('WAVE ' + wave + ' CLEARED!', '#7cff7c');
+  } else if (state === STATE_DEAD){
+    bannerText('LIFE LOST', '#ff7c9c');
+  }
+}
+
+function drawMushrooms(){
+  for (var r = 0; r < ROWS; r++){
+    for (var c = 0; c < COLS; c++){
+      var hp = mushrooms[r][c];
+      if (hp <= 0) continue;
+      var x = c * cell, y = r * cell;
+      var dmg = (4 - hp) / 4; // 0 = full
+      // cap
+      var cx = x + cell*0.5;
+      ctx.fillStyle = shadeGreen(hp);
+      ctx.beginPath();
+      ctx.arc(cx, y + cell*0.42, cell*0.34, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      // stem
+      ctx.fillStyle = hp >= 3 ? '#caa15a' : '#8a6e3a';
+      ctx.fillRect(cx - cell*0.10, y + cell*0.42, cell*0.20, cell*0.34);
+      // damage spots
+      if (dmg > 0){
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(x + cell*0.2, y + cell*0.25, cell*0.6*dmg, cell*0.1);
+      }
+    }
+  }
+}
+function shadeGreen(hp){
+  switch(hp){
+    case 4: return '#7cff7c';
+    case 3: return '#5fd65f';
+    case 2: return '#46a846';
+    default: return '#2e7a2e';
+  }
+}
+
+function drawSegments(){
+  for (var i = 0; i < segments.length; i++){
+    var s = segments[i];
+    var x = (s.colF + 0.5) * cell;
+    var y = (s.rowF + 0.5) * cell;
+    var rad = cell * 0.42;
+    // body
+    ctx.fillStyle = s.isHead ? '#ff5c5c' : '#ffd24a';
+    ctx.beginPath();
+    ctx.arc(x, y, rad, 0, Math.PI*2);
+    ctx.fill();
+    // outline
+    ctx.lineWidth = Math.max(1, cell*0.06);
+    ctx.strokeStyle = s.isHead ? '#7a1010' : '#a07000';
+    ctx.stroke();
+    if (s.isHead){
+      // eyes
+      ctx.fillStyle = '#fff';
+      var ex = s.dir >= 0 ? rad*0.35 : -rad*0.35;
+      ctx.beginPath(); ctx.arc(x+ex, y-rad*0.2, rad*0.18, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x+ex, y+rad*0.2, rad*0.18, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(x+ex+(s.dir>=0?1:-1), y-rad*0.2, rad*0.08, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x+ex+(s.dir>=0?1:-1), y+rad*0.2, rad*0.08, 0, Math.PI*2); ctx.fill();
+    }
+  }
+}
+
+function drawBullets(){
+  ctx.fillStyle = '#fff8c0';
+  for (var i = 0; i < bullets.length; i++){
+    var b = bullets[i];
+    ctx.fillRect(b.x - cell*0.06, b.y - cell*0.4, cell*0.12, cell*0.5);
+  }
+}
+
+function drawPlayer(){
+  var x = player.x, y = player.y;
+  var s = cell * 0.4;
+  ctx.fillStyle = state === STATE_DEAD ? '#888' : '#7cc8ff';
+  // little ship/shooter triangle
+  ctx.beginPath();
+  ctx.moveTo(x, y - s);
+  ctx.lineTo(x + s, y + s);
+  ctx.lineTo(x, y + s*0.4);
+  ctx.lineTo(x - s, y + s);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#cdebff';
+  ctx.lineWidth = Math.max(1, cell*0.05);
+  ctx.stroke();
+}
+
+function drawFloatTexts(){
+  ctx.font = Math.round(cell*0.5) + 'px monospace';
+  ctx.textAlign = 'center';
+  for (var i = 0; i < floatTexts.length; i++){
+    var f = floatTexts[i];
+    ctx.globalAlpha = Math.max(0, f.t / 0.7);
+    ctx.fillStyle = '#ffe07c';
+    ctx.fillText('+' + f.v, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'start';
+}
+
+function bannerText(txt, color){
+  ctx.save();
+  ctx.font = 'bold ' + Math.round(cell*0.9) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, H*0.4, W, cell*1.6);
+  ctx.fillStyle = color;
+  ctx.fillText(txt, W*0.5, H*0.5 + cell*0.3);
+  ctx.restore();
+}
+
+// ---------- Boot ----------
+function boot(){
+  resize();
+  // dummy state for first render
+  mushrooms = newMushrooms();
+  segments = [];
+  bullets = [];
+  player = newPlayer();
+  state = STATE_MENU;
+  showOverlay('CENTIPEDE',
+    'Drag your finger near the bottom to move &mdash; it auto-fires.<br>Desktop: Arrow keys / WASD + Space.<br>Shoot every segment to clear the wave!',
+    'START');
+  requestAnimationFrame(loop);
+}
+boot();
+
+})();
+</script>
+</body>
+</html>

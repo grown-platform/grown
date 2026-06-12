@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Yahtzee</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #11261f;
+    color: #e9f3ee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100vh;
+    height: 100dvh;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 420px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 6px 8px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 4px 6px;
+    flex: 0 0 auto;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0;
+    letter-spacing: 1px;
+    color: #ffd866;
+  }
+  .grand {
+    font-size: 14px;
+    font-weight: 700;
+    background: #1d3a30;
+    padding: 4px 10px;
+    border-radius: 8px;
+  }
+  /* Dice */
+  .dice-row {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    padding: 4px 0 6px;
+  }
+  .die {
+    width: 52px;
+    height: 52px;
+    background: #fafafa;
+    border-radius: 11px;
+    position: relative;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4);
+    cursor: pointer;
+    transition: transform .08s;
+  }
+  .die.held {
+    outline: 3px solid #ffd866;
+    background: #fff6d6;
+    transform: translateY(-3px);
+  }
+  .die.rolling { animation: shake .3s ease; }
+  @keyframes shake {
+    0%,100% { transform: rotate(0); }
+    25% { transform: rotate(-12deg); }
+    75% { transform: rotate(12deg); }
+  }
+  .pip {
+    position: absolute;
+    width: 9px; height: 9px;
+    background: #222;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  /* pip positions (percent of die) */
+  .p-tl { left: 27%; top: 27%; }
+  .p-tr { left: 73%; top: 27%; }
+  .p-ml { left: 27%; top: 50%; }
+  .p-mr { left: 73%; top: 50%; }
+  .p-c  { left: 50%; top: 50%; }
+  .p-bl { left: 27%; top: 73%; }
+  .p-br { left: 73%; top: 73%; }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex: 0 0 auto;
+    padding: 2px 0 6px;
+  }
+  .roll-btn {
+    flex: 1;
+    max-width: 200px;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 11px;
+    border: none;
+    border-radius: 10px;
+    background: #2ea36f;
+    color: #fff;
+    cursor: pointer;
+  }
+  .roll-btn:disabled { background: #3a4d45; color: #8aa; }
+  .rolls-left { font-size: 13px; color: #b9d4c8; white-space: nowrap; }
+  .new-btn {
+    font-size: 13px;
+    padding: 9px 12px;
+    border: 1px solid #3d6655;
+    border-radius: 10px;
+    background: transparent;
+    color: #cfeede;
+    cursor: pointer;
+  }
+  /* Scorecard */
+  .card {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #244a3d;
+    border-radius: 10px;
+    background: #16332a;
+    min-height: 0;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 12px;
+    border-bottom: 1px solid #1f4034;
+    font-size: 14px;
+  }
+  .row:last-child { border-bottom: none; }
+  .row.cat { cursor: pointer; }
+  .row.cat.scored {
+    color: #9fc4b5;
+    cursor: default;
+  }
+  .row.cat.scored .val { color: #ffd866; font-weight: 700; }
+  .row.cat.avail .val {
+    color: #6be6a8;
+    font-weight: 700;
+  }
+  .row.cat.avail:active { background: #1f4034; }
+  .row.sub {
+    background: #0f261f;
+    font-size: 13px;
+    color: #9fc4b5;
+    font-weight: 600;
+  }
+  .name { display: flex; align-items: center; gap: 6px; }
+  .val { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+  .val.empty { color: #486; }
+  /* Overlay */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(8,18,14,.92);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .overlay h2 { color: #ffd866; font-size: 26px; margin: 0 0 8px; }
+  .overlay .score { font-size: 48px; font-weight: 800; margin: 6px 0 20px; }
+  .overlay .msg { font-size: 15px; color: #b9d4c8; margin-bottom: 24px; }
+  .overlay button {
+    font-size: 17px; font-weight: 700;
+    padding: 13px 28px;
+    border: none; border-radius: 12px;
+    background: #2ea36f; color: #fff;
+    cursor: pointer;
+  }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/yahtzee.svg">
+    <link rel="manifest" href="/games/yahtzee.webmanifest">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Yahtzee">
+    <link rel="apple-touch-icon" href="/games/icons/yahtzee.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    // Back-to-all-games pill (top-left) + one-tap install button (bottom-right).
+    // Positioned with env(safe-area-inset-*) so they clear the notch/Dynamic Island.
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){var dp=null,btn=null;function mk(){btn=document.createElement('button');btn.textContent='⬇ Install';btn.setAttribute('style','position:fixed;right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:2147483647;padding:10px 16px;border:none;border-radius:24px;background:#4F46E5;color:#fff;font:600 14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');btn.onclick=function(){if(!dp)return;dp.prompt();dp.userChoice.finally(function(){dp=null;btn.remove();btn=null;});};document.body.appendChild(btn);}window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(!btn)mk();});window.addEventListener('appinstalled',function(){if(btn){btn.remove();btn=null;}});})();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>YAHTZEE</h1>
+    <div class="grand">Total: <span id="grand">0</span></div>
+  </header>
+
+  <div class="dice-row" id="diceRow"></div>
+
+  <div class="controls">
+    <button class="roll-btn" id="rollBtn">Roll</button>
+    <span class="rolls-left" id="rollsLeft">3 left</span>
+    <button class="new-btn" id="newBtn">New</button>
+  </div>
+
+  <div class="card" id="card"></div>
+</div>
+
+<div class="overlay" id="overlay">
+  <h2>Game Over!</h2>
+  <div class="score" id="finalScore">0</div>
+  <div class="msg" id="finalMsg"></div>
+  <button id="playAgain">Play Again</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Audio ----------
+  var actx = null;
+  function beep(freq, dur, type, vol){
+    try {
+      if(!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if(actx.state === "suspended") actx.resume();
+      var o = actx.createOscillator();
+      var g = actx.createGain();
+      o.type = type || "square";
+      o.frequency.value = freq;
+      g.gain.value = vol || 0.06;
+      o.connect(g); g.connect(actx.destination);
+      var t = actx.currentTime;
+      o.start(t);
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.stop(t + dur);
+    } catch(e){}
+  }
+  function sndRoll(){ beep(180, 0.08, "square", 0.05); setTimeout(function(){beep(240,0.08,"square",0.05);},60); }
+  function sndHold(){ beep(520, 0.05, "sine", 0.05); }
+  function sndScore(){ beep(660, 0.1, "triangle", 0.06); setTimeout(function(){beep(880,0.12,"triangle",0.06);},90); }
+  function sndEnd(){ beep(523,0.15,"triangle",0.07); setTimeout(function(){beep(659,0.15,"triangle",0.07);},150); setTimeout(function(){beep(784,0.25,"triangle",0.07);},300); }
+
+  // ---------- Pip layouts ----------
+  var PIPS = {
+    1: ["p-c"],
+    2: ["p-tl","p-br"],
+    3: ["p-tl","p-c","p-br"],
+    4: ["p-tl","p-tr","p-bl","p-br"],
+    5: ["p-tl","p-tr","p-c","p-bl","p-br"],
+    6: ["p-tl","p-tr","p-ml","p-mr","p-bl","p-br"]
+  };
+
+  // ---------- Scoring ----------
+  // Each takes the array of 5 dice values, returns score.
+  function counts(dice){
+    var c = [0,0,0,0,0,0,0]; // index 1..6
+    for(var i=0;i<dice.length;i++) c[dice[i]]++;
+    return c;
+  }
+  function sum(dice){
+    var s=0; for(var i=0;i<dice.length;i++) s+=dice[i]; return s;
+  }
+  function upperScore(face){
+    return function(dice){
+      var s=0; for(var i=0;i<dice.length;i++){ if(dice[i]===face) s+=face; } return s;
+    };
+  }
+  function nOfAKind(n){
+    return function(dice){
+      var c = counts(dice);
+      for(var f=1;f<=6;f++){ if(c[f]>=n) return sum(dice); }
+      return 0;
+    };
+  }
+  function fullHouse(dice){
+    var c = counts(dice);
+    var has3=false, has2=false;
+    for(var f=1;f<=6;f++){
+      if(c[f]===3) has3=true;
+      if(c[f]===2) has2=true;
+    }
+    // five of a kind also counts as full house in standard rules? No — needs exactly 3+2.
+    return (has3 && has2) ? 25 : 0;
+  }
+  function hasRun(dice, len){
+    var present = {};
+    for(var i=0;i<dice.length;i++) present[dice[i]]=true;
+    var run=0;
+    for(var f=1;f<=6;f++){
+      if(present[f]){ run++; if(run>=len) return true; }
+      else run=0;
+    }
+    return false;
+  }
+  function smallStraight(dice){ return hasRun(dice,4) ? 30 : 0; }
+  function largeStraight(dice){ return hasRun(dice,5) ? 40 : 0; }
+  function yahtzee(dice){
+    var c = counts(dice);
+    for(var f=1;f<=6;f++){ if(c[f]===5) return 50; }
+    return 0;
+  }
+  function chance(dice){ return sum(dice); }
+
+  var CATEGORIES = [
+    { id:"ones",   name:"Ones",            section:"upper", fn: upperScore(1) },
+    { id:"twos",   name:"Twos",            section:"upper", fn: upperScore(2) },
+    { id:"threes", name:"Threes",          section:"upper", fn: upperScore(3) },
+    { id:"fours",  name:"Fours",           section:"upper", fn: upperScore(4) },
+    { id:"fives",  name:"Fives",           section:"upper", fn: upperScore(5) },
+    { id:"sixes",  name:"Sixes",           section:"upper", fn: upperScore(6) },
+    { id:"three",  name:"3 of a Kind",     section:"lower", fn: nOfAKind(3) },
+    { id:"four",   name:"4 of a Kind",     section:"lower", fn: nOfAKind(4) },
+    { id:"fullh",  name:"Full House",      section:"lower", fn: fullHouse },
+    { id:"smstr",  name:"Sm Straight",     section:"lower", fn: smallStraight },
+    { id:"lgstr",  name:"Lg Straight",     section:"lower", fn: largeStraight },
+    { id:"yahtz",  name:"Yahtzee",         section:"lower", fn: yahtzee },
+    { id:"chance", name:"Chance",          section:"lower", fn: chance }
+  ];
+
+  // ---------- State ----------
+  var dice, held, rollsLeft, scored, yahtzeeBonus, hasRolled;
+
+  function newGame(){
+    dice = [1,2,3,4,5];
+    held = [false,false,false,false,false];
+    rollsLeft = 3;
+    scored = {};
+    yahtzeeBonus = 0;
+    hasRolled = false;
+    overlay.classList.remove("show");
+    render();
+  }
+
+  function turnsLeft(){
+    var n=0; for(var i=0;i<CATEGORIES.length;i++){ if(!(CATEGORIES[i].id in scored)) n++; } return n;
+  }
+
+  function roll(){
+    if(rollsLeft <= 0) return;
+    if(turnsLeft()===0) return;
+    var anyUnheld=false;
+    for(var i=0;i<5;i++){ if(!held[i]) anyUnheld=true; }
+    if(hasRolled && !anyUnheld) return; // all held, nothing to roll
+    for(var i=0;i<5;i++){
+      if(!held[i]) dice[i] = 1 + Math.floor(Math.random()*6);
+    }
+    rollsLeft--;
+    hasRolled = true;
+    sndRoll();
+    render(true);
+  }
+
+  function toggleHold(i){
+    if(!hasRolled) return;       // can't hold before first roll
+    if(rollsLeft <= 0) return;   // no point holding after last roll
+    held[i] = !held[i];
+    sndHold();
+    render();
+  }
+
+  function upperSubtotal(){
+    var s=0;
+    var ups = ["ones","twos","threes","fours","fives","sixes"];
+    for(var i=0;i<ups.length;i++){ if(ups[i] in scored) s += scored[ups[i]]; }
+    return s;
+  }
+  function upperBonus(){ return upperSubtotal() >= 63 ? 35 : 0; }
+
+  function grandTotal(){
+    var s = 0;
+    for(var k in scored){ if(scored.hasOwnProperty(k)) s += scored[k]; }
+    s += upperBonus();
+    s += yahtzeeBonus;
+    return s;
+  }
+
+  function chooseCategory(cat){
+    if(!hasRolled) return;          // must roll first
+    if(cat.id in scored) return;    // already used
+    var val = cat.fn(dice);
+
+    // Yahtzee bonus: if dice are a yahtzee and the Yahtzee box was already scored 50,
+    // award +100 bonus.
+    if(yahtzee(dice) === 50 && ("yahtz" in scored) && scored.yahtz === 50){
+      yahtzeeBonus += 100;
+    }
+
+    scored[cat.id] = val;
+    sndScore();
+
+    // reset for next turn
+    held = [false,false,false,false,false];
+    rollsLeft = 3;
+    hasRolled = false;
+
+    if(turnsLeft() === 0){
+      render();
+      setTimeout(endGame, 350);
+    } else {
+      render();
+    }
+  }
+
+  function endGame(){
+    var total = grandTotal();
+    finalScore.textContent = total;
+    var msg;
+    if(total >= 300) msg = "Incredible! A near-perfect game!";
+    else if(total >= 240) msg = "Excellent score!";
+    else if(total >= 180) msg = "Great game!";
+    else if(total >= 120) msg = "Nice work!";
+    else msg = "Good effort — try again!";
+    finalMsg.textContent = msg;
+    overlay.classList.add("show");
+    sndEnd();
+  }
+
+  // ---------- DOM refs ----------
+  var diceRow   = document.getElementById("diceRow");
+  var rollBtn   = document.getElementById("rollBtn");
+  var rollsLeftEl = document.getElementById("rollsLeft");
+  var newBtn    = document.getElementById("newBtn");
+  var card      = document.getElementById("card");
+  var grandEl   = document.getElementById("grand");
+  var overlay   = document.getElementById("overlay");
+  var finalScore= document.getElementById("finalScore");
+  var finalMsg  = document.getElementById("finalMsg");
+  var playAgain = document.getElementById("playAgain");
+
+  // build dice elements once
+  var dieEls = [];
+  for(var i=0;i<5;i++){
+    var d = document.createElement("div");
+    d.className = "die";
+    (function(idx){
+      d.addEventListener("click", function(){ toggleHold(idx); });
+    })(i);
+    diceRow.appendChild(d);
+    dieEls.push(d);
+  }
+
+  function renderDie(el, value, isHeld, animate){
+    el.innerHTML = "";
+    var pips = PIPS[value];
+    for(var p=0;p<pips.length;p++){
+      var pip = document.createElement("div");
+      pip.className = "pip " + pips[p];
+      el.appendChild(pip);
+    }
+    el.classList.toggle("held", !!isHeld);
+    if(animate && !isHeld){
+      el.classList.remove("rolling");
+      void el.offsetWidth; // reflow to restart animation
+      el.classList.add("rolling");
+    }
+  }
+
+  // build scorecard rows once; keep refs to value cells
+  var rowEls = {}; // id -> {row, val}
+  var subEls = {};
+  function buildCard(){
+    card.innerHTML = "";
+    addSub("UPPER SECTION");
+    addCats("upper");
+    addStat("bonus", "Bonus (≥63)");
+    addSub("LOWER SECTION");
+    addCats("lower");
+    addStat("ybonus", "Yahtzee Bonus");
+  }
+  function addSub(label){
+    var r = document.createElement("div");
+    r.className = "row sub";
+    r.innerHTML = '<span class="name">'+label+'</span>';
+    card.appendChild(r);
+  }
+  function addCats(section){
+    for(var i=0;i<CATEGORIES.length;i++){
+      var cat = CATEGORIES[i];
+      if(cat.section !== section) continue;
+      var r = document.createElement("div");
+      r.className = "row cat";
+      var name = document.createElement("span");
+      name.className = "name";
+      name.textContent = cat.name;
+      var val = document.createElement("span");
+      val.className = "val empty";
+      val.textContent = "–";
+      r.appendChild(name);
+      r.appendChild(val);
+      (function(c){
+        r.addEventListener("click", function(){ chooseCategory(c); });
+      })(cat);
+      card.appendChild(r);
+      rowEls[cat.id] = { row: r, val: val };
+    }
+  }
+  function addStat(id, label){
+    var r = document.createElement("div");
+    r.className = "row";
+    var name = document.createElement("span");
+    name.className = "name";
+    name.textContent = label;
+    var val = document.createElement("span");
+    val.className = "val";
+    val.textContent = "0";
+    r.appendChild(name); r.appendChild(val);
+    card.appendChild(r);
+    subEls[id] = val;
+  }
+
+  function render(animate){
+    // dice
+    for(var i=0;i<5;i++){
+      renderDie(dieEls[i], dice[i], held[i], animate);
+    }
+    // controls
+    var canRoll = rollsLeft > 0 && turnsLeft() > 0;
+    if(canRoll && hasRolled){
+      var anyUnheld=false;
+      for(var k=0;k<5;k++){ if(!held[k]) anyUnheld=true; }
+      if(!anyUnheld) canRoll=false;
+    }
+    rollBtn.disabled = !canRoll;
+    rollBtn.textContent = hasRolled ? "Roll" : "Roll Dice";
+    rollsLeftEl.textContent = rollsLeft + (rollsLeft===1?" left":" left");
+
+    // scorecard rows
+    for(var c=0;c<CATEGORIES.length;c++){
+      var cat = CATEGORIES[c];
+      var ref = rowEls[cat.id];
+      ref.row.classList.remove("scored","avail");
+      if(cat.id in scored){
+        ref.row.classList.add("scored");
+        ref.val.classList.remove("empty");
+        ref.val.textContent = scored[cat.id];
+      } else if(hasRolled){
+        ref.row.classList.add("avail");
+        ref.val.classList.remove("empty");
+        ref.val.textContent = cat.fn(dice); // potential score
+      } else {
+        ref.val.classList.add("empty");
+        ref.val.textContent = "–";
+      }
+    }
+    subEls.bonus.textContent = upperBonus() + " (" + upperSubtotal() + "/63)";
+    subEls.ybonus.textContent = yahtzeeBonus;
+
+    grandEl.textContent = grandTotal();
+  }
+
+  // ---------- Events ----------
+  rollBtn.addEventListener("click", function(){
+    if(!actx){ try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
+    roll();
+  });
+  newBtn.addEventListener("click", newGame);
+  playAgain.addEventListener("click", newGame);
+
+  // prevent double-tap zoom / scrolling bounce on non-scroll areas
+  document.addEventListener("dblclick", function(e){ e.preventDefault(); }, {passive:false});
+
+  buildCard();
+  newGame();
+})();
+</script>
+</body>
+</html>
