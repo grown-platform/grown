@@ -45,7 +45,31 @@
       print:   function(t){ console.log(t); },
       printErr:function(t){ console.error(t); },
       onRuntimeInitialized: function(){ Module.setStatus(""); },
+      // Saved games + prefs live in $HOME/.config (the game DirCreates a
+      // "MightyMike" folder there). In the browser that path doesn't exist and
+      // isn't persistent, so saving fails ("Cannot Create Player Save File").
+      // Mount IDBFS at .config so the folder exists AND survives reloads, and
+      // load any prior saves from IndexedDB before the game starts.
+      preRun: [function(){
+        try {
+          FS.mkdirTree("/home/web_user/.config");
+          FS.mount(IDBFS, {}, "/home/web_user/.config");
+          addRunDependency("mm-syncfs");
+          FS.syncfs(true, function(err){
+            if (err) console.error("MightyMike: load saves failed", err);
+            removeRunDependency("mm-syncfs");
+          });
+        } catch (e) { console.error("MightyMike: save FS setup failed", e); }
+      }],
     };
+    // Flush saves to IndexedDB. The game gives no save callback, so persist on
+    // tab-hide/close and on a gentle interval (saves are infrequent).
+    function mmPersistSaves(){
+      try { if (typeof FS !== "undefined") FS.syncfs(false, function(){}); } catch (e) {}
+    }
+    document.addEventListener("visibilitychange", function(){ if (document.hidden) mmPersistSaves(); });
+    window.addEventListener("pagehide", mmPersistSaves);
+    setInterval(mmPersistSaves, 15000);
     // Keep focus on the canvas so SDL receives keyboard events.
     window.addEventListener("load", function(){ Module.canvas.focus(); });
     window.addEventListener("click", function(){ Module.canvas.focus(); });
