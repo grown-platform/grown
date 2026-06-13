@@ -65,6 +65,25 @@ grown:
     type: ClusterIP
     httpPort: 8080
     grpcPort: 9000
+  # One-click public demo login. When enabled, grown exposes the demo button on
+  # the sign-in page; POST /api/v1/auth/demo-login looks the demo user up in
+  # Zitadel by loginName (grown.demo.username) and mints a session for them.
+  #
+  # Requirements for this to work end-to-end:
+  #   1. A human user with loginName == grown.demo.username must EXIST in the
+  #      Zitadel instance grown points at (provision it out-of-band).
+  #   2. zitadel.serviceToken must be a PAT that can read users (e.g. an
+  #      ORG_USER_MANAGER machine user) — the demo handler is a no-op (503)
+  #      without a Zitadel service token.
+  #   3. grown.demo.password is the demo account's Zitadel password. grown does
+  #      NOT read it (it mints the session server-side), but it is materialized
+  #      into the demo Secret as GROWN_DEMO_PASSWORD for completeness/rotation.
+  demo:
+    enabled: false
+    username: demo
+    # Demo account password (secret). Stored in the {release}-demo Secret as
+    # GROWN_DEMO_PASSWORD. Leave "" to omit the env var.
+    password: ""
 
 # -----------------------------------------------------------------------------
 # bolo-mp multiplayer sidecar (optional). Disabled by default for portability
@@ -162,6 +181,12 @@ zitadel:
   externalDomain: ""        # empty => use in-cluster service DNS
   externalPort: 8080
   externalSecure: false
+  # Optional PAT handed to grown as GROWN_ZITADEL_SERVICE_TOKEN so grown can call
+  # the Zitadel user API server-side (in-app password login, demo login, the
+  # security/directory proxy). Without it those server-side flows are disabled.
+  # Materialized into the {release}-demo Secret. Provision a machine user with a
+  # user-read role (e.g. ORG_USER_MANAGER) and a long-lived PAT.
+  serviceToken: ""
   resources:
     requests:
       cpu: 100m

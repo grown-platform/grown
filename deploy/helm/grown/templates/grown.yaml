@@ -91,6 +91,29 @@ spec:
               value: {{ .Values.defaultOrgSlug | quote }}
             - name: GROWN_ADMIN_EMAILS
               value: {{ .Values.adminEmails | quote }}
+            # --- one-click demo login ---
+            {{- if .Values.grown.demo.enabled }}
+            - name: GROWN_DEMO_LOGIN_ENABLED
+              value: "true"
+            - name: GROWN_DEMO_USERNAME
+              value: {{ .Values.grown.demo.username | quote }}
+            {{- if .Values.grown.demo.password }}
+            - name: GROWN_DEMO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-demo
+                  key: GROWN_DEMO_PASSWORD
+            {{- end }}
+            {{- end }}
+            {{- if .Values.zitadel.serviceToken }}
+            # Service token so grown can call the Zitadel user API server-side
+            # (required for demo login + in-app password login to function).
+            - name: GROWN_ZITADEL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-demo
+                  key: GROWN_ZITADEL_SERVICE_TOKEN
+            {{- end }}
             {{- if eq .Values.auth.mode "bundled" }}
             # In-app user management via the Zitadel User API. When Zitadel
             # advertises an external domain it routes by Host header, so the
