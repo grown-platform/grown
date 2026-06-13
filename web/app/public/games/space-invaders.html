@@ -131,6 +131,32 @@
     user-select: none;
   }
   #fireBtn:active, #fireBtn.active { background: #ff8080; transform: scale(0.97); }
+  /* Analog thumbstick (mobile, optional control scheme) */
+  .joyBase {
+    display: none;
+    position: relative;
+    width: 104px; height: 56px;
+    border-radius: 28px;
+    background: #142040;
+    border: 2px solid #2c3e6e;
+    touch-action: none;
+    user-select: none;
+    flex: 0 0 auto;
+  }
+  .joyThumb {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 44px; height: 44px;
+    margin: -22px 0 0 -22px;
+    border-radius: 50%;
+    background: #24407a;
+    border: 2px solid #5a7bd6;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    transition: background .12s;
+  }
+  .joyBase.active .joyThumb { background: #3a5cae; }
+  body.joystick .moveBtns { display: none; }
+  body.joystick .joyBase { display: block; }
   #hint {
     font-size: 11px;
     color: #5a6b8c;
@@ -215,6 +241,7 @@
       <div class="ctrlBtn" id="leftBtn">&#9664;</div>
       <div class="ctrlBtn" id="rightBtn">&#9654;</div>
     </div>
+    <div class="joyBase" id="joyBase"><div class="joyThumb" id="joyThumb"></div></div>
     <div id="fireBtn">FIRE</div>
   </div>
   <div id="hint">Drag on screen to move &middot; Tap FIRE to shoot &middot; Desktop: &larr; &rarr; + Space</div>
@@ -277,6 +304,8 @@
   var state, player, aliens, bullets, bombs, bunkers;
   var keys = { left: false, right: false, fire: false };
   var dragX = null;        // target x from touch drag (center)
+  var joyAxis = 0;         // analog thumbstick: -1 (left) .. 1 (right)
+  var controlMode = (function () { try { return localStorage.getItem('si-controls') || 'buttons'; } catch (e) { return 'buttons'; } })();
   var lastTime = 0;
   var running = false;
 
@@ -446,8 +475,10 @@
     // timers
     if (state.fireTimer > 0) state.fireTimer -= dt;
 
-    // player movement
-    if (dragX !== null) {
+    // player movement (joystick takes priority, then canvas drag, then keys/buttons)
+    if (joyAxis !== 0) {
+      player.x += joyAxis * PLAYER_SPEED * dt;
+    } else if (dragX !== null) {
       player.x = dragX - player.w / 2;
     } else {
       if (keys.left) player.x -= PLAYER_SPEED * dt;
@@ -726,6 +757,59 @@
   cv.addEventListener('mousedown', function (e) { dragStart(e); tryFire(); });
   window.addEventListener('mousemove', function (e) { if (dragX !== null) dragMove(e); });
   window.addEventListener('mouseup', dragEnd);
+
+  // ---- Input: analog thumbstick (optional control scheme) ----
+  var joyBase = document.getElementById('joyBase');
+  var joyThumb = document.getElementById('joyThumb');
+  var joyId = null;        // active pointer id
+  var JOY_MAX = 30;        // px travel from center to full deflection
+  function joySet(clientX) {
+    var rect = joyBase.getBoundingClientRect();
+    var dx = clientX - (rect.left + rect.width / 2);
+    var clamped = Math.max(-JOY_MAX, Math.min(JOY_MAX, dx));
+    joyThumb.style.transform = 'translateX(' + clamped + 'px)';
+    var v = clamped / JOY_MAX;
+    joyAxis = Math.abs(v) < 0.12 ? 0 : v; // small dead zone
+  }
+  function joyEnd() {
+    joyId = null; joyAxis = 0;
+    joyThumb.style.transform = 'translateX(0px)';
+    joyBase.classList.remove('active');
+  }
+  joyBase.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    joyId = e.pointerId;
+    joyBase.setPointerCapture && joyBase.setPointerCapture(e.pointerId);
+    joyBase.classList.add('active');
+    dragX = null; keys.left = keys.right = false;
+    joySet(e.clientX); audio();
+  });
+  joyBase.addEventListener('pointermove', function (e) {
+    if (joyId === null || e.pointerId !== joyId) return;
+    e.preventDefault(); joySet(e.clientX);
+  });
+  joyBase.addEventListener('pointerup', joyEnd);
+  joyBase.addEventListener('pointercancel', joyEnd);
+  joyBase.addEventListener('lostpointercapture', joyEnd);
+
+  // ---- Control-scheme toggle (top-right, beside the menu button) ----
+  function applyControlMode() {
+    document.body.classList.toggle('joystick', controlMode === 'joystick');
+    if (controlMode !== 'joystick') joyEnd();
+    if (ctrlToggle) ctrlToggle.title = controlMode === 'joystick' ? 'Controls: Joystick (tap for Buttons)' : 'Controls: Buttons (tap for Joystick)';
+  }
+  var ctrlToggle = document.createElement('button');
+  ctrlToggle.setAttribute('aria-label', 'Switch controls');
+  // Joystick glyph (knob on a base), monochrome to match the ⏸ menu button.
+  ctrlToggle.innerHTML = '<svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="6" r="3"/><rect x="11" y="8" width="2" height="7"/><path d="M5 20c0-2.2 3.1-4 7-4s7 1.8 7 4v1H5v-1z"/></svg>';
+  ctrlToggle.setAttribute('style', 'position:fixed;z-index:2147483646;top:calc(env(safe-area-inset-top,0px) + 10px);right:calc(env(safe-area-inset-right,0px) + 54px);width:40px;height:40px;min-width:0;padding:0;margin:0;box-sizing:border-box;border:none;border-radius:50%;background:rgba(15,23,42,.6);color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation;display:flex;align-items:center;justify-content:center;line-height:0');
+  ctrlToggle.onclick = function () {
+    controlMode = controlMode === 'joystick' ? 'buttons' : 'joystick';
+    try { localStorage.setItem('si-controls', controlMode); } catch (e) {}
+    applyControlMode();
+  };
+  (document.body || document.documentElement).appendChild(ctrlToggle);
+  applyControlMode();
 
   // prevent page scroll/zoom gestures globally
   document.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
