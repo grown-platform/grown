@@ -50,10 +50,12 @@ import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import DevicesIcon from "@mui/icons-material/Devices";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import ShieldIcon from "@mui/icons-material/Shield";
+import PublicIcon from "@mui/icons-material/Public";
 import GroupIcon from "@mui/icons-material/Group";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { Header } from "../../components/Header";
 import { SecuritySection } from "./SecuritySection";
+import { GeoSection } from "./GeoSection";
 import { DashboardSection } from "./DashboardSection";
 import { GroupsSection } from "./GroupsSection";
 import { RolesSection } from "./RolesSection";
@@ -144,6 +146,7 @@ type SectionId =
   | "audit"
   | "analytics"
   | "security"
+  | "geo"
   | "settings";
 const SECTIONS: {
   id: SectionId;
@@ -183,6 +186,12 @@ const SECTIONS: {
     id: "security",
     label: "Security",
     icon: <ShieldIcon />,
+    enabled: true,
+  },
+  {
+    id: "geo",
+    label: "Region access",
+    icon: <PublicIcon />,
     enabled: true,
   },
   {
@@ -365,6 +374,7 @@ export default function AdminApp({ user }: AdminAppProps) {
             {section === "audit" && <AuditSection />}
             {section === "analytics" && <AnalyticsSection />}
             {section === "security" && <SecuritySection />}
+            {section === "geo" && <GeoSection />}
             {section === "settings" && (
               <OrgSettingsSection
                 user={user}

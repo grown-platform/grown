@@ -20,6 +20,7 @@ import PeopleIcon from "@mui/icons-material/People";
 import GroupIcon from "@mui/icons-material/Group";
 import DevicesIcon from "@mui/icons-material/Devices";
 import ShieldIcon from "@mui/icons-material/Shield";
+import PublicIcon from "@mui/icons-material/Public";
 import HistoryIcon from "@mui/icons-material/History";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -46,6 +47,7 @@ const QUICK_ACTIONS: {
   { section: "roles", label: "Admin roles", description: "Who can administer", icon: <AdminPanelSettingsIcon /> },
   { section: "sessions", label: "Sessions", description: "Active logins", icon: <DevicesIcon /> },
   { section: "security", label: "Security", description: "Policies & 2FA", icon: <ShieldIcon /> },
+  { section: "geo", label: "Region access", description: "Block or allow by country", icon: <PublicIcon /> },
   { section: "audit", label: "Audit log", description: "Recent activity", icon: <HistoryIcon /> },
   { section: "analytics", label: "Analytics", description: "Usage & storage", icon: <BarChartIcon /> },
   { section: "settings", label: "Org settings", description: "Name & branding", icon: <SettingsIcon /> },
