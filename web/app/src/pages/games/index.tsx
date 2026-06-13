@@ -370,6 +370,14 @@ export default function GamesApp({ user }: { user: User | null }) {
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
+  // Desktop: focus the games search on load so you can type immediately. Skip on
+  // touch (auto-focus there pops the soft keyboard).
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (window.matchMedia && window.matchMedia("(pointer: fine)").matches) {
+      searchRef.current?.focus();
+    }
+  }, []);
   const [cat, setCat] = useState("All");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   // Multiplayer admin control panel — the settings button + panel are shown
@@ -576,6 +584,7 @@ export default function GamesApp({ user }: { user: User | null }) {
           placeholder="Search games"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          slotProps={{ input: { ref: searchRef } }}
           startDecorator={<Icons.Search />}
           endDecorator={
             query ? (

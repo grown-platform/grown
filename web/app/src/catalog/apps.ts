@@ -397,8 +397,8 @@ export const apps: AppTile[] = [
   },
   {
     id: "orgsync",
-    name: "Org Sync",
-    blurb: "Transfer Drive files & Contacts to another organization.",
+    name: "Share with Friends",
+    blurb: "Move Drive files & Contacts between orgs — and share with friends' instances.",
     accentColor: "#0CA678",
     phase: 4,
     comingSoon: false,

@@ -106,12 +106,13 @@ export default function OrgSyncApp({ user }: { user: User }) {
       <Container sx={{ py: 4, maxWidth: 900 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 0.5 }}>
           <SyncAltIcon sx={{ color: "#0CA678" }} />
-          <Typography level="h2">Org Sync</Typography>
+          <Typography level="h2">Share with Friends</Typography>
         </Box>
         <Typography level="body-sm" sx={{ mb: 3, opacity: 0.75 }}>
           Copy Drive files/folders and Contacts from this organization to another
-          one you administer. Pick what to transfer, enter the target org's slug,
-          and review before you send. Folders copy recursively.
+          one you administer — or share them with a friend's instance. Pick what to
+          transfer, enter the target org's slug, and review before you send. Folders
+          copy recursively.
         </Typography>
 
         {/* Roadmap teaser: reciprocal encrypted backups between friends' instances. */}
