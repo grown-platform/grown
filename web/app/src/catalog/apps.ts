@@ -31,6 +31,12 @@ export interface AppTile {
   /** Optional small sub-label under the name (rendered like "(coming soon)"),
    *  e.g. to indicate the underlying service powering the app. */
   subLabel?: string;
+  /** When true, the tile shows a small "NEW" badge on its icon (used by /games
+   *  to flag recently-updated games). */
+  isNew?: boolean;
+  /** Optional callback fired when the tile is launched/clicked (used by /games
+   *  to track per-device play counts). Does not prevent the navigation. */
+  onLaunch?: () => void;
 }
 
 /** GIT_URL points the Git tile at the org's git service. Override at build time

@@ -34,6 +34,7 @@ export function Tile({ app }: TileProps) {
               to: `/${app.id}`,
             })}
       data-testid={`tile-${app.id}`}
+      onClick={app.comingSoon ? undefined : app.onLaunch}
       aria-disabled={app.comingSoon || undefined}
       // Native hover tooltip describing what the app is.
       title={app.blurb ? `${app.name} — ${app.blurb}` : app.name}
@@ -58,37 +59,61 @@ export function Tile({ app }: TileProps) {
           : { transform: "scale(1.04)" },
       }}
     >
-      <Avatar
-        className="grown-tile-icon"
-        variant="plain"
-        sx={{
-          bgcolor: "background.surface",
-          width: 64,
-          height: 64,
-          boxShadow: "xs",
-          transition: "transform 150ms",
-          // Color the SVG icon (Material Symbols use currentColor for fill/stroke).
-          // Setting color on the Avatar alone is overridden by Joy's palette;
-          // targeting the inner svg makes the accent color stick.
-          "& svg": {
-            color: app.accentColor,
-            fontSize: 32,
-          },
-        }}
-      >
-        {app.iconUrl ? (
+      <Box sx={{ position: "relative" }}>
+        <Avatar
+          className="grown-tile-icon"
+          variant="plain"
+          sx={{
+            bgcolor: "background.surface",
+            width: 64,
+            height: 64,
+            boxShadow: "xs",
+            transition: "transform 150ms",
+            // Color the SVG icon (Material Symbols use currentColor for fill/stroke).
+            // Setting color on the Avatar alone is overridden by Joy's palette;
+            // targeting the inner svg makes the accent color stick.
+            "& svg": {
+              color: app.accentColor,
+              fontSize: 32,
+            },
+          }}
+        >
+          {app.iconUrl ? (
+            <Box
+              component="img"
+              src={app.iconUrl}
+              alt=""
+              sx={{ width: 64, height: 64, objectFit: "cover", borderRadius: "inherit" }}
+            />
+          ) : IconComponent ? (
+            <IconComponent />
+          ) : (
+            initial
+          )}
+        </Avatar>
+        {app.isNew && (
           <Box
-            component="img"
-            src={app.iconUrl}
-            alt=""
-            sx={{ width: 64, height: 64, objectFit: "cover", borderRadius: "inherit" }}
-          />
-        ) : IconComponent ? (
-          <IconComponent />
-        ) : (
-          initial
+            sx={{
+              position: "absolute",
+              top: -4,
+              right: -4,
+              px: 0.5,
+              py: "1px",
+              borderRadius: "sm",
+              bgcolor: "#dc2626",
+              color: "#fff",
+              fontSize: 9,
+              fontWeight: 700,
+              lineHeight: 1.4,
+              letterSpacing: 0.3,
+              boxShadow: "xs",
+              pointerEvents: "none",
+            }}
+          >
+            NEW
+          </Box>
         )}
-      </Avatar>
+      </Box>
       <Typography level="body-sm" sx={{ fontWeight: 500 }}>
         {app.name}
       </Typography>

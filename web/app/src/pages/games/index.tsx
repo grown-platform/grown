@@ -222,6 +222,7 @@ const GAMES: AppTile[] = [
 // buttons show icon-only on mobile (label hidden) and icon+label on wider screens.
 const CATEGORIES: { key: string; label: string; icon: string }[] = [
   { key: "All", label: "All", icon: "Apps" },
+  { key: "Most Played", label: "Most Played", icon: "TrendingUp" },
   { key: "Arcade", label: "Arcade", icon: "SportsEsports" },
   { key: "Puzzle", label: "Puzzle", icon: "Extension" },
   { key: "Card", label: "Card", icon: "Style" },
@@ -290,6 +291,35 @@ const TWO_PLAYER_IDS = new Set<string>([
   // handoff between turns so neither player sees the other's hand.
   "dominoes", "go-fish", "crazy-eights", "old-maid", "monopoly-deal",
 ]);
+
+// Per-device play counts, persisted in localStorage under grown.games.plays as
+// { [gameId]: count }. Used by the "Most Played" filter to sort games by how
+// often this browser has launched them. Purely local — no backend, no sync.
+const PLAYS_KEY = "grown.games.plays";
+
+function readPlays(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(PLAYS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, number>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function bumpPlay(id: string): Record<string, number> {
+  const plays = readPlays();
+  plays[id] = (plays[id] ?? 0) + 1;
+  try {
+    localStorage.setItem(PLAYS_KEY, JSON.stringify(plays));
+  } catch {
+    // best-effort (e.g. storage disabled / full)
+  }
+  return plays;
+}
 
 /** ImportedGame mirrors the JSON returned by GET /api/v1/games. */
 interface ImportedGame {
@@ -379,6 +409,11 @@ export default function GamesApp({ user }: { user: User | null }) {
     }
   }, []);
   const [cat, setCat] = useState("All");
+  // Per-device play counts (localStorage) powering the "Most Played" sort, and
+  // the set of recently-updated game ids that earn a NEW badge (from the
+  // backend). Both are best-effort and degrade to empty.
+  const [plays, setPlays] = useState<Record<string, number>>(() => readPlays());
+  const [newIds, setNewIds] = useState<Set<string>>(() => new Set());
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   // Multiplayer admin control panel — the settings button + panel are shown
   // ONLY to grown admins (resolved via GET /api/v1/admin/whoami, the same gate
@@ -429,6 +464,28 @@ export default function GamesApp({ user }: { user: User | null }) {
     await installPrompt.prompt();
     setInstallPrompt(null);
   };
+
+  // Fetch the up-to-4 most-recently-updated games (mtime within 7 days) so we
+  // can flag them with a NEW badge. Public, no auth; failures leave no badges.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/v1/games/recent", { credentials: "same-origin" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { recent?: { id: string }[] } | null) => {
+        if (alive && data?.recent) {
+          setNewIds(new Set(data.recent.map((g) => g.id)));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Record a launch for play-count tracking (drives the "Most Played" sort).
+  const onLaunch = useCallback((id: string) => {
+    setPlays(bumpPlay(id));
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -506,18 +563,35 @@ export default function GamesApp({ user }: { user: User | null }) {
   };
 
   const q = query.trim().toLowerCase();
+  // "Most Played" is a sort, not a category, so it matches every game (and the
+  // grid is reordered by play count below). All other non-"All" keys filter.
   const matchesCat = (id: string) =>
     cat === "All" ||
+    cat === "Most Played" ||
     (cat === "Group"
       ? GROUP_IDS.has(id)
       : cat === "2-Player"
         ? TWO_PLAYER_IDS.has(id)
         : CATEGORY_OF[id] === cat || (EXTRA_CATS[id]?.includes(cat) ?? false));
-  const filteredGames = GAMES.filter(
+  let filteredGames = GAMES.filter(
     (g) =>
       matchesCat(g.id) &&
       (!q || `${g.name} ${g.blurb ?? ""}`.toLowerCase().includes(q)),
   );
+  if (cat === "Most Played") {
+    // Most-played first; never-played games keep their original order at the end
+    // (stable sort + 0 default). TileGrid only re-sorts by comingSoon, so this
+    // order is preserved within the played / unplayed groups.
+    filteredGames = [...filteredGames].sort(
+      (a, b) => (plays[b.id] ?? 0) - (plays[a.id] ?? 0),
+    );
+  }
+  // Decorate each tile with the NEW badge + a launch hook that records the play.
+  filteredGames = filteredGames.map((g) => ({
+    ...g,
+    isNew: newIds.has(g.id),
+    onLaunch: () => onLaunch(g.id),
+  }));
   // Imported games are user uploads with no category, so they only appear under "All".
   const filteredImported =
     cat !== "All"
