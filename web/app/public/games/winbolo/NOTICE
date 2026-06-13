@@ -1,0 +1,9 @@
+WinBolo — a faithful reimplementation of Stuart Cheshire's Bolo by John Morrison.
+Source: WinBolo (https://github.com/kippandrew/WinBolo / code.google.com/archive/p/winbolo).
+Licensed under the GNU General Public License v2 (see LICENSE / gnu.txt).
+
+This is a clean-room reimplementation with its OWN graphics/sounds (GPL) — it does
+NOT use Stuart Cheshire's original proprietary assets. This browser build was
+compiled to WebAssembly via Emscripten (single-player preview; networked
+multiplayer and mouse-driven building are in progress). The repository's top-level
+MIT license does not apply to this GPL component.

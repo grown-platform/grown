@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>WinBolo</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1f6f3b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WinBolo">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(function(){})})}</script>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;
+    font-family:system-ui,-apple-system,sans-serif;}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
+  #gamearea{flex:1 1 auto;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;}
+  #canvas{max-width:100%;max-height:100%;width:auto;height:auto;
+    image-rendering:pixelated;image-rendering:crisp-edges;background:#000;outline:none;display:block;}
+  #status{position:absolute;left:0;right:0;top:42%;text-align:center;color:#9ab;
+    font:600 15px system-ui,sans-serif;z-index:5;padding:0 12px;}
+  #badge{position:fixed;right:6px;bottom:2px;color:#3a5;font:600 9px system-ui;z-index:2147483000;pointer-events:none;}
+
+  /* Docked touch controls (mobile only) — below the game, never over it. */
+  #touchbar{flex:0 0 auto;display:none;align-items:center;justify-content:space-between;gap:8px;
+    padding:8px calc(env(safe-area-inset-right,0px) + 10px) calc(env(safe-area-inset-bottom,0px) + 8px) calc(env(safe-area-inset-left,0px) + 10px);
+    background:linear-gradient(#06100a,#0a1810);border-top:1px solid #1c3a28;
+    height:clamp(120px,24vh,190px);box-sizing:border-box;}
+  body.touch #touchbar{display:flex;}
+  .cluster{display:flex;align-items:center;gap:10px;}
+  .tcol{display:flex;flex-direction:column;gap:8px;align-items:center;}
+  .tbtn{display:flex;align-items:center;justify-content:center;width:60px;height:60px;border-radius:14px;
+    border:1px solid #2c6e45;background:#14301f;color:#dbffe6;font-size:22px;font-weight:700;
+    touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;}
+  .tbtn:active,.tbtn.on{background:#256e40;border-color:#5ad68a;}
+  .tbtn.fire{background:#7a1f2b;border-color:#c2415a;width:72px;height:72px;font-size:25px;}
+  .tbtn.fire:active,.tbtn.fire.on{background:#a8293a;}
+  .tlabel{font-size:10px;color:#6fa885;margin-top:-2px;}
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="gamearea">
+      <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+      <div id="status">Loading WinBolo…</div>
+    </div>
+    <div id="touchbar">
+      <div class="cluster">
+        <div class="tcol"><div class="tbtn" data-code="KeyO">◀</div><div class="tlabel">TURN</div></div>
+        <div class="tcol"><div class="tbtn" data-code="KeyP">▶</div><div class="tlabel">TURN</div></div>
+      </div>
+      <div class="cluster">
+        <div class="tcol"><div class="tbtn" data-code="KeyQ">▲</div><div class="tlabel">FASTER</div></div>
+        <div class="tcol"><div class="tbtn" data-code="KeyA">▼</div><div class="tlabel">SLOWER</div></div>
+        <div class="tcol"><div class="tbtn fire" data-code="Space">●</div><div class="tlabel">FIRE</div></div>
+      </div>
+    </div>
+  </div>
+  <div id="badge">WinBolo · GPL · preview</div>
+  <!-- Back-to-games pill -->
+  <script>
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3)');document.body.appendChild(a);});
+  </script>
+
+  <script>
+    var statusEl = document.getElementById("status");
+    var Module = {
+      canvas: (function(){
+        var c = document.getElementById("canvas");
+        c.addEventListener("webglcontextlost", function(e){ e.preventDefault(); console.error("WebGL context lost"); }, false);
+        return c;
+      })(),
+      print:   function(t){ console.log(t); },
+      printErr:function(t){ console.error(t); },
+      setStatus: function(t){ if(statusEl){ if(t){ statusEl.textContent = t; } else { statusEl.style.display="none"; } } },
+      onRuntimeInitialized: function(){ if(statusEl) statusEl.style.display="none"; },
+    };
+    window.addEventListener("load", function(){ try{ Module.canvas.focus(); }catch(e){} });
+
+    // ---- Touch controls → WinBolo's classic keys (O/P turn, Q/A speed, Space fire).
+    var KEYS = {
+      "KeyO":{key:"o",keyCode:79}, "KeyP":{key:"p",keyCode:80},
+      "KeyQ":{key:"q",keyCode:81}, "KeyA":{key:"a",keyCode:65},
+      "Space":{key:" ",keyCode:32}
+    };
+    function dispatchKey(type, code){
+      var info = KEYS[code] || {key:code,keyCode:0};
+      var ev;
+      try { ev = new KeyboardEvent(type, { key:info.key, code:code, keyCode:info.keyCode, which:info.keyCode, bubbles:true, cancelable:true, view:window }); }
+      catch(e){ ev = document.createEvent("Event"); ev.initEvent(type,true,true); ev.key=info.key; ev.code=code; ev.keyCode=info.keyCode; ev.which=info.keyCode; }
+      try { Object.defineProperty(ev,"keyCode",{value:info.keyCode}); Object.defineProperty(ev,"which",{value:info.keyCode}); } catch(e){}
+      (Module.canvas||window).dispatchEvent(ev);
+      window.dispatchEvent(ev);
+    }
+    var isTouch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || ("ontouchstart" in window);
+    if (isTouch) document.body.classList.add("touch");
+    Array.prototype.forEach.call(document.querySelectorAll("#touchbar .tbtn"), function(el){
+      var code = el.getAttribute("data-code"); var held = false;
+      function down(e){ e.preventDefault(); if(held) return; held = true; el.classList.add("on"); dispatchKey("keydown", code); }
+      function up(e){ if(e) e.preventDefault(); if(!held) return; held = false; el.classList.remove("on"); dispatchKey("keyup", code); }
+      el.addEventListener("touchstart", down, {passive:false});
+      el.addEventListener("touchend", up, {passive:false});
+      el.addEventListener("touchcancel", up, {passive:false});
+      el.addEventListener("mousedown", down); el.addEventListener("mouseup", up); el.addEventListener("mouseleave", up);
+    });
+  </script>
+  <script async src="Bolo.js"></script>
+</body>
+</html>

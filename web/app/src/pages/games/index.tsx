@@ -97,6 +97,17 @@ const GAMES: AppTile[] = [
     // */index.html to the directory, which falls through to the SPA.
     externalUrl: "/games/bolo/play.html",
   },
+  {
+    id: "winbolo",
+    name: "WinBolo",
+    blurb: "Bolo, clean-room WinBolo (GPL) compiled to WASM — single-player preview.",
+    accentColor: "#1F6F3B",
+    phase: 4,
+    comingSoon: false,
+    iconName: "Adjust",
+    iconUrl: "/games/winbolo/icon.png",
+    externalUrl: "/games/winbolo/play.html",
+  },
   arcade("2048", "2048", "#EDC22E", "GridOn"),
   arcade("snake", "Snake", "#43A047", "Timeline"),
   arcade("minesweeper", "Minesweeper", "#455A64", "Flag"),
@@ -229,6 +240,8 @@ const CATEGORIES: { key: string; label: string; icon: string }[] = [
 const EXTRA_CATS: Record<string, string[]> = {
   mightymike: ["Port", "Puzzle", "Adventure", "Arcade"],
   bolo: ["Port", "Arcade", "Board"],
+  winbolo: ["Port", "Arcade", "Board"],
+  maelstrom: ["Port", "Arcade", "Speed"],
 };
 
 const CATEGORY_IDS: Record<string, string[]> = {
