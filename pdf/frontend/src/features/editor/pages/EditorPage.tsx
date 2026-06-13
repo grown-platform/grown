@@ -231,6 +231,8 @@ export function EditorPage() {
   const [pageAspect, setPageAspect] = useState(792 / POINTS_WIDE);
   const [tool, setTool] = useState<Tool>("select");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Text annotation currently being typed/edited directly on the page.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -441,7 +443,7 @@ export function EditorPage() {
         x: clamp01(x),
         y: clamp01(y),
         width: 0.4,
-        text: "Text",
+        text: "",
         fontSize: DEFAULT_FONT_SIZE,
         color: textColor,
         family: "Helvetica",
@@ -451,6 +453,8 @@ export function EditorPage() {
       snapshot();
       setAnnotations((p) => [...p, ann]);
       setSelectedId(ann.id);
+      // Drop a caret straight into the new box so you can just start typing.
+      setEditingId(ann.id);
       setTool("select");
       return;
     }
@@ -502,6 +506,8 @@ export function EditorPage() {
   // ---- Move / draw / resize via global pointer listeners --------------------
   const startMove = (e: React.MouseEvent, ann: Annotation) => {
     if (tool !== "select") return;
+    // Don't drag the box you're currently typing into — let the caret work.
+    if (editingId === ann.id) return;
     e.stopPropagation();
     setSelectedId(ann.id);
     snapshot();
@@ -644,6 +650,15 @@ export function EditorPage() {
   const updateSelected = (patch: Record<string, unknown>) => {
     if (!selectedId) return;
     setAnnotations((prev) => prev.map((a) => (a.id === selectedId ? ({ ...a, ...patch } as Annotation) : a)));
+  };
+  // Update one annotation's text live while it's being typed on the page.
+  const setText = (id: string, text: string) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? ({ ...a, text } as Annotation) : a)));
+  };
+  // Leave inline edit mode; discard a text box that was left empty.
+  const stopEditing = (id: string) => {
+    setEditingId(null);
+    setAnnotations((prev) => prev.filter((a) => !(a.id === id && a.type === "text" && a.text.trim() === "")));
   };
   const deleteSelected = () => {
     if (!selectedId) return;
@@ -1254,6 +1269,64 @@ export function EditorPage() {
                       const interactive = tool === "select";
                       if (ann.type === "text") {
                         const px = (ann.fontSize * renderWidth) / POINTS_WIDE;
+                        const isEditing = ann.id === editingId;
+                        const textStyle: React.CSSProperties = {
+                          fontSize: px,
+                          lineHeight: 1.2,
+                          color: ann.color,
+                          fontFamily: cssFamily(ann.family),
+                          fontWeight: ann.bold ? 700 : 400,
+                          fontStyle: ann.italic ? "italic" : "normal",
+                        };
+                        if (isEditing) {
+                          // True in-page editing: a transparent textarea sits exactly
+                          // where the text renders, so you type on the document itself.
+                          return (
+                            <textarea
+                              key={ann.id}
+                              autoFocus
+                              value={ann.text}
+                              onChange={(e) => setText(ann.id, e.target.value)}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => e.stopPropagation()}
+                              onFocus={(e) => {
+                                const v = e.target.value;
+                                e.target.setSelectionRange(v.length, v.length);
+                              }}
+                              onBlur={() => stopEditing(ann.id)}
+                              onKeyDown={(e) => {
+                                e.stopPropagation();
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  (e.target as HTMLTextAreaElement).blur();
+                                }
+                              }}
+                              className="absolute ring-2 ring-blue-500 bg-white/40"
+                              style={{
+                                ...textStyle,
+                                left: `${ann.x * 100}%`,
+                                top: `${ann.y * 100}%`,
+                                width: `${ann.width * 100}%`,
+                                margin: 0,
+                                padding: 0,
+                                border: "none",
+                                outline: "none",
+                                resize: "none",
+                                overflow: "hidden",
+                                whiteSpace: "pre-wrap",
+                                wordBreak: "break-word",
+                                pointerEvents: "auto",
+                                minHeight: px * 1.2,
+                              }}
+                              ref={(el) => {
+                                if (el) {
+                                  el.style.height = "auto";
+                                  el.style.height = el.scrollHeight + "px";
+                                }
+                              }}
+                            />
+                          );
+                        }
                         return (
                           <div
                             key={ann.id}
@@ -1262,17 +1335,18 @@ export function EditorPage() {
                               e.stopPropagation();
                               setSelectedId(ann.id);
                             }}
-                            className={`absolute select-none ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-move" : ""}`}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedId(ann.id);
+                              setEditingId(ann.id);
+                            }}
+                            className={`absolute select-none ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-text" : ""}`}
+                            title="Double-click to edit"
                             style={{
+                              ...textStyle,
                               left: `${ann.x * 100}%`,
                               top: `${ann.y * 100}%`,
                               width: `${ann.width * 100}%`,
-                              fontSize: px,
-                              lineHeight: 1.2,
-                              color: ann.color,
-                              fontFamily: cssFamily(ann.family),
-                              fontWeight: ann.bold ? 700 : 400,
-                              fontStyle: ann.italic ? "italic" : "normal",
                               whiteSpace: "pre-wrap",
                               wordBreak: "break-word",
                               overflow: "hidden",
