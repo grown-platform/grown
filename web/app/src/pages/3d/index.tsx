@@ -35,44 +35,61 @@ import {
 } from "@mui/joy";
 import ViewInArIcon from "@mui/icons-material/ViewInAr";
 import CenterFocusStrongIcon from "@mui/icons-material/CenterFocusStrong";
+import GridViewIcon from "@mui/icons-material/GridView";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import { downloadURL } from "../drive/api";
 import type { DriveFile } from "../drive/types";
 import { ModelViewer } from "./Viewer";
 import { DrivePicker } from "./DrivePicker";
+import { ModelLibrary } from "./ModelLibrary";
 import { extOf } from "./formats";
 
 export default function ThreeDApp({ user }: { user: User }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<ModelViewer | null>(null);
 
+  // The app lands on the Model Library (a gallery of the user's /models). The
+  // viewer takes over the viewport once the user opens a model or starts a new
+  // one; "Library" returns to the gallery.
+  const [view, setView] = useState<"library" | "viewer">("library");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The name of the currently-loaded model, or null for a blank "New model".
   const [modelName, setModelName] = useState<string | null>(null);
+  // A model queued to load once the viewer mounts (e.g. clicked from library).
+  const pendingFileRef = useRef<DriveFile | null>(null);
 
-  // Spin up the three.js viewer once the mount node exists; tear it down on
-  // unmount. The viewer starts on an empty grid (a fresh "New model" canvas).
+  // Spin up the three.js viewer once the viewport's mount node exists (i.e. in
+  // viewer mode); tear it down when we leave viewer mode. The viewer starts on
+  // an empty grid, then loads any model queued before the mount existed.
   useEffect(() => {
-    if (!mountRef.current) return;
+    if (view !== "viewer" || !mountRef.current) return;
     const viewer = new ModelViewer(mountRef.current);
     viewerRef.current = viewer;
+    const pending = pendingFileRef.current;
+    pendingFileRef.current = null;
+    if (pending) void loadIntoViewer(pending);
     return () => {
       viewer.dispose();
       viewerRef.current = null;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   function newModel() {
     setError(null);
     setModelName(null);
-    viewerRef.current?.newScene();
+    pendingFileRef.current = null;
+    if (view !== "viewer") {
+      setView("viewer");
+    } else {
+      viewerRef.current?.newScene();
+    }
   }
 
-  async function openFromDrive(file: DriveFile) {
-    setPickerOpen(false);
+  async function loadIntoViewer(file: DriveFile) {
     setError(null);
     setLoading(true);
     try {
@@ -91,6 +108,22 @@ export default function ThreeDApp({ user }: { user: User }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  /** Open a model in the viewer. If the viewer isn't mounted yet, queue it so
+   *  the mount effect loads it once the viewport exists. */
+  function openModel(file: DriveFile) {
+    if (view !== "viewer" || !viewerRef.current) {
+      pendingFileRef.current = file;
+      setView("viewer");
+      return;
+    }
+    void loadIntoViewer(file);
+  }
+
+  function openFromDrive(file: DriveFile) {
+    setPickerOpen(false);
+    openModel(file);
   }
 
   return (
@@ -140,79 +173,98 @@ export default function ThreeDApp({ user }: { user: User }) {
         </Dropdown>
 
         <Button
-          variant="plain"
+          variant={view === "library" ? "soft" : "plain"}
           size="sm"
-          startDecorator={<CenterFocusStrongIcon />}
-          onClick={() => viewerRef.current?.fitToView()}
+          startDecorator={<GridViewIcon />}
+          onClick={() => setView("library")}
         >
-          Fit to view
+          Library
         </Button>
+
+        {view === "viewer" && (
+          <Button
+            variant="plain"
+            size="sm"
+            startDecorator={<CenterFocusStrongIcon />}
+            onClick={() => viewerRef.current?.fitToView()}
+          >
+            Fit to view
+          </Button>
+        )}
 
         <Box sx={{ flex: 1 }} />
 
         <Typography level="body-sm" sx={{ opacity: 0.7 }} noWrap>
-          {modelName ?? "Untitled (new model)"}
+          {view === "library"
+            ? "Model Library"
+            : (modelName ?? "Untitled (new model)")}
         </Typography>
       </Sheet>
 
-      {/* Viewport */}
-      <Box sx={{ position: "relative", flex: 1, minHeight: 0 }}>
-        <Box ref={mountRef} sx={{ position: "absolute", inset: 0 }} />
+      {/* Library is the landing view; the viewport mounts only in viewer mode
+          (its ref drives viewer setup). We keep both branches in one return so
+          mountRef stays stable across renders within viewer mode. */}
+      {view === "library" ? (
+        <ModelLibrary onOpen={openModel} />
+      ) : (
+        <Box sx={{ position: "relative", flex: 1, minHeight: 0 }}>
+          <Box ref={mountRef} sx={{ position: "absolute", inset: 0 }} />
 
-        {loading && (
-          <Box
-            sx={{
-              position: "absolute",
-              inset: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: "rgba(255,255,255,0.4)",
-            }}
-          >
-            <CircularProgress />
-          </Box>
-        )}
+          {loading && (
+            <Box
+              sx={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                bgcolor: "rgba(255,255,255,0.4)",
+              }}
+            >
+              <CircularProgress />
+            </Box>
+          )}
 
-        {error && (
-          <Sheet
-            variant="soft"
-            color="danger"
-            sx={{
-              position: "absolute",
-              top: 12,
-              left: "50%",
-              transform: "translateX(-50%)",
-              px: 2,
-              py: 1,
-              borderRadius: "md",
-              maxWidth: "90%",
-            }}
-          >
-            <Typography level="body-sm" color="danger">
-              {error}
-            </Typography>
-          </Sheet>
-        )}
+          {error && (
+            <Sheet
+              variant="soft"
+              color="danger"
+              sx={{
+                position: "absolute",
+                top: 12,
+                left: "50%",
+                transform: "translateX(-50%)",
+                px: 2,
+                py: 1,
+                borderRadius: "md",
+                maxWidth: "90%",
+              }}
+            >
+              <Typography level="body-sm" color="danger">
+                {error}
+              </Typography>
+            </Sheet>
+          )}
 
-        {!modelName && !loading && !error && (
-          <Box
-            sx={{
-              position: "absolute",
-              bottom: 16,
-              left: 0,
-              right: 0,
-              textAlign: "center",
-              pointerEvents: "none",
-            }}
-          >
-            <Typography level="body-sm" sx={{ opacity: 0.55 }}>
-              Empty canvas — use File ▸ Open existing model to load one, or drag
-              to orbit. Pan with right-drag, zoom with scroll.
-            </Typography>
-          </Box>
-        )}
-      </Box>
+          {!modelName && !loading && !error && (
+            <Box
+              sx={{
+                position: "absolute",
+                bottom: 16,
+                left: 0,
+                right: 0,
+                textAlign: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <Typography level="body-sm" sx={{ opacity: 0.55 }}>
+                Empty canvas — use File ▸ Open existing model to load one, or
+                drag to orbit. Pan with right-drag, zoom with scroll.
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      )}
 
       <DrivePicker
         open={pickerOpen}
