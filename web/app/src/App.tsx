@@ -50,6 +50,9 @@ const SettingsPage = lazy(() => import("./pages/settings"));
 const CloudImportApp = lazy(() => import("./pages/cloudimport"));
 const VPNApp = lazy(() => import("./pages/vpn"));
 const AccessPage = lazy(() => import("./pages/access"));
+const TicketsApp = lazy(() => import("./pages/tickets"));
+// Public ticket intake: file a request without an account.
+const TicketSubmitPublic = lazy(() => import("./pages/tickets/Submit"));
 
 function ChunkFallback() {
   return (
@@ -157,6 +160,19 @@ export default function App() {
     />
   );
 
+  // Public ticket intake — anyone with a project's public link can file a
+  // request, no account needed.
+  const ticketSubmitRoute = (
+    <Route
+      path="/tickets/submit/:token"
+      element={
+        <Suspense fallback={<ChunkFallback />}>
+          <TicketSubmitPublic />
+        </Suspense>
+      }
+    />
+  );
+
   // Games are public — playable without an account, sign-in optional. The
   // page adapts to a null user when signed out.
   const gamesRoute = (
@@ -183,6 +199,7 @@ export default function App() {
             {sitesViewRoute}
             {videoWatchRoute}
             {liveWatchPublicRoute}
+            {ticketSubmitRoute}
             {gamesRoute}
             {auth.kind === "authenticated" ? (
               <>
@@ -418,6 +435,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<ChunkFallback />}>
                       <AccessPage user={auth.user} />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/tickets"
+                  element={
+                    <Suspense fallback={<ChunkFallback />}>
+                      <TicketsApp user={auth.user} />
                     </Suspense>
                   }
                 />

@@ -378,6 +378,15 @@ export const apps: AppTile[] = [
     iconName: "SportsEsports",
   },
   {
+    id: "tickets",
+    name: "Tickets",
+    blurb: "Track requests; public intake links.",
+    accentColor: "#2563EB",
+    phase: 4,
+    comingSoon: false,
+    iconName: "ConfirmationNumber",
+  },
+  {
     id: "orgsync",
     name: "Org Sync",
     blurb: "Transfer Drive files & Contacts to another organization.",

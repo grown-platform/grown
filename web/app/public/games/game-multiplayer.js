@@ -34,6 +34,18 @@
     return out;
   }
   function css(el, s) { el.setAttribute("style", s); }
+  function relAge(sec) {
+    sec = Math.max(0, Math.floor(sec || 0));
+    if (sec < 60) return sec + "s";
+    var m = Math.floor(sec / 60); if (m < 60) return m + "m";
+    var h = Math.floor(m / 60); if (h < 24) return h + "h";
+    return Math.floor(h / 24) + "d";
+  }
+  function fetchLobby() {
+    return fetch("/api/v1/gamerooms/list", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error("bad"); return r.json(); })
+      .then(function (j) { return (j && j.rooms) || []; });
+  }
 
   var ws = null, role = null, ready = false, peers = 0, active = false;
   var cb = { ready: null, move: null, reset: null, left: null };
@@ -60,10 +72,14 @@
 
   function sendMsg(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
-  function connect(code, pass, name, onErr) {
+  function connect(code, pass, name, onErr, isHost) {
     var proto = location.protocol === "https:" ? "wss://" : "ws://";
     var url = proto + location.host + "/api/v1/gamerooms/ws?room=" + encodeURIComponent(code) +
-      "&password=" + encodeURIComponent(pass) + "&name=" + encodeURIComponent(name);
+      "&password=" + encodeURIComponent(pass) + "&name=" + encodeURIComponent(name) +
+      "&game=" + encodeURIComponent(gameName);
+    // When we CREATE a room, mark it public + named so it shows up in the lobby.
+    // Joining an existing room never needs this (the room already exists).
+    if (isHost) url += "&public=1";
     ws = new WebSocket(url);
     active = true;
     ws.onmessage = function (ev) {
@@ -171,10 +187,89 @@
         createBtn.style.display = "none"; copyBtn.style.display = "";
         copyBtn.onclick = function () { navigator.clipboard && navigator.clipboard.writeText(link); copyBtn.textContent = "Copied!"; };
         setStatus("Share the link, then wait for a player…");
-        connect(code, passC._input.value, nameF._input.value || suggestName(), errEl);
+        connect(code, passC._input.value, nameF._input.value || suggestName(), errEl, true);
       };
       panel.appendChild(createBtn);
       panel.appendChild(copyBtn);
+
+      // ---- Browse open games --------------------------------------------
+      var divider = document.createElement("div");
+      css(divider, "display:flex;align-items:center;gap:10px;margin:16px 0 8px;font-size:12px;opacity:.6");
+      var dl = document.createElement("span"); css(dl, "flex:1;height:1px;background:#243049");
+      var dt = document.createElement("span"); dt.textContent = "or join an open game";
+      var dr = document.createElement("span"); css(dr, "flex:1;height:1px;background:#243049");
+      divider.appendChild(dl); divider.appendChild(dt); divider.appendChild(dr);
+      panel.appendChild(divider);
+
+      var head = document.createElement("div");
+      css(head, "display:flex;align-items:center;justify-content:space-between;margin-bottom:6px");
+      var headT = document.createElement("span"); headT.textContent = "Open " + gameName + " games"; css(headT, "font-size:12px;opacity:.7");
+      var refreshBtn = document.createElement("button"); refreshBtn.textContent = "↻ Refresh";
+      css(refreshBtn, "padding:4px 10px;border:1px solid #243049;border-radius:8px;background:transparent;color:#e8eefc;cursor:pointer;font:600 12px system-ui");
+      head.appendChild(headT); head.appendChild(refreshBtn);
+      panel.appendChild(head);
+
+      var list = document.createElement("div");
+      css(list, "max-height:180px;overflow:auto;margin-bottom:6px");
+      panel.appendChild(list);
+
+      function joinRow(room) {
+        var name = nameF._input.value || suggestName();
+        if (room.has_password) {
+          // Reveal a password field inline, then join on confirm.
+          list.innerHTML = "";
+          var note = document.createElement("div"); note.textContent = "This game is locked. Enter the password:"; css(note, "font-size:13px;opacity:.8;margin-bottom:6px");
+          list.appendChild(note);
+          var passL = field("Room password"); passL._input.type = "password";
+          list.appendChild(passL);
+          var go = button("Join game", true);
+          go.onclick = function () { setStatus("Connecting…"); connect(room.code, passL._input.value, name, errEl); };
+          list.appendChild(go);
+          passL._input.focus();
+        } else {
+          setStatus("Connecting…");
+          connect(room.code, "", name, errEl);
+        }
+      }
+
+      function renderRooms(rooms) {
+        list.innerHTML = "";
+        var open = (rooms || []).filter(function (r) {
+          return r && r.game && String(r.game).toLowerCase() === String(gameName).toLowerCase() &&
+            (r.players >= 1) && (r.players < 2);
+        });
+        if (!open.length) {
+          var empty = document.createElement("div");
+          empty.textContent = "No open games right now — create one!";
+          css(empty, "font-size:13px;opacity:.6;padding:8px 2px");
+          list.appendChild(empty);
+          return;
+        }
+        open.forEach(function (room) {
+          var row = document.createElement("button");
+          css(row, "width:100%;display:flex;align-items:center;gap:8px;text-align:left;padding:10px 12px;margin-bottom:6px;border:1px solid #243049;border-radius:10px;background:#0b1220;color:#e8eefc;cursor:pointer;font:inherit");
+          var nm = document.createElement("span"); nm.textContent = room.game || gameName; css(nm, "flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis");
+          var pl = document.createElement("span"); pl.textContent = "👤 " + (room.players || 1); css(pl, "font-size:13px;opacity:.85");
+          var lock = document.createElement("span"); lock.textContent = room.has_password ? "🔒" : ""; css(lock, "font-size:13px");
+          var age = document.createElement("span"); age.textContent = relAge(room.age_sec); css(age, "font-size:12px;opacity:.55;min-width:24px;text-align:right");
+          row.appendChild(nm); row.appendChild(pl); if (room.has_password) row.appendChild(lock); row.appendChild(age);
+          row.onclick = function () { joinRow(room); };
+          list.appendChild(row);
+        });
+      }
+
+      function loadRooms() {
+        list.innerHTML = "";
+        var loading = document.createElement("div"); loading.textContent = "Loading open games…"; css(loading, "font-size:13px;opacity:.6;padding:8px 2px");
+        list.appendChild(loading);
+        fetchLobby().then(renderRooms).catch(function () {
+          list.innerHTML = "";
+          var err = document.createElement("div"); err.textContent = "Couldn't load open games."; css(err, "font-size:13px;opacity:.6;padding:8px 2px");
+          list.appendChild(err);
+        });
+      }
+      refreshBtn.onclick = loadRooms;
+      loadRooms();
     }
     var cancel = button("Cancel"); cancel.onclick = closePanel; panel.appendChild(cancel);
 
