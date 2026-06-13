@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Container, Input, Button } from "@mui/joy";
 import SearchIcon from "@mui/icons-material/Search";
 import PersonAddIcon from "@mui/icons-material/PersonAddAlt1";
@@ -31,6 +31,14 @@ export function Dashboard({ user }: DashboardProps) {
   // In a single-user (personal) org the Admin app is hidden entirely; admins of a
   // team org see it (gated by !isPersonal && isAdmin).
   const [showAdmin, setShowAdmin] = useState(false);
+  // Focus the search on load so you can start typing apps immediately — desktop
+  // only (auto-focusing on touch devices pops the soft keyboard, which is worse).
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (window.matchMedia && window.matchMedia("(pointer: fine)").matches) {
+      searchRef.current?.focus();
+    }
+  }, []);
   useEffect(() => {
     let alive = true;
     fetch("/api/v1/admin/service-settings", { credentials: "same-origin" })
