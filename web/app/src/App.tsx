@@ -30,6 +30,7 @@ const MailApp = lazy(() => import("./pages/mail"));
 const ChatApp = lazy(() => import("./pages/chat"));
 const MeetApp = lazy(() => import("./pages/meet"));
 const TelephonyApp = lazy(() => import("./pages/telephony"));
+const OrgSyncApp = lazy(() => import("./pages/orgsync"));
 const FormsApp = lazy(() => import("./pages/forms"));
 const PhotosApp = lazy(() => import("./pages/photos"));
 const BooksApp = lazy(() => import("./pages/books"));
@@ -263,6 +264,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<ChunkFallback />}>
                       <TelephonyApp user={auth.user} />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/orgsync"
+                  element={
+                    <Suspense fallback={<ChunkFallback />}>
+                      <OrgSyncApp user={auth.user} />
                     </Suspense>
                   }
                 />

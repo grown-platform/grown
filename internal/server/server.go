@@ -53,6 +53,7 @@ import (
 	"code.pick.haus/grown/grown/internal/orgadmin"
 	"code.pick.haus/grown/grown/internal/orgadminhttp"
 	"code.pick.haus/grown/grown/internal/orgs"
+	"code.pick.haus/grown/grown/internal/orgsync"
 	pdfapp "code.pick.haus/grown/grown/internal/pdf/app"
 	"code.pick.haus/grown/grown/internal/photos"
 	"code.pick.haus/grown/grown/internal/prefs"
@@ -830,6 +831,28 @@ func New(cfg Config) *Server {
 		})
 	}
 
+	// Org Sync: copy selected Drive files/folders + Contacts to another org the
+	// caller administers. Reuses the drive repo/blobs already wired for import.
+	var orgSyncHTTP *orgsync.HTTPHandler
+	if orgSyncSvc := orgsync.NewService(cfg.CloudImportDriveRepo, cfg.CloudImportBlobs, cfg.ContactsRepo, cfg.OrgsRepo, cfg.OrgAdminRepo); orgSyncSvc != nil {
+		orgSyncHTTP = orgsync.NewHTTPHandler(orgSyncSvc,
+			func(r *http.Request) (string, bool) {
+				o, ok := auth.OrgFromContext(r.Context())
+				if !ok {
+					return "", false
+				}
+				return o.ID, true
+			},
+			func(r *http.Request) (string, bool) {
+				u, ok := auth.UserFromContext(r.Context())
+				if !ok {
+					return "", false
+				}
+				return u.ID, true
+			},
+		)
+	}
+
 	// Per-IP API rate limiting (outermost), with a stricter bucket on the auth
 	// endpoints to blunt credential stuffing. Tunable via GROWN_RATELIMIT_*.
 	rateLimiter := ratelimit.FromEnv()
@@ -1576,6 +1599,11 @@ func New(cfg Config) *Server {
 				driveAuthWrap(apiTokensHTTP).ServeHTTP(w, r)
 				return
 			}
+		}
+		// Org Sync transfer (/api/v1/orgsync/transfer) — auth-wrapped.
+		if orgSyncHTTP != nil && orgSyncHTTP.Match(r.URL.Path) {
+			driveAuthWrap(orgSyncHTTP).ServeHTTP(w, r)
+			return
 		}
 		// Telephony call-logging surface — auth-wrapped, pure HTTP.
 		if telephonyCalls != nil {

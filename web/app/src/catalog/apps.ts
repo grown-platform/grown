@@ -380,10 +380,10 @@ export const apps: AppTile[] = [
   {
     id: "orgsync",
     name: "Org Sync",
-    blurb: "Transfer & sync data between organizations and platforms.",
+    blurb: "Transfer Drive files & Contacts to another organization.",
     accentColor: "#0CA678",
     phase: 4,
-    comingSoon: true,
+    comingSoon: false,
     iconName: "SyncAlt",
     details: [
       "Transfer libraries from another grown organization or an external platform — Books, Music, Videos, Contacts, and more.",
