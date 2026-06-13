@@ -14,29 +14,12 @@ architecture so they start ahead.
 - **Cloud Import tests.** Suite green; minimal `.ics` / `.vcf` / Takeout-zip
   packages provided for interactive UI testing. (Gaps: mail import is counted but
   skipped in v1; photos route to Immich.)
-
-## TODO — Org Sync (cross-org data transfer)
-Transfer Drive files / Contacts / Music / Video between orgs with a review &
-select UI. Architecture (no `buf` — REST + side tables):
-- **Migration `008x_orgsync.sql`:** `grown.orgsync_requests` (source/target org,
-  status, scope JSON) + `grown.orgsync_jobs` (one row/item: type, source_id,
-  target_id, status).
-- **`internal/orgsync/`:** `requests_repo.go`, `jobs_repo.go`, `service.go` (the
-  transfer engine), `handler.go` (REST).
-- **Copy primitives (all exist, org-scoped by `org_id`):**
-  - Drive: `drive.Repository.Get/CreateFile/CreateFolder` + `Blobs.Get/Put`
-    (stream src blob → new key → new row in target org; recurse folders).
-  - Contacts: `contacts.Repository.Get/Create` (Fields struct copy).
-  - Music: `music.Repository.ListTracks/CreateTrack` + blob copy.
-  - Video: `video.Repository` + blob copy.
-- **Endpoints:** `POST /api/v1/orgsync/transfer` (selected items + target),
-  `GET /api/v1/orgsync/requests`, `POST …/{id}/approve`.
-- **Multi-org caveat:** each user has exactly one `org_id`; multi-account
-  switching exists (`internal/multiaccounts`). Transfer is initiated/approved by a
-  source-org admin; target receives. Duplicate handling = skip/overwrite/merge.
-- **Frontend:** `web/app/src/pages/orgsync/` + flip `orgsync.comingSoon=false` in
-  `web/app/src/catalog/apps.ts`. Browse source items with checkboxes → review →
-  transfer → progress from `orgsync_jobs`.
+- **Org Sync MVP.** Live `/orgsync` page: pick Drive files/folders + Contacts,
+  enter a target org slug, review, transfer. Folders recurse (blob copy + new
+  rows); caller must admin both orgs. `internal/orgsync/` (synchronous engine +
+  `POST /api/v1/orgsync/transfer`). **Next:** add Music/Video, duplicate handling
+  (skip/overwrite/merge), async jobs + progress for large transfers, and a
+  target-org picker (currently slug entry).
 
 ## TODO — Self-hosted PBX backend (Asterisk)
 Biggest item (infra, multi-day). Behind the existing Telephony admin console
