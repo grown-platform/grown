@@ -263,6 +263,12 @@ type Config struct {
 	// serving (API-only mode for tests).
 	StaticDir string
 
+	// SiteName is the product name used in server-rendered link-preview
+	// (Open Graph) metadata for the SPA shell — e.g. the og:title for the
+	// homepage and the og:site_name everywhere. Defaults to "Grown"; set per
+	// instance via GROWN_SITE_NAME (e.g. "Grown Platform" on grown.haus).
+	SiteName string
+
 	// DemoLogin configures the one-click demo login button. Disabled by default.
 	DemoLogin auth.DemoConfig
 	// ---- Cloud Import -------------------------------------------------------
@@ -927,7 +933,7 @@ func New(cfg Config) *Server {
 
 	// Route /api/* and /healthz to the auth-wrapped gateway; everything
 	// else falls through to the static SPA handler.
-	static := StaticHandler(cfg.StaticDir)
+	static := StaticHandler(cfg.StaticDir, cfg.SiteName)
 	driveAuthWrap := auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg, apiTokensRepo)
 
 	// Zitadel User API v2 proxy for the in-app account-security panel. Runs

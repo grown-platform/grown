@@ -13,7 +13,7 @@ func TestStaticHandler_ServesIndexAtRoot(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "index.html"), "<!doctype html><html>index</html>")
 
-	h := StaticHandler(dir)
+	h := StaticHandler(dir, "Grown")
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	h.ServeHTTP(rr, req)
@@ -30,7 +30,7 @@ func TestStaticHandler_ServesAssetByExactPath(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "assets/app.js"), "console.log('hi')")
 
-	h := StaticHandler(dir)
+	h := StaticHandler(dir, "Grown")
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
 	h.ServeHTTP(rr, req)
@@ -47,7 +47,7 @@ func TestStaticHandler_SPAFallbackToIndex(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "index.html"), "<!doctype html><html>spa</html>")
 
-	h := StaticHandler(dir)
+	h := StaticHandler(dir, "Grown")
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/coming-soon/drive", nil)
 	h.ServeHTTP(rr, req)
@@ -64,7 +64,7 @@ func TestStaticHandler_DoesNotShadowAPIPaths(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "index.html"), "spa")
 
-	h := StaticHandler(dir)
+	h := StaticHandler(dir, "Grown")
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/whoami", nil)
 	h.ServeHTTP(rr, req)
@@ -75,7 +75,7 @@ func TestStaticHandler_DoesNotShadowAPIPaths(t *testing.T) {
 }
 
 func TestStaticHandler_MissingDirReturns404(t *testing.T) {
-	h := StaticHandler("/this/path/does/not/exist")
+	h := StaticHandler("/this/path/does/not/exist", "Grown")
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	h.ServeHTTP(rr, req)

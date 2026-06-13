@@ -69,7 +69,7 @@ func setStaticCache(w http.ResponseWriter, urlPath string) {
 //
 // If `dir` is empty or missing, all requests get 404 — letting the operator
 // run the backend in API-only mode for tests.
-func StaticHandler(dir string) http.Handler {
+func StaticHandler(dir, siteName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Never shadow API paths; let the outer router fall through.
 		if strings.HasPrefix(r.URL.Path, "/api/") {
@@ -102,8 +102,9 @@ func StaticHandler(dir string) http.Handler {
 			return
 		}
 
-		// SPA fallback.
-		http.ServeFile(w, r, filepath.Join(dir, "index.html"))
+		// SPA fallback — serve index.html with route-aware link-preview (Open
+		// Graph) meta injected so shared URLs preview meaningfully.
+		serveSPAShell(w, r, dir, siteName)
 	})
 }
 

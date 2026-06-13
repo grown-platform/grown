@@ -1,4 +1,6 @@
-# Grown Workspace
+# Grown
+
+> **Grow your own platform and own what you grow.**
 
 **A self-hosted, open-source workspace platform** — your own Drive, Mail, Calendar,
 Docs, Sheets, Slides, Chat, Meet, Photos, Music, Video, a 100+ game arcade, and
@@ -9,7 +11,7 @@ office suites.
 > open source under the [MIT License](LICENSE). Use it, run it, fork it, sell it —
 > no strings.
 
-Live instance: **[workspace.pick.haus](https://workspace.pick.haus)**
+Live instance: **[grown.haus](https://grown.haus)**
 
 ## Contributing & issues — very welcome 🙌
 
@@ -51,7 +53,7 @@ helm install grown deploy/helm/grown -n grown --create-namespace \
 
 Prefer plain `kubectl`? `kubectl apply -f deploy/manifests/grown.yaml`. Full guide
 (kind, Raspberry Pi 5, Helm values, production notes): **[Install &
-self-host](https://workspace.pick.haus/docs/install.html)** · chart in
+self-host](https://grown.haus/docs/install.html)** · chart in
 [`deploy/helm/grown`](deploy/helm/grown).
 
 ## Documentation

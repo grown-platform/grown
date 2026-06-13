@@ -21,7 +21,7 @@ export const workspaceLogoSVG = `<svg viewBox="0 0 40 40" xmlns="http://www.w3.o
 
 export const defaultBrand: Brand = {
   productName: "Grown",
-  tagline: "Self-hosted, multi-org workspace platform",
+  tagline: "Grow your own platform and own what you grow.",
   primaryColor: "#3F704D", // muted forest green — distinct from Google's blue
   surfaceColor: "#FAFAF7", // warm white
   onSurfaceColor: "#1B2620", // dark green-black

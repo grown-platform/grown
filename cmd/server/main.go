@@ -2,6 +2,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -285,6 +286,7 @@ func main() {
 		Drive:       driveSvc,
 		Pool:        pool,
 		StaticDir:   *staticDir,
+		SiteName:    cmp.Or(os.Getenv("GROWN_SITE_NAME"), "Grown"),
 		DemoLogin:   loadDemoConfig(),
 		// Integrated PDF (editor & sign) app proxy targets. Empty disables the
 		// /pdf reverse proxy (e.g. when the PDF services aren't running).
