@@ -1,6 +1,6 @@
 // Service worker for the WinBolo PWA: cache-first for the engine (wasm/data/js),
 // network-first for the HTML shell so updates flow. Bump CACHE on rebuild.
-const CACHE = "winbolo-v1";
+const CACHE = "winbolo-v2";
 const SHELL = ["./play.html","./manifest.webmanifest","./icon-192.png","./icon-512.png","./Bolo.js","./Bolo.wasm","./Bolo.data"];
 self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => Promise.allSettled(SHELL.map((u) => c.add(u))))); });
 self.addEventListener("activate", (e) => e.waitUntil((async () => { const ks = await caches.keys(); await Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))); await self.clients.claim(); })()));
