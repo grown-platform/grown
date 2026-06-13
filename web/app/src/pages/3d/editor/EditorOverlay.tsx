@@ -34,6 +34,11 @@ import StraightenIcon from "@mui/icons-material/Straighten";
 import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
 import GridGoldenratioIcon from "@mui/icons-material/GridGoldenratio";
+import Crop32Icon from "@mui/icons-material/Crop32";
+import CircleOutlinedIcon from "@mui/icons-material/CircleOutlined";
+import HexagonOutlinedIcon from "@mui/icons-material/HexagonOutlined";
+import ContentCutIcon from "@mui/icons-material/ContentCut";
+import FlipIcon from "@mui/icons-material/Flip";
 import type { Editor, EditorState, Tool } from "./Editor";
 import type { PrimitiveKind } from "./primitives";
 import { MATERIAL_PRESETS, type MaterialPreset } from "./materials";
@@ -48,7 +53,8 @@ interface ToolDef {
 const TOOLS: ToolDef[] = [
   { tool: "select", label: "Select (V / Esc)", key: "V", icon: <NearMeIcon /> },
   { tool: "move", label: "Move (M)", key: "M", icon: <OpenWithIcon /> },
-  { tool: "rotate", label: "Rotate (R)", key: "R", icon: <RotateRightIcon /> },
+  // Rotate moves to Q (SketchUp's binding) so R/C can drive the draw tools.
+  { tool: "rotate", label: "Rotate (Q)", key: "Q", icon: <RotateRightIcon /> },
   { tool: "scale", label: "Scale (S)", key: "S", icon: <AspectRatioIcon /> },
   {
     tool: "pushpull",
@@ -68,6 +74,18 @@ const TOOLS: ToolDef[] = [
     label: "Tape Measure (T)",
     key: "T",
     icon: <StraightenIcon />,
+  },
+];
+
+/** On-plane drawing tools — sketch flat faces on the ground (y=0). */
+const DRAW_TOOLS: ToolDef[] = [
+  { tool: "rect", label: "Rectangle (R)", key: "R", icon: <Crop32Icon /> },
+  { tool: "circle", label: "Circle (C)", key: "C", icon: <CircleOutlinedIcon /> },
+  {
+    tool: "polygon",
+    label: "Polygon (G)",
+    key: "G",
+    icon: <HexagonOutlinedIcon />,
   },
 ];
 
@@ -114,7 +132,9 @@ export function EditorOverlay({ editor }: { editor: Editor }) {
         editor.setTool("select");
         return;
       }
-      const def = TOOLS.find((d) => d.key.toLowerCase() === e.key.toLowerCase());
+      const def = [...TOOLS, ...DRAW_TOOLS].find(
+        (d) => d.key.toLowerCase() === e.key.toLowerCase(),
+      );
       if (def && !meta) {
         editor.setTool(def.tool);
       }
@@ -161,6 +181,47 @@ export function EditorOverlay({ editor }: { editor: Editor }) {
               </IconButton>
             </Tooltip>
           ))}
+          <Divider sx={{ my: 0.25 }} />
+          {/* On-plane drawing tools (Rectangle / Circle / Polygon). */}
+          {DRAW_TOOLS.map((d) => (
+            <Tooltip key={d.tool} title={d.label} placement="right" size="sm">
+              <IconButton
+                size="sm"
+                variant={state.tool === d.tool ? "solid" : "plain"}
+                color={state.tool === d.tool ? "primary" : "neutral"}
+                onClick={() => editor.setTool(d.tool)}
+              >
+                {d.icon}
+              </IconButton>
+            </Tooltip>
+          ))}
+          <Divider sx={{ my: 0.25 }} />
+          {/* Section plane (clipping) toggle + reverse. */}
+          <Tooltip
+            title={`Section plane: ${state.sectionActive ? "on (drag to position)" : "off"}`}
+            placement="right"
+            size="sm"
+          >
+            <IconButton
+              size="sm"
+              variant={state.sectionActive ? "solid" : "plain"}
+              color={state.sectionActive ? "primary" : "neutral"}
+              onClick={() => editor.toggleSection()}
+            >
+              <ContentCutIcon />
+            </IconButton>
+          </Tooltip>
+          {state.sectionActive && (
+            <Tooltip title="Reverse section side" placement="right" size="sm">
+              <IconButton
+                size="sm"
+                variant="plain"
+                onClick={() => editor.reverseSection()}
+              >
+                <FlipIcon />
+              </IconButton>
+            </Tooltip>
+          )}
           <Divider sx={{ my: 0.25 }} />
           <Tooltip
             title={`Snap to grid: ${state.snap ? "on" : "off"}`}
