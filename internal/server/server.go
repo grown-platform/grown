@@ -1781,6 +1781,13 @@ func New(cfg Config) *Server {
 			driveAuthWrap(gameRoomsAdmin).ServeHTTP(w, r)
 			return
 		}
+		// Public "recently updated games" feed — read-only, no auth (the bundled
+		// games are public too). Stats <StaticDir>/games/*.html so the /games
+		// frontend can show a NEW badge on freshly-updated games.
+		if r.URL.Path == recentGamesPath {
+			recentGamesHandler(cfg.StaticDir).ServeHTTP(w, r)
+			return
+		}
 		// Public game-room WS relay — joinable by link, no workspace account, so
 		// it must bypass the auth wall (its access control is code + password).
 		if gameRoomsHTTP.Match(r.URL.Path) {
