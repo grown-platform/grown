@@ -262,6 +262,7 @@
         </div>
     </div>
 
+    <script src="/games/game-multiplayer.js"></script>
     <script>
         const BOARD_SIZE = 8;
         const BLACK = 1; // Human
@@ -283,7 +284,8 @@
         let currentPlayer = BLACK;
         let gameOver = false;
         let passCount = 0;
-        let mode = 'ai'; // 'ai' = vs computer, '2p' = pass-and-play hot seat
+        let mode = 'ai'; // 'ai' = vs computer, '2p' = pass-and-play hot seat, 'online' = networked
+        let mySide = BLACK; // which side this client controls when online
 
         const boardEl = document.getElementById('board');
         const blackScoreEl = document.getElementById('black-score');
@@ -291,13 +293,18 @@
         const statusEl = document.getElementById('status');
         const modeOverlay = document.getElementById('modeOverlay');
 
-        // In 2p both sides are human; in ai only BLACK is human.
-        function isHumanTurn() { return mode === '2p' ? true : currentPlayer === BLACK; }
+        // In 2p both sides are human; in ai only BLACK is human; online only
+        // your own side is human (your turn when currentPlayer===mySide).
+        function isHumanTurn() {
+            if (mode === 'online') return currentPlayer === mySide;
+            return mode === '2p' ? true : currentPlayer === BLACK;
+        }
         function sideName(side) {
             if (mode === '2p') return side === BLACK ? 'Black' : 'White';
             return side === BLACK ? 'You' : 'Computer';
         }
         function turnStatus() {
+            if (mode === 'online') return currentPlayer === mySide ? "Your turn" : "Opponent's turn";
             return mode === '2p' ? sideName(currentPlayer) + "'s turn"
                                  : (currentPlayer === BLACK ? "Your turn" : "Computer is thinking...");
         }
@@ -417,18 +424,25 @@
 
             const mover = currentPlayer;
             if (canMove(board, mover, index)) {
-                board = executeMove(board, mover, index);
-                currentPlayer = mover === BLACK ? WHITE : BLACK;
-                passCount = 0;
-                render();
-                checkGameState();
-                if (gameOver) return;
-                if (mode === '2p') {
-                    advanceTwoPlayer();
-                } else {
-                    statusEl.textContent = "Computer is thinking...";
-                    setTimeout(aiTurn, 600);
-                }
+                if (mode === 'online') GameMP.send({ index, player: mover });
+                applyMove(mover, index);
+            }
+        }
+
+        // Shared move-application path used by both the local click handler and
+        // applyRemoteMove, so both peers run identical flip / skip / turn logic.
+        function applyMove(mover, index) {
+            board = executeMove(board, mover, index);
+            currentPlayer = mover === BLACK ? WHITE : BLACK;
+            passCount = 0;
+            render();
+            checkGameState();
+            if (gameOver) return;
+            if (mode === '2p' || mode === 'online') {
+                advanceTwoPlayer();
+            } else {
+                statusEl.textContent = "Computer is thinking...";
+                setTimeout(aiTurn, 600);
             }
         }
 
@@ -442,7 +456,10 @@
                 currentPlayer = passer === BLACK ? WHITE : BLACK;
                 checkGameState();
                 if (gameOver) { render(); return; }
-                statusEl.textContent = sideName(passer) + " has no move — " + turnStatus();
+                const passerName = mode === 'online'
+                    ? (passer === mySide ? "You have" : "Opponent has")
+                    : sideName(passer) + " has";
+                statusEl.textContent = passerName + " no move — " + turnStatus();
                 render();
                 return;
             }
@@ -488,7 +505,13 @@
                 gameOver = true;
                 const b = board.filter(x => x === BLACK).length;
                 const w = board.filter(x => x === WHITE).length;
-                if (mode === '2p') {
+                if (mode === 'online') {
+                    if (b === w) statusEl.textContent = "It's a Draw!";
+                    else {
+                        const winner = b > w ? BLACK : WHITE;
+                        statusEl.textContent = winner === mySide ? "You Win!" : "Opponent Wins!";
+                    }
+                } else if (mode === '2p') {
                     if (b > w) statusEl.textContent = sideName(BLACK) + " Wins!";
                     else if (w > b) statusEl.textContent = sideName(WHITE) + " Wins!";
                     else statusEl.textContent = "It's a Draw!";
@@ -566,7 +589,9 @@
         }
 
         // "New Game" returns to the mode picker so you can switch AI / 2-player.
+        // When online, it restarts the shared board and tells the opponent.
         function resetGame() {
+            if (mode === 'online') { startGame(); GameMP.sendReset(); return; }
             showModeSelect();
         }
 
@@ -578,6 +603,34 @@
         }
         document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
         document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
+
+        // --- Online multiplayer (drop-in via game-multiplayer.js) ---
+        // Apply an opponent's move. m.player is the side that moved; ignore our
+        // own echo and only apply when it is the opponent's turn. Runs through the
+        // shared applyMove path so flip/skip/turn logic matches the local client.
+        function applyRemoteMove(m) {
+            if (mode !== 'online' || gameOver) return;
+            if (m.player === mySide) return;        // ignore our own echo
+            if (currentPlayer !== m.player) return; // only when it's their turn
+            if (canMove(board, m.player, m.index)) {
+                applyMove(m.player, m.index);
+            }
+        }
+        GameMP.setup({ gameName: 'Reversi' });
+        GameMP.onReady(function (role) {
+            // role 0 = host → Black (goes first); role 1 = guest → White.
+            mode = 'online';
+            mySide = role === 0 ? BLACK : WHITE;
+            modeOverlay.classList.remove('show');
+            startGame();
+        });
+        GameMP.onMove(applyRemoteMove);
+        GameMP.onReset(function () { if (mode === 'online') startGame(); });
+        GameMP.onPeerLeft(function () {
+            if (mode !== 'online') return;
+            gameOver = true;
+            statusEl.textContent = "Opponent left.";
+        });
 
         // Render an idle board behind the picker, then ask for a mode.
         startGame();

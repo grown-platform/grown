@@ -220,6 +220,7 @@
         </div>
     </div>
 
+    <script src="/games/game-multiplayer.js"></script>
     <script>
         const ROWS = 6;
         const COLS = 7;
@@ -230,14 +231,19 @@
         let board = [];
         let gameOver = false;
         let currentPlayer = PLAYER;
-        let mode = 'ai'; // 'ai' = vs computer, '2p' = pass-and-play hot seat
+        let mode = 'ai'; // 'ai' = vs computer, '2p' = pass-and-play hot seat, 'online' = networked
+        let mySide = PLAYER; // which side this client controls when online
 
         const boardElement = document.getElementById('board');
         const statusElement = document.getElementById('status');
         const modeOverlay = document.getElementById('modeOverlay');
 
-        // In 2p both sides are human; in ai only the PLAYER (red) side is human.
-        function isHumanTurn() { return mode === '2p' ? true : currentPlayer === PLAYER; }
+        // In 2p both sides are human; in ai only the PLAYER (red) side is human;
+        // online only your own side is human (your turn when currentPlayer===mySide).
+        function isHumanTurn() {
+            if (mode === 'online') return currentPlayer === mySide;
+            return mode === '2p' ? true : currentPlayer === PLAYER;
+        }
         function sideName(side) {
             if (mode === '2p') return side === PLAYER ? 'Red' : 'Yellow';
             return side === PLAYER ? 'You' : 'AI';
@@ -245,6 +251,7 @@
         function sideColor(side) { return side === PLAYER ? '#e74c3c' : '#f1c40f'; }
 
         function turnText() {
+            if (mode === 'online') return currentPlayer === mySide ? "Your Turn" : "Opponent's Turn";
             if (mode === '2p') return sideName(currentPlayer) + "'s Turn";
             return currentPlayer === PLAYER ? "Your Turn (Red)" : "AI is thinking...";
         }
@@ -254,7 +261,7 @@
             gameOver = false;
             currentPlayer = PLAYER;
             statusElement.textContent = turnText();
-            statusElement.style.color = mode === '2p' ? sideColor(currentPlayer) : "#34495e";
+            statusElement.style.color = (mode === '2p') ? sideColor(currentPlayer) : "#34495e";
             renderBoard();
         }
 
@@ -283,16 +290,17 @@
 
             const mover = currentPlayer;
             if (makeMove(col, mover)) {
+                if (mode === 'online') GameMP.send({ col, player: mover });
                 const winInfo = checkWin(board);
                 if (winInfo) {
                     endGame(winInfo, mover);
                 } else if (isBoardFull()) {
                     endGame(null, 'draw');
-                } else if (mode === '2p') {
-                    // Pass-and-play: the other human moves next.
+                } else if (mode === '2p' || mode === 'online') {
+                    // Pass-and-play / networked: the other side moves next.
                     currentPlayer = mover === PLAYER ? AI : PLAYER;
                     statusElement.textContent = turnText();
-                    statusElement.style.color = sideColor(currentPlayer);
+                    statusElement.style.color = (mode === 'online') ? "#34495e" : sideColor(currentPlayer);
                 } else {
                     currentPlayer = AI;
                     statusElement.textContent = "AI is thinking...";
@@ -339,7 +347,8 @@
                 statusElement.textContent = "It's a Draw!";
                 statusElement.style.color = "#7f8c8d";
             } else {
-                if (mode === '2p') statusElement.textContent = sideName(winner) + " Wins!";
+                if (mode === 'online') statusElement.textContent = winner === mySide ? "You Win!" : "Opponent Wins!";
+                else if (mode === '2p') statusElement.textContent = sideName(winner) + " Wins!";
                 else statusElement.textContent = winner === PLAYER ? "You Win!" : "AI Wins!";
                 statusElement.style.color = sideColor(winner);
                 if (winInfo) highlightWinners(winInfo);
@@ -542,7 +551,9 @@
         }
 
         // "New Game" returns to the mode picker so you can switch AI / 2-player.
+        // When online, it restarts the shared board and tells the opponent.
         function resetGame() {
+            if (mode === 'online') { initBoard(); GameMP.sendReset(); return; }
             showModeSelect();
         }
 
@@ -554,6 +565,40 @@
         }
         document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
         document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
+
+        // --- Online multiplayer (drop-in via game-multiplayer.js) ---
+        // Apply an opponent's drop. m.player is the side that moved; ignore our own
+        // echo and only advance the shared turn for the opponent's move.
+        function applyRemoteMove(m) {
+            if (mode !== 'online' || gameOver) return;
+            if (m.player === mySide) return;
+            if (makeMove(m.col, m.player)) {
+                const winInfo = checkWin(board);
+                if (winInfo) { endGame(winInfo, m.player); }
+                else if (isBoardFull()) { endGame(null, 'draw'); }
+                else {
+                    currentPlayer = m.player === PLAYER ? AI : PLAYER;
+                    statusElement.textContent = turnText();
+                    statusElement.style.color = "#34495e";
+                }
+            }
+        }
+        GameMP.setup({ gameName: 'Connect Four' });
+        GameMP.onReady(function (role) {
+            // role 0 = host → Red (goes first); role 1 = guest → Yellow.
+            mode = 'online';
+            mySide = role === 0 ? PLAYER : AI;
+            modeOverlay.classList.remove('show');
+            initBoard();
+        });
+        GameMP.onMove(applyRemoteMove);
+        GameMP.onReset(function () { if (mode === 'online') initBoard(); });
+        GameMP.onPeerLeft(function () {
+            if (mode !== 'online') return;
+            gameOver = true;
+            statusElement.textContent = "Opponent left.";
+            statusElement.style.color = "#7f8c8d";
+        });
 
         // Render an idle board behind the picker, then ask for a mode.
         initBoard();

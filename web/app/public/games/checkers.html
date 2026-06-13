@@ -269,6 +269,7 @@
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function(){
   "use strict";
@@ -285,8 +286,16 @@
   let mustContinueFrom = null; // {r,c} forced multi-jump continuation
   let gameOver = false;
   let busy = false;        // lock input during CPU/animation
-  let mode = 'ai';         // 'ai' = vs computer, '2p' = pass-and-play hot seat
+  let mode = 'ai';         // 'ai' = vs computer, '2p' = pass-and-play hot seat, 'online' = networked
   // In 'ai' mode the human controls 'p'; in '2p' mode both sides are human.
+  // In 'online' mode only your own side ('mySide') is human; the other side's
+  // completed turns arrive over the network and are replayed locally.
+  let mySide = 'p';        // role 0 = host = 'p' (moves first); role 1 = guest = 'c'
+  // Squares visited during the current local turn: [from, ...landings]. Broadcast
+  // as a single {path:[...]} when the turn fully resolves (after any multi-jump).
+  let movePath = null;
+  // True while replaying an incoming remote move, so we never re-broadcast it.
+  let applyingRemote = false;
 
   const boardEl = document.getElementById('board');
   const statusEl = document.getElementById('status');
@@ -301,7 +310,10 @@
 
   // Who the human(s) control: in 2p both sides are human, so the side to move
   // is always human. In ai mode only 'p' is human.
-  function isHumanTurn(){ return mode === '2p' ? true : turn === 'p'; }
+  function isHumanTurn(){
+    if (mode === 'online') return turn === mySide;
+    return mode === '2p' ? true : turn === 'p';
+  }
   function sideName(side){
     if (mode === '2p') return side === 'p' ? 'Red' : 'Black';
     return side === 'p' ? 'You' : 'CPU';
@@ -350,11 +362,17 @@
     selected = null;
     legalForSelected = [];
     mustContinueFrom = null;
+    movePath = null;
     gameOver = false;
     busy = false;
     overlay.classList.remove('show');
-    pNameEl.textContent = sideName('p');
-    cNameEl.textContent = sideName('c');
+    if (mode === 'online'){
+      pNameEl.textContent = mySide === 'p' ? 'You' : 'Opponent';
+      cNameEl.textContent = mySide === 'c' ? 'You' : 'Opponent';
+    } else {
+      pNameEl.textContent = sideName('p');
+      cNameEl.textContent = sideName('c');
+    }
     render();
     updateStatus();
   }
@@ -523,7 +541,12 @@
 
   function updateStatus(){
     if (gameOver) return;
-    if (mode === '2p'){
+    if (mode === 'online'){
+      const mine = turn === mySide;
+      statusEl.className = 'status ' + (mySide === 'p' ? (mine ? 'player' : 'cpu') : (mine ? 'cpu' : 'player'));
+      if (mine) statusEl.textContent = mustContinueFrom ? 'Continue your jump!' : 'Your turn';
+      else statusEl.textContent = "Opponent's turn";
+    } else if (mode === '2p'){
       statusEl.className = 'status ' + (turn === 'p' ? 'player' : 'cpu');
       const who = sideName(turn);
       statusEl.textContent = mustContinueFrom ? who + ' — continue your jump!' : who + "'s turn";
@@ -590,6 +613,12 @@
 
   function doPlayerMove(move){
     busy = true;
+    // Record the path for online broadcast: first hop seeds [from, to];
+    // each continuation appends the next landing square.
+    if (mode === 'online' && !applyingRemote){
+      if (!movePath) movePath = [{ r: move.from.r, c: move.from.c }];
+      movePath.push({ r: move.to.r, c: move.to.c });
+    }
     const res = applyMove(board, move);
     if (move.capture) sCap(); else sMove();
     if (res.promoted) sKing();
@@ -607,6 +636,11 @@
 
     // Turn ends.
     const mover = turn;
+    // Broadcast the fully-resolved local turn to the peer before passing turn.
+    if (mode === 'online' && !applyingRemote && movePath){
+      GameMP.send({ path: movePath, side: mover });
+    }
+    movePath = null;
     mustContinueFrom = null;
     selected = null;
     legalForSelected = [];
@@ -621,7 +655,7 @@
       render();
       setTimeout(cpuTurn, 450);
     } else {
-      // Pass-and-play: the other human moves next.
+      // Pass-and-play / online: the other side moves next.
       busy = false;
       updateStatus();
       render();
@@ -638,7 +672,19 @@
       gameOver = true;
       busy = true;
       const winner = sideThatJustMoved; // the side still able to play wins
-      if (mode === '2p'){
+      if (mode === 'online'){
+        if (winner === mySide){
+          statusEl.className = 'status win';
+          statusEl.textContent = 'You win!';
+          sWin();
+          showModal('You Win!', 'Opponent has no moves left.');
+        } else {
+          statusEl.className = 'status lose';
+          statusEl.textContent = 'Opponent wins!';
+          sLose();
+          showModal('Opponent Wins', 'You have no moves left.');
+        }
+      } else if (mode === '2p'){
         statusEl.className = 'status win';
         statusEl.textContent = sideName(winner) + ' wins!';
         sWin();
@@ -835,13 +881,68 @@
     newGame();
   }
 
+  // ----- Online multiplayer (drop-in via game-multiplayer.js) -----
+  // Replay an opponent's fully-resolved turn. m.path is [from, ...landings].
+  // m.side is the side that moved; ignore our own echo and only act on the
+  // opponent's move. Each hop is turned back into a concrete legal move object
+  // and run through the SAME doPlayerMove path so captures, kinging, multi-jump
+  // continuation and turn-pass / win checks all happen identically to a local move.
+  function applyRemoteMove(m){
+    if (mode !== 'online' || gameOver) return;
+    if (!m || !Array.isArray(m.path) || m.path.length < 2) return;
+    if (m.side === mySide) return;       // ignore our own echo
+    if (m.side !== turn) return;         // only the side to move may move
+    applyingRemote = true;
+    busy = false;                        // allow doPlayerMove to run hop-by-hop
+    // Walk the path: at each step find the legal move from current square to the
+    // next square in the path and execute it. doPlayerMove handles continuation
+    // state (mustContinueFrom) so we always recompute legal moves for the source.
+    for (let i = 0; i < m.path.length - 1; i++){
+      const from = m.path[i], to = m.path[i + 1];
+      const legal = allLegalMoves(board, turn).filter(
+        mv => mv.from.r === from.r && mv.from.c === from.c &&
+              mv.to.r === to.r && mv.to.c === to.c
+      );
+      if (!legal.length){ applyingRemote = false; return; } // desync guard
+      doPlayerMove(legal[0]);
+      if (gameOver) break;
+    }
+    applyingRemote = false;
+  }
+
   // ----- Controls -----
-  // "New Game" returns to the mode picker so you can switch AI / 2-player.
-  document.getElementById('newGame').addEventListener('click', showModeSelect);
+  // "New Game": offline returns to the mode picker (switch AI / 2-player);
+  // online restarts the shared board and tells the opponent.
+  document.getElementById('newGame').addEventListener('click', function(){
+    if (mode === 'online'){ newGame(); GameMP.sendReset(); return; }
+    showModeSelect();
+  });
   // "Play Again" from the game-over modal restarts the same mode.
-  document.getElementById('modalBtn').addEventListener('click', newGame);
+  document.getElementById('modalBtn').addEventListener('click', function(){
+    newGame();
+    if (mode === 'online') GameMP.sendReset();
+  });
   document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
   document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
+
+  GameMP.setup({ gameName: 'Checkers' });
+  GameMP.onReady(function (role){
+    // role 0 = host → 'p' (red, moves first); role 1 = guest → 'c'.
+    mode = 'online';
+    mySide = role === 0 ? 'p' : 'c';
+    modeOverlay.classList.remove('show');
+    newGame();
+  });
+  GameMP.onMove(applyRemoteMove);
+  GameMP.onReset(function (){ if (mode === 'online') newGame(); });
+  GameMP.onPeerLeft(function (){
+    if (mode !== 'online') return;
+    gameOver = true;
+    busy = true;
+    statusEl.className = 'status lose';
+    statusEl.textContent = 'Opponent left.';
+    showModal('Opponent left', 'Your opponent disconnected.');
+  });
 
   // Prevent double-tap zoom / scroll on the board explicitly.
   boardEl.addEventListener('touchend', function(e){ /* click handles logic */ }, {passive:true});

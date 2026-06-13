@@ -241,6 +241,7 @@
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -749,11 +750,15 @@
   var HUMAN = 'w';
   var AI = 'b';
   var AI_DEPTH = 3;
-  var mode = 'ai';   // 'ai' = vs computer (human is White), '2p' = pass-and-play
+  var mode = 'ai';   // 'ai' = vs computer (human is White), '2p' = pass-and-play, 'online' = networked
+  var mySide = HUMAN; // which color this client controls when online (role 0 = White = HUMAN, role 1 = Black = AI const)
 
   // In 2p both colors are human, so the side to move is always human.
-  // In ai mode only White (HUMAN) is human.
-  function isHumanTurn() { return mode === '2p' ? true : state.turn === HUMAN; }
+  // In ai mode only White (HUMAN) is human. Online: only your own color is interactive.
+  function isHumanTurn() {
+    if (mode === 'online') return state.turn === mySide;
+    return mode === '2p' ? true : state.turn === HUMAN;
+  }
   function sideName(color) {
     if (mode === '2p') return color === 'w' ? 'White' : 'Black';
     return color === HUMAN ? 'You' : 'CPU';
@@ -882,10 +887,14 @@
       statusEl.classList.add('over');
       if (checked) {
         var winColor = color === 'w' ? 'b' : 'w';
-        var winner = mode === '2p'
-          ? sideName(winColor)
-          : (winColor === 'b' ? 'Black (CPU)' : 'White (You)');
-        statusEl.textContent = 'Checkmate — ' + winner + ' wins!';
+        if (mode === 'online') {
+          statusEl.textContent = winColor === mySide ? 'Checkmate — You win!' : 'Checkmate — Opponent wins!';
+        } else {
+          var winner = mode === '2p'
+            ? sideName(winColor)
+            : (winColor === 'b' ? 'Black (CPU)' : 'White (You)');
+          statusEl.textContent = 'Checkmate — ' + winner + ' wins!';
+        }
       } else {
         statusEl.textContent = 'Stalemate — Draw';
       }
@@ -900,7 +909,10 @@
     }
     var colorWord = color === 'w' ? 'White' : 'Black';
     var who, checkMsg;
-    if (mode === '2p') {
+    if (mode === 'online') {
+      who = color === mySide ? 'Your move' : "Opponent's move";
+      checkMsg = color === mySide ? 'Check! Your move' : "Check! Opponent's move";
+    } else if (mode === '2p') {
       who = sideName(color) + ' to move (' + colorWord + ')';
       checkMsg = 'Check! ' + sideName(color) + ' to move';
     } else if (color === HUMAN) {
@@ -952,12 +964,24 @@
       showPromo(state.turn, function (promoType) {
         var mv = candidates.filter(function (m) { return m.promo === promoType; })[0] || candidates[0];
         applyMove(mv);
+        broadcastMove(mv);
         finishHumanTurn();
       });
       return;
     }
     applyMove(candidates[0]);
+    broadcastMove(candidates[0]);
     finishHumanTurn();
+  }
+
+  // In online mode, send a minimal descriptor sufficient to reproduce the move
+  // on the peer ({from, to, promotion?}). The peer re-derives the full move from
+  // its own legal-move list so castling / en-passant / check detection match.
+  function broadcastMove(mv) {
+    if (mode !== 'online') return;
+    var payload = { from: mv.from, to: mv.to, side: mv.piece.c };
+    if (mv.promo) payload.promotion = mv.promo;
+    GameMP.send(payload);
   }
 
   function finishHumanTurn() {
@@ -1042,9 +1066,56 @@
   document.getElementById('modeTwo').addEventListener('click', function () { startMode('2p'); });
 
   // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  // When online, it restarts the shared board and tells the opponent (no picker).
   document.getElementById('newGame').addEventListener('click', function () {
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    if (mode === 'online') { newGame(); GameMP.sendReset(); return; }
     showModeSelect();
+  });
+
+  // --- Online multiplayer (drop-in via game-multiplayer.js) ---
+  // Apply an opponent's move via the SAME path the local human uses: we look up
+  // the matching legal move (so flag/promo/castle/ep are filled in correctly),
+  // then applyMove() handles capture display, sound, make, and turn-flip.
+  function applyRemoteMove(m) {
+    if (mode !== 'online' || state.gameOver) return;
+    // Ignore our own echoed move (the relay echoes the sender's move back).
+    if (m.side === mySide) return;
+    // Defensive: the move must be made by the side currently on turn (opponent).
+    if (state.turn === mySide) return;
+    var candidates = legalMoves(state, state.turn).filter(function (mv) {
+      return mv.from === m.from && mv.to === m.to;
+    });
+    if (candidates.length === 0) return;
+    var chosen = candidates[0];
+    if (candidates.length > 1 && candidates[0].flag === 'promo') {
+      // Promotion: peer must NOT prompt — use the broadcast choice directly.
+      chosen = candidates.filter(function (mv) { return mv.promo === m.promotion; })[0] || candidates[0];
+    }
+    applyMove(chosen);
+    selected = -1;
+    legalForSel = [];
+    render();
+    updateStatus();
+  }
+
+  GameMP.setup({ gameName: 'Chess' });
+  GameMP.onReady(function (role) {
+    // role 0 = host → White (HUMAN, moves first); role 1 = guest → Black (AI const).
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    mode = 'online';
+    mySide = role === 0 ? HUMAN : AI;
+    modeOverlay.classList.remove('show');
+    newGame();
+  });
+  GameMP.onMove(applyRemoteMove);
+  GameMP.onReset(function () { if (mode === 'online') newGame(); });
+  GameMP.onPeerLeft(function () {
+    if (mode !== 'online') return;
+    state.gameOver = true;
+    statusEl.classList.remove('check');
+    statusEl.classList.add('over');
+    statusEl.textContent = 'Opponent left.';
   });
 
   // Unlock audio on first interaction.

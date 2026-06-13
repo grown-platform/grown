@@ -191,6 +191,7 @@
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -203,8 +204,9 @@
   let winLine = null;      // {cells:[[r,c],...]}
   let lastMove = null;     // [r,c]
   let moveCount = 0;
-  let mode = 'ai';         // 'ai' = vs computer, '2p' = pass-and-play hot seat
-  let turn = HUMAN;        // side to move (used in 2p; in ai humans are always HUMAN)
+  let mode = 'ai';         // 'ai' = vs computer, '2p' = pass-and-play hot seat, 'online' = networked
+  let turn = HUMAN;        // side to move (used in 2p/online; in ai humans are always HUMAN)
+  let mySide = HUMAN;      // which side this client controls when online (Black=HUMAN goes first)
 
   const canvas = document.getElementById("board");
   const ctx = canvas.getContext("2d");
@@ -212,8 +214,12 @@
   const statusDot = document.querySelector("#status .dot");
   const modeOverlay = document.getElementById("modeOverlay");
 
-  // In 2p both sides are human; in ai only HUMAN (black) is human-controlled.
-  function isHumanTurn() { return mode === '2p' ? true : turn === HUMAN; }
+  // In 2p both sides are human; in ai only HUMAN (black) is human-controlled;
+  // online only your own side is human (your turn when turn===mySide).
+  function isHumanTurn() {
+    if (mode === 'online') return turn === mySide;
+    return mode === '2p' ? true : turn === HUMAN;
+  }
   function sideName(side) {
     if (mode === '2p') return side === HUMAN ? 'Black' : 'White';
     return side === HUMAN ? 'You' : 'CPU';
@@ -378,7 +384,8 @@
       winLine = win;
       gameOver = true;
       draw();
-      if (mode === '2p') { setStatus(sideName(player) + " wins! 🎉", null); }
+      if (mode === 'online') { setStatus(player === mySide ? "You win! 🎉" : "Opponent wins!", null); }
+      else if (mode === '2p') { setStatus(sideName(player) + " wins! 🎉", null); }
       else if (player === HUMAN) { setStatus("You win! 🎉", null); }
       else { setStatus("CPU wins", null); }
       soundWin();
@@ -417,13 +424,15 @@
     if (board[idx(r, c)] !== EMPTY) return;
 
     const mover = turn;
+    if (mode === 'online') GameMP.send({ r, c, player: mover });
     const ended = placeStone(r, c, mover);
     if (ended) return;
 
-    if (mode === '2p') {
-      // Pass-and-play: the other human moves next.
+    if (mode === '2p' || mode === 'online') {
+      // Pass-and-play / networked: the other side moves next.
       turn = mover === HUMAN ? CPU : HUMAN;
-      setStatus(sideName(turn) + "'s move", turn);
+      if (mode === 'online') setStatus(turn === mySide ? "Your turn" : "Opponent's turn", turn);
+      else setStatus(sideName(turn) + "'s move", turn);
       return;
     }
 
@@ -580,7 +589,8 @@
     lastMove = null;
     moveCount = 0;
     turn = HUMAN;
-    setStatus(mode === '2p' ? sideName(HUMAN) + "'s move" : "Your move", HUMAN);
+    if (mode === 'online') setStatus(turn === mySide ? "Your turn" : "Opponent's turn", HUMAN);
+    else setStatus(mode === '2p' ? sideName(HUMAN) + "'s move" : "Your move", HUMAN);
     // try to resume audio on user gesture
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
     draw();
@@ -597,17 +607,53 @@
   document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
 
   // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  // When online, it restarts the shared board and tells the opponent.
   document.getElementById("newGame").addEventListener("click", function () {
+    if (mode === 'online') { newGame(); GameMP.sendReset(); return; }
     showModeSelect();
   });
 
-  // keyboard: N for new game (returns to mode picker)
+  // keyboard: N for new game (returns to mode picker; restarts online)
   window.addEventListener("keydown", function (e) {
-    if (e.key === "n" || e.key === "N") showModeSelect();
+    if (e.key === "n" || e.key === "N") {
+      if (mode === 'online') { newGame(); GameMP.sendReset(); return; }
+      showModeSelect();
+    }
   });
 
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", function () { setTimeout(resize, 150); });
+
+  // ---------- Online multiplayer (drop-in via game-multiplayer.js) ----------
+  // Apply an opponent's stone. m.player is the side that moved; ignore our own
+  // echo and only advance the shared turn for the opponent's move. Routes
+  // through the same placeStone path so win/draw handling stays identical.
+  function applyRemoteMove(m) {
+    if (mode !== 'online' || gameOver) return;
+    if (m.player === mySide) return;            // ignore our own echo
+    if (board[idx(m.r, m.c)] !== EMPTY) return; // already occupied (safety)
+    const mover = m.player;
+    const ended = placeStone(m.r, m.c, mover);
+    if (ended) return;
+    turn = mover === HUMAN ? CPU : HUMAN;
+    setStatus(turn === mySide ? "Your turn" : "Opponent's turn", turn);
+  }
+
+  GameMP.setup({ gameName: 'Gomoku' });
+  GameMP.onReady(function (role) {
+    // role 0 = host → Black (HUMAN, goes first); role 1 = guest → White (CPU side).
+    mode = 'online';
+    mySide = role === 0 ? HUMAN : CPU;
+    modeOverlay.classList.remove("show");
+    newGame();
+  });
+  GameMP.onMove(applyRemoteMove);
+  GameMP.onReset(function () { if (mode === 'online') newGame(); });
+  GameMP.onPeerLeft(function () {
+    if (mode !== 'online') return;
+    gameOver = true;
+    setStatus("Opponent left.", null);
+  });
 
   // init: render an idle board, then ask for a mode.
   board = new Array(N * N).fill(EMPTY);

@@ -294,6 +294,7 @@
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -307,12 +308,20 @@
   // Opposite pit of i (a player pit) is 12 - i.
   var YOU_STORE = 6, CPU_STORE = 13;
   var board, turn, gameOver, busy;
-  var mode = "ai"; // "ai" = vs computer, "2p" = pass-and-play
+  var mode = "ai"; // "ai" = vs computer, "2p" = pass-and-play, "online" = networked
+  // In online mode this client controls exactly one side. role 0 (host, moves
+  // first) = "you"; role 1 (guest) = "cpu". Pits are ABSOLUTE indices so the
+  // guest legitimately owns/clicks pits 7..12.
+  var mySide = "you";
 
   // The two sides are internally "you" (bottom) and "cpu" (top). In 2p both
-  // sides are human; in ai mode only "you" is human.
-  function isHumanTurn() { return mode === "2p" ? true : turn === "you"; }
+  // sides are human; in ai mode only "you" is human; online only your own side.
+  function isHumanTurn() {
+    if (mode === "online") return turn === mySide;
+    return mode === "2p" ? true : turn === "you";
+  }
   function sideName(player) {
+    if (mode === "online") return player === mySide ? "You" : "Opponent";
     if (mode === "2p") return player === "you" ? "Player 1" : "Player 2";
     return player === "you" ? "You" : "CPU";
   }
@@ -458,7 +467,10 @@
   function setTurnText() {
     var t = document.getElementById("turn");
     if (gameOver) { t.className = "over"; return; }
-    if (mode === "2p") {
+    if (mode === "online") {
+      t.textContent = turn === mySide ? "Your turn" : "Opponent's turn";
+      t.className = turn === mySide ? "you" : "cpu";
+    } else if (mode === "2p") {
       t.textContent = sideName(turn) + "'s turn";
       t.className = turn === "you" ? "you" : "cpu";
     } else if (turn === "you") { t.textContent = "Your turn"; t.className = "you"; }
@@ -587,6 +599,17 @@
     var mover = turn;
     var ownPit = mover === "you" ? isYouPit(idx) : isCpuPit(idx);
     if (!ownPit || board[idx] === 0) return;
+    // Broadcast the ABSOLUTE pit index so the peer sows the identical pit.
+    // (Done before animation so the peer can start applying right away; the
+    //  remote applies via the same playMove path, keeping logic identical.)
+    if (mode === "online") GameMP.send({ pit: idx, side: mover });
+    playMove(idx, mover);
+  }
+
+  // Shared move executor for local taps AND remote moves. Runs the same sow /
+  // capture / extra-turn / turn-switch / end-of-game logic for both, so the two
+  // clients stay in lock-step.
+  function playMove(idx, mover) {
     animateMove(idx, mover, function (extra) {
       if (gameOver) return;
       if (extra) {
@@ -595,8 +618,8 @@
         render();
         // In ai mode, if it's the CPU that earned the extra turn, keep going.
         if (mode === "ai" && mover === "cpu") setTimeout(cpuTurn, 550);
-      } else if (mode === "2p") {
-        // pass-and-play: hand off to the other human
+      } else if (mode === "2p" || mode === "online") {
+        // pass-and-play / networked: hand off to the other side. NEVER run AI.
         turn = mover === "you" ? "cpu" : "you";
         setTurnText();
         render();
@@ -606,6 +629,9 @@
         render();
         setTimeout(cpuTurn, 550);
       }
+      // Online: board is idle again (busy cleared in finishMove) — apply any
+      // queued opponent moves that arrived mid-animation.
+      if (mode === "online") drainRemote();
     });
   }
 
@@ -713,14 +739,20 @@
     t.className = "over";
     var resultEl = document.getElementById("result");
     var detailEl = document.getElementById("resultDetail");
+    // In online mode, score from this client's perspective (mySide).
+    var myStoreVal = mySide === "you" ? y : c;
+    var oppStoreVal = mySide === "you" ? c : y;
+    var iWon = myStoreVal > oppStoreVal;
     if (y > c) {
-      resultEl.textContent = mode === "2p" ? sideName("you") + " Wins!" : "You Win!";
+      if (mode === "online") resultEl.textContent = iWon ? "You Win!" : "Opponent Wins!";
+      else resultEl.textContent = mode === "2p" ? sideName("you") + " Wins!" : "You Win!";
       t.textContent = sideName("you") + " win " + y + " – " + c;
-      sndWin();
+      mode === "online" ? (iWon ? sndWin() : sndLose()) : sndWin();
     } else if (c > y) {
-      resultEl.textContent = mode === "2p" ? sideName("cpu") + " Wins!" : "CPU Wins";
+      if (mode === "online") resultEl.textContent = iWon ? "You Win!" : "Opponent Wins!";
+      else resultEl.textContent = mode === "2p" ? sideName("cpu") + " Wins!" : "CPU Wins";
       t.textContent = sideName("cpu") + " wins " + c + " – " + y;
-      mode === "2p" ? sndWin() : sndLose();
+      mode === "online" ? (iWon ? sndWin() : sndLose()) : (mode === "2p" ? sndWin() : sndLose());
     } else {
       resultEl.textContent = "Tie Game";
       t.textContent = "Tie " + y + " – " + c;
@@ -746,16 +778,74 @@
   document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
 
   // "New Game" returns to the mode picker so you can switch AI / 2-player.
+  // When online, it restarts the shared board and tells the opponent (no picker).
   document.getElementById("newGame").addEventListener("click", function () {
     if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (mode === "online") { newGame(); GameMP.sendReset(); return; }
     showModeSelect();
   });
-  // "Play Again" restarts the same mode.
-  document.getElementById("playAgain").addEventListener("click", newGame);
+  // "Play Again" restarts the same mode. Online: also tell the opponent.
+  document.getElementById("playAgain").addEventListener("click", function () {
+    newGame();
+    if (mode === "online") GameMP.sendReset();
+  });
 
   // prevent double-tap zoom / gesture scroll
   document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
   document.addEventListener("touchmove", function (e) { if (e.scale && e.scale !== 1) e.preventDefault(); }, { passive: false });
+
+  // ---- Online multiplayer (drop-in via game-multiplayer.js) -----------------
+  // Apply an opponent's pit pick. The payload carries the ABSOLUTE pit index and
+  // the sender's side, so the peer sows the exact same pit. We funnel through
+  // playMove so sowing / capture / extra-turn / turn-switch / sweep all run
+  // identically to a local tap — the network only transports WHICH pit.
+  //
+  // Echo/turn guard: a player can take several pits in a row (extra turns), so
+  // we can't simply alternate turns to detect echoes. Instead we tag every move
+  // with the sender's side (m.side) and ignore anything where side === mySide —
+  // that's our own broadcast bouncing back. This is robust to streaks of extra
+  // turns because it keys off identity, not turn parity.
+  // Remote moves can arrive faster than the local sow animation plays (a streak
+  // of extra-turn pits). The WebSocket delivers in order, so we queue them and
+  // drain one at a time once the board is idle — never dropping a move.
+  var remoteQueue = [];
+  function applyRemoteMove(m) {
+    if (mode !== "online" || gameOver) return;
+    if (m.side === mySide) return;            // ignore our own echo
+    remoteQueue.push(m);
+    drainRemote();
+  }
+  function drainRemote() {
+    if (busy || gameOver || remoteQueue.length === 0) return;
+    var m = remoteQueue.shift();
+    if (m.side !== turn) { drainRemote(); return; } // out-of-turn / stale, skip
+    var idx = m.pit;
+    var ownPit = m.side === "you" ? isYouPit(idx) : isCpuPit(idx);
+    if (!ownPit || board[idx] === 0) { drainRemote(); return; } // illegal/stale
+    playMove(idx, m.side); // playMove → animateMove sets busy; drained on finish
+  }
+
+  GameMP.setup({ gameName: "Mancala" });
+  GameMP.onReady(function (role) {
+    // role 0 = host → "you" (moves first); role 1 = guest → "cpu".
+    mode = "online";
+    mySide = role === 0 ? "you" : "cpu";
+    if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    document.getElementById("modeOverlay").classList.remove("show");
+    newGame();
+  });
+  GameMP.onMove(applyRemoteMove);
+  GameMP.onReset(function () { if (mode === "online") newGame(); });
+  GameMP.onPeerLeft(function () {
+    if (mode !== "online") return;
+    gameOver = true;
+    var t = document.getElementById("turn");
+    t.className = "over";
+    t.textContent = "Opponent left.";
+    document.getElementById("result").textContent = "Opponent left.";
+    document.getElementById("resultDetail").textContent = "";
+    showOverlay();
+  });
 
   buildPits();
   // Render an idle board behind the mode picker, then ask for a mode.

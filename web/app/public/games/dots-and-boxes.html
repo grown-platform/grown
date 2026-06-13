@@ -247,6 +247,7 @@
   </div>
 </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -266,11 +267,17 @@
   var n1 = document.querySelector("#s1 .name");
   var n2 = document.querySelector("#s2 .name");
 
-  var mode = "ai"; // "ai" = vs computer (P1 human), "2p" = pass-and-play
+  var mode = "ai"; // "ai" = vs computer (P1 human), "2p" = pass-and-play, "online" = networked
+  // Player 1 always moves first. When online, role 0 = host = player 1.
+  var mySide = 1; // which side this client controls when online
   // In 2p both players are human, so the current player is always human.
-  // In ai mode only player 1 is human.
-  function isHumanTurn() { return mode === "2p" ? true : current === 1; }
+  // In ai mode only player 1 is human. Online: only your own side is human.
+  function isHumanTurn() {
+    if (mode === "online") return current === mySide;
+    return mode === "2p" ? true : current === 1;
+  }
   function sideName(player) {
+    if (mode === "online") return player === mySide ? "You" : "Opponent";
     if (mode === "2p") return player === 1 ? "Player 1" : "Player 2";
     return player === 1 ? "You" : "CPU";
   }
@@ -504,6 +511,8 @@
     s2.classList.toggle("active", current === 2 && !gameOver);
     if (gameOver) {
       turnEl.textContent = "Game over";
+    } else if (mode === "online") {
+      turnEl.textContent = current === mySide ? "Your turn — tap a line" : "Opponent's turn…";
     } else if (mode === "2p") {
       turnEl.textContent = sideName(current) + " — tap a line";
     } else {
@@ -516,10 +525,12 @@
     updateUI();
     var s = scores();
     if (s.p1 > s.p2) {
-      resTitle.textContent = mode === "2p" ? sideName(1) + " wins!" : "You win!";
+      if (mode === "online") resTitle.textContent = mySide === 1 ? "You win!" : "Opponent wins!";
+      else resTitle.textContent = mode === "2p" ? sideName(1) + " wins!" : "You win!";
       resTitle.style.color = P1;
     } else if (s.p2 > s.p1) {
-      resTitle.textContent = mode === "2p" ? sideName(2) + " wins!" : "CPU wins";
+      if (mode === "online") resTitle.textContent = mySide === 2 ? "You win!" : "Opponent wins!";
+      else resTitle.textContent = mode === "2p" ? sideName(2) + " wins!" : "CPU wins";
       resTitle.style.color = P2;
     } else {
       resTitle.textContent = "It's a tie!";
@@ -534,6 +545,18 @@
     if (busy || gameOver || !isHumanTurn()) return;
     if (edgeDrawn(e)) return;
     var mover = current;
+    // Broadcast BEFORE committing so the peer applies the exact same edge and
+    // runs the identical commitMove() logic (extra-turn/score/turn-switch),
+    // keeping `current` in sync on both peers.
+    if (mode === "online") GameMP.send({ t: e.type, r: e.r, c: e.c, side: mover });
+    commitMove(e, mover);
+  }
+
+  // Apply an edge for `mover` and run the shared turn-flow. Used by both the
+  // local tap and the remote (networked) move so both peers stay identical.
+  // The extra-turn-on-box-completion rule lives entirely here: completing a box
+  // does NOT switch `current`; only a non-completing move hands off the turn.
+  function commitMove(e, mover) {
     var got = applyMove(e, mover);
     blip(got > 0);
     draw();
@@ -542,8 +565,8 @@
     if (got > 0) {
       // completing a box grants another turn — same player goes again
       updateUI();
-    } else if (mode === "2p") {
-      // pass-and-play: hand off to the other human
+    } else if (mode === "2p" || mode === "online") {
+      // pass-and-play / networked: hand off to the other player
       current = mover === 1 ? 2 : 1;
       updateUI();
     } else {
@@ -552,6 +575,25 @@
       busy = true;
       setTimeout(cpuTurn, 420);
     }
+  }
+
+  // ---- Online multiplayer (drop-in via game-multiplayer.js) ----
+  // Apply an opponent's edge. We guard against echo (GameMP.send mirrors our own
+  // message back) two ways: (a) only act in online mode and while it is NOT our
+  // turn (current !== mySide), and (b) ignore any move tagged with our own side.
+  // Because a player can make several moves in a row (each completing a box), the
+  // turn does NOT reliably alternate — so the m.side tag is the robust guard, and
+  // the current-turn check is a belt-and-suspenders backstop. We run commitMove()
+  // (the same path as a local tap) so the extra-turn/score/turn-switch logic is
+  // byte-for-byte identical on both peers and `current` never diverges.
+  function applyRemoteMove(m) {
+    if (mode !== "online" || gameOver) return;
+    var mover = m.side;
+    if (mover === mySide) return;          // our own echo — ignore
+    if (current === mySide) return;        // not the opponent's turn — stale/echo
+    var e = { type: m.t, r: m.r, c: m.c };
+    if (edgeDrawn(e)) return;              // already applied — avoid double-apply
+    commitMove(e, mover);
   }
 
   function cpuTurn() {
@@ -760,14 +802,44 @@
   document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
 
   // "New Game" returns to the mode picker so you can switch AI / 2-player.
-  document.getElementById("newBtn").addEventListener("click", showModeSelect);
+  // When online, it restarts the shared board and tells the opponent (no picker).
+  function newOrModeSelect() {
+    if (mode === "online") { newGame(); GameMP.sendReset(); return; }
+    showModeSelect();
+  }
+  document.getElementById("newBtn").addEventListener("click", newOrModeSelect);
   // "Play Again" restarts the same mode.
-  document.getElementById("againBtn").addEventListener("click", newGame);
-  // Changing size restarts the current mode at the new size.
-  sizeSel.addEventListener("change", newGame);
+  document.getElementById("againBtn").addEventListener("click", function () {
+    if (mode === "online") { newGame(); GameMP.sendReset(); return; }
+    newGame();
+  });
+  // Changing size restarts the current mode at the new size (and the opponent's).
+  sizeSel.addEventListener("change", function () {
+    newGame();
+    if (mode === "online") GameMP.sendReset();
+  });
 
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
+
+  // ---- Online wiring (game-multiplayer.js) ----
+  GameMP.setup({ gameName: "Dots and Boxes" });
+  GameMP.onReady(function (role) {
+    // role 0 = host = player 1 (moves first); role 1 = guest = player 2.
+    mode = "online";
+    mySide = role === 0 ? 1 : 2;
+    modeOverlay.classList.remove("show");
+    newGame();
+  });
+  GameMP.onMove(applyRemoteMove);
+  GameMP.onReset(function () { if (mode === "online") newGame(); });
+  GameMP.onPeerLeft(function () {
+    if (mode !== "online") return;
+    gameOver = true;
+    updateUI();
+    turnEl.textContent = "Opponent left.";
+    overlay.classList.remove("show");
+  });
 
   // start: render an idle board behind the mode picker, then ask for a mode.
   init(parseInt(sizeSel.value, 10));
