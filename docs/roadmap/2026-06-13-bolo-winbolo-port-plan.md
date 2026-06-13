@@ -1,41 +1,75 @@
-# Bolo (WinBolo) → browser WASM port — plan
+# Bolo → browser WASM port — source assessment & plan
 
-## The source situation (important)
-- `github.com/natdudley/Bolo` is **not source** — it's a MAME/MESS emulator
-  bundle of the **1982 Apple II** Bolo (a different, single-player game). Nothing
-  to port.
-- The macintoshgarden Bolo is **Stuart Cheshire's** 1987/1993 networked Mac tank
-  game — its original source was kept **closed** (anti-cheat). Not portable.
-- **WinBolo** (John Morrison) is an **open-source, GPL** faithful reimplementation
-  of Cheshire's Bolo, *with the networking*. This is the only legitimate base.
-  Cloned to `~/workspace/_ports/winbolo` (`github.com/kippandrew/WinBolo`, GPL).
+We want a browser-playable, multiplayer Bolo wired into the grown gamerooms
+relay. Four candidate sources were investigated. Summary up front:
 
-## Scope reality
-This is **not "just the networking."** It's a full port of a ~200-file C game.
-Comparable to (and harder than) the Mighty Mike port, because Bolo is inherently
-networked real-time multiplayer. Realistically a dedicated multi-session effort,
-not a one-shot.
+| Source | What it is | Source available? | License | WASM-portable? |
+|---|---|---|---|---|
+| **WinBolo** (kippandrew) | Full reimpl of Cheshire's Bolo, *with networking* | ✅ full C | GPL v2 | ⚠️ yes, but heavy lift |
+| **XBolo** (xbolo.org) | Cocoa reimpl, the game itself | ❌ binary only | closed | no |
+| **XBolo Map Editor** (zirman/magma) | Just the *map editor* | ✅ ObjC | MIT (graphics © Cheshire) | n/a — not the game |
+| **NuBolo** (nubolo.net) | Mac reimpl | ❌ **PPC binary only** | closed | no |
+| **Original Bolo** (Cheshire '93) | The original Mac game | ❌ proprietary | closed | only via emulator |
 
-## Port architecture (mirrors the Mighty Mike approach)
-1. **Build target:** the existing `winbolo/src/gui/linux` (SDL) build is the WASM
-   target. Compile with **Emscripten** (SDL2, single-threaded, ASYNCIFY for the
-   game loop), `--preload-file` for assets (sounds/, brains/, tiles), GLRENDER
-   off (SDL 2D renderer). Use the `disable-rsa-check` branch (or disable the RSA
-   key check) so a self-hosted build can run without the original key server.
-2. **Networking — the real work.** WinBolo's transport is native UDP
-   (`winbolo/src/winbolonet` + `src/server`). Browsers can't do raw UDP, so
-   replace the transport with **WebSocket → the gamerooms relay** we already
-   built (`/api/v1/gamerooms/ws`). Two options:
-   - thin shim: reimplement WinBolo's packet send/recv over a WS to a room, with
-     the grown `gamerooms` hub relaying datagrams between players; or
-   - run a headless WinBolo **server** in-cluster (the `src/server` Makefile
-     builds it) and have browser clients connect to it via a WS↔UDP bridge.
-   The room/join/password layer (and share link) reuses `game-multiplayer.js`.
-3. **Serving:** same as Mighty Mike — `web/app/public/games/bolo/` with a
-   `play.html` shell + `Bolo.js/.wasm/.data`, a touch control overlay
-   (`gamepad-overlay.js`), and a PWA manifest. Tag it Port + Multiplayer.
+## What each one actually is (verified)
 
-## Status
-Source identified + cloned + license verified (GPL). Build/port not started —
-this is the next dedicated game-port effort. GPL compliance: keep the port's
-source available and preserve `gnu.txt`/attribution if we ship it.
+- **NuBolo** (`nubolo_1p0b9a.dmg`, downloaded): the .app contains only a
+  **PowerPC Mach-O binary** (`file` → "Mach-O executable ppc", 443 KB, 2007) and
+  resources. No source ships in the dmg. A compiled PPC binary can't be ported —
+  it could only be *run* under a PPC emulator (SheepShaver). Dead end for a port.
+- **XBolo / magma** (`github.com/zirman/magma`): cloned — it is the **XBolo Map
+  Editor only**, not the game. Its own README points at `xbolo.org` for the game,
+  which is a **closed binary**. Its graphics/sounds are "captured from the
+  original Bolo © 1993 Stuart Cheshire" — so even the editor's assets are
+  IP-encumbered. Not a game source.
+- **Original Bolo**: Cheshire kept the source **closed** (anti-cheat). The only
+  way to run *the original* is a classic-Mac emulator (Mini vMac / Basilisk II /
+  SheepShaver) booting the real game, and its multiplayer is **AppleTalk** — you'd
+  need an AppleTalk-over-our-relay bridge. See "Emulator path" below.
+- **WinBolo** (`github.com/kippandrew/WinBolo`, cloned to `~/workspace/_ports/winbolo`):
+  the **only complete, open, buildable game** — full C, GPL v2, includes the
+  game logic, the `src/server`, and `src/winbolonet` networking. This is the base.
+
+## WinBolo WASM port — the real scope (why it's multi-session)
+
+The Linux GUI (`winbolo/src/gui/linux`) is the closest-to-portable frontend, but
+its Makefile shows two hard blockers for Emscripten:
+
+1. **GTK** — dialogs (game setup, finder, key setup, tracker, alliance, etc.) are
+   GTK (`gtk-config`; 22 of the .c files pull in GTK/GDK). GTK does **not** compile
+   to WASM. The entire dialog layer must be **deleted and replaced** with an
+   HTML/JS overlay UI (which actually fits grown better — reuse `game-multiplayer.js`
+   for room/join/password, and an HTML control panel for game setup).
+2. **SDL1** — it targets SDL1 (`sdl-config`, `SDL/SDL.h`). Must be migrated to
+   **SDL2** (Emscripten ships SDL2). Mostly mechanical (cursor/surface/event API
+   renames) but touches the whole render/input path.
+3. **Networking** — transport is native **UDP** (`winbolonet` + `server`).
+   Browsers can't do UDP. Replace the transport with **WebSocket → the gamerooms
+   relay** (`/api/v1/gamerooms/ws`). Two shapes: (a) a thin packet shim that
+   tunnels WinBolo datagrams through a WS room; or (b) a headless WinBolo `server`
+   in-cluster with a WS↔UDP bridge in front. (a) is simpler and serverless.
+
+`emsdk` is already on disk (`~/workspace/_ports/emsdk`, from the Mighty Mike port),
+so the toolchain is ready. The work is the three rewrites above, in order:
+SDL1→SDL2 compile-clean → strip GTK / stub dialogs → UDP→WS transport →
+`--preload-file` assets → touch overlay (`gamepad-overlay.js`) → serve at
+`web/app/public/games/bolo/`.
+
+This is a **dedicated multi-session game port**, comparable to (and harder than)
+Mighty Mike — Bolo is inherently networked real-time, and the GUI rewrite is real.
+It is honestly *not* "just get the networking working."
+
+## Emulator path (for the *original*, optional/experimental)
+
+To play Cheshire's actual 1993 Bolo: run it in a WASM classic-Mac emulator
+(Infinite Mac / Basilisk II-wasm) and bridge its **AppleTalk** networking to the
+relay. This means implementing an AppleTalk (DDP/ATP) ⇄ WebSocket shim and feeding
+it into the emulator's network layer. High effort, IP-gray (shipping the original
+ROM + game), and fragile. Worth a spike only after WinBolo works — same relay can
+back both. Documented so we don't lose the idea; not recommended as the first build.
+
+## Recommendation
+Build **WinBolo → WASM** as the canonical browser Bolo (GPL, complete, our relay
+fits its networking model). Treat NuBolo/XBolo-game as un-portable (closed
+binaries) and the original-via-emulator as a later experimental spike. GPL
+compliance: keep the port's source available and preserve `gnu.txt`/attribution.
