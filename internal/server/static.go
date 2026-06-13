@@ -112,6 +112,30 @@ func hasFileExt(p string) bool {
 	return strings.Contains(base, ".")
 }
 
+// serveStaticFile serves a single file's content without the */index.html → "./"
+// redirect that http.ServeFile performs (which would otherwise loop for a
+// pretty path like /docs/ that maps to docs/index.html).
+func serveStaticFile(w http.ResponseWriter, r *http.Request, dir, rel string) {
+	full := filepath.Join(dir, filepath.Clean("/"+rel))
+	if !strings.HasPrefix(full, filepath.Clean(dir)+string(filepath.Separator)) {
+		http.NotFound(w, r) // path-escape guard
+		return
+	}
+	f, err := os.Open(full)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil || fi.IsDir() {
+		http.NotFound(w, r)
+		return
+	}
+	setStaticCache(w, "/"+rel)
+	http.ServeContent(w, r, fi.Name(), fi.ModTime(), f)
+}
+
 // PDFStaticHandler serves the built PDF SPA (Vite base "/pdf/") from `dir` for
 // requests under /pdf and /pdf/*. The leading "/pdf" segment is stripped before
 // resolving files on disk, so /pdf/assets/app.js maps to dir/assets/app.js and

@@ -1571,15 +1571,14 @@ func New(cfg Config) *Server {
 			return
 		}
 		// Public documentation site at /docs (no auth). The bare path serves the
-		// docs index; /docs/* files (html, css, images) fall through to static.
+		// docs index directly (avoiding ServeFile's index.html redirect loop);
+		// /docs/* files (css, images) fall through to the static handler.
 		if r.URL.Path == "/docs" {
 			http.Redirect(w, r, "/docs/", http.StatusMovedPermanently)
 			return
 		}
-		if r.URL.Path == "/docs/" {
-			r2 := r.Clone(r.Context())
-			r2.URL.Path = "/docs/index.html"
-			static.ServeHTTP(w, r2)
+		if r.URL.Path == "/docs/" || r.URL.Path == "/docs/index.html" {
+			serveStaticFile(w, r, cfg.StaticDir, "docs/index.html")
 			return
 		}
 		static.ServeHTTP(w, r)
