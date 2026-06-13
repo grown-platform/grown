@@ -32,6 +32,8 @@ import {
   ArrowUpRight,
   Pencil,
   Highlighter,
+  Underline,
+  Strikethrough,
   Eraser,
   Undo2,
   Redo2,
@@ -103,6 +105,8 @@ type Tool =
   | "arrow"
   | "draw"
   | "highlight"
+  | "underline"
+  | "strikethrough"
   | "whiteout";
 
 type FontFamily = "Helvetica" | "Times" | "Courier";
@@ -134,7 +138,7 @@ interface ImageAnnotation {
 }
 interface BoxAnnotation {
   id: string;
-  type: "rect" | "ellipse" | "highlight" | "whiteout";
+  type: "rect" | "ellipse" | "highlight" | "underline" | "strikethrough" | "whiteout";
   page: number;
   x: number;
   y: number;
@@ -172,7 +176,8 @@ type Annotation =
   | InkAnnotation;
 
 const isBox = (a: Annotation): a is BoxAnnotation =>
-  a.type === "rect" || a.type === "ellipse" || a.type === "highlight" || a.type === "whiteout";
+  a.type === "rect" || a.type === "ellipse" || a.type === "highlight" ||
+  a.type === "underline" || a.type === "strikethrough" || a.type === "whiteout";
 const isLine = (a: Annotation): a is LineAnnotation => a.type === "line" || a.type === "arrow";
 
 interface PageEntry {
@@ -181,7 +186,7 @@ interface PageEntry {
 }
 
 const DEFAULT_FONT_SIZE = 16;
-const SHAPE_TOOLS: Tool[] = ["rect", "ellipse", "line", "arrow", "draw", "highlight", "whiteout"];
+const SHAPE_TOOLS: Tool[] = ["rect", "ellipse", "line", "arrow", "draw", "highlight", "underline", "strikethrough", "whiteout"];
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
@@ -532,6 +537,8 @@ export function EditorPage() {
           setDraft({ id: "draft", type: dw.tool, page: currentPage, x1: dw.sx, y1: dw.sy, x2: nx, y2: ny, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth });
         } else if (dw.tool === "highlight") {
           setDraft({ id: "draft", type: "highlight", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffeb3b", opacity: 0.35 });
+        } else if (dw.tool === "underline" || dw.tool === "strikethrough") {
+          setDraft({ id: "draft", type: dw.tool, page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: Math.max(1.5, dw.style.strokeWidth), fillColor: null, opacity: 1 });
         } else if (dw.tool === "whiteout") {
           setDraft({ id: "draft", type: "whiteout", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffffff", opacity: 1 });
         } else {
@@ -704,39 +711,51 @@ export function EditorPage() {
         const img = ann.mime === "image/jpeg" ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
         page.drawImage(img, { x: PX(ann.x), y: PY(ann.y) - ann.height * ph, width: ann.width * pw, height: ann.height * ph });
       } else if (isBox(ann)) {
-        const opts: Parameters<typeof page.drawRectangle>[0] = {
-          x: PX(ann.x),
-          y: PY(ann.y) - ann.height * ph,
-          width: ann.width * pw,
-          height: ann.height * ph,
-          opacity: ann.opacity,
-          borderOpacity: ann.opacity,
-        };
-        if (ann.fillColor) {
-          const { r, g, b } = hexToRgb(ann.fillColor);
-          opts.color = rgb(r, g, b);
-        }
-        if (ann.strokeColor && ann.strokeWidth > 0) {
-          const { r, g, b } = hexToRgb(ann.strokeColor);
-          opts.borderColor = rgb(r, g, b);
-          opts.borderWidth = ann.strokeWidth;
-        }
-        if (ann.type === "ellipse") {
-          const cx = PX(ann.x + ann.width / 2);
-          const cy = PY(ann.y + ann.height / 2);
-          page.drawEllipse({
-            x: cx,
-            y: cy,
-            xScale: (ann.width * pw) / 2,
-            yScale: (ann.height * ph) / 2,
-            color: opts.color,
-            borderColor: opts.borderColor,
-            borderWidth: opts.borderWidth,
+        if (ann.type === "underline" || ann.type === "strikethrough") {
+          const ny = ann.type === "underline" ? ann.y + ann.height : ann.y + ann.height / 2;
+          const { r, g, b } = hexToRgb(ann.strokeColor ?? "#111111");
+          page.drawLine({
+            start: { x: PX(ann.x), y: PY(ny) },
+            end: { x: PX(ann.x + ann.width), y: PY(ny) },
+            thickness: Math.max(1, ann.strokeWidth),
+            color: rgb(r, g, b),
             opacity: ann.opacity,
-            borderOpacity: ann.opacity,
           });
         } else {
-          page.drawRectangle(opts);
+          const opts: Parameters<typeof page.drawRectangle>[0] = {
+            x: PX(ann.x),
+            y: PY(ann.y) - ann.height * ph,
+            width: ann.width * pw,
+            height: ann.height * ph,
+            opacity: ann.opacity,
+            borderOpacity: ann.opacity,
+          };
+          if (ann.fillColor) {
+            const { r, g, b } = hexToRgb(ann.fillColor);
+            opts.color = rgb(r, g, b);
+          }
+          if (ann.strokeColor && ann.strokeWidth > 0) {
+            const { r, g, b } = hexToRgb(ann.strokeColor);
+            opts.borderColor = rgb(r, g, b);
+            opts.borderWidth = ann.strokeWidth;
+          }
+          if (ann.type === "ellipse") {
+            const cx = PX(ann.x + ann.width / 2);
+            const cy = PY(ann.y + ann.height / 2);
+            page.drawEllipse({
+              x: cx,
+              y: cy,
+              xScale: (ann.width * pw) / 2,
+              yScale: (ann.height * ph) / 2,
+              color: opts.color,
+              borderColor: opts.borderColor,
+              borderWidth: opts.borderWidth,
+              opacity: ann.opacity,
+              borderOpacity: ann.opacity,
+            });
+          } else {
+            page.drawRectangle(opts);
+          }
         }
       } else if (isLine(ann)) {
         const { r, g, b } = hexToRgb(ann.strokeColor);
@@ -867,6 +886,12 @@ export function EditorPage() {
     const Y = (ny: number) => ny * overlayH;
     const sw = (w: number) => Math.max(0.5, w * pxScale);
     if (isBox(a)) {
+      if (a.type === "underline" || a.type === "strikethrough") {
+        const ly = a.type === "underline" ? Y(a.y + a.height) : Y(a.y + a.height / 2);
+        return (
+          <line key={a.id} x1={X(a.x)} y1={ly} x2={X(a.x + a.width)} y2={ly} stroke={a.strokeColor ?? "#111"} strokeWidth={sw(Math.max(1.5, a.strokeWidth))} strokeOpacity={a.opacity} {...common} />
+        );
+      }
       const stroke = a.strokeColor ?? "none";
       const fill = a.fillColor ?? "none";
       const shared = { fill, fillOpacity: a.opacity, stroke, strokeWidth: sw(a.strokeWidth), strokeOpacity: a.opacity, ...common };
@@ -938,6 +963,8 @@ export function EditorPage() {
     { t: "text", icon: Type, label: "Text" },
     { t: "draw", icon: Pencil, label: "Draw" },
     { t: "highlight", icon: Highlighter, label: "Highlight" },
+    { t: "underline", icon: Underline, label: "Underline" },
+    { t: "strikethrough", icon: Strikethrough, label: "Strikethrough" },
     { t: "rect", icon: Square, label: "Rectangle" },
     { t: "ellipse", icon: Circle, label: "Ellipse" },
     { t: "line", icon: Minus, label: "Line" },
