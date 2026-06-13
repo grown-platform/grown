@@ -387,6 +387,15 @@ export const apps: AppTile[] = [
     iconName: "ConfirmationNumber",
   },
   {
+    id: "3d",
+    name: "3D",
+    blurb: "View 3D models; a SketchUp-style modeler in the making.",
+    accentColor: "#6750A4",
+    phase: 4,
+    comingSoon: false,
+    iconName: "ViewInAr",
+  },
+  {
     id: "orgsync",
     name: "Org Sync",
     blurb: "Transfer Drive files & Contacts to another organization.",

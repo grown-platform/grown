@@ -51,6 +51,8 @@ const CloudImportApp = lazy(() => import("./pages/cloudimport"));
 const VPNApp = lazy(() => import("./pages/vpn"));
 const AccessPage = lazy(() => import("./pages/access"));
 const TicketsApp = lazy(() => import("./pages/tickets"));
+// 3D model viewer (three.js) — code-split so its loaders load on demand.
+const ThreeDApp = lazy(() => import("./pages/3d"));
 // Public ticket intake: file a request without an account.
 const TicketSubmitPublic = lazy(() => import("./pages/tickets/Submit"));
 
@@ -449,6 +451,14 @@ export default function App() {
                 <Route
                   path="/coming-soon/:appId"
                   element={<ComingSoon user={auth.user} />}
+                />
+                <Route
+                  path="/3d"
+                  element={
+                    <Suspense fallback={<ChunkFallback />}>
+                      <ThreeDApp user={auth.user} />
+                    </Suspense>
+                  }
                 />
                 <Route path="/drive" element={<FileList user={auth.user} />} />
                 <Route
