@@ -60,6 +60,22 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ .Release.Name }}-zitadel-provision
+      # Match the Zitadel pod's fsGroup so the shared PVC's PAT file is readable.
+      securityContext:
+        fsGroup: 1000
+      # The provision Job and the Zitadel pod share the SAME ReadWriteOnce PVC
+      # (to read the bootstrap PAT), so on a multi-node cluster they MUST land on
+      # the same node — otherwise the PVC Multi-Attach blocks one of them. Pin the
+      # Job to the Zitadel pod's node via required podAffinity.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: grown
+                  app.kubernetes.io/component: zitadel
+                  app.kubernetes.io/instance: {{ .Release.Name }}
+              topologyKey: kubernetes.io/hostname
       volumes:
         - name: shared
           persistentVolumeClaim:
@@ -70,6 +86,11 @@ spec:
           env:
             - name: ZITADEL_URL
               value: {{ include "grown.zitadelInternalURL" . | quote }}
+            # When Zitadel advertises an external domain, it routes API requests
+            # by Host header. Calls to the in-cluster Service URL must therefore
+            # send Host: <externalDomain> or Zitadel returns "Instance not found".
+            - name: ZITADEL_HOST_HEADER
+              value: {{ .Values.zitadel.externalDomain | quote }}
             - name: REDIRECT_URL
               value: {{ include "grown.oidcRedirectURL" . | quote }}
             - name: POST_LOGOUT_URL
@@ -103,8 +124,13 @@ spec:
                 exit 0
               fi
 
+              # Host header sent on every API call so Zitadel resolves the
+              # instance when it advertises an external domain (empty => none).
+              HOSTHDR=""
+              [ -n "$ZITADEL_HOST_HEADER" ] && HOSTHDR="-H Host:$ZITADEL_HOST_HEADER"
+
               echo "Waiting for Zitadel /debug/ready..."
-              until curl -sf "$ZITADEL_URL/debug/ready" >/dev/null; do
+              until curl -sf $HOSTHDR "$ZITADEL_URL/debug/ready" >/dev/null; do
                 echo "  zitadel not ready..."; sleep 5
               done
 
@@ -116,7 +142,7 @@ spec:
               [ -s "$PAT_FILE" ] || { echo "PAT file not found"; exit 1; }
               TOKEN=$(tr -d '[:space:]' < "$PAT_FILE")
 
-              api() { curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" "$@"; }
+              api() { curl -s $HOSTHDR -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" "$@"; }
 
               # Find or create project.
               PID=$(api -X POST "$ZITADEL_URL/management/v1/projects/_search" \

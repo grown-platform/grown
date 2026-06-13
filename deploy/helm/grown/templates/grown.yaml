@@ -92,9 +92,17 @@ spec:
             - name: GROWN_ADMIN_EMAILS
               value: {{ .Values.adminEmails | quote }}
             {{- if eq .Values.auth.mode "bundled" }}
-            # In-app user management via the Zitadel User API (in-cluster).
+            # In-app user management via the Zitadel User API. When Zitadel
+            # advertises an external domain it routes by Host header, so the
+            # in-cluster Service URL would be rejected ("Instance not found");
+            # use the external issuer URL (browser-reachable) in that case,
+            # otherwise the in-cluster Service URL (kind/local).
             - name: GROWN_ZITADEL_API_URL
+              {{- if .Values.zitadel.externalDomain }}
+              value: {{ include "grown.zitadelExternalURL" . | quote }}
+              {{- else }}
               value: {{ include "grown.zitadelInternalURL" . | quote }}
+              {{- end }}
             {{- end }}
             # --- object storage (S3 / rustfs-compatible) ---
             - name: GROWN_RUSTFS_ENDPOINT

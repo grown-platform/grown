@@ -55,11 +55,31 @@ http://{{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc.cluster.local:{{ .
 http://{{ .Release.Name }}-zitadel.{{ .Release.Namespace }}.svc.cluster.local:8080
 {{- end -}}
 
-{{/* OIDC issuer handed to grown. External issuer when auth.mode=external,
-     bundled Zitadel internal URL otherwise. */}}
+{{/* Browser-facing issuer URL for the bundled Zitadel, derived from
+     zitadel.externalDomain (+ externalSecure/externalPort). Empty when no
+     external domain is configured. */}}
+{{- define "grown.zitadelExternalURL" -}}
+{{- if .Values.zitadel.externalDomain -}}
+{{- $scheme := ternary "https" "http" (.Values.zitadel.externalSecure | toString | eq "true") -}}
+{{- $port := .Values.zitadel.externalPort | toString -}}
+{{- if or (and (eq $scheme "https") (eq $port "443")) (and (eq $scheme "http") (eq $port "80")) -}}
+{{- printf "%s://%s" $scheme .Values.zitadel.externalDomain -}}
+{{- else -}}
+{{- printf "%s://%s:%s" $scheme .Values.zitadel.externalDomain $port -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/* OIDC issuer handed to grown.
+     - auth.mode=external           -> auth.external.issuer
+     - bundled + zitadel.externalDomain set -> the browser-facing Zitadel URL
+       (so the OIDC redirect to the issuer is reachable from the user's browser)
+     - bundled, no externalDomain   -> in-cluster Zitadel Service URL (kind/local) */}}
 {{- define "grown.oidcIssuer" -}}
 {{- if eq .Values.auth.mode "external" -}}
 {{ .Values.auth.external.issuer }}
+{{- else if .Values.zitadel.externalDomain -}}
+{{ include "grown.zitadelExternalURL" . }}
 {{- else -}}
 {{ include "grown.zitadelInternalURL" . }}
 {{- end -}}

@@ -83,6 +83,11 @@ spec:
         {{- include "grown.labels" . | nindent 8 }}
         app.kubernetes.io/component: zitadel
     spec:
+      # Zitadel runs as a non-root user (uid 1000). fsGroup makes the shared RWO
+      # PVC group-owned and group-writable so start-from-init can write the
+      # bootstrap PAT to /shared (otherwise: "open /shared/...: permission denied").
+      securityContext:
+        fsGroup: 1000
       initContainers:
         # Wait for Postgres to accept connections before init.
         - name: wait-for-postgres
@@ -112,6 +117,16 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: /shared
+          # start-from-init runs init + setup (migrations, projections, first
+          # instance) and only THEN starts the server. That one-shot sequence is
+          # NOT idempotent — if it is killed part-way (e.g. a premature liveness
+          # failure) the next boot fails on a duplicate default-instance domain.
+          # A startupProbe gates liveness until the server is actually up, giving
+          # setup up to ~10 min (failureThreshold * periodSeconds) on a fresh DB.
+          startupProbe:
+            httpGet: { path: /debug/healthz, port: 8080 }
+            periodSeconds: 5
+            failureThreshold: 120
           readinessProbe:
             httpGet: { path: /debug/ready, port: 8080 }
             initialDelaySeconds: 10
@@ -119,8 +134,8 @@ spec:
             failureThreshold: 60
           livenessProbe:
             httpGet: { path: /debug/healthz, port: 8080 }
-            initialDelaySeconds: 30
             periodSeconds: 20
+            failureThreshold: 6
           resources:
             {{- toYaml .Values.zitadel.resources | nindent 12 }}
       volumes:

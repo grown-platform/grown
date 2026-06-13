@@ -150,8 +150,15 @@ zitadel:
   # External-facing config for Zitadel's own issuer. For the bundled, fully
   # self-contained flow grown talks to Zitadel over the in-cluster Service, so
   # the issuer the chart hands grown is the cluster-internal URL by default.
-  # (Browser-facing SSO login pages require Zitadel to also be exposed at a
-  # public domain — see README "Zitadel & real login".)
+  #
+  # Set externalDomain to a PUBLIC, browser-reachable hostname (e.g.
+  # auth.grown.example.com) to get real SSO login working end-to-end: the chart
+  # then sets Zitadel's ExternalDomain to it AND hands grown
+  # GROWN_OIDC_ISSUER=<scheme>://<externalDomain>[:port] so the browser redirect
+  # to the issuer resolves. You must also route that hostname to the Zitadel
+  # Service (Ingress/HTTPRoute/tunnel). With edge TLS in front (e.g. Cloudflare),
+  # use externalSecure: true + externalPort: 443 while Zitadel itself serves
+  # plaintext HTTP (TLS_ENABLED stays false) — the proven homelab pattern.
   externalDomain: ""        # empty => use in-cluster service DNS
   externalPort: 8080
   externalSecure: false
