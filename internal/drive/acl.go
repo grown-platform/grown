@@ -92,6 +92,7 @@ func (a *ACL) ListSharesForFile(ctx context.Context, fileID string) ([]Share, er
 		`SELECT token, file_id::text, role, created_by::text, created_at, expires_at, revoked_at
 		 FROM grown.drive_shares
 		 WHERE file_id = $1 AND revoked_at IS NULL
+		   AND (expires_at IS NULL OR expires_at > now())
 		 ORDER BY created_at DESC`,
 		fileID,
 	)

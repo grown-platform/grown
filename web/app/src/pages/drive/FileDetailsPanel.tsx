@@ -70,6 +70,8 @@ export function FileDetailsPanel({
   const [newRole, setNewRole] = useState<"viewer" | "commenter" | "editor">(
     "viewer",
   );
+  // Optional expiry for new share links: "never" or a duration in seconds.
+  const [newExpiry, setNewExpiry] = useState<string>("never");
   const [lastCreatedToken, setLastCreatedToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -101,7 +103,9 @@ export function FileDetailsPanel({
 
   const handleCreate = async () => {
     try {
-      const created = await createShare(file.id, newRole);
+      const secs = Number(newExpiry);
+      const expiresAt = isNaN(secs) ? 0 : Math.floor(Date.now() / 1000) + secs;
+      const created = await createShare(file.id, newRole, expiresAt);
       setLastCreatedToken(created.token);
       await refreshShares();
     } catch (e) {
@@ -350,6 +354,20 @@ export function FileDetailsPanel({
                   <Option value="editor">Editor</Option>
                 </Select>
               </FormControl>
+              <FormControl size="sm" sx={{ mb: 1 }}>
+                <FormLabel>Link expires</FormLabel>
+                <Select
+                  value={newExpiry}
+                  onChange={(_, v) => v && setNewExpiry(v)}
+                  data-testid="share-expiry-select"
+                >
+                  <Option value="never">Never</Option>
+                  <Option value="3600">In 1 hour</Option>
+                  <Option value="86400">In 1 day</Option>
+                  <Option value="604800">In 7 days</Option>
+                  <Option value="2592000">In 30 days</Option>
+                </Select>
+              </FormControl>
               <Button
                 size="sm"
                 onClick={handleCreate}
@@ -504,11 +522,12 @@ function ShareRow({
         <Typography level="body-sm" sx={{ fontWeight: 500 }}>
           Anyone with the link
         </Typography>
-        <Typography
-          level="body-xs"
-          sx={{ opacity: 0.6, textTransform: "capitalize" }}
-        >
-          {share.role}
+        <Typography level="body-xs" sx={{ opacity: 0.6 }}>
+          <span style={{ textTransform: "capitalize" }}>{share.role}</span>
+          {" · "}
+          {share.expires_at && share.expires_at !== "0"
+            ? `expires ${new Date(Number(share.expires_at) * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+            : "no expiry"}
         </Typography>
       </Box>
       <IconButton

@@ -111,16 +111,18 @@ export function downloadURL(id: string): string {
   return `${BASE}/files/${id}/content`;
 }
 
-/** Create share. Returns the unwrapped DriveShare. */
+/** Create share. `expiresAt` is a Unix-seconds timestamp; omit/0 = no expiry.
+ * Returns the unwrapped DriveShare. */
 export async function createShare(
   fileId: string,
   role: "viewer" | "commenter" | "editor" = "viewer",
+  expiresAt = 0,
 ): Promise<DriveShare> {
   const r = await fetch(`${BASE}/files/${fileId}/shares`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role }),
+    body: JSON.stringify({ role, expires_at: expiresAt }),
   });
   const data = await jsonOrThrow<{ share: DriveShare }>(r);
   return data.share;
