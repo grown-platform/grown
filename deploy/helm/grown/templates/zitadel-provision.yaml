@@ -188,6 +188,17 @@ spec:
               CID=$(echo "$RESP" | grep -o '"clientId":"[^"]*"' | head -1 | cut -d'"' -f4)
               CSECRET=$(echo "$RESP" | grep -o '"clientSecret":"[^"]*"' | head -1 | cut -d'"' -f4)
               if [ -z "$CID" ] || [ -z "$CSECRET" ]; then
+                # Idempotency: this Job is a post-install/upgrade hook, so it re-runs
+                # on EVERY chart upgrade. After the first provision the OIDC app
+                # already exists (and its client secret — only returned once at
+                # creation — is already persisted in $SECRET_NAME). Treat that as
+                # success and keep the existing secret, otherwise every upgrade's
+                # hook fails and Helm rolls the release back (image bumps never
+                # stick). Only a genuine create error is fatal.
+                if echo "$RESP" | grep -qi "already exists"; then
+                  echo "OIDC app '$APP_NAME' already exists — keeping existing $SECRET_NAME; nothing to do."
+                  exit 0
+                fi
                 echo "Failed to create OIDC app: $RESP"; exit 1
               fi
               echo "Created OIDC app client_id=$CID"
