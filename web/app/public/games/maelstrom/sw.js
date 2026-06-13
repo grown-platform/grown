@@ -6,7 +6,7 @@
 // larger than the HTTP cache, especially for an installed PWA — and serve them
 // cache-first, so the game loads instantly after the first visit and works
 // offline. Bump CACHE whenever the game assets are rebuilt.
-const CACHE = "maelstrom-v1";
+const CACHE = "maelstrom-v2";
 const SHELL = [
   "./play.html",
   "./manifest.webmanifest",

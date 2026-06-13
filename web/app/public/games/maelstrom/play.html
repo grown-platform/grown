@@ -16,28 +16,91 @@
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(function(){})})}</script>
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden;
-    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;}
-  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
-  /* The SDL canvas; scale to fit the viewport, keep pixels crisp, letterbox. */
-  #canvas{max-width:100vw;max-height:100vh;width:auto;height:auto;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;
+    font-family:system-ui,-apple-system,sans-serif;}
+  /* Column layout: the game gets its own region up top; touch controls live in a
+     dedicated bar BELOW it, so they never sit over the playfield. */
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
+  #gamearea{flex:1 1 auto;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;}
+  /* The SDL canvas; scale to fit its region, keep pixels crisp, letterbox. */
+  #canvas{max-width:100%;max-height:100%;width:auto;height:auto;
     image-rendering:pixelated;image-rendering:crisp-edges;background:#000;outline:none;display:block;}
-  #status{position:fixed;left:0;right:0;top:42%;text-align:center;color:#9ab;
+  #status{position:absolute;left:0;right:0;top:42%;text-align:center;color:#9ab;
     font:600 15px system-ui,sans-serif;z-index:5;}
-  #credit{position:fixed;left:0;bottom:2px;width:100%;text-align:center;color:#456;
-    font:500 10px system-ui,sans-serif;z-index:2147483000;pointer-events:none;}
+  #credit{position:fixed;left:0;bottom:1px;width:100%;text-align:center;color:#456;
+    font:500 9px system-ui,sans-serif;z-index:2147483000;pointer-events:none;}
+
+  /* ---- Touch control bar (mobile only; hidden on desktop/fine-pointer) ---- */
+  #touchbar{flex:0 0 auto;display:none;align-items:center;justify-content:space-between;
+    gap:8px;padding:8px calc(env(safe-area-inset-right,0px) + 10px)
+      calc(env(safe-area-inset-bottom,0px) + 8px) calc(env(safe-area-inset-left,0px) + 10px);
+    background:linear-gradient(#06080f,#0b1020);border-top:1px solid #1b2742;
+    height:clamp(120px,24vh,190px);box-sizing:border-box;}
+  body.touch #touchbar{display:flex;}
+  .cluster{display:flex;align-items:center;gap:10px;}
+  .tbtn{display:flex;align-items:center;justify-content:center;
+    width:62px;height:62px;border-radius:14px;border:1px solid #2c3e6e;
+    background:#16224a;color:#dbe6ff;font-size:24px;font-weight:700;
+    touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;}
+  .tbtn:active,.tbtn.on{background:#2a3e7e;border-color:#5a7bd6;}
+  .tbtn.small{width:48px;height:48px;border-radius:11px;font-size:18px;}
+  .tbtn.fire{background:#7a1f2b;border-color:#c2415a;width:74px;height:74px;font-size:26px;}
+  .tbtn.fire:active,.tbtn.fire.on{background:#a8293a;}
+  .tcol{display:flex;flex-direction:column;gap:8px;align-items:center;}
+  .tlabel{font-size:10px;color:#6f80a8;margin-top:-2px;}
+
+  /* Hidden input used only to raise the mobile soft keyboard for name entry. */
+  #nameInput{position:fixed;opacity:0;pointer-events:none;left:-9999px;top:0;
+    width:1px;height:1px;font-size:16px;}
+  /* Name-entry hint banner (shown when the keyboard button is armed). */
+  #kbHint{position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483600;
+    display:none;background:#0b1020;border:1px solid #2c3e6e;border-radius:10px;
+    padding:8px 14px;color:#dbe6ff;font:600 13px system-ui,sans-serif;
+    box-shadow:0 6px 20px rgba(0,0,0,.5);}
+  #kbHint.show{display:block;}
 </style>
 </head>
 <body>
-  <div id="wrap"><canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas></div>
-  <div id="status">Loading Maelstrom…</div>
+  <div id="wrap">
+    <div id="gamearea">
+      <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+      <div id="status">Loading Maelstrom…</div>
+    </div>
+    <!-- Touch controls live here, outside the playfield. -->
+    <div id="touchbar">
+      <div class="cluster">
+        <div class="tbtn" data-code="ArrowLeft">◀</div>
+        <div class="tbtn" data-code="ArrowRight">▶</div>
+      </div>
+      <div class="cluster">
+        <div class="tbtn small" data-code="Escape" data-tap="1">≡</div>
+        <div class="tbtn small" id="kbBtn" data-tap="1">⌨</div>
+      </div>
+      <div class="cluster">
+        <div class="tcol">
+          <div class="tbtn" data-code="ArrowUp">▲</div>
+          <div class="tlabel">THRUST</div>
+        </div>
+        <div class="tcol">
+          <div class="tbtn" data-code="ArrowDown">◌</div>
+          <div class="tlabel">SHIELD</div>
+        </div>
+        <div class="tcol">
+          <div class="tbtn fire" data-code="Space">●</div>
+          <div class="tlabel">FIRE</div>
+        </div>
+      </div>
+    </div>
+  </div>
   <div id="credit">Maelstrom © 1992–2026 Ambrosia / Sam Lantinga · web port of libsdl-org/Maelstrom (Zlib)</div>
+  <input id="nameInput" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text" aria-label="Enter your name">
+  <div id="kbHint">Type your name, then Enter ↵</div>
 
   <script>
     var statusEl = document.getElementById("status");
     var Module = {
       canvas: (function(){
         var c = document.getElementById("canvas");
-        // Surface WebGL context-loss so we notice it during testing.
         c.addEventListener("webglcontextlost", function(e){ e.preventDefault(); console.error("WebGL context lost"); }, false);
         return c;
       })(),
@@ -45,9 +108,8 @@
       print:   function(t){ console.log(t); },
       printErr:function(t){ console.error(t); },
       onRuntimeInitialized: function(){ Module.setStatus(""); },
-      // Maelstrom's CMake sets SDL_EMSCRIPTEN_PERSISTENT_PATH=/storage, so SDL
-      // mounts IDBFS there itself for prefs/high scores. We pre-create + sync it
-      // so saved scores and preferences survive reloads.
+      // SDL mounts IDBFS at /storage (SDL_EMSCRIPTEN_PERSISTENT_PATH) for prefs +
+      // high scores; pre-create and sync it so saved scores survive reloads.
       preRun: [function(){
         try {
           FS.mkdirTree("/storage");
@@ -60,39 +122,102 @@
         } catch (e) { console.error("Maelstrom: save FS setup failed", e); }
       }],
     };
-    // Flush prefs/scores to IndexedDB on tab-hide/close and a gentle interval.
-    function maelPersist(){
-      try { if (typeof FS !== "undefined") FS.syncfs(false, function(){}); } catch (e) {}
-    }
+    function maelPersist(){ try { if (typeof FS !== "undefined") FS.syncfs(false, function(){}); } catch (e) {} }
     document.addEventListener("visibilitychange", function(){ if (document.hidden) maelPersist(); });
     window.addEventListener("pagehide", maelPersist);
     setInterval(maelPersist, 15000);
-    // Keep focus on the canvas so SDL receives keyboard events.
     window.addEventListener("load", function(){ Module.canvas.focus(); });
-    window.addEventListener("click", function(){ Module.canvas.focus(); });
-  </script>
 
-  <!-- Touch gamepad overlay → synthesizes Maelstrom's real key bindings.
-       Defaults (from game/controls.cpp): TurnL=ArrowLeft, TurnR=ArrowRight,
-       Thrust=ArrowUp, Shield=ArrowDown, Fire=Space, Pause=CapsLock, Quit=Escape.
-       Bump ?v= on every edit to bust the edge cache. -->
-  <script src="gamepad-overlay.js?v=20260613-maelstrom"></script>
-  <script>
-    window.addEventListener("load", function(){
-      if (!window.GamepadOverlay) return;
-      GamepadOverlay.mount({
-        target: window,           // SDL3/emscripten listens for keys on window
-        show: "always",           // visible on desktop too (handy for testing)
-        // D-pad: left/right rotate the ship, up thrusts. (Down maps to Shield
-        // but is also exposed as a dedicated button below.)
-        dpad: { up:"ArrowUp", down:"ArrowDown", left:"ArrowLeft", right:"ArrowRight" },
-        buttons: [
-          { id:"fire",   label:"●", code:"Space",     side:"right" }, // Fire
-          { id:"thrust", label:"▲", code:"ArrowUp",   side:"right" }, // Thrust
-          { id:"shield", label:"◌", code:"ArrowDown", side:"right" }, // Shield
-          { id:"pause",  label:"≡", code:"Escape",    side:"top"   }, // Pause/menu
-        ],
-      });
+    // ---- Synthetic keyboard → the game (SDL listens for key events on window) --
+    // Maelstrom's keys (game/controls.cpp defaults): TurnL=ArrowLeft,
+    // TurnR=ArrowRight, Thrust=ArrowUp, Shield=ArrowDown, Fire=Space, Pause=Escape.
+    var KEYMAP = {
+      "ArrowLeft":{key:"ArrowLeft",keyCode:37}, "ArrowRight":{key:"ArrowRight",keyCode:39},
+      "ArrowUp":{key:"ArrowUp",keyCode:38}, "ArrowDown":{key:"ArrowDown",keyCode:40},
+      "Space":{key:" ",keyCode:32}, "Escape":{key:"Escape",keyCode:27},
+      "Enter":{key:"Enter",keyCode:13}, "Backspace":{key:"Backspace",keyCode:8}
+    };
+    function dispatchKey(type, code, keyOverride, keyCodeOverride){
+      var info = KEYMAP[code] || {};
+      var key = keyOverride != null ? keyOverride : (info.key || code);
+      var keyCode = keyCodeOverride != null ? keyCodeOverride : (info.keyCode || 0);
+      var ev;
+      try {
+        ev = new KeyboardEvent(type, { key:key, code:code, keyCode:keyCode, which:keyCode,
+          bubbles:true, cancelable:true, view:window });
+      } catch (e) {
+        ev = document.createEvent("Event"); ev.initEvent(type, true, true);
+        ev.key = key; ev.code = code; ev.keyCode = keyCode; ev.which = keyCode;
+      }
+      // Some builds set keyCode read-only via the constructor; force it for older paths.
+      try { Object.defineProperty(ev, "keyCode", { value:keyCode }); Object.defineProperty(ev, "which", { value:keyCode }); } catch (e) {}
+      (Module.canvas || window).dispatchEvent(ev);
+      window.dispatchEvent(ev);
+    }
+
+    // ---- Touch bar: hold-to-repeat movement, tap for pause/keyboard ----
+    var isTouch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || ("ontouchstart" in window);
+    if (isTouch) document.body.classList.add("touch");
+    function bindBtn(el){
+      var code = el.getAttribute("data-code");
+      var tap = el.getAttribute("data-tap") === "1";
+      var held = false;
+      function down(e){ e.preventDefault(); if(held) return; held = true; el.classList.add("on");
+        if(code){ if(tap) dispatchKey("keydown", code); else dispatchKey("keydown", code); } }
+      function up(e){ if(e) e.preventDefault(); if(!held) return; held = false; el.classList.remove("on");
+        if(code) dispatchKey("keyup", code); }
+      el.addEventListener("touchstart", down, {passive:false});
+      el.addEventListener("touchend", up, {passive:false});
+      el.addEventListener("touchcancel", up, {passive:false});
+      el.addEventListener("mousedown", down);
+      el.addEventListener("mouseup", up);
+      el.addEventListener("mouseleave", up);
+    }
+    Array.prototype.forEach.call(document.querySelectorAll("#touchbar .tbtn"), bindBtn);
+
+    // ---- Name entry: summon the soft keyboard and forward typed chars to SDL ----
+    // Mobile soft keyboards don't fire reliable keydown, so we read the input's
+    // composed text via the input event and synthesize SDL key events from it.
+    var nameInput = document.getElementById("nameInput");
+    var kbHint = document.getElementById("kbHint");
+    var lastVal = "";
+    function armKeyboard(){
+      lastVal = ""; nameInput.value = "";
+      nameInput.style.pointerEvents = "auto"; nameInput.style.left = "8px";
+      nameInput.focus();
+      kbHint.classList.add("show");
+    }
+    function disarmKeyboard(){
+      nameInput.blur(); nameInput.style.pointerEvents = "none"; nameInput.style.left = "-9999px";
+      kbHint.classList.remove("show");
+    }
+    document.getElementById("kbBtn").addEventListener("click", function(){
+      if (document.activeElement === nameInput) disarmKeyboard(); else armKeyboard();
+    });
+    // Each newly inserted character → a key tap into the game.
+    nameInput.addEventListener("input", function(){
+      var v = nameInput.value;
+      // Handle deletions.
+      while (lastVal.length > v.length) { dispatchKey("keydown","Backspace"); dispatchKey("keyup","Backspace"); lastVal = lastVal.slice(0,-1); }
+      // Handle additions (usually one char, but paste/compose may add several).
+      for (var i = lastVal.length; i < v.length; i++) {
+        var ch = v[i];
+        var up = ch.toUpperCase();
+        var isLetter = up >= "A" && up <= "Z";
+        var code = isLetter ? ("Key"+up) : (ch >= "0" && ch <= "9" ? ("Digit"+ch) : "Space");
+        var kc = isLetter ? up.charCodeAt(0) : (ch >= "0" && ch <= "9" ? ch.charCodeAt(0) : 32);
+        dispatchKey("keydown", code, ch, kc);
+        dispatchKey("keyup", code, ch, kc);
+      }
+      lastVal = v;
+    });
+    // Enter confirms the name and dismisses the keyboard.
+    nameInput.addEventListener("keydown", function(e){
+      if (e.key === "Enter") { dispatchKey("keydown","Enter"); dispatchKey("keyup","Enter"); disarmKeyboard(); }
+    });
+    // Tapping the game area dismisses the name keyboard.
+    document.getElementById("gamearea").addEventListener("pointerdown", function(){
+      if (document.activeElement === nameInput) disarmKeyboard(); else Module.canvas.focus();
     });
   </script>
 
