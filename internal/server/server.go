@@ -42,6 +42,7 @@ import (
 	"code.pick.haus/grown/grown/internal/forms"
 	"code.pick.haus/grown/grown/internal/gamerooms"
 	"code.pick.haus/grown/grown/internal/games"
+	"code.pick.haus/grown/grown/internal/geoaccess"
 	"code.pick.haus/grown/grown/internal/groups"
 	"code.pick.haus/grown/grown/internal/health"
 	"code.pick.haus/grown/grown/internal/keep"
@@ -1089,6 +1090,26 @@ func New(cfg Config) *Server {
 		analyticsHandler = analyticsHandler.WithDemoUsername(cfg.DemoLogin.Username)
 	}
 
+	// Geo-location access control — an instance-level (NOT per-org) edge policy
+	// enforced against Cloudflare's CF-IPCountry header by geoMiddleware (wired
+	// at the very bottom around the whole router). geoStore persists the single
+	// grown.geo_access row (0085); geoCache is a TTL-bounded snapshot the
+	// middleware reads on the hot path; geoHandler is the admin-gated GET/PUT at
+	// /api/v1/admin/geo, which invalidates geoCache on write (reload-on-write).
+	// Same admin gate as analytics/audit (allowlist OR org_admins).
+	geoStore := geoaccess.NewStore(cfg.Pool)
+	geoCache := geoaccess.NewCache(geoStore)
+	geoHandler := geoaccess.NewHandler(geoStore, geoCache, geoaccess.Identity{
+		Caller: func(ctx context.Context) (string, bool) {
+			u, ok := auth.UserFromContext(ctx)
+			if !ok {
+				return "", false
+			}
+			return u.Email, true
+		},
+		IsAdmin: isAdminFromCtx,
+	})
+
 	// Admin security console — reads/writes the caller-org's Zitadel security
 	// policies (password complexity, login/MFA/passwordless, lockout) via the
 	// service PAT. Same admin gate as analytics. The Caller returns the caller's
@@ -1589,6 +1610,14 @@ func New(cfg Config) *Server {
 			driveAuthWrap(analyticsHandler).ServeHTTP(w, r)
 			return
 		}
+		// Admin-gated geo-location access policy (GET/PUT). Instance-level edge
+		// access control enforced by geoMiddleware against CF-IPCountry. This
+		// path lives under /api/v1/admin/ so geoMiddleware always exempts it —
+		// an admin can never lock themselves out of the policy editor.
+		if r.URL.Path == "/api/v1/admin/geo" {
+			driveAuthWrap(geoHandler).ServeHTTP(w, r)
+			return
+		}
 		// Admin-gated security console: reads/writes Zitadel org policies
 		// (password / MFA / lockout / passwordless) scoped to the caller's org.
 		if strings.HasPrefix(r.URL.Path, "/api/v1/admin/security/") {
@@ -1808,7 +1837,15 @@ func New(cfg Config) *Server {
 		static.ServeHTTP(w, r)
 	})
 
-	return &Server{grpc: grpcSrv, httpHandler: router}
+	// Geo-location access control wraps the WHOLE router: every route (main app,
+	// games area, all API + static) passes through geoMiddleware. When the policy
+	// mode is off (the default) it is a no-op. When block/allow is active it
+	// returns 403 for disallowed CF-IPCountry values — EXCEPT the always-exempt
+	// recovery paths (/api/v1/admin/*, /api/v1/auth/*, health) so an admin can
+	// never lock themselves out. Unknown/absent country headers fail open.
+	geoMiddleware := geoCache.Middleware(router)
+
+	return &Server{grpc: grpcSrv, httpHandler: geoMiddleware}
 }
 
 // orgAdminRoster adapts the org_admins + users repositories to the
