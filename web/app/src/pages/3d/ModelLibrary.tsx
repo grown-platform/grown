@@ -40,6 +40,7 @@ import {
   requestThumbnail,
   getCachedThumbnail,
 } from "./ThumbnailRenderer";
+import { seedExampleShipIfNeeded, hasSeededExample } from "./seedExample";
 
 interface LibModel {
   file: DriveFile;
@@ -65,16 +66,32 @@ export function ModelLibrary({ onOpen }: ModelLibraryProps) {
     try {
       // 1) Find the /models folder at the Drive root.
       const root = await listFiles("");
-      const folder =
+      let folder =
         root.find((f) => isFolder(f) && f.name.toLowerCase() === "models") ??
         null;
+      // First-run seeding: a fresh user has no /models folder and nothing to
+      // look at. Auto-create the folder once and drop in a default example ship
+      // so the library isn't empty. Guarded (hasSeededExample) so a user who
+      // later deletes the folder/example isn't handed it back.
+      if (!folder && !hasSeededExample()) {
+        try {
+          folder = await createFolder("models", "");
+        } catch {
+          /* leave null → fall through to the create-folder empty state */
+        }
+      }
       setModelsFolder(folder);
       if (!folder) {
         setModels([]);
         return;
       }
       // 2) List model files recursively under /models.
-      const found = await listModelsRecursive(folder.id, "");
+      let found = await listModelsRecursive(folder.id, "");
+      // Seed the example ship when the library is empty (best-effort, guarded).
+      if (found.length === 0) {
+        const seeded = await seedExampleShipIfNeeded(folder.id, []);
+        if (seeded) found = await listModelsRecursive(folder.id, "");
+      }
       // Folders first is irrelevant here; sort by path then name.
       found.sort((a, b) => {
         if (a.relPath !== b.relPath) return a.relPath.localeCompare(b.relPath);
@@ -96,7 +113,9 @@ export function ModelLibrary({ onOpen }: ModelLibraryProps) {
     setCreating(true);
     setError(null);
     try {
-      await createFolder("models", "");
+      const folder = await createFolder("models", "");
+      // Drop the example ship in so the freshly-created folder isn't empty.
+      await seedExampleShipIfNeeded(folder.id, []);
       await load();
     } catch (e) {
       setError((e as Error).message);
