@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Install &amp; self-host — Grown Workspace docs</title>
+<meta name="description" content="Install and self-host Grown Workspace on any Kubernetes cluster — an all-in-one Helm chart, raw manifests, kind on a laptop, or a Raspberry Pi 5 cluster." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+<style>
+  pre{background:#0f1a13;color:#d7f0df;border-radius:12px;padding:14px 16px;overflow:auto;font-size:13px;line-height:1.5;border:1px solid #20402d}
+  pre .c{color:#7fae90}
+  code{background:#eef3ec;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-size:13.5px}
+  pre code{background:none;border:0;padding:0}
+  .pill{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px;background:#dcf0e2;color:var(--green-d);margin-left:6px}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#eef3ec}
+  .note{background:#fff8e6;border:1px solid #f0e2bd;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:14px}
+</style>
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Install &amp; self-host</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🚀</div>
+  <span class="badge">Self-host</span>
+  <h1>Install Grown Workspace</h1>
+  <p>Run your own instance on any Kubernetes cluster. One all-in-one Helm chart brings
+     up the whole platform — app, database, object storage and auth — with no required
+     operators, so it works on a laptop (kind), a Raspberry Pi 5 cluster, or a homelab.</p>
+  <div class="cta">
+    <a href="#helm">Quick start →</a>
+    <a class="ghost" href="https://github.com/grown-platform/grown/tree/main/deploy/helm/grown">Chart on GitHub</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>What gets installed</h2>
+  <p class="lead">The chart is self-contained — it bundles everything Grown needs so a
+     fresh cluster becomes a working workspace:</p>
+  <ul class="feat">
+    <li><b>grown</b> — the platform (all the apps: Drive, Mail, Calendar, Docs, Sheets, Games, …).</li>
+    <li><b>PostgreSQL</b> — a plain StatefulSet (no operator required); swap in CNPG or a managed DB for production.</li>
+    <li><b>MinIO</b> — S3-compatible object storage for files, photos, video and music (swap in rustfs/any S3).</li>
+    <li><b>Zitadel</b> — OIDC single sign-on, with the Grown OIDC app <b>auto-provisioned</b> on install.</li>
+  </ul>
+  <p>Everything is plain Kubernetes objects, arm64-friendly, with sensible defaults that
+     come up out of the box on kind.</p>
+</div></section>
+
+<section id="helm"><div class="wrap">
+  <h2>Method 1 — Helm chart <span class="pill">recommended</span></h2>
+  <p class="lead">The simplest path. Requires a Kubernetes cluster and <code>helm</code>.</p>
+<pre><code><span class="c"># clone the repo (the chart lives in deploy/helm/grown)</span>
+git clone https://github.com/grown-platform/grown.git
+cd grown
+
+<span class="c"># install everything into the "grown" namespace</span>
+helm install grown deploy/helm/grown \
+  -n grown --create-namespace \
+  --set domain=grown.example.com</code></pre>
+  <p>That's it — Postgres, MinIO, Zitadel (with the OIDC app provisioned) and grown all
+     come up. Watch it with <code>kubectl -n grown get pods -w</code>; grown is ready when
+     <code>/healthz</code> returns 200. The default admin is printed in the install notes.</p>
+
+  <h3>Common values</h3>
+  <table>
+    <tr><th>Value</th><th>Default</th><th>What it does</th></tr>
+    <tr><td><code>domain</code></td><td>—</td><td>Public hostname (required).</td></tr>
+    <tr><td><code>ingress.type</code></td><td><code>ingress</code></td><td><code>ingress</code> (plain), <code>httproute</code> (Gateway API), or <code>none</code>.</td></tr>
+    <tr><td><code>auth.mode</code></td><td><code>bundled</code></td><td><code>bundled</code> Zitadel, or <code>external</code> against your own OIDC issuer.</td></tr>
+    <tr><td><code>adminEmails</code></td><td>—</td><td>Comma-separated super-admin allowlist.</td></tr>
+    <tr><td><code>storageClass</code></td><td>cluster default</td><td>PVC storage class (e.g. <code>local-path</code>, <code>longhorn</code>).</td></tr>
+    <tr><td><code>postgres.externalDsn</code></td><td>—</td><td>Use an external/managed Postgres instead of the bundled one.</td></tr>
+    <tr><td><code>minio.external.endpoint</code></td><td>—</td><td>Use an external S3 (rustfs/MinIO/cloud) instead of the bundled one.</td></tr>
+    <tr><td><code>image.tag</code></td><td>pinned</td><td>grown image tag.</td></tr>
+    <tr><td><code>bolo.enabled</code></td><td><code>false</code></td><td>Run the Bolo multiplayer sidecar.</td></tr>
+  </table>
+  <p>See <a href="https://github.com/grown-platform/grown/blob/main/deploy/helm/grown/values.yaml">values.yaml</a> for the full list, and the chart <a href="https://github.com/grown-platform/grown/blob/main/deploy/helm/grown/README.md">README</a> for production guidance.</p>
+
+  <div class="note"><b>Sign-in note.</b> grown authenticates through Zitadel via OIDC. For
+    browser login to work, Zitadel must be reachable from the browser at the issuer URL —
+    in production expose Zitadel on its own hostname (or point <code>auth.mode=external</code>
+    at an already-exposed issuer). The app, <code>/healthz</code> and the OIDC client
+    provisioning all work regardless; this only affects the interactive login redirect.</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Method 2 — Raw manifests (<code>kubectl apply</code>)</h2>
+  <p class="lead">No Helm? Apply the pre-rendered all-in-one manifest.</p>
+<pre><code><span class="c"># edit the hostname/values in the file first, then:</span>
+kubectl create namespace grown
+kubectl apply -n grown -f deploy/manifests/grown.yaml</code></pre>
+  <p><code>deploy/manifests/grown.yaml</code> is rendered from the same chart. To customise it,
+     re-render with your own values:</p>
+<pre><code>helm template grown deploy/helm/grown -n grown \
+  --set domain=grown.example.com &gt; my-grown.yaml
+kubectl apply -n grown -f my-grown.yaml</code></pre>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Method 3 — Local machine with <code>kind</code></h2>
+  <p class="lead">Try the whole platform on your laptop in a throwaway cluster. Requires
+     <a href="https://kind.sigs.k8s.io/">kind</a>, <code>kubectl</code> and <code>helm</code>
+     (Docker/Podman under the hood). This is the exact path the chart is smoke-tested on.</p>
+<pre><code>kind create cluster --name grown
+
+helm install grown deploy/helm/grown \
+  -n grown --create-namespace \
+  --set domain=grown.local --set ingress.type=none
+
+<span class="c"># wait for grown, then reach it via a port-forward</span>
+kubectl -n grown rollout status deploy/grown
+kubectl -n grown port-forward svc/grown 8080:8080
+<span class="c"># open http://localhost:8080/healthz  -> 200</span></code></pre>
+  <div class="note">On a single-node kind cluster everything lands on one node, so the bundled
+    Zitadel + its provisioning job share storage fine. grown may restart a couple of times
+    while Zitadel finishes booting, then settles automatically. Tear down with
+    <code>kind delete cluster --name grown</code>.</div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Method 4 — Raspberry Pi 5 (16 GB) cluster</h2>
+  <p class="lead">Grown runs well on a small arm64 Pi 5 cluster — the app itself is a
+     lightweight Go binary. Recommended: <b>3–4× Pi 5 (16 GB) with NVMe</b> (the M.2 HAT),
+     not SD cards.</p>
+  <ul class="feat">
+    <li><b>arm64 images.</b> grown and the bundled Postgres/MinIO/Zitadel all have arm64 images. Pin <code>image.tag</code> to an arm64-built grown tag.</li>
+    <li><b>Real storage.</b> Use NVMe + a storage class like <code>local-path</code> or <b>Longhorn</b> for Postgres I/O and S3 blobs — set <code>--set storageClass=longhorn</code>. Avoid SD cards.</li>
+    <li><b>No heavyweight operators.</b> The chart needs none — ideal for Pi. (Skip Ceph; use Longhorn/local-path.)</li>
+    <li><b>Headroom.</b> Core grown (app + Postgres + Zitadel + MinIO) is ~1.5–2.5 GiB — comfortable. Heavy extras (transcoding, live streaming, AV mail scanning) are what strain Pi cores; keep those modest.</li>
+  </ul>
+<pre><code>helm install grown deploy/helm/grown \
+  -n grown --create-namespace \
+  --set domain=grown.example.com \
+  --set storageClass=longhorn \
+  --set image.tag=&lt;arm64-tag&gt;</code></pre>
+  <p>A single 16 GB Pi 5 can host core grown for a household; a 3–4 node cluster comfortably
+     runs grown plus heavier add-ons (mail, photos) for a small team.</p>
+</div></section>
+
+<section id="grow"><div class="wrap">
+  <div class="grow" style="background:linear-gradient(160deg,#eef6f0,#e3f0e7);border:1px solid #cfe5d6;border-radius:16px;padding:22px;text-align:center">
+    <div style="font-size:30px">🌱</div>
+    <h2 style="margin:4px 0">Stuck, or want a deploy guide for your setup?</h2>
+    <p style="max-width:560px;margin:0 auto 12px;color:#3a4a40">Hit a snag installing, or want docs for a specific platform (k3s, Talos, a managed cloud)? <strong>Open an issue and we'll get it grown 🌱.</strong></p>
+    <a class="back" href="https://github.com/grown-platform/grown/issues/new" style="display:inline-block;background:var(--green);color:#fff;font-weight:600;border-radius:10px;padding:10px 18px">Open an issue</a>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.<br /><strong>Missing something? <a href="https://github.com/grown-platform/grown/issues/new">Open an issue</a> and we will get it grown 🌱</strong>
+</div></footer>
+
+</body>
+</html>

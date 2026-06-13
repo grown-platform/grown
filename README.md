@@ -38,6 +38,22 @@ Books, Video, Live, Music, Chat, Meet, Tasks, Keep, Sites, Groups, a Ticketing
 service, an in-process PDF signing app, and a large browser game arcade (including
 native game ports compiled to WebAssembly).
 
+## Install / self-host
+
+One all-in-one Helm chart brings up the whole platform (app + Postgres + MinIO +
+Zitadel SSO, no required operators) on any cluster — a laptop (kind), a Raspberry
+Pi 5 cluster, or a homelab:
+
+```bash
+helm install grown deploy/helm/grown -n grown --create-namespace \
+  --set domain=grown.example.com
+```
+
+Prefer plain `kubectl`? `kubectl apply -f deploy/manifests/grown.yaml`. Full guide
+(kind, Raspberry Pi 5, Helm values, production notes): **[Install &
+self-host](https://workspace.pick.haus/docs/install.html)** · chart in
+[`deploy/helm/grown`](deploy/helm/grown).
+
 ## Documentation
 
 - **[Visual tour of every service](docs/services/README.md)** — live screenshots
