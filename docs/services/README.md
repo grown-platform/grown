@@ -9,8 +9,8 @@ Auto-generated visual documentation for every app and service in **grown-workspa
 Grown Workspace is **forever free, [MIT licensed](../../LICENSE)**. **Contributions
 and issues are genuinely appreciated.**
 
-- **Source code:** **https://github.com/grown-platform/grown-workspace**
-- **Report a bug / request a feature:** [open an issue](https://github.com/grown-platform/grown-workspace/issues)
+- **Source code:** **https://github.com/grown-platform/grown**
+- **Report a bug / request a feature:** [open an issue](https://github.com/grown-platform/grown/issues)
 - **Contribute code:** fork the mirror and open a PR — see [CONTRIBUTING.md](../../CONTRIBUTING.md)
 
 ## Capture status (honest)
