@@ -36,6 +36,7 @@ import {
 import ViewInArIcon from "@mui/icons-material/ViewInAr";
 import CenterFocusStrongIcon from "@mui/icons-material/CenterFocusStrong";
 import GridViewIcon from "@mui/icons-material/GridView";
+import EditIcon from "@mui/icons-material/Edit";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import { downloadURL } from "../drive/api";
@@ -44,10 +45,14 @@ import { ModelViewer } from "./Viewer";
 import { DrivePicker } from "./DrivePicker";
 import { ModelLibrary } from "./ModelLibrary";
 import { extOf } from "./formats";
+import { Editor } from "./editor/Editor";
+import { EditorOverlay } from "./editor/EditorOverlay";
+import { saveGlbToDrive, downloadGlb } from "./editor/save";
 
 export default function ThreeDApp({ user }: { user: User }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<ModelViewer | null>(null);
+  const editorRef = useRef<Editor | null>(null);
 
   // The app lands on the Model Library (a gallery of the user's /models). The
   // viewer takes over the viewport once the user opens a model or starts a new
@@ -58,6 +63,12 @@ export default function ThreeDApp({ user }: { user: User }) {
   const [error, setError] = useState<string | null>(null);
   // The name of the currently-loaded model, or null for a blank "New model".
   const [modelName, setModelName] = useState<string | null>(null);
+  // Whether the modeling toolset (Editor.ts) is active over the viewport.
+  const [editing, setEditing] = useState(false);
+  // Editor instance, mirrored to state so the overlay re-mounts when it changes.
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   // A model queued to load once the viewer mounts (e.g. clicked from library).
   const pendingFileRef = useRef<DriveFile | null>(null);
 
@@ -72,11 +83,29 @@ export default function ThreeDApp({ user }: { user: User }) {
     pendingFileRef.current = null;
     if (pending) void loadIntoViewer(pending);
     return () => {
+      editorRef.current?.dispose();
+      editorRef.current = null;
+      setEditor(null);
+      setEditing(false);
       viewer.dispose();
       viewerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
+
+  // Create/tear down the modeling Editor (layered on the viewer's scene) as the
+  // user toggles edit mode. The Editor borrows the viewer's scene/camera/etc.
+  useEffect(() => {
+    if (editing && viewerRef.current && !editorRef.current) {
+      const ed = new Editor(viewerRef.current);
+      editorRef.current = ed;
+      setEditor(ed);
+    } else if (!editing && editorRef.current) {
+      editorRef.current.dispose();
+      editorRef.current = null;
+      setEditor(null);
+    }
+  }, [editing]);
 
   function newModel() {
     setError(null);
@@ -86,6 +115,32 @@ export default function ThreeDApp({ user }: { user: User }) {
       setView("viewer");
     } else {
       viewerRef.current?.newScene();
+    }
+  }
+
+  async function handleSave(download: boolean) {
+    const ed = editorRef.current;
+    if (!ed) {
+      setStatus("Enter Edit mode to save a model.");
+      return;
+    }
+    setSaving(true);
+    setStatus(null);
+    try {
+      const bytes = await ed.exportGLB();
+      const name = modelName ?? "Untitled";
+      if (download) {
+        downloadGlb(bytes, name);
+        setStatus("Downloaded .glb");
+      } else {
+        const file = await saveGlbToDrive(bytes, name);
+        setModelName(file.name);
+        setStatus(`Saved to Drive ▸ models ▸ ${file.name}`);
+      }
+    } catch (e) {
+      setStatus(`Save failed: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -166,9 +221,18 @@ export default function ThreeDApp({ user }: { user: User }) {
             </MenuItem>
             <MenuItem onClick={newModel}>New model</MenuItem>
             <ListDivider />
-            {/* TODO(follow-ups): Save back to Drive + Export glTF/STL. */}
-            <MenuItem disabled>Save (coming soon)</MenuItem>
-            <MenuItem disabled>Export (coming soon)</MenuItem>
+            <MenuItem
+              disabled={!editing || saving}
+              onClick={() => void handleSave(false)}
+            >
+              Save to Drive (.glb)
+            </MenuItem>
+            <MenuItem
+              disabled={!editing || saving}
+              onClick={() => void handleSave(true)}
+            >
+              Export / Download (.glb)
+            </MenuItem>
           </Menu>
         </Dropdown>
 
@@ -192,7 +256,26 @@ export default function ThreeDApp({ user }: { user: User }) {
           </Button>
         )}
 
+        {view === "viewer" && (
+          <Button
+            variant={editing ? "soft" : "plain"}
+            color={editing ? "primary" : "neutral"}
+            size="sm"
+            startDecorator={<EditIcon />}
+            onClick={() => setEditing((e) => !e)}
+          >
+            {editing ? "Editing" : "Edit"}
+          </Button>
+        )}
+
         <Box sx={{ flex: 1 }} />
+
+        {saving && <CircularProgress size="sm" />}
+        {status && (
+          <Typography level="body-xs" sx={{ opacity: 0.7 }} noWrap>
+            {status}
+          </Typography>
+        )}
 
         <Typography level="body-sm" sx={{ opacity: 0.7 }} noWrap>
           {view === "library"
@@ -209,6 +292,8 @@ export default function ThreeDApp({ user }: { user: User }) {
       ) : (
         <Box sx={{ position: "relative", flex: 1, minHeight: 0 }}>
           <Box ref={mountRef} sx={{ position: "absolute", inset: 0 }} />
+
+          {editing && editor && <EditorOverlay editor={editor} />}
 
           {loading && (
             <Box
@@ -246,7 +331,7 @@ export default function ThreeDApp({ user }: { user: User }) {
             </Sheet>
           )}
 
-          {!modelName && !loading && !error && (
+          {!modelName && !loading && !error && !editing && (
             <Box
               sx={{
                 position: "absolute",

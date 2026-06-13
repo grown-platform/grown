@@ -37,6 +37,37 @@ export class ModelViewer {
   private container: HTMLElement;
   private resizeObserver: ResizeObserver;
 
+  /**
+   * Accessors so a layered editor (Editor.ts) can reach the scene graph,
+   * camera, renderer and controls without us leaking these everywhere. The
+   * viewer stays the owner of lifecycle; the editor only borrows references.
+   */
+  getScene(): THREE.Scene {
+    return this.scene;
+  }
+  getCamera(): THREE.PerspectiveCamera {
+    return this.camera;
+  }
+  getRenderer(): THREE.WebGLRenderer {
+    return this.renderer;
+  }
+  getControls(): OrbitControls {
+    return this.controls;
+  }
+  getGrid(): THREE.GridHelper {
+    return this.grid;
+  }
+  getDomElement(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+  getContainer(): HTMLElement {
+    return this.container;
+  }
+  /** The root group holding the current model, if any (editor adds into the scene directly). */
+  getModelRoot(): THREE.Group | null {
+    return this.modelRoot;
+  }
+
   constructor(container: HTMLElement) {
     this.container = container;
 
