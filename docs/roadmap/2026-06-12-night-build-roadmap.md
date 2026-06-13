@@ -21,32 +21,30 @@ architecture so they start ahead.
   (skip/overwrite/merge), async jobs + progress for large transfers, and a
   target-org picker (currently slug entry).
 
-## TODO — Self-hosted PBX backend (Asterisk)
-Biggest item (infra, multi-day). Behind the existing Telephony admin console
-(front-end scaffold today). Plan: deploy Asterisk (PJSIP) in-cluster via gitops,
-a WebRTC↔SIP gateway for the browser softphone, dialplan + extensions sourced
-from Contacts/org, and a Go bridge mapping the admin console + softphone WS to
-Asterisk ARI/AMI. Optional deployment (flag-gated). Not started.
+## ✅ PDF editor — underline & strikethrough markup (shipped)
+Added Underline + Strikethrough to `EditorPage.tsx` (drag a region → renders/
+exports a horizontal line via pdf-lib). **Next (mapped):** eraser, line-end
+styles, sticky-note comments, text box w/ border, watermark, redaction flatten,
+page thumbnails sidebar.
 
-## TODO — PDF editor: Acrobat-style toolbar
-Main editor: `pdf/frontend/src/features/editor/pages/EditorPage.tsx` (react-pdf +
-pdf-lib). Current tools: select/text/draw/highlight/rect/ellipse/line/arrow/
-whiteout/image. Add (pattern: tool type → button → mouse handlers → SVG render →
-pdf-lib export):
-- Tier 1: eraser, text underline/strikethrough, line-end styles.
-- Tier 2: sticky-note comments, text box w/ border, pressure-ish freehand.
-- Tier 3: watermark, redaction flatten, page thumbnails sidebar, cloud/callout.
-The annotate path also uses tibui `<PDFEditor>` (`features/documents/EditDocumentPage.tsx`)
-whose `tools` prop can be extended.
+## ✅ Multiplayer game framework + online Tic-Tac-Toe (shipped)
+`internal/gamerooms`: a public, game-agnostic realtime relay — join a room by
+code (shared via link) + optional password; the hub broadcasts JSON messages
+and tracks presence. Account-free (WS bypasses the auth wall), capped, ephemeral.
+Demo game: `/games/multiplayer-tictactoe.html` (create → share link → play).
+**Reusable** for any multiplayer game: client generates a room code, connects to
+`/api/v1/gamerooms/ws?room=&password=&name=`, and relays game-specific messages.
 
-## TODO — Multiplayer game framework (coffeetable pattern)
-Reuse the lightweight realtime architecture from `coffeetable` for a multiplayer
-game with a **join-by-share-link** (room code) and **optional password**. Pattern:
-a signaling/state WS hub keyed by room code (cf. `internal/meet/hub.go`,
-`internal/telephony` hubs), a room table (code + optional password hash + expiry),
-a `/games/<game>?room=<code>` join link, and a thin game client. Generalize so the
-same room+join+password layer serves multiple multiplayer games. The coffeetable
-env "didn't fully work" — salvage its transport/state-sync layer, not its game.
+## ◻️ PBX backend (Asterisk) — foundation laid, disabled
+gitops `clusters/homelab/telephony/` has WebRTC-capable Asterisk manifests +
+baseline config (ws transport, webrtc endpoint template, demo dialplan, ARI, RTP
+range), **intentionally not referenced by the homelab kustomization** so Flux
+doesn't deploy it. See its `RUNBOOK.md`. **Remaining (needs the user's input +
+testing):** real secrets, image pin, RTP networking (cloudflared can't carry
+UDP — needs direct path or TURN), wss ingress, SIP trunk/DIDs, and the grown
+**ARI bridge** (`internal/telephony`) to drive the softphone + admin console
+from live Asterisk state. This is the one item that genuinely can't be finished
+to a working phone system without trunk credentials + live testing.
 
 ## Also noted
 - `docs_shares` lacks an `expires_at` column — add for parity with drive/video
