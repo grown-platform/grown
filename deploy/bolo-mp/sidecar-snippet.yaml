@@ -1,0 +1,36 @@
+# DRAFT — do NOT apply from here. Copy into the gitops repo's grown Deployment.
+#
+# RECOMMENDED shape (see RUNBOOK.md): run the Bolo MP server as a SIDECAR in the
+# grown pod. Because grown is single-replica, grown proxying /bolo-mp/* to
+# 127.0.0.1:6173 gives automatic per-gid stickiness with no Service/Ingress.
+#
+# (1) Add this container to the grown Deployment's spec.template.spec.containers:
+- name: bolo-mp
+  image: code.pick.haus/grown/bolo-mp:<TAG>   # set to the pushed tag/digest
+  imagePullPolicy: IfNotPresent
+  ports:
+    - name: bolo-mp
+      containerPort: 6173
+  env:
+    - name: PORT
+      value: "6173"
+    - name: ROOM_TTL_MS
+      value: "300000"       # GC empty rooms after 5 min
+    - name: MAX_ROOMS
+      value: "200"
+  readinessProbe:
+    httpGet: { path: /healthz, port: 6173 }
+    initialDelaySeconds: 3
+    periodSeconds: 5
+  livenessProbe:
+    httpGet: { path: /healthz, port: 6173 }
+    initialDelaySeconds: 10
+    periodSeconds: 15
+  resources:
+    requests: { cpu: "50m", memory: "64Mi" }
+    limits:   { cpu: "500m", memory: "256Mi" }
+
+# (2) Add this env var to the GROWN container in the same Deployment so its
+#     /bolo-mp/* reverse-proxy targets the sidecar on localhost:
+# - name: GROWN_BOLO_MP_URL
+#   value: "http://127.0.0.1:6173"

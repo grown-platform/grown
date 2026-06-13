@@ -301,6 +301,10 @@ func main() {
 		// whole to Twenty at root. Both empty disables the CRM proxy.
 		CRMURL:  os.Getenv("GROWN_CRM_URL"),
 		CRMHost: os.Getenv("GROWN_CRM_HOST"),
+		// Orona Bolo multiplayer server origin. grown reverse-proxies /bolo-mp/*
+		// to it (WebSocket-capable), stripping the prefix. Empty disables the
+		// proxy (the bolo single-player path is unaffected). e.g. http://127.0.0.1:6173.
+		BoloMpURL: os.Getenv("GROWN_BOLO_MP_URL"),
 		// Cloud Import — upload-based import from Google Takeout and Apple exports.
 		CloudImportRepo:      cloudimport.NewRepository(pool),
 		CloudImportDriveRepo: drive.NewRepository(pool),

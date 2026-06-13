@@ -272,6 +272,11 @@ processes:
       # Admin: comma-separated emails allowed to mutate per-org service toggles.
       # Empty ⇒ any org member may write (dev fallback; see internal/admin TODO).
       - GROWN_ADMIN_EMAILS=${GROWN_ADMIN_EMAILS}
+      # Orona Bolo multiplayer — grown reverse-proxies /bolo-mp/* (WebSocket) to
+      # the authoritative game server, stripping the prefix (/bolo-mp/match/<gid>
+      # -> /match/<gid>). The proxy tolerates the server being down (502 until
+      # bolo-mp is up); the bolo single-player path is unaffected either way.
+      - GROWN_BOLO_MP_URL=http://127.0.0.1:6173
     depends_on:
       postgres-createdb:
         condition: process_completed_successfully
@@ -600,5 +605,43 @@ processes:
     depends_on:
       twenty-server:
         condition: process_healthy
+    availability:
+      restart: on_failure
+
+  # ---------------------------------------------------------------------------
+  # Orona Bolo multiplayer — authoritative WebSocket game server (Milestone 2).
+  # grown reverse-proxies /bolo-mp/* (see GROWN_BOLO_MP_URL on the backend) to
+  # this server's /match/<gid>. It runs the revived BoloServerWorld sim (50Hz
+  # tick) from the _ports/orona checkout. WEBROOT points at grown's integrated
+  # /games/bolo assets so it serves the same client bundle/assets as the SPA.
+  #
+  # BOLO_MP_DIR defaults to a sibling _ports/orona checkout; override if yours
+  # lives elsewhere. The process is optional: if the dir is missing it logs a
+  # hint and exits, and the /bolo-mp proxy simply returns 502 (single-player and
+  # the rest of grown are unaffected).
+  bolo-mp:
+    command: |
+      set -e
+      BOLO_MP_DIR="${BOLO_MP_DIR:-$PROJECT_ROOT/../_ports/orona}"
+      if [ ! -f "$BOLO_MP_DIR/build/mp-server.js" ]; then
+        echo "bolo-mp: server not found at $BOLO_MP_DIR/build/mp-server.js"
+        echo "bolo-mp: set BOLO_MP_DIR to your _ports/orona checkout to enable online Bolo."
+        echo "bolo-mp: (the /bolo-mp proxy will 502 until then; single-player is unaffected)."
+        sleep 2147483647
+      fi
+      cd "$BOLO_MP_DIR/build"
+      export PORT=6173
+      export WEBROOT="$PROJECT_ROOT/web/app/public/games/bolo"
+      export MAP_FILE="$BOLO_MP_DIR/maps/Everard Island.map"
+      exec node mp-server.js
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 6173
+        path: /healthz
+      initial_delay_seconds: 2
+      period_seconds: 2
+      timeout_seconds: 5
+      failure_threshold: 30
     availability:
       restart: on_failure

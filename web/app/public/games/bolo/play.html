@@ -83,6 +83,40 @@
     z-index:60;background:rgba(11,16,32,.85);border:1px solid #2d6b3f;border-radius:10px;
     padding:6px 12px;color:#9fdcb0;font:600 12px system-ui,sans-serif;pointer-events:none;}
   body.touch.building #buildhint{display:block;}
+
+  /* ---- Mode menu (bare play.html: Single Player vs Play Online) ---- */
+  #menu{position:fixed;inset:0;z-index:2147483640;display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;
+    background:radial-gradient(120% 90% at 50% 0%,#16306b 0%,#0a1430 55%,#05070f 100%);}
+  #menu.show{display:flex;}
+  #menu h1{margin:0 0 6px;color:#dbe6ff;font:800 30px system-ui,sans-serif;letter-spacing:1px;
+    text-shadow:0 2px 8px #000;}
+  #menu .sub{color:#9fb4e0;font:500 13px system-ui;margin-top:-6px;margin-bottom:10px;opacity:.85;}
+  .mbtn{width:min(320px,84vw);padding:15px 18px;border-radius:14px;border:1px solid #2c3e6e;
+    background:#16224a;color:#eaf1ff;font:700 16px system-ui,sans-serif;cursor:pointer;
+    display:flex;align-items:center;gap:12px;justify-content:center;}
+  .mbtn:active{background:#2a3e7e;}
+  .mbtn.primary{background:#2563eb;border-color:#3b74ff;}
+  .mbtn.primary:active{background:#1d4fd0;}
+  /* Online room panel (reuses the games' GameMP look). */
+  #onlinePanel{width:min(360px,90vw);background:#0f172a;border:1px solid #243049;
+    border-radius:16px;padding:18px;color:#e8eefc;font:15px/1.5 system-ui,sans-serif;
+    box-shadow:0 18px 50px rgba(0,0,0,.6);display:none;}
+  #onlinePanel.show{display:block;}
+  #onlinePanel h3{margin:0 0 10px;font-size:18px;}
+  #onlinePanel label{display:block;font-size:12px;opacity:.7;margin:8px 0 4px;}
+  #onlinePanel input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #243049;
+    background:#0b1220;color:#e8eefc;font:inherit;box-sizing:border-box;}
+  #onlinePanel .pbtn{width:100%;padding:11px 14px;margin-top:10px;border:0;border-radius:10px;
+    cursor:pointer;font:600 15px system-ui;background:#2563eb;color:#fff;}
+  #onlinePanel .pbtn.ghost{background:transparent;border:1px solid #243049;color:#e8eefc;}
+  #shareBox{display:none;font:13px ui-monospace,monospace;word-break:break-all;
+    background:#0b1220;border:1px solid #243049;border-radius:8px;padding:8px;margin:10px 0;}
+  #onlineStatus{min-height:18px;font-size:13px;opacity:.85;margin:6px 0;}
+  .teamrow{display:flex;gap:10px;margin-top:6px;}
+  .teamrow label{display:flex;align-items:center;gap:6px;margin:0;opacity:1;cursor:pointer;
+    padding:8px 12px;border:1px solid #243049;border-radius:10px;flex:1;justify-content:center;}
+  .teamrow input{width:auto;}
 </style>
 </head>
 <body>
@@ -121,6 +155,31 @@
     </div>
   </div>
 
+  <!-- Mode chooser (bare play.html). Hidden once a mode is selected. -->
+  <div id="menu">
+    <h1>BOLO</h1>
+    <div class="sub">Classic tank warfare on Everard Island</div>
+    <button class="mbtn primary" id="btn-solo">🎮 Single Player</button>
+    <button class="mbtn" id="btn-online">👥 Play Online</button>
+
+    <div id="onlinePanel">
+      <h3 id="onlineTitle">Play Bolo online</h3>
+      <label for="onlineNick">Your nickname</label>
+      <input id="onlineNick" maxlength="20" autocomplete="off">
+      <label>Team</label>
+      <div class="teamrow">
+        <label><input type="radio" name="oteam" value="red" checked> 🔴 Red</label>
+        <label><input type="radio" name="oteam" value="blue"> 🔵 Blue</label>
+      </div>
+      <div id="shareBox"></div>
+      <div id="onlineStatus"></div>
+      <button class="pbtn" id="onlineCreate">Create game &amp; get link</button>
+      <button class="pbtn" id="onlineJoin" style="display:none">Join game</button>
+      <button class="pbtn ghost" id="onlineCopy" style="display:none">Copy link</button>
+      <button class="pbtn ghost" id="onlineBack">Back</button>
+    </div>
+  </div>
+
   <a id="backpill" href="/games" aria-label="Back to games">
     <svg viewBox="0 0 24 24"><path d="M15.5 19l-7-7 7-7 1.4 1.4L11.3 12l5.6 5.6z"/></svg>
     <span>Games</span>
@@ -131,69 +190,211 @@
   <script src="vendor/jquery-3.7.1.min.js"></script>
   <script src="js/jquery.cookie.js"></script>
   <script src="vendor/jquery-ui-1.13.2.min.js"></script>
-  <script src="js/bolo-bundle.js"></script>
+
+  <!-- ===================================================================
+       MODE ROUTER (runs BEFORE the bundle so we can pick local vs network
+       and configure the multiplayer WS URL before the world is constructed).
+
+         play.html?local         -> single-player (BoloLocalWorld)
+         play.html?gid=<20 letters> -> online: join that room
+         play.html  (bare)        -> show the Single Player / Play Online menu
+
+       The Orona bundle's index.js selects its exported world at load time from
+       location.search (=="?local" -> local world, else network world). So we
+       only load the bundle once a mode is locked in:
+         - solo: ensure ?local is present (the original behavior).
+         - online: ensure search is ?gid=<...> (network world) and set
+           window.__BOLO_WS_URL to grown's reverse-proxied /bolo-mp endpoint
+           (the bundle uses it verbatim — patched in bolo-bundle.js#loaded).
+       =================================================================== -->
   <script>
+  (function () {
+    var qs = new URLSearchParams(location.search);
+    var GID_RE = /^[a-z]{20}$/;
+
+    function gidNew() {
+      var s = "abcdefghijklmnopqrstuvwxyz", out = "", a = new Uint8Array(20);
+      crypto.getRandomValues(a);
+      for (var i = 0; i < 20; i++) out += s[a[i] % 26];
+      return out;
+    }
+    var ADJ = ["Swift","Brave","Clever","Lucky","Mighty","Sly","Witty","Bold","Cosmic","Turbo","Sneaky","Jolly","Nimble","Fuzzy","Zippy","Rad"];
+    var ANIMAL = ["Otter","Fox","Panda","Falcon","Tiger","Koala","Wolf","Lynx","Raven","Gecko","Moose","Heron","Badger","Orca","Yak","Wombat"];
+    function suggestName() {
+      function pick(a){ var b=new Uint8Array(1); crypto.getRandomValues(b); return a[b[0]%a.length]; }
+      var n=new Uint8Array(1); crypto.getRandomValues(n);
+      return (pick(ADJ)+pick(ANIMAL)+(10+(n[0]%90))).slice(0,20);
+    }
+
+    // grown reverse-proxies the Orona MP server under /bolo-mp/ (WS-capable). On
+    // HTTPS the page is wss://, on http it's ws://. The room id (gid) maps to the
+    // server's /match/<gid> endpoint -> /bolo-mp/match/<gid> through grown.
+    function wsUrlFor(gid) {
+      var proto = location.protocol === "https:" ? "wss://" : "ws://";
+      return proto + location.host + "/bolo-mp/match/" + gid;
+    }
+
+    var gidParam = qs.get("gid") || qs.get("room");
+
+    // --- Decide the mode ----------------------------------------------------
+    if (location.search.indexOf("local") !== -1) {
+      // SINGLE PLAYER — fall through to the boot script (mode = local).
+      window.__BOLO_MODE = "local";
+      bootBundle();
+    } else if (gidParam && GID_RE.test(gidParam)) {
+      // ONLINE — join the given room. Configure the WS URL, then boot the
+      // network world. We must ensure location.search is NOT "?local" so the
+      // bundle exports the network world; "?gid=<...>" already satisfies that.
+      window.__BOLO_MODE = "online";
+      window.__BOLO_WS_URL = wsUrlFor(gidParam);
+      window.__BOLO_NICK = qs.get("nick") || "";
+      window.__BOLO_TEAM = qs.get("team") || "red";
+      bootBundle();
+    } else {
+      // BARE — show the menu.
+      showMenu();
+    }
+
+    function bootBundle() {
+      var s = document.createElement("script");
+      s.src = "js/bolo-bundle.js";
+      document.body.appendChild(s);
+    }
+
+    // --- Menu UI ------------------------------------------------------------
+    function showMenu() {
+      var menu = document.getElementById("menu");
+      var panel = document.getElementById("onlinePanel");
+      var status = document.getElementById("status");
+      if (status) status.style.display = "none";
+      menu.classList.add("show");
+
+      document.getElementById("btn-solo").onclick = function () {
+        location.replace(location.pathname + "?local");
+      };
+      document.getElementById("btn-online").onclick = function () {
+        panel.classList.add("show");
+        document.getElementById("btn-solo").style.display = "none";
+        document.getElementById("btn-online").style.display = "none";
+        var nick = document.getElementById("onlineNick");
+        if (!nick.value) nick.value = suggestName();
+      };
+      document.getElementById("onlineBack").onclick = function () {
+        location.replace(location.pathname); // back to the menu
+      };
+
+      var nickEl = document.getElementById("onlineNick");
+      var statusEl = document.getElementById("onlineStatus");
+      var shareBox = document.getElementById("shareBox");
+      var createBtn = document.getElementById("onlineCreate");
+      var copyBtn = document.getElementById("onlineCopy");
+
+      function team() {
+        var r = document.querySelector('input[name="oteam"]:checked');
+        return r ? r.value : "red";
+      }
+      function go(gid) {
+        var u = location.pathname + "?gid=" + gid +
+          "&nick=" + encodeURIComponent(nickEl.value || suggestName()) +
+          "&team=" + team();
+        location.assign(u);
+      }
+
+      createBtn.onclick = function () {
+        var gid = gidNew();
+        var link = location.origin + location.pathname + "?gid=" + gid;
+        shareBox.style.display = "block";
+        shareBox.textContent = link;
+        copyBtn.style.display = "block";
+        statusEl.textContent = "Share this link, then click Start to enter the game.";
+        createBtn.textContent = "Start game →";
+        createBtn.onclick = function () { go(gid); };
+        copyBtn.onclick = function () {
+          if (navigator.clipboard) navigator.clipboard.writeText(link);
+          copyBtn.textContent = "Copied!";
+        };
+      };
+    }
+  })();
+  </script>
+
+  <!-- ===================================================================
+       BOOT + CONTROLS — runs after the bundle is appended. The bundle defines
+       window.BoloClient (local or network world per the mode router above).
+       =================================================================== -->
+  <script>
+  window.addEventListener("DOMContentLoaded", function () { /* ensure DOM ready */ });
   (function () {
     var statusEl = document.getElementById("status");
     function setStatus(t){ if(!statusEl) return; if(t){ statusEl.textContent=t; statusEl.style.display=""; } else { statusEl.style.display="none"; } }
 
-    // Force the single-player local world: Orona's index.coffee selects
-    // BoloLocalWorld only when location.search === "?local". play.html may be
-    // opened without that query, so normalise it before the bundle's world runs.
-    // (The bundle's exported global already resolved at load; but the world is
-    // constructed here, and BoloLocalWorld is what we boot explicitly.)
-
-    // --- Boot Orona single-player ----------------------------------------
-    // esbuild exposed src/client/index.js's module.exports as global BoloClient.
-    // With ?local that export is BoloLocalWorld. To be robust regardless of the
-    // URL query, we ensure ?local is present (reload once if missing) so the
-    // bundle's top-level mode check picks the local world.
-    if (location.search.indexOf("local") === -1) {
-      var u = location.pathname + "?local" + location.hash;
-      location.replace(u);
-      return;
+    // Wait for the bundle (appended dynamically by the mode router) to define
+    // window.BoloClient, then construct + start the world for the chosen mode.
+    function whenBundleReady(fn) {
+      if (!window.__BOLO_MODE) return; // bare menu: nothing to boot
+      var tries = 0;
+      var t = setInterval(function () {
+        if (window.BoloClient && window.jQuery) { clearInterval(t); fn(); }
+        else if (++tries > 600) { clearInterval(t); setStatus("Failed to load Bolo"); }
+      }, 25);
     }
 
-    $(function () {
-      try {
-        var World = window.BoloClient;
-        window.world = new World();
-        window.world.start();
-        window.__boloStarted = true;
-        // Orona appends its canvas + HUD straight to <body>. Re-home them into
-        // the game region so the touchbar can sit below without overlapping.
-        // It draws async after resource load; poll briefly for the canvas.
-        var tries = 0;
-        var homeTimer = setInterval(function () {
-          var area = document.getElementById("gamearea");
-          var canvas = document.querySelector("body > canvas");
-          if (canvas) {
-            // Move the canvas and any HUD root(s) Orona appended to body.
-            area.appendChild(canvas);
-            // Orona's HUD is a bare <div> appended to body; move stray body divs
-            // that aren't our own chrome into the game area too.
-            Array.prototype.slice.call(document.querySelectorAll("body > div"))
-              .forEach(function (d) {
-                if (d.id === "wrap" || d.id === "backpill" || d.id === "credit") return;
-                area.appendChild(d);
-              });
-            setStatus("");
-            clearInterval(homeTimer);
-            // Nudge Orona to resize the canvas to the game region.
-            sizeCanvasToArea();
-          } else if (++tries > 120) {
-            clearInterval(homeTimer);
+    whenBundleReady(function () {
+      $(function () {
+        try {
+          var World = window.BoloClient;
+          window.world = new World();
+          window.world.start();
+          window.__boloStarted = true;
+
+          // ONLINE: auto-fill + submit the join dialog from the URL (nick/team),
+          // exactly mirroring the human flow (same as the M1 mp.html harness).
+          if (window.__BOLO_MODE === "online" && window.__BOLO_NICK) {
+            var jt = 0;
+            var ji = setInterval(function () {
+              var d = document.getElementById("join-dialog");
+              if (d) {
+                try {
+                  $("#join-nick-field").val(window.__BOLO_NICK);
+                  var team = window.__BOLO_TEAM || "red";
+                  $("#join-team-" + team).prop("checked", true).attr("checked", "checked").trigger("change");
+                  $("#join-submit").trigger("click");
+                } catch (e) {}
+                clearInterval(ji);
+              } else if (++jt > 600) { clearInterval(ji); }
+            }, 25);
           }
-        }, 50);
-      } catch (e) {
-        window.__boloError = String((e && e.stack) || e);
-        setStatus("Failed to start Bolo");
-        var pre = document.createElement("pre");
-        pre.style.cssText = "color:#f88;white-space:pre-wrap;padding:12px;font:12px monospace;";
-        pre.textContent = window.__boloError;
-        document.getElementById("gamearea").appendChild(pre);
-        throw e;
-      }
+
+          // Orona appends its canvas + HUD straight to <body>. Re-home them into
+          // the game region so the touchbar can sit below without overlapping.
+          var tries = 0;
+          var homeTimer = setInterval(function () {
+            var area = document.getElementById("gamearea");
+            var canvas = document.querySelector("body > canvas");
+            if (canvas) {
+              area.appendChild(canvas);
+              Array.prototype.slice.call(document.querySelectorAll("body > div"))
+                .forEach(function (d) {
+                  if (d.id === "wrap" || d.id === "backpill" || d.id === "credit" || d.id === "menu") return;
+                  area.appendChild(d);
+                });
+              setStatus("");
+              clearInterval(homeTimer);
+              sizeCanvasToArea();
+            } else if (++tries > 120) {
+              clearInterval(homeTimer);
+            }
+          }, 50);
+        } catch (e) {
+          window.__boloError = String((e && e.stack) || e);
+          setStatus("Failed to start Bolo");
+          var pre = document.createElement("pre");
+          pre.style.cssText = "color:#f88;white-space:pre-wrap;padding:12px;font:12px monospace;";
+          pre.textContent = window.__boloError;
+          document.getElementById("gamearea").appendChild(pre);
+          throw e;
+        }
+      });
     });
 
     // Orona's renderer sizes its canvas to window.innerWidth/innerHeight on
@@ -207,8 +408,6 @@
       var r = area.getBoundingClientRect();
       var w = Math.max(1, Math.round(r.width));
       var h = Math.max(1, Math.round(r.height));
-      // Orona reads window.innerWidth/innerHeight in handleResize; temporarily
-      // shim them so the canvas matches the (shorter) game region, then restore.
       var ow = Object.getOwnPropertyDescriptor(window, "innerWidth");
       var oh = Object.getOwnPropertyDescriptor(window, "innerHeight");
       try {
@@ -227,12 +426,6 @@
     // ===================================================================
     // Touch controls
     // ===================================================================
-    // Orona is keyboard-driven. Its client binds keydown/keyup on #input-dummy,
-    // the renderer canvas, and '#tool-select label', reading e.which. We
-    // dispatch synthetic KeyboardEvents at #input-dummy (the element it focuses)
-    // matching its real single-player bindings (src/client/world/local.coffee):
-    //   Space(32)=fire  ←(37)=turn CCW  ↑(38)=forward  →(39)=turn CW
-    //   ↓(40)=brake/reverse  Z(90)=range+  X(88)=range-   (Z/X handled in mixin)
     var KEYMAP = {
       "ArrowLeft":  { key:"ArrowLeft",  keyCode:37 },
       "ArrowRight": { key:"ArrowRight", keyCode:39 },
@@ -266,7 +459,6 @@
     var isTouch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || ("ontouchstart" in window);
     if (isTouch) document.body.classList.add("touch");
 
-    // Hold-to-repeat tank buttons (keydown on press, keyup on release).
     function bindHold(el) {
       var code = el.getAttribute("data-code");
       if (!code) return;
@@ -283,12 +475,6 @@
     Array.prototype.forEach.call(document.querySelectorAll("#touchbar .tbtn[data-code]"), bindHold);
 
     // -------- Builder palette --------
-    // Orona's build UI: a tool is armed by clicking a radio in #tool-select,
-    // then clicking the canvas calls renderer.handleClick → checkBuildOrder →
-    // buildOrder (src/client/renderer/base.coffee:135, world/local.coffee:64).
-    // On touch we (a) click the matching #tool-<name> radio to arm @currentTool,
-    // then (b) on the next map tap, set the renderer's @mouse via a mousemove and
-    // fire a click on the canvas at that point — exactly the inputs Orona reads.
     var armedTool = null;
     function clearArmed() {
       armedTool = null;
@@ -296,14 +482,9 @@
       Array.prototype.forEach.call(document.querySelectorAll("#buildrow .tbtn"), function (b){ b.classList.remove("on"); });
     }
     function armTool(name, btn) {
-      // Orona builds the tool radios as #tool-forest/#tool-road/#tool-building/
-      // #tool-pillbox/#tool-mine and toggles @currentTool on their click.
       var radio = document.getElementById("tool-" + name);
       if (!radio) return; // HUD not ready yet
       var wasArmed = armedTool === name;
-      // Reflect desired state: clicking the radio toggles currentTool in Orona.
-      // We mirror Orona's own toggle semantics: a second arm of the same tool
-      // disarms it.
       $(radio).trigger("click");
       Array.prototype.forEach.call(document.querySelectorAll("#buildrow .tbtn"), function (b){ b.classList.remove("on"); });
       if (wasArmed) {
@@ -322,15 +503,9 @@
       btn.addEventListener("mousedown", tap);
     });
 
-    // Map tap → build at that tile (only meaningful while a tool is armed).
-    // We forward the tap as the mousemove+click pair Orona's renderer consumes.
     function forwardMapClick(clientX, clientY) {
       var canvas = document.querySelector("#gamearea canvas");
       if (!canvas) return;
-      var rect = canvas.getBoundingClientRect();
-      // Orona reads e.pageX/e.pageY in its mousemove handler (sets @mouse) and
-      // getCellAtScreen subtracts the camera view origin — these are page coords
-      // relative to the canvas which now fills #gamearea at the area's offset.
       var pageX = clientX + window.scrollX;
       var pageY = clientY + window.scrollY;
       function fire(type) {
@@ -345,22 +520,18 @@
         try { Object.defineProperty(ev, "pageX", { value: pageX }); Object.defineProperty(ev, "pageY", { value: pageY }); } catch (e) {}
         canvas.dispatchEvent(ev);
       }
-      fire("mousemove"); // sets renderer @mouse = [pageX, pageY]
-      fire("click");     // triggers handleClick → build order
+      fire("mousemove");
+      fire("click");
     }
     document.getElementById("gamearea").addEventListener("touchstart", function (e) {
-      if (!armedTool) return;            // only intercept taps when building
+      if (!armedTool) return;
       if (!e.touches || !e.touches.length) return;
       var t = e.touches[0];
-      // Ignore taps that landed on our own chrome.
       if (t.target && (t.target.closest && t.target.closest("#backpill,#touchbar"))) return;
       e.preventDefault();
       forwardMapClick(t.clientX, t.clientY);
     }, { passive:false });
 
-    // Keep desktop keyboard working: Orona listens on #input-dummy/canvas. Make
-    // sure that element keeps focus after the user taps the game (touch) so the
-    // physical keyboard still drives the tank on hybrid devices.
     document.getElementById("gamearea").addEventListener("pointerdown", function () {
       var inp = document.getElementById("input-dummy");
       if (inp && !armedTool) try { inp.focus(); } catch (e) {}

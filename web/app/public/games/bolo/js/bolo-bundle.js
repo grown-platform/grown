@@ -5800,18 +5800,29 @@ To see multiplayer in action, follow instructions on Github.`).css({
           }
           // Callback after resources have been loaded.
           loaded(vignette) {
-            var m, path, ws;
+            var m, path, url, ws;
             this.vignette = vignette;
             this.vignette.message("Connecting to the multiplayer game");
             this.heartbeatTimer = 0;
-            if (m = /^\?([a-z]{20})$/.exec(location.search)) {
-              path = `/match/${m[1]}`;
-            } else if (location.search) {
-              return this.vignette.message("Invalid game ID");
+            // grown integration: play.html (online mode) sets a full ws(s):// URL
+            // in window.__BOLO_WS_URL pointing at grown's reverse-proxied
+            // /bolo-mp/match/<gid> endpoint (wss:// on HTTPS). When present we use
+            // it verbatim; otherwise fall back to the original same-origin scheme
+            // (?<gid> -> /match/<gid>, bare -> /demo) used by the standalone M1
+            // server. This keeps the M1 smoke-test path working unchanged.
+            if (typeof window !== "undefined" && window.__BOLO_WS_URL) {
+              url = window.__BOLO_WS_URL;
             } else {
-              path = "/demo";
+              if (m = /^\?([a-z]{20})$/.exec(location.search)) {
+                path = `/match/${m[1]}`;
+              } else if (location.search) {
+                return this.vignette.message("Invalid game ID");
+              } else {
+                path = "/demo";
+              }
+              url = `ws://${location.host}${path}`;
             }
-            this.ws = new WebSocket(`ws://${location.host}${path}`);
+            this.ws = new WebSocket(url);
             ws = $(this.ws);
             ws.one("open.bolo", () => {
               return this.connected();

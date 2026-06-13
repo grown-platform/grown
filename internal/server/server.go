@@ -230,6 +230,15 @@ type Config struct {
 	CRMURL  string
 	CRMHost string
 
+	// BoloMpURL is the internal origin of the Orona Bolo multiplayer server
+	// (e.g. http://127.0.0.1:6173). grown reverse-proxies /bolo-mp/* to it,
+	// stripping the /bolo-mp prefix (so /bolo-mp/match/<gid> -> /match/<gid>).
+	// The endpoint is a WebSocket game server; Go's httputil.ReverseProxy
+	// forwards the Connection: Upgrade handshake and streams the WS unbuffered.
+	// Like the game-room relay it is link-gated, not account-gated, so it
+	// bypasses grown's auth middleware. Empty disables the proxy.
+	BoloMpURL string
+
 	// StaticDir is the path to the built React SPA. Empty disables static
 	// serving (API-only mode for tests).
 	StaticDir string
@@ -1219,6 +1228,14 @@ func New(cfg Config) *Server {
 	// auth middleware (like the PDF proxies).
 	crmProxy := newReverseProxy(cfg.CRMURL)
 
+	// Orona Bolo multiplayer (authoritative WS game server) reverse proxy.
+	// /bolo-mp/* → the Bolo MP server with the /bolo-mp prefix stripped, so the
+	// browser opens wss://<grown-host>/bolo-mp/match/<gid> and it reaches the
+	// server's /match/<gid>. httputil.ReverseProxy forwards the WebSocket
+	// Upgrade handshake and switches to unbuffered byte streaming on the 101,
+	// so the 50Hz sim deltas pass through. Public/link-gated (no grown account).
+	boloMpProxy := newStripPrefixProxy(cfg.BoloMpURL, "/bolo-mp")
+
 	// ---- Cloud Import (plain HTTP, no gRPC) ----------------------------------
 	// Wire concrete app-repo closures into cloudimport via the injected-interface
 	// pattern so cloudimport has no import-time dependency on internal/calendar,
@@ -1671,6 +1688,13 @@ func New(cfg Config) *Server {
 		// it must bypass the auth wall (its access control is code + password).
 		if gameRoomsHTTP.Match(r.URL.Path) {
 			gameRoomsHTTP.ServeHTTP(w, r)
+			return
+		}
+		// Bolo multiplayer (Orona authoritative WS server) — reverse-proxied at
+		// /bolo-mp/*. Link-gated (a 20-letter gid in the URL), no grown account,
+		// so it bypasses the auth wall just like the game-room relay.
+		if boloMpProxy != nil && strings.HasPrefix(r.URL.Path, "/bolo-mp/") {
+			boloMpProxy.ServeHTTP(w, r)
 			return
 		}
 		// Public ticket intake (/api/v1/public/tickets/{token}) — unauthenticated
