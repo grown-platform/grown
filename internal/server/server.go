@@ -40,6 +40,7 @@ import (
 	"code.pick.haus/grown/grown/internal/email"
 	"code.pick.haus/grown/grown/internal/eventmeet"
 	"code.pick.haus/grown/grown/internal/forms"
+	"code.pick.haus/grown/grown/internal/gamerooms"
 	"code.pick.haus/grown/grown/internal/games"
 	"code.pick.haus/grown/grown/internal/groups"
 	"code.pick.haus/grown/grown/internal/health"
@@ -853,6 +854,11 @@ func New(cfg Config) *Server {
 		)
 	}
 
+	// Public multiplayer game-room relay: players join a room by code (shared
+	// via link) + optional password; the hub broadcasts messages between them.
+	// Game-agnostic and account-free, so any game can be made multiplayer.
+	gameRoomsHTTP := gamerooms.NewHTTPHandler(gamerooms.NewHub())
+
 	// Per-IP API rate limiting (outermost), with a stricter bucket on the auth
 	// endpoints to blunt credential stuffing. Tunable via GROWN_RATELIMIT_*.
 	rateLimiter := ratelimit.FromEnv()
@@ -1625,6 +1631,12 @@ func New(cfg Config) *Server {
 		// Cloud Import — multipart upload + job-status polling (auth-wrapped).
 		if cloudImportHandler != nil && strings.HasPrefix(r.URL.Path, "/api/v1/import") {
 			driveAuthWrap(cloudImportHandler).ServeHTTP(w, r)
+			return
+		}
+		// Public game-room WS relay — joinable by link, no workspace account, so
+		// it must bypass the auth wall (its access control is code + password).
+		if gameRoomsHTTP.Match(r.URL.Path) {
+			gameRoomsHTTP.ServeHTTP(w, r)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/healthz" {
