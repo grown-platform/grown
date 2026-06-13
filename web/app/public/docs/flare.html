@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Flare — Grown Workspace docs</title>
+<meta name="description" content="Flare (coming soon): an open Cloudflare-style edge for self-hosters — secure tunnels, DNS management, and WireGuard mesh tunnels to sync platforms together." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Admin &amp; infrastructure / Flare</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🔥</div>
+  <span class="badge">Admin &amp; infrastructure · <span class="tag soon">coming soon</span></span>
+  <h1>Flare</h1>
+  <p>An open, self-hosted Cloudflare-style edge — secure tunnels and DNS management
+     you run yourself, plus WireGuard mesh tunnels that let multiple platforms find
+     and sync with each other.</p>
+</div></header>
+
+<section><div class="wrap">
+  <h2>What Flare will be</h2>
+  <p class="lead">Today a self-hosted stack often leans on Cloudflare for the edge —
+     a tunnel to expose services without opening ports, and DNS to point names at
+     them. Flare brings that capability in-house and open: <strong>your own tunnels,
+     your own DNS, your own mesh</strong> — no third party in the path.</p>
+  <ul class="feat">
+    <li><b>Secure tunnels.</b> A cloudflared-style outbound tunnel: expose a service to the internet without opening inbound ports or running a public load balancer. The agent dials out; traffic rides the tunnel back to your cluster.</li>
+    <li><b>DNS management.</b> Create and manage the DNS records that point hostnames at your tunnels — the same "add a public hostname and it just resolves" flow, self-hosted.</li>
+    <li><b>WireGuard mesh.</b> Connect multiple self-hosted platforms over fast, encrypted <b>WireGuard</b> tunnels so they can reach each other privately.</li>
+    <li><b>Platform-to-platform sync.</b> The mesh is the substrate for syncing between instances — e.g. an <a href="/docs/orgsync.html">Org Sync</a> transfer or a reciprocal encrypted backup running over a private WireGuard link between two friends' Grown deployments, instead of over the public internet.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Why it matters</h2>
+  <p class="lead">Self-hosting shouldn't mean depending on a hyperscaler for the
+     network edge. Flare keeps the tunnel, the DNS, and the inter-platform mesh under
+     your control — and turns "two separate instances" into "two instances that can
+     securely talk and sync," which is what makes a federation of Grown deployments
+     practical.</p>
+  <dl class="kv">
+    <dt>Status</dt><dd>Planned — not yet available.</dd>
+    <dt>Category</dt><dd>Admin &amp; infrastructure</dd>
+    <dt>Builds on</dt><dd>WireGuard, tunneling, DNS</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.<br /><strong>Want Flare sooner, or have ideas for it? <a href="https://github.com/grown-platform/grown/issues/new">Open an issue</a> and we will get it grown 🌱</strong>
+</div></footer>
+
+</body>
+</html>
