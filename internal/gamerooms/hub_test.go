@@ -9,7 +9,7 @@ func TestRoomPasswordGating(t *testing.T) {
 		t.Fatal("new room should be allowed")
 	}
 	// Create the room.
-	if _, ok := h.join("ABC123", "secret"); !ok {
+	if _, ok := h.join("ABC123", "secret", "", false); !ok {
 		t.Fatal("join should create the room")
 	}
 	// Correct password passes; wrong fails.
@@ -19,7 +19,7 @@ func TestRoomPasswordGating(t *testing.T) {
 	if h.PasswordOK("ABC123", "nope") {
 		t.Error("wrong password should fail")
 	}
-	if _, ok := h.join("ABC123", "nope"); ok {
+	if _, ok := h.join("ABC123", "nope", "", false); ok {
 		t.Error("join with wrong password should fail")
 	}
 	if !h.RoomExists("ABC123") {

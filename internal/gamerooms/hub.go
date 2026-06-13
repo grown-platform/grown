@@ -32,6 +32,18 @@ type room struct {
 	mu       sync.Mutex
 	password string
 	peers    map[string]*peer
+	game     string    // display name, for the public lobby
+	listed   bool      // discoverable in the open-games lobby
+	created  time.Time // for lobby age display
+}
+
+// RoomInfo is a public-lobby summary of an open room.
+type RoomInfo struct {
+	Code        string `json:"code"`
+	Game        string `json:"game"`
+	Players     int    `json:"players"`
+	HasPassword bool   `json:"has_password"`
+	AgeSec      int64  `json:"age_sec"`
 }
 
 // Hub holds all active rooms.
@@ -45,7 +57,7 @@ func NewHub() *Hub { return &Hub{rooms: map[string]*room{}} }
 
 // join resolves (creating if new) the room for code. Returns ok=false when the
 // room exists with a different password, or the room cap is hit.
-func (h *Hub) join(code, password string) (*room, bool) {
+func (h *Hub) join(code, password, game string, listed bool) (*room, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	r, ok := h.rooms[code]
@@ -53,7 +65,7 @@ func (h *Hub) join(code, password string) (*room, bool) {
 		if len(h.rooms) >= maxRooms {
 			return nil, false
 		}
-		r = &room{password: password, peers: map[string]*peer{}}
+		r = &room{password: password, peers: map[string]*peer{}, game: game, listed: listed, created: time.Now()}
 		h.rooms[code] = r
 		return r, true
 	}
@@ -61,6 +73,25 @@ func (h *Hub) join(code, password string) (*room, bool) {
 		return nil, false
 	}
 	return r, true
+}
+
+// List returns open, discoverable rooms (someone waiting, not full) for the
+// public lobby so players on the same instance can find a game without a link.
+func (h *Hub) List() []RoomInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]RoomInfo, 0, len(h.rooms))
+	for code, r := range h.rooms {
+		r.mu.Lock()
+		n := len(r.peers)
+		info := RoomInfo{Code: code, Game: r.game, Players: n, HasPassword: r.password != "", AgeSec: int64(time.Since(r.created).Seconds())}
+		listed := r.listed
+		r.mu.Unlock()
+		if listed && n >= 1 && n < maxPeersPerRoom {
+			out = append(out, info)
+		}
+	}
+	return out
 }
 
 func (h *Hub) cleanup(code string, r *room) {
@@ -97,8 +128,8 @@ func (h *Hub) PasswordOK(code, password string) bool {
 
 // Serve runs the relay loop for one connected player. The caller has already
 // validated the password.
-func (h *Hub) Serve(w http.ResponseWriter, req *http.Request, code, password, peerID, name string) {
-	cr, ok := h.join(code, password)
+func (h *Hub) Serve(w http.ResponseWriter, req *http.Request, code, password, peerID, name, game string, listed bool) {
+	cr, ok := h.join(code, password, game, listed)
 	if !ok {
 		http.Error(w, "room full or password mismatch", http.StatusForbidden)
 		return

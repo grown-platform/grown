@@ -68,6 +68,7 @@ import (
 	"code.pick.haus/grown/grown/internal/slides"
 	"code.pick.haus/grown/grown/internal/tasks"
 	"code.pick.haus/grown/grown/internal/telephony"
+	"code.pick.haus/grown/grown/internal/tickets"
 	"code.pick.haus/grown/grown/internal/useravatar"
 	"code.pick.haus/grown/grown/internal/users"
 	"code.pick.haus/grown/grown/internal/video"
@@ -857,7 +858,35 @@ func New(cfg Config) *Server {
 	// Public multiplayer game-room relay: players join a room by code (shared
 	// via link) + optional password; the hub broadcasts messages between them.
 	// Game-agnostic and account-free, so any game can be made multiplayer.
-	gameRoomsHTTP := gamerooms.NewHTTPHandler(gamerooms.NewHub())
+	gameRoomsHub := gamerooms.NewHub()
+	gameRoomsHTTP := gamerooms.NewHTTPHandler(gameRoomsHub)
+
+	// Ticketing service (Jira-like): authenticated project/ticket management plus
+	// an unauthenticated public intake surface for projects that opt into it.
+	ticketsRepo := tickets.NewRepository(cfg.Pool)
+	var ticketsHTTP *tickets.HTTPHandler
+	var ticketsPublicHTTP *tickets.PublicHandler
+	if ticketsRepo != nil {
+		ticketsHTTP = tickets.NewHTTPHandler(ticketsRepo, tickets.AuthFuncs{
+			UserID: func(r *http.Request) (string, bool) {
+				u, ok := auth.UserFromContext(r.Context())
+				if !ok {
+					return "", false
+				}
+				return u.ID, true
+			},
+			OrgID: func(r *http.Request) (string, bool) {
+				o, ok := auth.OrgFromContext(r.Context())
+				if !ok {
+					return "", false
+				}
+				return o.ID, true
+			},
+			UserName:  func(r *http.Request) string { u, _ := auth.UserFromContext(r.Context()); return u.DisplayName },
+			UserEmail: func(r *http.Request) string { u, _ := auth.UserFromContext(r.Context()); return u.Email },
+		})
+		ticketsPublicHTTP = tickets.NewPublicHandler(ticketsRepo)
+	}
 
 	// Per-IP API rate limiting (outermost), with a stricter bucket on the auth
 	// endpoints to blunt credential stuffing. Tunable via GROWN_RATELIMIT_*.
@@ -1611,6 +1640,11 @@ func New(cfg Config) *Server {
 			driveAuthWrap(orgSyncHTTP).ServeHTTP(w, r)
 			return
 		}
+		// Ticketing service (/api/v1/tickets/*) — auth-wrapped project/ticket API.
+		if ticketsHTTP != nil && ticketsHTTP.Match(r.URL.Path) {
+			driveAuthWrap(ticketsHTTP).ServeHTTP(w, r)
+			return
+		}
 		// Telephony call-logging surface — auth-wrapped, pure HTTP.
 		if telephonyCalls != nil {
 			if telephonyCalls.Match(r.URL.Path) {
@@ -1637,6 +1671,12 @@ func New(cfg Config) *Server {
 		// it must bypass the auth wall (its access control is code + password).
 		if gameRoomsHTTP.Match(r.URL.Path) {
 			gameRoomsHTTP.ServeHTTP(w, r)
+			return
+		}
+		// Public ticket intake (/api/v1/public/tickets/{token}) — unauthenticated
+		// submission for projects that opted into a public intake link.
+		if ticketsPublicHTTP != nil && ticketsPublicHTTP.Match(r.URL.Path) {
+			ticketsPublicHTTP.ServeHTTP(w, r)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/healthz" {
