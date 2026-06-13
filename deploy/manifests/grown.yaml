@@ -1,0 +1,843 @@
+---
+# Source: grown/templates/zitadel-provision.yaml
+# RBAC for the provisioning Job to create/patch the OIDC client secret.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grown-zitadel-provision
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: zitadel-provision
+---
+# Source: grown/templates/minio.yaml
+# Bundled MinIO (S3-compatible object storage). grown's GROWN_RUSTFS_* point at
+# the MinIO Service. A bucket-init Job (post-install hook) creates the buckets.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grown-minio
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: minio
+type: Opaque
+stringData:
+  MINIO_ROOT_USER: "grown"
+  MINIO_ROOT_PASSWORD: "DevPassword!1"
+---
+# Source: grown/templates/oidc-secret.yaml
+# Bundled OIDC: seed a placeholder secret so grown's secretKeyRef resolves on
+# first boot. The zitadel-provision Job overwrites client-id/client-secret with
+# the real Zitadel-issued values once Zitadel is up. grown's readiness probe
+# keeps the pod out of rotation until OIDC is actually configured.
+#
+# helm.sh/resource-policy keeps it from being clobbered on upgrade; the Job
+# owns the real values.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grown-zitadel-secret
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: oidc
+  annotations:
+    "helm.sh/resource-policy": keep
+type: Opaque
+stringData:
+  client-id: "CHANGE_ME"
+  client-secret: "CHANGE_ME"
+---
+# Source: grown/templates/postgres.yaml
+# Bundled Postgres — a plain StatefulSet (NOT CNPG, so no operator required).
+# Creates the grown DB plus any postgres.extraDatabases (zitadel, pdf).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grown-postgres
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: postgres
+type: Opaque
+stringData:
+  POSTGRES_USER: "grown"
+  POSTGRES_PASSWORD: "DevPassword!1"
+  POSTGRES_DB: "grown"
+---
+# Source: grown/templates/s3-secret.yaml
+# S3 connection secret grown reads (mirrors the homelab grown-s3 secret shape).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grown-s3
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: s3
+type: Opaque
+stringData:
+  endpoint: "http://grown-minio.grown.svc.cluster.local:9000"
+  access_key: "grown"
+  secret_key: "DevPassword!1"
+  bucket: "grown-default"
+---
+# Source: grown/templates/zitadel.yaml
+# Bundled Zitadel (OIDC provider). One Deployment running `start-from-init`,
+# which runs init + setup (first-instance admin + bootstrap service account +
+# PAT) and then starts the server. The bootstrap PAT is written to a shared
+# emptyDir-backed file that the provisioning Job reads (see zitadel-provision).
+#
+# Zitadel uses the bundled Postgres `zitadel` database.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grown-zitadel-config
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: zitadel
+type: Opaque
+stringData:
+  ZITADEL_MASTERKEY: "MasterkeyNeedsToHave32Characters"
+  # Database wiring -> bundled Postgres.
+  ZITADEL_DATABASE_POSTGRES_HOST: "grown-postgres.grown.svc.cluster.local"
+  ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+  ZITADEL_DATABASE_POSTGRES_DATABASE: "zitadel"
+  ZITADEL_DATABASE_POSTGRES_USER_USERNAME: "grown"
+  ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: "DevPassword!1"
+  ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: "disable"
+  ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: "grown"
+  ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: "DevPassword!1"
+  ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: "disable"
+  # External access config.
+  ZITADEL_EXTERNALDOMAIN: "grown-zitadel.grown.svc.cluster.local"
+  ZITADEL_EXTERNALPORT: "8080"
+  ZITADEL_EXTERNALSECURE: "false"
+  ZITADEL_TLS_ENABLED: "false"
+  ZITADEL_PORT: "8080"
+  # First-instance admin + machine bootstrap (env wins over steps merge).
+  ZITADEL_FIRSTINSTANCE_PATPATH: "/shared/bootstrap-pat.txt"
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: "admin"
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME: "Grown"
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME: "Admin"
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS: "admin@grown.localtest.me"
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED: "true"
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: "DevPassword!1"
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+  ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: "bootstrap"
+  ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: "Bootstrap SA"
+  ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+---
+# Source: grown/templates/postgres.yaml
+# Init script: creates extra databases owned by the grown user.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grown-postgres-init
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: postgres
+data:
+  init-extra-dbs.sh: |
+    #!/bin/sh
+    set -e
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+      SELECT 'CREATE DATABASE zitadel OWNER "'||current_user||'"'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'zitadel')\gexec
+    EOSQL
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+      SELECT 'CREATE DATABASE pdf OWNER "'||current_user||'"'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'pdf')\gexec
+    EOSQL
+---
+# Source: grown/templates/zitadel.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grown-zitadel-shared
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: zitadel
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 64Mi
+---
+# Source: grown/templates/zitadel-provision.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: grown-zitadel-provision
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: zitadel-provision
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+# Source: grown/templates/zitadel-provision.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: grown-zitadel-provision
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: zitadel-provision
+subjects:
+  - kind: ServiceAccount
+    name: grown-zitadel-provision
+roleRef:
+  kind: Role
+  name: grown-zitadel-provision
+  apiGroup: rbac.authorization.k8s.io
+---
+# Source: grown/templates/grown.yaml
+# The grown app: Deployment + Service. Env mirrors the homelab gitops
+# deployment, sourced from the bundled (or external) dependencies.
+apiVersion: v1
+kind: Service
+metadata:
+  name: grown-grown
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: grown
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: grown
+    app.kubernetes.io/instance: grown
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: grpc
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
+---
+# Source: grown/templates/minio.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: grown-minio
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: minio
+spec:
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: minio
+    app.kubernetes.io/instance: grown
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+---
+# Source: grown/templates/postgres.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: grown-postgres
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: postgres
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: postgres
+    app.kubernetes.io/instance: grown
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+# Source: grown/templates/zitadel.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: grown-zitadel
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: zitadel
+spec:
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: zitadel
+    app.kubernetes.io/instance: grown
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+# Source: grown/templates/grown.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grown-grown
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: grown
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: grown
+      app.kubernetes.io/instance: grown
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: grown
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: grown-0.1.0
+        app.kubernetes.io/component: grown
+    spec:
+      containers:
+        - name: grown
+          image: "code.pick.haus/grown/grown:20260613-150615-2d752d1c"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: grpc, containerPort: 9000 }
+          env:
+            - name: GROWN_POSTGRES_DSN
+              value: "postgres://grown:DevPassword!1@grown-postgres.grown.svc.cluster.local:5432/grown?sslmode=disable"
+            # --- OIDC ---
+            - name: GROWN_OIDC_ISSUER
+              value: "http://grown-zitadel.grown.svc.cluster.local:8080"
+            - name: GROWN_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: grown-zitadel-secret
+                  key: client-id
+            - name: GROWN_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: grown-zitadel-secret
+                  key: client-secret
+            - name: GROWN_OIDC_REDIRECT_URL
+              value: "http://grown.example.com/api/v1/auth/callback"
+            # --- session ---
+            - name: GROWN_SESSION_COOKIE_NAME
+              value: "grown_session"
+            - name: GROWN_SESSION_COOKIE_SECURE
+              value: "false"
+            - name: GROWN_SESSION_COOKIE_DOMAIN
+              value: "grown.example.com"
+            - name: GROWN_SESSION_LIFETIME
+              value: "168h"
+            - name: GROWN_DEFAULT_ORG_SLUG
+              value: "default"
+            - name: GROWN_ADMIN_EMAILS
+              value: "admin@grown.localtest.me"
+            # In-app user management via the Zitadel User API (in-cluster).
+            - name: GROWN_ZITADEL_API_URL
+              value: "http://grown-zitadel.grown.svc.cluster.local:8080"
+            # --- object storage (S3 / rustfs-compatible) ---
+            - name: GROWN_RUSTFS_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: grown-s3, key: endpoint }
+            - name: GROWN_RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: grown-s3, key: access_key }
+            - name: GROWN_RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: grown-s3, key: secret_key }
+            - name: GROWN_RUSTFS_BUCKET
+              valueFrom:
+                secretKeyRef: { name: grown-s3, key: bucket }
+            # --- PDF signing app (built in-process) ---
+            - name: GROWN_PDF_BUILTIN
+              value: "true"
+            - name: PDF_DATABASE_URL
+              value: "postgres://grown:DevPassword!1@grown-postgres.grown.svc.cluster.local:5432/pdf?sslmode=disable"
+            - name: PDF_STORAGE_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: grown-s3, key: endpoint }
+            - name: PDF_STORAGE_BUCKET
+              value: "pdf-docs"
+            - name: PDF_STORAGE_REGION
+              value: "us-east-1"
+            - name: PDF_STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: grown-s3, key: access_key }
+            - name: PDF_STORAGE_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: grown-s3, key: secret_key }
+            - name: PDF_CRYPTO_KEY_ENCRYPTION_KEY
+              value: "wWwDxAaMbc6w7gpizZI+mFi7vhL/U+HYhxjDyQyl598="
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+# Source: grown/templates/zitadel.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grown-zitadel
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: zitadel
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: zitadel
+      app.kubernetes.io/instance: grown
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: grown
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: grown-0.1.0
+        app.kubernetes.io/component: zitadel
+    spec:
+      initContainers:
+        # Wait for Postgres to accept connections before init.
+        - name: wait-for-postgres
+          image: "postgres:17.2-alpine"
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h grown-postgres.grown.svc.cluster.local -p 5432 -U grown; do
+                echo "waiting for postgres..."; sleep 3
+              done
+      containers:
+        - name: zitadel
+          image: "ghcr.io/zitadel/zitadel:v2.71.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - start-from-init
+            - --masterkeyFromEnv
+            - --tlsMode
+            - disabled
+          envFrom:
+            - secretRef:
+                name: grown-zitadel-config
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+          readinessProbe:
+            httpGet: { path: /debug/ready, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: { path: /debug/healthz, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      volumes:
+        # Shared between the zitadel container and the provisioning Job via a
+        # PVC so the bootstrap PAT survives and is readable cross-pod.
+        - name: shared
+          persistentVolumeClaim:
+            claimName: grown-zitadel-shared
+---
+# Source: grown/templates/minio.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: grown-minio
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: minio
+spec:
+  serviceName: grown-minio
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: minio
+      app.kubernetes.io/instance: grown
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: grown
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: grown-0.1.0
+        app.kubernetes.io/component: minio
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: minio
+          image: "minio/minio:RELEASE.2025-04-08T15-41-24Z"
+          imagePullPolicy: IfNotPresent
+          args: ["server", "/data", "--console-address", ":9001"]
+          envFrom:
+            - secretRef:
+                name: grown-minio
+          ports:
+            - { name: s3, containerPort: 9000 }
+            - { name: console, containerPort: 9001 }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: 9000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /minio/health/live, port: 9000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+# Source: grown/templates/postgres.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: grown-postgres
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: grown-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: postgres
+      app.kubernetes.io/instance: grown
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: grown
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: grown-0.1.0
+        app.kubernetes.io/component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: "postgres:17.2-alpine"
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: grown-postgres
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      volumes:
+        - name: init
+          configMap:
+            name: grown-postgres-init
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+# Source: grown/templates/minio.yaml
+# Bucket-init Job: waits for MinIO, then creates the grown bucket (+ pdf bucket).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grown-minio-init
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: minio-init
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: grown
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: grown-0.1.0
+        app.kubernetes.io/component: minio-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "waiting for minio S3 auth..."
+              until mc alias set m http://grown-minio:9000 "$ACCESS" "$SECRET" 2>/dev/null; do sleep 3; done
+              mc mb --ignore-existing m/grown-default
+              echo "bucket grown-default ready"
+              mc mb --ignore-existing m/pdf-docs
+              echo "bucket pdf-docs ready"
+          env:
+            - name: ACCESS
+              valueFrom:
+                secretKeyRef: { name: grown-minio, key: MINIO_ROOT_USER }
+            - name: SECRET
+              valueFrom:
+                secretKeyRef: { name: grown-minio, key: MINIO_ROOT_PASSWORD }
+---
+# Source: grown/templates/zitadel-provision.yaml
+# Provisioning Job: waits for Zitadel + the bootstrap PAT (written by
+# start-from-init to the shared PVC), creates the grown project + OIDC app, and
+# writes the client-id/client-secret into auth.clientSecretName.
+# Modeled on deploy/zitadel/create-oidc-app.sh + the homelab zitadel-client-job.
+#
+# NOTE: this Job mounts the SAME RWO PVC as the Zitadel pod to read the PAT, so
+# both pods must schedule on the same node. That holds on kind (single node) and
+# a single-node Pi. For multi-node, set auth.mode=external (see README).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grown-zitadel-provision
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.1.0
+    app.kubernetes.io/component: zitadel-provision
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: grown
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: grown-0.1.0
+        app.kubernetes.io/component: zitadel-provision
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: grown-zitadel-provision
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: grown-zitadel-shared
+      containers:
+        - name: provision
+          image: alpine/k8s:1.32.2
+          env:
+            - name: ZITADEL_URL
+              value: "http://grown-zitadel.grown.svc.cluster.local:8080"
+            - name: REDIRECT_URL
+              value: "http://grown.example.com/api/v1/auth/callback"
+            - name: POST_LOGOUT_URL
+              value: "http://grown.example.com/"
+            - name: SECRET_NAME
+              value: "grown-zitadel-secret"
+            - name: SECRET_NAMESPACE
+              value: "grown"
+            - name: PROJECT_NAME
+              value: "grown"
+            - name: APP_NAME
+              value: "grown"
+            - name: PAT_FILE
+              value: "/shared/bootstrap-pat.txt"
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+              readOnly: true
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "=== grown Zitadel OIDC client provisioning ==="
+
+              # Skip if the secret already has a real client-id.
+              EXISTING=$(kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" \
+                -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d || echo "")
+              if [ -n "$EXISTING" ] && [ "$EXISTING" != "CHANGE_ME" ]; then
+                echo "Secret $SECRET_NAME already has client-id $EXISTING; skipping."
+                exit 0
+              fi
+
+              echo "Waiting for Zitadel /debug/ready..."
+              until curl -sf "$ZITADEL_URL/debug/ready" >/dev/null; do
+                echo "  zitadel not ready..."; sleep 5
+              done
+
+              echo "Waiting for bootstrap PAT at $PAT_FILE..."
+              for i in $(seq 1 60); do
+                [ -s "$PAT_FILE" ] && break
+                echo "  waiting for PAT ($i)..."; sleep 3
+              done
+              [ -s "$PAT_FILE" ] || { echo "PAT file not found"; exit 1; }
+              TOKEN=$(tr -d '[:space:]' < "$PAT_FILE")
+
+              api() { curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" "$@"; }
+
+              # Find or create project.
+              PID=$(api -X POST "$ZITADEL_URL/management/v1/projects/_search" \
+                -d "{\"queries\":[{\"nameQuery\":{\"name\":\"$PROJECT_NAME\",\"method\":\"TEXT_QUERY_METHOD_EQUALS\"}}]}" \
+                | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [ -z "$PID" ]; then
+                echo "Creating project $PROJECT_NAME..."
+                PID=$(api -X POST "$ZITADEL_URL/management/v1/projects" \
+                  -d "{\"name\":\"$PROJECT_NAME\"}" \
+                  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              fi
+              [ -z "$PID" ] && { echo "no project id"; exit 1; }
+              echo "Project: $PID"
+
+              # Relax login policy so the OIDC flow completes without forced MFA.
+              api -X PUT "$ZITADEL_URL/admin/v1/policies/login" \
+                -d '{"allowUsernamePassword":true,"allowRegister":false,"allowExternalIdp":false,"forceMfa":false,"forceMfaLocalOnly":false,"passwordlessType":"PASSWORDLESS_TYPE_NOT_ALLOWED","passwordCheckLifetime":"864000s","externalLoginCheckLifetime":"864000s","mfaInitSkipLifetime":"2592000s","secondFactorCheckLifetime":"64800s","multiFactorCheckLifetime":"43200s"}' >/dev/null || true
+
+              # Create the OIDC web app. Zitadel returns clientId+clientSecret once.
+              RESP=$(api -X POST "$ZITADEL_URL/management/v1/projects/$PID/apps/oidc" \
+                -d "{
+                  \"name\": \"$APP_NAME\",
+                  \"redirectUris\": [\"$REDIRECT_URL\"],
+                  \"responseTypes\": [\"OIDC_RESPONSE_TYPE_CODE\"],
+                  \"grantTypes\": [\"OIDC_GRANT_TYPE_AUTHORIZATION_CODE\", \"OIDC_GRANT_TYPE_REFRESH_TOKEN\"],
+                  \"appType\": \"OIDC_APP_TYPE_WEB\",
+                  \"authMethodType\": \"OIDC_AUTH_METHOD_TYPE_BASIC\",
+                  \"postLogoutRedirectUris\": [\"$POST_LOGOUT_URL\"],
+                  \"accessTokenType\": \"OIDC_TOKEN_TYPE_BEARER\",
+                  \"accessTokenRoleAssertion\": true,
+                  \"idTokenRoleAssertion\": true,
+                  \"idTokenUserinfoAssertion\": true,
+                  \"devMode\": true
+                }")
+              CID=$(echo "$RESP" | grep -o '"clientId":"[^"]*"' | head -1 | cut -d'"' -f4)
+              CSECRET=$(echo "$RESP" | grep -o '"clientSecret":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [ -z "$CID" ] || [ -z "$CSECRET" ]; then
+                echo "Failed to create OIDC app: $RESP"; exit 1
+              fi
+              echo "Created OIDC app client_id=$CID"
+
+              kubectl create secret generic "$SECRET_NAME" -n "$SECRET_NAMESPACE" \
+                --from-literal=client-id="$CID" \
+                --from-literal=client-secret="$CSECRET" \
+                --dry-run=client -o yaml | kubectl apply -f -
+              echo "=== Wrote $SECRET_NAME (client-id/client-secret) ==="

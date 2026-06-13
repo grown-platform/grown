@@ -1,0 +1,56 @@
+{{- if eq .Values.ingress.type "ingress" }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-grown
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grown
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.domain | quote }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.domain | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-grown
+                port:
+                  number: {{ .Values.grown.service.httpPort }}
+{{- else if eq .Values.ingress.type "httproute" }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-grown
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grown
+spec:
+  parentRefs:
+    - name: {{ .Values.ingress.httproute.gatewayName }}
+      namespace: {{ .Values.ingress.httproute.gatewayNamespace }}
+  hostnames:
+    - {{ .Values.domain | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ .Release.Name }}-grown
+          port: {{ .Values.grown.service.httpPort }}
+{{- end }}

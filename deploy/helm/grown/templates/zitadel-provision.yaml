@@ -1,0 +1,166 @@
+{{- if eq .Values.auth.mode "bundled" }}
+# RBAC for the provisioning Job to create/patch the OIDC client secret.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-zitadel-provision
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zitadel-provision
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-zitadel-provision
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zitadel-provision
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-zitadel-provision
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zitadel-provision
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-zitadel-provision
+roleRef:
+  kind: Role
+  name: {{ .Release.Name }}-zitadel-provision
+  apiGroup: rbac.authorization.k8s.io
+---
+# Provisioning Job: waits for Zitadel + the bootstrap PAT (written by
+# start-from-init to the shared PVC), creates the grown project + OIDC app, and
+# writes the client-id/client-secret into auth.clientSecretName.
+# Modeled on deploy/zitadel/create-oidc-app.sh + the homelab zitadel-client-job.
+#
+# NOTE: this Job mounts the SAME RWO PVC as the Zitadel pod to read the PAT, so
+# both pods must schedule on the same node. That holds on kind (single node) and
+# a single-node Pi. For multi-node, set auth.mode=external (see README).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-zitadel-provision
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zitadel-provision
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels:
+        {{- include "grown.labels" . | nindent 8 }}
+        app.kubernetes.io/component: zitadel-provision
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Release.Name }}-zitadel-provision
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-zitadel-shared
+      containers:
+        - name: provision
+          image: {{ .Values.zitadel.provision.image }}
+          env:
+            - name: ZITADEL_URL
+              value: {{ include "grown.zitadelInternalURL" . | quote }}
+            - name: REDIRECT_URL
+              value: {{ include "grown.oidcRedirectURL" . | quote }}
+            - name: POST_LOGOUT_URL
+              value: {{ printf "%s/" (include "grown.externalURL" .) | quote }}
+            - name: SECRET_NAME
+              value: {{ .Values.auth.clientSecretName | quote }}
+            - name: SECRET_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: PROJECT_NAME
+              value: "grown"
+            - name: APP_NAME
+              value: "grown"
+            - name: PAT_FILE
+              value: "/shared/bootstrap-pat.txt"
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+              readOnly: true
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "=== grown Zitadel OIDC client provisioning ==="
+
+              # Skip if the secret already has a real client-id.
+              EXISTING=$(kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" \
+                -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d || echo "")
+              if [ -n "$EXISTING" ] && [ "$EXISTING" != "CHANGE_ME" ]; then
+                echo "Secret $SECRET_NAME already has client-id $EXISTING; skipping."
+                exit 0
+              fi
+
+              echo "Waiting for Zitadel /debug/ready..."
+              until curl -sf "$ZITADEL_URL/debug/ready" >/dev/null; do
+                echo "  zitadel not ready..."; sleep 5
+              done
+
+              echo "Waiting for bootstrap PAT at $PAT_FILE..."
+              for i in $(seq 1 60); do
+                [ -s "$PAT_FILE" ] && break
+                echo "  waiting for PAT ($i)..."; sleep 3
+              done
+              [ -s "$PAT_FILE" ] || { echo "PAT file not found"; exit 1; }
+              TOKEN=$(tr -d '[:space:]' < "$PAT_FILE")
+
+              api() { curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" "$@"; }
+
+              # Find or create project.
+              PID=$(api -X POST "$ZITADEL_URL/management/v1/projects/_search" \
+                -d "{\"queries\":[{\"nameQuery\":{\"name\":\"$PROJECT_NAME\",\"method\":\"TEXT_QUERY_METHOD_EQUALS\"}}]}" \
+                | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [ -z "$PID" ]; then
+                echo "Creating project $PROJECT_NAME..."
+                PID=$(api -X POST "$ZITADEL_URL/management/v1/projects" \
+                  -d "{\"name\":\"$PROJECT_NAME\"}" \
+                  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              fi
+              [ -z "$PID" ] && { echo "no project id"; exit 1; }
+              echo "Project: $PID"
+
+              # Relax login policy so the OIDC flow completes without forced MFA.
+              api -X PUT "$ZITADEL_URL/admin/v1/policies/login" \
+                -d '{"allowUsernamePassword":true,"allowRegister":false,"allowExternalIdp":false,"forceMfa":false,"forceMfaLocalOnly":false,"passwordlessType":"PASSWORDLESS_TYPE_NOT_ALLOWED","passwordCheckLifetime":"864000s","externalLoginCheckLifetime":"864000s","mfaInitSkipLifetime":"2592000s","secondFactorCheckLifetime":"64800s","multiFactorCheckLifetime":"43200s"}' >/dev/null || true
+
+              # Create the OIDC web app. Zitadel returns clientId+clientSecret once.
+              RESP=$(api -X POST "$ZITADEL_URL/management/v1/projects/$PID/apps/oidc" \
+                -d "{
+                  \"name\": \"$APP_NAME\",
+                  \"redirectUris\": [\"$REDIRECT_URL\"],
+                  \"responseTypes\": [\"OIDC_RESPONSE_TYPE_CODE\"],
+                  \"grantTypes\": [\"OIDC_GRANT_TYPE_AUTHORIZATION_CODE\", \"OIDC_GRANT_TYPE_REFRESH_TOKEN\"],
+                  \"appType\": \"OIDC_APP_TYPE_WEB\",
+                  \"authMethodType\": \"OIDC_AUTH_METHOD_TYPE_BASIC\",
+                  \"postLogoutRedirectUris\": [\"$POST_LOGOUT_URL\"],
+                  \"accessTokenType\": \"OIDC_TOKEN_TYPE_BEARER\",
+                  \"accessTokenRoleAssertion\": true,
+                  \"idTokenRoleAssertion\": true,
+                  \"idTokenUserinfoAssertion\": true,
+                  \"devMode\": true
+                }")
+              CID=$(echo "$RESP" | grep -o '"clientId":"[^"]*"' | head -1 | cut -d'"' -f4)
+              CSECRET=$(echo "$RESP" | grep -o '"clientSecret":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [ -z "$CID" ] || [ -z "$CSECRET" ]; then
+                echo "Failed to create OIDC app: $RESP"; exit 1
+              fi
+              echo "Created OIDC app client_id=$CID"
+
+              kubectl create secret generic "$SECRET_NAME" -n "$SECRET_NAMESPACE" \
+                --from-literal=client-id="$CID" \
+                --from-literal=client-secret="$CSECRET" \
+                --dry-run=client -o yaml | kubectl apply -f -
+              echo "=== Wrote $SECRET_NAME (client-id/client-secret) ==="
+{{- end }}

@@ -1,0 +1,176 @@
+# The grown app: Deployment + Service. Env mirrors the homelab gitops
+# deployment, sourced from the bundled (or external) dependencies.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-grown
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grown
+spec:
+  type: {{ .Values.grown.service.type }}
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: grown
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.grown.service.httpPort }}
+      targetPort: 8080
+      protocol: TCP
+    - name: grpc
+      port: {{ .Values.grown.service.grpcPort }}
+      targetPort: 9000
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-grown
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grown
+spec:
+  replicas: {{ .Values.grown.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: grown
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "grown.labels" . | nindent 8 }}
+        app.kubernetes.io/component: grown
+    spec:
+      {{- $pull := include "grown.pullSecretName" . }}
+      {{- if $pull }}
+      imagePullSecrets:
+        - name: {{ $pull }}
+      {{- end }}
+      containers:
+        - name: grown
+          image: {{ include "grown.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: grpc, containerPort: 9000 }
+          env:
+            - name: GROWN_POSTGRES_DSN
+              value: {{ include "grown.pgDSN" . | quote }}
+            # --- OIDC ---
+            - name: GROWN_OIDC_ISSUER
+              value: {{ include "grown.oidcIssuer" . | quote }}
+            - name: GROWN_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.clientSecretName }}
+                  key: client-id
+            - name: GROWN_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.clientSecretName }}
+                  key: client-secret
+            - name: GROWN_OIDC_REDIRECT_URL
+              value: {{ include "grown.oidcRedirectURL" . | quote }}
+            # --- session ---
+            - name: GROWN_SESSION_COOKIE_NAME
+              value: {{ .Values.session.cookieName | quote }}
+            - name: GROWN_SESSION_COOKIE_SECURE
+              value: {{ .Values.session.cookieSecure | quote }}
+            - name: GROWN_SESSION_COOKIE_DOMAIN
+              value: {{ .Values.domain | quote }}
+            - name: GROWN_SESSION_LIFETIME
+              value: {{ .Values.session.lifetime | quote }}
+            - name: GROWN_DEFAULT_ORG_SLUG
+              value: {{ .Values.defaultOrgSlug | quote }}
+            - name: GROWN_ADMIN_EMAILS
+              value: {{ .Values.adminEmails | quote }}
+            {{- if eq .Values.auth.mode "bundled" }}
+            # In-app user management via the Zitadel User API (in-cluster).
+            - name: GROWN_ZITADEL_API_URL
+              value: {{ include "grown.zitadelInternalURL" . | quote }}
+            {{- end }}
+            # --- object storage (S3 / rustfs-compatible) ---
+            - name: GROWN_RUSTFS_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-s3, key: endpoint }
+            - name: GROWN_RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-s3, key: access_key }
+            - name: GROWN_RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-s3, key: secret_key }
+            - name: GROWN_RUSTFS_BUCKET
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-s3, key: bucket }
+            {{- if .Values.pdf.enabled }}
+            # --- PDF signing app (built in-process) ---
+            - name: GROWN_PDF_BUILTIN
+              value: "true"
+            - name: PDF_DATABASE_URL
+              value: {{ include "grown.pdfDSN" . | quote }}
+            - name: PDF_STORAGE_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-s3, key: endpoint }
+            - name: PDF_STORAGE_BUCKET
+              value: {{ .Values.pdf.bucket | quote }}
+            - name: PDF_STORAGE_REGION
+              value: {{ .Values.pdf.region | quote }}
+            - name: PDF_STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-s3, key: access_key }
+            - name: PDF_STORAGE_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-s3, key: secret_key }
+            - name: PDF_CRYPTO_KEY_ENCRYPTION_KEY
+              value: {{ .Values.pdf.kek | quote }}
+            {{- end }}
+            {{- if .Values.bolo.enabled }}
+            # --- bolo-mp sidecar proxy target ---
+            - name: GROWN_BOLO_MP_URL
+              value: "http://127.0.0.1:{{ .Values.bolo.port }}"
+            {{- end }}
+            {{- with .Values.grown.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.grown.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+        {{- if .Values.bolo.enabled }}
+        # bolo-mp multiplayer sidecar (authoritative 50Hz Node sim).
+        - name: bolo-mp
+          image: "{{ .Values.bolo.image.repository }}:{{ .Values.bolo.image.tag }}"
+          imagePullPolicy: {{ .Values.bolo.image.pullPolicy }}
+          ports:
+            - { name: bolo-mp, containerPort: {{ .Values.bolo.port }} }
+          env:
+            - name: PORT
+              value: {{ .Values.bolo.port | quote }}
+            - name: ROOM_TTL_MS
+              value: {{ .Values.bolo.env.roomTtlMs | quote }}
+            - name: MAX_ROOMS
+              value: {{ .Values.bolo.env.maxRooms | quote }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: {{ .Values.bolo.port }} }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: {{ .Values.bolo.port }} }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.bolo.resources | nindent 12 }}
+        {{- end }}

@@ -1,0 +1,148 @@
+{{- if eq .Values.auth.mode "bundled" }}
+# Bundled Zitadel (OIDC provider). One Deployment running `start-from-init`,
+# which runs init + setup (first-instance admin + bootstrap service account +
+# PAT) and then starts the server. The bootstrap PAT is written to a shared
+# emptyDir-backed file that the provisioning Job reads (see zitadel-provision).
+#
+# Zitadel uses the bundled Postgres `zitadel` database.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-zitadel-config
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zitadel
+type: Opaque
+stringData:
+  ZITADEL_MASTERKEY: {{ .Values.zitadel.masterKey | quote }}
+  # Database wiring -> bundled Postgres.
+  ZITADEL_DATABASE_POSTGRES_HOST: {{ include "grown.pgHost" . | quote }}
+  ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+  ZITADEL_DATABASE_POSTGRES_DATABASE: "zitadel"
+  ZITADEL_DATABASE_POSTGRES_USER_USERNAME: {{ .Values.postgres.auth.username | quote }}
+  ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: {{ .Values.postgres.auth.password | quote }}
+  ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: "disable"
+  ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: {{ .Values.postgres.auth.username | quote }}
+  ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: {{ .Values.postgres.auth.password | quote }}
+  ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: "disable"
+  # External access config.
+  ZITADEL_EXTERNALDOMAIN: {{ .Values.zitadel.externalDomain | default (printf "%s-zitadel.%s.svc.cluster.local" .Release.Name .Release.Namespace) | quote }}
+  ZITADEL_EXTERNALPORT: {{ .Values.zitadel.externalPort | quote }}
+  ZITADEL_EXTERNALSECURE: {{ .Values.zitadel.externalSecure | quote }}
+  ZITADEL_TLS_ENABLED: "false"
+  ZITADEL_PORT: "8080"
+  # First-instance admin + machine bootstrap (env wins over steps merge).
+  ZITADEL_FIRSTINSTANCE_PATPATH: "/shared/bootstrap-pat.txt"
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: {{ .Values.zitadel.admin.username | quote }}
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME: {{ .Values.zitadel.admin.firstName | quote }}
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME: {{ .Values.zitadel.admin.lastName | quote }}
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS: {{ .Values.zitadel.admin.email | quote }}
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED: "true"
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: {{ .Values.zitadel.admin.password | quote }}
+  ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+  ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: "bootstrap"
+  ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: "Bootstrap SA"
+  ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-zitadel
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zitadel
+spec:
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: zitadel
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-zitadel
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zitadel
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: zitadel
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "grown.labels" . | nindent 8 }}
+        app.kubernetes.io/component: zitadel
+    spec:
+      initContainers:
+        # Wait for Postgres to accept connections before init.
+        - name: wait-for-postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h {{ include "grown.pgHost" . }} -p 5432 -U {{ .Values.postgres.auth.username }}; do
+                echo "waiting for postgres..."; sleep 3
+              done
+      containers:
+        - name: zitadel
+          image: "{{ .Values.zitadel.image.repository }}:{{ .Values.zitadel.image.tag }}"
+          imagePullPolicy: {{ .Values.zitadel.image.pullPolicy }}
+          args:
+            - start-from-init
+            - --masterkeyFromEnv
+            - --tlsMode
+            - disabled
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-zitadel-config
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+          readinessProbe:
+            httpGet: { path: /debug/ready, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: { path: /debug/healthz, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.zitadel.resources | nindent 12 }}
+      volumes:
+        # Shared between the zitadel container and the provisioning Job via a
+        # PVC so the bootstrap PAT survives and is readable cross-pod.
+        - name: shared
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-zitadel-shared
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-zitadel-shared
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zitadel
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.storageClass }}
+  storageClassName: {{ .Values.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: 64Mi
+{{- end }}

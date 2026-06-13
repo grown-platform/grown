@@ -1,0 +1,245 @@
+# =============================================================================
+# Grown Workspace — all-in-one chart values
+#
+# Out of the box (just `--set domain=...`) this brings up a fully self-contained
+# Grown instance: bundled Postgres + MinIO (S3) + Zitadel (OIDC), the grown app,
+# and the optional bolo-mp multiplayer sidecar. The defaults below are tuned to
+# work on a vanilla kind cluster and on arm64 (Raspberry Pi 5).
+#
+# The ONE thing you must set: `domain` (the public hostname grown is served on).
+# For kind/local you can leave the default and use a port-forward.
+# =============================================================================
+
+# Public hostname grown is reachable at. Drives the OIDC redirect URL, the
+# Ingress/HTTPRoute host, and the session cookie domain.
+# kind/local: leave as-is and use `kubectl port-forward` (see NOTES.txt).
+domain: grown.localtest.me
+
+# http vs https for the externally-facing URLs (redirect URL, issuer when
+# auth.mode=bundled with an external-facing Zitadel). kind/local default: http.
+# Set to "https" once you have TLS in front (Ingress TLS / Gateway).
+scheme: http
+
+# Default org slug created/expected inside grown.
+defaultOrgSlug: default
+
+# Comma-separated super-admin emails. Non-empty => ONLY these are admins.
+# Defaults to the bundled Zitadel admin so you can log in and administer.
+adminEmails: "admin@grown.localtest.me"
+
+# StorageClass for all PVCs. Empty string ("") uses the cluster default
+# (correct for kind's `standard` and most Pi/k3s setups). Set explicitly for
+# homelab (e.g. "ceph-block", "longhorn", "local-path").
+storageClass: ""
+
+# -----------------------------------------------------------------------------
+# grown application image + the deployment knobs
+# -----------------------------------------------------------------------------
+image:
+  repository: code.pick.haus/grown/grown
+  tag: ""            # defaults to .Chart.appVersion when empty
+  pullPolicy: IfNotPresent
+
+# Image pull secret(s) for the (private) grown registry. The chart can create
+# one from a docker config, or you can reference an existing secret by name.
+imagePullSecrets:
+  # Name of an EXISTING pull secret in the namespace (leave "" to skip).
+  existingSecret: ""
+  # OR have the chart create one. Provide a base64 ~/.docker/config.json.
+  create:
+    enabled: false
+    name: grown-registry
+    dockerconfigjson: ""   # base64-encoded docker config json
+
+grown:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  # Extra env vars to inject verbatim (list of {name,value} / {name,valueFrom}).
+  extraEnv: []
+  service:
+    type: ClusterIP
+    httpPort: 8080
+    grpcPort: 9000
+
+# -----------------------------------------------------------------------------
+# bolo-mp multiplayer sidecar (optional). Disabled by default for portability
+# (the image is in the private registry). grown's /bolo-mp proxy 502s harmlessly
+# when this is off; single-player Bolo is unaffected.
+# -----------------------------------------------------------------------------
+bolo:
+  enabled: false
+  image:
+    repository: code.pick.haus/grown/bolo-mp
+    tag: "20260613-1"
+    pullPolicy: IfNotPresent
+  port: 6173
+  env:
+    roomTtlMs: "300000"
+    maxRooms: "200"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -----------------------------------------------------------------------------
+# Ingress: how grown is exposed.
+#   type: ingress    -> plain networking.k8s.io/v1 Ingress (PORTABLE DEFAULT;
+#                       works on kind w/ ingress-nginx, k3s w/ traefik, Pi)
+#   type: httproute  -> Gateway API HTTPRoute (like production homelab)
+#   type: none       -> nothing; reach grown via port-forward / your own routing
+# -----------------------------------------------------------------------------
+ingress:
+  type: none
+  # --- networking.k8s.io Ingress options (type: ingress) ---
+  className: ""            # e.g. "nginx", "traefik"; empty = cluster default
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: grown-tls  # existing TLS secret (cert-manager etc.)
+  # --- Gateway API HTTPRoute options (type: httproute) ---
+  httproute:
+    gatewayName: public-gateway
+    gatewayNamespace: network
+
+# -----------------------------------------------------------------------------
+# Authentication (OIDC).
+#   mode: bundled   -> deploy Zitadel in-cluster and auto-provision the grown
+#                      OIDC app (writes the client-id/secret secret). Default.
+#   mode: external  -> use an existing OIDC issuer; supply issuer/clientId/secret.
+# -----------------------------------------------------------------------------
+auth:
+  mode: bundled
+
+  # Used when mode: external (and as the OIDC values when bundled+manual).
+  external:
+    issuer: ""
+    clientId: ""
+    clientSecret: ""
+
+  # Name of the secret holding client-id / client-secret keys. With mode:bundled
+  # the provisioning Job creates this; with mode:external the chart creates it
+  # from auth.external above.
+  clientSecretName: grown-zitadel-secret
+
+# -----------------------------------------------------------------------------
+# Bundled Zitadel (OIDC provider). Only deployed when auth.mode=bundled.
+# -----------------------------------------------------------------------------
+zitadel:
+  image:
+    repository: ghcr.io/zitadel/zitadel
+    tag: "v2.71.0"
+    pullPolicy: IfNotPresent
+  # 32-char master key that encrypts Zitadel secrets at rest. CHANGE for prod;
+  # MUST stay stable across restarts (random per-boot => stored secrets break).
+  masterKey: "MasterkeyNeedsToHave32Characters"
+  # First-instance bootstrap admin (you log into grown with this).
+  admin:
+    username: "admin"
+    firstName: "Grown"
+    lastName: "Admin"
+    email: "admin@grown.localtest.me"
+    password: "DevPassword!1"
+  # External-facing config for Zitadel's own issuer. For the bundled, fully
+  # self-contained flow grown talks to Zitadel over the in-cluster Service, so
+  # the issuer the chart hands grown is the cluster-internal URL by default.
+  # (Browser-facing SSO login pages require Zitadel to also be exposed at a
+  # public domain — see README "Zitadel & real login".)
+  externalDomain: ""        # empty => use in-cluster service DNS
+  externalPort: 8080
+  externalSecure: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  # provisioning Job that creates the grown OIDC app + writes clientSecretName.
+  provision:
+    image: alpine/k8s:1.32.2
+
+# -----------------------------------------------------------------------------
+# Bundled Postgres (plain StatefulSet — NOT CNPG, so no operator needed).
+# Production: document swapping in CNPG / a managed PG and point postgres.dsn at it.
+# -----------------------------------------------------------------------------
+postgres:
+  # Set an existing DSN to use an EXTERNAL Postgres and skip the bundled one.
+  externalDsn: ""
+  image:
+    repository: postgres
+    tag: "17.2-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    username: grown
+    password: DevPassword!1
+    database: grown          # grown's DB
+  # Additional databases created at init (Zitadel + PDF live here too).
+  extraDatabases:
+    - zitadel
+    - pdf
+  persistence:
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# Bundled object storage — MinIO (S3-compatible, the most portable choice;
+# grown's GROWN_RUSTFS_* point at it). A bucket-init Job creates the bucket.
+# Production note: rustfs (the homelab default) is also S3-compatible and can be
+# swapped in by pointing s3.endpoint/keys at it and disabling minio.enabled.
+# -----------------------------------------------------------------------------
+minio:
+  enabled: true
+  image:
+    repository: minio/minio
+    tag: "RELEASE.2025-04-08T15-41-24Z"
+    pullPolicy: IfNotPresent
+  mcImage: minio/mc:latest      # used by the bucket-init Job
+  accessKey: grown
+  secretKey: DevPassword!1
+  bucket: grown-default
+  apiPort: 9000
+  consolePort: 9001
+  persistence:
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  # When minio.enabled=false, point grown at an external S3 endpoint:
+  external:
+    endpoint: ""              # e.g. http://rustfs.grown.svc.cluster.local:9100
+
+# -----------------------------------------------------------------------------
+# PDF signing app (built into grown via GROWN_PDF_BUILTIN). Shares Postgres
+# (own `pdf` db) and S3 (own bucket). Enabled by default — degrades gracefully.
+# -----------------------------------------------------------------------------
+pdf:
+  enabled: true
+  database: pdf
+  bucket: pdf-docs
+  region: us-east-1
+  # Persistent KEK (base64 32 bytes) encrypting the PDF signing CA key at rest.
+  # MUST be stable across restarts. CHANGE for production.
+  kek: "wWwDxAaMbc6w7gpizZI+mFi7vhL/U+HYhxjDyQyl598="
+
+# -----------------------------------------------------------------------------
+# Session cookie settings.
+# -----------------------------------------------------------------------------
+session:
+  cookieName: grown_session
+  cookieSecure: false        # set true once served over https
+  lifetime: 168h

@@ -1,0 +1,135 @@
+{{- if .Values.minio.enabled }}
+# Bundled MinIO (S3-compatible object storage). grown's GROWN_RUSTFS_* point at
+# the MinIO Service. A bucket-init Job (post-install hook) creates the buckets.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-minio
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+type: Opaque
+stringData:
+  MINIO_ROOT_USER: {{ .Values.minio.accessKey | quote }}
+  MINIO_ROOT_PASSWORD: {{ .Values.minio.secretKey | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-minio
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: minio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: s3
+      port: {{ .Values.minio.apiPort }}
+      targetPort: 9000
+    - name: console
+      port: {{ .Values.minio.consolePort }}
+      targetPort: 9001
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-minio
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  serviceName: {{ .Release.Name }}-minio
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: minio
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "grown.labels" . | nindent 8 }}
+        app.kubernetes.io/component: minio
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: minio
+          image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
+          imagePullPolicy: {{ .Values.minio.image.pullPolicy }}
+          args: ["server", "/data", "--console-address", ":9001"]
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-minio
+          ports:
+            - { name: s3, containerPort: 9000 }
+            - { name: console, containerPort: 9001 }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: 9000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /minio/health/live, port: 9000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.minio.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.storageClass }}
+        storageClassName: {{ .Values.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.minio.persistence.size }}
+---
+# Bucket-init Job: waits for MinIO, then creates the grown bucket (+ pdf bucket).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-minio-init
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio-init
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "grown.labels" . | nindent 8 }}
+        app.kubernetes.io/component: minio-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: {{ .Values.minio.mcImage }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "waiting for minio S3 auth..."
+              until mc alias set m http://{{ .Release.Name }}-minio:{{ .Values.minio.apiPort }} "$ACCESS" "$SECRET" 2>/dev/null; do sleep 3; done
+              mc mb --ignore-existing m/{{ .Values.minio.bucket }}
+              echo "bucket {{ .Values.minio.bucket }} ready"
+              {{- if .Values.pdf.enabled }}
+              mc mb --ignore-existing m/{{ .Values.pdf.bucket }}
+              echo "bucket {{ .Values.pdf.bucket }} ready"
+              {{- end }}
+          env:
+            - name: ACCESS
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-minio, key: MINIO_ROOT_USER }
+            - name: SECRET
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-minio, key: MINIO_ROOT_PASSWORD }
+{{- end }}

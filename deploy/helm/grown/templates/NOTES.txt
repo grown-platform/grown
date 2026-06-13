@@ -1,0 +1,61 @@
+
+========================================================================
+  Grown Workspace installed  (release: {{ .Release.Name }}, ns: {{ .Release.Namespace }})
+========================================================================
+
+Bundled components:
+  - Postgres (StatefulSet)        {{ if .Values.postgres.externalDsn }}EXTERNAL (postgres.externalDsn set){{ else }}{{ .Release.Name }}-postgres{{ end }}
+  - Object storage (S3)           {{ if .Values.minio.enabled }}MinIO: {{ .Release.Name }}-minio (bucket {{ .Values.minio.bucket }}){{ else }}EXTERNAL: {{ .Values.minio.external.endpoint }}{{ end }}
+  - Auth (OIDC)                   {{ if eq .Values.auth.mode "bundled" }}bundled Zitadel: {{ .Release.Name }}-zitadel{{ else }}external issuer: {{ .Values.auth.external.issuer }}{{ end }}
+  - grown app                     {{ .Release.Name }}-grown  (image {{ include "grown.image" . }})
+  {{- if .Values.bolo.enabled }}
+  - bolo-mp sidecar               enabled
+  {{- end }}
+
+Public URL:   {{ include "grown.externalURL" . }}
+
+------------------------------------------------------------------------
+NEXT STEPS
+------------------------------------------------------------------------
+1) Watch everything come up:
+     kubectl get pods -n {{ .Release.Namespace }} -w
+
+{{- if eq .Values.ingress.type "none" }}
+
+2) No ingress configured (ingress.type=none). Reach grown via port-forward:
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-grown 8080:{{ .Values.grown.service.httpPort }}
+   then open http://localhost:8080  (health: http://localhost:8080/healthz)
+{{- else }}
+
+2) grown is exposed via {{ .Values.ingress.type }} at:  {{ include "grown.externalURL" . }}
+   Make sure {{ .Values.domain }} resolves to your ingress/gateway IP.
+{{- end }}
+
+{{- if eq .Values.auth.mode "bundled" }}
+
+3) OIDC auto-provisioning: the {{ .Release.Name }}-zitadel-provision Job creates
+   the grown OIDC app and writes the {{ .Values.auth.clientSecretName }} secret.
+   Check it finished:
+     kubectl -n {{ .Release.Namespace }} logs job/{{ .Release.Name }}-zitadel-provision
+   grown's pod stays NotReady until that secret holds a real client-id.
+
+   Default login (bundled Zitadel admin):
+     user:  {{ .Values.zitadel.admin.email }}
+     pass:  {{ .Values.zitadel.admin.password }}
+   (CHANGE these via zitadel.admin.* / zitadel.masterKey for anything real.)
+
+   IMPORTANT — browser login: grown talks to Zitadel in-cluster, but the SSO
+   login PAGE is browser-facing. For a real end-to-end login, Zitadel must be
+   reachable by the browser at the SAME issuer URL grown uses. See the chart
+   README ("Zitadel & real login") — the simplest path is auth.mode=external
+   pointed at a publicly-exposed Zitadel/OIDC issuer.
+{{- else }}
+
+3) Using external OIDC issuer: {{ .Values.auth.external.issuer }}
+   Ensure its redirect URI allowlist includes:
+     {{ include "grown.oidcRedirectURL" . }}
+{{- end }}
+
+Uninstall:  helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+            (PVCs and the kept OIDC secret survive; delete the ns to purge.)
+========================================================================
