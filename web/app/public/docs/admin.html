@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Admin — Grown Workspace docs</title>
+<meta name="description" content="Admin in Grown Workspace: the org console — users, per-service enablement, sessions, audit logs with IP geolocation, security policies, analytics, and branding." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Admin &amp; infrastructure / Admin</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🛡️</div>
+  <span class="badge">Admin &amp; infrastructure</span>
+  <h1>Admin</h1>
+  <p>The org console for your workspace — manage people, turn apps on or off,
+     watch sign-ins, and audit every action, all from one place.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/admin">Open Admin →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Admin is a Google-Admin-style console for org administrators.
+     A left-hand nav splits administration into sections — Dashboard, Services,
+     Users, Groups, Admin roles, Sessions &amp; logins, Audit log, Analytics,
+     Security and Org settings. Identity is backed by Zitadel, so policy changes
+     you make here apply to your real organization. Every section is gated to
+     admins (your email must be listed in <code>GROWN_ADMIN_EMAILS</code>).</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/admin-desktop.png" alt="Admin console on desktop" /><figcaption>The org console — sectioned nav, live stats, and audit.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Dashboard.</b> At-a-glance org stats — members, admins, active users in the last 7 days, and storage used — with quick links into every section.</li>
+    <li><b>Service enablement.</b> Turn each workspace app on or off for your org with a per-service toggle. Services are default-on; an off toggle hides the app for everyone in the org.</li>
+    <li><b>Users.</b> Add members, see who's who, and grant or revoke the admin role per user.</li>
+    <li><b>Groups &amp; admin roles.</b> Manage mailing lists / forum groups and decide who can administer the org.</li>
+    <li><b>Sessions &amp; logins.</b> See every active session across the org — device, IP and last-seen — and revoke any of them. IPs resolve to an approximate city/country via a keyless geo-IP lookup.</li>
+    <li><b>Audit log.</b> A newest-first record of org actions — actor, service, action, resource, method, status, IP and user-agent — filterable by service, actor and action. Public IPs are geolocated for context.</li>
+    <li><b>Analytics.</b> Usage and storage breakdowns for the org.</li>
+    <li><b>Security.</b> Live Zitadel policy management — password complexity, enforced 2-step verification, login lockout thresholds and passwordless / passkeys — plus a read-only view of configured SSO identity providers.</li>
+    <li><b>Org settings &amp; branding.</b> Rename the org, set an accent colour and product name, and upload a logo.</li>
+    <li><b>API rate limiting.</b> The backend protects the HTTP API with per-caller rate limits so a runaway script can't overwhelm the workspace.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Admin is an admin-gated SPA over org-scoped HTTP endpoints
+     (<code>/api/v1/admin/*</code>). Identity, security policy and SSO are read
+     from and written to Zitadel; service toggles, audit events and sessions live
+     in the workspace's own store. Non-admins are denied with a clear 403.</p>
+  <dl class="kv">
+    <dt>Identity</dt><dd>Zitadel (users, security policy, SSO / IdPs)</dd>
+    <dt>Access</dt><dd>Admin-only — emails in <code>GROWN_ADMIN_EMAILS</code></dd>
+    <dt>Audit</dt><dd>Org-scoped event log with IP + geo-IP enrichment</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

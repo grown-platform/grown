@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Music — Grown Workspace docs</title>
+<meta name="description" content="Music in Grown Workspace: stream your own music collection — library, playlists, liked songs and a full-featured player." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Files &amp; media / Music</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🎵</div>
+  <span class="badge">Files &amp; media</span>
+  <h1>Music</h1>
+  <p>Stream your own music collection — upload your tracks, organise them into
+     playlists, and play them anywhere with a full-featured web player.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/music">Open Music →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Music is your personal streaming service, hosted on your own
+     workspace. Upload audio files and they land in a browsable library with
+     title, artist, album and artwork. Build playlists, mark the songs you love,
+     and stream anything on demand — the audio is served straight from your
+     workspace's object storage with range requests, so seeking and resuming are
+     instant.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/music-desktop.png" alt="Music library on desktop" /><figcaption>The library — tracks, playlists and a persistent player bar.</figcaption></figure>
+    <figure class="shot"><img loading="lazy" src="shots/music-mobile.png" alt="Music on mobile" /><figcaption>On mobile.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Your library.</b> Every uploaded track shows its title, artist, album, duration and artwork; search across all three fields to find anything fast.</li>
+    <li><b>Playlists.</b> Create and name playlists, add or remove tracks, and drag to reorder — the order is saved server-side.</li>
+    <li><b>Liked songs.</b> Heart any track to collect it in a dedicated Liked view you can play in one tap.</li>
+    <li><b>Full player.</b> A persistent player bar with play/pause, previous/next, a seek scrubber, volume, shuffle, and repeat (off / all / one).</li>
+    <li><b>Queue.</b> Play a whole list or add tracks to the up-next queue; the player walks the queue honouring shuffle and repeat.</li>
+    <li><b>Upload with metadata.</b> Drop in an audio file — duration is probed in the browser before upload, and you can set title, artist, album and artwork. A progress bar tracks the transfer.</li>
+    <li><b>Edit &amp; manage.</b> Rename track metadata, swap artwork, download the original file, or delete tracks you no longer want.</li>
+    <li><b>Range streaming.</b> Tracks stream over range-capable HTTP, so jumping around a song or resuming playback is immediate.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Music stores your audio in the workspace's object storage and
+     keeps track and playlist metadata in the platform database. The web player
+     streams files directly over range-capable HTTP under the workspace origin,
+     so playback, seeking and resume all work without a separate media server.</p>
+  <dl class="kv">
+    <dt>Storage</dt><dd>Audio files in workspace object storage; metadata in the platform database</dd>
+    <dt>Streaming</dt><dd>Range-capable HTTP (seek &amp; resume)</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

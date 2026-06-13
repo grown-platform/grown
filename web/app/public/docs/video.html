@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Video — Grown Workspace docs</title>
+<meta name="description" content="Video in Grown Workspace: a YouTube-style video library — upload, browse and watch, with playlists, captions, watch progress and shareable links." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Files &amp; media / Video</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🎬</div>
+  <span class="badge">Files &amp; media</span>
+  <h1>Video</h1>
+  <p>A YouTube-style video library for your workspace — upload, browse and watch
+     videos hosted on infrastructure you control.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/video">Open Video →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Video gives your organisation its own video product. Upload a
+     file and it appears as a thumbnail tile with a title, description and
+     duration; click to watch in a full player that remembers where you left
+     off. Group videos into playlists, add subtitles, and share a clip with
+     specific teammates or with anyone via a public watch link — all without
+     handing your footage to a third-party platform.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/video-desktop.png" alt="Video library on desktop" /><figcaption>The library — thumbnails, playlists and a YouTube-style watch page.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Library.</b> Every video shows a thumbnail, title, description and duration; a watched badge and resume bar reflect your progress.</li>
+    <li><b>Watch page.</b> A full player with a YouTube-style watch view; playback position is saved as you go so you can pick up where you left off on any device.</li>
+    <li><b>Playlists.</b> Organise videos into named playlists and play through them in order.</li>
+    <li><b>Captions &amp; subtitles.</b> Attach WebVTT caption tracks in multiple languages with selectable labels.</li>
+    <li><b>Share with people.</b> Search your organisation's directory and share a video with specific members.</li>
+    <li><b>Public watch links.</b> Mint a tokenised public link (optionally with an expiry) that lets anyone watch without an account — revoke it any time.</li>
+    <li><b>Upload &amp; manage.</b> Upload with a progress bar, edit title/description/thumbnail, download the original, or delete videos you no longer need.</li>
+    <li><b>Range streaming.</b> Videos stream over range-capable HTTP, so seeking is instant and large files don't need to fully buffer.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Video stores uploaded files in the workspace's object storage
+     and serves them over range-capable HTTP under the workspace origin.
+     Per-user watch progress, playlists, captions and shares live in the
+     platform database. Public links resolve through an unauthenticated token
+     endpoint, so a shared clip plays for viewers who aren't signed in.</p>
+  <dl class="kv">
+    <dt>Storage</dt><dd>Video files in workspace object storage; metadata in the platform database</dd>
+    <dt>Streaming</dt><dd>Range-capable HTTP (seek &amp; resume)</dd>
+    <dt>Sharing</dt><dd>Per-user shares + tokenised public watch links</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC); public links need no account</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

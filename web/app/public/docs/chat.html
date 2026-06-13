@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Chat — Grown Workspace docs</title>
+<meta name="description" content="Chat in Grown Workspace: real-time team channels and direct messages, with reactions, threads, attachments and @mentions — also available as a rail inside Mail." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Communication / Chat</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">💬</div>
+  <span class="badge">Communication</span>
+  <h1>Chat</h1>
+  <p>Real-time team chat — channels and direct messages that update live,
+     without handing your conversations to a third party.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/chat">Open Chat →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Chat gives your workspace a fast place to talk. Group channels keep
+     teams in sync; direct messages cover quick one-on-ones. Messages stream over a
+     live connection, so replies, reactions and presence appear the moment they happen.
+     The same chat is also embedded as a compact rail inside Mail.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/chat-desktop.png" alt="Chat on desktop" /><figcaption>Channels, direct messages, and a live composer.</figcaption></figure>
+    <figure class="shot"><img loading="lazy" src="shots/chat-mobile.png" alt="Chat on mobile" /><figcaption>On mobile.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Channels &amp; direct messages.</b> Create named group channels with multiple members, or one-on-one DMs — including a private note-to-self channel.</li>
+    <li><b>Real-time delivery.</b> Each channel holds a live websocket connection, so new messages, deletions and presence arrive instantly.</li>
+    <li><b>Presence.</b> See how many people are currently active in a channel.</li>
+    <li><b>Threads.</b> Reply under any message to keep side conversations tidy; the parent shows its reply count.</li>
+    <li><b>Reactions.</b> React with a row of quick emoji or pick any emoji; reactions show a count and whether you reacted.</li>
+    <li><b>Attachments.</b> Drag-and-drop or paste files and images; images render inline, other files become download links.</li>
+    <li><b>Rich formatting.</b> Write in Markdown — bold, italic, strikethrough, code blocks, lists and tables — with a formatting toolbar and emoji picker in the composer.</li>
+    <li><b>@mentions.</b> Mention teammates with autocomplete that searches the org directory by name or email.</li>
+    <li><b>GIF search.</b> Find and send GIFs without leaving the composer.</li>
+    <li><b>Unread badges.</b> Per-channel unread counts that clear when you open the channel.</li>
+    <li><b>Embedded rail.</b> A compact chat sidebar that drops into other apps such as Mail for quick messages without switching context.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Chat keeps a websocket open per channel for live message, presence and
+     deletion events. Attachments upload to your workspace's object storage and are
+     referenced inline. The member directory and @mention autocomplete are served from
+     the shared org directory, and every request rides your workspace single sign-on.</p>
+  <dl class="kv">
+    <dt>Transport</dt><dd>Live websocket per channel (messages, presence, deletions)</dd>
+    <dt>Storage</dt><dd>Messages in the workspace database; attachments in object storage</dd>
+    <dt>Directory</dt><dd>Shared org directory powers member search and @mentions</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

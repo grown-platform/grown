@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>VPN — Grown Workspace docs</title>
+<meta name="description" content="VPN in Grown Workspace: a Tailscale tailnet for secure, private access to your workspace services from anywhere." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Admin &amp; infrastructure / VPN</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🔒</div>
+  <span class="badge">Admin &amp; infrastructure</span>
+  <h1>VPN</h1>
+  <p>A Tailscale tailnet for your workspace — secure, private access to internal
+     services from anywhere, with nothing exposed to the open internet.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/vpn">Open VPN →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">The VPN page is the front door to your workspace's Tailscale
+     tailnet. It shows whether the integration is active, lists the devices on
+     the tailnet, points to the internal services you can reach over it, and
+     gives you everything you need to join — install links and step-by-step
+     instructions.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/vpn-desktop.png" alt="VPN page on desktop" /><figcaption>Tailnet status, devices, and how to join.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Tailnet status.</b> A banner shows whether the Tailscale integration is active and names your tailnet.</li>
+    <li><b>Device list.</b> See every device on the tailnet with its hostname, OS, address, online/offline state and last-seen time (when an API key is configured).</li>
+    <li><b>Workspace services.</b> A handy reference of internal endpoints reachable over the tailnet — the workspace itself, Postgres, and object storage.</li>
+    <li><b>Join instructions.</b> Clear steps to install Tailscale, sign in to the workspace tailnet, and gain access to exposed services.</li>
+    <li><b>Install links.</b> One-click download buttons for macOS, Windows, Linux, iOS and Android.</li>
+    <li><b>Honest setup state.</b> When the tailnet isn't configured yet, the page explains exactly which environment variables and the Tailscale Kubernetes operator are needed to light it up.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">VPN is backed by the Tailscale Kubernetes operator running in the
+     cluster. The workspace reads tailnet status — and, with a Tailscale API key,
+     the device list — and renders it here. Devices that sign in to the same
+     tailnet gain access to the services the operator exposes; no ports are
+     opened to the public internet.</p>
+  <dl class="kv">
+    <dt>Backend</dt><dd>Tailscale (WireGuard-based mesh VPN)</dd>
+    <dt>Operator</dt><dd>Tailscale Kubernetes operator in-cluster</dd>
+    <dt>Config</dt><dd><code>GROWN_TAILSCALE_TAILNET</code> + optional <code>GROWN_TAILSCALE_API_KEY</code></dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

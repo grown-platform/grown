@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Docs — Grown Workspace docs</title>
+<meta name="description" content="Docs in Grown Workspace: collaborative rich-text documents edited in real time — comments, version history, templates, sharing and exports." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Productivity / Docs</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">📄</div>
+  <span class="badge">Productivity</span>
+  <h1>Docs</h1>
+  <p>Collaborative rich-text documents, edited in real time — write together,
+     comment, track versions and export anywhere.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/docs">Open Docs →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Docs is a full collaborative word processor. Several people can
+     edit the same document at once — you see each other's live cursors and
+     selections — backed by a conflict-free sync engine so nobody's work is lost.
+     Start from a blank page or pick a starter template, then format, comment and
+     share without leaving the workspace.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/docs-desktop.png" alt="Docs editor on desktop" /><figcaption>The editor — live presence, formatting toolbar and a comments rail.</figcaption></figure>
+    <figure class="shot"><img loading="lazy" src="shots/docs-mobile.png" alt="Docs on mobile" /><figcaption>On mobile.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Real-time co-editing.</b> Multiple people edit the same document together, with live cursors, selections and presence avatars in the header.</li>
+    <li><b>Comments.</b> Anchor comments to a selection, reply in threads, and resolve or reopen them — all in a side panel.</li>
+    <li><b>Version history.</b> Automatic snapshots with author and timestamp; name a version, preview it, and restore any earlier state in one click.</li>
+    <li><b>Sharing &amp; permissions.</b> Share by link as viewer or editor, or invite specific people by email with per-user can-edit / can-view access — works across organisations.</li>
+    <li><b>Starter templates.</b> Begin from Blank document, Project proposal, Meeting notes, Brochure, Newsletter or Business letter.</li>
+    <li><b>Rich formatting.</b> Headings 1–6, bold/italic/underline/strikethrough, super/subscript, text and highlight colours, fonts and sizes, line spacing, alignment, indentation and clear-formatting.</li>
+    <li><b>Lists, tables &amp; media.</b> Bulleted, numbered and check lists; insert tables, images (by URL, paste or drag-and-drop), links and horizontal rules.</li>
+    <li><b>Export anywhere.</b> Download as Word (.docx), OpenDocument (.odt), RTF, PDF, plain text, HTML, EPUB or Markdown.</li>
+    <li><b>Find &amp; replace, command palette.</b> Search across the document and search every menu action from one box (Alt+/), with a full keyboard-shortcut reference (Ctrl+/).</li>
+    <li><b>Page layout.</b> Ruler with margin and indent controls, portrait/landscape orientation, optional page numbers, and an Editing/Viewing mode toggle.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Docs builds on a rich-text editor synced through a conflict-free
+     replicated data type (CRDT). Every keystroke merges cleanly across all
+     editors over a live websocket, so concurrent edits never collide. Document
+     content, comments and version snapshots persist in the workspace; the same
+     single sign-on grants access across the platform, including sharing with
+     people in other organisations.</p>
+  <dl class="kv">
+    <dt>Editor</dt><dd>TipTap rich-text editor with collaborative extensions</dd>
+    <dt>Sync</dt><dd>Yjs CRDT over a live websocket (conflict-free co-editing)</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

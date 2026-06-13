@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Slides — Grown Workspace docs</title>
+<meta name="description" content="Slides in Grown Workspace: build and present slide decks together — shapes, text, images, animations, speaker notes and a full presenter view." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Productivity / Slides</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🖼️</div>
+  <span class="badge">Productivity</span>
+  <h1>Slides</h1>
+  <p>Build and present slide decks — design slides with text, shapes, images and
+     animations, then present full-screen with speaker notes.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/slides">Open Slides →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Slides is a presentation editor and deck library in one. Design
+     each slide on a free-form canvas — drag and resize text boxes, shapes and
+     images — add transitions and per-element animations, write speaker notes,
+     then run the deck in a full presenter view. Decks are collaborative, so a
+     team can build the same presentation together in real time.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/slides-desktop.png" alt="Slides editor on desktop" /><figcaption>The deck editor — canvas, slide panel and toolbar.</figcaption></figure>
+    <figure class="shot"><img loading="lazy" src="shots/slides-mobile.png" alt="Slides on mobile" /><figcaption>On mobile.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Free-form canvas.</b> Drag, resize and arrange text boxes, images, lines and shapes (rectangle, rounded rectangle, ellipse, triangle, diamond, arrow).</li>
+    <li><b>Text styling.</b> Choose font, size and colour; bold/italic/underline; horizontal and vertical alignment — edit text in place with a double-click.</li>
+    <li><b>Templates.</b> Start from Blank, Simple Light, Bold Dark, Photo Focus or Pitch Deck.</li>
+    <li><b>Transitions &amp; animations.</b> Slide transitions (fade, slide, push) and per-element entrance animations — appear, fade in, fly in from bottom or left — with click ordering.</li>
+    <li><b>Speaker notes.</b> Per-slide notes shown in the editor and in the presenter view.</li>
+    <li><b>Presenter view.</b> Full-screen presenting with the current slide, next-slide preview, notes, an elapsed timer and a slide/step counter; step through animations with arrow keys or space.</li>
+    <li><b>Arrange &amp; edit.</b> Cut/copy/paste and duplicate elements, bring to front / send to back, nudge with arrow keys, and undo/redo.</li>
+    <li><b>Deck library.</b> My presentations and Shared-with-me views; create, rename, duplicate or trash decks, with live thumbnails in the slide panel.</li>
+    <li><b>Export.</b> Download as PowerPoint (.pptx), PDF, plain text (with notes), HTML, or the current slide as PNG, JPG or SVG.</li>
+    <li><b>Real-time collaboration.</b> Co-edit decks with live presence indicators showing who's on which slide.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Each deck is a list of slides, and each slide is a set of
+     positioned elements — text, shapes and images — with its own background,
+     notes, transition and animation order. The editor renders that model on a
+     scalable canvas and replays it in the presenter view. Edits broadcast to
+     other collaborators over a live websocket, and sharing is governed by the
+     same workspace sign-on, including people in other organisations.</p>
+  <dl class="kv">
+    <dt>Model</dt><dd>Decks of slides; slides of positioned text/shape/image elements</dd>
+    <dt>Sync</dt><dd>Live websocket collaboration with per-slide presence</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

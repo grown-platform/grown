@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Games — Grown Workspace docs</title>
+<meta name="description" content="Games in Grown Workspace: an arcade of 100+ browser games — installable and playable offline — plus native game ports (Mighty Mike, Maelstrom, Bolo) and online multiplayer." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#6741d9" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Fun / Games</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🎮</div>
+  <span class="badge">Fun</span>
+  <h1>Games</h1>
+  <p>The arcade — over 100 browser games you can install and play offline, with
+     category filters and high scores, native game ports compiled to run in the
+     browser, and online multiplayer for the games you'd rather not play alone.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/games">Open Games →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Games is a hub of more than a hundred ready-to-play titles —
+     arcade, puzzle, board, card, word, casino and kids' games — that run
+     entirely in your browser. No account is required: it works signed-out and
+     signed-in alike. Install it as its own app and the whole collection plays
+     with no connection at all. Beyond the hand-built games, the hub hosts
+     genuine native games ported to run in the browser, and many of the
+     turn-based and party games can be played online with friends over a shared
+     link.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/games-desktop.png" alt="The Games hub on desktop" /><figcaption>The arcade — search, category filters and a grid of 100+ games.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Featured ports — native games in the browser</h2>
+  <p class="lead">The headline attractions are real native games compiled to run
+     on the web, complete with on-screen touch controls so they play on a phone
+     as well as a desktop:</p>
+  <ul class="feat">
+    <li><b>Mighty Mike.</b> A run-and-gun arcade adventure — a remake of Pangea Software's <i>Power Pete</i>.</li>
+    <li><b>Maelstrom.</b> Ambrosia Software's fast Asteroids-style shooter, an SDL game compiled to WebAssembly (Zlib-licensed).</li>
+    <li><b>Bolo.</b> The classic networked tank game, faithfully ported — with online multiplayer: create a room, share the link, and play together, plus a builder palette for terrain on mobile.</li>
+    <li><b>WinBolo.</b> A clean-room, GPL WinBolo compiled to WebAssembly — currently a single-player preview.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Online multiplayer</h2>
+  <p class="lead">Plenty of games here are better with someone else. <b>Bolo</b>
+     has full online play — create a room, share a link, and battle together in
+     real time. Many turn-based games carry a 👥 icon that opens an online match
+     you can invite someone into: Tic-Tac-Toe, Connect Four, Reversi, Gomoku,
+     Checkers, Chess, Dots &amp; Boxes, Mancala and Battleship — plus Monopoly
+     Deal for 2–5 players. Prefer the same screen? Those games and more offer
+     local two-player pass-and-play, with a slide-to-reveal privacy handoff for
+     hidden-hand card and tile games.</p>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>100+ games.</b> A big, growing library spanning Arcade, Puzzle, Board, Card, Word, Casino, Kids and Speed — from Tetris, Snake and 2048 to Solitaire, Chess, Wordle and Blackjack.</li>
+    <li><b>Native ports in the browser.</b> Real native games — Mighty Mike, Maelstrom and Bolo — compiled to run on the web, with on-screen touch controls for mobile.</li>
+    <li><b>Online multiplayer.</b> Create-a-room online play for Bolo, and a 👥 online mode across many turn-based games plus Monopoly Deal (2–5 players).</li>
+    <li><b>Two-player pass &amp; play.</b> Local hot-seat for board games and hidden-hand card games, with a slide-to-reveal handoff between turns.</li>
+    <li><b>Install &amp; play offline.</b> Add the hub to your home screen and a service worker precaches the whole collection — every game runs with no connection.</li>
+    <li><b>Category filters &amp; search.</b> Filter by Arcade, Puzzle, Card, Board, Word, Casino, Kids, Speed, Group, 2-Player, Adventure or Port, or just search by name.</li>
+    <li><b>High scores &amp; pause.</b> Games keep your best scores locally and have a real in-game pause menu.</li>
+    <li><b>No account needed.</b> The arcade is public — it works whether or not you're signed in.</li>
+    <li><b>Import your own.</b> Signed-in users can upload a self-contained HTML game; imports run in a locked-down sandboxed iframe (opaque origin, no access to your session) so untrusted games stay isolated.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Bundled games are trusted, self-contained HTML served from the
+     workspace and opened directly; the native ports are compiled to WebAssembly
+     and shipped the same way. A service worker registered for the games hub
+     precaches the collection so the installed app works fully offline. Imported
+     games are treated as untrusted: they only ever run inside a sandboxed iframe
+     with an opaque origin, so they can't reach your workspace session, cookies
+     or APIs. High scores live in the browser; online multiplayer connects
+     players through shared rooms.</p>
+  <dl class="kv">
+    <dt>Delivery</dt><dd>Self-contained HTML + WebAssembly ports, served under the workspace origin</dd>
+    <dt>Offline</dt><dd>Installable PWA; a service worker precaches the whole collection</dd>
+    <dt>Multiplayer</dt><dd>Create-a-room online play (Bolo) and 👥 online mode for many turn-based games</dd>
+    <dt>Imports</dt><dd>Untrusted uploads run only in a sandboxed iframe (opaque origin)</dd>
+    <dt>Auth</dt><dd>No account required to play; sign in to import your own games</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

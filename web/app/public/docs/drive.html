@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Drive — Grown Workspace docs</title>
+<meta name="description" content="Drive in Grown Workspace: file storage and sharing with previews, version history, EXIF metadata on photos, and expiring share links." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Files &amp; media / Drive</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">📁</div>
+  <span class="badge">Files &amp; media</span>
+  <h1>Drive</h1>
+  <p>File storage and sharing with previews, versions and rich photo metadata —
+     plus share links you can set to expire.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/drive">Open Drive →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Drive is your workspace's file storage. Organise files in folders,
+     preview them in the browser, keep a full version history, and share them — with
+     specific people or via a link that can expire. Image files surface their EXIF
+     metadata, including camera, date taken and GPS location.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/drive-desktop.png" alt="Drive on desktop" /><figcaption>Files and folders with previews and a details panel.</figcaption></figure>
+    <figure class="shot"><img loading="lazy" src="shots/drive-mobile.png" alt="Drive on mobile" /><figcaption>On mobile.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Upload &amp; organise.</b> Drag-and-drop or pick files, create folders, rename, move, copy and trash — with grid and list views.</li>
+    <li><b>In-browser previews.</b> View PDFs, images, video, audio, CSV tables and text/JSON without downloading.</li>
+    <li><b>EXIF photo metadata.</b> Image previews show dimensions, camera make and model, lens, focal length, ISO, exposure, date taken and GPS location with a map link.</li>
+    <li><b>Version history.</b> Every file keeps its prior versions; view, download or restore any version, and restoring saves the current content as a new version.</li>
+    <li><b>Sharing.</b> Grant access to specific Grown users, or create an "anyone with the link" share with a viewer, commenter or editor role.</li>
+    <li><b>Expiring share links.</b> Set a link to never expire or to lapse after 1 hour, 1 day, 7 days or 30 days; revoke shares any time.</li>
+    <li><b>File details panel.</b> See who has access, file type, size, owner, location and timestamps in a side panel.</li>
+    <li><b>Smart views.</b> My Drive, Shared with me, Starred, Recent and Trash, plus search and filters by name, type and owner.</li>
+    <li><b>Starred files.</b> Flag favorites and find them in the Starred view.</li>
+    <li><b>Open in editors.</b> Hand files off to the matching Grown editor (for example, a spreadsheet opens in Sheets).</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Drive stores file content and metadata in your workspace, with each file
+     tracking its versions. Shares are token links carrying a role and an optional expiry,
+     reachable at <code>/drive/share/&lt;token&gt;</code>, alongside per-user access grants.
+     Previews and EXIF parsing run in the browser, and everything is gated by your
+     workspace single sign-on.</p>
+  <dl class="kv">
+    <dt>Storage</dt><dd>File content and version snapshots in workspace storage</dd>
+    <dt>Sharing</dt><dd>Token links (role + optional expiry) and per-user access grants</dd>
+    <dt>Metadata</dt><dd>EXIF read in-browser (camera, date, GPS) for image files</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

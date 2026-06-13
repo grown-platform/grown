@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Telephony — Grown Workspace docs</title>
+<meta name="description" content="Telephony in Grown Workspace: a VoIP softphone plus Google-Voice-style texting, with a 3CX-style PBX admin console (admins only), call recordings and a live activity log." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Communication / Telephony</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">☎️</div>
+  <span class="badge">Communication</span>
+  <h1>Telephony</h1>
+  <p>A VoIP softphone plus Google-Voice-style texting, with a 3CX-style PBX admin
+     console for admins — call recordings and a live activity log included.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/telephony">Open Telephony →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Telephony turns the browser into a phone. Place and receive calls from
+     a dialpad, text contacts from a Google-Voice-style thread view, and — if you're an
+     admin — run the whole phone system from a PBX administration console. Calls connect
+     peer-to-peer over WebRTC, the directory is shared with Contacts, and console actions
+     are captured in a searchable activity log.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/telephony-desktop.png" alt="Telephony on desktop" /><figcaption>The softphone — dialpad, recent calls and the contact directory.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Softphone</h2>
+  <ul class="feat">
+    <li><b>Dialpad.</b> A full numeric keypad to dial extensions or numbers, with a call button and backspace.</li>
+    <li><b>Call controls.</b> Accept, mute/unmute and hang up from an in-call bar that shows the other party, the call state and a live duration timer.</li>
+    <li><b>Incoming &amp; outgoing states.</b> Clear states for ringing out, incoming, connecting and connected.</li>
+    <li><b>Recent calls.</b> A history list marking calls sent, received and missed, with a one-click "call back".</li>
+    <li><b>Directory &amp; presence.</b> Dialable contacts come from the Contacts app; live green/grey dots show who's online.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Texting</h2>
+  <ul class="feat">
+    <li><b>Conversation threads.</b> A Google-Voice-style two-pane view: a list of threads on the left, the open conversation on the right.</li>
+    <li><b>Send to anyone.</b> Start a thread with a contact or type any phone number or extension.</li>
+    <li><b>Unread markers.</b> Threads flag unread messages and clear when opened.</li>
+    <li><b>Relative timestamps.</b> Each message carries a time, and threads show a relative "last activity" stamp.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>PBX admin console <span class="badge">Admins only</span></h2>
+  <p class="lead">A full, 3CX-style administration console — visible only to org admins —
+     for configuring and monitoring the phone system end to end.</p>
+  <ul class="feat">
+    <li><b>Dashboard.</b> Health stats for registered extensions, active calls, trunks, calls today and voicemails, plus a system status table.</li>
+    <li><b>Extensions.</b> Manage user extensions, devices, voicemail and registration status.</li>
+    <li><b>Ring groups &amp; call queues.</b> Group members with ring strategies and timeouts; configure queues with agents and SLAs.</li>
+    <li><b>Auto-attendant (IVR).</b> An editable greeting and a digit-routing map to extensions, queues or voicemail.</li>
+    <li><b>Trunks &amp; routes.</b> SIP trunks plus inbound (DID) and outbound (dial-pattern) routing.</li>
+    <li><b>Voicemail, music on hold &amp; fax.</b> Voicemail-to-email, hold music, and fax-to-email with a transmission log.</li>
+    <li><b>Phonebook.</b> A shared phonebook for caller-ID name lookup.</li>
+    <li><b>Reports (CDR).</b> Filterable call detail records by date, direction and status, with inline recording playback.</li>
+    <li><b>Recordings.</b> Storage usage, a retention policy, and per-recording play, download and delete.</li>
+    <li><b>Activity log.</b> A searchable, filterable audit trail of console actions.</li>
+    <li><b>System.</b> Phone provisioning, SIP security and intrusion detection, backup &amp; restore, and SMTP email settings.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Calls connect peer-to-peer over WebRTC, coordinated by a websocket
+     signaling channel that carries presence, call invites, accept/reject/hangup and the
+     WebRTC offer/answer and ICE exchange. The softphone needs microphone access (served
+     over HTTPS or localhost). The admin console is gated to org admins, and its actions
+     are recorded in the activity log.</p>
+  <dl class="kv">
+    <dt>Media</dt><dd>WebRTC peer-to-peer audio (STUN for NAT traversal)</dd>
+    <dt>Signaling</dt><dd>Websocket (presence, invites, offer/answer, ICE, hangup)</dd>
+    <dt>Backend</dt><dd>Asterisk-based PBX behind the admin console</dd>
+    <dt>Directory</dt><dd>Shared with Contacts (numbers become dialable extensions)</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC); admin console gated to org admins</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

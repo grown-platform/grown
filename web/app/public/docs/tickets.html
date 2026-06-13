@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Tickets — Grown Workspace docs</title>
+<meta name="description" content="Tickets in Grown Workspace: a Jira-like helpdesk — projects with per-project numbering, statuses, priorities, comment threads with internal notes, and a public submit portal." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Productivity / Tickets</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🎫</div>
+  <span class="badge">Productivity</span>
+  <h1>Tickets</h1>
+  <p>A Jira-like helpdesk for your workspace — track requests across projects,
+     and let anyone file one through a public link, no account required.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/tickets">Open Tickets →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Tickets organises support and request tracking into projects.
+     Each project has its own key and numbering, configurable statuses, and an
+     intake mode — either your team only, or a public link anyone can use without
+     signing in. Open a project to see its queue, drill into a ticket to set
+     status and priority, and work it through a threaded comment conversation.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/tickets-desktop.png" alt="Tickets on desktop" /><figcaption>Projects sidebar, the ticket queue, and a ticket's comment thread.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Projects.</b> Group work into projects, each with a name, a short uppercase key (e.g. <code>SUP</code>) and a description. The sidebar badges every project with its open-ticket count.</li>
+    <li><b>Per-project numbering.</b> Tickets are numbered within their project, so each gets a stable reference like <code>SUP-12</code>.</li>
+    <li><b>Configurable statuses.</b> A project defines its own set of statuses; tickets move through them, and you can filter the queue by any status.</li>
+    <li><b>Priority.</b> Every ticket carries a priority — low, normal, high or urgent — shown as a colour-coded chip.</li>
+    <li><b>Assignee.</b> Tickets can be assigned to (and cleared from) a workspace user.</li>
+    <li><b>Comment threads.</b> Work a ticket through a running conversation, with the requester's details, source and timestamps in view.</li>
+    <li><b>Internal notes.</b> Mark a comment as an internal note — visible to your team but not to the requester — for triage and back-channel discussion.</li>
+    <li><b>Configurable intake.</b> Each project is either <em>Team only</em> or <em>Public link</em>. Public projects expose a copy-to-clipboard intake URL.</li>
+    <li><b>Public submit portal.</b> A branded, accountless form at the project's public link lets anyone file a request — name, email, subject and details — and instantly shows them their ticket reference (e.g. <code>SUP-12</code>) to quote later.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Authenticated members manage projects and tickets over the
+     workspace API; status and priority changes and comments are saved as you go.
+     Public projects additionally expose unauthenticated intake endpoints — the
+     submit portal fetches the project's public branding by token, posts the
+     request, and returns its <code>KEY-N</code> reference. A disabled or unknown
+     link renders a graceful not-found.</p>
+  <dl class="kv">
+    <dt>Structure</dt><dd>Projects → tickets (<code>KEY-N</code>) → comments</dd>
+    <dt>Intake</dt><dd>Team only, or a public link (no account)</dd>
+    <dt>Workflow</dt><dd>Configurable statuses, priority, assignee, internal notes</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Meet — Grown Workspace docs</title>
+<meta name="description" content="Meet in Grown Workspace: peer-to-peer WebRTC video meetings — your video goes straight to other participants, no server relay. Screen share, hand raise and in-call chat included." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Communication / Meet</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🎥</div>
+  <span class="badge">Communication</span>
+  <h1>Meet</h1>
+  <p>Peer-to-peer WebRTC video meetings — your video goes straight to the other
+     participants, with no server relaying your call.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/meet">Open Meet →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Meet is video conferencing built on WebRTC. Create a room, share its
+     short code, and everyone connects directly to one another — audio and video flow
+     peer-to-peer rather than through a central server. Controls for mic, camera, screen
+     share, hand raise and in-call chat are all one click away.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/meet-desktop.png" alt="Meet on desktop" /><figcaption>The Meet lobby — start or join a call with a short code.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Peer-to-peer video.</b> Each participant connects directly to the others over WebRTC; media never routes through a relay server.</li>
+    <li><b>Short room codes.</b> Create a named room and get a short shareable code (like <code>abc-defg-hij</code>); join from the room list, by typing a code, or straight from a <code>/meet/&lt;code&gt;</code> link.</li>
+    <li><b>Participant grid.</b> Tiles for every participant with name, mute and camera indicators, and an avatar fallback when a camera is off.</li>
+    <li><b>Mic &amp; camera controls.</b> Toggle your microphone and camera; your state is reflected to everyone in the room.</li>
+    <li><b>Screen sharing.</b> Share your screen with one click; the shared track replaces your camera across all connections and stops cleanly when you end it.</li>
+    <li><b>Hand raise.</b> Raise your hand to signal the room; a badge appears on your tile.</li>
+    <li><b>In-call chat.</b> A side panel for text messages during the call, with an unread badge.</li>
+    <li><b>Roster panel.</b> A slide-out list of everyone in the call with mute, camera and raised-hand status, plus a live participant count.</li>
+    <li><b>Copyable invite link.</b> Copy the meeting URL from the top bar to invite others.</li>
+    <li><b>Graceful join.</b> No camera or mic? You can still join to see and hear the others.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">A websocket signaling channel coordinates the call: it exchanges WebRTC
+     offers, answers and ICE candidates, and relays control events like join, leave,
+     mute, hand raise and chat. Once peers are connected, audio and video travel directly
+     between them. STUN is used to traverse NAT; the actual media stays peer-to-peer.</p>
+  <dl class="kv">
+    <dt>Media</dt><dd>WebRTC, peer-to-peer (no server relay of audio/video)</dd>
+    <dt>Signaling</dt><dd>Websocket per room (SDP offers/answers, ICE, control events)</dd>
+    <dt>Connectivity</dt><dd>STUN for NAT traversal</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

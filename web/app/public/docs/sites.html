@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Sites — Grown Workspace docs</title>
+<meta name="description" content="Sites in Grown Workspace: build and publish simple multi-page websites with a block-based editor — no code required." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Collaboration / Sites</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🌐</div>
+  <span class="badge">Collaboration</span>
+  <h1>Sites</h1>
+  <p>Build and publish simple websites from your workspace — a block-based
+     editor, multiple pages, and a public link when you're ready.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/sites">Open Sites →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Sites is a lightweight website builder. Stack content blocks —
+     headings, text, images, buttons, dividers and embeds — onto pages, add as
+     many pages as you need, and preview as you go. Keep a site as a private
+     draft while you work, then publish it to share a clean public page. No code,
+     no separate hosting.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/sites-desktop.png" alt="Sites editor on desktop" /><figcaption>The block-based editor with live preview.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Block-based editor.</b> Compose pages from content blocks: heading, text, image, button, divider and embed.</li>
+    <li><b>Multiple pages.</b> A site is a tree of pages, each with its own title, path and blocks — build anything from a one-pager to a small multi-page site.</li>
+    <li><b>Live preview.</b> See pages render as you edit, so what you build is what you publish.</li>
+    <li><b>Draft &amp; publish.</b> Sites start private; flip a switch to publish, and your changes go live on a public view link. Unpublish any time.</li>
+    <li><b>Embeds.</b> Drop in an embed block to surface external content via an iframe.</li>
+    <li><b>Site management.</b> Create, rename and manage all your sites from a grid that shows draft vs published status at a glance.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Each site's page tree is serialized to JSON and stored in the
+     platform database. The editor renders that model in the browser and saves
+     it back as you work. Publishing flips the site's published flag and exposes
+     it through an unauthenticated public endpoint, so a published site renders
+     for visitors who aren't signed in.</p>
+  <dl class="kv">
+    <dt>Content model</dt><dd>Page tree of blocks serialized to JSON in the platform database</dd>
+    <dt>Publishing</dt><dd>Published flag + unauthenticated public view route</dd>
+    <dt>Blocks</dt><dd>Heading, text, image, button, divider, embed</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC); published sites need no account</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

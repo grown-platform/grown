@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Settings — Grown Workspace docs</title>
+<meta name="description" content="Settings in Grown Workspace: your account preferences — profile, avatar, scoped API tokens, language & region, appearance, and notifications." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Account / Settings</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">⚙️</div>
+  <span class="badge">Account</span>
+  <h1>Settings</h1>
+  <p>Your personal control panel — manage your profile and photo, mint scoped API
+     tokens, and tune how the workspace looks and behaves for you.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/settings">Open Settings →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Settings is where you manage <em>your</em> account — distinct
+     from the org-wide Admin console. Edit your name, username, phone and email,
+     upload an avatar, create personal API tokens for scripts and integrations,
+     and set language, formats, appearance and notification preferences that
+     follow you across the workspace.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/settings-desktop.png" alt="Settings on desktop" /><figcaption>Profile, API tokens, and your workspace preferences.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Profile.</b> Edit your first and last name, a unique username, phone number and email. Changing your email sends a verification link, and your address shows a verified / unverified badge.</li>
+    <li><b>Profile photo.</b> Upload an avatar; it updates everywhere your identity appears.</li>
+    <li><b>API tokens.</b> Create personal access tokens that authenticate scripts and integrations as you over the HTTP API (<code>Authorization: Bearer &lt;token&gt;</code>). The full token is shown once — copy it then.</li>
+    <li><b>Token scopes.</b> Grant <em>full access</em>, or limit a token to chosen services (Drive, Mail, Calendar, Contacts, Sheets, Docs, Photos, Music, Video, Tasks), optionally read-only. Set an expiry — never, 30 days, 90 days or a year — and revoke any token at any time.</li>
+    <li><b>Language &amp; region.</b> Pick your language, date and time formats, and which day the week starts on.</li>
+    <li><b>Appearance.</b> Choose comfortable or compact density, and the default app you land on after signing in.</li>
+    <li><b>Notifications.</b> Toggle email digests and activity summaries.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Settings reads and writes your account over per-user endpoints
+     (<code>/api/v1/me/*</code>). Profile and email changes flow through Zitadel
+     — email changes stay pending until you verify the new address. Preferences
+     are saved server-side and applied app-wide (density, for instance, is set on
+     the page so components react immediately). API tokens are hashed; the raw
+     value is returned only once at creation.</p>
+  <dl class="kv">
+    <dt>Scope</dt><dd>Per-user — your account only</dd>
+    <dt>Identity</dt><dd>Zitadel (name, username, phone, verified email)</dd>
+    <dt>Tokens</dt><dd>Scoped bearer tokens, shown once, revocable</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

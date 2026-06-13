@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Forms — Grown Workspace docs</title>
+<meta name="description" content="Forms in Grown Workspace: build forms and surveys, collect responses, view summaries and export results — with optional quiz mode." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Productivity / Forms</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">📝</div>
+  <span class="badge">Productivity</span>
+  <h1>Forms</h1>
+  <p>Build forms and surveys, collect responses, and see the results — with an
+     optional quiz mode that grades itself.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/forms">Open Forms →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Forms lets you build a form or survey from a stack of question
+     types, share a link, and collect responses — then read them one by one or as
+     a summary with charts. Add sections for multi-page forms, branch between them
+     based on answers, or turn the whole thing into a self-grading quiz.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/forms-desktop.png" alt="Forms editor on desktop" /><figcaption>The form editor — questions, settings and a live preview.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Nine question types.</b> Short answer, paragraph, multiple choice, checkboxes, dropdown, linear scale, date, time and file upload.</li>
+    <li><b>Sections &amp; branching.</b> Split long forms into named sections (pages) and branch to a different section — or submit early — based on a multiple-choice or dropdown answer.</li>
+    <li><b>Question options.</b> Mark questions required, add descriptions, configure linear-scale endpoints and labels, and reorder or duplicate questions.</li>
+    <li><b>Form settings.</b> Collect respondent email, limit to one response, show a progress bar, shuffle question order, toggle accepting responses, and set a custom confirmation message.</li>
+    <li><b>Filling experience.</b> Multi-page navigation with Back/Next, a progress bar, retained answers and required-field validation.</li>
+    <li><b>Responses.</b> Browse individual responses with Previous/Next, or open a Summary tab with bar charts for choice questions and lists of text answers.</li>
+    <li><b>Quiz mode.</b> Set correct answers and point values, auto-grade on submission, show scores to respondents, and see average / high / low across all responses.</li>
+    <li><b>Export.</b> Download every response as a CSV, including email, answers and quiz scores.</li>
+    <li><b>Templates &amp; management.</b> Start from a template (Contact info, Party invite, RSVP, Event registration, Course evaluation, Event feedback), or duplicate, preview and share any form.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">A form is an ordered list of questions grouped into sections;
+     each submission stores its answers as structured data, with branching
+     resolved as the respondent moves between pages. Choice answers roll up into
+     summary charts, and in quiz mode answers are scored against the answer key on
+     submission. Sharing a form gives respondents a link, while building and
+     viewing results use the workspace single sign-on.</p>
+  <dl class="kv">
+    <dt>Model</dt><dd>Sections of questions (9 types) with optional answer-based branching</dd>
+    <dt>Responses</dt><dd>Per-submission answers, summary charts, CSV export, quiz grading</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Mail — Grown Workspace docs</title>
+<meta name="description" content="Mail in Grown Workspace: a full self-hosted mailbox — threads, attachments, search, labels, and an embedded chat rail." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Communication / Mail</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">✉️</div>
+  <span class="badge">Communication</span>
+  <h1>Mail</h1>
+  <p>A full self-hosted mailbox — read, write, search and organise your email
+     without handing it to a third party.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/mail">Open Mail →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Mail is a complete webmail client backed by your own mail server.
+     Your messages live on infrastructure you run — Mail just gives you a fast,
+     modern interface to them, with single sign-on shared across the workspace.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/mail-desktop.png" alt="Mail inbox on desktop" /><figcaption>The inbox — threads, labels, and a built-in chat rail.</figcaption></figure>
+    <figure class="shot"><img loading="lazy" src="shots/mail-mobile.png" alt="Mail on mobile" /><figcaption>On mobile.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Threaded conversations.</b> Messages are grouped into conversations so a back-and-forth reads as one thread.</li>
+    <li><b>Attachments.</b> Send and receive files; attachments are stored in your workspace's object storage.</li>
+    <li><b>Search.</b> Find mail across folders by sender, subject and body.</li>
+    <li><b>Labels &amp; folders.</b> Organise mail with labels and standard mailboxes (Inbox, Sent, Drafts, Archive, Trash).</li>
+    <li><b>Compose &amp; reply.</b> Rich composer with reply, reply-all and forward.</li>
+    <li><b>Embedded chat rail.</b> A team-chat sidebar sits alongside the inbox for quick messages without leaving Mail.</li>
+    <li><b>Single sign-on.</b> The same login as the rest of the workspace; your address is <code>&lt;you&gt;@your-domain</code>.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Mail connects to a self-hosted mail backend over IMAP/SMTP; the
+     workspace maps your login to your mailbox. Outbound mail is delivered through
+     the configured relay, and inbound mail lands in your mailbox in real time.</p>
+  <dl class="kv">
+    <dt>Backend</dt><dd>IMAP/SMTP (self-hosted mail server)</dd>
+    <dt>Storage</dt><dd>Messages on the mail server; attachments in workspace object storage</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

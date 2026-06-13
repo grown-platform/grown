@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Books — Grown Workspace docs</title>
+<meta name="description" content="Books in Grown Workspace: a self-hosted e-book library — EPUB, PDF, MOBI, CBZ and TXT — with an in-browser reader, bookmarks, highlights and synced progress." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Files &amp; media / Books</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">📚</div>
+  <span class="badge">Files &amp; media</span>
+  <h1>Books</h1>
+  <p>Your own e-book library — collect EPUB, PDF, MOBI, CBZ and TXT files and
+     read them right in the browser, with bookmarks, highlights and synced
+     progress.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/books">Open Books →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Books is a reading library hosted in your workspace. Upload
+     books and documents and they appear as a cover-art grid you can star,
+     organise onto shelves and search. Open one and the built-in reader renders
+     it in the browser — EPUB, PDF, plain text and CBZ comics — keeping your
+     place, your bookmarks and your highlights in sync wherever you read.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/books-desktop.png" alt="Books library on desktop" /><figcaption>The library — covers, shelves and the in-browser reader.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Five formats.</b> Store EPUB, PDF, MOBI, CBZ and TXT files; EPUB, PDF, TXT and CBZ render in the in-browser reader, and any format can be downloaded.</li>
+    <li><b>In-browser reader.</b> A dedicated reader per format — paginated EPUB, page-by-page PDF, scrollable TXT, and a CBZ comic viewer.</li>
+    <li><b>Reading progress.</b> Your last location and percent-read are saved per book and synced across devices; mark a book finished when you're done.</li>
+    <li><b>Bookmarks.</b> Drop labelled bookmarks at any point and jump back to them from a side panel.</li>
+    <li><b>Highlights &amp; notes.</b> Highlight passages in yellow, green, blue or pink and attach a note; review them all in a highlights panel.</li>
+    <li><b>Shelves.</b> Group books into named shelves (collections) and filter the library to one shelf.</li>
+    <li><b>Covers &amp; metadata.</b> Each book carries title, author and description; upload a cover image or edit the details, and star favourites.</li>
+    <li><b>Upload.</b> Add books by uploading the file directly into your library.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Books stores your files in the workspace's object storage and
+     serves them under the workspace origin for the reader to render in-browser.
+     Per-user reading progress, bookmarks, highlights and shelf membership live
+     in the platform database, so the same book opens to the same page no matter
+     which device you pick up.</p>
+  <dl class="kv">
+    <dt>Formats</dt><dd>EPUB, PDF, MOBI, CBZ, TXT (EPUB/PDF/TXT/CBZ render in-browser)</dd>
+    <dt>Storage</dt><dd>Book files in workspace object storage; progress &amp; annotations in the platform database</dd>
+    <dt>Sync</dt><dd>Per-user reading progress, bookmarks and highlights across devices</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

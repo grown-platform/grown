@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Groups — Grown Workspace docs</title>
+<meta name="description" content="Groups in Grown Workspace: mailing lists and team groups with shared email addresses, member rosters, and topic-based conversations." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Communication / Groups</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">📇</div>
+  <span class="badge">Communication</span>
+  <h1>Groups</h1>
+  <p>Mailing lists and team groups — a shared address and a place for the
+     whole group to talk.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/groups">Open Groups →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Groups bundle people behind a shared name and email address. Each group
+     has a member roster and a stream of topic-based conversations, so a team, project or
+     community has one place to reach everyone and keep discussions together.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/groups-desktop.png" alt="Groups on desktop" /><figcaption>A group — members, conversations and details.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Groups with an address.</b> Create a group with a name, email address and optional description.</li>
+    <li><b>Member rosters.</b> Add members from the org directory with live search by name or email; manage the roster at any time.</li>
+    <li><b>Topic conversations.</b> Start topics with a subject and an opening message; each group lists its topics with author, post count and last activity.</li>
+    <li><b>Posts.</b> Reply to a topic to keep the thread going, with author and a "time ago" stamp on every post.</li>
+    <li><b>Search.</b> Find groups by name, email or description.</li>
+    <li><b>Tabbed group view.</b> Conversations, About (description, email, created date) and Members tabs for each group.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Groups are stored per organisation and served from the workspace API.
+     Member search resolves against the shared org directory, so any user in your org can
+     be found and added — even before they've signed in. Each group owns its topics, and
+     each topic its sequence of posts.</p>
+  <dl class="kv">
+    <dt>Storage</dt><dd>Per-org groups, topics and posts in the workspace database</dd>
+    <dt>Directory</dt><dd>Shared org directory powers member search</dd>
+    <dt>Structure</dt><dd>Group → topics → posts</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

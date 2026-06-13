@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Org Sync — Grown Workspace docs</title>
+<meta name="description" content="Org Sync in Grown Workspace: copy Drive files, folders and Contacts from one organization to another you administer — with reciprocal encrypted friend backups on the roadmap." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Admin &amp; infrastructure / Org Sync</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🔁</div>
+  <span class="badge">Admin &amp; infrastructure</span>
+  <h1>Org Sync</h1>
+  <p>Move data between organizations you run — copy Drive files, folders and
+     Contacts from one org to another, recursively and admin-gated.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/orgsync">Open Org Sync →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Org Sync copies selected Drive files and folders and selected
+     Contacts from your current organization into another organization you
+     administer, identified by its slug. Pick what to transfer, name the target,
+     review, and send — folders copy recursively, bringing their whole contents
+     across. Because it can read one org and write another, it's gated to admins
+     of both.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/orgsync-desktop.png" alt="Org Sync on desktop" /><figcaption>Pick Drive items and Contacts, name the target org, transfer.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Cross-org transfer.</b> Copy from your current org into another org you administer, addressed by its slug (e.g. <code>acme-team</code>).</li>
+    <li><b>Drive files &amp; folders.</b> Tick the Drive items to bring over; selected folders copy <em>recursively</em>, including everything inside them.</li>
+    <li><b>Contacts.</b> Select individual contacts to copy across alongside (or instead of) Drive items.</li>
+    <li><b>Review before you send.</b> A running count shows how many items you've picked; the transfer button confirms the total before anything moves.</li>
+    <li><b>Clear results.</b> After a transfer you get a summary — files, folders and contacts copied, plus any errors — and the target org's name.</li>
+    <li><b>Admin-gated.</b> The caller must be an admin of both the source and target organizations.</li>
+    <li><b>Coming soon — back up with friends.</b> A roadmap item teased in the app: <em>reciprocal, end-to-end encrypted backups between friends' instances</em> — store an encrypted backup on a friend's Grown platform and host theirs on yours, so each keeps the other's bytes safe but can never read them.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Org Sync lists your current org's Drive root and Contacts so you
+     can choose what to copy, then posts your selection and the target slug to the
+     transfer endpoint. The server, having confirmed you administer both orgs,
+     copies the chosen files (recursing into folders) and contacts into the target
+     and reports back how much landed.</p>
+  <dl class="kv">
+    <dt>Copies</dt><dd>Drive files &amp; folders (recursive) + Contacts</dd>
+    <dt>Target</dt><dd>Another org you administer, by slug</dd>
+    <dt>Access</dt><dd>Admin of both source and target orgs</dd>
+    <dt>Roadmap</dt><dd>Reciprocal end-to-end encrypted friend backups <em>(coming soon)</em></dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

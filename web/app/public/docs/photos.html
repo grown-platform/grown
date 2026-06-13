@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Photos — Grown Workspace docs</title>
+<meta name="description" content="Photos in Grown Workspace: a photo library with albums, a full-screen lightbox and a built-in editor, backed by object storage and integrating with Immich." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Files &amp; media / Photos</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🌄</div>
+  <span class="badge">Files &amp; media</span>
+  <h1>Photos</h1>
+  <p>A photo library with albums, a full-screen viewer and a built-in editor —
+     backed by your own object storage.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/photos">Open Photos →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Photos is your workspace's gallery. Upload images, browse them in a grid,
+     gather them into albums, and open any one full screen. A built-in editor handles quick
+     crops and adjustments, and rich metadata shows the camera and capture details — all
+     stored in object storage you run, with Immich integration.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/photos-desktop.png" alt="Photos on desktop" /><figcaption>The photo grid with albums and favorites.</figcaption></figure>
+    <figure class="shot"><img loading="lazy" src="shots/photos-mobile.png" alt="Photos on mobile" /><figcaption>On mobile.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Upload.</b> Add photos by drag-and-drop or file picker.</li>
+    <li><b>Albums.</b> Create albums, add and remove photos, set a cover image, and delete albums while keeping the photos.</li>
+    <li><b>Views.</b> Browse all photos, just favorites, or a single album in a responsive grid.</li>
+    <li><b>Lightbox.</b> A full-screen viewer with prev/next, keyboard arrows and swipe, plus star, add-to-album, info, edit, download and delete actions.</li>
+    <li><b>Built-in editor.</b> Rotate, adjust brightness and contrast, and crop — then save the result as a new copy.</li>
+    <li><b>Photo metadata.</b> See dimensions, camera make and model, lens, capture date and exposure settings.</li>
+    <li><b>Favorites.</b> Star photos and find them in the Favorites view.</li>
+    <li><b>Batch actions.</b> Multi-select to add to an album, remove from an album, or delete.</li>
+    <li><b>Editable details.</b> Give a photo a description and view its name, size, type and creation date.</li>
+    <li><b>Download.</b> Save any photo straight from the viewer, menu or info dialog.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Photos and albums are served from the workspace API, with image content
+     stored in object storage and integrating with Immich. Uploads go up as multipart form
+     data; favorites and description edits apply optimistically and sync to the server. The
+     editor renders crops and adjustments in the browser and saves the output as a new
+     photo. Everything is gated by your workspace single sign-on.</p>
+  <dl class="kv">
+    <dt>Storage</dt><dd>Image content in object storage; integrates with Immich</dd>
+    <dt>Albums</dt><dd>Mutable collections with a cover photo and member photos</dd>
+    <dt>Editing</dt><dd>In-browser crop, rotate and adjust, saved as a new copy</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

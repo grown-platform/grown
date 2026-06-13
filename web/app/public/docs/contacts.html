@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Contacts — Grown Workspace docs</title>
+<meta name="description" content="Contacts in Grown Workspace: a shared address book that also powers the phone directory — with labels, groups, vCard and Google CSV import/export, and duplicate merge." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Communication / Contacts</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">👥</div>
+  <span class="badge">Communication</span>
+  <h1>Contacts</h1>
+  <p>A shared address book for your workspace — the same people directory that
+     also powers the phone.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/contacts">Open Contacts →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Contacts keeps the people you work with in one place. Each contact holds
+     names, company, job title, multiple emails and phones, labels and notes. Import from
+     your old tools, organise with labels and groups, and let the same directory power the
+     Telephony dialer.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/contacts-desktop.png" alt="Contacts on desktop" /><figcaption>The shared address book — search, labels and groups.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Rich contact records.</b> Display name, first and last name, company, job title, multiple emails and phones, custom labels and notes.</li>
+    <li><b>Add, edit, delete.</b> Manage contacts individually, or paste a list to create many at once.</li>
+    <li><b>Search.</b> Filter instantly across names, company, job title, emails, phones and labels.</li>
+    <li><b>Starred favorites.</b> Star important contacts and filter to just them.</li>
+    <li><b>Labels &amp; groups.</b> Create custom labels and contact groups, assign them in bulk, and filter by either.</li>
+    <li><b>vCard import/export.</b> Bring in <code>.vcf</code> files from Apple or Google Contacts and export contacts back out as vCard.</li>
+    <li><b>Google CSV import.</b> Import a Google Contacts CSV export, with format auto-detection and a preview before importing.</li>
+    <li><b>Duplicate merge.</b> Detect duplicates by shared email or name, pick a primary, and merge — unioning emails, phones, labels and notes.</li>
+    <li><b>Bulk actions.</b> Multi-select to label, group, email, export, merge or delete in one go.</li>
+    <li><b>Powers the phone directory.</b> Contacts with phone numbers become dialable entries in Telephony.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Contacts are stored per organisation and served from the workspace API.
+     Import and export run as vCard and CSV in the browser, with server-side export for
+     larger sets. The same records feed the shared directory that Telephony reads to build
+     its dialable phone directory, and every request rides your workspace single sign-on.</p>
+  <dl class="kv">
+    <dt>Storage</dt><dd>Per-org contact records in the workspace database</dd>
+    <dt>Interop</dt><dd>vCard (.vcf) and Google CSV import/export</dd>
+    <dt>Directory</dt><dd>Shared directory powers the Telephony phone list</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

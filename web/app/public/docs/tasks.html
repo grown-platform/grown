@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Tasks — Grown Workspace docs</title>
+<meta name="description" content="Tasks in Grown Workspace: personal to-do lists with subtasks, due dates and notes — surfaced alongside your Calendar." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Productivity / Tasks</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">✅</div>
+  <span class="badge">Productivity</span>
+  <h1>Tasks</h1>
+  <p>Personal to-do lists with subtasks, due dates and notes — kept in step with
+     your Calendar.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/tasks">Open Tasks →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Tasks is a clean, focused to-do app. Keep separate lists for
+     different projects, add tasks in a single line, break them into subtasks,
+     give them due dates and notes, and check them off when they're done. Because
+     Tasks is part of the workspace, it shows up alongside your schedule in
+     Calendar.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/tasks-desktop.png" alt="Tasks on desktop" /><figcaption>Lists in the sidebar, tasks and subtasks in the main panel.</figcaption></figure>
+    <figure class="shot"><img loading="lazy" src="shots/tasks-mobile.png" alt="Tasks on mobile" /><figcaption>On mobile.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Multiple lists.</b> Create, rename and delete as many to-do lists as you need, switching between them from the sidebar.</li>
+    <li><b>Quick add.</b> Type a task and press Enter — it appears at the top of the list straight away.</li>
+    <li><b>Subtasks.</b> Break a task into indented subtasks, each with its own completion, notes and due date.</li>
+    <li><b>Due dates.</b> Set an optional due date that shows as a friendly label (Today, Tomorrow…); overdue dates are flagged in red.</li>
+    <li><b>Notes.</b> Attach free-text notes to any task, with a preview on the task row and full editing in the detail view.</li>
+    <li><b>Complete &amp; collapse.</b> Check tasks off to strike them through and tuck them into a collapsible Completed section.</li>
+    <li><b>Calendar integration.</b> Tasks surface in Calendar on a dedicated Tasks calendar you can toggle alongside your events.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Each list belongs to you and holds tasks; a task can be a parent
+     with subtasks via a parent reference, and carries an optional due date and
+     notes. Completion updates optimistically in the interface and syncs to the
+     server. The same Tasks data feeds the Tasks calendar in Calendar, so your
+     to-dos and your schedule stay in one place. Access uses the workspace
+     single sign-on.</p>
+  <dl class="kv">
+    <dt>Model</dt><dd>Lists of tasks; tasks with subtasks, due dates and notes</dd>
+    <dt>Integration</dt><dd>Surfaced on the Tasks calendar in Calendar</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

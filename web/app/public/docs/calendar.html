@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Calendar — Grown Workspace docs</title>
+<meta name="description" content="Calendar in Grown Workspace: events, recurrence, attendees and reminders — with multiple calendars and a Meet video meeting on any event." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Productivity / Calendar</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">📅</div>
+  <span class="badge">Productivity</span>
+  <h1>Calendar</h1>
+  <p>Events, recurrence, attendees and reminders — and attach a Meet video
+     meeting to any event in a click.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/calendar">Open Calendar →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Calendar gives you day, week and month views, a mini-month
+     navigator and a stack of toggleable calendars — your own, plus Tasks,
+     Birthdays and Holidays. Create events with recurrence, guests and reminders,
+     and add a video meeting that everyone can join straight from the event.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/calendar-desktop.png" alt="Calendar on desktop" /><figcaption>Week view with the mini-month navigator and calendar list.</figcaption></figure>
+    <figure class="shot"><img loading="lazy" src="shots/calendar-mobile.png" alt="Calendar on mobile" /><figcaption>On mobile.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Day, week &amp; month views.</b> Switch views, jump to Today, and browse with the mini-month navigator in the sidebar.</li>
+    <li><b>Multiple calendars.</b> Your primary calendar plus Tasks, Birthdays and Holidays — each colour-coded and toggleable; create your own calendars too.</li>
+    <li><b>Item types.</b> Create Events, Tasks, Out-of-office blocks and Focus time, each with its own look in the grid.</li>
+    <li><b>Recurrence.</b> Daily, Weekly, Monthly, Annually, every weekday, or a custom rule (interval plus chosen weekdays). Edit or delete just this occurrence or the whole series.</li>
+    <li><b>Attendees.</b> Invite guests by email and track their RSVP status (accepted, declined, tentative or awaiting); respond Accept / Decline / Maybe yourself.</li>
+    <li><b>Reminders.</b> Add notifications from at-time-of-event up to 1 day before, with multiple reminders per event.</li>
+    <li><b>Meet meeting on an event.</b> Attach a video meeting — generate a new Meet room or reuse an existing one — and everyone gets a Join button and a shareable link. When the first person joins, invited attendees get a "Meeting started" alert.</li>
+    <li><b>All-day events.</b> Mark events all-day; they show in a dedicated strip above the time grid.</li>
+    <li><b>Colours, status &amp; visibility.</b> Pick from eight event colours, set busy/free status and default/public/private visibility.</li>
+    <li><b>Tasks integration.</b> Tasks appear on a dedicated calendar and can be checked off; completed tasks show struck through.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Events are stored with start and end times, attendees, reminders
+     and an optional recurrence rule (RRULE), which the calendar expands into
+     individual occurrences across whichever view you're in. Attaching a meeting
+     creates or links a Meet room tied to the event, so the Join link travels with
+     the invite. Calendar visibility preferences are kept per user, and access
+     uses the same workspace sign-on.</p>
+  <dl class="kv">
+    <dt>Model</dt><dd>Events with RRULE recurrence, attendees, reminders and item types</dd>
+    <dt>Meetings</dt><dd>Meet rooms attached per event with a shareable Join link</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Live — Grown Workspace docs</title>
+<meta name="description" content="Live in Grown Workspace: self-hosted live streaming — go live from your browser or OBS over RTMP, watch via HLS or low-latency WebRTC." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Files &amp; media / Live</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">📺</div>
+  <span class="badge">Files &amp; media</span>
+  <h1>Live</h1>
+  <p>Self-hosted live streaming — broadcast from your browser or pro software,
+     and let your team (or the public) watch in their browser.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/live">Open Live →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Live turns your workspace into its own streaming channel.
+     Create a stream and go live straight from the browser — sharing your webcam
+     or your screen — or feed it from OBS and other broadcast software over RTMP.
+     Viewers watch on a clean page over HLS, or over low-latency WebRTC.
+     Streams can be visible to your organisation only or made public for anyone
+     to watch.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/live-desktop.png" alt="Live streaming on desktop" /><figcaption>Browse live and past streams; go live from the browser or RTMP.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Go live from the browser.</b> Publish straight from a tab over WebRTC (WHIP) — capture your webcam and mic, or share your screen, no software to install.</li>
+    <li><b>Stream from OBS.</b> Each stream gets an RTMP ingest URL and a secret stream key for OBS and other broadcast tools.</li>
+    <li><b>Watch over HLS.</b> Viewers play streams over HLS in any modern browser — robust across networks and devices.</li>
+    <li><b>Low-latency playback.</b> A WebRTC (WHEP) read endpoint is available for near-real-time viewing when latency matters.</li>
+    <li><b>Org or public visibility.</b> Keep a stream inside your organisation, or mark it public with a watch page anyone can open without an account.</li>
+    <li><b>Browse &amp; filter.</b> See what's live now, or filter to your own streams or all streams; titles, descriptions and a live badge keep the list scannable.</li>
+    <li><b>Stream lifecycle.</b> Create, edit title/description/visibility, end a broadcast, and delete streams you're done with.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Live uses a self-hosted MediaMTX media server as its
+     ingest/egress core, proxied under the workspace origin. Browser broadcasts
+     publish over WHIP (WebRTC); OBS publishes over RTMP with a per-stream key.
+     The same path is served back out as HLS for broad-compatibility playback
+     and as WHEP (WebRTC) for low-latency viewing. Stream metadata and
+     visibility live in the platform database.</p>
+  <dl class="kv">
+    <dt>Media core</dt><dd>Self-hosted MediaMTX (proxied under the workspace origin)</dd>
+    <dt>Ingest</dt><dd>RTMP (OBS, broadcast software) · WebRTC/WHIP (browser Go Live)</dd>
+    <dt>Playback</dt><dd>HLS (broad compatibility) · WebRTC/WHEP (low latency)</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC); public streams need no account</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

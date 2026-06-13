@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Access — Grown Workspace docs</title>
+<meta name="description" content="Access in Grown Workspace: clientless access to internal apps, a coming-soon browser terminal & desktop, and your tailnet status." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Admin &amp; infrastructure / Access</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🔑</div>
+  <span class="badge">Admin &amp; infrastructure</span>
+  <h1>Access</h1>
+  <p>Clientless access to internal apps, terminals and your tailnet — a launchpad
+     for the self-hosted services that live behind your workspace.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/access">Open Access →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Access is where org admins publish internal and self-hosted
+     services so every member can reach them from one screen — no client, no VPN
+     dance, just a click. It also surfaces your Tailscale tailnet status and
+     previews a browser-based terminal &amp; desktop gateway that's on the way.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/access-desktop.png" alt="Access page on desktop" /><figcaption>Published apps, the tailnet panel, and the coming-soon gateway.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Published apps.</b> Admins register internal services — name, URL, an optional description and an emoji/label icon — as launch tiles. Any member can click a tile to open the app in a new tab.</li>
+    <li><b>Admin-managed catalogue.</b> Admins get add, edit and delete controls on each tile; members see a clean, read-only launcher.</li>
+    <li><b>Browser terminal &amp; desktop <em>(coming soon)</em>.</b> Clientless SSH, RDP and VNC into internal hosts, entirely in the browser, powered by an Apache Guacamole gateway. The section activates once the gateway is deployed.</li>
+    <li><b>Tailnet status.</b> When a Tailscale tailnet is configured, Access shows the tailnet name, device count and this host — with a link out to the Tailscale admin.</li>
+    <li><b>Clientless by default.</b> Published apps need nothing installed; a full-device VPN is the separate VPN app for when you want it.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Access reads the org's published-app list and your admin status,
+     and best-effort fetches Tailscale status to show the tailnet panel. App
+     tiles are simple links; the browser terminal &amp; desktop will proxy through
+     a Guacamole gateway prepared in gitops and exposed on the tailnet.</p>
+  <dl class="kv">
+    <dt>Apps</dt><dd>Admin-registered internal services (name · URL · icon)</dd>
+    <dt>Gateway</dt><dd>Apache Guacamole for SSH / RDP / VNC <em>(coming soon)</em></dd>
+    <dt>Network</dt><dd>Tailscale tailnet status (when configured)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

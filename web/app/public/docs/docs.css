@@ -1,0 +1,66 @@
+/* Shared styles for Grown Workspace per-service documentation pages. */
+:root{
+  --green:#3F704D; --green-d:#2f5a3c; --ink:#1b241e; --muted:#5b6b60;
+  --bg:#f5f7f2; --card:#ffffff; --line:#e4e9e0; --accent:#6741d9;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;}
+a{color:var(--green);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:920px;margin:0 auto;padding:0 20px}
+
+/* top bar with back link */
+.bar{background:rgba(245,247,242,.92);backdrop-filter:blur(6px);
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.bar .wrap{display:flex;align-items:center;gap:14px;padding:11px 20px;font-size:14px}
+.bar a.back{font-weight:600}
+.bar .crumb{color:var(--muted)}
+
+/* hero */
+header.hero{background:linear-gradient(160deg,var(--green),var(--green-d));color:#fff;padding:44px 0 36px}
+.hero .ico{font-size:40px;line-height:1;margin-bottom:10px}
+.hero h1{margin:0 0 8px;font-size:30px;letter-spacing:-.5px}
+.hero p{margin:0;font-size:17px;opacity:.92;max-width:640px}
+.hero .badge{display:inline-block;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);
+  border-radius:999px;padding:3px 12px;font-size:12px;margin-bottom:6px}
+.hero .cta{margin-top:20px}
+.hero .cta a{display:inline-block;background:#fff;color:var(--green-d);font-weight:600;border-radius:10px;
+  padding:9px 16px;margin:0 8px 8px 0;font-size:14px}
+.hero .cta a.ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5)}
+
+section{padding:34px 0;border-bottom:1px solid var(--line)}
+section h2{font-size:22px;margin:0 0 6px;letter-spacing:-.3px}
+section h3{font-size:16px;margin:18px 0 4px}
+section .lead{color:var(--muted);margin:0 0 18px;max-width:680px}
+p{max-width:680px}
+
+.shot{border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  box-shadow:0 8px 30px rgba(31,42,32,.10);margin:8px 0 4px;background:#fff}
+.shot img{display:block;width:100%}
+.shot figcaption{font-size:13px;color:var(--muted);padding:10px 14px;border-top:1px solid var(--line)}
+.shots2{display:grid;gap:16px;grid-template-columns:1fr;margin:8px 0}
+@media(min-width:640px){.shots2{grid-template-columns:2fr 1fr}}
+.shots2 .shot{margin:0}
+
+ul.feat{margin:0;padding-left:18px}
+ul.feat li{margin:7px 0}
+ul.feat li b{color:var(--ink)}
+
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card h3{margin:0 0 4px;font-size:15px}
+.card p{margin:0;font-size:14px;color:var(--muted)}
+
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;font-size:14px;margin:6px 0 0}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0}
+
+.tag{font-size:11px;font-weight:600;border-radius:999px;padding:1px 8px;vertical-align:middle}
+.tag.soon{background:#fdecc8;color:#92600a}
+.tag.new{background:#dcf0e2;color:var(--green-d)}
+
+footer{padding:26px 0 56px;color:var(--muted);font-size:13px}
+@media(max-width:560px){.hero h1{font-size:25px}.hero p{font-size:15px}}

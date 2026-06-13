@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Cloud Import — Grown Workspace docs</title>
+<meta name="description" content="Cloud Import in Grown Workspace: bring your data over from Google and other clouds — Contacts, Calendar, Drive files and Photos via Takeout, .vcf and .ics." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Admin &amp; infrastructure / Cloud Import</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">☁️</div>
+  <span class="badge">Admin &amp; infrastructure</span>
+  <h1>Cloud Import</h1>
+  <p>Bring your data with you — import Contacts, Calendar, Drive files and Photos
+     from Google and other clouds, straight into your workspace.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/cloudimport">Open Cloud Import →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Cloud Import takes the export archives the big clouds give you —
+     a Google Takeout download, or individual contact and calendar files — and
+     unpacks them into the right Grown apps. Drop a file, watch the job run, and
+     your contacts, events and files land where they belong.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/cloudimport-desktop.png" alt="Cloud Import on desktop" /><figcaption>Drop an export archive and watch each item import.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Drag-and-drop upload.</b> Drop an export archive onto the page, or pick a file — no fiddly multi-step wizard.</li>
+    <li><b>Google Takeout.</b> Upload the <code>.zip</code> or <code>.tgz</code> from takeout.google.com containing Contacts, Calendar, Drive, Gmail and/or Photos.</li>
+    <li><b>Individual files.</b> Bring single <code>.vcf</code> (contacts), <code>.ics</code> (calendar) and <code>.mbox</code> (mail) files — handy for Apple Contacts and Calendar exports.</li>
+    <li><b>Routed to the right app.</b> Contacts go to Contacts, calendar events (with recurrence rules) go to Calendar, and files under Drive/ go to your Drive.</li>
+    <li><b>Photos detection.</b> Photos in an archive are detected and you're pointed to Immich for the photo library.</li>
+    <li><b>Live job progress.</b> Each upload becomes a job that polls in real time, with a per-item breakdown — Contacts, Calendar, Drive, Photos, Mail — and a done / skipped / error status and count for each.</li>
+    <li><b>Import history.</b> Past jobs stay listed so you can see exactly what was brought in and when.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">An uploaded archive is posted to the import service, which
+     creates a job and processes its contents server-side. The page polls the job
+     until it finishes, showing each item kind's status as it goes. Contacts and
+     calendar events are parsed and written into your workspace; Drive files are
+     copied in; photos are counted and handed off to Immich.</p>
+  <dl class="kv">
+    <dt>Accepts</dt><dd>Takeout <code>.zip</code> / <code>.tgz</code>, <code>.vcf</code>, <code>.ics</code>, <code>.mbox</code></dd>
+    <dt>Targets</dt><dd>Contacts, Calendar, Drive (Photos → Immich)</dd>
+    <dt>Processing</dt><dd>Async jobs with live, polled progress</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

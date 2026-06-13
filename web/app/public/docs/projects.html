@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Projects — Grown Workspace docs</title>
+<meta name="description" content="Projects in Grown Workspace: kanban boards for tracking work — issues with status, priority, assignees, labels, sub-issues and real-time sync." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Productivity / Projects</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">📐</div>
+  <span class="badge">Productivity</span>
+  <h1>Projects</h1>
+  <p>Kanban boards for tracking work — issues with status, priority, assignees and
+     sub-issues, synced live across your team.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/projects">Open Projects →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Projects is a fast, Linear-style issue tracker. Teams own issues
+     with a short key (like ENG-1), and you can work them on a kanban board,
+     drag them between columns, or read them as grouped lists. Every issue carries
+     a status, priority, assignee, labels and an estimate, and can be broken into
+     sub-issues — with updates syncing live across everyone on the team.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/projects-desktop.png" alt="Projects board on desktop" /><figcaption>The kanban board — issues moving across status columns.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Kanban board.</b> Drag issues between columns — Backlog, Todo, In Progress, Done and Canceled — to update their status.</li>
+    <li><b>Priorities.</b> Flag issues as Urgent, High, Medium, Low or No priority.</li>
+    <li><b>Assignees &amp; labels.</b> Assign an issue to a team member and tag it with any number of org-wide labels.</li>
+    <li><b>Estimates.</b> Size work with Fibonacci story points (0, 1, 2, 3, 5, 8, 13).</li>
+    <li><b>Sub-issues.</b> Break an issue into child issues with parent/child links and progress tracking (e.g. 2/5 done).</li>
+    <li><b>Issue detail.</b> Editable title and description, a comment thread with author and timestamp, and quick pickers for every property.</li>
+    <li><b>Multiple views.</b> Board, List (grouped by status, priority or assignee), My issues, Projects, Labels, and Teams &amp; members.</li>
+    <li><b>Command palette.</b> Press Cmd/Ctrl+K to jump between views, search issues by title or key, and create a new issue.</li>
+    <li><b>Filtering.</b> Filter by status, priority and assignee at once to focus the board or list.</li>
+    <li><b>Real-time collaboration.</b> Per-team live updates over a websocket keep everyone's board in sync.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Work is organised by team; each team has a key that prefixes its
+     issue identifiers, and issues carry status, priority, assignee, labels,
+     estimate and an optional parent for sub-issues. Issues can also be grouped
+     into projects. Moving a card on the board updates the issue's status, and
+     every change broadcasts to the team over a live websocket. Access uses the
+     workspace single sign-on.</p>
+  <dl class="kv">
+    <dt>Model</dt><dd>Teams of issues with status, priority, assignee, labels, estimate &amp; sub-issues</dd>
+    <dt>Sync</dt><dd>Per-team live websocket updates</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>

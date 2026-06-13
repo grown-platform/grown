@@ -42,6 +42,9 @@
   .gallery .shot{margin:0}
   .gallery .shot img{aspect-ratio:16/10;object-fit:cover;object-position:top}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  a.card{display:block;text-decoration:none;color:inherit;transition:border-color .15s,box-shadow .15s}
+  a.card:hover{text-decoration:none;border-color:var(--green);box-shadow:0 4px 16px rgba(31,42,32,.08)}
+  a.card h3 .arw{color:var(--muted);font-weight:400;float:right}
   .card h3{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:8px}
   .card p{margin:0;font-size:14px;color:var(--muted)}
   .tag{font-size:11px;font-weight:600;border-radius:999px;padding:1px 8px;vertical-align:middle}
@@ -132,46 +135,48 @@
   <div class="wrap">
     <h2>Apps</h2>
     <p class="lead">Each app works on its own and together with the rest. Single sign-on,
-      shared contacts, and cross-app sharing tie them into one workspace.</p>
+      shared contacts, and cross-app sharing tie them into one workspace.
+      <strong>Click any app for its documentation.</strong></p>
 
     <div class="cat">Productivity</div>
     <div class="grid">
-      <div class="card"><h3>📄 Docs</h3><p>Collaborative rich-text documents, edited in real time.</p></div>
-      <div class="card"><h3>📊 Sheets</h3><p>Spreadsheets with 245+ functions, dynamic-array spill, data validation, conditional formatting, charts and pivot tables.</p></div>
-      <div class="card"><h3>🖼️ Slides</h3><p>Build and present slide decks.</p></div>
-      <div class="card"><h3>📅 Calendar</h3><p>Events, recurrence, attendees and reminders — attach a Meet video meeting to any event.</p></div>
-      <div class="card"><h3>✅ Tasks</h3><p>Personal and shared to-do lists.</p></div>
-      <div class="card"><h3>💡 Keep</h3><p>Quick notes, pinned and shareable.</p></div>
-      <div class="card"><h3>📝 Forms</h3><p>Build forms and collect responses.</p></div>
-      <div class="card"><h3>📐 Projects</h3><p>Kanban boards for tracking work.</p></div>
+      <a class="card" href="/docs/docs.html"><h3>📄 Docs <span class="arw">›</span></h3><p>Collaborative rich-text documents, edited in real time.</p></a>
+      <a class="card" href="/docs/sheets.html"><h3>📊 Sheets <span class="arw">›</span></h3><p>Spreadsheets with 245+ functions, dynamic-array spill, data validation, conditional formatting, charts and pivot tables.</p></a>
+      <a class="card" href="/docs/slides.html"><h3>🖼️ Slides <span class="arw">›</span></h3><p>Build and present slide decks.</p></a>
+      <a class="card" href="/docs/calendar.html"><h3>📅 Calendar <span class="arw">›</span></h3><p>Events, recurrence, attendees and reminders — attach a Meet video meeting to any event.</p></a>
+      <a class="card" href="/docs/tasks.html"><h3>✅ Tasks <span class="arw">›</span></h3><p>Personal and shared to-do lists.</p></a>
+      <a class="card" href="/docs/keep.html"><h3>💡 Keep <span class="arw">›</span></h3><p>Quick notes, pinned and shareable.</p></a>
+      <a class="card" href="/docs/forms.html"><h3>📝 Forms <span class="arw">›</span></h3><p>Build forms and collect responses.</p></a>
+      <a class="card" href="/docs/projects.html"><h3>📐 Projects <span class="arw">›</span></h3><p>Kanban boards for tracking work.</p></a>
+      <a class="card" href="/docs/tickets.html"><h3>🎫 Tickets <span class="arw">›</span></h3><p>Jira-like helpdesk with a public submission portal.</p></a>
     </div>
 
     <div class="cat">Communication</div>
     <div class="grid">
-      <div class="card"><h3>✉️ Mail</h3><p>A full self-hosted mailbox — threads, attachments, search.</p></div>
-      <div class="card"><h3>💬 Chat</h3><p>Team channels and direct messages.</p></div>
-      <div class="card"><h3>🎥 Meet</h3><p>Peer-to-peer WebRTC video meetings — your video goes straight to other participants, no server relay.</p></div>
-      <div class="card"><h3>☎️ Telephony</h3><p>A VoIP softphone plus Google-Voice-style texting, and a 3CX-style PBX admin console (admins only).</p></div>
-      <div class="card"><h3>👥 Contacts</h3><p>Shared address book that also powers the phone directory.</p></div>
-      <div class="card"><h3>📇 Groups</h3><p>Mailing lists and team groups.</p></div>
+      <a class="card" href="/docs/mail.html"><h3>✉️ Mail <span class="arw">›</span></h3><p>A full self-hosted mailbox — threads, attachments, search.</p></a>
+      <a class="card" href="/docs/chat.html"><h3>💬 Chat <span class="arw">›</span></h3><p>Team channels and direct messages.</p></a>
+      <a class="card" href="/docs/meet.html"><h3>🎥 Meet <span class="arw">›</span></h3><p>Peer-to-peer WebRTC video meetings — your video goes straight to other participants, no server relay.</p></a>
+      <a class="card" href="/docs/telephony.html"><h3>☎️ Telephony <span class="arw">›</span></h3><p>A VoIP softphone plus Google-Voice-style texting, and a 3CX-style PBX admin console (admins only).</p></a>
+      <a class="card" href="/docs/contacts.html"><h3>👥 Contacts <span class="arw">›</span></h3><p>Shared address book that also powers the phone directory.</p></a>
+      <a class="card" href="/docs/groups.html"><h3>📇 Groups <span class="arw">›</span></h3><p>Mailing lists and team groups.</p></a>
     </div>
 
     <div class="cat">Files &amp; media</div>
     <div class="grid">
-      <div class="card"><h3>📁 Drive</h3><p>File storage and sharing with previews, versions, and EXIF metadata (camera, date, GPS) on photos.</p></div>
+      <a class="card" href="/docs/drive.html"><h3>📁 Drive <span class="arw">›</span></h3><p>File storage and sharing with previews, versions, and EXIF metadata (camera, date, GPS) on photos.</p></a>
       <div class="card"><h3>📕 PDF</h3><p>View, edit, annotate, fill and sign PDFs.</p></div>
-      <div class="card"><h3>🌄 Photos</h3><p>Photo library with albums.</p></div>
-      <div class="card"><h3>📚 Books</h3><p>E-book library — EPUB, PDF, MOBI, CBZ and TXT.</p></div>
-      <div class="card"><h3>🎵 Music</h3><p>Stream your music collection.</p></div>
-      <div class="card"><h3>🎬 Video</h3><p>Video library and streaming.</p></div>
-      <div class="card"><h3>📺 Live</h3><p>Live streaming.</p></div>
+      <a class="card" href="/docs/photos.html"><h3>🌄 Photos <span class="arw">›</span></h3><p>Photo library with albums.</p></a>
+      <a class="card" href="/docs/books.html"><h3>📚 Books <span class="arw">›</span></h3><p>E-book library — EPUB, PDF, MOBI, CBZ and TXT.</p></a>
+      <a class="card" href="/docs/music.html"><h3>🎵 Music <span class="arw">›</span></h3><p>Stream your music collection.</p></a>
+      <a class="card" href="/docs/video.html"><h3>🎬 Video <span class="arw">›</span></h3><p>Video library and streaming.</p></a>
+      <a class="card" href="/docs/live.html"><h3>📺 Live <span class="arw">›</span></h3><p>Live streaming.</p></a>
     </div>
 
     <div class="cat">Collaboration &amp; build</div>
     <div class="grid">
-      <div class="card"><h3>🎨 Whiteboard</h3><p>Real-time collaborative drawing.</p></div>
+      <a class="card" href="/docs/whiteboard.html"><h3>🎨 Whiteboard <span class="arw">›</span></h3><p>Real-time collaborative drawing.</p></a>
       <div class="card"><h3>🧩 Assemble</h3><p>Spatial collaboration spaces — single sign-on with your workspace, plus guest access.</p></div>
-      <div class="card"><h3>🌐 Sites</h3><p>Build and publish simple websites.</p></div>
+      <a class="card" href="/docs/sites.html"><h3>🌐 Sites <span class="arw">›</span></h3><p>Build and publish simple websites.</p></a>
       <div class="card"><h3>🤝 CRM</h3><p>Customer relationship management, powered by Twenty CRM (open source).</p></div>
       <div class="card"><h3>🛰️ Spacelight</h3><p>A personal dashboard with calendar sync and more.</p></div>
       <div class="card"><h3>🐙 Git</h3><p>Source-code hosting (Forgejo).</p></div>
@@ -179,16 +184,16 @@
 
     <div class="cat">Admin &amp; infrastructure</div>
     <div class="grid">
-      <div class="card"><h3>🛡️ Admin</h3><p>Org administration — users, service enablement, audit logs (with IP + geolocation), and API rate limiting.</p></div>
-      <div class="card"><h3>🔑 Access</h3><p>Per-resource sharing and permissions.</p></div>
-      <div class="card"><h3>🔒 VPN</h3><p>Tailscale-based private network access.</p></div>
-      <div class="card"><h3>☁️ Cloud Import</h3><p>Import your data from Google and other clouds.</p></div>
-      <div class="card"><h3>🔁 Org Sync <span class="tag soon">coming soon</span></h3><p>Cross-org directory synchronisation.</p></div>
+      <a class="card" href="/docs/admin.html"><h3>🛡️ Admin <span class="arw">›</span></h3><p>Org administration — users, service enablement, audit logs (with IP + geolocation), and API rate limiting.</p></a>
+      <a class="card" href="/docs/access.html"><h3>🔑 Access <span class="arw">›</span></h3><p>Per-resource sharing and permissions.</p></a>
+      <a class="card" href="/docs/vpn.html"><h3>🔒 VPN <span class="arw">›</span></h3><p>Tailscale-based private network access.</p></a>
+      <a class="card" href="/docs/cloudimport.html"><h3>☁️ Cloud Import <span class="arw">›</span></h3><p>Import your data from Google and other clouds.</p></a>
+      <a class="card" href="/docs/orgsync.html"><h3>🔁 Org Sync <span class="arw">›</span></h3><p>Cross-org Drive &amp; Contacts transfer (encrypted friend-backups coming soon).</p></a>
     </div>
 
     <div class="cat">Fun</div>
     <div class="grid">
-      <div class="card"><h3>🎮 Games</h3><p>A hub of arcade, puzzle, board and card games — installable and playable offline — plus native game <b>ports</b> compiled to run in the browser (e.g. Mighty Mike) with on-screen touch controls.</p></div>
+      <a class="card" href="/docs/games.html"><h3>🎮 Games <span class="arw">›</span></h3><p>A hub of 100+ arcade, puzzle, board and card games — installable and playable offline — plus native game <b>ports</b> (Mighty Mike, Maelstrom, Bolo) with online multiplayer and on-screen touch controls.</p></a>
     </div>
   </div>
 </section>

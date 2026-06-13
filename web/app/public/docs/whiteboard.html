@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Whiteboard — Grown Workspace docs</title>
+<meta name="description" content="Whiteboard in Grown Workspace: a real-time collaborative infinite canvas — sketch, diagram and brainstorm together with live cursors and autosave." />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="theme-color" content="#3F704D" />
+<link rel="stylesheet" href="docs.css" />
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <a class="back" href="/docs">‹ All docs</a>
+  <span class="crumb">/ Collaboration / Whiteboard</span>
+</div></div>
+
+<header class="hero"><div class="wrap">
+  <div class="ico">🎨</div>
+  <span class="badge">Collaboration</span>
+  <h1>Whiteboard</h1>
+  <p>A real-time collaborative infinite canvas — sketch, diagram and brainstorm
+     together, with live cursors and everything saved as you go.</p>
+  <div class="cta">
+    <a href="https://workspace.pick.haus/whiteboard">Open Whiteboard →</a>
+    <a class="ghost" href="/docs#apps">Browse all apps</a>
+  </div>
+</div></header>
+
+<section><div class="wrap">
+  <h2>Overview</h2>
+  <p class="lead">Whiteboard is a shared drawing surface for your workspace.
+     Open a board and you get an infinite canvas with shapes, arrows, freehand
+     drawing, text and sticky notes. Invite teammates and you'll see their
+     cursors move and their edits appear live — every change streams over a
+     WebSocket and is autosaved, so the board is always up to date for whoever
+     opens it next.</p>
+  <div class="shots2">
+    <figure class="shot"><img loading="lazy" src="shots/whiteboard-desktop.png" alt="Whiteboard canvas on desktop" /><figcaption>An infinite canvas with live collaborators in the top bar.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>Features</h2>
+  <ul class="feat">
+    <li><b>Infinite canvas.</b> A familiar shapes-and-arrows drawing surface (built on the Excalidraw model) with freehand pen, text, sticky notes, pan and zoom.</li>
+    <li><b>Real-time collaboration.</b> Edits stream to everyone on the board over a WebSocket, so the scene stays in sync as people draw.</li>
+    <li><b>Live presence.</b> See who else is on the board — each collaborator gets a coloured avatar, kept fresh by a presence heartbeat.</li>
+    <li><b>Autosave.</b> The scene is persisted automatically as you work; reopen a board and it's exactly where you left it.</li>
+    <li><b>Sharing &amp; access control.</b> Grant specific teammates a role on a board and revoke it later; boards shared with you show up in a "shared with me" list — even across organisations.</li>
+    <li><b>Board management.</b> Create, rename and trash boards from a simple list of everything you own and everything shared with you.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Each board's scene is stored as JSON in the platform database
+     and autosaved by the editor. While a board is open, the editor holds a
+     WebSocket to a per-board channel that relays both the live scene and
+     presence (cursors and avatars) between everyone viewing it. Per-user access
+     is governed by object grants, which also power cross-org sharing.</p>
+  <dl class="kv">
+    <dt>Canvas model</dt><dd>Excalidraw scene JSON, autosaved to the platform database</dd>
+    <dt>Collaboration</dt><dd>Per-board WebSocket channel (live scene + presence)</dd>
+    <dt>Sharing</dt><dd>Per-user object grants, including cross-org "shared with me"</dd>
+    <dt>Auth</dt><dd>Workspace single sign-on (OIDC)</dd>
+  </dl>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/docs">‹ All Grown Workspace docs</a> ·
+  <a href="https://github.com/grown-platform/grown">Source on GitHub</a> ·
+  <a href="https://github.com/grown-platform/grown/issues">Report an issue</a>
+  <br />Grown Workspace · forever free, MIT licensed.
+</div></footer>
+
+</body>
+</html>
