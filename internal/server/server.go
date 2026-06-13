@@ -1769,6 +1769,13 @@ func New(cfg Config) *Server {
 			loginHandlers.DemoLogin(w, r)
 			return
 		}
+		// Recently-updated games feed — public, read-only; drives the "NEW" badge
+		// on the arcade. Stats the bundled games/*.html files (same StaticDir the
+		// SPA + games are served from).
+		if r.URL.Path == recentGamesPath {
+			recentGamesHandler(cfg.StaticDir)(w, r)
+			return
+		}
 		// Cloud Import — multipart upload + job-status polling (auth-wrapped).
 		if cloudImportHandler != nil && strings.HasPrefix(r.URL.Path, "/api/v1/import") {
 			driveAuthWrap(cloudImportHandler).ServeHTTP(w, r)
