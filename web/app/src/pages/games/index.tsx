@@ -71,6 +71,19 @@ const GAMES: AppTile[] = [
     // */index.html to the directory, which falls through to the SPA.
     externalUrl: "/games/mightymike/play.html",
   },
+  {
+    id: "maelstrom",
+    name: "Maelstrom",
+    blurb: "Asteroids-style arcade shooter — a native SDL game port.",
+    accentColor: "#0B3D91",
+    phase: 4,
+    comingSoon: false,
+    iconName: "Rocket",
+    iconUrl: "/games/maelstrom/icon.png",
+    // Entry is play.html (not index.html): http.ServeFile 301-redirects any
+    // */index.html to the directory, which falls through to the SPA.
+    externalUrl: "/games/maelstrom/play.html",
+  },
   arcade("2048", "2048", "#EDC22E", "GridOn"),
   arcade("snake", "Snake", "#43A047", "Timeline"),
   arcade("minesweeper", "Minesweeper", "#455A64", "Flag"),

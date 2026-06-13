@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Maelstrom</title>
+<!-- PWA installability -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0B3D91">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Maelstrom">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(function(){})})}</script>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+  /* The SDL canvas; scale to fit the viewport, keep pixels crisp, letterbox. */
+  #canvas{max-width:100vw;max-height:100vh;width:auto;height:auto;
+    image-rendering:pixelated;image-rendering:crisp-edges;background:#000;outline:none;display:block;}
+  #status{position:fixed;left:0;right:0;top:42%;text-align:center;color:#9ab;
+    font:600 15px system-ui,sans-serif;z-index:5;}
+  #credit{position:fixed;left:0;bottom:2px;width:100%;text-align:center;color:#456;
+    font:500 10px system-ui,sans-serif;z-index:2147483000;pointer-events:none;}
+</style>
+</head>
+<body>
+  <div id="wrap"><canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas></div>
+  <div id="status">Loading Maelstrom…</div>
+  <div id="credit">Maelstrom © 1992–2026 Ambrosia / Sam Lantinga · web port of libsdl-org/Maelstrom (Zlib)</div>
+
+  <script>
+    var statusEl = document.getElementById("status");
+    var Module = {
+      canvas: (function(){
+        var c = document.getElementById("canvas");
+        // Surface WebGL context-loss so we notice it during testing.
+        c.addEventListener("webglcontextlost", function(e){ e.preventDefault(); console.error("WebGL context lost"); }, false);
+        return c;
+      })(),
+      setStatus: function(t){ if(statusEl) statusEl.textContent = t || ""; if(!t && statusEl){ statusEl.style.display="none"; } },
+      print:   function(t){ console.log(t); },
+      printErr:function(t){ console.error(t); },
+      onRuntimeInitialized: function(){ Module.setStatus(""); },
+      // Maelstrom's CMake sets SDL_EMSCRIPTEN_PERSISTENT_PATH=/storage, so SDL
+      // mounts IDBFS there itself for prefs/high scores. We pre-create + sync it
+      // so saved scores and preferences survive reloads.
+      preRun: [function(){
+        try {
+          FS.mkdirTree("/storage");
+          FS.mount(IDBFS, {}, "/storage");
+          addRunDependency("mael-syncfs");
+          FS.syncfs(true, function(err){
+            if (err) console.error("Maelstrom: load saves failed", err);
+            removeRunDependency("mael-syncfs");
+          });
+        } catch (e) { console.error("Maelstrom: save FS setup failed", e); }
+      }],
+    };
+    // Flush prefs/scores to IndexedDB on tab-hide/close and a gentle interval.
+    function maelPersist(){
+      try { if (typeof FS !== "undefined") FS.syncfs(false, function(){}); } catch (e) {}
+    }
+    document.addEventListener("visibilitychange", function(){ if (document.hidden) maelPersist(); });
+    window.addEventListener("pagehide", maelPersist);
+    setInterval(maelPersist, 15000);
+    // Keep focus on the canvas so SDL receives keyboard events.
+    window.addEventListener("load", function(){ Module.canvas.focus(); });
+    window.addEventListener("click", function(){ Module.canvas.focus(); });
+  </script>
+
+  <!-- Touch gamepad overlay → synthesizes Maelstrom's real key bindings.
+       Defaults (from game/controls.cpp): TurnL=ArrowLeft, TurnR=ArrowRight,
+       Thrust=ArrowUp, Shield=ArrowDown, Fire=Space, Pause=CapsLock, Quit=Escape.
+       Bump ?v= on every edit to bust the edge cache. -->
+  <script src="gamepad-overlay.js?v=20260613-maelstrom"></script>
+  <script>
+    window.addEventListener("load", function(){
+      if (!window.GamepadOverlay) return;
+      GamepadOverlay.mount({
+        target: window,           // SDL3/emscripten listens for keys on window
+        show: "always",           // visible on desktop too (handy for testing)
+        // D-pad: left/right rotate the ship, up thrusts. (Down maps to Shield
+        // but is also exposed as a dedicated button below.)
+        dpad: { up:"ArrowUp", down:"ArrowDown", left:"ArrowLeft", right:"ArrowRight" },
+        buttons: [
+          { id:"fire",   label:"●", code:"Space",     side:"right" }, // Fire
+          { id:"thrust", label:"▲", code:"ArrowUp",   side:"right" }, // Thrust
+          { id:"shield", label:"◌", code:"ArrowDown", side:"right" }, // Shield
+          { id:"pause",  label:"≡", code:"Escape",    side:"top"   }, // Pause/menu
+        ],
+      });
+    });
+  </script>
+
+  <script async src="Maelstrom.js"></script>
+</body>
+</html>
