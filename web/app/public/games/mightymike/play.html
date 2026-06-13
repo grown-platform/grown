@@ -25,10 +25,27 @@
     font:600 15px system-ui,sans-serif;z-index:5;}
   #credit{position:fixed;left:0;bottom:2px;width:100%;text-align:center;color:#456;
     font:500 10px system-ui,sans-serif;z-index:2147483000;pointer-events:none;}
+  /* Landscape nudge: Mighty Mike is a wide-screen game, so on small touch
+     devices held upright we cover the screen with a "rotate to landscape"
+     prompt until the device is turned. Hidden on desktop and in landscape. */
+  #rotate{display:none;}
+  @media (orientation:portrait) and (pointer:coarse){
+    #rotate{display:flex;position:fixed;inset:0;z-index:2147483100;
+      flex-direction:column;align-items:center;justify-content:center;gap:18px;
+      background:#000;color:#cde;font:600 17px system-ui,sans-serif;text-align:center;padding:24px;}
+    #rotate .phone{width:64px;height:104px;border:3px solid #cde;border-radius:12px;
+      animation:rot 1.8s ease-in-out infinite;}
+    #wrap,#status{visibility:hidden;}
+  }
+  @keyframes rot{0%,40%{transform:rotate(0)}70%,100%{transform:rotate(-90deg)}}
 </style>
 </head>
 <body>
   <div id="wrap"><canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas></div>
+  <div id="rotate" role="alert">
+    <div class="phone" aria-hidden="true"></div>
+    <div>Rotate your device to landscape<br>to play Mighty Mike</div>
+  </div>
   <div id="status">Loading Mighty Mike…</div>
   <div id="credit">Mighty Mike © 1995–2000 Pangea Software · web port of jorio/MightyMike (CC BY-NC-SA 4.0)</div>
 
@@ -97,6 +114,24 @@
         // top bar, left of Pause. (The old ▶/Enter button was replaced by it.)
       });
     });
+  </script>
+
+  <script>
+    // Best-effort orientation lock to landscape. This only succeeds in a
+    // fullscreen / installed-PWA context (and on browsers that support it); it
+    // throws otherwise, so we swallow the error and rely on the CSS #rotate
+    // prompt to ask the player to turn their device.
+    (function(){
+      function tryLock(){
+        try {
+          var o = screen.orientation;
+          if (o && typeof o.lock === "function") { o.lock("landscape").catch(function(){}); }
+        } catch (e) { /* not allowed outside fullscreen — the prompt handles it */ }
+      }
+      window.addEventListener("load", tryLock);
+      // Retry after the first touch (some browsers only allow it post-gesture).
+      window.addEventListener("touchend", tryLock, { once:true });
+    })();
   </script>
 
   <script async src="MightyMike.js"></script>
