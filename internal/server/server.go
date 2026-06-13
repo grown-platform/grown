@@ -239,6 +239,16 @@ type Config struct {
 	// bypasses grown's auth middleware. Empty disables the proxy.
 	BoloMpURL string
 
+	// ForgejoURL is the internal origin of a per-instance Forgejo (git hosting),
+	// e.g. http://forgejo.<ns>.svc:3000. grown reverse-proxies /git/* to it with
+	// the /git prefix stripped (so /git/user/login -> /user/login). Set Forgejo's
+	// ROOT_URL to https://<host>/git/ so its generated links carry the /git prefix
+	// back through this proxy. cloudflared can't strip a path prefix, but this
+	// in-process proxy can — which is how the git host lives at <host>/git on the
+	// same origin instead of a separate subdomain. Forgejo does its own auth, so
+	// the path bypasses grown's auth middleware. Empty disables the proxy.
+	ForgejoURL string
+
 	// StaticDir is the path to the built React SPA. Empty disables static
 	// serving (API-only mode for tests).
 	StaticDir string
@@ -1236,6 +1246,13 @@ func New(cfg Config) *Server {
 	// so the 50Hz sim deltas pass through. Public/link-gated (no grown account).
 	boloMpProxy := newStripPrefixProxy(cfg.BoloMpURL, "/bolo-mp")
 
+	// /git/* → a per-instance Forgejo with the /git prefix stripped. Forgejo
+	// serves at its root and ROOT_URL=https://<host>/git/ makes its links carry
+	// the /git prefix; this proxy strips it on the way in (cloudflared can't), so
+	// the git host lives at <host>/git on the same origin. Forgejo does its own
+	// auth, so this bypasses grown's auth wall.
+	forgejoProxy := newStripPrefixProxy(cfg.ForgejoURL, "/git")
+
 	// ---- Cloud Import (plain HTTP, no gRPC) ----------------------------------
 	// Wire concrete app-repo closures into cloudimport via the injected-interface
 	// pattern so cloudimport has no import-time dependency on internal/calendar,
@@ -1696,6 +1713,18 @@ func New(cfg Config) *Server {
 		if boloMpProxy != nil && strings.HasPrefix(r.URL.Path, "/bolo-mp/") {
 			boloMpProxy.ServeHTTP(w, r)
 			return
+		}
+		// Per-instance Forgejo (git hosting) at /git/* — reverse-proxied with the
+		// /git prefix stripped. Forgejo does its own auth, so it bypasses the wall.
+		if forgejoProxy != nil {
+			if r.URL.Path == "/git" {
+				http.Redirect(w, r, "/git/", http.StatusMovedPermanently)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, "/git/") {
+				forgejoProxy.ServeHTTP(w, r)
+				return
+			}
 		}
 		// Public ticket intake (/api/v1/public/tickets/{token}) — unauthenticated
 		// submission for projects that opted into a public intake link.

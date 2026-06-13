@@ -305,6 +305,9 @@ func main() {
 		// to it (WebSocket-capable), stripping the prefix. Empty disables the
 		// proxy (the bolo single-player path is unaffected). e.g. http://127.0.0.1:6173.
 		BoloMpURL: os.Getenv("GROWN_BOLO_MP_URL"),
+		// Per-instance Forgejo (git hosting) reverse-proxied at /git/* (prefix
+		// stripped). Set Forgejo ROOT_URL to https://<host>/git/. Empty disables.
+		ForgejoURL: os.Getenv("GROWN_FORGEJO_URL"),
 		// Cloud Import — upload-based import from Google Takeout and Apple exports.
 		CloudImportRepo:      cloudimport.NewRepository(pool),
 		CloudImportDriveRepo: drive.NewRepository(pool),
