@@ -43,8 +43,12 @@ type Identity struct {
 // Handler serves GET /api/v1/admin/analytics. It is dependency-light: only
 // net/http, encoding/json, and a *pgxpool.Pool (injected via WithPool).
 type Handler struct {
-	id   Identity
-	pool *pgxpool.Pool
+	id Identity
+	// demoUsername is the configured demo login name (GROWN_DEMO_USERNAME), used
+	// to count unique login IPs for the public demo user. Empty when no demo is
+	// configured, in which case the metric is reported as 0.
+	demoUsername string
+	pool         *pgxpool.Pool
 }
 
 // NewHandler constructs the analytics handler.
@@ -56,6 +60,13 @@ func NewHandler(id Identity) *Handler {
 // When no pool is set every request returns 503.
 func (h *Handler) WithPool(pool *pgxpool.Pool) *Handler {
 	h.pool = pool
+	return h
+}
+
+// WithDemoUsername sets the demo login name so the analytics response can
+// include a unique-IP count for the public demo user. Returns h for chaining.
+func (h *Handler) WithDemoUsername(name string) *Handler {
+	h.demoUsername = name
 	return h
 }
 
@@ -120,6 +131,14 @@ type UserStats struct {
 	ActiveLast7Days int64 `json:"active_last_7_days"`
 	// ActiveLast30Days counts distinct users active in the last 30 days.
 	ActiveLast30Days int64 `json:"active_last_30_days"`
+	// DemoConfigured reports whether a public demo user is configured for this
+	// instance (GROWN_DEMO_USERNAME set). When false the dashboard hides the
+	// demo metric entirely.
+	DemoConfigured bool `json:"demo_configured"`
+	// DemoUniqueIPs is the number of distinct IP addresses that have logged in
+	// as the demo user (distinct non-empty sessions.ip for the demo user). 0
+	// when no demo user is configured.
+	DemoUniqueIPs int64 `json:"demo_unique_ips"`
 }
 
 // StorageStats captures blob storage usage.
@@ -221,6 +240,22 @@ func (h *Handler) collect(ctx context.Context, orgID string) AnalyticsResponse {
 		  WHERE u.org_id = $1
 		    AND s.revoked_at IS NULL
 		    AND s.last_seen_at > $2`, orgID, ago30)
+
+	// Unique IPs that have logged in as the public demo user. The demo user is
+	// matched by login name/email (case-insensitive) within this org; we count
+	// distinct non-empty session IPs. Only meaningful when a demo is configured.
+	var demoUniqueIPs int64
+	demoConfigured := h.demoUsername != ""
+	if demoConfigured {
+		demoUniqueIPs = countOne(ctx, pool,
+			`SELECT COUNT(DISTINCT s.ip)
+			   FROM grown.sessions s
+			   JOIN grown.users u ON u.id = s.user_id
+			  WHERE u.org_id = $1
+			    AND lower(u.email) = lower($2)
+			    AND s.ip IS NOT NULL
+			    AND s.ip <> ''`, orgID, h.demoUsername)
+	}
 
 	// --- storage ---
 	driveBytes := sumOne(ctx, pool,
@@ -352,6 +387,8 @@ func (h *Handler) collect(ctx context.Context, orgID string) AnalyticsResponse {
 			TotalAdmins:      totalAdmins,
 			ActiveLast7Days:  active7,
 			ActiveLast30Days: active30,
+			DemoConfigured:   demoConfigured,
+			DemoUniqueIPs:    demoUniqueIPs,
 		},
 		Storage: StorageStats{
 			DriveBytes:          driveBytes,

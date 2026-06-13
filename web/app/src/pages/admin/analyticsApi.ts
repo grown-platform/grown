@@ -14,6 +14,10 @@ export interface UserStats {
   total_admins: number;
   active_last_7_days: number;
   active_last_30_days: number;
+  /** Whether a public demo user is configured (GROWN_DEMO_USERNAME set). */
+  demo_configured: boolean;
+  /** Distinct IPs that have signed in as the demo user. */
+  demo_unique_ips: number;
 }
 
 export interface StorageStats {

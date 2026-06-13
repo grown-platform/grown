@@ -137,6 +137,12 @@ export function DashboardSection({
           <StatTile label="Admins" value={stats.users.total_admins} />
           <StatTile label="Active (7 days)" value={stats.users.active_last_7_days} />
           <StatTile label="Storage used" value={formatBytes(stats.storage.total_bytes)} />
+          {stats.users.demo_configured && (
+            <StatTile
+              label="Demo logins (unique IPs)"
+              value={stats.users.demo_unique_ips}
+            />
+          )}
         </Box>
       )}
 

@@ -1083,6 +1083,11 @@ func New(cfg Config) *Server {
 		},
 		IsAdmin: isAdminFromCtx,
 	}).WithPool(cfg.Pool)
+	// Surface the demo user's unique-login-IP count on the admin dashboard, but
+	// only when the public demo login is actually enabled for this instance.
+	if cfg.DemoLogin.Enabled && cfg.DemoLogin.Username != "" {
+		analyticsHandler = analyticsHandler.WithDemoUsername(cfg.DemoLogin.Username)
+	}
 
 	// Admin security console — reads/writes the caller-org's Zitadel security
 	// policies (password complexity, login/MFA/passwordless, lockout) via the
