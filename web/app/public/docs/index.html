@@ -38,6 +38,9 @@
   .shot img{display:block;width:100%}
   .shot figcaption{font-size:13px;color:var(--muted);padding:10px 14px;border-top:1px solid var(--line)}
   .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+  .gallery{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));margin-top:8px}
+  .gallery .shot{margin:0}
+  .gallery .shot img{aspect-ratio:16/10;object-fit:cover;object-position:top}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
   .card h3{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:8px}
   .card p{margin:0;font-size:14px;color:var(--muted)}
@@ -67,7 +70,8 @@
        meetings, phone system and more, all in one place that you run and own.</p>
     <div class="cta">
       <a href="https://workspace.pick.haus/">Open the app →</a>
-      <a class="ghost" href="#apps">Browse the apps</a>
+      <a class="ghost" href="#screenshots">See screenshots</a>
+      <a class="ghost" href="https://github.com/grown-platform/grown">Source on GitHub</a>
     </div>
   </div>
 </header>
@@ -75,6 +79,7 @@
 <nav class="toc">
   <div class="wrap">
     <a href="#overview">Overview</a>
+    <a href="#screenshots">Screenshots</a>
     <a href="#apps">Apps</a>
     <a href="#recent">What's new</a>
     <a href="#pwa">Install / Offline</a>
@@ -93,6 +98,33 @@
       <img src="dashboard.png" alt="The Workspace app launcher showing all available apps" />
       <figcaption>The app launcher — every tool one click away.</figcaption>
     </figure>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="wrap">
+    <h2>Screenshots</h2>
+    <p class="lead">Live captures of the actual apps — not mockups. A few highlights;
+      there's a full per-service gallery (desktop + mobile, every app) in the
+      <a href="https://github.com/grown-platform/grown/tree/main/docs/services">repo docs</a>.</p>
+    <div class="gallery">
+      <figure class="shot"><img loading="lazy" src="shots/drive.png" alt="Drive — files and app launcher" /><figcaption>Drive — files &amp; the app launcher</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/mail.png" alt="Mail — webmail inbox" /><figcaption>Mail — inbox, threads, labels</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/calendar.png" alt="Calendar" /><figcaption>Calendar — events &amp; meetings</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/sheets.png" alt="Sheets spreadsheet" /><figcaption>Sheets — spreadsheets &amp; formulas</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/docs.png" alt="Docs editor" /><figcaption>Docs — real-time rich text</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/slides.png" alt="Slides" /><figcaption>Slides — decks &amp; presenting</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/photos.png" alt="Photos library" /><figcaption>Photos — your photo library</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/chat.png" alt="Chat" /><figcaption>Chat — channels &amp; DMs</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/video.png" alt="Video" /><figcaption>Video — library &amp; streaming</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/music.png" alt="Music" /><figcaption>Music — stream your collection</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/tickets.png" alt="Tickets" /><figcaption>Tickets — helpdesk &amp; public intake</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/meet.png" alt="Meet" /><figcaption>Meet — WebRTC video meetings</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/whiteboard.png" alt="Whiteboard" /><figcaption>Whiteboard — collaborative canvas</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/contacts.png" alt="Contacts" /><figcaption>Contacts — shared address book</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/books.png" alt="Books" /><figcaption>Books — e-book library</figcaption></figure>
+      <figure class="shot"><img loading="lazy" src="shots/admin.png" alt="Admin console" /><figcaption>Admin — org console &amp; audit</figcaption></figure>
+    </div>
   </div>
 </section>
 
@@ -219,8 +251,12 @@
 
 <footer>
   <div class="wrap">
-    Workspace · self-hosted workspace platform. ·
-    <a href="https://workspace.pick.haus/">Open the app</a>
+    Workspace · self-hosted workspace platform · <b>forever free, MIT licensed</b>.<br />
+    Open source — <a href="https://github.com/grown-platform/grown">source on GitHub</a> ·
+    <a href="https://github.com/grown-platform/grown/issues">report an issue</a> ·
+    <a href="https://github.com/grown-platform/grown/blob/main/CONTRIBUTING.md">contribute</a> ·
+    <a href="https://workspace.pick.haus/">open the app</a>.
+    <br />Contributions and issues are very welcome.
   </div>
 </footer>
 
