@@ -93,6 +93,22 @@
   }
   .player-zone.cpu { border-color: #5b2730; }
   .player-zone.you { border-color: #2a4f43; }
+  /* Active player's zone gets an accent glow so it's clear whose turn it is. */
+  .player-zone.active { box-shadow: 0 0 0 2px var(--accent); }
+  .pz-head .name.opp { color: var(--bad); }
+  /* Lobby list (online mode) */
+  .lobby-list { display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+  .lobby-row {
+    display:flex; align-items:center; gap:8px; padding:9px 11px;
+    background: var(--panel2); border:1px solid var(--line); border-radius:8px;
+    font-size:13px; font-weight:600;
+  }
+  .lobby-row .badge { font-size:10px; color:#3a2c00; background:var(--accent); border-radius:4px; padding:1px 5px; font-weight:700; }
+  .share-box {
+    font:12px ui-monospace,monospace; word-break:break-all;
+    background: var(--bg); border:1px solid var(--line); border-radius:8px;
+    padding:8px; margin:8px 0;
+  }
   .pz-head {
     display: flex;
     align-items: center;
@@ -470,17 +486,11 @@
   </div>
 
   <div class="board" id="board">
-    <!-- Seat 1 zone (CPU in vs-Computer, Player 2 in 2-player). Public tableau. -->
-    <div class="player-zone cpu" id="cpuZone">
-      <div class="pz-head">
-        <span class="name cpu" id="cpuName">🤖 CPU</span>
-        <span class="pz-stats"><span id="cpuHandWrap">Hand: <b id="cpuHandCount">0</b> · </span>Sets: <b id="cpuSets">0</b>/3</span>
-      </div>
-      <div class="props" id="cpuProps"></div>
-      <div class="bank-line"><span class="bank-label">Bank:</span><span id="cpuBank"></span><span class="money-chip" id="cpuBankTotal">$0M</span></div>
-    </div>
+    <!-- Opponent zones (1-4 of them) are rendered dynamically into here. Each is a
+         public tableau (name, hand count, sets, bank, properties). -->
+    <div id="oppZones"></div>
 
-    <!-- Seat 0 zone (You in vs-Computer, Player 1 in 2-player). Public tableau. -->
+    <!-- Local player's zone (You / the seat at this device). Public tableau. -->
     <div class="player-zone you" id="youZone">
       <div class="pz-head">
         <span class="name you" id="youName">😎 You</span>
@@ -519,8 +529,33 @@
       <div class="mode-opts">
         <button id="modeAi">🤖 vs Computer</button>
         <button id="modeTwo">👥 2 Players (pass &amp; play)</button>
+        <button id="modeOnline">🌐 Online (2–5 players)</button>
       </div>
     </div>
+  </div>
+
+  <!-- vs-Computer setup: pick how many CPU opponents (1-4). -->
+  <div class="overlay" id="aiSetupOverlay">
+    <div class="modal">
+      <h2>vs Computer</h2>
+      <p>How many CPU opponents?</p>
+      <div class="mode-opts" id="aiCountOpts">
+        <button data-n="1">1 CPU</button>
+        <button data-n="2">2 CPUs</button>
+        <button data-n="3">3 CPUs</button>
+        <button data-n="4">4 CPUs</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Online connect (create / join) -->
+  <div class="overlay" id="onlineOverlay">
+    <div class="modal" id="onlineModal"></div>
+  </div>
+
+  <!-- Online lobby (waiting room before host starts) -->
+  <div class="overlay" id="lobbyOverlay">
+    <div class="modal" id="lobbyModal"></div>
   </div>
 
   <!-- Privacy handoff overlay (2-player pass & play). Opaque; drag the handle
@@ -641,25 +676,56 @@ function buildDeck(){
 
 // ---------- Game State ----------
 let G = null;
-// mode: 'ai' = seat 1 is the CPU (default, unchanged); '2p' = seat 1 is a human
-// (Player 2) taking a full manual pass-and-play turn behind a privacy handoff.
+// mode:
+//  'ai'     = seat 0 is You; seats 1..N are CPUs (1-4 of them).
+//  '2p'     = N human seats sharing the device via privacy pass-and-play.
+//  'online' = N human seats over the relay; the HOST holds authoritative state
+//             and thin clients render the public board + their private hand.
 let mode = 'ai';
+// numSeats: total players this game (2-5). Defaults to 2 (back-compat).
+let numSeats = 2;
+// In online mode, the seat THIS device controls (host is usually 0, but any).
+let mySeatOnline = 0;
+// Seat display names (used in 2p/online). Index by seat. Falls back to Player N.
+let seatLabels = [];
 
-// Perspective helpers. In 'ai' mode the human is always seat 0 and the opponent
-// (CPU) is seat 1 — nothing changes. In '2p' mode "me" is whichever seat is to
-// move (always a human at the device) and "opp" is the other player. During a
-// 2p payment the device is temporarily handed to the payer, so viewSeat (when
-// set) overrides whose hand/controls are shown.
+// Perspective helpers.
+//  meSeat()  = the seat whose hand/controls are face-up on THIS device.
+//    - ai:     always seat 0 (You).
+//    - 2p:     the seat to move (or viewSeat during a payment handoff).
+//    - online: mySeatOnline (this device always controls its own seat).
 function meSeat(){
+  if(mode === 'online') return mySeatOnline;
   if(mode !== '2p') return 0;
   return (G && G.viewSeat != null) ? G.viewSeat : G.turn;
 }
-function oppSeat(){ return 1 - meSeat(); }
-function isHumanSeat(pi){ return mode === '2p' ? true : pi === 0; }
-// Display name for a seat. In 2p both are "Player N"; in ai it's You / CPU.
+// opponentSeats(): every seat that is NOT `pi` (defaults to meSeat()).
+function opponentSeats(pi){
+  if(pi==null) pi = meSeat();
+  const out=[];
+  for(let i=0;i<numSeats;i++) if(i!==pi) out.push(i);
+  return out;
+}
+// oppSeat(): legacy single-opponent helper (only meaningful with 2 seats).
+function oppSeat(){ const o=opponentSeats(); return o.length?o[0]:(1-meSeat()); }
+// nextSeat(): turn rotation.
+function nextSeat(pi){ return (pi+1) % numSeats; }
+// A seat is human-controlled if it's not a CPU.
+function isHumanSeat(pi){
+  if(!G || !G.players[pi]) return mode!=='ai' || pi===0;
+  return !G.players[pi].cpu;
+}
+// In online mode the ACTIVE local player can only act on their OWN seat.
+function isMyControllableSeat(pi){
+  if(mode==='online') return pi===mySeatOnline;
+  return isHumanSeat(pi);
+}
+// Display name for a seat.
 function seatName(pi){
-  if(mode === '2p') return 'Player ' + (pi + 1);
-  return pi === 0 ? 'You' : 'CPU';
+  if(seatLabels[pi]) return seatLabels[pi];
+  if(mode === 'ai') return pi === 0 ? 'You' : 'CPU '+pi;
+  if(mode === 'online') return pi===mySeatOnline ? 'You' : 'Player '+(pi+1);
+  return 'Player ' + (pi + 1);
 }
 
 function freshPlayer(isCPU){
@@ -671,13 +737,23 @@ function freshPlayer(isCPU){
   };
 }
 
+// buildPlayers(): create the seat array for the current mode/numSeats.
+function buildPlayers(){
+  const arr=[];
+  for(let i=0;i<numSeats;i++){
+    // ai mode: seat 0 human, rest CPU. 2p/online: all human.
+    const isCPU = (mode==='ai') && i!==0;
+    arr.push(freshPlayer(isCPU));
+  }
+  return arr;
+}
+
 function newGame(){
   const deck = shuffle(buildDeck());
-  // Seat 1 is a CPU only in 'ai' mode; in '2p' mode it's Player 2 (a human).
   G = {
     deck,
     discard: [],
-    players: [ freshPlayer(false), freshPlayer(mode==='ai') ], // 0=P1/you, 1=P2/cpu
+    players: buildPlayers(),
     turn: 0,
     playsLeft: 0,
     drawnThisTurn: false,
@@ -687,9 +763,10 @@ function newGame(){
     viewSeat: null      // 2p: temporary perspective override (e.g. during payment)
   };
   hideHandoff();
+  buildOppZones();
   // deal 5 each
   for(let i=0;i<5;i++){ for(const p of G.players){ p.hand.push(drawCard()); } }
-  log('New game started. '+seatName(0)+' goes first!', 'sys');
+  log('New game started ('+numSeats+' players). '+seatName(0)+' goes first!', 'sys');
   startTurn(0);
 }
 
@@ -716,20 +793,30 @@ function startTurn(pi){
   const p = G.players[pi];
   const n = (p.hand.length===0) ? 5 : 2;
   for(let i=0;i<n;i++){ const c=drawCard(); if(c) p.hand.push(c); }
+  if(mode==='online'){
+    // Host drives online turns; see hostStartTurn(). This branch only runs for
+    // the host's local engine — broadcast the new public state.
+    if(checkWin()) return;
+    broadcastState();
+    render();
+    return;
+  }
   if(isHumanSeat(pi)){
-    setStatus('you', (mode==='2p' ? seatName(pi)+': ' : 'Your turn — ')+'play up to 3 cards.');
+    const isYou = (mode==='ai' && pi===0);
+    setStatus('you', (isYou ? 'Your turn — ' : seatName(pi)+': ')+'play up to 3 cards.');
     render();
     if(checkWin()) return;
   } else {
-    setStatus('cpu', "CPU is thinking…");
+    setStatus('cpu', seatName(pi)+" is thinking…");
     render();
     if(checkWin()) return;
     G.busy = true;
-    setTimeout(cpuTurn, 700);
+    setTimeout(()=>cpuTurn(pi), 700);
   }
 }
 
 function endTurn(){
+  if(mode==='online'){ submitOnlineEndTurn(); return; }
   const pi = G.turn;
   const p = G.players[pi];
   // hand limit 7 — the active human discards down via the modal.
@@ -742,7 +829,7 @@ function endTurn(){
 
 function finishEndTurn(){
   if(checkWin()) return;
-  const next = G.turn===0 ? 1 : 0;
+  const next = nextSeat(G.turn);
   if(mode==='2p'){
     // Lock input and cover the screen BEFORE rendering for the next player, so
     // the player handing over the device can't glimpse the incoming hand.
@@ -769,9 +856,10 @@ function countPropsInGroup(arr){
   return arr.filter(c=>c.type==='property'||c.type==='wildcard').length;
 }
 function checkWin(){
-  for(let i=0;i<2;i++){
+  for(let i=0;i<numSeats;i++){
     if(completeSets(G.players[i]) >= 3){
       G.over = true;
+      if(mode==='online'){ hostGameOver(i); }
       showWin(i);
       return true;
     }
@@ -783,42 +871,81 @@ function checkWin(){
 function setStatus(who, msg){
   const tl = document.getElementById('turnLabel');
   tl.className = 'turn ' + who;
-  if(mode==='2p' && (who==='you'||who==='cpu')){
-    tl.textContent = seatName(G.turn).toUpperCase()+' TURN';
+  const localSeat = meSeat();
+  if(who==='you' && G && G.turn===localSeat){
+    tl.textContent = 'YOUR TURN';
+  } else if(who==='you' || who==='cpu'){
+    tl.textContent = G ? seatName(G.turn).toUpperCase()+' TURN' : '';
   } else {
-    tl.textContent = who==='you' ? 'YOUR TURN' : (who==='cpu' ? 'CPU TURN' : '');
+    tl.textContent = '';
   }
   document.getElementById('statusMsg').textContent = msg;
 }
 
 function bankTotal(p){ return p.bank.reduce((s,c)=>s+(c.value||0),0); }
 
+// buildOppZones(): (re)create one public tableau panel per opponent seat. Called
+// on new game / start so the DOM matches numSeats. Each panel exposes elements
+// id'd by seat index so render() can update counts/props/bank cheaply.
+function buildOppZones(){
+  const wrap = document.getElementById('oppZones');
+  if(!wrap) return;
+  wrap.innerHTML='';
+  const local = meSeat();
+  for(let i=0;i<numSeats;i++){
+    if(i===local) continue;               // local seat is the dedicated youZone
+    const z=document.createElement('div');
+    z.className='player-zone cpu';
+    z.id='oppZone_'+i;
+    z.innerHTML =
+      '<div class="pz-head">'+
+        '<span class="name opp" id="oppName_'+i+'"></span>'+
+        '<span class="pz-stats">Hand: <b id="oppHand_'+i+'">0</b> · Sets: <b id="oppSets_'+i+'">0</b>/3</span>'+
+      '</div>'+
+      '<div class="props" id="oppProps_'+i+'"></div>'+
+      '<div class="bank-line"><span class="bank-label">Bank:</span><span id="oppBank_'+i+'"></span><span class="money-chip" id="oppBankTotal_'+i+'">$0M</span></div>';
+    wrap.appendChild(z);
+  }
+}
+
 function render(){
   if(!G) return;
-  const you = G.players[0], cpu = G.players[1]; // seat 0, seat 1 (public tableaus)
-  const active = meSeat();
-  // Zone labels: in 2p both seats are players; in ai it's You / CPU.
-  document.getElementById('youName').textContent = (mode==='2p' ? '🙂 '+seatName(0) : '😎 You');
-  document.getElementById('cpuName').textContent = (mode==='2p' ? '🙂 '+seatName(1) : '🤖 CPU');
-  // counts (public tableaus are always visible; only the concealed HAND flips).
-  document.getElementById('cpuSets').textContent = completeSets(cpu);
+  const local = meSeat();
+  // If the local seat changed (2p handoff), rebuild the opponent zones so the
+  // current device-holder is the youZone and everyone else is an opponent panel.
+  if(G._renderedLocal !== local){ buildOppZones(); G._renderedLocal = local; }
+
+  // Local (you) zone.
+  const you = G.players[local];
+  document.getElementById('youName').textContent =
+    (mode==='ai') ? '😎 You' : '🙂 '+seatName(local);
   document.getElementById('youSets').textContent = completeSets(you);
-  // Hand counts: show a count badge for the seat whose hand is hidden, and hide
-  // the badge for the active seat (its hand is face-up in the panel below).
-  const cpuHidden = (active !== 1);
-  document.getElementById('cpuHandCount').textContent = cpu.hand.length;
-  document.getElementById('cpuHandWrap').style.display = cpuHidden ? '' : 'none';
-  const youHidden = (active !== 0);
   document.getElementById('youHandCount').textContent = you.hand.length;
-  document.getElementById('youHandWrap').style.display = (mode==='2p' && youHidden) ? '' : 'none';
-
-  document.getElementById('handCount').textContent = G.players[active].hand.length;
-  document.getElementById('playsLeft').textContent = (!G.over && isHumanSeat(G.turn)) ? G.playsLeft : 0;
-
-  renderProps('cpuProps', cpu);
+  // Local hand is face-up below, so only show the count badge in 2p (privacy).
+  document.getElementById('youHandWrap').style.display = 'none';
+  document.getElementById('youZone').classList.toggle('active', G.turn===local && !G.over);
   renderProps('youProps', you);
-  renderBank('cpuBank','cpuBankTotal', cpu);
   renderBank('youBank','youBankTotal', you);
+
+  // Opponent zones.
+  for(let i=0;i<numSeats;i++){
+    if(i===local) continue;
+    const p=G.players[i];
+    const nm=document.getElementById('oppName_'+i);
+    if(!nm) continue; // zones not built for this seat
+    const icon = p.cpu ? '🤖 ' : '🙂 ';
+    nm.textContent = icon + seatName(i);
+    document.getElementById('oppSets_'+i).textContent = completeSets(p);
+    document.getElementById('oppHand_'+i).textContent = p.hand.length;
+    document.getElementById('oppZone_'+i).classList.toggle('active', G.turn===i && !G.over);
+    renderProps('oppProps_'+i, p);
+    renderBank('oppBank_'+i,'oppBankTotal_'+i, p);
+  }
+
+  document.getElementById('handCount').textContent = you.hand.length;
+  const myTurnPlays = (!G.over && G.turn===local && isMyControllableSeat(local));
+  document.getElementById('playsLeft').textContent = myTurnPlays ? G.playsLeft : 0;
+
   renderHand();
   updateActionButtons();
 }
@@ -923,7 +1050,10 @@ function selectedCard(){
 }
 
 function onSelectCard(id){
-  if(G.over || G.busy || !isHumanSeat(G.turn)) return;
+  if(G.over || G.busy) return;
+  // You can only act on your own turn (online: only your own seat).
+  if(mode==='online'){ if(G.turn!==mySeatOnline) return; }
+  else if(!isHumanSeat(G.turn)) return;
   G.selected = (G.selected===id) ? null : id;
   renderHand();
   updateActionButtons();
@@ -933,7 +1063,8 @@ function updateActionButtons(){
   const playBtn = document.getElementById('playBtn');
   const bankBtn = document.getElementById('bankBtn');
   const endBtn  = document.getElementById('endBtn');
-  const myTurn = (isHumanSeat(G.turn) && !G.over && !G.busy);
+  const controllable = (mode==='online') ? (G.turn===mySeatOnline) : isHumanSeat(G.turn);
+  const myTurn = (controllable && !G.over && !G.busy);
   const c = selectedCard();
   endBtn.disabled = !myTurn;
   if(!myTurn || !c || G.playsLeft<=0){
@@ -963,6 +1094,7 @@ function updateActionButtons(){
 function youBankCard(){
   const c = selectedCard();
   if(!c || G.playsLeft<=0) return;
+  if(mode==='online'){ G.selected=null; submitOnlineAction({kind:'bank', cardId:c.id}); return; }
   const myPi = meSeat();
   removeFromHand(myPi, c.id);
   G.players[myPi].bank.push(c.type==='action' ? {id:c.id,type:'action',name:c.name,value:c.value,act:c.act} : c);
@@ -977,6 +1109,7 @@ function youBankCard(){
 function youPlayCard(){
   const c = selectedCard();
   if(!c || G.playsLeft<=0) return;
+  if(mode==='online'){ playOnlineCard(c); return; }
   const myPi = meSeat();
   if(c.type==='property'){
     layProperty(myPi, c, c.group);
@@ -1018,13 +1151,23 @@ function layProperty(pi, card, group){
 }
 
 // ---------- Action handling (active human player) ----------
-// In ai mode the actor is seat 0 ("You") vs seat 1 (CPU). In 2p mode the actor
-// is whichever human seat is to move; opp is the other human seat.
+// Shared by 'ai' and '2p' modes (online routes actions through the host
+// validator). The actor is whichever seat is to move; targets are chosen among
+// the N opponents. When there is exactly one valid opponent we skip the chooser.
+//
+// pickOpponent(valid, title, cb): valid is a list of seat indices that are
+// legal targets; auto-resolves when only one, else opens a chooser modal.
+function pickOpponent(valid, title, cb){
+  if(valid.length===0){ toast('No valid target.'); return; }
+  if(valid.length===1){ cb(valid[0]); return; }
+  chooseOpponentTarget(valid, title, cb);
+}
+
 function playYouAction(c){
-  const myPi = meSeat(), oppPi = oppSeat();
-  const opp = G.players[oppPi];
+  const myPi = meSeat();
   const me = G.players[myPi];
-  const ME = seatName(myPi), OPP = seatName(oppPi);
+  const ME = seatName(myPi);
+  const opps = opponentSeats(myPi);
   switch(c.act){
     case 'passgo': {
       removeFromHand(myPi, c.id);
@@ -1036,74 +1179,91 @@ function playYouAction(c){
       break;
     }
     case 'birthday': {
+      // Every opponent pays $2M.
       removeFromHand(myPi, c.id);
       G.discard.push(c);
       snd.action();
-      log(ME+" played It's My Birthday — "+OPP+" pays $2M.", 'you');
+      log(ME+" played It's My Birthday — everyone pays $2M.", 'you');
       G.selected=null; G.playsLeft--; render();
-      requestPayment(oppPi, myPi, 2, "It's My Birthday", ()=>{ if(!checkWin()) render(); });
+      chargeMany(opps, myPi, 2, "It's My Birthday", ()=>{ if(!checkWin()) render(); });
       break;
     }
     case 'debt': {
-      removeFromHand(myPi, c.id);
-      G.discard.push(c);
-      snd.action();
-      log(ME+' played Debt Collector — '+OPP+' owes $5M.', 'you');
-      G.selected=null; G.playsLeft--; render();
-      requestPayment(oppPi, myPi, 5, 'Debt Collector', ()=>{ if(!checkWin()) render(); });
+      // Debt Collector targets ONE chosen opponent for $5M.
+      pickOpponent(opps, 'Debt Collector — charge whom $5M?', (oppPi)=>{
+        const OPP=seatName(oppPi);
+        removeFromHand(myPi, c.id);
+        G.discard.push(c);
+        snd.action();
+        log(ME+' played Debt Collector — '+OPP+' owes $5M.', 'you');
+        G.selected=null; G.playsLeft--; render();
+        requestPayment(oppPi, myPi, 5, 'Debt Collector', ()=>{ if(!checkWin()) render(); });
+      });
       break;
     }
     case 'rent':
     case 'rent_any': {
-      // choose a color you own to charge rent for
+      // choose a color you own to charge rent for; ALL opponents pay it.
       const owned = GROUP_KEYS.filter(g=> me.props[g] && countPropsInGroup(me.props[g])>0);
       if(owned.length===0){ toast('You have no properties to charge rent for.'); return; }
       chooseColorForRent(owned, (g)=>{
         const cnt = Math.min(countPropsInGroup(me.props[g]), GROUPS[g].rent.length);
         let amount = GROUPS[g].rent[cnt-1] || GROUPS[g].rent[GROUPS[g].rent.length-1];
-        // house/hotel bonus
         amount += addonBonus(me.props[g]);
         removeFromHand(myPi, c.id);
         G.discard.push(c);
         snd.action();
-        log(ME+' played Rent on '+GROUPS[g].name+' — '+OPP+' owes $'+amount+'M.', 'you');
+        log(ME+' played Rent on '+GROUPS[g].name+' — everyone owes $'+amount+'M.', 'you');
         G.selected=null; G.playsLeft--; render();
-        requestPayment(oppPi, myPi, amount, 'Rent ('+GROUPS[g].name+')', ()=>{ if(!checkWin()) render(); });
+        chargeMany(opps, myPi, amount, 'Rent ('+GROUPS[g].name+')', ()=>{ if(!checkWin()) render(); });
       });
       break;
     }
     case 'slydeal': {
-      // steal a single property from opp (not from a complete set)
-      const stealable = stealableProps(opp, false);
-      if(stealable.length===0){ toast(OPP+' has no stealable property.'); return; }
-      chooseStealTarget(stealable, 'Sly Deal — steal a property', (pick)=>{
-        attemptAction(c, myPi, oppPi, 'Sly Deal', ()=>{
-          doSteal(oppPi, myPi, pick.group, pick.card);
-          log(ME+' stole '+GROUPS[pick.group].name+' from '+OPP+'.', 'you');
+      // pick a victim that has a stealable property, then a property.
+      const valid = opps.filter(o=> stealableProps(G.players[o], false).length>0);
+      if(valid.length===0){ toast('No opponent has a stealable property.'); return; }
+      pickOpponent(valid, 'Sly Deal — steal from whom?', (oppPi)=>{
+        const opp=G.players[oppPi], OPP=seatName(oppPi);
+        const stealable = stealableProps(opp, false);
+        chooseStealTarget(stealable, 'Sly Deal — steal a property', oppPi, (pick)=>{
+          attemptAction(c, myPi, oppPi, 'Sly Deal', ()=>{
+            doSteal(oppPi, myPi, pick.group, pick.card);
+            log(ME+' stole '+GROUPS[pick.group].name+' from '+OPP+'.', 'you');
+          });
         });
       });
       break;
     }
     case 'forceddeal': {
       const mine = stealableProps(me, false);
-      const theirs = stealableProps(opp, false);
-      if(mine.length===0 || theirs.length===0){ toast('Forced Deal needs a property on each side.'); return; }
-      chooseForcedDeal(mine, theirs, (myPick, theirPick)=>{
-        attemptAction(c, myPi, oppPi, 'Forced Deal', ()=>{
-          doSteal(oppPi, myPi, theirPick.group, theirPick.card);
-          doSteal(myPi, oppPi, myPick.group, myPick.card);
-          log(ME+' swapped properties with '+OPP+'.', 'you');
+      if(mine.length===0){ toast('You have no property to swap.'); return; }
+      const valid = opps.filter(o=> stealableProps(G.players[o], false).length>0);
+      if(valid.length===0){ toast('No opponent has a property to swap.'); return; }
+      pickOpponent(valid, 'Forced Deal — swap with whom?', (oppPi)=>{
+        const opp=G.players[oppPi], OPP=seatName(oppPi);
+        const theirs = stealableProps(opp, false);
+        chooseForcedDeal(mine, theirs, oppPi, (myPick, theirPick)=>{
+          attemptAction(c, myPi, oppPi, 'Forced Deal', ()=>{
+            doSteal(oppPi, myPi, theirPick.group, theirPick.card);
+            doSteal(myPi, oppPi, myPick.group, myPick.card);
+            log(ME+' swapped properties with '+OPP+'.', 'you');
+          });
         });
       });
       break;
     }
     case 'dealbreaker': {
-      const sets = completeSetsList(opp);
-      if(sets.length===0){ toast(OPP+' has no complete set to steal.'); return; }
-      chooseSetTarget(sets, (g)=>{
-        attemptAction(c, myPi, oppPi, 'Deal Breaker', ()=>{
-          stealWholeSet(oppPi, myPi, g);
-          log(ME+' stole '+OPP+"'s "+GROUPS[g].name+' set!', 'you');
+      const valid = opps.filter(o=> completeSetsList(G.players[o]).length>0);
+      if(valid.length===0){ toast('No opponent has a complete set to steal.'); return; }
+      pickOpponent(valid, 'Deal Breaker — steal from whom?', (oppPi)=>{
+        const opp=G.players[oppPi], OPP=seatName(oppPi);
+        const sets = completeSetsList(opp);
+        chooseSetTarget(sets, (g)=>{
+          attemptAction(c, myPi, oppPi, 'Deal Breaker', ()=>{
+            stealWholeSet(oppPi, myPi, g);
+            log(ME+' stole '+OPP+"'s "+GROUPS[g].name+' set!', 'you');
+          });
         });
       });
       break;
@@ -1158,37 +1318,47 @@ function attemptAction(card, fromPi, toPi, label, onSuccess){
   G.selected = null;
   G.playsLeft--;
   snd.action();
-  // does target have Just Say No?
+  // does target have Just Say No? (only auto-resolved when the target is a CPU)
   const target = G.players[toPi];
   const jsnIdx = target.hand.findIndex(c=>c.act==='sayno');
-  if(jsnIdx>=0){
-    if(mode==='ai' && toPi===1){
-      // CPU decides whether to say no
-      if(cpuWantsSayNo(label)){
-        const jsn = target.hand.splice(jsnIdx,1)[0];
-        G.discard.push(jsn);
-        snd.no();
-        log('CPU played Just Say No! Action cancelled.', 'cpu');
-        // you could counter with your own JSN
-        const myJsn = G.players[0].hand.findIndex(c=>c.act==='sayno');
-        if(myJsn>=0){
-          askYouCounterNo(()=>{
-            const j = G.players[0].hand.splice(myJsn,1)[0];
-            G.discard.push(j);
-            snd.no();
-            log('You countered with Just Say No! Action proceeds.', 'you');
-            onSuccess(); render(); checkWin();
-          }, ()=>{ render(); checkWin(); });
-          return;
-        }
-        render(); checkWin();
+  if(jsnIdx>=0 && target.cpu){
+    // CPU decides whether to say no
+    if(cpuWantsSayNo(label)){
+      const jsn = target.hand.splice(jsnIdx,1)[0];
+      G.discard.push(jsn);
+      snd.no();
+      log(seatName(toPi)+' played Just Say No! Action cancelled.', 'cpu');
+      // the actor (fromPi) may counter with their own JSN
+      const myJsn = G.players[fromPi].hand.findIndex(c=>c.act==='sayno');
+      if(myJsn>=0 && !G.players[fromPi].cpu){
+        askYouCounterNo(()=>{
+          const j = G.players[fromPi].hand.splice(myJsn,1)[0];
+          G.discard.push(j);
+          snd.no();
+          log(seatName(fromPi)+' countered with Just Say No! Action proceeds.', 'you');
+          onSuccess(); render(); checkWin();
+        }, ()=>{ render(); checkWin(); });
         return;
       }
+      render(); checkWin();
+      return;
     }
   }
   onSuccess();
   render();
   checkWin();
+}
+
+// chargeMany: charge a list of payer seats `amount` each, paid to `payeePi`,
+// sequentially (so 2p/online handoffs don't overlap). Calls done() at the end.
+function chargeMany(payerSeats, payeePi, amount, reason, done){
+  let i=0;
+  function next(){
+    if(i>=payerSeats.length){ if(done) done(); return; }
+    const payer=payerSeats[i++];
+    requestPayment(payer, payeePi, amount, reason, next);
+  }
+  next();
 }
 
 function cpuWantsSayNo(label){
@@ -1241,14 +1411,14 @@ function requestPayment(payerPi, payeePi, amount, reason, done){
   const payer = G.players[payerPi];
   const totalAssets = bankTotal(payer) + propAssetValue(payer);
   if(amount<=0 || totalAssets===0){
-    log(seatName(payerPi)+' could not pay (no assets).', payerPi===0?'you':'cpu');
+    log(seatName(payerPi)+' could not pay (no assets).', payer.cpu?'cpu':'you');
     if(done) done();
     return;
   }
-  if(mode==='ai' && payerPi===1){
+  if(payer.cpu){
     // CPU auto-pays
-    const paid = cpuPay(payer, payeePi, amount);
-    log('CPU paid $'+paid+'M for '+reason+'.', 'cpu');
+    const paid = cpuPay(payerPi, payeePi, amount);
+    log(seatName(payerPi)+' paid $'+paid+'M for '+reason+'.', 'cpu');
     snd.pay();
     if(done) done();
   } else if(mode==='2p' && payerPi !== G.turn){
@@ -1279,7 +1449,8 @@ function propAssetValue(p){
   return v;
 }
 
-function cpuPay(payer, payeePi, amount){
+function cpuPay(payerPi, payeePi, amount){
+  const payer = G.players[payerPi];
   const payee = G.players[payeePi];
   let remaining = amount;
   let paid = 0;
@@ -1310,7 +1481,7 @@ function cpuPay(payer, payeePi, amount){
     for(const pr of props){
       if(remaining<=0) break;
       // move property to payee bank? In real game props given go to property area; simplify: payee receives into props
-      doSteal(1, payeePi, pr.g, pr.c);
+      doSteal(payerPi, payeePi, pr.g, pr.c);
       paid += (pr.c.value||0);
       remaining -= (pr.c.value||0);
     }
@@ -1319,16 +1490,17 @@ function cpuPay(payer, payeePi, amount){
 }
 
 // ---------- CPU TURN ----------
-function cpuTurn(){
-  const cpu = G.players[1];
+// Generalized to N seats: `ci` is the CPU's seat. Targeted actions pick the most
+// threatening human/CPU opponent (the one closest to winning / richest).
+function cpuTurn(ci){
   let safety=0;
   function step(){
     safety++;
     if(G.over){ G.busy=false; return; }
-    if(G.playsLeft<=0 || safety>20){ cpuEndTurn(); return; }
-    const move = cpuChooseMove();
-    if(!move){ cpuEndTurn(); return; }
-    cpuDoMove(move, ()=>{
+    if(G.playsLeft<=0 || safety>20){ cpuEndTurn(ci); return; }
+    const move = cpuChooseMove(ci);
+    if(!move){ cpuEndTurn(ci); return; }
+    cpuDoMove(ci, move, ()=>{
       render();
       if(checkWin()){ G.busy=false; return; }
       setTimeout(step, 650);
@@ -1337,9 +1509,20 @@ function cpuTurn(){
   step();
 }
 
-function cpuChooseMove(){
-  const cpu = G.players[1];
-  const you = G.players[0];
+// cpuPickOpponent: choose a target seat among opponents, by a scoring fn.
+// Default score = completeSets*10 + asset value (deny the leader).
+function cpuPickOpponent(ci, scoreFn){
+  let best=null, bestScore=-Infinity;
+  for(const o of opponentSeats(ci)){
+    const p=G.players[o];
+    const s = scoreFn ? scoreFn(p,o) : (completeSets(p)*10 + bankTotal(p) + propAssetValue(p));
+    if(s>bestScore){ bestScore=s; best=o; }
+  }
+  return best;
+}
+
+function cpuChooseMove(ci){
+  const cpu = G.players[ci];
   // priority: win-enabling property plays, deal breaker, then build, rent, bank
   // 1) Lay properties that progress sets
   for(const c of cpu.hand){
@@ -1348,22 +1531,28 @@ function cpuChooseMove(){
   // 2) Wildcards into the most useful group
   for(const c of cpu.hand){
     if(c.type==='wildcard'){
-      const g = cpuBestWildGroup(c);
+      const g = cpuBestWildGroup(ci, c);
       return {kind:'lay', card:c, group:g};
     }
   }
-  // 3) Deal Breaker if you have a complete set
+  // 3) Deal Breaker against the opponent with the best complete set
   const dbCard = cpu.hand.find(c=>c.act==='dealbreaker');
-  if(dbCard){ const sets=completeSetsList(you); if(sets.length>0) return {kind:'action', card:dbCard, target:sets[0]}; }
-  // 4) Sly Deal a near-complete-set property from you
+  if(dbCard){
+    const vics = opponentSeats(ci).filter(o=>completeSetsList(G.players[o]).length>0);
+    if(vics.length){ const v=cpuPickOpponent(ci,(p,o)=>vics.includes(o)?completeSets(p):-1); const sets=completeSetsList(G.players[v]); return {kind:'action', card:dbCard, victim:v, target:sets[0]}; }
+  }
+  // 4) Sly Deal a near-complete-set property from the leader
   const slyCard = cpu.hand.find(c=>c.act==='slydeal');
-  if(slyCard){ const st=stealableProps(you,false); if(st.length>0) return {kind:'action', card:slyCard, target:bestStealTarget(st)}; }
-  // 5) Rent if profitable
+  if(slyCard){
+    const vics = opponentSeats(ci).filter(o=>stealableProps(G.players[o],false).length>0);
+    if(vics.length){ const v=vics[0]; const st=stealableProps(G.players[v],false); return {kind:'action', card:slyCard, victim:v, target:bestStealTarget(v, st)}; }
+  }
+  // 5) Rent if profitable (charges all opponents)
   const rentCard = cpu.hand.find(c=>c.act==='rent'||c.act==='rent_any');
   if(rentCard){
     const owned = GROUP_KEYS.filter(g=> cpu.props[g] && countPropsInGroup(cpu.props[g])>0);
-    if(owned.length>0 && (bankTotal(you)>0 || propAssetValue(you)>0)){
-      // choose highest rent color
+    const someoneRich = opponentSeats(ci).some(o=> bankTotal(G.players[o])>0 || propAssetValue(G.players[o])>0);
+    if(owned.length>0 && someoneRich){
       let best=owned[0], bestAmt=-1;
       for(const g of owned){
         const cnt=Math.min(countPropsInGroup(cpu.props[g]),GROUPS[g].rent.length);
@@ -1373,11 +1562,11 @@ function cpuChooseMove(){
       return {kind:'action', card:rentCard, rentGroup:best};
     }
   }
-  // 6) Debt collector / birthday if you have money
+  // 6) Debt collector / birthday if an opponent has money
   const debtCard = cpu.hand.find(c=>c.act==='debt');
-  if(debtCard && (bankTotal(you)>=3 || propAssetValue(you)>=3)) return {kind:'action', card:debtCard};
+  if(debtCard){ const v=cpuPickOpponent(ci); if(v!=null && (bankTotal(G.players[v])>=3 || propAssetValue(G.players[v])>=3)) return {kind:'action', card:debtCard, victim:v}; }
   const bdayCard = cpu.hand.find(c=>c.act==='birthday');
-  if(bdayCard && (bankTotal(you)>=2 || propAssetValue(you)>=2)) return {kind:'action', card:bdayCard};
+  if(bdayCard && opponentSeats(ci).some(o=> bankTotal(G.players[o])>=2 || propAssetValue(G.players[o])>=2)) return {kind:'action', card:bdayCard};
   // 7) Pass Go to draw
   const pg = cpu.hand.find(c=>c.act==='passgo');
   if(pg) return {kind:'action', card:pg};
@@ -1389,21 +1578,18 @@ function cpuChooseMove(){
   // 9) bank a card (money first, then least-useful action like sayno-keep)
   let bankCandidate = cpu.hand.find(c=>c.type==='money');
   if(!bankCandidate){
-    // bank an action we can't use (but keep Just Say No!)
     bankCandidate = cpu.hand.find(c=>c.type==='action' && c.act!=='sayno');
   }
   if(!bankCandidate && cpu.hand.length>0){
-    // last resort, bank anything except keep one sayno
     bankCandidate = cpu.hand.find(c=>c.act!=='sayno') || null;
   }
   if(bankCandidate) return {kind:'bank', card:bankCandidate};
   return null;
 }
 
-function cpuBestWildGroup(c){
-  const cpu=G.players[1];
+function cpuBestWildGroup(ci, c){
+  const cpu=G.players[ci];
   const opts = c.groups==='any' ? GROUP_KEYS : c.groups;
-  // choose group where CPU is closest to completing (but not already complete)
   let best=opts[0], bestScore=-1;
   for(const g of opts){
     const have = cpu.props[g] ? countPropsInGroup(cpu.props[g]) : 0;
@@ -1413,124 +1599,132 @@ function cpuBestWildGroup(c){
   }
   return best;
 }
-function bestStealTarget(list){
-  // prefer property in a group where you're close to complete (more valuable to deny)
-  const you=G.players[0];
+function bestStealTarget(victimSeat, list){
+  // prefer property in a group where the victim is close to complete
+  const v=G.players[victimSeat];
   list.sort((a,b)=>{
-    const av=(you.props[a.group]?countPropsInGroup(you.props[a.group]):0);
-    const bv=(you.props[b.group]?countPropsInGroup(you.props[b.group]):0);
+    const av=(v.props[a.group]?countPropsInGroup(v.props[a.group]):0);
+    const bv=(v.props[b.group]?countPropsInGroup(v.props[b.group]):0);
     return bv-av;
   });
   return list[0];
 }
 
-function cpuDoMove(move, done){
-  const cpu=G.players[1];
+function cpuDoMove(ci, move, done){
+  const cpu=G.players[ci];
   if(move.kind==='lay'){
-    layProperty(1, move.card, move.group);
+    layProperty(ci, move.card, move.group);
     snd.prop();
-    log('CPU laid '+GROUPS[move.group].name+' property.', 'cpu');
+    log(seatName(ci)+' laid '+GROUPS[move.group].name+' property.', 'cpu');
     done();
   } else if(move.kind==='bank'){
-    removeFromHand(1, move.card.id);
+    removeFromHand(ci, move.card.id);
     cpu.bank.push(move.card);
     snd.bank();
-    log('CPU banked '+move.card.name+'.', 'cpu');
+    log(seatName(ci)+' banked '+move.card.name+'.', 'cpu');
     done();
   } else if(move.kind==='addon'){
-    removeFromHand(1, move.card.id);
+    removeFromHand(ci, move.card.id);
     cpu.props[move.group].push(Object.assign({},move.card,{assignedGroup:move.group}));
     snd.action();
-    log('CPU added '+move.card.name+' to '+GROUPS[move.group].name+'.', 'cpu');
+    log(seatName(ci)+' added '+move.card.name+' to '+GROUPS[move.group].name+'.', 'cpu');
     done();
   } else if(move.kind==='action'){
-    cpuDoAction(move, done);
+    cpuDoAction(ci, move, done);
   } else { done(); }
 }
 
-function cpuDoAction(move, done){
+function cpuDoAction(ci, move, done){
   const c=move.card;
-  const cpu=G.players[1], you=G.players[0];
+  const cpu=G.players[ci];
+  const ME=seatName(ci);
   switch(c.act){
     case 'passgo':
-      removeFromHand(1,c.id); G.discard.push(c);
+      removeFromHand(ci,c.id); G.discard.push(c);
       for(let i=0;i<2;i++){ const d=drawCard(); if(d) cpu.hand.push(d); }
       G.playsLeft--; snd.action();
-      log('CPU played Pass Go (drew 2).', 'cpu');
+      log(ME+' played Pass Go (drew 2).', 'cpu');
       done(); break;
     case 'birthday':
-      removeFromHand(1,c.id); G.discard.push(c); G.playsLeft--; snd.action();
-      log("CPU played It's My Birthday — you owe $2M.", 'cpu');
+      removeFromHand(ci,c.id); G.discard.push(c); G.playsLeft--; snd.action();
+      log(ME+" played It's My Birthday — everyone owes $2M.", 'cpu');
       render();
-      requestPayment(0,1,2,"CPU's Birthday", done);
+      chargeMany(opponentSeats(ci), ci, 2, ME+"'s Birthday", done);
       break;
-    case 'debt':
-      removeFromHand(1,c.id); G.discard.push(c); G.playsLeft--; snd.action();
-      log('CPU played Debt Collector — you owe $5M.', 'cpu');
+    case 'debt': {
+      const v=move.victim;
+      removeFromHand(ci,c.id); G.discard.push(c); G.playsLeft--; snd.action();
+      log(ME+' played Debt Collector — '+seatName(v)+' owes $5M.', 'cpu');
       render();
-      requestPayment(0,1,5,'Debt Collector', done);
+      requestPayment(v,ci,5,'Debt Collector', done);
       break;
+    }
     case 'rent':
     case 'rent_any': {
       const g=move.rentGroup;
       const cnt=Math.min(countPropsInGroup(cpu.props[g]),GROUPS[g].rent.length);
       let amt=(GROUPS[g].rent[cnt-1]||0)+addonBonus(cpu.props[g]);
-      removeFromHand(1,c.id); G.discard.push(c); G.playsLeft--; snd.action();
-      log('CPU played Rent on '+GROUPS[g].name+' — you owe $'+amt+'M.', 'cpu');
+      removeFromHand(ci,c.id); G.discard.push(c); G.playsLeft--; snd.action();
+      log(ME+' played Rent on '+GROUPS[g].name+' — everyone owes $'+amt+'M.', 'cpu');
       render();
-      requestPayment(0,1,amt,'Rent', done);
+      chargeMany(opponentSeats(ci), ci, amt, 'Rent', done);
       break;
     }
     case 'slydeal':
-      cpuAttempt(c, 'Sly Deal', ()=>{ doSteal(0,1,move.target.group,move.target.card); log('CPU stole your '+GROUPS[move.target.group].name+' property.', 'cpu'); }, done);
+      cpuAttempt(ci, move.victim, c, 'Sly Deal', ()=>{ doSteal(move.victim,ci,move.target.group,move.target.card); log(ME+' stole '+seatName(move.victim)+"'s "+GROUPS[move.target.group].name+' property.', 'cpu'); }, done);
       break;
     case 'dealbreaker':
-      cpuAttempt(c, 'Deal Breaker', ()=>{ stealWholeSet(0,1,move.target); log('CPU stole your '+GROUPS[move.target].name+' SET!', 'cpu'); }, done);
+      cpuAttempt(ci, move.victim, c, 'Deal Breaker', ()=>{ stealWholeSet(move.victim,ci,move.target); log(ME+' stole '+seatName(move.victim)+"'s "+GROUPS[move.target].name+' SET!', 'cpu'); }, done);
       break;
     default:
-      // shouldn't happen; bank it
-      removeFromHand(1,c.id); cpu.bank.push(c); G.playsLeft--; done();
+      removeFromHand(ci,c.id); cpu.bank.push(c); G.playsLeft--; done();
   }
 }
 
-// CPU plays an action that YOU might Just Say No to
-function cpuAttempt(card, label, effect, done){
-  removeFromHand(1, card.id);
+// CPU (seat ci) plays an action against `victim` who might Just Say No.
+function cpuAttempt(ci, victim, card, label, effect, done){
+  removeFromHand(ci, card.id);
   G.discard.push(card);
   G.playsLeft--;
   snd.action();
-  const youJsn = G.players[0].hand.findIndex(c=>c.act==='sayno');
-  if(youJsn>=0){
-    askYouSayNo(label, ()=>{
-      // you said no
-      const j=G.players[0].hand.splice(youJsn,1)[0]; G.discard.push(j); snd.no();
-      log('You played Just Say No! CPU action cancelled.', 'you');
-      // CPU might counter
-      const cpuJsn = G.players[1].hand.findIndex(c=>c.act==='sayno');
-      if(cpuJsn>=0 && Math.random()<0.6){
-        const cj=G.players[1].hand.splice(cpuJsn,1)[0]; G.discard.push(cj); snd.no();
-        log('CPU countered with Just Say No! Action proceeds.', 'cpu');
-        effect();
-      }
-      render(); done();
-    }, ()=>{
-      effect(); render(); done();
-    });
+  const vp=G.players[victim];
+  const vJsnIdx = vp.hand.findIndex(c=>c.act==='sayno');
+  // If the victim is a human (ai-mode seat 0), ask them; if a CPU, auto-decide.
+  function counterMaybe(after){
+    // CPU actor may counter the victim's JSN.
+    const cjsn = G.players[ci].hand.findIndex(c=>c.act==='sayno');
+    if(cjsn>=0 && Math.random()<0.6){
+      const cj=G.players[ci].hand.splice(cjsn,1)[0]; G.discard.push(cj); snd.no();
+      log(seatName(ci)+' countered with Just Say No! Action proceeds.', 'cpu');
+      effect();
+    }
+    after();
+  }
+  if(vJsnIdx>=0 && !vp.cpu){
+    askYouSayNo(label, seatName(ci), ()=>{
+      const j=vp.hand.splice(vJsnIdx,1)[0]; G.discard.push(j); snd.no();
+      log(seatName(victim)+' played Just Say No! '+seatName(ci)+' action cancelled.', 'you');
+      counterMaybe(()=>{ render(); done(); });
+    }, ()=>{ effect(); render(); done(); });
+  } else if(vJsnIdx>=0 && vp.cpu && cpuWantsSayNo(label)){
+    const j=vp.hand.splice(vJsnIdx,1)[0]; G.discard.push(j); snd.no();
+    log(seatName(victim)+' played Just Say No! Action cancelled.', 'cpu');
+    counterMaybe(()=>{ render(); done(); });
   } else {
     effect(); render(); done();
   }
 }
 
-function cpuEndTurn(){
-  const cpu=G.players[1];
+function cpuEndTurn(ci){
+  const cpu=G.players[ci];
   while(cpu.hand.length>7){
     const idx=cpuDiscardChoice(cpu);
     G.discard.push(cpu.hand.splice(idx,1)[0]);
   }
-  log('CPU ended its turn.', 'cpu');
+  log(seatName(ci)+' ended its turn.', 'cpu');
   G.busy=false;
   if(checkWin()) return;
-  startTurn(0);
+  startTurn(nextSeat(ci));
 }
 
 function cpuDiscardChoice(p){
@@ -1576,9 +1770,34 @@ function chooseWildGroup(card, cb){
   overlay.classList.add('show');
 }
 
+// chooseOpponentTarget: pick which opponent seat to target (Sly/Forced/Debt/DB).
+function chooseOpponentTarget(seats, title, cb){
+  let sel=null;
+  modal.innerHTML='<h2>'+title+'</h2><p>Choose an opponent.</p>';
+  const wrap=document.createElement('div'); wrap.className='opts';
+  seats.forEach(pi=>{
+    const p=G.players[pi];
+    const b=document.createElement('button'); b.className='opt';
+    b.innerHTML=(p.cpu?'🤖 ':'🙂 ')+seatName(pi)+
+      ' <span style="color:#94a3c4;font-weight:400">— sets '+completeSets(p)+'/3, bank $'+bankTotal(p)+'M</span>';
+    b.onclick=()=>{ sel=pi; [...wrap.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); goBtn.disabled=false; };
+    wrap.appendChild(b);
+  });
+  modal.appendChild(wrap);
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const goBtn=document.createElement('button'); goBtn.className='go'; goBtn.textContent='Choose'; goBtn.disabled=true;
+  goBtn.onclick=()=>{ closeModal(); cb(sel); };
+  const cancel=document.createElement('button'); cancel.className='cancel'; cancel.textContent='Cancel';
+  cancel.onclick=()=> closeModal();
+  btns.appendChild(goBtn); btns.appendChild(cancel);
+  modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+
 function chooseColorForRent(owned, cb){
   let sel=null;
-  modal.innerHTML='<h2>Charge Rent</h2><p>Pick a color you own to charge '+seatName(oppSeat())+' rent.</p>';
+  const who = (numSeats>2) ? 'everyone' : seatName(oppSeat());
+  modal.innerHTML='<h2>Charge Rent</h2><p>Pick a color you own to charge '+who+' rent.</p>';
   const wrap=document.createElement('div'); wrap.className='opts';
   const me=G.players[meSeat()];
   owned.forEach(g=>{
@@ -1600,9 +1819,9 @@ function chooseColorForRent(owned, cb){
   overlay.classList.add('show');
 }
 
-function chooseStealTarget(list, title, cb){
+function chooseStealTarget(list, title, oppPi, cb){
   let sel=null;
-  modal.innerHTML='<h2>'+title+'</h2><p>Pick a property to steal from '+seatName(oppSeat())+'.</p>';
+  modal.innerHTML='<h2>'+title+'</h2><p>Pick a property to steal from '+seatName(oppPi)+'.</p>';
   const wrap=document.createElement('div'); wrap.className='opts';
   list.forEach((item,i)=>{
     const b=document.createElement('button'); b.className='opt';
@@ -1643,9 +1862,9 @@ function chooseSetTarget(sets, cb){
   overlay.classList.add('show');
 }
 
-function chooseForcedDeal(mine, theirs, cb){
+function chooseForcedDeal(mine, theirs, oppPi, cb){
   let myPick=null, theirPick=null;
-  modal.innerHTML='<h2>Forced Deal</h2><p>Give one of your properties to get one of '+seatName(oppSeat())+"'s.</p>";
+  modal.innerHTML='<h2>Forced Deal</h2><p>Give one of your properties to get one of '+seatName(oppPi)+"'s.</p>";
   const m1=document.createElement('p'); m1.textContent='Your property to give:'; m1.style.color='#9fe6c7'; m1.style.fontWeight='700';
   modal.appendChild(m1);
   const wrapA=document.createElement('div'); wrapA.className='opts';
@@ -1656,7 +1875,7 @@ function chooseForcedDeal(mine, theirs, cb){
     wrapA.appendChild(b);
   });
   modal.appendChild(wrapA);
-  const m2=document.createElement('p'); m2.textContent=seatName(oppSeat())+"'s property to take:"; m2.style.color='#ffb3bb'; m2.style.fontWeight='700';
+  const m2=document.createElement('p'); m2.textContent=seatName(oppPi)+"'s property to take:"; m2.style.color='#ffb3bb'; m2.style.fontWeight='700';
   modal.appendChild(m2);
   const wrapB=document.createElement('div'); wrapB.className='opts';
   theirs.forEach(item=>{
@@ -1776,9 +1995,9 @@ function promptDiscard(){
   overlay.classList.add('show');
 }
 
-// You: confirm Just Say No against incoming CPU action
-function askYouSayNo(label, yes, no){
-  modal.innerHTML='<h2>Just Say No?</h2><p>CPU is playing <b>'+label+'</b> against you. Use your Just Say No to cancel it?</p>';
+// You: confirm Just Say No against an incoming action from `actorName`.
+function askYouSayNo(label, actorName, yes, no){
+  modal.innerHTML='<h2>Just Say No?</h2><p>'+(actorName||'Opponent')+' is playing <b>'+label+'</b> against you. Use your Just Say No to cancel it?</p>';
   const btns=document.createElement('div'); btns.className='mbtns';
   const y=document.createElement('button'); y.className='go'; y.textContent='Say No!';
   y.onclick=()=>{ closeModal(); yes(); };
@@ -1804,28 +2023,32 @@ function askYouCounterNo(yes, no){
 // ---------- Win screen ----------
 function showWin(winnerPi){
   hideHandoff();
-  G.viewSeat = null;
-  if(mode==='2p'){
-    snd.win();
-    const wn = seatName(winnerPi);
+  if(G) G.viewSeat = null;
+  // Did the local device's player win? (ai: seat 0; online: mySeatOnline; 2p: n/a)
+  const localWon = (mode==='ai') ? winnerPi===0
+                 : (mode==='online') ? winnerPi===mySeatOnline
+                 : false;
+  const wn = seatName(winnerPi);
+  if(mode==='ai'){
+    if(localWon) snd.win(); else snd.lose();
+    setStatus(localWon?'you':'cpu', localWon?'You win! 🎉':wn+' wins.');
+    modal.innerHTML =
+      '<div class="win-emoji">'+(localWon?'🏆':'💀')+'</div>'+
+      '<h2 style="text-align:center">'+(localWon?'You Win!':wn+' Wins')+'</h2>'+
+      '<p style="text-align:center">'+(localWon?'You completed 3 property sets!':wn+' completed 3 property sets first.')+'</p>';
+  } else {
+    // 2p / online: neutral announcement (or you-win flavor online).
+    if(mode==='online' && !localWon) snd.lose(); else snd.win();
     setStatus('you', wn+' wins! 🎉');
     document.getElementById('turnLabel').textContent = 'GAME OVER';
     modal.innerHTML =
-      '<div class="win-emoji">🏆</div>'+
-      '<h2 style="text-align:center">'+wn+' Wins!</h2>'+
+      '<div class="win-emoji">'+(mode==='online'&&!localWon?'😢':'🏆')+'</div>'+
+      '<h2 style="text-align:center">'+(localWon?'You Win!':wn+' Wins!')+'</h2>'+
       '<p style="text-align:center">'+wn+' completed 3 property sets first.</p>';
-  } else {
-    const youWin = winnerPi===0;
-    if(youWin) snd.win(); else snd.lose();
-    setStatus(youWin?'you':'cpu', youWin?'You win! 🎉':'CPU wins.');
-    modal.innerHTML =
-      '<div class="win-emoji">'+(youWin?'🏆':'💀')+'</div>'+
-      '<h2 style="text-align:center">'+(youWin?'You Win!':'CPU Wins')+'</h2>'+
-      '<p style="text-align:center">'+(youWin?'You completed 3 property sets!':'CPU completed 3 property sets first.')+'</p>';
   }
   const btns=document.createElement('div'); btns.className='mbtns';
-  const go=document.createElement('button'); go.className='go'; go.textContent='Play Again';
-  go.onclick=()=>{ closeModal(); newGame(); };  // same mode
+  const go=document.createElement('button'); go.className='go'; go.textContent=(mode==='online')?'Back to menu':'Play Again';
+  go.onclick=()=>{ closeModal(); if(mode==='online'){ netDisconnect(); showModeSelect(); } else { newGame(); } };
   btns.appendChild(go);
   modal.appendChild(btns);
   overlay.classList.add('show');
@@ -1900,34 +2123,856 @@ function initSlider(onReveal){
   window.addEventListener('pointercancel', slideUp);
 }
 
+/* ============================================================================
+ * ONLINE MULTIPLAYER (authoritative host) — Part B
+ * ----------------------------------------------------------------------------
+ * Transport: the game-room relay at /api/v1/gamerooms/ws. Messages are JSON;
+ * the server stamps `from` (peerId) + `name`, sends roster/join/leave, supports
+ * BROADCAST (no `to`) and PRIVATE (`to:"<peerId>"`).
+ *
+ * Roles: the HOST is the earliest peer in the room. The host holds the FULL
+ * authoritative game state (deck + every hand + every board). Thin clients keep
+ * only their own private hand + the public board, and submit ACTION INTENTS to
+ * the host. The host VALIDATES every action against the real state, applies it,
+ * then broadcasts the new public state and privately re-deals any changed hands.
+ *
+ * Hidden-info privacy: each player's hand is sent ONLY to that player via a
+ * private `{to:peerId, type:"deal"|"hand", hand:[...]}` message. The public
+ * broadcast contains only counts + face-up tableaus (props/banks/sets).
+ *
+ * Interactive cards implemented end-to-end:
+ *   • Rent / Debt / Birthday  → host charges each payer; payer's client picks
+ *     cards (pay_req → pay_resp); host validates + transfers.
+ *   • Sly Deal / Forced Deal / Deal Breaker → actor resolves targets locally
+ *     (all target info is public), submits a resolved descriptor; host applies.
+ *   • Just Say No → one exchange: host asks the victim (jsn_ask → jsn_resp); if
+ *     the victim says no, the host asks the ACTOR to counter. (See GAPS for the
+ *     documented simplifications around longer JSN chains.)
+ * ========================================================================== */
+
+let net = {
+  ws: null,
+  myId: null,           // our peerId (from roster.you)
+  hostId: null,         // peerId of the host (earliest peer)
+  isHost: false,
+  roster: [],           // [{id,name}] in join order
+  seatOf: {},           // peerId -> seat index (assigned at game start)
+  idOfSeat: [],         // seat index -> peerId
+  started: false,
+  code: null,
+  pendingReplies: {}    // requestId -> callback (host-side, for pay/jsn round-trips)
+};
+
+function netSend(obj){ if(net.ws && net.ws.readyState===1) net.ws.send(JSON.stringify(obj)); }
+function netSendTo(peerId, obj){ obj.to = peerId; netSend(obj); }
+
+function netDisconnect(){
+  net.started = false;
+  if(net.ws){ try{ net.ws.onclose=null; net.ws.close(); }catch(e){} }
+  net.ws = null;
+}
+
+// ---- Connect ----
+function netConnect(code, pass, name, isCreate, onErr){
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  let url = proto + location.host + '/api/v1/gamerooms/ws?room=' + encodeURIComponent(code) +
+    '&password=' + encodeURIComponent(pass||'') + '&name=' + encodeURIComponent(name) +
+    '&game=' + encodeURIComponent('Monopoly Deal');
+  if(isCreate) url += '&public=1';
+  net.code = code;
+  try { net.ws = new WebSocket(url); } catch(e){ if(onErr) onErr('Connection failed.'); return; }
+  net.ws.onmessage = (ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } onNetMessage(m); };
+  net.ws.onerror = ()=>{ if(onErr) onErr('Connection error.'); };
+  net.ws.onclose = ()=>{ onNetClose(); };
+}
+
+function onNetClose(){
+  if(!net.started) return;          // closed before/around lobby — ignore
+  // If we lost the connection mid-game, end the game with a message.
+  if(mode==='online'){
+    setStatus('cpu','Disconnected from the room.');
+    if(!G || !G.over){ announceFatal('Connection lost. Game ended.'); }
+  }
+}
+
+function announceFatal(msg){
+  if(G) G.over = true;
+  hideHandoff(); closeModal();
+  modal.innerHTML = '<div class="win-emoji">🔌</div><h2 style="text-align:center">Game ended</h2><p style="text-align:center">'+msg+'</p>';
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const go=document.createElement('button'); go.className='go'; go.textContent='Back to menu';
+  go.onclick=()=>{ closeModal(); netDisconnect(); showModeSelect(); };
+  btns.appendChild(go); modal.appendChild(btns);
+  overlay.classList.add('show');
+}
+
+// ---- Incoming messages ----
+function onNetMessage(m){
+  switch(m.type){
+    case 'roster':
+      net.myId = m.you;
+      net.roster = m.peers || [];
+      recomputeHost();
+      if(!net.started) renderLobby();
+      else if(net.isHost) hostHandlePresence();
+      break;
+    case 'join':
+      if(!net.roster.find(p=>p.id===m.from)) net.roster.push({id:m.from, name:m.name});
+      recomputeHost();
+      if(!net.started) renderLobby();
+      break;
+    case 'leave': {
+      // Capture host identity BEFORE recompute so we can detect a host departure
+      // (after recompute the next peer would wrongly look like the host).
+      const leftWasHost = (m.from === net.hostId);
+      net.roster = net.roster.filter(p=>p.id!==m.from);
+      if(!net.started){ recomputeHost(); renderLobby(); }
+      else { handlePeerLeave(m.from, leftWasHost); }
+      break;
+    }
+    // ---- lobby/start ----
+    case 'start':        // host -> all: game begins (public seat assignment)
+      clientOnStart(m); break;
+    case 'deal':         // host -> me (private): my starting hand
+    case 'hand':         // host -> me (private): my updated hand
+      clientOnHand(m); break;
+    case 'state':        // host -> all: public board snapshot
+      clientOnState(m); break;
+    case 'gameover':
+      clientOnGameOver(m); break;
+    // ---- host-bound from clients ----
+    case 'action':       // client -> host: an action intent
+      if(net.isHost) hostOnAction(m); break;
+    case 'endturn':
+      if(net.isHost) hostOnEndTurn(m); break;
+    case 'discard':
+      if(net.isHost) hostOnDiscard(m); break;
+    // ---- round-trip replies ----
+    case 'pay_req':      clientOnPayReq(m); break;
+    case 'pay_resp':     if(net.isHost) hostOnReply(m); break;
+    case 'jsn_ask':      clientOnJsnAsk(m); break;
+    case 'jsn_resp':     if(net.isHost) hostOnReply(m); break;
+    case 'log':          if(m.msg) log(m.msg, m.who||'sys'); break;
+  }
+}
+
+function recomputeHost(){
+  // Host = earliest peer in roster order (index 0). The relay preserves order.
+  if(net.roster.length===0){ net.hostId=null; return; }
+  net.hostId = net.roster[0].id;
+  net.isHost = (net.hostId === net.myId);
+}
+
+// ============================ LOBBY ===========================================
+let lobbyOverlay = document.getElementById('lobbyOverlay');
+let lobbyModal = document.getElementById('lobbyModal');
+function renderLobby(){
+  document.getElementById('onlineOverlay').classList.remove('show');
+  lobbyOverlay.classList.add('show');
+  const n = net.roster.length;
+  let html = '<h2>Lobby</h2>';
+  html += '<p>Room code <b style="color:#ffcf33">'+(net.code||'')+'</b> · '+n+'/5 players'+(net.isHost?' · you are host':'')+'</p>';
+  html += '<div class="lobby-list">';
+  net.roster.slice(0,5).forEach((p,i)=>{
+    const youTag = p.id===net.myId ? ' <span class="badge">YOU</span>' : '';
+    const hostTag = (i===0) ? ' <span class="badge">HOST</span>' : '';
+    html += '<div class="lobby-row">'+ (i+1) +'. '+escapeHtml(p.name||('Player '+(i+1)))+youTag+hostTag+'</div>';
+  });
+  html += '</div>';
+  lobbyModal.innerHTML = html;
+  const link = location.origin + location.pathname + '?room=' + (net.code||'');
+  const share = document.createElement('div'); share.className='share-box'; share.textContent = link;
+  lobbyModal.appendChild(share);
+  const btns=document.createElement('div'); btns.className='mbtns';
+  if(net.isHost){
+    const start=document.createElement('button'); start.className='go'; start.textContent='Start game ('+n+')';
+    start.disabled = n<2 || n>5;
+    start.onclick=()=> hostStartGame();
+    btns.appendChild(start);
+    const copy=document.createElement('button'); copy.className='cancel'; copy.textContent='Copy link';
+    copy.onclick=()=>{ try{ navigator.clipboard.writeText(link); copy.textContent='Copied!'; }catch(e){} };
+    btns.appendChild(copy);
+  } else {
+    const wait=document.createElement('div'); wait.style.cssText='font-size:13px;color:#94a3c4;flex:1;text-align:center;padding:8px';
+    wait.textContent='Waiting for host to start…';
+    btns.appendChild(wait);
+  }
+  lobbyModal.appendChild(btns);
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ======================== HOST: start & deal =================================
+function hostStartGame(){
+  const peers = net.roster.slice(0,5);
+  if(peers.length<2){ return; }
+  numSeats = peers.length;
+  mode = 'online';
+  net.started = true;
+  // Assign seats in roster order; host takes its own seat too.
+  net.idOfSeat = peers.map(p=>p.id);
+  net.seatOf = {};
+  seatLabels = [];
+  peers.forEach((p,i)=>{ net.seatOf[p.id]=i; seatLabels[i]=p.name||('Player '+(i+1)); });
+  mySeatOnline = net.seatOf[net.myId];
+  // Build the authoritative game.
+  const deck = shuffle(buildDeck());
+  G = { deck, discard:[], players:buildPlayers(), turn:0, playsLeft:0, over:false, selected:null, busy:false, viewSeat:null };
+  for(let i=0;i<5;i++){ for(const p of G.players){ p.hand.push(drawCard()); } }
+  // Tell everyone the game started + seat map (public).
+  netSend({ type:'start', seats: peers.map(p=>({id:p.id, name:p.name})), numSeats });
+  // Deal each player their private hand.
+  for(let s=0;s<numSeats;s++){ dealPrivateHand(s, 'deal'); }
+  // Local host UI setup.
+  lobbyOverlay.classList.remove('show');
+  buildOppZones();
+  G._renderedLocal = mySeatOnline;
+  log('Online game started ('+numSeats+' players).', 'sys');
+  hostStartTurn(0);
+}
+
+// dealPrivateHand: send seat s's hand to its peer privately (host's own seat is
+// applied directly to its local thin-view hand mirror).
+function dealPrivateHand(seat, kind){
+  const pid = net.idOfSeat[seat];
+  const hand = G.players[seat].hand;
+  if(pid===net.myId){ /* host renders from G directly */ return; }
+  netSendTo(pid, { type:kind||'hand', hand: hand });
+}
+
+// Public snapshot: everything EXCEPT hidden hands (hands -> counts only).
+function publicSnapshot(){
+  return {
+    turn: G.turn,
+    playsLeft: G.playsLeft,
+    over: G.over,
+    deckCount: G.deck.length,
+    players: G.players.map(p=>({
+      cpu: false,
+      handCount: p.hand.length,
+      bank: p.bank,
+      props: p.props
+    }))
+  };
+}
+function broadcastState(){
+  if(mode!=='online' || !net.isHost) return;
+  netSend({ type:'state', pub: publicSnapshot() });
+}
+
+// hostStartTurn: advance the authoritative turn, draw, broadcast.
+function hostStartTurn(seat){
+  G.turn = seat;
+  G.playsLeft = 3;
+  G.selected = null;
+  G.busy = false;
+  const p = G.players[seat];
+  const n = (p.hand.length===0) ? 5 : 2;
+  for(let i=0;i<n;i++){ const c=drawCard(); if(c) p.hand.push(c); }
+  if(checkWin()) return;             // checkWin -> hostGameOver + broadcast
+  dealPrivateHand(seat,'hand');      // the active player drew — update their hand
+  broadcastState();
+  hostRenderLocal();
+  netBroadcastLog(seatName(seat)+"'s turn.");
+}
+
+function netBroadcastLog(msg, who){
+  log(msg, who||'sys');
+  if(net.isHost) netSend({ type:'log', msg, who:'sys' });
+}
+
+// hostGameOver: announce winner to all.
+function hostGameOver(winnerSeat){
+  netSend({ type:'gameover', winner: winnerSeat });
+  broadcastState();
+}
+
+// hostHandlePresence / handlePeerLeave: disconnect handling. `leftWasHost` is
+// computed by the caller before the host is recomputed.
+function hostHandlePresence(){ /* roster already updated; nothing extra here */ }
+function handlePeerLeave(peerId, leftWasHost){
+  if(leftWasHost){
+    // The HOST left — game ends for everyone (mid-game, authoritative state is
+    // gone). Non-hosts simply cannot continue.
+    announceFatal('The host left the game.');
+    return;
+  }
+  // A non-host left. Only the (still-present) host mutates authoritative state.
+  if(net.isHost && G){
+    const seat = net.seatOf[peerId];
+    if(seat==null || !G.players[seat]) return;
+    netBroadcastLog(seatName(seat)+' disconnected — their assets are frozen.');
+    G.players[seat].gone = true;
+    broadcastState(); hostRenderLocal();
+    if(G.turn===seat && !G.over){ hostStartTurn(hostNextActiveSeat(seat)); }
+  }
+}
+function hostNextActiveSeat(seat){
+  let s=seat, guard=0;
+  do { s=nextSeat(s); guard++; } while(G.players[s] && G.players[s].gone && guard<numSeats);
+  return s;
+}
+
+// ======================== HOST: apply actions ================================
+// hostOnAction: a client (or the host's own UI) submitted a resolved action.
+// `m.seat` is the acting seat (host re-validates it's that peer's turn).
+function hostOnAction(m){
+  if(!validateActor(m)) return;
+  applyHostAction(m.seat, m.action);
+}
+function validateActor(m){
+  if(!net.isHost || !G || G.over) return false;
+  const seat = m.seat!=null ? m.seat : net.seatOf[m.from];
+  if(seat==null || seat!==G.turn) return false;            // not their turn
+  if(m.from!=null && net.seatOf[m.from]!==seat) return false; // spoofed seat
+  if(G.playsLeft<=0 && m.action && m.action.kind!=='__none') return false;
+  return true;
+}
+
+// applyHostAction: execute a validated action on the authoritative G.
+// action shapes:
+//   {kind:'bank', cardId}
+//   {kind:'lay', cardId, group}            (group chosen for wildcards)
+//   {kind:'passgo', cardId}
+//   {kind:'addon', cardId, group}          (house/hotel)
+//   {kind:'rent', cardId, group}           (charge all opponents)
+//   {kind:'debt', cardId, victim}
+//   {kind:'birthday', cardId}
+//   {kind:'sly', cardId, victim, group, targetCardId}
+//   {kind:'forced', cardId, victim, myGroup, myCardId, theirGroup, theirCardId}
+//   {kind:'dealbreaker', cardId, victim, group}
+function applyHostAction(seat, a){
+  const p = G.players[seat];
+  const card = p.hand.find(c=>c.id===a.cardId);
+  if(!card && a.kind!=='__none') return;                   // card not in hand
+  const finish = ()=>{ if(!checkWin()){ broadcastState(); hostRenderLocal(); } };
+  const afterPlay = ()=>{ G.playsLeft--; dealPrivateHand(seat,'hand'); finish(); };
+  switch(a.kind){
+    case 'bank':
+      removeFromHand(seat, card.id);
+      p.bank.push(card.type==='action'?{id:card.id,type:'action',name:card.name,value:card.value,act:card.act}:card);
+      netBroadcastLog(seatName(seat)+' banked '+card.name+'.');
+      afterPlay(); break;
+    case 'lay':
+      layProperty(seat, card, a.group||card.group);
+      netBroadcastLog(seatName(seat)+' laid a '+GROUPS[a.group||card.group].name+' property.');
+      afterPlay(); break;
+    case 'passgo':
+      removeFromHand(seat, card.id); G.discard.push(card);
+      for(let i=0;i<2;i++){ const d=drawCard(); if(d) p.hand.push(d); }
+      netBroadcastLog(seatName(seat)+' played Pass Go (drew 2).');
+      afterPlay(); break;
+    case 'addon': {
+      if(!G.players[seat].props[a.group]) return;
+      removeFromHand(seat, card.id);
+      p.props[a.group].push(Object.assign({},card,{assignedGroup:a.group}));
+      netBroadcastLog(seatName(seat)+' added '+card.name+' to '+GROUPS[a.group].name+'.');
+      afterPlay(); break;
+    }
+    case 'rent': {
+      const g=a.group;
+      if(!p.props[g]) return;
+      const cnt=Math.min(countPropsInGroup(p.props[g]),GROUPS[g].rent.length);
+      let amt=(GROUPS[g].rent[cnt-1]||0)+addonBonus(p.props[g]);
+      removeFromHand(seat, card.id); G.discard.push(card); G.playsLeft--;
+      dealPrivateHand(seat,'hand');
+      netBroadcastLog(seatName(seat)+' played Rent on '+GROUPS[g].name+' — everyone owes $'+amt+'M.');
+      broadcastState(); hostRenderLocal();
+      hostChargeSeats(activeOpponents(seat), seat, amt, 'Rent ('+GROUPS[g].name+')', finish);
+      break;
+    }
+    case 'debt': {
+      removeFromHand(seat, card.id); G.discard.push(card); G.playsLeft--;
+      dealPrivateHand(seat,'hand');
+      netBroadcastLog(seatName(seat)+' played Debt Collector — '+seatName(a.victim)+' owes $5M.');
+      broadcastState(); hostRenderLocal();
+      hostChargeSeats([a.victim], seat, 5, 'Debt Collector', finish);
+      break;
+    }
+    case 'birthday': {
+      removeFromHand(seat, card.id); G.discard.push(card); G.playsLeft--;
+      dealPrivateHand(seat,'hand');
+      netBroadcastLog(seatName(seat)+" played It's My Birthday — everyone pays $2M.");
+      broadcastState(); hostRenderLocal();
+      hostChargeSeats(activeOpponents(seat), seat, 2, "It's My Birthday", finish);
+      break;
+    }
+    case 'sly': {
+      hostTargetedAction(seat, a, 'Sly Deal', ()=>{
+        const arr=G.players[a.victim].props[a.group];
+        const tc=arr && arr.find(c=>c.id===a.targetCardId);
+        if(tc){ doSteal(a.victim, seat, a.group, tc); netBroadcastLog(seatName(seat)+' stole '+GROUPS[a.group].name+' from '+seatName(a.victim)+'.'); }
+      }, finish);
+      break;
+    }
+    case 'forced': {
+      hostTargetedAction(seat, a, 'Forced Deal', ()=>{
+        const tArr=G.players[a.victim].props[a.theirGroup];
+        const mArr=G.players[seat].props[a.myGroup];
+        const tc=tArr && tArr.find(c=>c.id===a.theirCardId);
+        const mc=mArr && mArr.find(c=>c.id===a.myCardId);
+        if(tc) doSteal(a.victim, seat, a.theirGroup, tc);
+        if(mc) doSteal(seat, a.victim, a.myGroup, mc);
+        netBroadcastLog(seatName(seat)+' swapped properties with '+seatName(a.victim)+'.');
+      }, finish);
+      break;
+    }
+    case 'dealbreaker': {
+      hostTargetedAction(seat, a, 'Deal Breaker', ()=>{
+        stealWholeSet(a.victim, seat, a.group);
+        netBroadcastLog(seatName(seat)+' stole '+seatName(a.victim)+"'s "+GROUPS[a.group].name+' set!');
+      }, finish);
+      break;
+    }
+    default: break;
+  }
+}
+
+function activeOpponents(seat){ return opponentSeats(seat).filter(o=>!G.players[o].gone); }
+
+// hostTargetedAction: spend the card, run a single Just Say No exchange with the
+// victim, then apply `effect` if not cancelled.
+function hostTargetedAction(actor, a, label, effect, done){
+  const card = G.players[actor].hand.find(c=>c.id===a.cardId);
+  if(card){ removeFromHand(actor, card.id); G.discard.push(card); }
+  G.playsLeft--;
+  dealPrivateHand(actor,'hand');
+  broadcastState(); hostRenderLocal();
+  hostAskJsn(a.victim, label, actor, (victimSaidNo)=>{
+    if(!victimSaidNo){ effect(); done(); return; }
+    netBroadcastLog(seatName(a.victim)+' played Just Say No!');
+    // offer the actor a counter
+    hostAskJsn(actor, 'counter '+label, a.victim, (actorCountered)=>{
+      if(actorCountered){ netBroadcastLog(seatName(actor)+' countered with Just Say No!'); effect(); }
+      done();
+    });
+  });
+}
+
+// hostAskJsn: ask `seat` whether to use Just Say No. If that seat has no JSN, or
+// is gone, auto-resolve to "no". Round-trips to a remote player; CPU n/a online.
+function hostAskJsn(seat, label, otherSeat, cb){
+  const p=G.players[seat];
+  const has = p.hand.some(c=>c.act==='sayno');
+  if(!has || p.gone){ cb(false); return; }
+  const pid = net.idOfSeat[seat];
+  if(pid===net.myId){
+    // host's own seat — ask locally
+    askYouSayNo(label, seatName(otherSeat), ()=>{ hostConsumeJsn(seat); cb(true); }, ()=>cb(false));
+    return;
+  }
+  const rid = 'jsn_'+(UID++);
+  net.pendingReplies[rid] = (resp)=>{
+    if(resp && resp.useNo){ hostConsumeJsn(seat); cb(true); } else cb(false);
+  };
+  netSendTo(pid, { type:'jsn_ask', rid, label, by: seatName(otherSeat) });
+  // safety timeout: if no reply in 20s, treat as "allow".
+  setTimeout(()=>{ if(net.pendingReplies[rid]){ const f=net.pendingReplies[rid]; delete net.pendingReplies[rid]; f({useNo:false}); } }, 20000);
+}
+function hostConsumeJsn(seat){
+  const p=G.players[seat];
+  const i=p.hand.findIndex(c=>c.act==='sayno');
+  if(i>=0){ G.discard.push(p.hand.splice(i,1)[0]); dealPrivateHand(seat,'hand'); }
+}
+
+// hostChargeSeats: charge each seat `amount`, sequentially.
+function hostChargeSeats(seats, payeeSeat, amount, reason, done){
+  let i=0;
+  function next(){
+    if(i>=seats.length){ if(done) done(); return; }
+    const s=seats[i++];
+    hostChargeOne(s, payeeSeat, amount, reason, next);
+  }
+  next();
+}
+function hostChargeOne(payerSeat, payeeSeat, amount, reason, done){
+  const payer=G.players[payerSeat];
+  if(payer.gone){ done(); return; }
+  const total = bankTotal(payer)+propAssetValue(payer);
+  if(amount<=0 || total===0){ netBroadcastLog(seatName(payerSeat)+' had nothing to pay.'); done(); return; }
+  const pid=net.idOfSeat[payerSeat];
+  if(pid===net.myId){
+    // host's own seat pays via the local payment modal
+    showPaymentModalOnline(payerSeat, payeeSeat, amount, reason, (cardIds)=>{ hostApplyPayment(payerSeat,payeeSeat,cardIds,amount,reason); done(); });
+    return;
+  }
+  const rid='pay_'+(UID++);
+  net.pendingReplies[rid]=(resp)=>{ hostApplyPayment(payerSeat, payeeSeat, (resp&&resp.cardIds)||[], amount, reason); done(); };
+  netSendTo(pid, { type:'pay_req', rid, amount, reason });
+  setTimeout(()=>{ if(net.pendingReplies[rid]){ const f=net.pendingReplies[rid]; delete net.pendingReplies[rid]; f({cardIds:hostAutoPayPick(payerSeat,amount)}); } }, 30000);
+}
+// hostAutoPayPick: fallback selection if a payer times out (greedy smallest).
+function hostAutoPayPick(payerSeat, amount){
+  const p=G.players[payerSeat]; const ids=[]; let acc=0;
+  const money=p.bank.slice().sort((a,b)=>(a.value||0)-(b.value||0));
+  for(const c of money){ if(acc>=amount) break; ids.push(c.id); acc+=(c.value||0); }
+  if(acc<amount){ for(const g of GROUP_KEYS){ if(p.props[g]) for(const c of p.props[g]){ if(acc>=amount) break; if(c.type==='property'||c.type==='wildcard'){ ids.push(c.id); acc+=(c.value||0); } } } }
+  return ids;
+}
+// hostApplyPayment: validate the payer's chosen cards cover the debt (or are
+// all their assets), then transfer them to the payee.
+function hostApplyPayment(payerSeat, payeeSeat, cardIds, amount, reason){
+  const payer=G.players[payerSeat], payee=G.players[payeeSeat];
+  const chosen=new Set(cardIds||[]);
+  let sum=0, transferred=0;
+  // money bank
+  for(const c of payer.bank.slice()){ if(chosen.has(c.id)){ sum+=(c.value||0); } }
+  for(const g of GROUP_KEYS){ if(payer.props[g]) for(const c of payer.props[g]){ if(chosen.has(c.id)) sum+=(c.value||0); } }
+  const totalAvail=bankTotal(payer)+propAssetValue(payer);
+  const need=Math.min(amount, totalAvail);
+  if(sum<need){
+    // invalid/short selection — fall back to auto-pick to keep the game moving.
+    cardIds=hostAutoPayPick(payerSeat, need); chosen.clear(); cardIds.forEach(id=>chosen.add(id));
+  }
+  // transfer money cards
+  for(const c of payer.bank.slice()){ if(chosen.has(c.id)){ const i=payer.bank.findIndex(x=>x.id===c.id); if(i>=0){ payee.bank.push(payer.bank.splice(i,1)[0]); transferred+=(c.value||0); } } }
+  // transfer property cards
+  for(const g of GROUP_KEYS){ if(payer.props[g]) for(const c of payer.props[g].slice()){ if(chosen.has(c.id)){ doStealCardObj(payerSeat, payeeSeat, g, c); transferred+=(c.value||0); } } }
+  netBroadcastLog(seatName(payerSeat)+' paid $'+transferred+'M to '+seatName(payeeSeat)+' for '+reason+'.');
+  dealPrivateHand(payerSeat,'hand'); dealPrivateHand(payeeSeat,'hand');
+  broadcastState(); hostRenderLocal();
+}
+
+// hostOnReply: route a pay_resp / jsn_resp back to its pending callback.
+function hostOnReply(m){
+  const f=net.pendingReplies[m.rid];
+  if(f){ delete net.pendingReplies[m.rid]; f(m); }
+}
+
+// hostOnEndTurn: the active player ended their turn.
+function hostOnEndTurn(m){
+  if(!net.isHost || !G || G.over) return;
+  const seat = m.seat!=null?m.seat:net.seatOf[m.from];
+  if(seat!==G.turn) return;
+  const p=G.players[seat];
+  if(p.hand.length>7){
+    // ask the player to discard down (handled client-side via discard message)
+    netSendTo(net.idOfSeat[seat], { type:'pay_req', rid:'discard', amount:0, reason:'__discard', discard:p.hand.length-7 });
+    // We reuse a discard round-trip below instead:
+    hostRequestDiscard(seat);
+    return;
+  }
+  hostStartTurn(hostNextActiveSeat(seat));
+}
+function hostRequestDiscard(seat){
+  const need=G.players[seat].hand.length-7;
+  const pid=net.idOfSeat[seat];
+  if(pid===net.myId){ promptDiscardOnline(seat, ()=>hostStartTurn(hostNextActiveSeat(seat))); return; }
+  const rid='disc_'+(UID++);
+  net.pendingReplies[rid]=(resp)=>{ hostApplyDiscard(seat,(resp&&resp.cardIds)||[]); hostStartTurn(hostNextActiveSeat(seat)); };
+  netSendTo(pid, { type:'pay_req', rid, amount:0, reason:'__discard', discard:need, isDiscard:true });
+  setTimeout(()=>{ if(net.pendingReplies[rid]){ const f=net.pendingReplies[rid]; delete net.pendingReplies[rid]; f({cardIds:G.players[seat].hand.slice(0,need).map(c=>c.id)}); } }, 30000);
+}
+function hostOnDiscard(m){ /* discard arrives via hostOnReply (pay_resp w/ isDiscard) */ }
+function hostApplyDiscard(seat, cardIds){
+  const p=G.players[seat]; const set=new Set(cardIds);
+  p.hand = p.hand.filter(c=>{ if(set.has(c.id)){ G.discard.push(c); return false; } return true; });
+  dealPrivateHand(seat,'hand');
+}
+
+// ======================== CLIENT (thin) side =================================
+// Thin clients keep their own hand + a public snapshot, and synthesize a G-like
+// object so the existing render() can draw the board.
+let clientHand = [];
+let clientPub = null;
+
+function clientOnStart(m){
+  mode='online'; net.started=true;
+  const seats = m.seats||[];
+  numSeats = m.numSeats || seats.length;
+  net.idOfSeat = seats.map(s=>s.id);
+  net.seatOf={}; seatLabels=[];
+  seats.forEach((s,i)=>{ net.seatOf[s.id]=i; seatLabels[i]=s.name||('Player '+(i+1)); });
+  mySeatOnline = net.seatOf[net.myId];
+  clientHand=[]; clientPub=null;
+  lobbyOverlay.classList.remove('show');
+  document.getElementById('onlineOverlay').classList.remove('show');
+  if(!net.isHost){ buildClientG(); buildOppZones(); G._renderedLocal=mySeatOnline; render(); onlineStatus(); }
+}
+function clientOnHand(m){
+  if(net.isHost) return;            // host renders from G
+  clientHand = m.hand||[];
+  if(G){ G.players[mySeatOnline].hand = clientHand.slice(); render(); }
+}
+function clientOnState(m){
+  if(net.isHost) return;
+  clientPub = m.pub;
+  buildClientG();
+  render();
+  onlineStatus();
+}
+function clientOnGameOver(m){ if(!net.isHost){ if(G) G.over=true; showWin(m.winner); } }
+
+// buildClientG: fold the public snapshot + our private hand into a G object the
+// renderer understands. Opponent hands are placeholders (count only).
+function buildClientG(){
+  if(!clientPub){
+    G = { players: [], turn:0, playsLeft:0, over:false, selected:null, busy:false, viewSeat:null };
+    for(let i=0;i<numSeats;i++) G.players.push(freshPlayer(false));
+    G.players[mySeatOnline].hand = clientHand.slice();
+    return;
+  }
+  const prevSel = G && G.selected;
+  G = { players: [], turn:clientPub.turn, playsLeft:clientPub.playsLeft, over:clientPub.over, selected:prevSel, busy:false, viewSeat:null, _renderedLocal: mySeatOnline };
+  clientPub.players.forEach((pp,i)=>{
+    const pl = freshPlayer(false);
+    pl.bank = pp.bank||[];
+    pl.props = pp.props||{};
+    if(i===mySeatOnline){ pl.hand = clientHand.slice(); }
+    else { pl.hand = new Array(pp.handCount||0).fill(0).map(()=>({id:-1,type:'money',value:0,name:'?'})); } // placeholders for count
+    G.players[i]=pl;
+  });
+}
+
+// ---- Client: respond to host requests ----
+function clientOnPayReq(m){
+  if(net.isHost) return;            // host charges itself via local modal
+  if(m.reason==='__discard' || m.isDiscard){
+    promptDiscardOnline(mySeatOnline, (cardIds)=>{ netSendTo(net.hostId, { type:'pay_resp', rid:m.rid, cardIds, isDiscard:true }); }, m.discard);
+    return;
+  }
+  showPaymentModalOnline(mySeatOnline, null, m.amount, m.reason, (cardIds)=>{
+    netSendTo(net.hostId, { type:'pay_resp', rid:m.rid, cardIds });
+  });
+}
+function clientOnJsnAsk(m){
+  if(net.isHost) return;
+  // Does my hand actually contain a Just Say No? If not, auto-allow.
+  if(!clientHand.some(c=>c.act==='sayno')){ netSendTo(net.hostId, { type:'jsn_resp', rid:m.rid, useNo:false }); return; }
+  askYouSayNo(m.label, m.by||'Opponent',
+    ()=>netSendTo(net.hostId, { type:'jsn_resp', rid:m.rid, useNo:true }),
+    ()=>netSendTo(net.hostId, { type:'jsn_resp', rid:m.rid, useNo:false }));
+}
+
+// hostRenderLocal: the host is also a player — refresh its own board view from G.
+function hostRenderLocal(){ if(net.isHost){ G._renderedLocal=mySeatOnline; render(); onlineStatus(); } }
+
+// onlineStatus: refresh the top status line for online mode.
+function onlineStatus(){
+  if(mode!=='online' || !G || G.over) return;
+  if(G.turn===mySeatOnline) setStatus('you', 'Your turn — play up to 3 cards.');
+  else setStatus('cpu', seatName(G.turn)+"'s turn…");
+}
+
+// ======================= ONLINE: local action submission =====================
+// In online mode the player's UI builds a resolved action descriptor and submits
+// it to the host (the host submits to itself). The host is the single source of
+// truth, so we DON'T mutate G here — we wait for the rebroadcast.
+function submitOnlineAction(action){
+  const msg = { type:'action', seat:mySeatOnline, action };
+  if(net.isHost){ hostOnAction(Object.assign({from:net.myId}, msg)); }
+  else netSendTo(net.hostId, msg);
+}
+function submitOnlineEndTurn(){
+  if(net.isHost) hostOnEndTurn({from:net.myId, seat:mySeatOnline});
+  else netSendTo(net.hostId, { type:'endturn', seat:mySeatOnline });
+}
+
+// playOnlineCard: build a resolved action descriptor for the selected card using
+// PUBLIC board info (all target info is public) + the local choosers, then
+// submit it to the host. The host re-validates everything.
+function playOnlineCard(c){
+  const me = G.players[mySeatOnline];
+  const opps = activeOpponentsLocal(mySeatOnline);
+  G.selected = null;
+  if(c.type==='property'){ submitOnlineAction({kind:'lay', cardId:c.id, group:c.group}); render(); return; }
+  if(c.type==='wildcard'){ chooseWildGroup(c, (g)=>{ submitOnlineAction({kind:'lay', cardId:c.id, group:g}); }); return; }
+  // action
+  switch(c.act){
+    case 'passgo': submitOnlineAction({kind:'passgo', cardId:c.id}); render(); break;
+    case 'birthday': submitOnlineAction({kind:'birthday', cardId:c.id}); render(); break;
+    case 'debt':
+      pickOpponent(opps, 'Debt Collector — charge whom $5M?', (v)=> submitOnlineAction({kind:'debt', cardId:c.id, victim:v}));
+      break;
+    case 'rent':
+    case 'rent_any': {
+      const owned = GROUP_KEYS.filter(g=> me.props[g] && countPropsInGroup(me.props[g])>0);
+      if(owned.length===0){ toast('You have no properties to charge rent for.'); G.selected=c.id; render(); return; }
+      chooseColorForRent(owned, (g)=> submitOnlineAction({kind:'rent', cardId:c.id, group:g}));
+      break;
+    }
+    case 'slydeal': {
+      const valid = opps.filter(o=> stealableProps(G.players[o], false).length>0);
+      if(valid.length===0){ toast('No opponent has a stealable property.'); G.selected=c.id; render(); return; }
+      pickOpponent(valid, 'Sly Deal — steal from whom?', (v)=>{
+        chooseStealTarget(stealableProps(G.players[v],false), 'Sly Deal — steal a property', v, (pick)=>{
+          submitOnlineAction({kind:'sly', cardId:c.id, victim:v, group:pick.group, targetCardId:pick.card.id});
+        });
+      });
+      break;
+    }
+    case 'forceddeal': {
+      const mine = stealableProps(me, false);
+      if(mine.length===0){ toast('You have no property to swap.'); G.selected=c.id; render(); return; }
+      const valid = opps.filter(o=> stealableProps(G.players[o], false).length>0);
+      if(valid.length===0){ toast('No opponent has a property to swap.'); G.selected=c.id; render(); return; }
+      pickOpponent(valid, 'Forced Deal — swap with whom?', (v)=>{
+        chooseForcedDeal(mine, stealableProps(G.players[v],false), v, (myPick, theirPick)=>{
+          submitOnlineAction({kind:'forced', cardId:c.id, victim:v, myGroup:myPick.group, myCardId:myPick.card.id, theirGroup:theirPick.group, theirCardId:theirPick.card.id});
+        });
+      });
+      break;
+    }
+    case 'dealbreaker': {
+      const valid = opps.filter(o=> completeSetsList(G.players[o]).length>0);
+      if(valid.length===0){ toast('No opponent has a complete set to steal.'); G.selected=c.id; render(); return; }
+      pickOpponent(valid, 'Deal Breaker — steal from whom?', (v)=>{
+        chooseSetTarget(completeSetsList(G.players[v]), (g)=> submitOnlineAction({kind:'dealbreaker', cardId:c.id, victim:v, group:g}));
+      });
+      break;
+    }
+    case 'house':
+    case 'hotel': {
+      const sets = completeSetsList(me).filter(g=>g!=='railroad' && g!=='utility');
+      if(sets.length===0){ toast((c.act==='house'?'House':'Hotel')+' needs a complete (non-RR/util) set.'); G.selected=c.id; render(); return; }
+      const elig = (c.act==='hotel')
+        ? sets.filter(g=> me.props[g].some(x=>x.act==='house') && !me.props[g].some(x=>x.act==='hotel'))
+        : sets.filter(g=> !me.props[g].some(x=>x.act==='house'));
+      if(elig.length===0){ toast(c.act==='hotel'?'Need a set with a House and no Hotel.':'All your sets already have a House.'); G.selected=c.id; render(); return; }
+      chooseSetTarget(elig, (g)=> submitOnlineAction({kind:'addon', cardId:c.id, group:g}));
+      break;
+    }
+    case 'sayno': toast('Just Say No is played automatically to cancel actions against you.'); G.selected=c.id; render(); break;
+    default: toast('Cannot play that now.'); G.selected=c.id; render();
+  }
+}
+// activeOpponentsLocal: opponents from THIS client's view (skips disconnected).
+function activeOpponentsLocal(seat){
+  return opponentSeats(seat).filter(o=> !(G.players[o] && G.players[o].gone));
+}
+
+// Online payment modal — reuses the same card-picker UI but returns chosen ids.
+function showPaymentModalOnline(payerSeat, payeeSeat, amount, reason, cb){
+  const me = (payerSeat===mySeatOnline) ? G.players[mySeatOnline] : G.players[payerSeat];
+  // Build the item list from the payer's OWN assets (host has full G; client has
+  // its own hand + public board which includes its own bank/props).
+  const src = (net.isHost) ? G.players[payerSeat] : G.players[mySeatOnline];
+  const items=[]; const selected=new Set();
+  src.bank.forEach(c=> items.push({id:c.id, kind:'bank', value:c.value||0, label:'$'+(c.value||0)+'M'+(c.type==='action'?' ('+c.name.split(' ')[0]+')':'')}));
+  for(const g of GROUP_KEYS){ if(src.props[g]) src.props[g].forEach(c=>{ if(c.type==='property'||c.type==='wildcard') items.push({id:c.id, kind:'prop', group:g, value:c.value||0, label:GROUPS[g].name+(c.type==='wildcard'?'*':'')+' $'+(c.value||0)+'M'}); }); }
+  const totalAvail=items.reduce((s,i)=>s+i.value,0);
+  const mustPay=Math.min(amount, totalAvail);
+  function draw(){
+    modal.innerHTML='<h2>Pay $'+amount+'M</h2><p>'+reason+' — select cards to pay. You owe <b style="color:#ffcf33">$'+amount+'M</b>.'+(totalAvail<amount?' (You only have $'+totalAvail+'M — pay all.)':'')+'</p>';
+    const grid=document.createElement('div'); grid.className='pay-grid';
+    items.forEach(it=>{ const d=document.createElement('button'); d.className='pay-item '+(it.kind==='bank'?'money':'prop')+(selected.has(it.id)?' sel':''); d.textContent=it.label; d.onclick=()=>{ if(selected.has(it.id)) selected.delete(it.id); else selected.add(it.id); draw(); }; grid.appendChild(d); });
+    modal.appendChild(grid);
+    let sum=0; items.forEach(it=>{ if(selected.has(it.id)) sum+=it.value; });
+    const tot=document.createElement('div'); tot.className='pay-total'; tot.innerHTML='Selected: <b>$'+sum+'M</b> / $'+mustPay+'M needed'; modal.appendChild(tot);
+    const btns=document.createElement('div'); btns.className='mbtns'; const go=document.createElement('button'); go.className='go'; go.textContent='Pay'; go.disabled=sum<mustPay;
+    go.onclick=()=>{ closeModal(); cb([...selected]); }; btns.appendChild(go); modal.appendChild(btns);
+  }
+  draw(); overlay.classList.add('show');
+}
+
+// Online discard modal — returns chosen ids.
+function promptDiscardOnline(seat, cb, needOverride){
+  const src = (net.isHost) ? G.players[seat] : G.players[mySeatOnline];
+  const need = needOverride!=null ? needOverride : (src.hand.length-7);
+  const sel=new Set();
+  function draw(){
+    modal.innerHTML='<h2>Discard '+need+'</h2><p>Hand limit is 7. Choose '+need+' card(s) to discard.</p>';
+    const grid=document.createElement('div'); grid.className='pay-grid';
+    src.hand.forEach(c=>{ const d=document.createElement('button'); d.className='pay-item '+(c.type==='money'?'money':'prop')+(sel.has(c.id)?' sel':''); d.textContent=c.name; d.onclick=()=>{ if(sel.has(c.id)) sel.delete(c.id); else if(sel.size<need) sel.add(c.id); draw(); }; grid.appendChild(d); });
+    modal.appendChild(grid);
+    const tot=document.createElement('div'); tot.className='pay-total'; tot.innerHTML='Selected <b>'+sel.size+'</b> / '+need; modal.appendChild(tot);
+    const btns=document.createElement('div'); btns.className='mbtns'; const go=document.createElement('button'); go.className='go'; go.textContent='Discard'; go.disabled=sel.size!==need;
+    go.onclick=()=>{ closeModal(); if(net.isHost){ hostApplyDiscard(seat,[...sel]); } cb([...sel]); }; btns.appendChild(go); modal.appendChild(btns);
+  }
+  draw(); overlay.classList.add('show');
+}
+
 // ---------- Mode selection ----------
 const modeOverlay = document.getElementById('modeOverlay');
-function showModeSelect(){ modeOverlay.classList.add('show'); }
-function startMode(m){
+function showModeSelect(){
+  netDisconnect();
+  document.getElementById('onlineOverlay').classList.remove('show');
+  document.getElementById('lobbyOverlay').classList.remove('show');
+  document.getElementById('aiSetupOverlay').classList.remove('show');
+  modeOverlay.classList.add('show');
+}
+function startMode(m, seats){
   mode = m;
+  seatLabels = [];
+  numSeats = seats || 2;
   modeOverlay.classList.remove('show');
+  document.getElementById('aiSetupOverlay').classList.remove('show');
   newGame();
 }
 
 // ---------- Wire up buttons ----------
 // "New Game" returns to the mode picker so you can switch AI / 2-player.
 document.getElementById('newGameBtn').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); showModeSelect(); });
+function localTurnControllable(){
+  if(!G) return false;
+  if(mode==='online') return G.turn===mySeatOnline && !G.over;
+  return isHumanSeat(G.turn) && !G.over;
+}
 document.getElementById('playBtn').addEventListener('click', ()=>{ if(!G||G.busy) return; youPlayCard(); });
 document.getElementById('bankBtn').addEventListener('click', ()=>{ if(!G||G.busy) return; youBankCard(); });
-document.getElementById('endBtn').addEventListener('click', ()=>{ if(!G||G.busy||!isHumanSeat(G.turn)) return; endTurn(); });
+document.getElementById('endBtn').addEventListener('click', ()=>{ if(!G||G.busy||!localTurnControllable()) return; endTurn(); });
 document.getElementById('logToggle').addEventListener('click', (e)=>{
   const el=document.getElementById('log'); el.classList.toggle('show');
   e.target.textContent = el.classList.contains('show')?'hide log':'show log';
 });
-document.getElementById('modeAi').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); startMode('ai'); });
-document.getElementById('modeTwo').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); startMode('2p'); });
+document.getElementById('modeAi').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); showAiSetup(); });
+document.getElementById('modeTwo').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); startMode('2p', 2); });
+document.getElementById('modeOnline').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); showOnlineConnect(); });
+
+// vs-Computer opponent count picker.
+function showAiSetup(){
+  modeOverlay.classList.remove('show');
+  document.getElementById('aiSetupOverlay').classList.add('show');
+}
+document.querySelectorAll('#aiCountOpts button').forEach(b=>{
+  b.addEventListener('click', ()=>{ const n=parseInt(b.getAttribute('data-n'),10)||1; startMode('ai', n+1); });
+});
+
+// ---- Online connect overlay (create / join) ----
+const onlineOverlay = document.getElementById('onlineOverlay');
+const onlineModal = document.getElementById('onlineModal');
+const NET_ADJ=['Swift','Brave','Clever','Lucky','Mighty','Sly','Witty','Bold','Cosmic','Turbo','Sneaky','Jolly','Nimble','Fuzzy','Zippy','Rad'];
+const NET_ANI=['Otter','Fox','Panda','Falcon','Tiger','Koala','Wolf','Lynx','Raven','Gecko','Moose','Heron','Badger','Orca','Yak','Wombat'];
+function suggestNick(){ function pk(a){ const b=new Uint8Array(1); crypto.getRandomValues(b); return a[b[0]%a.length]; } const n=new Uint8Array(1); crypto.getRandomValues(n); return pk(NET_ADJ)+' '+pk(NET_ANI)+' '+(10+(n[0]%90)); }
+function randCode(){ const s='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let o=''; const a=new Uint8Array(7); crypto.getRandomValues(a); for(let i=0;i<7;i++) o+=s[a[i]%s.length]; return o; }
+
+function showOnlineConnect(joinRoom){
+  modeOverlay.classList.remove('show');
+  onlineOverlay.classList.add('show');
+  const nick = suggestNick();
+  let html='<h2>'+(joinRoom?'Join online game':'Play online')+'</h2>';
+  html+='<p>2–5 players. Share a link to invite friends.</p>';
+  html+='<div style="margin-bottom:10px"><label style="font-size:12px;color:#94a3c4">Your nickname</label>'+
+    '<input id="onName" maxlength="40" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2c3a5c;background:#0b1220;color:#e8edf7;margin-top:4px"></div>';
+  html+='<div style="margin-bottom:10px"><label style="font-size:12px;color:#94a3c4">Room password (optional)</label>'+
+    '<input id="onPass" type="password" placeholder="optional" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2c3a5c;background:#0b1220;color:#e8edf7;margin-top:4px"></div>';
+  html+='<div id="onErr" style="font-size:13px;color:#ff5d6c;min-height:16px;margin-bottom:6px"></div>';
+  onlineModal.innerHTML=html;
+  document.getElementById('onName').value=nick;
+  const btns=document.createElement('div'); btns.className='mbtns';
+  if(joinRoom){
+    const go=document.createElement('button'); go.className='go'; go.textContent='Join';
+    go.onclick=()=>{ const name=document.getElementById('onName').value||nick; const pass=document.getElementById('onPass').value; document.getElementById('onErr').textContent='Connecting…'; netConnect(joinRoom, pass, name, false, (e)=>{ document.getElementById('onErr').textContent=e; }); };
+    btns.appendChild(go);
+  } else {
+    const go=document.createElement('button'); go.className='go'; go.textContent='Create room';
+    go.onclick=()=>{ const name=document.getElementById('onName').value||nick; const pass=document.getElementById('onPass').value; const code=randCode(); document.getElementById('onErr').textContent='Creating…'; netConnect(code, pass, name, true, (e)=>{ document.getElementById('onErr').textContent=e; }); };
+    btns.appendChild(go);
+  }
+  const cancel=document.createElement('button'); cancel.className='cancel'; cancel.textContent='Back';
+  cancel.onclick=()=>{ netDisconnect(); onlineOverlay.classList.remove('show'); modeOverlay.classList.add('show'); };
+  btns.appendChild(cancel);
+  onlineModal.appendChild(btns);
+}
 
 // prevent double-tap zoom on buttons
 document.addEventListener('dblclick', e=>e.preventDefault(), {passive:false});
 
 // Start: render an idle game behind the picker, then ask for a mode.
+// If arriving via a ?room= share link, jump straight to the join flow.
+const urlRoom = new URLSearchParams(location.search).get('room');
 newGame();
-showModeSelect();
+if(urlRoom){ showOnlineConnect(urlRoom); }
+else showModeSelect();
 
 })();
 </script>
