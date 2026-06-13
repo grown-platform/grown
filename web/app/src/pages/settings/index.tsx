@@ -18,6 +18,7 @@ import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import { AvatarUploader } from "./AvatarUploader";
 import { ProfileSection } from "./ProfileSection";
+import { ApiTokensSection } from "./ApiTokensSection";
 import { getPreferences, updatePreferences } from "./api";
 import type { UserPreferences } from "./api";
 
@@ -167,6 +168,9 @@ export default function SettingsPage({ user }: SettingsPageProps) {
             }
           />
         </Sheet>
+
+        {/* ── API tokens ─────────────────────────── */}
+        <ApiTokensSection />
 
         {loading && (
           <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>

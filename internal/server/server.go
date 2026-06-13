@@ -25,6 +25,7 @@ import (
 	"code.pick.haus/grown/grown/internal/adminanalytics"
 	"code.pick.haus/grown/grown/internal/adminsecurity"
 	"code.pick.haus/grown/grown/internal/adminusers"
+	"code.pick.haus/grown/grown/internal/apitokens"
 	"code.pick.haus/grown/grown/internal/audit"
 	"code.pick.haus/grown/grown/internal/auth"
 	"code.pick.haus/grown/grown/internal/books"
@@ -805,17 +806,41 @@ func New(cfg Config) *Server {
 		})
 	}
 
+	// Per-user API tokens: authenticate "Authorization: Bearer grw_..." as the
+	// owning user, gated to the token's scopes (enforced inside the middleware).
+	apiTokensRepo := apitokens.NewRepository(cfg.Pool)
+	var apiTokensHTTP *apitokens.HTTPHandler
+	if apiTokensRepo != nil {
+		apiTokensHTTP = apitokens.NewHTTPHandler(apiTokensRepo, apitokens.AuthFuncs{
+			UserID: func(r *http.Request) (string, bool) {
+				u, ok := auth.UserFromContext(r.Context())
+				if !ok {
+					return "", false
+				}
+				return u.ID, true
+			},
+			OrgID: func(r *http.Request) (string, bool) {
+				o, ok := auth.OrgFromContext(r.Context())
+				if !ok {
+					return "", false
+				}
+				return o.ID, true
+			},
+			IsTokenAuth: func(r *http.Request) bool { return auth.IsTokenAuth(r.Context()) },
+		})
+	}
+
 	// Per-IP API rate limiting (outermost), with a stricter bucket on the auth
 	// endpoints to blunt credential stuffing. Tunable via GROWN_RATELIMIT_*.
 	rateLimiter := ratelimit.FromEnv()
 	authWrapped := rateLimiter.Middleware(
-		auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg)(apiHandler),
+		auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg, apiTokensRepo)(apiHandler),
 	)
 
 	// Route /api/* and /healthz to the auth-wrapped gateway; everything
 	// else falls through to the static SPA handler.
 	static := StaticHandler(cfg.StaticDir)
-	driveAuthWrap := auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg)
+	driveAuthWrap := auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg, apiTokensRepo)
 
 	// Zitadel User API v2 proxy for the in-app account-security panel. Runs
 	// inside the auth middleware so the caller's oidc_subject is resolvable; the
@@ -1541,6 +1566,14 @@ func New(cfg Config) *Server {
 		if eventMeetHTTP != nil {
 			if _, ok := eventMeetHTTP.Match(r.URL.Path); ok {
 				driveAuthWrap(eventMeetHTTP).ServeHTTP(w, r)
+				return
+			}
+		}
+		// Per-user API token management (/api/v1/me/tokens) — auth-wrapped, pure
+		// HTTP, matched before the grpc-gateway.
+		if apiTokensHTTP != nil {
+			if _, ok := apiTokensHTTP.Match(r.URL.Path); ok {
+				driveAuthWrap(apiTokensHTTP).ServeHTTP(w, r)
 				return
 			}
 		}

@@ -21,7 +21,7 @@ func TestHTTPMiddleware_NilDepsPassThrough(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mw := HTTPMiddleware(Config{CookieName: "grown_session"}, nil, nil, nil, defaultOrg)
+	mw := HTTPMiddleware(Config{CookieName: "grown_session"}, nil, nil, nil, defaultOrg, nil)
 	handler := mw(next)
 
 	req := httptest.NewRequest("GET", "/anything", nil)
@@ -55,7 +55,7 @@ func TestHTTPMiddleware_NoCookiePassThrough(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mw := HTTPMiddleware(Config{CookieName: "grown_session"}, nil, nil, nil, defaultOrg)
+	mw := HTTPMiddleware(Config{CookieName: "grown_session"}, nil, nil, nil, defaultOrg, nil)
 	handler := mw(next)
 
 	req := httptest.NewRequest("GET", "/anything", nil)

@@ -381,6 +381,8 @@ const (
 	userCtxKey ctxKey = iota
 	orgCtxKey
 	sessionTokenCtxKey
+	tokenAuthCtxKey // set true when the request was authenticated by an API token
+	scopesCtxKey    // []string of the API token's scopes
 )
 
 // WithSessionToken attaches the caller's live session token to the context (set
@@ -416,4 +418,23 @@ func WithOrg(ctx context.Context, o orgs.Org) context.Context {
 func OrgFromContext(ctx context.Context) (orgs.Org, bool) {
 	o, ok := ctx.Value(orgCtxKey).(orgs.Org)
 	return o, ok
+}
+
+// WithTokenAuth marks the request as authenticated by an API token (carrying its
+// scopes), as opposed to an interactive session.
+func WithTokenAuth(ctx context.Context, scopes []string) context.Context {
+	ctx = context.WithValue(ctx, tokenAuthCtxKey, true)
+	return context.WithValue(ctx, scopesCtxKey, scopes)
+}
+
+// IsTokenAuth reports whether the request was authenticated by an API token.
+func IsTokenAuth(ctx context.Context) bool {
+	v, _ := ctx.Value(tokenAuthCtxKey).(bool)
+	return v
+}
+
+// ScopesFromContext returns the API token scopes attached by WithTokenAuth.
+func ScopesFromContext(ctx context.Context) ([]string, bool) {
+	s, ok := ctx.Value(scopesCtxKey).([]string)
+	return s, ok
 }
