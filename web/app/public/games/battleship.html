@@ -266,6 +266,7 @@
   </div>
 </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function(){
   "use strict";
@@ -308,9 +309,14 @@
   // board: { grid:[[{ship,shot}]], ships:[{name,len,cells,hits}] }
   // mode 'ai': boards[0] = human, boards[1] = computer.
   // mode '2p': boards[0] = Player 1, boards[1] = Player 2 (pass & play).
-  var mode = null;            // 'ai' | '2p'
+  var mode = null;            // 'ai' | '2p' | 'online'
   var boards = [null, null];
-  var phase = "menu";         // 'menu' | 'place' | 'handoff' | 'battle' | 'over'
+  var phase = "menu";         // 'menu' | 'place' | 'handoff' | 'battle' | 'wait' | 'over'
+  // ---- Online multiplayer state (mode === 'online') ----
+  // mySeat = my role (0 = host fires first, 1 = guest). boards[mySeat] is MY real
+  // fleet; boards[1-mySeat] is the enemy-VIEW board (shots only, no real ships).
+  var mySeat = 0;
+  var oppReady = false, myReady = false;
   var placingPlayer = 0;      // whose fleet is being placed
   var placeIndex = 0;
   var horizontal = true;
@@ -637,6 +643,17 @@
 
   function donePlacing(){
     if(placeIndex < FLEET.length) return;
+    if(mode === "online"){
+      myReady = true;
+      GameMP.send({ k:"ready", seat: mySeat });
+      if(oppReady){
+        startBattleOnline();
+      } else {
+        phase = "wait"; // lock input until the opponent has placed too
+        statusEl.textContent = "Waiting for opponent to place their fleet…";
+      }
+      return;
+    }
     if(mode === "ai"){
       randomPlaceAll(boards[1]);
       startBattle(0);
@@ -844,6 +861,162 @@
     if(won) sndWin(); else sndLose();
   }
 
+  // ---------- Online multiplayer (mode === 'online') ----------
+  // Hidden-information protocol: each client holds only its OWN fleet truthfully.
+  // boards[mySeat] = my real fleet; boards[1-mySeat] = enemy-VIEW (shots only).
+  // A shot is FIRED by the shooter, ADJUDICATED by the defender (who owns the
+  // real board), and the result is reported back. `active` (the seat allowed to
+  // fire) converges to the DEFENDER's seat after every resolved shot — i.e. the
+  // turn always passes to whoever was just fired upon.
+
+  function startOnline(role){
+    mySeat = role;
+    mode = "online";
+    myReady = false;
+    oppReady = false;
+    gameOver = false;
+    boards[mySeat]   = newBoard();   // my real fleet (placed below)
+    boards[1-mySeat] = newBoard();   // enemy-view board: shots only, no ships
+    setOverlay(false);               // no privacy handoff in online mode
+    computeCellSize();
+    buildGrid(playerGridEl);
+    buildGrid(enemyGridEl);
+    // Place MY fleet on MY board. startPlacement edits boards[placingPlayer],
+    // so point placingPlayer at my seat and render my own fleet.
+    startPlacement(mySeat);
+  }
+
+  // The New Game button in online mode: re-place my fleet and tell the opponent
+  // to restart too.
+  function restartOnline(){
+    startOnline(mySeat);
+    GameMP.sendReset();
+  }
+
+  function startBattleOnline(){
+    phase = "battle";
+    active = 0;            // seat 0 fires first; both clients agree
+    gameOver = false;
+    showControls("battleControls");
+    showBoards(true, true);
+    renderBattleOnline();
+    statusEl.textContent = (active === mySeat) ? "Your turn — fire!" : "Opponent's turn…";
+    if(actx && actx.state === "suspended") actx.resume();
+  }
+
+  function renderBattleOnline(){
+    renderEnemy(enemyGridEl, boards[1-mySeat]);
+    renderOwn(playerGridEl, boards[mySeat]);
+    enemyLabelEl.textContent = "Enemy Waters";
+    myLabelEl.textContent = "Your Fleet";
+  }
+
+  // I click the enemy grid to fire. Allowed only on my turn during battle.
+  function onlineFire(r, c){
+    if(phase !== "battle" || active !== mySeat || gameOver) return;
+    var cell = boards[1-mySeat].grid[r][c];
+    if(cell.shot) return;            // already fired here
+    GameMP.send({ k:"fire", r:r, c:c, seat: mySeat });
+    // Lock input and wait for the defender's adjudication. Do NOT mark anything
+    // locally — the {k:'result'} reply tells us hit/miss/sunk.
+    phase = "wait";
+    statusEl.textContent = "Waiting for result…";
+  }
+
+  // I am the DEFENDER: the opponent fired at MY board. Adjudicate on my real
+  // fleet and report back. Idempotent if the same shot arrives twice.
+  function onlineDefend(r, c){
+    var b = boards[mySeat];
+    var cell = b.grid[r][c];
+    var hit, sunk = false, shipName = null, sunkCells = null;
+    if(!cell.shot){
+      cell.shot = true;
+      hit = !!cell.ship;
+      if(hit){
+        cell.ship.hits++;
+        sunk = shipSunkCheck(cell.ship);
+        shipName = cell.ship.name;
+        if(sunk) sunkCells = cell.ship.cells.map(function(pt){ return { r:pt.r, c:pt.c }; });
+        if(sunk) sndSink(); else sndHit();
+      } else {
+        sndMiss();
+      }
+      renderOwn(playerGridEl, b); // see the incoming shot land on my fleet
+    } else {
+      // Re-derive the result for an idempotent reply (no double-apply).
+      hit = !!cell.ship;
+      if(hit){
+        sunk = shipSunkCheck(cell.ship);
+        shipName = cell.ship.name;
+        if(sunk) sunkCells = cell.ship.cells.map(function(pt){ return { r:pt.r, c:pt.c }; });
+      }
+    }
+    var defeated = allSunk(b);
+    GameMP.send({ k:"result", r:r, c:c, hit:hit, sunk:sunk, shipName:shipName,
+                  sunkCells:sunkCells, defeated:defeated, seat: mySeat });
+    // Turn passes to ME (the defender) — the shooter's client converges to the
+    // same `active` on its {k:'result'} branch.
+    active = mySeat;
+    if(defeated){
+      endGame("💥 DEFEAT! Your fleet was destroyed.", false);
+    } else {
+      phase = "battle";
+      statusEl.textContent = "Your turn — fire!";
+      renderBattleOnline();
+    }
+  }
+
+  // I am the SHOOTER: the defender adjudicated my shot. Paint the enemy-view
+  // board so the EXISTING renderEnemy (keyed off cell.shot + ship.hits>=ship.len)
+  // shows miss / hit / sunk correctly.
+  function onlineResult(m){
+    var ev = boards[1-mySeat];
+    if(!m.hit){
+      ev.grid[m.r][m.c].shot = true;
+      ev.grid[m.r][m.c].ship = null;
+      sndMiss();
+    } else if(!m.sunk){
+      ev.grid[m.r][m.c].shot = true;
+      // hits(1) < len(99) ⇒ renderEnemy draws 'hit'
+      ev.grid[m.r][m.c].ship = { len:99, hits:1 };
+      sndHit();
+    } else {
+      // Mark every cell of the sunk ship with a SHARED object where
+      // hits(1) >= len(1) ⇒ renderEnemy draws 'sunk'.
+      var sunkShip = { len:1, hits:1 };
+      var cells = m.sunkCells || [];
+      for(var i=0;i<cells.length;i++){
+        var pt = cells[i];
+        ev.grid[pt.r][pt.c].shot = true;
+        ev.grid[pt.r][pt.c].ship = sunkShip;
+      }
+      sndSink();
+    }
+    renderEnemy(enemyGridEl, ev);
+    if(m.defeated){
+      endGame("🎉 VICTORY! You sank the enemy fleet!", true);
+    } else {
+      // Turn passes to the opponent (the defender) — converges with their side.
+      active = 1 - mySeat;
+      phase = "battle";
+      statusEl.textContent = "Opponent's turn…";
+    }
+  }
+
+  // Dispatch incoming network messages. Echo guard: ignore anything I sent.
+  function onlineMessage(m){
+    if(mode !== "online") return;
+    if(m.seat === mySeat) return;   // relay echoes our own sends back
+    if(m.k === "ready"){
+      oppReady = true;
+      if(myReady) startBattleOnline();
+    } else if(m.k === "fire"){
+      onlineDefend(m.r, m.c);
+    } else if(m.k === "result"){
+      onlineResult(m);
+    }
+  }
+
   // ---------- Event wiring ----------
   document.getElementById("aiBtn").addEventListener("click", function(){ selectMode("ai"); });
   document.getElementById("twoBtn").addEventListener("click", function(){ selectMode("2p"); });
@@ -872,7 +1045,11 @@
   enemyGridEl.addEventListener("click", function(e){
     var t = e.target.closest(".cell");
     if(!t) return;
-    if(phase === "battle") playerFire(+t.dataset.r, +t.dataset.c);
+    if(mode === "online"){
+      onlineFire(+t.dataset.r, +t.dataset.c);
+    } else if(phase === "battle"){
+      playerFire(+t.dataset.r, +t.dataset.c);
+    }
   });
 
   document.getElementById("rotateBtn").addEventListener("click", function(){
@@ -889,7 +1066,10 @@
     sndPlace();
   });
   startBtn.addEventListener("click", donePlacing);
-  document.getElementById("newGameBtn").addEventListener("click", showMenu);
+  document.getElementById("newGameBtn").addEventListener("click", function(){
+    if(mode === "online"){ restartOnline(); return; }
+    showMenu();
+  });
 
   legendEl.textContent = "Carrier 5 · Battleship 4 · Cruiser 3 · Submarine 3 · Destroyer 2";
 
@@ -906,6 +1086,18 @@
 
   computeCellSize();
   showMenu();
+
+  // ---------- Online multiplayer wiring ----------
+  GameMP.setup({ gameName: "Battleship" });
+  GameMP.onReady(function(role){ startOnline(role); });
+  GameMP.onMove(onlineMessage);
+  GameMP.onReset(function(){ if(mode === "online") startOnline(mySeat); });
+  GameMP.onPeerLeft(function(){
+    if(mode === "online" && !gameOver){
+      gameOver = true;
+      endGame("Opponent left.", false);
+    }
+  });
 })();
 </script>
 </body>
