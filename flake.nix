@@ -13,6 +13,19 @@
         "x86_64-darwin"
       ];
       forAll = nixpkgs.lib.genAttrs systems;
+
+      # nixpkgs instance used for the dockerTools image builds. The pinned
+      # nixpkgs-unstable `minio` currently carries known CVEs and is marked
+      # insecure; the chart already runs an upstream minio so this is no
+      # regression — permit it explicitly so the image still builds.
+      imagesPkgs =
+        system:
+        import nixpkgs {
+          inherit system;
+          config.permittedInsecurePackages = [
+            "minio-2025-10-15T17-29-55Z"
+          ];
+        };
     in
     {
       devShells = forAll (
@@ -99,5 +112,37 @@
       );
 
       formatter = forAll (system: (import nixpkgs { inherit system; }).nixfmt-rfc-style);
+
+      # -----------------------------------------------------------------------
+      # OCI container images (Nix dockerTools) for grown + its runtime deps, so
+      # the platform can migrate off the upstream Docker images one-by-one.
+      # See nix/images.nix and docs/roadmap/2026-06-13-nix-images-migration.md.
+      #
+      # dockerTools images are LINUX images. We therefore build them against a
+      # linux nixpkgs regardless of the host: the homelab cluster is amd64
+      # (x86_64-linux) and the Pi cluster is arm64 (aarch64-linux). The default
+      # `images` attrset targets x86_64-linux (homelab); `images-aarch64-linux`
+      # targets the Pi cluster. Building on an aarch64-darwin host requires a
+      # linux builder (a remote x86_64-linux builder is configured) and/or
+      # substitution from the binary cache.
+      #
+      #   nix build .#images.grown      # grown app (Go + Vite SPA + pandoc)
+      #   nix build .#images.postgres   # Postgres 17
+      #   nix build .#images.minio      # MinIO
+      #   nix build .#images.zitadel    # Zitadel (OIDC)
+      #   nix build .#images.all        # all four tarballs in one dir
+      #
+      # Pi cluster (arm64):
+      #   nix build .#images-aarch64-linux.grown   (etc.)
+      # -----------------------------------------------------------------------
+      images = import ./nix/images.nix {
+        pkgs = imagesPkgs "x86_64-linux";
+      };
+
+      images-x86_64-linux = self.images;
+
+      images-aarch64-linux = import ./nix/images.nix {
+        pkgs = imagesPkgs "aarch64-linux";
+      };
     };
 }
