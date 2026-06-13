@@ -249,6 +249,15 @@ type Config struct {
 	// the path bypasses grown's auth middleware. Empty disables the proxy.
 	ForgejoURL string
 
+	// AssembleURL is the internal origin of the Assemble spatial-collaboration
+	// app, e.g. http://assemble.<ns>.svc:8080. grown reverse-proxies /assemble/*
+	// to it with the /assemble prefix stripped. Crucially this path BYPASSES
+	// grown's auth wall: Assemble runs its own auth — SSO for signed-in workspace
+	// users and GUEST access for joining rooms — so a visitor hitting /assemble
+	// must NOT be redirected to grown's sign-in. Serving it on the same origin
+	// lets signed-in users share the session. Empty disables the proxy.
+	AssembleURL string
+
 	// StaticDir is the path to the built React SPA. Empty disables static
 	// serving (API-only mode for tests).
 	StaticDir string
@@ -1253,6 +1262,13 @@ func New(cfg Config) *Server {
 	// auth, so this bypasses grown's auth wall.
 	forgejoProxy := newStripPrefixProxy(cfg.ForgejoURL, "/git")
 
+	// /assemble/* → the Assemble spatial-collaboration app, /assemble prefix
+	// stripped. This BYPASSES grown's auth wall on purpose: Assemble does its own
+	// auth (workspace SSO + guest room access), so visitors must reach it without
+	// being bounced to grown's sign-in. Same origin = signed-in users share the
+	// session. Configure Assemble's base path to /assemble.
+	assembleProxy := newStripPrefixProxy(cfg.AssembleURL, "/assemble")
+
 	// ---- Cloud Import (plain HTTP, no gRPC) ----------------------------------
 	// Wire concrete app-repo closures into cloudimport via the injected-interface
 	// pattern so cloudimport has no import-time dependency on internal/calendar,
@@ -1723,6 +1739,19 @@ func New(cfg Config) *Server {
 			}
 			if strings.HasPrefix(r.URL.Path, "/git/") {
 				forgejoProxy.ServeHTTP(w, r)
+				return
+			}
+		}
+		// Assemble (spatial collaboration) at /assemble/* — reverse-proxied,
+		// prefix stripped, BYPASSING grown's auth wall so guests reach it without
+		// a forced sign-in (Assemble handles SSO + guest access itself).
+		if assembleProxy != nil {
+			if r.URL.Path == "/assemble" {
+				http.Redirect(w, r, "/assemble/", http.StatusMovedPermanently)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, "/assemble/") {
+				assembleProxy.ServeHTTP(w, r)
 				return
 			}
 		}

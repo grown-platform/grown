@@ -308,6 +308,9 @@ func main() {
 		// Per-instance Forgejo (git hosting) reverse-proxied at /git/* (prefix
 		// stripped). Set Forgejo ROOT_URL to https://<host>/git/. Empty disables.
 		ForgejoURL: os.Getenv("GROWN_FORGEJO_URL"),
+		// Assemble (spatial collaboration) reverse-proxied at /assemble/* (prefix
+		// stripped, auth-wall bypassed so guests work). Empty disables.
+		AssembleURL: os.Getenv("GROWN_ASSEMBLE_URL"),
 		// Cloud Import — upload-based import from Google Takeout and Apple exports.
 		CloudImportRepo:      cloudimport.NewRepository(pool),
 		CloudImportDriveRepo: drive.NewRepository(pool),
