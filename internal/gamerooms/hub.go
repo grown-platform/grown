@@ -203,7 +203,13 @@ func (h *Hub) Serve(w http.ResponseWriter, req *http.Request, code, password, pe
 		}
 		msg["from"] = peerID
 		msg["name"] = name
-		h.broadcast(cr, self, msg)
+		// A "to" field directs the message to a single peer (private delivery,
+		// e.g. dealing a hidden hand). Otherwise it broadcasts to the room.
+		if toID, ok := msg["to"].(string); ok && toID != "" {
+			h.sendTo(cr, toID, msg)
+		} else {
+			h.broadcast(cr, self, msg)
+		}
 	}
 	<-writeDone
 }
@@ -221,6 +227,24 @@ func (h *Hub) sendRoster(cr *room, to *peer) {
 	}
 	select {
 	case to.out <- out:
+	default:
+	}
+}
+
+// sendTo delivers a message to a single peer by id (private/targeted delivery).
+func (h *Hub) sendTo(cr *room, toID string, msg map[string]any) {
+	out, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	cr.mu.Lock()
+	target := cr.peers[toID]
+	cr.mu.Unlock()
+	if target == nil {
+		return
+	}
+	select {
+	case target.out <- out:
 	default:
 	}
 }
