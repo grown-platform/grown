@@ -16,6 +16,10 @@ Live instance: **[workspace.pick.haus](https://workspace.pick.haus)**
 **Contributions and issues are genuinely appreciated.** Whether it's a bug report,
 a feature idea, a new game, or a pull request — please jump in.
 
+> **Missing something?** If an app lacks a feature, a doc is unclear, or you hit a
+> bug — **just [open an issue](https://github.com/grown-platform/grown/issues/new)
+> and we'll get it grown 🌱.** No request is too small.
+
 - **Source code (mirror):** **https://github.com/grown-platform/grown**
 - **🐛 Found a bug / have an idea?** [Open an issue](https://github.com/grown-platform/grown/issues).
 - **🔧 Want to contribute code?** Fork the GitHub mirror, make your change, and
