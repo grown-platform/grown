@@ -37,6 +37,27 @@
     background:linear-gradient(#06080f,#0b1020);border-top:1px solid #1b2742;
     height:clamp(120px,24vh,190px);box-sizing:border-box;}
   body.touch #touchbar{display:flex;}
+
+  /* ---- Landscape side bars: on a wide touch screen the controls flank the
+     playfield (left + right) instead of sitting in a bottom bar, so the game
+     gets the full height. Hidden in portrait and on desktop. ---- */
+  #leftbar,#rightbar{display:none;flex:0 0 auto;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;box-sizing:border-box;
+    background:linear-gradient(#06080f,#0b1020);
+    width:clamp(86px,15vw,140px);
+    padding:10px calc(env(safe-area-inset-right,0px) + 8px) 10px calc(env(safe-area-inset-left,0px) + 8px);}
+  #leftbar{border-right:1px solid #1b2742;}
+  #rightbar{border-left:1px solid #1b2742;}
+  @media (orientation:landscape){
+    /* Row layout: left controls | game | right controls. */
+    body.touch #wrap{flex-direction:row;}
+    body.touch #leftbar,body.touch #rightbar{display:flex;}
+    body.touch #touchbar{display:none;}
+  }
+  @media (orientation:portrait){
+    /* Portrait keeps the bottom control bar; side bars stay hidden. */
+    body.touch #leftbar,body.touch #rightbar{display:none;}
+  }
   .cluster{display:flex;align-items:center;gap:10px;}
   .tbtn{display:flex;align-items:center;justify-content:center;
     width:62px;height:62px;border-radius:14px;border:1px solid #2c3e6e;
@@ -62,9 +83,35 @@
 </head>
 <body>
   <div id="wrap">
+    <!-- Landscape LEFT bar: movement + utility. -->
+    <div id="leftbar">
+      <div class="cluster">
+        <div class="tbtn" data-code="ArrowLeft">◀</div>
+        <div class="tbtn" data-code="ArrowRight">▶</div>
+      </div>
+      <div class="cluster">
+        <div class="tbtn small" data-code="Escape" data-tap="1">≡</div>
+        <div class="tbtn small kbBtn" data-tap="1">⌨</div>
+      </div>
+    </div>
     <div id="gamearea">
       <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
       <div id="status">Loading Maelstrom…</div>
+    </div>
+    <!-- Landscape RIGHT bar: thrust / shield / fire. -->
+    <div id="rightbar">
+      <div class="tcol">
+        <div class="tbtn" data-code="ArrowUp">▲</div>
+        <div class="tlabel">THRUST</div>
+      </div>
+      <div class="tcol">
+        <div class="tbtn" data-code="ArrowDown">◌</div>
+        <div class="tlabel">SHIELD</div>
+      </div>
+      <div class="tcol">
+        <div class="tbtn fire" data-code="Space">●</div>
+        <div class="tlabel">FIRE</div>
+      </div>
     </div>
     <!-- Touch controls live here, outside the playfield. -->
     <div id="touchbar">
@@ -74,7 +121,7 @@
       </div>
       <div class="cluster">
         <div class="tbtn small" data-code="Escape" data-tap="1">≡</div>
-        <div class="tbtn small" id="kbBtn" data-tap="1">⌨</div>
+        <div class="tbtn small kbBtn" data-tap="1">⌨</div>
       </div>
       <div class="cluster">
         <div class="tcol">
@@ -173,7 +220,8 @@
       el.addEventListener("mouseup", up);
       el.addEventListener("mouseleave", up);
     }
-    Array.prototype.forEach.call(document.querySelectorAll("#touchbar .tbtn"), bindBtn);
+    // Bind every touch button across the bottom bar AND the landscape side bars.
+    Array.prototype.forEach.call(document.querySelectorAll(".tbtn"), bindBtn);
 
     // ---- Name entry: summon the soft keyboard and forward typed chars to SDL ----
     // Mobile soft keyboards don't fire reliable keydown, so we read the input's
@@ -191,8 +239,11 @@
       nameInput.blur(); nameInput.style.pointerEvents = "none"; nameInput.style.left = "-9999px";
       kbHint.classList.remove("show");
     }
-    document.getElementById("kbBtn").addEventListener("click", function(){
-      if (document.activeElement === nameInput) disarmKeyboard(); else armKeyboard();
+    // The keyboard toggle exists in both the bottom bar and the side bar.
+    Array.prototype.forEach.call(document.querySelectorAll(".kbBtn"), function(btn){
+      btn.addEventListener("click", function(){
+        if (document.activeElement === nameInput) disarmKeyboard(); else armKeyboard();
+      });
     });
     // Each newly inserted character → a key tap into the game.
     nameInput.addEventListener("input", function(){
