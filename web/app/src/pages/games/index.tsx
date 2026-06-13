@@ -84,6 +84,19 @@ const GAMES: AppTile[] = [
     // */index.html to the directory, which falls through to the SPA.
     externalUrl: "/games/maelstrom/play.html",
   },
+  {
+    id: "bolo",
+    name: "Bolo",
+    blurb: "The classic networked tank game — faithful browser port (Orona).",
+    accentColor: "#1B5E20",
+    phase: 4,
+    comingSoon: false,
+    iconName: "Adjust",
+    iconUrl: "/games/bolo/icon.png",
+    // Entry is play.html (not index.html): http.ServeFile 301-redirects any
+    // */index.html to the directory, which falls through to the SPA.
+    externalUrl: "/games/bolo/play.html",
+  },
   arcade("2048", "2048", "#EDC22E", "GridOn"),
   arcade("snake", "Snake", "#43A047", "Timeline"),
   arcade("minesweeper", "Minesweeper", "#455A64", "Flag"),
@@ -215,6 +228,7 @@ const CATEGORIES: { key: string; label: string; icon: string }[] = [
 // consults this in addition to the single-category CATEGORY_OF map.
 const EXTRA_CATS: Record<string, string[]> = {
   mightymike: ["Port", "Puzzle", "Adventure", "Arcade"],
+  bolo: ["Port", "Arcade", "Board"],
 };
 
 const CATEGORY_IDS: Record<string, string[]> = {

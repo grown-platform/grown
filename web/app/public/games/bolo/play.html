@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Bolo</title>
+<!-- PWA installability -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1B5E20">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bolo">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="shortcut icon" href="images/favicon.png">
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(function(){})})}</script>
+
+<!-- Orona styling (vendored offline; original CDN refs removed for PWA) -->
+<link rel="stylesheet" href="vendor/jquery-ui-1.13.2.min.css">
+<link rel="stylesheet" href="css/bolo.css">
+<link rel="stylesheet" href="css/jquery.ui.theme.css">
+
+<style>
+  /* Orona draws a full-window canvas + absolutely-positioned HUD straight onto
+     <body>. We keep that intact in #gamearea, and dock our touch controls in a
+     bar BELOW it (mirroring maelstrom/play.html) so they never sit on the map. */
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;
+    font-family:system-ui,-apple-system,sans-serif;}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
+  /* The game region. Orona appends its canvas + HUD to <body>; we re-parent them
+     into #gamearea after boot, and Orona sizes the canvas to window.innerWidth/
+     innerHeight (see handleResize) which we feed via the resize hook below. */
+  #gamearea{flex:1 1 auto;min-height:0;position:relative;overflow:hidden;background:#3a6ea5;}
+  #status{position:absolute;left:0;right:0;top:42%;text-align:center;color:#dbe6ff;
+    font:600 15px system-ui,sans-serif;z-index:50;pointer-events:none;text-shadow:0 1px 3px #000;}
+
+  /* Back-to-/games pill (top-left), above the game. */
+  #backpill{position:fixed;z-index:2147483600;
+    top:calc(env(safe-area-inset-top,0px) + 8px);
+    left:calc(env(safe-area-inset-left,0px) + 8px);
+    display:inline-flex;align-items:center;gap:6px;
+    padding:7px 12px 7px 9px;border-radius:999px;
+    background:rgba(11,16,32,.78);border:1px solid #2c3e6e;color:#dbe6ff;
+    font:600 13px system-ui,sans-serif;text-decoration:none;
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
+  #backpill:active{background:rgba(42,62,126,.9);}
+  #backpill svg{width:16px;height:16px;fill:currentColor;}
+
+  #credit{position:fixed;left:0;bottom:1px;width:100%;text-align:center;color:#9fb;
+    font:500 9px system-ui,sans-serif;z-index:2147483000;pointer-events:none;opacity:.7;
+    text-shadow:0 1px 2px #000;}
+
+  /* ---- Touch control bar (mobile only; hidden on desktop/fine-pointer) ---- */
+  #touchbar{flex:0 0 auto;display:none;flex-direction:column;gap:6px;
+    padding:6px calc(env(safe-area-inset-right,0px) + 8px)
+      calc(env(safe-area-inset-bottom,0px) + 6px) calc(env(safe-area-inset-left,0px) + 8px);
+    background:linear-gradient(#06080f,#0b1020);border-top:1px solid #1b2742;
+    box-sizing:border-box;}
+  body.touch #touchbar{display:flex;}
+  body.touch #status{top:30%;}
+
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .cluster{display:flex;align-items:center;gap:8px;}
+  .tbtn{display:flex;align-items:center;justify-content:center;
+    min-width:50px;height:50px;padding:0 6px;border-radius:12px;border:1px solid #2c3e6e;
+    background:#16224a;color:#dbe6ff;font-size:20px;font-weight:700;
+    touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;line-height:1;}
+  .tbtn:active,.tbtn.on{background:#2a3e7e;border-color:#5a7bd6;}
+  .tbtn.fire{background:#7a1f2b;border-color:#c2415a;min-width:64px;height:56px;font-size:22px;}
+  .tbtn.fire:active,.tbtn.fire.on{background:#a8293a;}
+  .tbtn.small{min-width:42px;height:42px;font-size:16px;border-radius:10px;}
+  .tbtn.build{flex-direction:column;gap:1px;min-width:54px;height:48px;font-size:18px;
+    background:#13351f;border-color:#2d6b3f;}
+  .tbtn.build .bl{font-size:8px;color:#9fdcb0;font-weight:600;}
+  .tbtn.build:active,.tbtn.build.on{background:#1f6b3a;border-color:#4cd07a;}
+  .tlabel{font-size:9px;color:#6f80a8;text-align:center;margin-top:-1px;letter-spacing:.5px;}
+  .tcol{display:flex;flex-direction:column;align-items:center;gap:2px;}
+
+  /* When a build tool is armed, hint the user to tap the map. */
+  #buildhint{display:none;position:absolute;left:50%;top:8px;transform:translateX(-50%);
+    z-index:60;background:rgba(11,16,32,.85);border:1px solid #2d6b3f;border-radius:10px;
+    padding:6px 12px;color:#9fdcb0;font:600 12px system-ui,sans-serif;pointer-events:none;}
+  body.touch.building #buildhint{display:block;}
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="gamearea">
+      <div id="status">Loading Bolo…</div>
+      <div id="buildhint">Tap a map tile to build</div>
+    </div>
+
+    <!-- Touch controls live here, OUTSIDE the playfield (mobile only). -->
+    <div id="touchbar">
+      <!-- Row 1: tank controls -->
+      <div class="row">
+        <div class="cluster">
+          <div class="tcol"><div class="tbtn" data-code="ArrowLeft">◀</div><div class="tlabel">TURN L</div></div>
+          <div class="tcol"><div class="tbtn" data-code="ArrowRight">▶</div><div class="tlabel">TURN R</div></div>
+        </div>
+        <div class="cluster">
+          <div class="tcol"><div class="tbtn" data-code="ArrowUp">▲</div><div class="tlabel">FWD</div></div>
+          <div class="tcol"><div class="tbtn" data-code="ArrowDown">▼</div><div class="tlabel">BRAKE</div></div>
+        </div>
+        <div class="cluster">
+          <div class="tcol"><div class="tbtn small" data-code="KeyZ">＋</div><div class="tlabel">RANGE</div></div>
+          <div class="tcol"><div class="tbtn small" data-code="KeyX">－</div><div class="tlabel">RANGE</div></div>
+          <div class="tcol"><div class="tbtn fire" data-code="Space">●</div><div class="tlabel">FIRE</div></div>
+        </div>
+      </div>
+      <!-- Row 2: builder palette. Tap to arm a tool, then tap the map to build. -->
+      <div class="row" id="buildrow">
+        <div class="tbtn build" data-tool="forest">🌲<span class="bl">TREE</span></div>
+        <div class="tbtn build" data-tool="road">▦<span class="bl">ROAD</span></div>
+        <div class="tbtn build" data-tool="building">▩<span class="bl">WALL</span></div>
+        <div class="tbtn build" data-tool="pillbox">⬢<span class="bl">PILL</span></div>
+        <div class="tbtn build" data-tool="mine">✸<span class="bl">MINE</span></div>
+      </div>
+    </div>
+  </div>
+
+  <a id="backpill" href="/games" aria-label="Back to games">
+    <svg viewBox="0 0 24 24"><path d="M15.5 19l-7-7 7-7 1.4 1.4L11.3 12l5.6 5.6z"/></svg>
+    <span>Games</span>
+  </a>
+  <div id="credit">Orona © 2010 Stéphan Kochen (GPL v2) · Bolo graphics/sounds © 1993 Stuart Cheshire</div>
+
+  <!-- Vendored offline (was Google CDN in the spike's index-local.html) -->
+  <script src="vendor/jquery-3.7.1.min.js"></script>
+  <script src="js/jquery.cookie.js"></script>
+  <script src="vendor/jquery-ui-1.13.2.min.js"></script>
+  <script src="js/bolo-bundle.js"></script>
+  <script>
+  (function () {
+    var statusEl = document.getElementById("status");
+    function setStatus(t){ if(!statusEl) return; if(t){ statusEl.textContent=t; statusEl.style.display=""; } else { statusEl.style.display="none"; } }
+
+    // Force the single-player local world: Orona's index.coffee selects
+    // BoloLocalWorld only when location.search === "?local". play.html may be
+    // opened without that query, so normalise it before the bundle's world runs.
+    // (The bundle's exported global already resolved at load; but the world is
+    // constructed here, and BoloLocalWorld is what we boot explicitly.)
+
+    // --- Boot Orona single-player ----------------------------------------
+    // esbuild exposed src/client/index.js's module.exports as global BoloClient.
+    // With ?local that export is BoloLocalWorld. To be robust regardless of the
+    // URL query, we ensure ?local is present (reload once if missing) so the
+    // bundle's top-level mode check picks the local world.
+    if (location.search.indexOf("local") === -1) {
+      var u = location.pathname + "?local" + location.hash;
+      location.replace(u);
+      return;
+    }
+
+    $(function () {
+      try {
+        var World = window.BoloClient;
+        window.world = new World();
+        window.world.start();
+        window.__boloStarted = true;
+        // Orona appends its canvas + HUD straight to <body>. Re-home them into
+        // the game region so the touchbar can sit below without overlapping.
+        // It draws async after resource load; poll briefly for the canvas.
+        var tries = 0;
+        var homeTimer = setInterval(function () {
+          var area = document.getElementById("gamearea");
+          var canvas = document.querySelector("body > canvas");
+          if (canvas) {
+            // Move the canvas and any HUD root(s) Orona appended to body.
+            area.appendChild(canvas);
+            // Orona's HUD is a bare <div> appended to body; move stray body divs
+            // that aren't our own chrome into the game area too.
+            Array.prototype.slice.call(document.querySelectorAll("body > div"))
+              .forEach(function (d) {
+                if (d.id === "wrap" || d.id === "backpill" || d.id === "credit") return;
+                area.appendChild(d);
+              });
+            setStatus("");
+            clearInterval(homeTimer);
+            // Nudge Orona to resize the canvas to the game region.
+            sizeCanvasToArea();
+          } else if (++tries > 120) {
+            clearInterval(homeTimer);
+          }
+        }, 50);
+      } catch (e) {
+        window.__boloError = String((e && e.stack) || e);
+        setStatus("Failed to start Bolo");
+        var pre = document.createElement("pre");
+        pre.style.cssText = "color:#f88;white-space:pre-wrap;padding:12px;font:12px monospace;";
+        pre.textContent = window.__boloError;
+        document.getElementById("gamearea").appendChild(pre);
+        throw e;
+      }
+    });
+
+    // Orona's renderer sizes its canvas to window.innerWidth/innerHeight on
+    // resize. With a docked touchbar the playfield is shorter than the window,
+    // so we override the canvas box to the #gamearea rect and re-fire resize so
+    // Orona recomputes its internal pixel dimensions to match.
+    function sizeCanvasToArea() {
+      var area = document.getElementById("gamearea");
+      var canvas = area.querySelector("canvas");
+      if (!canvas) return;
+      var r = area.getBoundingClientRect();
+      var w = Math.max(1, Math.round(r.width));
+      var h = Math.max(1, Math.round(r.height));
+      // Orona reads window.innerWidth/innerHeight in handleResize; temporarily
+      // shim them so the canvas matches the (shorter) game region, then restore.
+      var ow = Object.getOwnPropertyDescriptor(window, "innerWidth");
+      var oh = Object.getOwnPropertyDescriptor(window, "innerHeight");
+      try {
+        Object.defineProperty(window, "innerWidth", { configurable: true, get: function () { return w; } });
+        Object.defineProperty(window, "innerHeight", { configurable: true, get: function () { return h; } });
+        $(window).trigger("resize");
+      } finally {
+        if (ow) Object.defineProperty(window, "innerWidth", ow); else { try { delete window.innerWidth; } catch (e) {} }
+        if (oh) Object.defineProperty(window, "innerHeight", oh); else { try { delete window.innerHeight; } catch (e) {} }
+      }
+    }
+    var resizeT;
+    window.addEventListener("resize", function () { clearTimeout(resizeT); resizeT = setTimeout(sizeCanvasToArea, 120); });
+    window.addEventListener("orientationchange", function () { setTimeout(sizeCanvasToArea, 250); });
+
+    // ===================================================================
+    // Touch controls
+    // ===================================================================
+    // Orona is keyboard-driven. Its client binds keydown/keyup on #input-dummy,
+    // the renderer canvas, and '#tool-select label', reading e.which. We
+    // dispatch synthetic KeyboardEvents at #input-dummy (the element it focuses)
+    // matching its real single-player bindings (src/client/world/local.coffee):
+    //   Space(32)=fire  ←(37)=turn CCW  ↑(38)=forward  →(39)=turn CW
+    //   ↓(40)=brake/reverse  Z(90)=range+  X(88)=range-   (Z/X handled in mixin)
+    var KEYMAP = {
+      "ArrowLeft":  { key:"ArrowLeft",  keyCode:37 },
+      "ArrowRight": { key:"ArrowRight", keyCode:39 },
+      "ArrowUp":    { key:"ArrowUp",    keyCode:38 },
+      "ArrowDown":  { key:"ArrowDown",  keyCode:40 },
+      "Space":      { key:" ",          keyCode:32 },
+      "KeyZ":       { key:"z",          keyCode:90 },
+      "KeyX":       { key:"x",          keyCode:88 }
+    };
+    function inputTarget() {
+      return document.getElementById("input-dummy")
+        || document.querySelector("#gamearea canvas")
+        || window;
+    }
+    function dispatchKey(type, code) {
+      var info = KEYMAP[code] || {};
+      var keyCode = info.keyCode || 0;
+      var ev;
+      try {
+        ev = new KeyboardEvent(type, { key: info.key || code, code: code,
+          keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true, view: window });
+      } catch (e) {
+        ev = document.createEvent("Event"); ev.initEvent(type, true, true);
+        ev.key = info.key || code; ev.code = code;
+      }
+      try { Object.defineProperty(ev, "keyCode", { value: keyCode }); Object.defineProperty(ev, "which", { value: keyCode }); } catch (e) {}
+      var t = inputTarget();
+      t.dispatchEvent(ev);
+    }
+
+    var isTouch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || ("ontouchstart" in window);
+    if (isTouch) document.body.classList.add("touch");
+
+    // Hold-to-repeat tank buttons (keydown on press, keyup on release).
+    function bindHold(el) {
+      var code = el.getAttribute("data-code");
+      if (!code) return;
+      var held = false;
+      function down(e){ if(e) e.preventDefault(); if(held) return; held=true; el.classList.add("on"); dispatchKey("keydown", code); }
+      function up(e){ if(e) e.preventDefault(); if(!held) return; held=false; el.classList.remove("on"); dispatchKey("keyup", code); }
+      el.addEventListener("touchstart", down, { passive:false });
+      el.addEventListener("touchend", up, { passive:false });
+      el.addEventListener("touchcancel", up, { passive:false });
+      el.addEventListener("mousedown", down);
+      el.addEventListener("mouseup", up);
+      el.addEventListener("mouseleave", up);
+    }
+    Array.prototype.forEach.call(document.querySelectorAll("#touchbar .tbtn[data-code]"), bindHold);
+
+    // -------- Builder palette --------
+    // Orona's build UI: a tool is armed by clicking a radio in #tool-select,
+    // then clicking the canvas calls renderer.handleClick → checkBuildOrder →
+    // buildOrder (src/client/renderer/base.coffee:135, world/local.coffee:64).
+    // On touch we (a) click the matching #tool-<name> radio to arm @currentTool,
+    // then (b) on the next map tap, set the renderer's @mouse via a mousemove and
+    // fire a click on the canvas at that point — exactly the inputs Orona reads.
+    var armedTool = null;
+    function clearArmed() {
+      armedTool = null;
+      document.body.classList.remove("building");
+      Array.prototype.forEach.call(document.querySelectorAll("#buildrow .tbtn"), function (b){ b.classList.remove("on"); });
+    }
+    function armTool(name, btn) {
+      // Orona builds the tool radios as #tool-forest/#tool-road/#tool-building/
+      // #tool-pillbox/#tool-mine and toggles @currentTool on their click.
+      var radio = document.getElementById("tool-" + name);
+      if (!radio) return; // HUD not ready yet
+      var wasArmed = armedTool === name;
+      // Reflect desired state: clicking the radio toggles currentTool in Orona.
+      // We mirror Orona's own toggle semantics: a second arm of the same tool
+      // disarms it.
+      $(radio).trigger("click");
+      Array.prototype.forEach.call(document.querySelectorAll("#buildrow .tbtn"), function (b){ b.classList.remove("on"); });
+      if (wasArmed) {
+        armedTool = null;
+        document.body.classList.remove("building");
+      } else {
+        armedTool = name;
+        if (btn) btn.classList.add("on");
+        document.body.classList.add("building");
+      }
+    }
+    Array.prototype.forEach.call(document.querySelectorAll("#buildrow .tbtn[data-tool]"), function (btn) {
+      function tap(e){ e.preventDefault(); armTool(btn.getAttribute("data-tool"), btn); }
+      btn.addEventListener("touchstart", tap, { passive:false });
+      btn.addEventListener("click", function(e){ if(!isTouch){} ; e.preventDefault(); });
+      btn.addEventListener("mousedown", tap);
+    });
+
+    // Map tap → build at that tile (only meaningful while a tool is armed).
+    // We forward the tap as the mousemove+click pair Orona's renderer consumes.
+    function forwardMapClick(clientX, clientY) {
+      var canvas = document.querySelector("#gamearea canvas");
+      if (!canvas) return;
+      var rect = canvas.getBoundingClientRect();
+      // Orona reads e.pageX/e.pageY in its mousemove handler (sets @mouse) and
+      // getCellAtScreen subtracts the camera view origin — these are page coords
+      // relative to the canvas which now fills #gamearea at the area's offset.
+      var pageX = clientX + window.scrollX;
+      var pageY = clientY + window.scrollY;
+      function fire(type) {
+        var ev;
+        try {
+          ev = new MouseEvent(type, { clientX: clientX, clientY: clientY,
+            bubbles: true, cancelable: true, view: window });
+        } catch (e) {
+          ev = document.createEvent("MouseEvent");
+          ev.initMouseEvent(type, true, true, window, 0, 0, 0, clientX, clientY, false, false, false, false, 0, null);
+        }
+        try { Object.defineProperty(ev, "pageX", { value: pageX }); Object.defineProperty(ev, "pageY", { value: pageY }); } catch (e) {}
+        canvas.dispatchEvent(ev);
+      }
+      fire("mousemove"); // sets renderer @mouse = [pageX, pageY]
+      fire("click");     // triggers handleClick → build order
+    }
+    document.getElementById("gamearea").addEventListener("touchstart", function (e) {
+      if (!armedTool) return;            // only intercept taps when building
+      if (!e.touches || !e.touches.length) return;
+      var t = e.touches[0];
+      // Ignore taps that landed on our own chrome.
+      if (t.target && (t.target.closest && t.target.closest("#backpill,#touchbar"))) return;
+      e.preventDefault();
+      forwardMapClick(t.clientX, t.clientY);
+    }, { passive:false });
+
+    // Keep desktop keyboard working: Orona listens on #input-dummy/canvas. Make
+    // sure that element keeps focus after the user taps the game (touch) so the
+    // physical keyboard still drives the tank on hybrid devices.
+    document.getElementById("gamearea").addEventListener("pointerdown", function () {
+      var inp = document.getElementById("input-dummy");
+      if (inp && !armedTool) try { inp.focus(); } catch (e) {}
+    });
+  })();
+  </script>
+</body>
+</html>

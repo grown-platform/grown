@@ -1,0 +1,15 @@
+{
+  "name": "Bolo",
+  "short_name": "Bolo",
+  "description": "The classic networked tank game — faithful browser port (Orona).",
+  "start_url": "play.html?local",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#1B5E20",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

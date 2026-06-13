@@ -1,0 +1,30 @@
+Bolo (Orona browser port) — third-party components
+==================================================
+
+This /games entry bundles the Orona Bolo client by Stéphan Kochen.
+
+CODE
+----
+Orona is licensed under the GNU General Public License, version 2 (see the
+LICENSE file in this directory). The game logic was written with WinBolo as a
+reference and is therefore a GPL v2 derived work. The bundled jQuery and
+jQuery UI libraries are under the MIT license.
+
+  Orona © 2010 Stéphan Kochen — https://github.com/stephank/orona
+
+GRAPHICS & SOUNDS  (IP-encumbered)
+----------------------------------
+All sprite/tilemap images (images/base.png, images/styled.png,
+images/overlay.png, images/hud.png) and all sound effects (sounds/*.ogg) are
+the ORIGINAL Bolo art and audio:
+
+  © 1993 Stuart Cheshire — "Bolo"
+
+These are proprietary, third-party game assets. They are NOT covered by the
+grown-workspace repository's top-level MIT license, which explicitly excludes
+such bundled third-party components. They are included here intentionally for
+this private instance. A PUBLIC deployment would require cleared or original
+replacement art/audio.
+
+The application icon (icon*.png) is an original tank/crosshair illustration
+created for this integration and is not derived from the Bolo assets.
