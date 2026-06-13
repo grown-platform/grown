@@ -4,6 +4,8 @@ import { CsvPreview } from "./CsvPreview";
 import { ImageMetadata } from "./ImageMetadata";
 import type { DriveFile } from "./types";
 import { downloadURL } from "./api";
+import { isModelFile } from "../3d/formats";
+import { ModelPreview } from "../3d/ModelPreview";
 
 interface FilePreviewProps {
   file: DriveFile;
@@ -17,6 +19,18 @@ interface FilePreviewProps {
 export function FilePreview({ file }: FilePreviewProps) {
   const url = downloadURL(file.id);
   const m = file.mime_type;
+
+  // 3D models are matched by extension (most are stored as octet-stream) and
+  // get a dedicated interactive preview with an "Open in 3D" handoff.
+  if (isModelFile(file.name)) {
+    return (
+      <Box
+        sx={{ bgcolor: "background.level1", borderRadius: "md", minHeight: 400 }}
+      >
+        <ModelPreview file={file} />
+      </Box>
+    );
+  }
 
   return (
     <Box

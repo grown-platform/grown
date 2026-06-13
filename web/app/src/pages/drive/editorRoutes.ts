@@ -1,4 +1,5 @@
 import type { DriveFile } from "./types";
+import { isModelFile } from "../3d/formats";
 
 /** Mime type → which editor app would normally open this file. */
 const MIME_TO_EDITOR: Array<{ test: (m: string) => boolean; app: string }> = [
@@ -46,10 +47,14 @@ export function editorAppFor(file: DriveFile): string | null {
 }
 
 /** Returns the route to navigate to when "Open" is invoked on a file. Routes
- *  through the editor when one is mapped; otherwise the generic FileViewer at
- *  /drive/file/:id. */
+ *  through the editor when one is mapped; 3D models open in the 3D app; other
+ *  files fall back to the generic FileViewer at /drive/file/:id.
+ *
+ *  3D models are matched by file extension (glb/gltf/obj/stl/ply/…) rather than
+ *  mime type, since most are stored as application/octet-stream. */
 export function openFileRoute(file: DriveFile): string {
   const app = editorAppFor(file);
   if (app) return `/${app}/${file.id}`;
+  if (isModelFile(file.name)) return `/3d?file=${file.id}`;
   return `/drive/file/${file.id}`;
 }

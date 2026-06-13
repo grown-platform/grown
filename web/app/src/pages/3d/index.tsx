@@ -21,6 +21,7 @@
  *     Drive as glTF).
  */
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Box,
   Sheet,
@@ -39,7 +40,7 @@ import GridViewIcon from "@mui/icons-material/GridView";
 import EditIcon from "@mui/icons-material/Edit";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
-import { downloadURL } from "../drive/api";
+import { downloadURL, getFile } from "../drive/api";
 import type { DriveFile } from "../drive/types";
 import { ModelViewer } from "./Viewer";
 import { DrivePicker } from "./DrivePicker";
@@ -71,6 +72,9 @@ export default function ThreeDApp({ user }: { user: User }) {
   const [status, setStatus] = useState<string | null>(null);
   // A model queued to load once the viewer mounts (e.g. clicked from library).
   const pendingFileRef = useRef<DriveFile | null>(null);
+  // Deep-link support: /3d?file=<driveId> opens that model directly (e.g. from
+  // Drive's "Open" on a 3D file, or a 3D-preview "Open in 3D" button).
+  const [searchParams] = useSearchParams();
 
   // Spin up the three.js viewer once the viewport's mount node exists (i.e. in
   // viewer mode); tear it down when we leave viewer mode. The viewer starts on
@@ -106,6 +110,26 @@ export default function ThreeDApp({ user }: { user: User }) {
       setEditor(null);
     }
   }, [editing]);
+
+  // On mount, honor a ?file=<driveId> deep-link by fetching that file's
+  // metadata and opening it in the viewer (switching out of the library view).
+  useEffect(() => {
+    const fileId = searchParams.get("file");
+    if (!fileId) return;
+    let alive = true;
+    getFile(fileId)
+      .then((f) => {
+        if (alive) openModel(f);
+      })
+      .catch((e) => {
+        if (alive) setError(`Couldn't open that model: ${(e as Error).message}`);
+      });
+    return () => {
+      alive = false;
+    };
+    // Run once on mount for the initial deep-link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function newModel() {
     setError(null);
