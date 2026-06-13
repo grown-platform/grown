@@ -106,8 +106,13 @@
   function buildUI() {
     icon = document.createElement("button");
     icon.title = "Play online";
-    icon.innerHTML = "👥";
-    css(icon, "position:fixed;z-index:2147483646;top:calc(env(safe-area-inset-top,0px) + 10px);right:calc(env(safe-area-inset-right,0px) + 54px);width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(15,23,42,.6);color:#fff;font-size:19px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation");
+    icon.setAttribute("aria-label", "Play online");
+    // Crisp monochrome "people" glyph (matches the ⏸ menu button's weight),
+    // not the blurry color emoji.
+    icon.innerHTML = '<svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>';
+    // padding:0 + box-sizing keep it a perfect circle even though games set a
+    // global `button{padding:...}` rule; flex centers the glyph.
+    css(icon, "position:fixed;z-index:2147483646;top:calc(env(safe-area-inset-top,0px) + 10px);right:calc(env(safe-area-inset-right,0px) + 54px);width:40px;height:40px;min-width:0;padding:0;margin:0;box-sizing:border-box;border:none;border-radius:50%;background:rgba(15,23,42,.6);color:#fff;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation;display:flex;align-items:center;justify-content:center;line-height:0");
     icon.onclick = function () { openPanel(null); };
     (document.body || document.documentElement).appendChild(icon);
 
