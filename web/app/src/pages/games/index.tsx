@@ -71,16 +71,6 @@ const GAMES: AppTile[] = [
     // */index.html to the directory, which falls through to the SPA.
     externalUrl: "/games/mightymike/play.html",
   },
-  {
-    id: "multiplayer-tictactoe",
-    name: "Tic-Tac-Toe (online)",
-    blurb: "Real-time 2-player Tic-Tac-Toe — share a link to invite, optional password.",
-    accentColor: "#2563EB",
-    phase: 4,
-    comingSoon: false,
-    iconName: "Groups",
-    externalUrl: "/games/multiplayer-tictactoe.html",
-  },
   arcade("2048", "2048", "#EDC22E", "GridOn"),
   arcade("snake", "Snake", "#43A047", "Timeline"),
   arcade("minesweeper", "Minesweeper", "#455A64", "Flag"),
@@ -212,7 +202,6 @@ const CATEGORIES: { key: string; label: string; icon: string }[] = [
 // consults this in addition to the single-category CATEGORY_OF map.
 const EXTRA_CATS: Record<string, string[]> = {
   mightymike: ["Port", "Puzzle", "Adventure", "Arcade"],
-  "multiplayer-tictactoe": ["2-Player", "Board", "Group"],
 };
 
 const CATEGORY_IDS: Record<string, string[]> = {

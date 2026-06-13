@@ -227,6 +227,7 @@
     </div>
 </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
     const boardElement = document.getElementById('board');
     const cells = document.querySelectorAll('.cell');
@@ -239,16 +240,21 @@
     let gameActive = true;
     const HUMAN = 'X';
     const AI = 'O';
-    let mode = 'ai';            // 'ai' = vs computer, '2p' = pass-and-play
+    let mode = 'ai';            // 'ai' = vs computer, '2p' = pass-and-play, 'online'
     let currentPlayer = HUMAN;  // whose turn it is (X always starts)
+    let mySide = HUMAN;         // in online mode, which side you control
 
-    // In 2p both sides are human; in ai only X is human.
-    function isHumanTurn() { return mode === '2p' ? true : currentPlayer === HUMAN; }
+    // In 2p both sides are human; in ai only X is human; online = your side only.
+    function isHumanTurn() {
+        if (mode === 'online') return currentPlayer === mySide;
+        return mode === '2p' ? true : currentPlayer === HUMAN;
+    }
     function sideName(side) {
         if (mode === '2p') return side === HUMAN ? 'Player 1 (X)' : 'Player 2 (O)';
         return side === HUMAN ? 'You' : 'Computer';
     }
     function turnText() {
+        if (mode === 'online') return currentPlayer === mySide ? 'Your turn (' + mySide + ')' : "Opponent's turn (" + currentPlayer + ')';
         if (mode === '2p') return sideName(currentPlayer) + "'s turn";
         return currentPlayer === HUMAN ? 'Your turn (X)' : "Computer's turn (O)";
     }
@@ -265,7 +271,9 @@
 
         if (board[index] !== '' || !gameActive || !isHumanTurn()) return;
 
-        makeMove(index, currentPlayer);
+        const placed = currentPlayer;
+        makeMove(index, placed);
+        if (mode === 'online') GameMP.send({ index: index, player: placed });
 
         if (gameActive && mode === 'ai' && currentPlayer === AI) {
             statusDisplay.innerText = "Computer is thinking...";
@@ -354,7 +362,9 @@
         if (result === 'draw') {
             statusDisplay.innerText = "It's a Draw!";
         } else {
-            statusDisplay.innerText = result.winner === HUMAN ? "You Win!" : "Computer Wins!";
+            if (mode === 'online') statusDisplay.innerText = result.winner === mySide ? "You Win!" : "Opponent Wins!";
+            else if (mode === '2p') statusDisplay.innerText = sideName(result.winner) + " Wins!";
+            else statusDisplay.innerText = result.winner === HUMAN ? "You Win!" : "Computer Wins!";
             result.line.forEach(index => {
                 cells[index].classList.add('winner');
             });
@@ -364,15 +374,32 @@
     function resetGame() {
         board = ['', '', '', '', '', '', '', '', ''];
         gameActive = true;
-        statusDisplay.innerText = "Your turn (X)";
+        currentPlayer = HUMAN;
         cells.forEach(cell => {
             cell.innerText = '';
             cell.className = 'cell';
         });
+        statusDisplay.innerText = turnText();
     }
 
     cells.forEach(cell => cell.addEventListener('click', handleCellClick));
-    resetBtn.addEventListener('click', resetGame);
+    resetBtn.addEventListener('click', () => { resetGame(); if (mode === 'online') GameMP.sendReset(); });
+
+    // ---- Online multiplayer (shared drop-in module) ----
+    if (window.GameMP) {
+        GameMP.setup({ gameName: 'Tic-Tac-Toe' });
+        GameMP.onReady((r) => {
+            mode = 'online';
+            mySide = r === 0 ? 'X' : 'O';   // host is X (goes first), guest is O
+            if (modeOverlay) modeOverlay.style.display = 'none';
+            resetGame();
+        });
+        GameMP.onMove((m) => {
+            if (mode === 'online' && gameActive && board[m.index] === '' && m.player !== mySide) makeMove(m.index, m.player);
+        });
+        GameMP.onReset(() => resetGame());
+        GameMP.onPeerLeft(() => { if (mode === 'online') { gameActive = false; statusDisplay.innerText = 'Opponent left the game.'; } });
+    }
 
 </script>
 
