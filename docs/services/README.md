@@ -2,7 +2,16 @@
 
 Auto-generated visual documentation for every app and service in **grown-workspace**. Every screenshot below was **live-captured** with Playwright (Chromium) — none are mockups.
 
-> Generated on 2026-06-13 from a local run of the full stack. Do not treat this directory as committed source; it is review output.
+> Generated on 2026-06-13 from a local run of the full stack.
+
+## Open source · contributions & issues welcome 🙌
+
+Grown Workspace is **forever free, [MIT licensed](../../LICENSE)**. **Contributions
+and issues are genuinely appreciated.**
+
+- **Source code:** **https://github.com/grown-platform/grown-workspace**
+- **Report a bug / request a feature:** [open an issue](https://github.com/grown-platform/grown-workspace/issues)
+- **Contribute code:** fork the mirror and open a PR — see [CONTRIBUTING.md](../../CONTRIBUTING.md)
 
 ## Capture status (honest)
 

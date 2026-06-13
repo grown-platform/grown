@@ -114,6 +114,25 @@ export default function OrgSyncApp({ user }: { user: User }) {
           and review before you send. Folders copy recursively.
         </Typography>
 
+        {/* Roadmap teaser: reciprocal encrypted backups between friends' instances. */}
+        <Sheet
+          variant="soft"
+          color="primary"
+          sx={{ borderRadius: "lg", p: 2, mb: 3, display: "flex", gap: 1.5, alignItems: "flex-start" }}
+        >
+          <span style={{ fontSize: 20, lineHeight: 1 }}>🔐</span>
+          <Box>
+            <Typography level="title-sm">Coming soon: back up with friends</Typography>
+            <Typography level="body-sm" sx={{ opacity: 0.8 }}>
+              Store <strong>end-to-end encrypted backups on a friend&apos;s Grown
+              platform — and host theirs on yours</strong>. A mutual, zero-trust
+              backup pact between self-hosted instances: your data is encrypted
+              before it leaves, so your friend keeps the bytes safe but can never
+              read them.
+            </Typography>
+          </Box>
+        </Sheet>
+
         {/* Target + action */}
         <Sheet variant="outlined" sx={{ borderRadius: "lg", p: 2.5, mb: 3 }}>
           <Box sx={{ display: "flex", gap: 2, alignItems: "flex-end", flexWrap: "wrap" }}>

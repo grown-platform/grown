@@ -1,0 +1,48 @@
+# Grown Workspace
+
+**A self-hosted, open-source workspace platform** — your own Drive, Mail, Calendar,
+Docs, Sheets, Slides, Chat, Meet, Photos, Music, Video, a 100+ game arcade, and
+more, running on your own infrastructure. A free alternative to the big cloud
+office suites.
+
+> **Forever free. MIT licensed.** Grown Workspace is and always will be free and
+> open source under the [MIT License](LICENSE). Use it, run it, fork it, sell it —
+> no strings.
+
+Live instance: **[workspace.pick.haus](https://workspace.pick.haus)**
+
+## Contributing & issues — very welcome 🙌
+
+**Contributions and issues are genuinely appreciated.** Whether it's a bug report,
+a feature idea, a new game, or a pull request — please jump in.
+
+- **Source code (mirror):** **https://github.com/grown-platform/grown-workspace**
+- **🐛 Found a bug / have an idea?** [Open an issue](https://github.com/grown-platform/grown-workspace/issues).
+- **🔧 Want to contribute code?** Fork the GitHub mirror, make your change, and
+  open a pull request — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for the flow.
+
+The canonical repository lives on our Forgejo (`code.pick.haus`) and is mirrored
+to GitHub so anyone can file issues and propose PRs. A maintainer reviews PRs and
+merges them upstream; merged changes flow back out to the GitHub mirror.
+
+## What's inside
+
+A Go backend (gRPC + gRPC-Gateway) serving a React/TypeScript SPA (Vite, Joy UI),
+with Postgres, S3-compatible blob storage, and Zitadel OIDC auth. Apps include
+Drive, Mail, Calendar, Contacts, Docs, Sheets, Slides, Whiteboard, Forms, Photos,
+Books, Video, Live, Music, Chat, Meet, Tasks, Keep, Sites, Groups, a Ticketing
+service, an in-process PDF signing app, and a large browser game arcade (including
+native game ports compiled to WebAssembly).
+
+## Documentation
+
+- **[Visual tour of every service](docs/services/README.md)** — live screenshots
+  of each app, desktop + mobile.
+- Architecture, design notes, and roadmaps live under [`docs/`](docs/).
+
+## License
+
+[MIT](LICENSE) for the platform's own code. A few **bundled third-party
+components keep their own licenses** (noted in their subdirectories) — e.g. the
+WinBolo game port is GPL v2, and Maelstrom is Zlib. See [LICENSE](LICENSE) for
+details.
