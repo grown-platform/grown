@@ -94,6 +94,11 @@ spec:
             storage: {{ .Values.minio.persistence.size }}
 ---
 # Bucket-init Job: waits for MinIO, then creates the grown bucket (+ pdf bucket).
+# Run as a Helm hook so chart upgrades RECREATE it instead of patching it — a
+# Job's pod template is immutable, so a plain upgrade that touches the Job (even
+# just its chart-version label) fails with "field is immutable". The hook +
+# before-hook-creation delete policy sidesteps that. It is idempotent (mc mb
+# --ignore-existing), so re-running each upgrade is safe.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -101,6 +106,10 @@ metadata:
   labels:
     {{- include "grown.labels" . | nindent 4 }}
     app.kubernetes.io/component: minio-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 10
   template:
