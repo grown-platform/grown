@@ -17,6 +17,8 @@ import { Header } from "../../components/Header";
 import { TileGrid } from "../../components/TileGrid";
 import type { AppTile } from "../../catalog/apps";
 import type { User } from "../../api/types";
+import { adminWhoAmI } from "../admin/usersApi";
+import MultiplayerAdminPanel from "./MultiplayerAdminPanel";
 
 /**
  * Games dashboard — a public sub-area surfacing playable games. It works
@@ -370,6 +372,11 @@ export default function GamesApp({ user }: { user: User | null }) {
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState("All");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  // Multiplayer admin control panel — the settings button + panel are shown
+  // ONLY to grown admins (resolved via GET /api/v1/admin/whoami, the same gate
+  // the rest of the SPA uses for admin-only affordances).
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
 
   // Make /games installable as its own PWA (own icon) while this page is shown:
   // point the manifest + theme color at the games-hub manifest, restore on unmount.
@@ -430,6 +437,25 @@ export default function GamesApp({ user }: { user: User | null }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Resolve admin status to gate the multiplayer-admin settings button. Only
+  // attempted when signed in (whoami needs a session); failures leave isAdmin
+  // false so the button stays hidden.
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+    let alive = true;
+    adminWhoAmI()
+      .then((w) => {
+        if (alive) setIsAdmin(w.isAdmin);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [user]);
 
   const onPick = () => fileRef.current?.click();
 
@@ -529,6 +555,17 @@ export default function GamesApp({ user }: { user: User | null }) {
                 startDecorator={<Icons.UploadFile />}
               >
                 Import game
+              </Button>
+            )}
+            {isAdmin && (
+              <Button
+                variant="outlined"
+                color="neutral"
+                onClick={() => setAdminOpen(true)}
+                startDecorator={<Icons.Settings />}
+                data-testid="games-mp-admin-button"
+              >
+                Multiplayer admin
               </Button>
             )}
           </Box>
@@ -685,6 +722,13 @@ export default function GamesApp({ user }: { user: User | null }) {
           )}
         </ModalDialog>
       </Modal>
+
+      {isAdmin && (
+        <MultiplayerAdminPanel
+          open={adminOpen}
+          onClose={() => setAdminOpen(false)}
+        />
+      )}
 
       <Snackbar
         open={error !== null}

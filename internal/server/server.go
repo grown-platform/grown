@@ -886,7 +886,8 @@ func New(cfg Config) *Server {
 	// Public multiplayer game-room relay: players join a room by code (shared
 	// via link) + optional password; the hub broadcasts messages between them.
 	// Game-agnostic and account-free, so any game can be made multiplayer.
-	gameRoomsHub := gamerooms.NewHub()
+	gameRoomsStore := gamerooms.NewStore(cfg.Pool)
+	gameRoomsHub := gamerooms.NewHub(gameRoomsStore)
 	gameRoomsHTTP := gamerooms.NewHTTPHandler(gameRoomsHub)
 
 	// Ticketing service (Jira-like): authenticated project/ticket management plus
@@ -1049,6 +1050,22 @@ func New(cfg Config) *Server {
 		}
 		return orgAdminFromCtx(ctx)
 	}
+
+	// Admin control plane for the public game-room relay: enable/disable
+	// multiplayer, monitor live sessions, kick rooms/peers, view the audit log.
+	// Same admin gate as audit/analytics (allowlist OR org_admins). Mounted
+	// auth-wrapped under /api/v1/gamerooms/admin/* (the public WS/list relay
+	// stays account-free).
+	gameRoomsAdmin := gamerooms.NewAdminHandler(gameRoomsHub, gameRoomsStore, gamerooms.Identity{
+		Caller: func(ctx context.Context) (string, bool) {
+			u, ok := auth.UserFromContext(ctx)
+			if !ok {
+				return "", false
+			}
+			return u.Email, true
+		},
+		IsAdmin: isAdminFromCtx,
+	})
 
 	// Admin analytics — read-only org-scoped COUNT/SUM queries over every app
 	// table. Same admin gate as audit / orgadminhttp (allowlist OR org_admins).
@@ -1715,6 +1732,13 @@ func New(cfg Config) *Server {
 		// Cloud Import — multipart upload + job-status polling (auth-wrapped).
 		if cloudImportHandler != nil && strings.HasPrefix(r.URL.Path, "/api/v1/import") {
 			driveAuthWrap(cloudImportHandler).ServeHTTP(w, r)
+			return
+		}
+		// Game-room ADMIN control plane — auth-wrapped + admin-gated (the handler
+		// enforces the admin check). Checked before the public relay so the more
+		// specific /admin/* paths win.
+		if gameRoomsAdmin.Match(r.URL.Path) {
+			driveAuthWrap(gameRoomsAdmin).ServeHTTP(w, r)
 			return
 		}
 		// Public game-room WS relay — joinable by link, no workspace account, so
