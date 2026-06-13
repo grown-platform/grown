@@ -93,6 +93,12 @@ func (c *indexShell) load(file string) ([]byte, error) {
 
 var titleRe = regexp.MustCompile(`(?is)<title>.*?</title>`)
 
+// existingMetaRe matches any base og:/twitter:/description <meta> tag in the
+// shell so injection can replace (not duplicate) them. Duplicate og:title tags
+// make crawlers pick ambiguously, so we strip the static defaults first.
+var existingMetaRe = regexp.MustCompile(
+	`(?is)\s*<meta[^>]*(property="og:[^"]*"|name="twitter:[^"]*"|name="description")[^>]*>`)
+
 // reqScheme infers the external scheme, honoring the edge proxy's
 // X-Forwarded-Proto and defaulting to https (grown sits behind TLS in prod).
 func reqScheme(r *http.Request) string {
@@ -154,7 +160,9 @@ func injectOGMeta(shell []byte, r *http.Request, siteName string) []byte {
 	meta.WriteString("\n    <meta name=\"twitter:description\" content=\"" + e(ogTagline) + "\" />")
 	meta.WriteString("\n    <meta name=\"twitter:image\" content=\"" + e(imageURL) + "\" />")
 
-	out := titleRe.ReplaceAll(shell, []byte("<title>"+e(ogTitle)+"</title>"))
+	// Strip any static og:/twitter:/description metas so we don't emit duplicates.
+	out := existingMetaRe.ReplaceAll(shell, nil)
+	out = titleRe.ReplaceAll(out, []byte("<title>"+e(ogTitle)+"</title>"))
 	// Insert the meta block right before </head> (first occurrence).
 	if idx := bytes.Index(bytes.ToLower(out), []byte("</head>")); idx >= 0 {
 		var b bytes.Buffer

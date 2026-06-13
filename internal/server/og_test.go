@@ -45,6 +45,15 @@ func TestInjectOGMeta(t *testing.T) {
 	if strings.Contains(out, "<title>Workspace</title>") {
 		t.Error("original <title> not replaced")
 	}
+	// A shell carrying static og:* defaults must not end up with duplicates.
+	shellWithDefaults := []byte(`<html><head><title>Grown</title>` +
+		`<meta property="og:title" content="Grown" />` +
+		`<meta name="twitter:card" content="summary_large_image" /></head></html>`)
+	out3 := string(injectOGMeta(shellWithDefaults, r, "Grown"))
+	if strings.Count(out3, `property="og:title"`) != 1 {
+		t.Errorf("expected exactly one og:title, got %d:\n%s",
+			strings.Count(out3, `property="og:title"`), out3)
+	}
 
 	// /games gets the Games title + game image, with the site appended.
 	r2 := httptest.NewRequest("GET", "https://pick.haus/games", nil)
