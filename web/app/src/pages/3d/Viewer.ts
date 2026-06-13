@@ -25,10 +25,18 @@ import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 
+export type Projection = "perspective" | "orthographic";
+
 export class ModelViewer {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
-  private camera: THREE.PerspectiveCamera;
+  /** The active render camera — swapped between perspective and ortho. */
+  private camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  /** The persistent perspective camera (kept so we can swap back losslessly). */
+  private perspCamera: THREE.PerspectiveCamera;
+  /** The persistent orthographic camera. */
+  private orthoCamera: THREE.OrthographicCamera;
+  private projection: Projection = "perspective";
   private controls: OrbitControls;
   /** The currently-loaded model root (everything under here is cleared on reload). */
   private modelRoot: THREE.Group | null = null;
@@ -36,6 +44,11 @@ export class ModelViewer {
   private frameId = 0;
   private container: HTMLElement;
   private resizeObserver: ResizeObserver;
+  /** Listeners notified when the active camera object is swapped (ortho↔persp),
+   *  so layered tools (Editor) can re-target their controls/raycaster. */
+  private cameraListeners = new Set<
+    (cam: THREE.PerspectiveCamera | THREE.OrthographicCamera) => void
+  >();
 
   /**
    * Accessors so a layered editor (Editor.ts) can reach the scene graph,
@@ -45,8 +58,15 @@ export class ModelViewer {
   getScene(): THREE.Scene {
     return this.scene;
   }
-  getCamera(): THREE.PerspectiveCamera {
+  getCamera(): THREE.PerspectiveCamera | THREE.OrthographicCamera {
     return this.camera;
+  }
+  /** Subscribe to active-camera swaps (ortho↔perspective). Returns unsubscribe. */
+  onCameraChange(
+    fn: (cam: THREE.PerspectiveCamera | THREE.OrthographicCamera) => void,
+  ): () => void {
+    this.cameraListeners.add(fn);
+    return () => this.cameraListeners.delete(fn);
   }
   getRenderer(): THREE.WebGLRenderer {
     return this.renderer;
@@ -76,12 +96,28 @@ export class ModelViewer {
 
     const w = container.clientWidth || 1;
     const h = container.clientHeight || 1;
-    this.camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 10000);
-    this.camera.position.set(6, 5, 8);
+    const aspect = w / h;
+    this.perspCamera = new THREE.PerspectiveCamera(50, aspect, 0.01, 10000);
+    this.perspCamera.position.set(6, 5, 8);
+    // The ortho camera shares the near/far envelope; its frustum half-height is
+    // derived on every swap from the perspective distance so framing matches.
+    this.orthoCamera = new THREE.OrthographicCamera(
+      -aspect,
+      aspect,
+      1,
+      -1,
+      0.01,
+      10000,
+    );
+    this.orthoCamera.position.copy(this.perspCamera.position);
+    this.camera = this.perspCamera;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h);
+    // Enable per-material clipping planes so the Section Plane tool can cut the
+    // model non-destructively (vs. global renderer.clippingPlanes).
+    this.renderer.localClippingEnabled = true;
     container.appendChild(this.renderer.domElement);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -110,7 +146,70 @@ export class ModelViewer {
     this.clearModel();
     this.camera.position.set(6, 5, 8);
     this.controls.target.set(0, 0, 0);
+    if (this.projection === "orthographic") {
+      const dist = this.camera.position.distanceTo(this.controls.target);
+      const vFov = (this.perspCamera.fov * Math.PI) / 180;
+      this.applyOrthoFrustum(Math.tan(vFov / 2) * dist);
+    }
     this.controls.update();
+  }
+
+  // ---- Camera projection / FOV ----
+
+  getProjection(): Projection {
+    return this.projection;
+  }
+
+  getFov(): number {
+    return this.perspCamera.fov;
+  }
+
+  /** Adjust the perspective field-of-view (no-op visually in ortho mode). */
+  setFov(fov: number): void {
+    const clamped = THREE.MathUtils.clamp(fov, 10, 120);
+    this.perspCamera.fov = clamped;
+    this.perspCamera.updateProjectionMatrix();
+  }
+
+  /** Swap between perspective and orthographic projection, preserving framing. */
+  setProjection(projection: Projection): void {
+    if (projection === this.projection) return;
+    this.projection = projection;
+
+    const from = this.camera;
+    const to =
+      projection === "orthographic" ? this.orthoCamera : this.perspCamera;
+
+    // Preserve eye position and look direction across the swap.
+    to.position.copy(from.position);
+    to.quaternion.copy(from.quaternion);
+
+    if (projection === "orthographic") {
+      // Match the perspective frustum at the orbit target: the ortho half-height
+      // is the perspective half-height at the current view distance.
+      const dist = from.position.distanceTo(this.controls.target);
+      const vFov = (this.perspCamera.fov * Math.PI) / 180;
+      const halfH = Math.tan(vFov / 2) * dist;
+      this.applyOrthoFrustum(halfH);
+    }
+
+    this.camera = to;
+    this.controls.object = to;
+    this.controls.update();
+    for (const fn of this.cameraListeners) fn(to);
+  }
+
+  /** Size the ortho frustum from a half-height, honoring the viewport aspect. */
+  private applyOrthoFrustum(halfH: number): void {
+    const w = this.container.clientWidth || 1;
+    const h = this.container.clientHeight || 1;
+    const aspect = w / h;
+    const halfW = halfH * aspect;
+    this.orthoCamera.left = -halfW;
+    this.orthoCamera.right = halfW;
+    this.orthoCamera.top = halfH;
+    this.orthoCamera.bottom = -halfH;
+    this.orthoCamera.updateProjectionMatrix();
   }
 
   private clearModel(): void {
@@ -207,13 +306,19 @@ export class ModelViewer {
     const center = box.getCenter(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
 
-    const fov = (this.camera.fov * Math.PI) / 180;
+    // Use the perspective FOV to compute a framing distance for both cameras.
+    const fov = (this.perspCamera.fov * Math.PI) / 180;
     const dist = (maxDim / 2 / Math.tan(fov / 2)) * 1.6;
 
     const dir = new THREE.Vector3(1, 0.8, 1).normalize();
     this.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
-    this.camera.near = dist / 100;
-    this.camera.far = dist * 100;
+    // Keep both cameras' clipping envelope generous enough for this framing.
+    this.perspCamera.near = dist / 100;
+    this.perspCamera.far = dist * 100;
+    this.perspCamera.updateProjectionMatrix();
+    if (this.projection === "orthographic") {
+      this.applyOrthoFrustum((maxDim / 2) * 1.6);
+    }
     this.camera.updateProjectionMatrix();
 
     this.controls.target.copy(center);
@@ -226,8 +331,13 @@ export class ModelViewer {
   resize(): void {
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    const aspect = w / h;
+    this.perspCamera.aspect = aspect;
+    this.perspCamera.updateProjectionMatrix();
+    if (this.projection === "orthographic") {
+      // Preserve the current vertical extent, re-derive width from aspect.
+      this.applyOrthoFrustum(this.orthoCamera.top);
+    }
     this.renderer.setSize(w, h);
   }
 

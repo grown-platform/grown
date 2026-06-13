@@ -43,6 +43,7 @@ import type { User } from "../../api/types";
 import { downloadURL, getFile } from "../drive/api";
 import type { DriveFile } from "../drive/types";
 import { ModelViewer } from "./Viewer";
+import { CameraControls } from "./CameraControls";
 import { DrivePicker } from "./DrivePicker";
 import { ModelLibrary } from "./ModelLibrary";
 import { extOf } from "./formats";
@@ -54,6 +55,9 @@ export default function ThreeDApp({ user }: { user: User }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<ModelViewer | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  // Viewer mirrored to state so viewport chrome (e.g. CameraControls) mounts
+  // once the viewer exists.
+  const [viewer, setViewer] = useState<ModelViewer | null>(null);
 
   // The app lands on the Model Library (a gallery of the user's /models). The
   // viewer takes over the viewport once the user opens a model or starts a new
@@ -83,6 +87,7 @@ export default function ThreeDApp({ user }: { user: User }) {
     if (view !== "viewer" || !mountRef.current) return;
     const viewer = new ModelViewer(mountRef.current);
     viewerRef.current = viewer;
+    setViewer(viewer);
     const pending = pendingFileRef.current;
     pendingFileRef.current = null;
     if (pending) void loadIntoViewer(pending);
@@ -93,6 +98,7 @@ export default function ThreeDApp({ user }: { user: User }) {
       setEditing(false);
       viewer.dispose();
       viewerRef.current = null;
+      setViewer(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
@@ -318,6 +324,8 @@ export default function ThreeDApp({ user }: { user: User }) {
           <Box ref={mountRef} sx={{ position: "absolute", inset: 0 }} />
 
           {editing && editor && <EditorOverlay editor={editor} />}
+
+          {viewer && <CameraControls viewer={viewer} />}
 
           {loading && (
             <Box
