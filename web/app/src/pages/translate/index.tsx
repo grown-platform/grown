@@ -44,8 +44,22 @@ import {
   type TranslateProgress,
 } from "./translator";
 import { speak, type SpeakProgress } from "./speak";
+import { SUPERTONIC_VOICES, DEFAULT_VOICE_ID } from "./supertonic";
 
 const ACCENT = "#0E7C86";
+
+const VOICE_STORAGE_KEY = "translate.supertonicVoice";
+
+/** Read the persisted voice id (validated), defaulting to M1. */
+function loadVoiceId(): string {
+  try {
+    const v = localStorage.getItem(VOICE_STORAGE_KEY);
+    if (v && SUPERTONIC_VOICES.some((o) => o.id === v)) return v;
+  } catch {
+    /* localStorage unavailable — fall back to default */
+  }
+  return DEFAULT_VOICE_ID;
+}
 
 export default function TranslateApp({ user }: { user: User }) {
   const [sourceLang, setSourceLang] = useState("en");
@@ -61,6 +75,7 @@ export default function TranslateApp({ user }: { user: User }) {
   const [translateError, setTranslateError] = useState<string | null>(null);
 
   // Speech state.
+  const [voiceId, setVoiceId] = useState(loadVoiceId);
   const [speaking, setSpeaking] = useState(false);
   const [speakStatus, setSpeakStatus] = useState<SpeakProgress | null>(null);
   const [speakError, setSpeakError] = useState<string | null>(null);
@@ -127,8 +142,12 @@ export default function TranslateApp({ user }: { user: User }) {
     setSpeakError(null);
     setSpeakStatus({ message: "Starting…" });
     try {
-      const handle = await speak(output, to, audioRef.current, (p) =>
-        setSpeakStatus(p),
+      const handle = await speak(
+        output,
+        to,
+        audioRef.current,
+        (p) => setSpeakStatus(p),
+        voiceId,
       );
       stopRef.current = handle.stop;
       // For the browser engine, playback already kicked off synchronously; for
@@ -163,6 +182,15 @@ export default function TranslateApp({ user }: { user: User }) {
       setSpeakError((e as Error).message);
       setSpeaking(false);
       setSpeakStatus(null);
+    }
+  }
+
+  function handleVoiceChange(v: string) {
+    setVoiceId(v);
+    try {
+      localStorage.setItem(VOICE_STORAGE_KEY, v);
+    } catch {
+      /* persistence is best-effort */
     }
   }
 
@@ -328,6 +356,32 @@ export default function TranslateApp({ user }: { user: User }) {
               Stop
             </Button>
           )}
+
+          <Tooltip title="Supertonic voice (used for on-device speech). Saved for next time.">
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.75}
+              sx={{ alignSelf: "center" }}
+            >
+              <Typography level="body-xs" sx={{ opacity: 0.7 }}>
+                Voice
+              </Typography>
+              <Select
+                size="sm"
+                value={voiceId}
+                onChange={(_, v) => v && handleVoiceChange(v)}
+                sx={{ minWidth: 150 }}
+                slotProps={{ listbox: { sx: { maxHeight: 320 } } }}
+              >
+                {SUPERTONIC_VOICES.map((v) => (
+                  <Option key={v.id} value={v.id}>
+                    {v.label}
+                  </Option>
+                ))}
+              </Select>
+            </Stack>
+          </Tooltip>
 
           {ttsCached && (
             <Tooltip title="Voice models are cached on-device — Speak works offline.">

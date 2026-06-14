@@ -35,7 +35,37 @@ const ASSET_BASE =
   (import.meta.env.VITE_SUPERTONIC_URL as string | undefined) ||
   "https://huggingface.co/Supertone/supertonic-3/resolve/main";
 const ONNX_DIR = `${ASSET_BASE}/onnx`;
-const VOICE_STYLE_URL = `${ASSET_BASE}/voice_styles/M1.json`;
+
+/**
+ * The 10 voice styles published in the Supertone/supertonic-3 repo under
+ * `voice_styles/{id}.json`. Each is a tiny JSON style vector; the heavy ONNX
+ * models are shared across all voices. `M1` is the default. The URL for a given
+ * voice is `${ASSET_BASE}/voice_styles/${voiceId}.json`.
+ */
+export const SUPERTONIC_VOICES = [
+  { id: "F1", label: "Female 1 (F1)" },
+  { id: "F2", label: "Female 2 (F2)" },
+  { id: "F3", label: "Female 3 (F3)" },
+  { id: "F4", label: "Female 4 (F4)" },
+  { id: "F5", label: "Female 5 (F5)" },
+  { id: "M1", label: "Male 1 (M1)" },
+  { id: "M2", label: "Male 2 (M2)" },
+  { id: "M3", label: "Male 3 (M3)" },
+  { id: "M4", label: "Male 4 (M4)" },
+  { id: "M5", label: "Male 5 (M5)" },
+] as const;
+
+export type SupertonicVoiceId = (typeof SUPERTONIC_VOICES)[number]["id"];
+
+export const DEFAULT_VOICE_ID: SupertonicVoiceId = "M1";
+
+const VALID_VOICE_IDS = new Set<string>(SUPERTONIC_VOICES.map((v) => v.id));
+
+/** Build the cache-keyed URL for a voice style JSON, validating the id. */
+function voiceStyleUrl(voiceId: string): string {
+  const id = VALID_VOICE_IDS.has(voiceId) ? voiceId : DEFAULT_VOICE_ID;
+  return `${ASSET_BASE}/voice_styles/${id}.json`;
+}
 
 // ---------------------------------------------------------------------------
 // Indefinite, offline-first caching via the Cache API
@@ -547,11 +577,16 @@ async function loadStyle(url: string): Promise<Style> {
   );
 }
 
-/** A ready-to-use engine: the TTS pipeline, default voice style, and backend. */
+/**
+ * A ready-to-use engine: the TTS pipeline (shared ONNX models) and the backend.
+ * Voice styles are loaded lazily per voice id and memoised here, so switching
+ * voice only fetches+caches that one small JSON — see `getStyle`.
+ */
 export interface SupertonicEngine {
   tts: TextToSpeech;
-  style: Style;
   backend: "webgpu" | "wasm";
+  /** Load (and cache) the Style for `voiceId`, memoised per engine. */
+  getStyle: (voiceId: string) => Promise<Style>;
 }
 
 let enginePromise: Promise<SupertonicEngine> | null = null;
@@ -607,9 +642,22 @@ export async function getSupertonicEngine(
       ({ tts } = await loadModels(["wasm"], onProgress));
       backend = "wasm";
     }
-    onProgress("Loading default voice style…");
-    const style = await loadStyle(VOICE_STYLE_URL);
-    return { tts, style, backend };
+    // Lazily load + memoise voice styles per id. Each voice is a tiny JSON
+    // fetched through cachedFetch, so the first use of a voice downloads +
+    // caches it indefinitely and later uses (incl. offline) load from cache.
+    const styleCache = new Map<string, Promise<Style>>();
+    const getStyle = (voiceId: string): Promise<Style> => {
+      const id = VALID_VOICE_IDS.has(voiceId) ? voiceId : DEFAULT_VOICE_ID;
+      let p = styleCache.get(id);
+      if (!p) {
+        p = loadStyle(voiceStyleUrl(id));
+        // Drop failed loads so a later attempt can retry cleanly.
+        p.catch(() => styleCache.delete(id));
+        styleCache.set(id, p);
+      }
+      return p;
+    };
+    return { tts, backend, getStyle };
   })();
   // If loading fails, clear the cache so a later Speak can retry cleanly.
   enginePromise.catch(() => {
@@ -620,17 +668,26 @@ export async function getSupertonicEngine(
 
 /**
  * Synthesise `text` in `lang` and return a playable WAV Blob URL plus its
- * duration. `totalStep` trades quality for speed (8 is the example default).
+ * duration. `voiceId` selects one of the 10 Supertonic voice styles (default
+ * `M1`); its style JSON is loaded + cached on demand. `totalStep` trades
+ * quality for speed (8 is the example default).
  */
 export async function synthesize(
   engine: SupertonicEngine,
   text: string,
   lang: string,
-  opts: { totalStep?: number; speed?: number; onStep?: DenoiseProgress } = {},
+  opts: {
+    voiceId?: string;
+    totalStep?: number;
+    speed?: number;
+    onStep?: DenoiseProgress;
+  } = {},
 ): Promise<{ url: string; duration: number }> {
-  const { totalStep = 8, speed = 1.05, onStep } = opts;
+  const { voiceId = DEFAULT_VOICE_ID, totalStep = 8, speed = 1.05, onStep } = opts;
+  // Load (and cache) the selected voice's style — small JSON, per-voice cached.
+  const style = await engine.getStyle(voiceId);
   const { wav, duration } = await engine.tts.call(
-    text, lang, engine.style, totalStep, speed, 0.3, onStep,
+    text, lang, style, totalStep, speed, 0.3, onStep,
   );
   const wavLen = Math.floor(engine.tts.sampleRate * duration[0]);
   const wavOut = wav.slice(0, wavLen);

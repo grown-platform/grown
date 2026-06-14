@@ -26,6 +26,7 @@ async function speakSupertonic(
   lang: Language,
   audio: HTMLAudioElement,
   onProgress: (p: SpeakProgress) => void,
+  voiceId?: string,
 ): Promise<SpeakResult> {
   // Dynamic import keeps onnxruntime-web out of the main bundle.
   const st = await import("./supertonic");
@@ -35,6 +36,7 @@ async function speakSupertonic(
   const engine = await st.getSupertonicEngine((m) => onProgress({ message: m }));
   onProgress({ message: "Synthesising speech…" });
   const { url } = await st.synthesize(engine, text, lang.supertonic, {
+    voiceId,
     onStep: (step, total) =>
       onProgress({ message: `Denoising ${step}/${total}…` }),
   });
@@ -72,12 +74,15 @@ function speakBrowser(text: string, lang: Language): SpeakResult {
 /**
  * Speak `text` in `lang`, preferring Supertonic and falling back to the browser.
  * `audio` is a reused <audio> element so callers control the player UI.
+ * `voiceId` selects the Supertonic voice (default `M1`); the browser fallback
+ * is unaffected by it.
  */
 export async function speak(
   text: string,
   lang: Language,
   audio: HTMLAudioElement,
   onProgress: (p: SpeakProgress) => void,
+  voiceId?: string,
 ): Promise<SpeakResult> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Nothing to speak yet — translate first.");
@@ -86,7 +91,7 @@ export async function speak(
   // to the browser fallback.
   if (lang.supertonic) {
     try {
-      return await speakSupertonic(trimmed, lang, audio, onProgress);
+      return await speakSupertonic(trimmed, lang, audio, onProgress, voiceId);
     } catch (e) {
       // Fall through to the browser engine, but surface why we fell back.
       onProgress({
