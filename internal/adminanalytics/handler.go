@@ -199,6 +199,25 @@ type AppStats struct {
 	ChatMessages     int64 `json:"chat_messages"`
 }
 
+// demoUniqueIPsQuery counts distinct non-empty login IPs for the public demo
+// user within one org. $1 is the org id, $2 the configured demo login name
+// (GROWN_DEMO_USERNAME).
+//
+// The demo user is matched two ways, because GROWN_DEMO_USERNAME is a login
+// NAME (e.g. "demo") while grown.users.email is a full address (e.g.
+// "demo@grown.haus"). Matching only the full email — the original bug — fails
+// whenever the configured name is the bare local-part, so the tile read 0 even
+// with real demo logins. We therefore also match the email's local-part
+// (everything before the "@"), case-insensitively.
+const demoUniqueIPsQuery = `SELECT COUNT(DISTINCT s.ip)
+	   FROM grown.sessions s
+	   JOIN grown.users u ON u.id = s.user_id
+	  WHERE u.org_id = $1
+	    AND (lower(u.email) = lower($2)
+	         OR lower(split_part(u.email, '@', 1)) = lower($2))
+	    AND s.ip IS NOT NULL
+	    AND s.ip <> ''`
+
 // countOne executes a SELECT COUNT(*) … query and returns the result. On any
 // error it returns 0, tolerating missing tables / columns gracefully.
 func countOne(ctx context.Context, pool *pgxpool.Pool, q string, args ...any) int64 {
@@ -247,14 +266,7 @@ func (h *Handler) collect(ctx context.Context, orgID string) AnalyticsResponse {
 	var demoUniqueIPs int64
 	demoConfigured := h.demoUsername != ""
 	if demoConfigured {
-		demoUniqueIPs = countOne(ctx, pool,
-			`SELECT COUNT(DISTINCT s.ip)
-			   FROM grown.sessions s
-			   JOIN grown.users u ON u.id = s.user_id
-			  WHERE u.org_id = $1
-			    AND lower(u.email) = lower($2)
-			    AND s.ip IS NOT NULL
-			    AND s.ip <> ''`, orgID, h.demoUsername)
+		demoUniqueIPs = countOne(ctx, pool, demoUniqueIPsQuery, orgID, h.demoUsername)
 	}
 
 	// --- storage ---
