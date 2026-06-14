@@ -114,6 +114,15 @@ spec:
                   name: {{ .Release.Name }}-demo
                   key: GROWN_ZITADEL_SERVICE_TOKEN
             {{- end }}
+            {{- if .Values.grown.forgejoAdminToken }}
+            # Forgejo admin PAT so grown can auto-provision the Forgejo org +
+            # team membership (reverse-proxy SSO org/team auto-create at /git).
+            - name: GROWN_FORGEJO_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-demo
+                  key: GROWN_FORGEJO_ADMIN_TOKEN
+            {{- end }}
             {{- if eq .Values.auth.mode "bundled" }}
             # In-app user management via the Zitadel User API. When Zitadel
             # advertises an external domain it routes by Host header, so the

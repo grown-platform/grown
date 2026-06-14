@@ -84,6 +84,13 @@ grown:
     # Demo account password (secret). Stored in the {release}-demo Secret as
     # GROWN_DEMO_PASSWORD. Leave "" to omit the env var.
     password: ""
+  # Forgejo admin PAT (secret) handed to grown as GROWN_FORGEJO_ADMIN_TOKEN so it
+  # can auto-provision the matching Forgejo org + team membership at /git access
+  # time (and mirror grown org creation). Pair with grown.extraEnv
+  # GROWN_FORGEJO_URL. Materialized into the {release}-demo Secret. Leave "" to
+  # disable provisioning (the /git proxy + reverse-proxy SSO still work; only the
+  # admin-API org/team auto-create is skipped).
+  forgejoAdminToken: ""
 
 # -----------------------------------------------------------------------------
 # bolo-mp multiplayer sidecar (optional). Disabled by default for portability
