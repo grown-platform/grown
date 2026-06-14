@@ -46,6 +46,7 @@ import (
 	"code.pick.haus/grown/grown/internal/geoaccess"
 	"code.pick.haus/grown/grown/internal/groups"
 	"code.pick.haus/grown/grown/internal/health"
+	"code.pick.haus/grown/grown/internal/honeypot"
 	"code.pick.haus/grown/grown/internal/keep"
 	"code.pick.haus/grown/grown/internal/live"
 	"code.pick.haus/grown/grown/internal/mail"
@@ -910,6 +911,14 @@ func New(cfg Config) *Server {
 	gameRoomsHub := gamerooms.NewHub(gameRoomsStore)
 	gameRoomsHTTP := gamerooms.NewHTTPHandler(gameRoomsHub)
 
+	// Honeypot / intrusion tripwire: decoy paths + a hidden-form-field trap that
+	// legitimate users never touch. Hits record an instance-global security alert
+	// (grown.honeypot_alerts, 0087). honeypotStore.Middleware wraps the router
+	// early (decoy paths return an innocuous 404); the public form trap is mounted
+	// at /api/v1/honeypot; the admin-gated listing is at /api/v1/admin/honeypot.
+	// A nil pool yields a nil *Store, which every method tolerates (feature off).
+	honeypotStore := honeypot.NewStore(cfg.Pool)
+
 	// Ticketing service (Jira-like): authenticated project/ticket management plus
 	// an unauthenticated public intake surface for projects that opt into it.
 	ticketsRepo := tickets.NewRepository(cfg.Pool)
@@ -1119,6 +1128,20 @@ func New(cfg Config) *Server {
 	geoStore := geoaccess.NewStore(cfg.Pool)
 	geoCache := geoaccess.NewCache(geoStore)
 	geoHandler := geoaccess.NewHandler(geoStore, geoCache, geoaccess.Identity{
+		Caller: func(ctx context.Context) (string, bool) {
+			u, ok := auth.UserFromContext(ctx)
+			if !ok {
+				return "", false
+			}
+			return u.Email, true
+		},
+		IsAdmin: isAdminFromCtx,
+	})
+
+	// Honeypot admin surface — recent intrusion alerts + counts + clear. Same
+	// admin gate as analytics/geo (allowlist OR org_admins). Instance-global data
+	// (the traps fire on unauthenticated probers, so there is no org to scope to).
+	honeypotAdmin := honeypot.NewAdminHandler(honeypotStore, honeypot.Identity{
 		Caller: func(ctx context.Context) (string, bool) {
 			u, ok := auth.UserFromContext(ctx)
 			if !ok {
@@ -1664,6 +1687,13 @@ func New(cfg Config) *Server {
 			driveAuthWrap(geoHandler).ServeHTTP(w, r)
 			return
 		}
+		// Admin-gated honeypot console: recent intrusion alerts + counts (GET) and
+		// clear/acknowledge (DELETE). Under /api/v1/admin/ so geoMiddleware exempts
+		// it. The traps that FEED it (decoy paths + /api/v1/honeypot) are public.
+		if r.URL.Path == "/api/v1/admin/honeypot" {
+			driveAuthWrap(honeypotAdmin).ServeHTTP(w, r)
+			return
+		}
 		// Admin-gated security console: reads/writes Zitadel org policies
 		// (password / MFA / lockout / passwordless) scoped to the caller's org.
 		if strings.HasPrefix(r.URL.Path, "/api/v1/admin/security/") {
@@ -1835,6 +1865,14 @@ func New(cfg Config) *Server {
 			recentGamesHandler(cfg.StaticDir).ServeHTTP(w, r)
 			return
 		}
+		// Public honeypot form trap (POST /api/v1/honeypot). PUBLIC by design — the
+		// point is to catch unauthenticated bots that fill a hidden form field a
+		// human never would. Bypasses the auth wall; always returns 204 so a bot
+		// gets no signal. The admin LISTING (/api/v1/admin/honeypot) stays gated.
+		if r.URL.Path == "/api/v1/honeypot" {
+			honeypotStore.FormHandler().ServeHTTP(w, r)
+			return
+		}
 		// Public game-room WS relay — joinable by link, no workspace account, so
 		// it must bypass the auth wall (its access control is code + password).
 		if gameRoomsHTTP.Match(r.URL.Path) {
@@ -1908,7 +1946,14 @@ func New(cfg Config) *Server {
 	// never lock themselves out. Unknown/absent country headers fail open.
 	geoMiddleware := geoCache.Middleware(router)
 
-	return &Server{grpc: grpcSrv, httpHandler: geoMiddleware}
+	// Honeypot decoy tripwire wraps the OUTERMOST layer so the fixed decoy paths
+	// (/.env, /wp-login.php, …) are intercepted before anything else — recording
+	// an alert and returning a plain 404 — while every real path falls straight
+	// through to geoMiddleware/router. It only matches the exact decoy paths, so
+	// it never shadows a real route, the geo middleware, or auth.
+	honeypotMiddleware := honeypotStore.Middleware(geoMiddleware)
+
+	return &Server{grpc: grpcSrv, httpHandler: honeypotMiddleware}
 }
 
 // orgAdminRoster adapts the org_admins + users repositories to the

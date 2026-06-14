@@ -50,12 +50,14 @@ import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import DevicesIcon from "@mui/icons-material/Devices";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import ShieldIcon from "@mui/icons-material/Shield";
+import GppMaybeIcon from "@mui/icons-material/GppMaybe";
 import PublicIcon from "@mui/icons-material/Public";
 import GroupIcon from "@mui/icons-material/Group";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { Header } from "../../components/Header";
 import { SecuritySection } from "./SecuritySection";
 import { GeoSection } from "./GeoSection";
+import { HoneypotSection } from "./HoneypotSection";
 import { DashboardSection } from "./DashboardSection";
 import { GroupsSection } from "./GroupsSection";
 import { RolesSection } from "./RolesSection";
@@ -147,6 +149,7 @@ type SectionId =
   | "analytics"
   | "security"
   | "geo"
+  | "honeypot"
   | "settings";
 const SECTIONS: {
   id: SectionId;
@@ -192,6 +195,12 @@ const SECTIONS: {
     id: "geo",
     label: "Region access",
     icon: <PublicIcon />,
+    enabled: true,
+  },
+  {
+    id: "honeypot",
+    label: "Honeypot",
+    icon: <GppMaybeIcon />,
     enabled: true,
   },
   {
@@ -375,6 +384,7 @@ export default function AdminApp({ user }: AdminAppProps) {
             {section === "analytics" && <AnalyticsSection />}
             {section === "security" && <SecuritySection />}
             {section === "geo" && <GeoSection />}
+            {section === "honeypot" && <HoneypotSection />}
             {section === "settings" && (
               <OrgSettingsSection
                 user={user}
