@@ -134,6 +134,26 @@ export default function OrgSyncApp({ user }: { user: User }) {
           </Box>
         </Sheet>
 
+        {/* Roadmap teaser: a federated, friend-powered CDN for public content. */}
+        <Sheet
+          variant="soft"
+          color="success"
+          sx={{ borderRadius: "lg", p: 2, mb: 3, display: "flex", gap: 1.5, alignItems: "flex-start" }}
+        >
+          <span style={{ fontSize: 20, lineHeight: 1 }}>🌐</span>
+          <Box>
+            <Typography level="title-sm">Coming soon: a friend-powered CDN</Typography>
+            <Typography level="body-sm" sx={{ opacity: 0.8 }}>
+              Serve your <strong>public content — sites, photos, videos, 3D models
+              and game bundles — faster by mirroring it across your friends&apos;
+              Grown platforms</strong>. A federated, community-run CDN: each
+              friend&apos;s instance becomes an edge node, so visitors are served
+              from whoever is closest, and your stuff stays up even when your own
+              box is offline. No big cloud required.
+            </Typography>
+          </Box>
+        </Sheet>
+
         {/* Target + action */}
         <Sheet variant="outlined" sx={{ borderRadius: "lg", p: 2.5, mb: 3 }}>
           <Box sx={{ display: "flex", gap: 2, alignItems: "flex-end", flexWrap: "wrap" }}>
