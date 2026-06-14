@@ -265,8 +265,11 @@ export const apps: AppTile[] = [
     externalUrl: ASSEMBLE_URL,
   },
   {
+    // Renamed from "Spacelight" → "Lightsky" (same app, same logo/URL). The id
+    // stays "spacelight" so existing service-settings/routes keyed on it keep
+    // working and the self-hosted app at spacelight.pick.haus is unchanged.
     id: "spacelight",
-    name: "Spacelight",
+    name: "Lightsky",
     blurb: "Family hub & home dashboard.",
     accentColor: "#5C6BC0",
     phase: 4,
