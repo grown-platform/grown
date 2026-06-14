@@ -37,9 +37,9 @@ import (
 	"code.pick.haus/grown/grown/internal/directory"
 	"code.pick.haus/grown/grown/internal/docs"
 	"code.pick.haus/grown/grown/internal/drive"
-	"code.pick.haus/grown/grown/internal/forgejo"
 	"code.pick.haus/grown/grown/internal/email"
 	"code.pick.haus/grown/grown/internal/eventmeet"
+	"code.pick.haus/grown/grown/internal/forgejo"
 	"code.pick.haus/grown/grown/internal/forms"
 	"code.pick.haus/grown/grown/internal/gamerooms"
 	"code.pick.haus/grown/grown/internal/games"
@@ -128,9 +128,12 @@ type Config struct {
 	VideoCaptionRepo  *video.CaptionRepository
 	// PublicHost is grown's public origin (e.g. https://workspace.pick.haus),
 	// used to build absolute share-link URLs. Empty = relative URLs.
-	PublicHost        string
-	MusicRepo         *music.Repository
-	MusicBlobs        music.BlobStore
+	PublicHost string
+	MusicRepo  *music.Repository
+	MusicBlobs music.BlobStore
+	// MusicRadio is the radio recorder driving start/stop of station taps. nil
+	// disables the radio control + proxy endpoints (stations still list).
+	MusicRadio        music.RadioController
 	ProjectsRepo      *projects.Repository
 	KeepRepo          *keep.Repository
 	TasksRepo         *tasks.Repository
@@ -622,6 +625,9 @@ func New(cfg Config) *Server {
 	if cfg.MusicRepo != nil && cfg.MusicBlobs != nil {
 		musicSvc = music.NewService(cfg.MusicRepo, cfg.MusicBlobs)
 		musicHTTP = music.NewHTTP(cfg.MusicRepo, cfg.MusicBlobs)
+		if cfg.MusicRadio != nil {
+			musicHTTP = musicHTTP.WithRadio(cfg.MusicRadio)
+		}
 		grownv1.RegisterMusicServiceServer(grpcSrv, musicSvc)
 	}
 
@@ -1594,6 +1600,28 @@ func New(cfg Config) *Server {
 			if path == "/api/v1/music/upload" && r.Method == http.MethodPost {
 				auditRec.Log("music", "upload", driveAuthWrap(musicHTTP.UploadHandler())).ServeHTTP(w, r)
 				return
+			}
+			// Radio: list / play / stop / retention / live stream proxy. Matched
+			// before the generic /content stream so radio paths take precedence.
+			if path == "/api/v1/music/radio/stations" && r.Method == http.MethodGet {
+				auditRec.Log("music", "radio_stations", driveAuthWrap(musicHTTP.ListStationsHandler())).ServeHTTP(w, r)
+				return
+			}
+			if _, action, ok := music.RadioStationID(r.URL.Path); ok {
+				switch {
+				case action == "play" && r.Method == http.MethodPost:
+					auditRec.Log("music", "radio_play", driveAuthWrap(musicHTTP.PlayHandler())).ServeHTTP(w, r)
+					return
+				case action == "stop" && r.Method == http.MethodPost:
+					auditRec.Log("music", "radio_stop", driveAuthWrap(musicHTTP.StopHandler())).ServeHTTP(w, r)
+					return
+				case action == "retention" && (r.Method == http.MethodGet || r.Method == http.MethodPut || r.Method == http.MethodPatch):
+					auditRec.Log("music", "radio_retention", driveAuthWrap(musicHTTP.RetentionHandler())).ServeHTTP(w, r)
+					return
+				case action == "stream" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+					driveAuthWrap(musicHTTP.StreamProxyHandler()).ServeHTTP(w, r)
+					return
+				}
 			}
 			if strings.HasPrefix(r.URL.Path, "/api/v1/music/") && strings.HasSuffix(r.URL.Path, "/content") && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 				auditRec.Log("music", "stream", driveAuthWrap(musicHTTP.StreamHandler())).ServeHTTP(w, r)

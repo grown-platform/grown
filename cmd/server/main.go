@@ -40,6 +40,7 @@ import (
 	"code.pick.haus/grown/grown/internal/meet"
 	"code.pick.haus/grown/grown/internal/multiaccounts"
 	"code.pick.haus/grown/grown/internal/music"
+	"code.pick.haus/grown/grown/internal/music/radio"
 	"code.pick.haus/grown/grown/internal/notifications"
 	"code.pick.haus/grown/grown/internal/orgadmin"
 	"code.pick.haus/grown/grown/internal/orgs"
@@ -187,6 +188,14 @@ func main() {
 	booksRepo := books.NewRepository(pool)
 	books.SeedSamples(startupCtx, booksRepo, blobs, defaultOrg.ID)
 
+	// Music radio: seed the built-in stations into the default org (no-op once
+	// seeded), construct the stream recorder, and start the retention sweeper.
+	// Recording is best-effort; failures never block startup or playback.
+	musicRepo := music.NewRepository(pool)
+	music.SeedStations(startupCtx, musicRepo, defaultOrg.ID)
+	musicRecorder := radio.NewRecorder(musicRepo, blobs)
+	radio.StartRetentionSweeper(context.Background(), musicRepo, blobs, time.Hour)
+
 	// Feature flag: GROWN_PDF_BUILTIN=true mounts the PDF signing backend
 	// in-process (gRPC + gateway + raw-HTTP under /pdf-api/), authenticated by
 	// grown's session via the auth bridge. Default (unset/anything-but-"true")
@@ -254,8 +263,9 @@ func main() {
 		},
 		LiveHLSURL:          defaultEnv("GROWN_LIVE_HLS_URL", "http://127.0.0.1:8888"),
 		LiveWebRTCURL:       defaultEnv("GROWN_LIVE_WEBRTC_URL", "http://127.0.0.1:8889"),
-		MusicRepo:           music.NewRepository(pool),
+		MusicRepo:           musicRepo,
 		MusicBlobs:          blobs,
+		MusicRadio:          musicRecorder,
 		ProjectsRepo:        projects.NewRepository(pool),
 		KeepRepo:            keep.NewRepository(pool),
 		TasksRepo:           tasks.NewRepository(pool),

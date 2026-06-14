@@ -22,16 +22,31 @@ type BlobStore interface {
 	Delete(ctx context.Context, key string) error
 }
 
+// RadioController is the subset of the radio.Recorder the HTTP layer drives:
+// reference-counted start/stop of a station's live tap + recording.
+type RadioController interface {
+	Start(orgID, stationID, listenerID, ownerID string)
+	Stop(stationID, listenerID string)
+}
+
 // HTTP serves track upload + stream/download over raw HTTP (not gRPC),
 // mirroring the Drive and Video blob endpoints.
 type HTTP struct {
 	repo  *Repository
 	blobs BlobStore
+	radio RadioController
 }
 
 // NewHTTP constructs the raw HTTP handlers.
 func NewHTTP(repo *Repository, blobs BlobStore) *HTTP {
 	return &HTTP{repo: repo, blobs: blobs}
+}
+
+// WithRadio attaches the radio recorder so the radio control + proxy endpoints
+// are active. Returns the receiver for chaining.
+func (h *HTTP) WithRadio(rc RadioController) *HTTP {
+	h.radio = rc
+	return h
 }
 
 func randKey() string {
