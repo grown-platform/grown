@@ -11,7 +11,7 @@
  * and both download their models on first use (cached afterward) — the UI shows
  * progress and never crashes to a blank screen on failure.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Container,
@@ -33,6 +33,7 @@ import StopIcon from "@mui/icons-material/Stop";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import CloudDoneOutlinedIcon from "@mui/icons-material/CloudDoneOutlined";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import { LANGUAGES, langByCode } from "./languages";
@@ -67,6 +68,23 @@ export default function TranslateApp({ user }: { user: User }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   // The active speak handle, so the Stop button can halt playback.
   const stopRef = useRef<(() => void) | null>(null);
+
+  // Whether the Supertonic TTS models are already in Cache Storage, so a Speak
+  // runs fully offline. Checked on mount and re-checked after each Speak (the
+  // first Speak downloads + caches them indefinitely).
+  const [ttsCached, setTtsCached] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void import("./supertonic")
+      .then((st) => st.supertonicModelsCached())
+      .then((cached) => {
+        if (alive) setTtsCached(cached);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   function swapLanguages() {
     setSourceLang(targetLang);
@@ -133,6 +151,14 @@ export default function TranslateApp({ user }: { user: User }) {
             ? `Playing (Supertonic · ${handle.backend?.toUpperCase()})`
             : "Playing (browser voice)",
       });
+      // The first Supertonic Speak downloads + caches the models; re-probe so the
+      // "available offline" badge appears once they're stored.
+      if (handle.engine === "supertonic") {
+        void import("./supertonic")
+          .then((st) => st.supertonicModelsCached())
+          .then(setTtsCached)
+          .catch(() => {});
+      }
     } catch (e) {
       setSpeakError((e as Error).message);
       setSpeaking(false);
@@ -301,6 +327,22 @@ export default function TranslateApp({ user }: { user: User }) {
             >
               Stop
             </Button>
+          )}
+
+          {ttsCached && (
+            <Tooltip title="Voice models are cached on-device — Speak works offline.">
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={0.5}
+                sx={{ color: ACCENT, opacity: 0.85, alignSelf: "center" }}
+              >
+                <CloudDoneOutlinedIcon fontSize="small" />
+                <Typography level="body-xs" sx={{ color: ACCENT }}>
+                  Downloaded ✓ — available offline
+                </Typography>
+              </Stack>
+            </Tooltip>
           )}
         </Stack>
 

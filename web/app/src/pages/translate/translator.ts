@@ -138,6 +138,15 @@ async function getNllbPipeline(onProgress: ProgressFn): Promise<any> {
   nllbPipeline = (async () => {
     // Dynamic import keeps transformers.js out of the main bundle entirely.
     const tf = await import("@huggingface/transformers");
+    // Persist the ~600 MB NLLB model in the browser's Cache Storage forever so
+    // the first run downloads it and every later run — including fully offline —
+    // loads it from cache. `useBrowserCache` is transformers.js's default, but
+    // we force it on (and keep remote models allowed for the first download).
+    // The library uses a stable cache name ("transformers-cache") that we don't
+    // override, so the model is never re-downloaded across sessions. Together
+    // with the Supertonic TTS cache this keeps ~1 GB of models on-device.
+    tf.env.useBrowserCache = true;
+    tf.env.allowRemoteModels = true;
     // Let the lib pick WebGPU when available and fall back to WASM itself.
     return tf.pipeline("translation", NLLB_MODEL, {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

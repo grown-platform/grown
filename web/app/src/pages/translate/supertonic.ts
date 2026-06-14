@@ -15,10 +15,13 @@
  * Model assets (~398 MB across 4 ONNX files + 2 JSON) are NOT vendored into the
  * repo — that would bloat it and the build. Instead they're fetched at runtime
  * from the official Hugging Face Hub repo (Supertone/supertonic-3) on first
- * Speak and cached by the browser (HTTP cache + onnxruntime's own caching), so
- * subsequent runs are offline-fast. Execution prefers WebGPU and falls back to
- * WASM; onnxruntime-web's WASM binaries are loaded from the jsDelivr CDN so they
- * don't enter our Vite bundle.
+ * Speak. We route every model/config/voice/WASM fetch through the **Cache API**
+ * (see `cachedFetch`) so the first Speak downloads + stores them indefinitely
+ * and every later run — including fully offline — loads from Cache Storage. The
+ * ONNX `InferenceSession`s are created from the cached `ArrayBuffer`s rather
+ * than from a URL, so onnxruntime never re-fetches them. Execution prefers
+ * WebGPU and falls back to WASM; onnxruntime-web's WASM binaries are loaded from
+ * the jsDelivr CDN (and likewise cached) so they don't enter our Vite bundle.
  *
  * Everything here is loaded behind a dynamic import in the page, so none of
  * onnxruntime-web lands in the main app bundle.
@@ -34,9 +37,83 @@ const ASSET_BASE =
 const ONNX_DIR = `${ASSET_BASE}/onnx`;
 const VOICE_STYLE_URL = `${ASSET_BASE}/voice_styles/M1.json`;
 
+// ---------------------------------------------------------------------------
+// Indefinite, offline-first caching via the Cache API
+// ---------------------------------------------------------------------------
+//
+// The Supertonic assets (~398 MB of ONNX + small JSON configs) plus the
+// onnxruntime-web WASM binaries are large and never change for a given model
+// version, so we store them in Cache Storage forever. The cache is cache-first
+// (serve a stored Response if present), put-on-miss (download once, then keep),
+// and never evicted by us — so after the first Speak everything loads from disk
+// and the feature works fully offline.
+//
+// The name is *versioned but persistent*: bump the `-v1` suffix to intentionally
+// invalidate (e.g. when the model repo changes), but nothing here ever expires
+// it. Combined with the transformers.js NLLB model (~600 MB, cached separately
+// by the library in its own `transformers-cache`), the Translate app keeps
+// roughly ~1 GB in Cache Storage once both translation + TTS are warmed up. The
+// browser may still evict caches under storage pressure unless persistent
+// storage is granted, so on the first successful cache we request
+// `navigator.storage.persist()` (best-effort) to ask the browser to keep it.
+const CACHE_NAME = "supertonic-models-v1";
+
+let persistRequested = false;
+function requestPersistentStorage(): void {
+  if (persistRequested) return;
+  persistRequested = true;
+  // Best-effort: ask the browser to exempt our ~1 GB of model caches from
+  // eviction. Ignored if unsupported or denied — caching still works either way.
+  void navigator.storage?.persist?.().catch(() => {});
+}
+
+/**
+ * Cache-first fetch backed by a single, indefinitely-kept Cache. On a hit we
+ * return the stored Response; on a miss we fetch, store a clone, and return it.
+ * Falls back to a plain `fetch` if the Cache API is unavailable.
+ */
+async function cachedFetch(url: string): Promise<Response> {
+  if (typeof caches === "undefined") return fetch(url);
+  const cache = await caches.open(CACHE_NAME);
+  const hit = await cache.match(url);
+  if (hit) return hit;
+  const res = await fetch(url);
+  if (res.ok) {
+    // Store a clone (the body can only be consumed once) and keep it forever.
+    await cache.put(url, res.clone());
+    requestPersistentStorage();
+  }
+  return res;
+}
+
 // onnxruntime-web ships its WASM/threading binaries separately; point at a CDN
 // matching the installed version so we don't have to copy them into public/.
-ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ort.env.versions.web}/dist/`;
+const WASM_BASE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ort.env.versions.web}/dist/`;
+ort.env.wasm.wasmPaths = WASM_BASE;
+
+// Route onnxruntime's own WASM binary requests through our indefinite cache so
+// the runtime itself works offline after the first run. ORT fetches its .wasm
+// (and .mjs) files relative to `wasmPaths`; we intercept those by overriding the
+// global fetch ORT uses, restricted to the jsDelivr ORT path so nothing else is
+// affected. This is installed once, lazily, when models first load.
+let wasmFetchPatched = false;
+function patchOrtWasmFetch(): void {
+  if (wasmFetchPatched || typeof window === "undefined") return;
+  wasmFetchPatched = true;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const u =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (typeof u === "string" && u.startsWith(WASM_BASE)) {
+      return cachedFetch(u);
+    }
+    return originalFetch(input as RequestInfo, init);
+  }) as typeof window.fetch;
+}
 
 /** The 32 language tags Supertonic accepts (`na` = language-agnostic). */
 export const SUPERTONIC_LANGS = new Set([
@@ -47,6 +124,23 @@ export const SUPERTONIC_LANGS = new Set([
 
 export function supertonicSupportsLang(lang: string): boolean {
   return SUPERTONIC_LANGS.has(lang);
+}
+
+/**
+ * Whether the Supertonic model files are already in Cache Storage, i.e. a Speak
+ * will run fully offline without re-downloading. We probe the largest asset (the
+ * vector estimator) as a proxy for "the model set has been cached". Best-effort:
+ * returns false if the Cache API is unavailable.
+ */
+export async function supertonicModelsCached(): Promise<boolean> {
+  if (typeof caches === "undefined") return false;
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    const hit = await cache.match(`${ONNX_DIR}/vector_estimator.onnx`);
+    return hit != null;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -427,9 +521,16 @@ export function writeWavFile(audioData: number[], sampleRate: number): ArrayBuff
 export type LoadProgress = (message: string) => void;
 
 async function loadJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await cachedFetch(url);
   if (!res.ok) throw new Error(`Fetch ${url} failed (${res.status})`);
   return (await res.json()) as T;
+}
+
+/** Cache-first fetch of a model file as bytes for InferenceSession.create(). */
+async function loadModelBytes(url: string): Promise<Uint8Array> {
+  const res = await cachedFetch(url);
+  if (!res.ok) throw new Error(`Fetch ${url} failed (${res.status})`);
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 async function loadStyle(url: string): Promise<Style> {
@@ -459,6 +560,9 @@ async function loadModels(
   providers: ort.InferenceSession.ExecutionProviderConfig[],
   onProgress: LoadProgress,
 ): Promise<{ tts: TextToSpeech; sampleRate: number }> {
+  // Make onnxruntime's WASM binaries load through our indefinite cache too.
+  patchOrtWasmFetch();
+
   const cfgs = await loadJSON<Cfgs>(`${ONNX_DIR}/tts.json`);
   const indexer = await loadJSON<number[]>(`${ONNX_DIR}/unicode_indexer.json`);
 
@@ -475,9 +579,11 @@ async function loadModels(
   const sessions: ort.InferenceSession[] = [];
   for (let i = 0; i < models.length; i++) {
     onProgress(`Loading TTS model ${i + 1}/4: ${models[i][0]}…`);
-    sessions.push(
-      await ort.InferenceSession.create(`${ONNX_DIR}/${models[i][1]}`, opts),
-    );
+    // Create the session from the cached bytes (Uint8Array) rather than a URL,
+    // so onnxruntime never re-downloads the model — first run caches, every
+    // later run (incl. offline) loads straight from Cache Storage.
+    const bytes = await loadModelBytes(`${ONNX_DIR}/${models[i][1]}`);
+    sessions.push(await ort.InferenceSession.create(bytes, opts));
   }
   const [dp, te, ve, voc] = sessions;
   const tts = new TextToSpeech(cfgs, new UnicodeProcessor(indexer), dp, te, ve, voc);
