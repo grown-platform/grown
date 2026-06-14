@@ -184,7 +184,11 @@ func (h *HTTP) StreamHandler() http.Handler {
 			return
 		}
 		defer body.Close()
-		if ct == "" {
+		// Prefer the blob's own Content-Type, but fall back to the track's
+		// recorded type whenever the blob's is missing OR not an audio type
+		// (e.g. objects stored as application/octet-stream): the browser's
+		// <audio> won't start a non-audio response.
+		if ct == "" || !strings.HasPrefix(ct, "audio/") {
 			ct = t.ContentType
 		}
 		w.Header().Set("Content-Type", ct)
