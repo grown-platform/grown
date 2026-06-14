@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -14,6 +14,8 @@ import {
   MenuButton,
   MenuItem,
   AspectRatio,
+  Select,
+  Option,
   Tabs,
   TabList,
   Tab,
@@ -26,6 +28,8 @@ import QueueMusicIcon from "@mui/icons-material/QueueMusic";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import PlaylistPlayIcon from "@mui/icons-material/PlaylistPlay";
 import RadioIcon from "@mui/icons-material/Radio";
+import AlbumIcon from "@mui/icons-material/Album";
+import PersonIcon from "@mui/icons-material/Person";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
@@ -43,6 +47,45 @@ import { UploadDialog } from "./UploadDialog";
 import { PlaylistFormDialog } from "./dialogs";
 import { RadioStations } from "./RadioStations";
 
+// ---- Quality filter -------------------------------------------------------
+type QualityFilter = "all" | "hi" | "std" | "low";
+
+/** Estimated bitrate (kbps) from file size + duration; 0 when unknown. */
+function trackKbps(t: Track): number {
+  return t.duration_seconds > 0
+    ? Math.round((t.size * 8) / t.duration_seconds / 1000)
+    : 0;
+}
+function passesQuality(t: Track, q: QualityFilter): boolean {
+  if (q === "all") return true;
+  const k = trackKbps(t);
+  if (k === 0) return false; // unknown bitrate only shows under "All"
+  if (q === "hi") return k >= 256;
+  if (q === "std") return k >= 128 && k < 256;
+  return k < 128;
+}
+const QUALITY_OPTIONS: { value: QualityFilter; label: string }[] = [
+  { value: "all", label: "All quality" },
+  { value: "hi", label: "High · ≥256 kbps" },
+  { value: "std", label: "Standard · 128–255" },
+  { value: "low", label: "Low · <128" },
+];
+
+/** Group tracks by a key (album/artist), most-tracks-first. */
+function groupTracks(
+  tracks: Track[],
+  keyOf: (t: Track) => string,
+): { name: string; tracks: Track[] }[] {
+  const m = new Map<string, Track[]>();
+  for (const t of tracks) {
+    const k = keyOf(t).trim() || "Unknown";
+    (m.get(k) ?? m.set(k, []).get(k)!).push(t);
+  }
+  return [...m.entries()]
+    .map(([name, ts]) => ({ name, tracks: ts }))
+    .sort((a, b) => b.tracks.length - a.tracks.length || a.name.localeCompare(b.name));
+}
+
 interface MusicLibraryProps {
   user: User;
 }
@@ -55,6 +98,7 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
   const [likedTracks, setLikedTracks] = useState<Track[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [quality, setQuality] = useState<QualityFilter>("all");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [newPlaylistOpen, setNewPlaylistOpen] = useState(false);
 
@@ -124,13 +168,25 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
   }, []);
 
   const shownTracks = useMemo(() => {
-    const list = tracks ?? [];
+    let list = tracks ?? [];
     const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((t) =>
-      [t.title, t.artist, t.album].join(" ").toLowerCase().includes(q),
-    );
-  }, [tracks, query]);
+    if (q)
+      list = list.filter((t) =>
+        [t.title, t.artist, t.album].join(" ").toLowerCase().includes(q),
+      );
+    if (quality !== "all") list = list.filter((t) => passesQuality(t, quality));
+    return list;
+  }, [tracks, query, quality]);
+
+  // Albums / Artists views group the same (search + quality) filtered tracks.
+  const albums = useMemo(
+    () => groupTracks(shownTracks, (t) => t.album),
+    [shownTracks],
+  );
+  const artists = useMemo(
+    () => groupTracks(shownTracks, (t) => t.artist),
+    [shownTracks],
+  );
 
   const shownPlaylists = useMemo(() => {
     const list = playlists ?? [];
@@ -153,6 +209,71 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
   function playAll(startIndex = 0) {
     if (shownTracks.length > 0) player.playQueue(shownTracks, startIndex);
   }
+
+  // Reusable list of tracks (used by Tracks, Liked, Albums, Artists). Playing a
+  // row queues the list it belongs to, so Album/Artist groups play in context.
+  const trackListSheet = (list: Track[]) => (
+    <Sheet variant="outlined" sx={{ borderRadius: "md", p: 0.5 }}>
+      {list.map((t) => (
+        <TrackRow
+          key={t.id}
+          track={t}
+          active={player.current?.id === t.id}
+          playing={player.playing}
+          onPlay={() => {
+            if (player.current?.id === t.id) player.toggle();
+            else player.playQueue(list, list.indexOf(t));
+          }}
+          onPlayNext={() => trackActions.actions.playNext(t)}
+          onAddToQueue={() => trackActions.actions.addToQueue(t)}
+          onLike={() => trackActions.actions.toggleLike(t)}
+          onAddToPlaylist={() => trackActions.actions.addToPlaylist(t)}
+          onDownload={() => trackActions.actions.download(t)}
+          onEdit={() => trackActions.actions.edit(t)}
+          onDelete={() => trackActions.actions.remove(t)}
+        />
+      ))}
+    </Sheet>
+  );
+
+  // Grouped (Albums/Artists) view: a section per group with a play-all header.
+  const groupedView = (
+    groups: { name: string; tracks: Track[] }[],
+    icon: ReactNode,
+    emptyLabel: string,
+  ) =>
+    groups.length === 0 ? (
+      <Sheet variant="soft" sx={{ p: 6, borderRadius: "md", textAlign: "center" }}>
+        <Typography level="body-lg" sx={{ opacity: 0.7 }}>
+          {query || quality !== "all" ? "No matches." : emptyLabel}
+        </Typography>
+      </Sheet>
+    ) : (
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+        {groups.map((g) => (
+          <Box key={g.name}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.75 }}>
+              {icon}
+              <Typography level="title-md" sx={{ flex: 1 }} noWrap>
+                {g.name}
+              </Typography>
+              <Typography level="body-xs" sx={{ opacity: 0.6 }}>
+                {g.tracks.length} track{g.tracks.length === 1 ? "" : "s"}
+              </Typography>
+              <Button
+                size="sm"
+                variant="plain"
+                startDecorator={<PlaylistPlayIcon />}
+                onClick={() => player.playQueue(g.tracks, 0)}
+              >
+                Play
+              </Button>
+            </Box>
+            {trackListSheet(g.tracks)}
+          </Box>
+        ))}
+      </Box>
+    );
 
   async function createNewPlaylist(input: {
     name: string;
@@ -204,6 +325,19 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
             }}
             aria-label="Search music"
           />
+          <Select
+            size="sm"
+            value={quality}
+            onChange={(_, v) => v && setQuality(v)}
+            sx={{ minWidth: 150 }}
+            aria-label="Filter by quality"
+          >
+            {QUALITY_OPTIONS.map((o) => (
+              <Option key={o.value} value={o.value}>
+                {o.label}
+              </Option>
+            ))}
+          </Select>
           <Button
             variant="solid"
             color="primary"
@@ -250,6 +384,12 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
         <Tabs defaultValue="tracks" sx={{ bgcolor: "transparent" }}>
           <TabList>
             <Tab value="tracks">Tracks</Tab>
+            <Tab value="albums">
+              <AlbumIcon sx={{ fontSize: 18, mr: 0.5 }} /> Albums
+            </Tab>
+            <Tab value="artists">
+              <PersonIcon sx={{ fontSize: 18, mr: 0.5 }} /> Artists
+            </Tab>
             <Tab value="liked">Liked</Tab>
             <Tab value="playlists">Playlists</Tab>
             <Tab value="radio">
@@ -305,31 +445,38 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
                     {shownTracks.length === 1 ? "" : "s"}
                   </Typography>
                 </Box>
-                <Sheet variant="outlined" sx={{ borderRadius: "md", p: 0.5 }}>
-                  {shownTracks.map((t) => (
-                    <TrackRow
-                      key={t.id}
-                      track={t}
-                      active={player.current?.id === t.id}
-                      playing={player.playing}
-                      onPlay={() => {
-                        if (player.current?.id === t.id) player.toggle();
-                        else
-                          player.playQueue(shownTracks, shownTracks.indexOf(t));
-                      }}
-                      onPlayNext={() => trackActions.actions.playNext(t)}
-                      onAddToQueue={() => trackActions.actions.addToQueue(t)}
-                      onLike={() => trackActions.actions.toggleLike(t)}
-                      onAddToPlaylist={() =>
-                        trackActions.actions.addToPlaylist(t)
-                      }
-                      onDownload={() => trackActions.actions.download(t)}
-                      onEdit={() => trackActions.actions.edit(t)}
-                      onDelete={() => trackActions.actions.remove(t)}
-                    />
-                  ))}
-                </Sheet>
+                {trackListSheet(shownTracks)}
               </>
+            )}
+          </TabPanel>
+
+          {/* Albums */}
+          <TabPanel value="albums" sx={{ px: 0 }}>
+            {tracks === null && !error ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              groupedView(
+                albums,
+                <AlbumIcon sx={{ opacity: 0.6 }} />,
+                "No albums yet.",
+              )
+            )}
+          </TabPanel>
+
+          {/* Artists */}
+          <TabPanel value="artists" sx={{ px: 0 }}>
+            {tracks === null && !error ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              groupedView(
+                artists,
+                <PersonIcon sx={{ opacity: 0.6 }} />,
+                "No artists yet.",
+              )
             )}
           </TabPanel>
 
