@@ -16,6 +16,8 @@ import SyncAltIcon from "@mui/icons-material/SyncAlt";
 import FolderIcon from "@mui/icons-material/Folder";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import PersonIcon from "@mui/icons-material/Person";
+import PublicIcon from "@mui/icons-material/Public";
+import CorporateFareIcon from "@mui/icons-material/CorporateFare";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import { listFiles } from "../drive/api";
@@ -47,6 +49,20 @@ export default function OrgSyncApp({ user }: { user: User }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<TransferResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Where the picked items go. "friend" (default) is another, independently-run
+  // Grown platform addressed by its domain; "local" is another org you run on
+  // THIS platform (what the transfer backend supports today). Cross-platform
+  // delivery is federated and still rolling out — see friendShare().
+  const [mode, setMode] = useState<"friend" | "local">("friend");
+  const [platformAddr, setPlatformAddr] = useState("");
+  const [pending, setPending] = useState<string | null>(null);
+
+  function switchMode(next: "friend" | "local") {
+    setMode(next);
+    setError(null);
+    setResult(null);
+    setPending(null);
+  }
 
   useEffect(() => {
     Promise.all([listFiles(""), listContacts()])
@@ -66,7 +82,27 @@ export default function OrgSyncApp({ user }: { user: User }) {
     });
 
   const total = pickedFiles.size + pickedContacts.size;
-  const canTransfer = total > 0 && targetSlug.trim() !== "" && !busy;
+  const canSendLocal = total > 0 && targetSlug.trim() !== "" && !busy;
+  const canSendFriend =
+    total > 0 && platformAddr.trim() !== "" && targetSlug.trim() !== "" && !busy;
+
+  /** Friend's-platform share: cross-instance delivery is federated and still
+   *  rolling out, so we don't pretend it succeeded. We validate the target and
+   *  surface an honest "pending — your friend's platform must accept" status;
+   *  nothing leaves this platform yet. */
+  function friendShare() {
+    setError(null);
+    setResult(null);
+    const host = platformAddr
+      .trim()
+      .replace(/^https?:\/\//, "")
+      .replace(/\/+$/, "");
+    setPending(
+      `Ready to share ${total} item${total === 1 ? "" : "s"} with “${targetSlug.trim()}” on ${host}. ` +
+        `Cross-platform sharing is federated and rolling out — your friend's platform has to accept the ` +
+        `connection before anything moves, so nothing has been sent yet.`,
+    );
+  }
 
   const sortedFiles = useMemo(
     () => [...files].sort((a, b) => (isFolder(b) ? 1 : 0) - (isFolder(a) ? 1 : 0)),
@@ -109,10 +145,12 @@ export default function OrgSyncApp({ user }: { user: User }) {
           <Typography level="h2">Share with Friends</Typography>
         </Box>
         <Typography level="body-sm" sx={{ mb: 3, opacity: 0.75 }}>
-          Copy Drive files/folders and Contacts from this organization to another
-          one you administer — or share them with a friend's instance. Pick what to
-          transfer, enter the target org's slug, and review before you send. Folders
-          copy recursively.
+          Send Drive files/folders and Contacts to a friend who runs their{" "}
+          <strong>own Grown platform</strong> — a separate, independently-run
+          instance they control, with their own Drive and accounts. This isn&apos;t
+          a corporate migration tool: it&apos;s for sharing across the little
+          network of platforms you and your friends self-host. (You can also copy
+          between orgs you run here on this platform.)
         </Typography>
 
         {/* Roadmap teaser: reciprocal encrypted backups between friends' instances. */}
@@ -154,27 +192,102 @@ export default function OrgSyncApp({ user }: { user: User }) {
           </Box>
         </Sheet>
 
-        {/* Target + action */}
+        {/* Where to send: a friend's platform (default) or another org here. */}
         <Sheet variant="outlined" sx={{ borderRadius: "lg", p: 2.5, mb: 3 }}>
-          <Box sx={{ display: "flex", gap: 2, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <FormControl size="sm" sx={{ flex: 1, minWidth: 220 }}>
-              <FormLabel>Target organization (slug)</FormLabel>
-              <Input
-                placeholder="e.g. acme-team"
-                value={targetSlug}
-                onChange={(e) => setTargetSlug(e.target.value)}
-              />
-            </FormControl>
+          {/* Destination mode — segmented toggle. */}
+          <Box sx={{ display: "flex", gap: 1, mb: 2, flexWrap: "wrap" }}>
             <Button
-              onClick={transfer}
-              disabled={!canTransfer}
-              loading={busy}
-              startDecorator={<SyncAltIcon />}
-              sx={{ bgcolor: "#0CA678" }}
+              size="sm"
+              variant={mode === "friend" ? "solid" : "outlined"}
+              color={mode === "friend" ? "primary" : "neutral"}
+              startDecorator={<PublicIcon />}
+              onClick={() => switchMode("friend")}
+              sx={mode === "friend" ? { bgcolor: "#0CA678" } : undefined}
             >
-              Transfer {total > 0 ? `${total} item${total === 1 ? "" : "s"}` : ""}
+              A friend&apos;s platform
+            </Button>
+            <Button
+              size="sm"
+              variant={mode === "local" ? "solid" : "outlined"}
+              color={mode === "local" ? "primary" : "neutral"}
+              startDecorator={<CorporateFareIcon />}
+              onClick={() => switchMode("local")}
+              sx={mode === "local" ? { bgcolor: "#0CA678" } : undefined}
+            >
+              Another org on this platform
             </Button>
           </Box>
+
+          {mode === "friend" ? (
+            <>
+              <Box sx={{ display: "flex", gap: 2, alignItems: "flex-end", flexWrap: "wrap" }}>
+                <FormControl size="sm" sx={{ flex: 2, minWidth: 240 }}>
+                  <FormLabel>Friend&apos;s platform address</FormLabel>
+                  <Input
+                    startDecorator={<PublicIcon />}
+                    placeholder="e.g. https://ada.grown.haus"
+                    value={platformAddr}
+                    onChange={(e) => setPlatformAddr(e.target.value)}
+                  />
+                </FormControl>
+                <FormControl size="sm" sx={{ flex: 1, minWidth: 150 }}>
+                  <FormLabel>Their org / handle</FormLabel>
+                  <Input
+                    placeholder="e.g. studio"
+                    value={targetSlug}
+                    onChange={(e) => setTargetSlug(e.target.value)}
+                  />
+                </FormControl>
+                <Button
+                  onClick={friendShare}
+                  disabled={!canSendFriend}
+                  startDecorator={<PublicIcon />}
+                  sx={{ bgcolor: "#0CA678" }}
+                >
+                  Send to friend{total > 0 ? ` (${total})` : ""}
+                </Button>
+              </Box>
+              <Typography level="body-xs" sx={{ mt: 1, opacity: 0.7 }}>
+                A friend&apos;s platform is a{" "}
+                <strong>separate Grown instance they run themselves</strong> — their
+                own Drive, accounts and rules, on their own domain. Your data only
+                leaves once their platform accepts the connection.
+              </Typography>
+            </>
+          ) : (
+            <>
+              <Box sx={{ display: "flex", gap: 2, alignItems: "flex-end", flexWrap: "wrap" }}>
+                <FormControl size="sm" sx={{ flex: 1, minWidth: 220 }}>
+                  <FormLabel>Target organization (slug)</FormLabel>
+                  <Input
+                    startDecorator={<CorporateFareIcon />}
+                    placeholder="e.g. acme-team"
+                    value={targetSlug}
+                    onChange={(e) => setTargetSlug(e.target.value)}
+                  />
+                </FormControl>
+                <Button
+                  onClick={transfer}
+                  disabled={!canSendLocal}
+                  loading={busy}
+                  startDecorator={<SyncAltIcon />}
+                  sx={{ bgcolor: "#0CA678" }}
+                >
+                  Transfer {total > 0 ? `${total} item${total === 1 ? "" : "s"}` : ""}
+                </Button>
+              </Box>
+              <Typography level="body-xs" sx={{ mt: 1, opacity: 0.7 }}>
+                Copy to another organization you administer{" "}
+                <strong>on this same platform</strong>. You must be an admin of
+                both orgs. Folders copy recursively.
+              </Typography>
+            </>
+          )}
+          {pending && (
+            <Sheet color="warning" variant="soft" sx={{ p: 1.5, mt: 1.5, borderRadius: "md" }}>
+              <Typography level="body-sm">{pending}</Typography>
+            </Sheet>
+          )}
           {error && (
             <Typography color="danger" level="body-sm" sx={{ mt: 1.5 }}>
               {error}
