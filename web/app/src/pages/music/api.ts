@@ -5,6 +5,8 @@ import type {
   ListPlaylistsResponse,
   TrackUpdateInput,
   PlaylistInput,
+  Station,
+  RetentionMode,
 } from "./types";
 
 const API_BASE = "/api/v1";
@@ -132,6 +134,41 @@ export async function unlikeTrack(trackId: string): Promise<void> {
 export async function listLikedTracks(): Promise<Track[]> {
   const r = await jsonFetch<{ tracks?: Track[] }>("/music/liked");
   return r.tracks ?? [];
+}
+
+// --- Radio ----------------------------------------------------------------
+
+export async function listStations(): Promise<Station[]> {
+  const r = await jsonFetch<{ stations?: Station[] }>("/music/radio/stations");
+  return r.stations ?? [];
+}
+
+/** playStation starts server-side caching for the station and returns it. */
+export function playStation(id: string): Promise<Station> {
+  return jsonFetch<Station>(`/music/radio/${id}/play`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export async function stopStation(id: string): Promise<void> {
+  await fetch(`${API_BASE}/music/radio/${id}/stop`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+}
+
+export function setStationRetention(
+  id: string,
+  mode: RetentionMode,
+  days: number,
+): Promise<Station> {
+  return jsonFetch<Station>(`/music/radio/${id}/retention`, {
+    method: "PUT",
+    body: JSON.stringify({ retention_mode: mode, retention_days: days }),
+  });
 }
 
 // --- Blobs (raw HTTP, not gRPC-gateway) -----------------------------------

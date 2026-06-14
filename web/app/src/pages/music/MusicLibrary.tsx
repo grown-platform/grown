@@ -25,6 +25,7 @@ import LibraryMusicIcon from "@mui/icons-material/LibraryMusic";
 import QueueMusicIcon from "@mui/icons-material/QueueMusic";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import PlaylistPlayIcon from "@mui/icons-material/PlaylistPlay";
+import RadioIcon from "@mui/icons-material/Radio";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
@@ -40,6 +41,7 @@ import { useTrackActions } from "./useTrackActions";
 import { TrackRow } from "./TrackRow";
 import { UploadDialog } from "./UploadDialog";
 import { PlaylistFormDialog } from "./dialogs";
+import { RadioStations } from "./RadioStations";
 
 interface MusicLibraryProps {
   user: User;
@@ -250,6 +252,9 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
             <Tab value="tracks">Tracks</Tab>
             <Tab value="liked">Liked</Tab>
             <Tab value="playlists">Playlists</Tab>
+            <Tab value="radio">
+              <RadioIcon sx={{ fontSize: 18, mr: 0.5 }} /> Radio
+            </Tab>
           </TabList>
 
           {/* Tracks */}
@@ -493,6 +498,11 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
                 ))}
               </Box>
             )}
+          </TabPanel>
+
+          {/* Radio */}
+          <TabPanel value="radio" sx={{ px: 0 }}>
+            <RadioStations query={query} />
           </TabPanel>
         </Tabs>
       </Container>

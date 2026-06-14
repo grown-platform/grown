@@ -8,7 +8,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { streamUrl } from "./api";
-import type { Track } from "./types";
+import type { Track, Station } from "./types";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -32,8 +32,16 @@ export interface PlayerState {
   shuffle: boolean;
   /** Repeat mode: off, all (loop queue), one (loop current track). */
   repeat: RepeatMode;
+  /** When playing a live radio station, the active station; else null. In
+   *  radio mode playback is continuous (no track-end advance) and the player
+   *  bar shows the station name. */
+  radioStation: Station | null;
   /** Load a queue and start playback at startIndex. */
   playQueue: (queue: Track[], startIndex: number) => void;
+  /** Tune into a live radio station via its same-origin proxy stream. */
+  playRadio: (station: Station) => void;
+  /** Leave radio mode (stops the <audio>); caller also POSTs /stop. */
+  stopRadio: () => void;
   /** Play a single track with no surrounding queue. */
   playTrack: (track: Track) => void;
   /** Insert a track immediately after the current position (Play next). */
@@ -72,6 +80,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [muted, setMuted] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>("off");
+  const [radioStation, setRadioStation] = useState<Station | null>(null);
+  // Ref mirror so the audio "ended" handler doesn't advance a queue in radio mode.
+  const radioRef = useRef<Station | null>(null);
+  useEffect(() => {
+    radioRef.current = radioStation;
+  }, [radioStation]);
 
   // Use refs for queue/index/repeat/shuffle inside callbacks so they see
   // current values without being stale closures.
@@ -111,6 +125,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const playQueue = useCallback(
     (q: Track[], startIndex: number) => {
+      setRadioStation(null); // leaving radio mode for on-demand playback
       setQueue(q);
       setIndex(startIndex);
       const t = q[startIndex];
@@ -125,6 +140,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     },
     [playQueue],
   );
+
+  const playRadio = useCallback((station: Station) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setRadioStation(station);
+    setQueue([]);
+    setIndex(-1);
+    audio.src = station.play_url;
+    audio
+      .play()
+      .then(() => setPlaying(true))
+      .catch(() => setPlaying(false));
+  }, []);
+
+  const stopRadio = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    setRadioStation(null);
+    setPlaying(false);
+  }, []);
 
   const playNext = useCallback(
     (track: Track) => {
@@ -214,7 +253,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const toggle = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio || !current) return;
+    if (!audio || (!current && !radioRef.current)) return;
     if (audio.paused)
       audio
         .play()
@@ -295,6 +334,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onEnded = () => {
+      // Radio is a continuous live stream; "ended" means the connection
+      // dropped. Don't advance a queue — just stop.
+      if (radioRef.current) {
+        setPlaying(false);
+        return;
+      }
       if (repeatRef.current === "one") {
         // Restart the current track.
         const audio = audioRef.current;
@@ -344,7 +389,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     muted,
     shuffle,
     repeat,
+    radioStation,
     playQueue,
+    playRadio,
+    stopRadio,
     playTrack,
     playNext,
     addToQueue,

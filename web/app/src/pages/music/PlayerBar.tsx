@@ -14,16 +14,132 @@ import SkipPreviousIcon from "@mui/icons-material/SkipPrevious";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
+import RadioIcon from "@mui/icons-material/Radio";
+import StopIcon from "@mui/icons-material/Stop";
 import ShuffleIcon from "@mui/icons-material/Shuffle";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import RepeatOneIcon from "@mui/icons-material/RepeatOne";
 import { usePlayer } from "./player";
+import { stopStation } from "./api";
 import { formatClock } from "./media";
 
 /** PlayerBar is the persistent transport control fixed to the bottom of the
  *  music app. It renders nothing until a track is loaded. */
 export function PlayerBar() {
   const p = usePlayer();
+
+  // Radio mode: a continuous live stream — no scrubber/skip, show the station
+  // and a LIVE badge with a stop control.
+  if (p.radioStation) {
+    const st = p.radioStation;
+    return (
+      <Sheet
+        variant="outlined"
+        role="region"
+        aria-label="Radio player"
+        sx={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1100,
+          display: "flex",
+          alignItems: "center",
+          gap: 1.5,
+          px: { xs: 1.5, sm: 2 },
+          py: { xs: 0.75, sm: 1 },
+          boxShadow: "md",
+          bgcolor: "background.surface",
+        }}
+      >
+        <AspectRatio
+          ratio="1"
+          sx={{ width: 44, borderRadius: "sm", flexShrink: 0 }}
+        >
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: "primary.softBg",
+            }}
+          >
+            <RadioIcon sx={{ color: "primary.500" }} />
+          </Box>
+        </AspectRatio>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+            <Typography
+              level="body-xs"
+              sx={{
+                fontWeight: 700,
+                color: "danger.500",
+                letterSpacing: 0.5,
+              }}
+            >
+              ● LIVE
+            </Typography>
+            <Typography level="body-sm" sx={{ fontWeight: 500 }} noWrap>
+              {st.name}
+            </Typography>
+          </Box>
+          <Typography level="body-xs" sx={{ opacity: 0.7 }} noWrap>
+            {st.genre || "Radio"} · caching to this station's album
+          </Typography>
+        </Box>
+        <IconButton
+          size="sm"
+          variant="solid"
+          color="primary"
+          onClick={p.toggle}
+          aria-label={p.playing ? "Pause" : "Play"}
+        >
+          {p.playing ? <PauseIcon /> : <PlayArrowIcon />}
+        </IconButton>
+        <Tooltip title="Stop radio" placement="top">
+          <IconButton
+            size="sm"
+            variant="plain"
+            color="neutral"
+            onClick={() => {
+              p.stopRadio();
+              void stopStation(st.id);
+            }}
+            aria-label="Stop radio"
+          >
+            <StopIcon />
+          </IconButton>
+        </Tooltip>
+        <Box
+          sx={{
+            display: { xs: "none", sm: "flex" },
+            alignItems: "center",
+            gap: 1,
+          }}
+        >
+          <IconButton
+            size="sm"
+            variant="plain"
+            onClick={p.toggleMute}
+            aria-label={p.muted || p.volume === 0 ? "Unmute" : "Mute"}
+          >
+            {p.muted || p.volume === 0 ? <VolumeOffIcon /> : <VolumeUpIcon />}
+          </IconButton>
+          <Slider
+            size="sm"
+            aria-label="Volume"
+            value={p.muted ? 0 : p.volume}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(_, v) => p.setVolume(Array.isArray(v) ? v[0] : v)}
+            sx={{ width: 100 }}
+          />
+        </Box>
+      </Sheet>
+    );
+  }
+
   if (!p.current) return null;
 
   const t = p.current;

@@ -52,3 +52,21 @@ export interface PlaylistInput {
   name: string;
   description: string;
 }
+
+/** RetentionMode mirrors the backend: keep songs forever, or erase after N days. */
+export type RetentionMode = "keep" | "days";
+
+/** Station mirrors the radio_station JSON served by the music HTTP layer. */
+export interface Station {
+  id: string;
+  org_id: string;
+  name: string;
+  stream_url: string;
+  genre: string;
+  logo_url: string;
+  retention_mode: RetentionMode;
+  retention_days: number;
+  track_count: number;
+  /** play_url is grown's same-origin live-stream proxy for the <audio> element. */
+  play_url: string;
+}
