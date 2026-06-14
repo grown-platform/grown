@@ -7,6 +7,7 @@
  * language isn't in Supertonic's set — so Speak always does something.
  */
 import type { Language } from "./languages";
+import type { TtsBackendPref } from "./supertonic";
 
 export interface SpeakProgress {
   message: string;
@@ -27,13 +28,17 @@ async function speakSupertonic(
   audio: HTMLAudioElement,
   onProgress: (p: SpeakProgress) => void,
   voiceId?: string,
+  backend: TtsBackendPref = "wasm",
 ): Promise<SpeakResult> {
   // Dynamic import keeps onnxruntime-web out of the main bundle.
   const st = await import("./supertonic");
   if (!lang.supertonic || !st.supertonicSupportsLang(lang.supertonic)) {
     throw new Error(`Supertonic has no voice for ${lang.name}.`);
   }
-  const engine = await st.getSupertonicEngine((m) => onProgress({ message: m }));
+  const engine = await st.getSupertonicEngine(
+    (m) => onProgress({ message: m }),
+    backend,
+  );
   onProgress({ message: "Synthesising speech…" });
   const { url } = await st.synthesize(engine, text, lang.supertonic, {
     voiceId,
@@ -83,6 +88,7 @@ export async function speak(
   audio: HTMLAudioElement,
   onProgress: (p: SpeakProgress) => void,
   voiceId?: string,
+  backend: TtsBackendPref = "wasm",
 ): Promise<SpeakResult> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Nothing to speak yet — translate first.");
@@ -91,7 +97,14 @@ export async function speak(
   // to the browser fallback.
   if (lang.supertonic) {
     try {
-      return await speakSupertonic(trimmed, lang, audio, onProgress, voiceId);
+      return await speakSupertonic(
+        trimmed,
+        lang,
+        audio,
+        onProgress,
+        voiceId,
+        backend,
+      );
     } catch (e) {
       // Fall through to the browser engine, but surface why we fell back.
       onProgress({

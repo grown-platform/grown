@@ -26,6 +26,7 @@ import {
   LinearProgress,
   Alert,
   Tooltip,
+  Switch,
 } from "@mui/joy";
 import TranslateIcon from "@mui/icons-material/Translate";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
@@ -44,11 +45,16 @@ import {
   type TranslateProgress,
 } from "./translator";
 import { speak, type SpeakProgress } from "./speak";
-import { SUPERTONIC_VOICES, DEFAULT_VOICE_ID } from "./supertonic";
+import {
+  SUPERTONIC_VOICES,
+  DEFAULT_VOICE_ID,
+  type TtsBackendPref,
+} from "./supertonic";
 
 const ACCENT = "#0E7C86";
 
 const VOICE_STORAGE_KEY = "translate.supertonicVoice";
+const BACKEND_STORAGE_KEY = "translate.ttsBackend";
 
 /** Read the persisted voice id (validated), defaulting to M1. */
 function loadVoiceId(): string {
@@ -59,6 +65,20 @@ function loadVoiceId(): string {
     /* localStorage unavailable — fall back to default */
   }
   return DEFAULT_VOICE_ID;
+}
+
+/**
+ * Read the persisted speech backend, defaulting to the stable CPU path. WebGPU
+ * is only ever used when the user has explicitly opted in (it can crash the
+ * browser's GPU process on some drivers — see supertonic.ts).
+ */
+function loadBackend(): TtsBackendPref {
+  try {
+    if (localStorage.getItem(BACKEND_STORAGE_KEY) === "webgpu") return "webgpu";
+  } catch {
+    /* localStorage unavailable — fall back to default */
+  }
+  return "wasm";
 }
 
 export default function TranslateApp({ user }: { user: User }) {
@@ -76,6 +96,8 @@ export default function TranslateApp({ user }: { user: User }) {
 
   // Speech state.
   const [voiceId, setVoiceId] = useState(loadVoiceId);
+  // Speech backend: "wasm" (CPU, stable default) or "webgpu" (faster, opt-in).
+  const [ttsBackend, setTtsBackend] = useState<TtsBackendPref>(loadBackend);
   const [speaking, setSpeaking] = useState(false);
   const [speakStatus, setSpeakStatus] = useState<SpeakProgress | null>(null);
   const [speakError, setSpeakError] = useState<string | null>(null);
@@ -137,6 +159,9 @@ export default function TranslateApp({ user }: { user: User }) {
 
     // Ensure the audio element exists.
     if (!audioRef.current) audioRef.current = new Audio();
+    // Stop + revoke any prior playback so repeated Speaks don't leak object URLs.
+    stopRef.current?.();
+    stopRef.current = null;
 
     setSpeaking(true);
     setSpeakError(null);
@@ -148,6 +173,7 @@ export default function TranslateApp({ user }: { user: User }) {
         audioRef.current,
         (p) => setSpeakStatus(p),
         voiceId,
+        ttsBackend,
       );
       stopRef.current = handle.stop;
       // For the browser engine, playback already kicked off synchronously; for
@@ -189,6 +215,16 @@ export default function TranslateApp({ user }: { user: User }) {
     setVoiceId(v);
     try {
       localStorage.setItem(VOICE_STORAGE_KEY, v);
+    } catch {
+      /* persistence is best-effort */
+    }
+  }
+
+  function handleBackendChange(useGpu: boolean) {
+    const next: TtsBackendPref = useGpu ? "webgpu" : "wasm";
+    setTtsBackend(next);
+    try {
+      localStorage.setItem(BACKEND_STORAGE_KEY, next);
     } catch {
       /* persistence is best-effort */
     }
@@ -380,6 +416,30 @@ export default function TranslateApp({ user }: { user: User }) {
                   </Option>
                 ))}
               </Select>
+            </Stack>
+          </Tooltip>
+
+          <Tooltip title="On-device speech runs on the CPU by default (stable). Faster GPU mode uses WebGPU, which can crash the browser on some graphics drivers — turn it on only if it works for you.">
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.75}
+              sx={{ alignSelf: "center" }}
+            >
+              <Switch
+                size="sm"
+                checked={ttsBackend === "webgpu"}
+                onChange={(e) => handleBackendChange(e.target.checked)}
+              />
+              <Typography level="body-xs" sx={{ opacity: 0.7 }}>
+                Faster GPU mode
+                {ttsBackend === "webgpu" && (
+                  <Typography level="body-xs" sx={{ color: "warning.500" }}>
+                    {" "}
+                    (experimental)
+                  </Typography>
+                )}
+              </Typography>
             </Stack>
           </Tooltip>
 

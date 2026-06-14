@@ -589,7 +589,25 @@ export interface SupertonicEngine {
   getStyle: (voiceId: string) => Promise<Style>;
 }
 
+/**
+ * Which onnxruntime execution backend to use.
+ *
+ * - `"wasm"` (the **default**) runs entirely on the CPU. It's slower than the
+ *   GPU path but rock-solid: WASM lives in the renderer's linear memory and
+ *   cannot crash the browser's GPU process, so a Speak never takes down the tab.
+ * - `"webgpu"` is the opt-in fast path. onnxruntime-web's WebGPU backend pushes
+ *   the 257 MB vector-estimator through 8 denoising passes, and on a number of
+ *   consumer GPU drivers that crashes the GPU process — which kills the whole
+ *   renderer ("Aw, Snap" / browser crash) **uncatchably** (a native crash is not
+ *   a JS exception, so the WASM fallback can't rescue it). We therefore never
+ *   pick it automatically; the user must explicitly enable it.
+ */
+export type TtsBackendPref = "wasm" | "webgpu";
+
 let enginePromise: Promise<SupertonicEngine> | null = null;
+// The backend the cached engine was built with; if a new request asks for a
+// different one we rebuild instead of handing back the wrong-backend engine.
+let enginePref: TtsBackendPref | null = null;
 
 async function loadModels(
   providers: ort.InferenceSession.ExecutionProviderConfig[],
@@ -625,20 +643,37 @@ async function loadModels(
   return { tts, sampleRate: cfgs.ae.sample_rate };
 }
 
-/** Load (once) and return the Supertonic engine, preferring WebGPU. */
+/**
+ * Load (once) and return the Supertonic engine. Defaults to the **WASM (CPU)**
+ * backend, which is stable and cannot crash the browser's GPU process; pass
+ * `pref = "webgpu"` to opt into the faster (but on some drivers crash-prone) GPU
+ * path. The engine is memoised per backend — switching `pref` rebuilds it.
+ */
 export async function getSupertonicEngine(
   onProgress: LoadProgress,
+  pref: TtsBackendPref = "wasm",
 ): Promise<SupertonicEngine> {
-  if (enginePromise) return enginePromise;
+  if (enginePromise && enginePref === pref) return enginePromise;
+  enginePref = pref;
   enginePromise = (async () => {
     let backend: "webgpu" | "wasm" = "wasm";
     let tts: TextToSpeech;
-    try {
-      onProgress("Initialising Supertonic (WebGPU)…");
-      ({ tts } = await loadModels(["webgpu"], onProgress));
-      backend = "webgpu";
-    } catch {
-      onProgress("WebGPU unavailable — falling back to WASM…");
+    if (pref === "webgpu") {
+      // Opt-in GPU path. A WebGPU *init* failure is catchable (we fall back to
+      // WASM here); a WebGPU *runtime* GPU-process crash is not — hence WASM is
+      // the default and this branch only runs when the user explicitly asks.
+      try {
+        onProgress("Initialising Supertonic (WebGPU, experimental)…");
+        ({ tts } = await loadModels(["webgpu"], onProgress));
+        backend = "webgpu";
+      } catch {
+        onProgress("WebGPU unavailable — falling back to CPU…");
+        ({ tts } = await loadModels(["wasm"], onProgress));
+        backend = "wasm";
+      }
+    } else {
+      // Default, stable path: CPU only.
+      onProgress("Initialising Supertonic (CPU)…");
       ({ tts } = await loadModels(["wasm"], onProgress));
       backend = "wasm";
     }
@@ -662,6 +697,7 @@ export async function getSupertonicEngine(
   // If loading fails, clear the cache so a later Speak can retry cleanly.
   enginePromise.catch(() => {
     enginePromise = null;
+    enginePref = null;
   });
   return enginePromise;
 }
