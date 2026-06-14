@@ -52,12 +52,14 @@ import BarChartIcon from "@mui/icons-material/BarChart";
 import ShieldIcon from "@mui/icons-material/Shield";
 import GppMaybeIcon from "@mui/icons-material/GppMaybe";
 import PublicIcon from "@mui/icons-material/Public";
+import SpeedIcon from "@mui/icons-material/Speed";
 import GroupIcon from "@mui/icons-material/Group";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { Header } from "../../components/Header";
 import { SecuritySection } from "./SecuritySection";
 import { GeoSection } from "./GeoSection";
 import { HoneypotSection } from "./HoneypotSection";
+import { RateLimitSection } from "./RateLimitSection";
 import { DashboardSection } from "./DashboardSection";
 import { GroupsSection } from "./GroupsSection";
 import { RolesSection } from "./RolesSection";
@@ -150,6 +152,7 @@ type SectionId =
   | "security"
   | "geo"
   | "honeypot"
+  | "ratelimit"
   | "settings";
 const SECTIONS: {
   id: SectionId;
@@ -201,6 +204,12 @@ const SECTIONS: {
     id: "honeypot",
     label: "Honeypot",
     icon: <GppMaybeIcon />,
+    enabled: true,
+  },
+  {
+    id: "ratelimit",
+    label: "Rate limiting",
+    icon: <SpeedIcon />,
     enabled: true,
   },
   {
@@ -385,6 +394,7 @@ export default function AdminApp({ user }: AdminAppProps) {
             {section === "security" && <SecuritySection />}
             {section === "geo" && <GeoSection />}
             {section === "honeypot" && <HoneypotSection />}
+            {section === "ratelimit" && <RateLimitSection />}
             {section === "settings" && (
               <OrgSettingsSection
                 user={user}

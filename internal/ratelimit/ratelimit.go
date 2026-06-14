@@ -83,6 +83,17 @@ type RateLimiter struct {
 	general  *limiter
 	auth     *limiter
 	settings Settings
+	// store records block events for the admin observability panel. nil ⇒ no
+	// recording (the limiter still throttles; it just isn't observable in the DB).
+	store *Store
+}
+
+// WithStore wires a block-event store so 429 rejections are recorded for the
+// admin Rate-limiting panel. Returns rl for chaining. A nil store is tolerated
+// (recording becomes a no-op).
+func (rl *RateLimiter) WithStore(s *Store) *RateLimiter {
+	rl.store = s
+	return rl
 }
 
 // FromEnv builds a RateLimiter from environment variables, with defaults tuned
@@ -160,10 +171,20 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		lim := rl.general
+		bucket := "general"
 		if isAuthPath(r.URL.Path) {
 			lim = rl.auth
+			bucket = "auth"
 		}
 		if !lim.allow(clientIP(r), time.Now()) {
+			// Record the throttle event (best-effort, async) for the admin panel.
+			rl.store.Record(Block{
+				IP:        clientIP(r),
+				Path:      r.URL.Path,
+				Bucket:    bucket,
+				Country:   strings.TrimSpace(r.Header.Get("CF-IPCountry")),
+				UserAgent: r.UserAgent(),
+			})
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, "rate limit exceeded — slow down and retry", http.StatusTooManyRequests)
 			return

@@ -948,7 +948,10 @@ func New(cfg Config) *Server {
 
 	// Per-IP API rate limiting (outermost), with a stricter bucket on the auth
 	// endpoints to blunt credential stuffing. Tunable via GROWN_RATELIMIT_*.
-	rateLimiter := ratelimit.FromEnv()
+	// The block store makes 429s observable in the admin Rate-limiting panel
+	// (grown.ratelimit_blocks, 0088); a nil pool yields a nil store (recording off).
+	rateLimitStore := ratelimit.NewStore(cfg.Pool)
+	rateLimiter := ratelimit.FromEnv().WithStore(rateLimitStore)
 	authWrapped := rateLimiter.Middleware(
 		auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg, apiTokensRepo)(apiHandler),
 	)
@@ -1142,6 +1145,21 @@ func New(cfg Config) *Server {
 	// admin gate as analytics/geo (allowlist OR org_admins). Instance-global data
 	// (the traps fire on unauthenticated probers, so there is no org to scope to).
 	honeypotAdmin := honeypot.NewAdminHandler(honeypotStore, honeypot.Identity{
+		Caller: func(ctx context.Context) (string, bool) {
+			u, ok := auth.UserFromContext(ctx)
+			if !ok {
+				return "", false
+			}
+			return u.Email, true
+		},
+		IsAdmin: isAdminFromCtx,
+	})
+
+	// Admin rate-limiting panel — read-only observability for the per-IP API
+	// limiter: effective config (GROWN_RATELIMIT_*), recent 429 block events, and
+	// the top offending IPs. Same admin gate as analytics/honeypot. Instance-global
+	// data (the limiter keys on IP, not org).
+	rateLimitAdmin := ratelimit.NewAdminHandler(rateLimiter, rateLimitStore, ratelimit.Identity{
 		Caller: func(ctx context.Context) (string, bool) {
 			u, ok := auth.UserFromContext(ctx)
 			if !ok {
@@ -1726,6 +1744,13 @@ func New(cfg Config) *Server {
 		// it. The traps that FEED it (decoy paths + /api/v1/honeypot) are public.
 		if r.URL.Path == "/api/v1/admin/honeypot" {
 			driveAuthWrap(auditMutations("security", "honeypot-clear", honeypotAdmin)).ServeHTTP(w, r)
+			return
+		}
+		// Admin-gated rate-limiting panel: effective config + recent 429 blocks +
+		// top offending IPs (read-only). Under /api/v1/admin/ so geoMiddleware
+		// exempts it. Instance-global data (the limiter keys on IP, not org).
+		if r.URL.Path == "/api/v1/admin/ratelimit" {
+			driveAuthWrap(rateLimitAdmin).ServeHTTP(w, r)
 			return
 		}
 		// Admin-gated security console: reads/writes Zitadel org policies
