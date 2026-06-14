@@ -8,6 +8,7 @@
  */
 import type { Language } from "./languages";
 import type { TtsBackendPref } from "./supertonic";
+import { isIOS } from "./device";
 
 export interface SpeakProgress {
   message: string;
@@ -92,6 +93,14 @@ export async function speak(
 ): Promise<SpeakResult> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Nothing to speak yet — translate first.");
+
+  // On iOS every browser is WebKit with a hard per-tab memory cap; loading
+  // Supertonic's ~398 MB of ONNX models would OOM-kill the page (an uncatchable
+  // crash, not an error we could fall back from). iOS ships perfectly good
+  // built-in voices, so go straight to the native speechSynthesis there.
+  if (isIOS()) {
+    return speakBrowser(trimmed, lang);
+  }
 
   // Try Supertonic only when it can voice this language; otherwise go straight
   // to the browser fallback.

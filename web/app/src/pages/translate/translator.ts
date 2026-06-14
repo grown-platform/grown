@@ -20,6 +20,7 @@
  * can show a meaningful loading state.
  */
 import type { Language } from "./languages";
+import { isMobileDevice } from "./device";
 
 export type Engine = "browser" | "transformers";
 
@@ -147,12 +148,18 @@ async function getNllbPipeline(onProgress: ProgressFn): Promise<any> {
     // with the Supertonic TTS cache this keeps ~1 GB of models on-device.
     tf.env.useBrowserCache = true;
     tf.env.allowRemoteModels = true;
-    // Pin the translation model to the **WASM (CPU)** backend. transformers.js
-    // already defaults to WASM in the browser, but we set it explicitly so a
-    // future library default can't silently move us onto WebGPU — whose driver
-    // crashes (seen with the TTS path on some GPUs) would otherwise take down
-    // the whole tab. CPU is plenty fast for a one-shot translation.
-    return tf.pipeline("translation", NLLB_MODEL, {
+    // On phones — especially **iOS**, where every browser is WebKit with a hard
+    // per-tab memory cap — the full-precision NLLB (encoder + decoder, >1 GB
+    // resident) gets the page killed the instant it's loaded. Load the **4-bit
+    // quantized** weights there instead (~1/4 the memory, ~300 MB), which fit.
+    // Desktop keeps full precision for best quality. `dtype` selects the onnx
+    // variant (q4 → *_q4.onnx), so the smaller files are what download + cache.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const opts: any = {
+      // Pin to the **WASM (CPU)** backend. transformers.js already defaults to
+      // WASM in the browser, but we set it explicitly so a future library
+      // default can't silently move us onto WebGPU — whose driver crashes (seen
+      // with the TTS path on some GPUs) would otherwise take down the whole tab.
       device: "wasm",
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       progress_callback: (p: any) => {
@@ -164,7 +171,9 @@ async function getNllbPipeline(onProgress: ProgressFn): Promise<any> {
           });
         }
       },
-    });
+    };
+    if (isMobileDevice()) opts.dtype = "q4";
+    return tf.pipeline("translation", NLLB_MODEL, opts);
   })();
   return nllbPipeline;
 }
