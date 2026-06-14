@@ -4,6 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
+	"sync"
+	"time"
 )
 
 // OrgEvent carries the details of a newly-created grown org. It is the payload
@@ -26,7 +29,17 @@ type OrgEvent struct {
 // Forgejo outage never blocks grown org creation.
 type Provisioner struct {
 	client *Client
+
+	// accessCache deduplicates access-time provisioning (EnsureAccess) so we
+	// don't hit the Forgejo API on every /git request. Keyed by
+	// "email|slug|admin"; an entry means "provisioned within accessTTL ago".
+	accessMu    sync.Mutex
+	accessCache map[string]time.Time
 }
+
+// accessTTL is how long an EnsureAccess result is cached before we re-run the
+// (idempotent) provisioning for the same user+org+role.
+const accessTTL = 10 * time.Minute
 
 // NewProvisionerFromEnv constructs a Provisioner whose Client reads
 // GROWN_FORGEJO_URL and GROWN_FORGEJO_ADMIN_TOKEN from the environment. When
@@ -37,7 +50,101 @@ func NewProvisionerFromEnv() *Provisioner {
 			os.Getenv("GROWN_FORGEJO_URL"),
 			os.Getenv("GROWN_FORGEJO_ADMIN_TOKEN"),
 		),
+		accessCache: make(map[string]time.Time),
 	}
+}
+
+// Configured reports whether the underlying client can make real Forgejo API
+// calls (both GROWN_FORGEJO_URL and GROWN_FORGEJO_ADMIN_TOKEN set). When false,
+// every method is a safe no-op — this is what keeps the access-time provisioning
+// inert on prod pick.haus, which has no admin token.
+func (p *Provisioner) Configured() bool {
+	return p != nil && p.client.configured()
+}
+
+// shouldProvision reports whether EnsureAccess should run for key (cache miss or
+// stale) and, if so, records the attempt so concurrent/subsequent requests skip
+// it for accessTTL.
+func (p *Provisioner) shouldProvision(key string) bool {
+	p.accessMu.Lock()
+	defer p.accessMu.Unlock()
+	if last, ok := p.accessCache[key]; ok && time.Since(last) < accessTTL {
+		return false
+	}
+	p.accessCache[key] = time.Now()
+	return true
+}
+
+// clearProvision drops a cache entry so a failed EnsureAccess is retried on the
+// next request instead of being suppressed for the full TTL.
+func (p *Provisioner) clearProvision(key string) {
+	p.accessMu.Lock()
+	delete(p.accessCache, key)
+	p.accessMu.Unlock()
+}
+
+// EnsureAccess is the access-time provisioning hook: when an authenticated grown
+// user reaches /git, it guarantees (best-effort, idempotent) that the Forgejo
+// org named after their grown org slug exists and that the user is a member with
+// the right role:
+//
+//   - grown admin  → Owners team (org owner / admin rights)
+//   - otherwise     → Maintainers team (write access)
+//
+// It is rate-limited by an in-memory TTL cache keyed on user+org+role, so it
+// touches the Forgejo API at most once per accessTTL per (user, org, role).
+// Personal orgs (slug "personal-*") and unconfigured clients are skipped. This
+// method NEVER blocks the caller meaningfully — callers should still invoke it
+// in a goroutine — and never returns an error (it logs instead).
+func (p *Provisioner) EnsureAccess(ctx context.Context, slug, displayName, email string, isAdmin bool) {
+	if !p.Configured() || email == "" || slug == "" {
+		return
+	}
+	if strings.HasPrefix(slug, "personal-") {
+		return
+	}
+
+	key := email + "|" + slug + "|" + boolKey(isAdmin)
+	if !p.shouldProvision(key) {
+		return
+	}
+
+	username := UsernameFromEmail(email)
+	log := slog.Default().With(
+		"forgejo_org", slug, "forgejo_user", username, "admin", isAdmin)
+
+	// 1. Ensure the org exists (idempotent; 422 = already there → success).
+	if err := p.client.CreateOrg(ctx, slug, displayName); err != nil {
+		log.WarnContext(ctx, "forgejo: ensure-access create org failed", "err", err)
+		p.clearProvision(key) // retry next time
+		return
+	}
+
+	// 2. Add the user to the right team.
+	if isAdmin {
+		if err := p.client.AddOrgOwner(ctx, slug, username); err != nil {
+			log.WarnContext(ctx, "forgejo: ensure-access add owner failed", "err", err)
+			p.clearProvision(key)
+		}
+		return
+	}
+	teamID, err := p.client.EnsureMaintainersTeam(ctx, slug)
+	if err != nil {
+		log.WarnContext(ctx, "forgejo: ensure-access ensure maintainers team failed", "err", err)
+		p.clearProvision(key)
+		return
+	}
+	if err := p.client.AddTeamMember(ctx, teamID, username); err != nil {
+		log.WarnContext(ctx, "forgejo: ensure-access add maintainer failed", "err", err)
+		p.clearProvision(key)
+	}
+}
+
+func boolKey(b bool) string {
+	if b {
+		return "admin"
+	}
+	return "member"
 }
 
 // OnOrgCreated is the callback to assign to orgs.Repository.OnCreate. It

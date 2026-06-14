@@ -310,6 +310,9 @@ func main() {
 		// Per-instance Forgejo (git hosting) reverse-proxied at /git/* (prefix
 		// stripped). Set Forgejo ROOT_URL to https://<host>/git/. Empty disables.
 		ForgejoURL: os.Getenv("GROWN_FORGEJO_URL"),
+		// Same provisioner instance used for org-creation mirroring; also drives
+		// access-time /git SSO org/team provisioning. No-op when unconfigured.
+		ForgejoProvisioner: forgejoProvisioner,
 		// Assemble (spatial collaboration) reverse-proxied at /assemble/* (prefix
 		// stripped, auth-wall bypassed so guests work). Empty disables.
 		AssembleURL: os.Getenv("GROWN_ASSEMBLE_URL"),

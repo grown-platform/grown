@@ -138,6 +138,104 @@ func (c *Client) SetSiteAdmin(ctx context.Context, username string, isAdmin bool
 	return fmt.Errorf("forgejo.SetSiteAdmin: unexpected status %d", status)
 }
 
+// maintainersTeamName is the name of the team we create for non-admin members:
+// a WRITE-access team granting push/pull on all org repos.
+const maintainersTeamName = "Maintainers"
+
+// EnsureMaintainersTeam makes sure a WRITE-access "Maintainers" team exists in
+// orgName and returns its numeric ID. It is idempotent: if the team already
+// exists (POST returns 422) it is looked up and its ID returned. The team is
+// created with `permission: write` and `includes_all_repositories: true` so
+// members get push/pull on every repo in the org.
+func (c *Client) EnsureMaintainersTeam(ctx context.Context, orgName string) (int64, error) {
+	if !c.configured() {
+		return 0, nil
+	}
+	// Fast path: already present.
+	if id, err := c.teamIDByName(ctx, orgName, maintainersTeamName); err != nil {
+		return 0, fmt.Errorf("forgejo.EnsureMaintainersTeam lookup: %w", err)
+	} else if id != 0 {
+		return id, nil
+	}
+	// Create it. Units mirror Forgejo's defaults for a write team.
+	body := map[string]any{
+		"name":                      maintainersTeamName,
+		"description":               "grown-managed maintainers (write access)",
+		"permission":                "write",
+		"includes_all_repositories": true,
+		"can_create_org_repo":       true,
+		"units": []string{
+			"repo.code", "repo.issues", "repo.pulls", "repo.releases",
+			"repo.wiki", "repo.projects", "repo.packages",
+		},
+	}
+	path := fmt.Sprintf("/api/v1/orgs/%s/teams", orgName)
+	status, _, err := c.do(ctx, http.MethodPost, path, body)
+	if err != nil {
+		return 0, fmt.Errorf("forgejo.EnsureMaintainersTeam create: %w", err)
+	}
+	switch status {
+	case http.StatusCreated, http.StatusOK, http.StatusUnprocessableEntity:
+		// 201/200 created, 422 already exists → re-resolve the ID either way.
+		id, lerr := c.teamIDByName(ctx, orgName, maintainersTeamName)
+		if lerr != nil {
+			return 0, fmt.Errorf("forgejo.EnsureMaintainersTeam re-lookup: %w", lerr)
+		}
+		return id, nil
+	default:
+		return 0, fmt.Errorf("forgejo.EnsureMaintainersTeam: unexpected status %d", status)
+	}
+}
+
+// AddTeamMember adds username to the team identified by teamID via
+// PUT /api/v1/teams/{id}/members/{username}. Idempotent: 204/200 = added,
+// 404 (user not yet in Forgejo) is treated as non-fatal (the reverse-proxy
+// auto-register creates the user on their first /git hit; a momentary race is
+// expected and swallowed).
+func (c *Client) AddTeamMember(ctx context.Context, teamID int64, username string) error {
+	if !c.configured() || teamID == 0 {
+		return nil
+	}
+	path := fmt.Sprintf("/api/v1/teams/%d/members/%s", teamID, username)
+	status, _, err := c.do(ctx, http.MethodPut, path, nil)
+	if err != nil {
+		return fmt.Errorf("forgejo.AddTeamMember: %w", err)
+	}
+	if status == http.StatusNoContent || status == http.StatusOK || status == http.StatusNotFound {
+		return nil
+	}
+	return fmt.Errorf("forgejo.AddTeamMember: unexpected status %d", status)
+}
+
+// teamIDByName returns the numeric ID of the team named teamName in orgName, or
+// 0 when not found.
+func (c *Client) teamIDByName(ctx context.Context, orgName, teamName string) (int64, error) {
+	path := fmt.Sprintf("/api/v1/orgs/%s/teams", orgName)
+	status, body, err := c.do(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return 0, err
+	}
+	if status == http.StatusNotFound {
+		return 0, nil
+	}
+	if status != http.StatusOK {
+		return 0, fmt.Errorf("list teams status %d", status)
+	}
+	var teams []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &teams); err != nil {
+		return 0, fmt.Errorf("decode teams: %w", err)
+	}
+	for _, t := range teams {
+		if strings.EqualFold(t.Name, teamName) {
+			return t.ID, nil
+		}
+	}
+	return 0, nil
+}
+
 // ownersTeamID looks up the numeric ID of the "Owners" team for orgName.
 // Returns 0 if the team is not found. The Owners team is the built-in team
 // Forgejo creates for every org; its name is always "Owners".

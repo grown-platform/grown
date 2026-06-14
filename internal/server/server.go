@@ -37,6 +37,7 @@ import (
 	"code.pick.haus/grown/grown/internal/directory"
 	"code.pick.haus/grown/grown/internal/docs"
 	"code.pick.haus/grown/grown/internal/drive"
+	"code.pick.haus/grown/grown/internal/forgejo"
 	"code.pick.haus/grown/grown/internal/email"
 	"code.pick.haus/grown/grown/internal/eventmeet"
 	"code.pick.haus/grown/grown/internal/forms"
@@ -249,6 +250,12 @@ type Config struct {
 	// same origin instead of a separate subdomain. Forgejo does its own auth, so
 	// the path bypasses grown's auth middleware. Empty disables the proxy.
 	ForgejoURL string
+
+	// ForgejoProvisioner mirrors grown orgs/users into the per-instance Forgejo
+	// (org auto-create + team membership) at /git access time. When nil or
+	// unconfigured (no GROWN_FORGEJO_ADMIN_TOKEN) it is a no-op, which is the
+	// case on prod pick.haus. See internal/forgejo.
+	ForgejoProvisioner *forgejo.Provisioner
 
 	// AssembleURL is the internal origin of the Assemble spatial-collaboration
 	// app, e.g. http://assemble.<ns>.svc:8080. grown reverse-proxies /assemble/*
@@ -1309,7 +1316,12 @@ func New(cfg Config) *Server {
 	// the /git prefix; this proxy strips it on the way in (cloudflared can't), so
 	// the git host lives at <host>/git on the same origin. Forgejo does its own
 	// auth, so this bypasses grown's auth wall.
-	forgejoProxy := newStripPrefixProxy(cfg.ForgejoURL, "/git")
+	forgejoProxy := newForgejoProxy(cfg.ForgejoURL, "/git", cfg.ForgejoProvisioner, isAdminFromCtx)
+	// forgejoAuthWrap resolves the grown session (cookie or bearer) into the
+	// request context WITHOUT requiring it — anonymous visitors pass through with
+	// no user, so public Forgejo browsing still works. The proxy director then
+	// reads the (optional) user/org from context to drive reverse-proxy SSO.
+	forgejoAuthWrap := auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg, apiTokensRepo)
 
 	// /assemble/* → the Assemble spatial-collaboration app, /assemble prefix
 	// stripped. This BYPASSES grown's auth wall on purpose: Assemble does its own
@@ -1816,7 +1828,10 @@ func New(cfg Config) *Server {
 				return
 			}
 			if strings.HasPrefix(r.URL.Path, "/git/") {
-				forgejoProxy.ServeHTTP(w, r)
+				// Wrap with the auth middleware so the grown session is resolved
+				// (optionally) into context for reverse-proxy SSO; the director
+				// reads it. Anonymous requests still pass through unauthenticated.
+				forgejoAuthWrap(forgejoProxy).ServeHTTP(w, r)
 				return
 			}
 		}
@@ -2135,6 +2150,75 @@ func newStripPrefixProxy(target, prefix string) *httputil.ReverseProxy {
 				p = "/"
 			}
 			r.URL.Path = p
+		},
+	}
+}
+
+// newForgejoProxy builds the /git reverse proxy with grown→Forgejo SSO via
+// Forgejo's reverse-proxy authentication (X-WEBAUTH-USER / X-WEBAUTH-EMAIL) plus
+// access-time org/team provisioning.
+//
+// Security model: the request has ALREADY passed through grown's auth middleware
+// (so the grown user, if any, is in r.Context()). The director:
+//
+//  1. UNCONDITIONALLY strips any client-supplied X-WEBAUTH-* headers FIRST, so a
+//     visitor can never forge an identity by sending those headers themselves.
+//  2. Sets X-WEBAUTH-USER / X-WEBAUTH-EMAIL server-side ONLY for an authenticated
+//     grown session. Forgejo (ENABLE_REVERSE_PROXY_AUTH + AUTO_REGISTER) then
+//     auto-creates + auto-logs-in the matching user with zero extra clicks.
+//  3. Anonymous visitors get NO header → Forgejo serves them as a guest (public
+//     repo browsing still works).
+//
+// When an authenticated user is present, it also kicks off best-effort, cached,
+// non-blocking org/team provisioning in a goroutine (provisioner is a no-op when
+// unconfigured, e.g. on prod pick.haus).
+func newForgejoProxy(target, prefix string, prov *forgejo.Provisioner, isAdmin func(context.Context) bool) *httputil.ReverseProxy {
+	u, err := url.Parse(target)
+	if err != nil || target == "" {
+		return nil
+	}
+	return &httputil.ReverseProxy{
+		Director: func(r *http.Request) {
+			r.URL.Scheme = u.Scheme
+			r.URL.Host = u.Host
+			r.Host = u.Host
+			p := strings.TrimPrefix(r.URL.Path, prefix)
+			if p == "" {
+				p = "/"
+			}
+			r.URL.Path = p
+
+			// (1) Always drop any inbound reverse-proxy auth headers BEFORE we
+			// decide whether to set them — prevents client impersonation.
+			r.Header.Del("X-WEBAUTH-USER")
+			r.Header.Del("X-WEBAUTH-EMAIL")
+
+			ctx := r.Context()
+			user, hasUser := auth.UserFromContext(ctx)
+			if !hasUser || user.Email == "" {
+				return // anonymous: no SSO header, guest browsing
+			}
+
+			// (2) Trusted, server-side identity for an authenticated session.
+			r.Header.Set("X-WEBAUTH-USER", forgejo.UsernameFromEmail(user.Email))
+			r.Header.Set("X-WEBAUTH-EMAIL", user.Email)
+
+			// (3) Access-time org/team provisioning (best-effort, non-blocking).
+			if prov == nil || !prov.Configured() {
+				return
+			}
+			org, hasOrg := auth.OrgFromContext(ctx)
+			if !hasOrg || org.Slug == "" {
+				return
+			}
+			admin := isAdmin != nil && isAdmin(ctx)
+			slug, display, email := org.Slug, org.DisplayName, user.Email
+			go func() {
+				// Detached context: outlive the proxied request, but bound it.
+				bg, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				prov.EnsureAccess(bg, slug, display, email, admin)
+			}()
 		},
 	}
 }
