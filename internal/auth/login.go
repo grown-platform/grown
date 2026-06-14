@@ -107,7 +107,13 @@ func (h *LoginHandlers) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.mintSession(ctx, w, r, zResult.UserID); err != nil {
+	// Enrich with email/profile so the grown row carries a real email (best
+	// effort — never block password login if the lookup fails).
+	var pwEmail, pwDisplay string
+	if det, derr := h.zitadel.LookupUserDetailsByLoginName(ctx, req.Username); derr == nil {
+		pwEmail, pwDisplay = det.Email, det.DisplayName
+	}
+	if err := h.mintSession(ctx, w, r, zResult.UserID, pwEmail, pwDisplay); err != nil {
 		slog.Error("mint session after password login", "err", err)
 		jsonError(w, "internal error", http.StatusInternalServerError)
 		return
@@ -150,17 +156,20 @@ func (h *LoginHandlers) DemoLogin(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Look up the demo user's Zitadel user id by their login name so we can
-	// resolve (or provision) their grown row via GetByOIDCAnyOrg / UpsertByOIDC,
-	// exactly like the OIDC callback does.
-	zUserID, err := h.zitadel.LookupUserByLoginName(ctx, h.demoUsername)
+	// Look up the demo user's Zitadel user id + email/profile by login name so we
+	// can resolve (or provision) their grown row via GetByOIDCAnyOrg /
+	// UpsertByOIDC, exactly like the OIDC callback does. The email is important:
+	// it backs downstream features keyed off the user's address (e.g. the Forgejo
+	// reverse-proxy SSO at /git derives the git username from it), so we provision
+	// it rather than leaving it blank as the bare-userID lookup would.
+	zUser, err := h.zitadel.LookupUserDetailsByLoginName(ctx, h.demoUsername)
 	if err != nil {
 		slog.Error("demo login: lookup demo user in zitadel", "username", h.demoUsername, "err", err)
 		jsonError(w, "demo user not found", http.StatusServiceUnavailable)
 		return
 	}
 
-	if err := h.mintSession(ctx, w, r, zUserID); err != nil {
+	if err := h.mintSession(ctx, w, r, zUser.UserID, zUser.Email, zUser.DisplayName); err != nil {
 		slog.Error("mint session for demo login", "err", err)
 		jsonError(w, "internal error", http.StatusInternalServerError)
 		return
@@ -171,24 +180,36 @@ func (h *LoginHandlers) DemoLogin(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
+// orFallback returns primary when non-empty, otherwise fallback.
+func orFallback(primary, fallback string) string {
+	if primary != "" {
+		return primary
+	}
+	return fallback
+}
+
 // mintSession resolves the grown user for zitadelUserID, creates a grown
 // session, and sets the session cookie on w. It mirrors exactly what the OIDC
 // Callback does: GetByOIDCAnyOrg → UpsertByOIDC (provision if new) →
 // CreateWithContext → set-cookie.
-func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, r *http.Request, zitadelUserID string) error {
+func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, r *http.Request, zitadelUserID, email, displayName string) error {
 	issuer := h.issuer
 	if issuer == "" {
 		issuer = h.cfg.IssuerURL
 	}
 
-	// Resolve or provision the grown user.
+	// Resolve or provision the grown user. When we have an email/display name
+	// (always for demo login, best-effort for password login) we keep the grown
+	// row in sync via UpsertByOIDC so the user always has a real email — this is
+	// what downstream email-keyed features (Forgejo reverse-proxy SSO) rely on.
 	u, err := h.users.GetByOIDCAnyOrg(ctx, issuer, zitadelUserID)
 	if err != nil && !errors.Is(err, users.ErrNotFound) {
 		return err
 	}
-	if errors.Is(err, users.ErrNotFound) {
-		// First time this Zitadel user signs in via the password flow — provision
-		// them exactly like the OIDC callback would, in the default org.
+	switch {
+	case errors.Is(err, users.ErrNotFound):
+		// First time this Zitadel user signs in via this flow — provision them
+		// exactly like the OIDC callback would, in the default org.
 		orgID, orgErr := h.resolveDefaultOrg(ctx)
 		if orgErr != nil {
 			return orgErr
@@ -197,9 +218,24 @@ func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, 
 			OrgID:       orgID,
 			OIDCIssuer:  issuer,
 			OIDCSubject: zitadelUserID,
+			Email:       email,
+			DisplayName: displayName,
 		})
 		if err != nil {
 			return err
+		}
+	case email != "" && u.Email != email:
+		// Existing user but their grown row is missing / has a stale email (e.g.
+		// a demo user provisioned before email backfill). Update it so email-keyed
+		// downstream features work. Idempotent via UpsertByOIDC's ON CONFLICT.
+		if updated, uerr := h.users.UpsertByOIDC(ctx, users.UpsertInput{
+			OrgID:       u.OrgID,
+			OIDCIssuer:  issuer,
+			OIDCSubject: zitadelUserID,
+			Email:       email,
+			DisplayName: orFallback(displayName, u.DisplayName),
+		}); uerr == nil {
+			u = updated
 		}
 	}
 

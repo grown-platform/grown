@@ -141,7 +141,61 @@ func (c *ZitadelClient) AuthenticatePassword(ctx context.Context, loginName, pas
 
 // LookupUserByLoginName looks up the Zitadel user id for a loginName using the
 // Zitadel User API v2 POST /v2/users/_search endpoint.
-func (c *ZitadelClient) LookupUserByLoginName(ctx context.Context, loginName string) (string, error) {
+// ZitadelUser is the subset of a Zitadel user we surface from a login-name
+// lookup: the user id plus the profile fields needed to provision a grown row.
+type ZitadelUser struct {
+	UserID      string
+	Email       string
+	DisplayName string
+}
+
+// LookupUserDetailsByLoginName resolves a Zitadel user by login name and returns
+// the user id, email, and display name. It is used by the demo-login path to
+// provision the grown user with a real email (required for downstream features
+// such as Forgejo reverse-proxy SSO, which keys off the user's email). Returns
+// ErrZitadelUnauthorized when no user matches.
+func (c *ZitadelClient) LookupUserDetailsByLoginName(ctx context.Context, loginName string) (ZitadelUser, error) {
+	respBytes, err := c.searchUserByLoginName(ctx, loginName)
+	if err != nil {
+		return ZitadelUser{}, err
+	}
+	var parsed struct {
+		Result []struct {
+			UserID string `json:"userId"`
+			Human  struct {
+				Profile struct {
+					DisplayName string `json:"displayName"`
+					GivenName   string `json:"givenName"`
+					FamilyName  string `json:"familyName"`
+				} `json:"profile"`
+				Email struct {
+					Email string `json:"email"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(respBytes, &parsed); err != nil {
+		return ZitadelUser{}, fmt.Errorf("zitadel: decode user search response: %w", err)
+	}
+	if len(parsed.Result) == 0 {
+		return ZitadelUser{}, ErrZitadelUnauthorized
+	}
+	r := parsed.Result[0]
+	display := r.Human.Profile.DisplayName
+	if display == "" {
+		display = strings.TrimSpace(r.Human.Profile.GivenName + " " + r.Human.Profile.FamilyName)
+	}
+	return ZitadelUser{
+		UserID:      r.UserID,
+		Email:       r.Human.Email.Email,
+		DisplayName: display,
+	}, nil
+}
+
+// searchUserByLoginName POSTs a Zitadel v2 user search by login name and returns
+// the raw response body. Shared by LookupUserByLoginName and
+// LookupUserDetailsByLoginName.
+func (c *ZitadelClient) searchUserByLoginName(ctx context.Context, loginName string) ([]byte, error) {
 	type query struct {
 		LoginNameQuery struct {
 			LoginName string `json:"loginName"`
@@ -163,34 +217,40 @@ func (c *ZitadelClient) LookupUserByLoginName(ctx context.Context, loginName str
 	}
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
-		return "", fmt.Errorf("zitadel: marshal user search: %w", err)
+		return nil, fmt.Errorf("zitadel: marshal user search: %w", err)
 	}
-
 	// Zitadel v2 user search is POST /v2/users (the /_search suffix is the v1
 	// path and returns 405 Method Not Allowed on this instance).
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		c.apiURL+"/v2/users", bytes.NewReader(bodyBytes))
 	if err != nil {
-		return "", fmt.Errorf("zitadel: build user search request: %w", err)
+		return nil, fmt.Errorf("zitadel: build user search request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.serviceToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("zitadel: user search: %w", err)
+		return nil, fmt.Errorf("zitadel: user search: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if err != nil {
-		return "", fmt.Errorf("zitadel: read user search response: %w", err)
+		return nil, fmt.Errorf("zitadel: read user search response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("zitadel: user search status %d: %s",
+		return nil, fmt.Errorf("zitadel: user search status %d: %s",
 			resp.StatusCode, truncate(string(respBytes), 200))
 	}
+	return respBytes, nil
+}
 
+func (c *ZitadelClient) LookupUserByLoginName(ctx context.Context, loginName string) (string, error) {
+	respBytes, err := c.searchUserByLoginName(ctx, loginName)
+	if err != nil {
+		return "", err
+	}
 	var parsed struct {
 		Result []struct {
 			UserID string `json:"userId"`
