@@ -188,20 +188,35 @@ spec:
               CID=$(echo "$RESP" | grep -o '"clientId":"[^"]*"' | head -1 | cut -d'"' -f4)
               CSECRET=$(echo "$RESP" | grep -o '"clientSecret":"[^"]*"' | head -1 | cut -d'"' -f4)
               if [ -z "$CID" ] || [ -z "$CSECRET" ]; then
-                # Idempotency: this Job is a post-install/upgrade hook, so it re-runs
-                # on EVERY chart upgrade. After the first provision the OIDC app
-                # already exists (and its client secret — only returned once at
-                # creation — is already persisted in $SECRET_NAME). Treat that as
-                # success and keep the existing secret, otherwise every upgrade's
-                # hook fails and Helm rolls the release back (image bumps never
-                # stick). Only a genuine create error is fatal.
+                # This Job is a post-install/upgrade hook, so it re-runs on EVERY
+                # chart upgrade. We only reach here when $SECRET_NAME was still
+                # CHANGE_ME/empty (the guard near the top of this script exits
+                # early once it holds a real client-id) — i.e. the OIDC app exists
+                # but its secret was never persisted. The client secret is only
+                # returned at creation, so SELF-HEAL: look the app up by name and
+                # REGENERATE its secret, then fall through to write it. Because the
+                # early guard skips once the secret is valid, this never needlessly
+                # rotates an already-working secret. Only a genuine error is fatal.
                 if echo "$RESP" | grep -qi "already exists"; then
-                  echo "OIDC app '$APP_NAME' already exists — keeping existing $SECRET_NAME; nothing to do."
-                  exit 0
+                  echo "OIDC app '$APP_NAME' exists but $SECRET_NAME is unset — re-issuing its client secret."
+                  APP_ID=$(api -X POST "$ZITADEL_URL/management/v1/projects/$PID/apps/_search" \
+                    -d "{\"queries\":[{\"nameQuery\":{\"name\":\"$APP_NAME\",\"method\":\"TEXT_QUERY_METHOD_EQUALS\"}}]}" \
+                    | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                  if [ -z "$APP_ID" ]; then echo "could not find existing app $APP_NAME"; exit 1; fi
+                  CID=$(api "$ZITADEL_URL/management/v1/projects/$PID/apps/$APP_ID" \
+                    | grep -o '"clientId":"[^"]*"' | head -1 | cut -d'"' -f4)
+                  CSECRET=$(api -X POST "$ZITADEL_URL/management/v1/projects/$PID/apps/$APP_ID/oidc_config/_generate_client_secret" \
+                    | grep -o '"clientSecret":"[^"]*"' | head -1 | cut -d'"' -f4)
+                  if [ -z "$CID" ] || [ -z "$CSECRET" ]; then
+                    echo "failed to re-issue client secret (app=$APP_ID)"; exit 1
+                  fi
+                  echo "Re-issued client secret for existing app $APP_ID (client_id=$CID)"
+                else
+                  echo "Failed to create OIDC app: $RESP"; exit 1
                 fi
-                echo "Failed to create OIDC app: $RESP"; exit 1
+              else
+                echo "Created OIDC app client_id=$CID"
               fi
-              echo "Created OIDC app client_id=$CID"
 
               kubectl create secret generic "$SECRET_NAME" -n "$SECRET_NAMESPACE" \
                 --from-literal=client-id="$CID" \
