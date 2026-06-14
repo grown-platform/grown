@@ -1450,7 +1450,41 @@ func New(cfg Config) *Server {
 		cfg.UsersRepo,
 		cfg.OrgsRepo,
 		issuer,
-	)
+	).WithDemoLoginAudit(func(r *http.Request, orgID, userID, email string) {
+		// Demo sign-in is pre-auth (no session on the inbound request), so we pass
+		// the resolved demo identity explicitly. Best-effort; a nil recorder or an
+		// empty org is dropped by the recorder.
+		auditRec.Record(r.Context(), audit.Event{
+			OrgID:        orgID,
+			ActorID:      userID,
+			ActorEmail:   email,
+			Service:      "auth",
+			Action:       "demo-login",
+			ResourceType: "session",
+			Method:       r.Method + " " + r.URL.Path,
+			Status:       "ok",
+			IP:           r.Header.Get("X-Forwarded-For"),
+			UserAgent:    r.UserAgent(),
+		})
+	})
+
+	// auditMutations wraps an admin handler so that only MUTATING requests
+	// (POST/PUT/PATCH/DELETE) are recorded to the org-scoped audit trail via
+	// auditRec.Log — read-only GETs pass through unaudited so the log isn't
+	// flooded with every console page-load. The wrapped handler still runs inside
+	// driveAuthWrap at the call site, so the recorder resolves actor/org from the
+	// auth context. Best-effort: a nil recorder yields the handler unchanged.
+	auditMutations := func(service, action string, h http.Handler) http.Handler {
+		audited := auditRec.Log(service, action, h)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				audited.ServeHTTP(w, r)
+			default:
+				h.ServeHTTP(w, r)
+			}
+		})
+	}
 
 	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Host-based dispatch: anything on the CRM subdomain goes straight to
@@ -1684,20 +1718,20 @@ func New(cfg Config) *Server {
 		// path lives under /api/v1/admin/ so geoMiddleware always exempts it —
 		// an admin can never lock themselves out of the policy editor.
 		if r.URL.Path == "/api/v1/admin/geo" {
-			driveAuthWrap(geoHandler).ServeHTTP(w, r)
+			driveAuthWrap(auditMutations("security", "geo-access-change", geoHandler)).ServeHTTP(w, r)
 			return
 		}
 		// Admin-gated honeypot console: recent intrusion alerts + counts (GET) and
 		// clear/acknowledge (DELETE). Under /api/v1/admin/ so geoMiddleware exempts
 		// it. The traps that FEED it (decoy paths + /api/v1/honeypot) are public.
 		if r.URL.Path == "/api/v1/admin/honeypot" {
-			driveAuthWrap(honeypotAdmin).ServeHTTP(w, r)
+			driveAuthWrap(auditMutations("security", "honeypot-clear", honeypotAdmin)).ServeHTTP(w, r)
 			return
 		}
 		// Admin-gated security console: reads/writes Zitadel org policies
 		// (password / MFA / lockout / passwordless) scoped to the caller's org.
 		if strings.HasPrefix(r.URL.Path, "/api/v1/admin/security/") {
-			driveAuthWrap(securityHandler).ServeHTTP(w, r)
+			driveAuthWrap(auditMutations("security", "security-policy-change", securityHandler)).ServeHTTP(w, r)
 			return
 		}
 		// User avatar: upload (POST), serve (GET), delete (DELETE) for the caller's
@@ -1732,7 +1766,7 @@ func New(cfg Config) *Server {
 			p == "/api/v1/admin/sessions" || strings.HasPrefix(p, "/api/v1/admin/sessions/") ||
 			p == "/api/v1/org/branding" || strings.HasPrefix(p, "/api/v1/org/branding/") ||
 			p == "/api/v1/me/sessions" || strings.HasPrefix(p, "/api/v1/me/sessions/") {
-			driveAuthWrap(orgAdminHandler).ServeHTTP(w, r)
+			driveAuthWrap(auditMutations("admin", "org-settings-change", orgAdminHandler)).ServeHTTP(w, r)
 			return
 		}
 		// Non-gated admin self-check: any authenticated member may ask whether
@@ -1745,7 +1779,7 @@ func New(cfg Config) *Server {
 		// Admin user management (Zitadel-backed). Distinct path from the gRPC
 		// AdminService's /api/v1/admin/service-settings.
 		if strings.HasPrefix(r.URL.Path, "/api/v1/admin/users") {
-			driveAuthWrap(adminUsers).ServeHTTP(w, r)
+			driveAuthWrap(auditMutations("admin", "user-management", adminUsers)).ServeHTTP(w, r)
 			return
 		}
 		// Org user directory search (member pickers).

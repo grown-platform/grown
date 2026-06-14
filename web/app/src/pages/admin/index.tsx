@@ -2030,39 +2030,85 @@ function AuditSection() {
   // and committed on submit/refresh so we don't fire a request per keystroke.
   const [serviceFilter, setServiceFilter] = useState("");
   const [actorFilter, setActorFilter] = useState("");
+  const [actionFilter, setActionFilter] = useState("");
+  // PAGE_SIZE is the backend max per request; a full page means more may exist.
+  const PAGE_SIZE = 500;
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = useCallback(async (service: string, actor: string) => {
-    setLoading(true);
-    setError(null);
-    setForbidden(false);
-    try {
-      const rows = await listAuditEvents({ service, actor, limit: 1000 });
-      setEvents(rows);
-    } catch (e) {
-      if (e instanceof AuditForbiddenError) {
-        setForbidden(true);
-        setEvents(null);
-      } else {
-        setError((e as Error).message);
+  const load = useCallback(
+    async (service: string, actor: string, action: string) => {
+      setLoading(true);
+      setError(null);
+      setForbidden(false);
+      try {
+        const rows = await listAuditEvents({
+          service,
+          actor,
+          action,
+          limit: PAGE_SIZE,
+        });
+        setEvents(rows);
+        setHasMore(rows.length >= PAGE_SIZE);
+      } catch (e) {
+        if (e instanceof AuditForbiddenError) {
+          setForbidden(true);
+          setEvents(null);
+        } else {
+          setError((e as Error).message);
+        }
+      } finally {
+        setLoading(false);
       }
+    },
+    [],
+  );
+
+  // loadMore fetches the next page strictly older than the oldest loaded row
+  // (keyset paging via the `before` cursor) and appends it.
+  const loadMore = useCallback(async () => {
+    if (!events || events.length === 0) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const before = events[events.length - 1].created_at;
+      const rows = await listAuditEvents({
+        service: serviceFilter,
+        actor: actorFilter,
+        action: actionFilter,
+        before,
+        limit: PAGE_SIZE,
+      });
+      setEvents((prev) => [...(prev ?? []), ...rows]);
+      setHasMore(rows.length >= PAGE_SIZE);
+    } catch (e) {
+      if (e instanceof AuditForbiddenError) setForbidden(true);
+      else setError((e as Error).message);
     } finally {
-      setLoading(false);
+      setLoadingMore(false);
     }
-  }, []);
+  }, [events, serviceFilter, actorFilter, actionFilter]);
 
   useEffect(() => {
-    void load("", "");
+    void load("", "", "");
   }, [load]);
 
   function applyFilters(e?: React.FormEvent) {
     e?.preventDefault();
-    void load(serviceFilter, actorFilter);
+    void load(serviceFilter, actorFilter, actionFilter);
   }
 
   // Distinct service slugs seen in the current page, to populate the dropdown.
   const services = useMemo(() => {
     const s = new Set<string>();
     for (const ev of events ?? []) if (ev.service) s.add(ev.service);
+    return Array.from(s).sort();
+  }, [events]);
+
+  // Distinct action verbs seen in the current page, for the action datalist.
+  const actions = useMemo(() => {
+    const s = new Set<string>();
+    for (const ev of events ?? []) if (ev.action) s.add(ev.action);
     return Array.from(s).sort();
   }, [events]);
 
@@ -2184,6 +2230,22 @@ function AuditSection() {
             sx={{ width: { xs: "100%", sm: 220 } }}
           />
         </FormControl>
+        <FormControl size="sm">
+          <FormLabel>Action</FormLabel>
+          <Input
+            size="sm"
+            placeholder="e.g. create"
+            value={actionFilter}
+            onChange={(e) => setActionFilter(e.target.value)}
+            slotProps={{ input: { list: "audit-actions" } }}
+            sx={{ width: { xs: "100%", sm: 140 } }}
+          />
+          <datalist id="audit-actions">
+            {actions.map((a) => (
+              <option key={a} value={a} />
+            ))}
+          </datalist>
+        </FormControl>
         <Button type="submit" size="sm" variant="solid" loading={loading}>
           Apply
         </Button>
@@ -2195,7 +2257,8 @@ function AuditSection() {
           onClick={() => {
             setServiceFilter("");
             setActorFilter("");
-            void load("", "");
+            setActionFilter("");
+            void load("", "", "");
           }}
         >
           Refresh
@@ -2302,6 +2365,19 @@ function AuditSection() {
             </tbody>
           </Table>
         </Sheet>
+      )}
+
+      {events && events.length > 0 && hasMore && (
+        <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+          <Button
+            size="sm"
+            variant="outlined"
+            onClick={() => void loadMore()}
+            loading={loadingMore}
+          >
+            Load older events
+          </Button>
+        </Box>
       )}
     </>
   );

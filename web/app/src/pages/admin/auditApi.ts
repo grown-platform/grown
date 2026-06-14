@@ -33,6 +33,9 @@ export interface AuditFilter {
   actor?: string;
   action?: string;
   limit?: number;
+  /** Keyset cursor: only events strictly older than this RFC3339 timestamp.
+   *  Drives "load more" paging (pass the oldest row's created_at). */
+  before?: string;
 }
 
 /** Raised when the caller lacks admin privileges (403). */
@@ -51,6 +54,7 @@ export async function listAuditEvents(
   if (filter.service?.trim()) params.set("service", filter.service.trim());
   if (filter.actor?.trim()) params.set("actor", filter.actor.trim());
   if (filter.action?.trim()) params.set("action", filter.action.trim());
+  if (filter.before?.trim()) params.set("before", filter.before.trim());
   params.set("limit", String(filter.limit ?? 100));
 
   const resp = await fetch(`${API_BASE}?${params.toString()}`, {

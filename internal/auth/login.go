@@ -29,6 +29,20 @@ type LoginHandlers struct {
 	// demo configuration (read from env at construction time)
 	demoEnabled  bool
 	demoUsername string
+
+	// auditDemoLogin, when set, is invoked best-effort AFTER a successful demo
+	// login with the resolved demo user's org/user/email + the request, so the
+	// caller (server.go) can record an audit event without this package importing
+	// internal/audit. nil ⇒ no auditing. Kept generic (a plain func) to preserve
+	// the package's decoupling.
+	auditDemoLogin func(r *http.Request, orgID, userID, email string)
+}
+
+// WithDemoLoginAudit registers a best-effort hook fired after a successful demo
+// login (server.go backs it with the audit recorder). Returns h for chaining.
+func (h *LoginHandlers) WithDemoLoginAudit(fn func(r *http.Request, orgID, userID, email string)) *LoginHandlers {
+	h.auditDemoLogin = fn
+	return h
 }
 
 // NewLoginHandlers constructs the LoginHandlers.
@@ -113,7 +127,7 @@ func (h *LoginHandlers) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 	if det, derr := h.zitadel.LookupUserDetailsByLoginName(ctx, req.Username); derr == nil {
 		pwEmail, pwDisplay = det.Email, det.DisplayName
 	}
-	if err := h.mintSession(ctx, w, r, zResult.UserID, pwEmail, pwDisplay); err != nil {
+	if _, err := h.mintSession(ctx, w, r, zResult.UserID, pwEmail, pwDisplay); err != nil {
 		slog.Error("mint session after password login", "err", err)
 		jsonError(w, "internal error", http.StatusInternalServerError)
 		return
@@ -169,10 +183,17 @@ func (h *LoginHandlers) DemoLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.mintSession(ctx, w, r, zUser.UserID, zUser.Email, zUser.DisplayName); err != nil {
+	u, err := h.mintSession(ctx, w, r, zUser.UserID, zUser.Email, zUser.DisplayName)
+	if err != nil {
 		slog.Error("mint session for demo login", "err", err)
 		jsonError(w, "internal error", http.StatusInternalServerError)
 		return
+	}
+
+	// Best-effort audit of the demo sign-in (the demo user has no auth context on
+	// the inbound request, so we pass the resolved identity explicitly).
+	if h.auditDemoLogin != nil {
+		h.auditDemoLogin(r, u.OrgID, u.ID, u.Email)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -192,7 +213,7 @@ func orFallback(primary, fallback string) string {
 // session, and sets the session cookie on w. It mirrors exactly what the OIDC
 // Callback does: GetByOIDCAnyOrg → UpsertByOIDC (provision if new) →
 // CreateWithContext → set-cookie.
-func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, r *http.Request, zitadelUserID, email, displayName string) error {
+func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, r *http.Request, zitadelUserID, email, displayName string) (users.User, error) {
 	issuer := h.issuer
 	if issuer == "" {
 		issuer = h.cfg.IssuerURL
@@ -204,7 +225,7 @@ func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, 
 	// what downstream email-keyed features (Forgejo reverse-proxy SSO) rely on.
 	u, err := h.users.GetByOIDCAnyOrg(ctx, issuer, zitadelUserID)
 	if err != nil && !errors.Is(err, users.ErrNotFound) {
-		return err
+		return users.User{}, err
 	}
 	switch {
 	case errors.Is(err, users.ErrNotFound):
@@ -212,7 +233,7 @@ func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, 
 		// exactly like the OIDC callback would, in the default org.
 		orgID, orgErr := h.resolveDefaultOrg(ctx)
 		if orgErr != nil {
-			return orgErr
+			return users.User{}, orgErr
 		}
 		u, err = h.users.UpsertByOIDC(ctx, users.UpsertInput{
 			OrgID:       orgID,
@@ -222,7 +243,7 @@ func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, 
 			DisplayName: displayName,
 		})
 		if err != nil {
-			return err
+			return users.User{}, err
 		}
 	case email != "" && u.Email != email:
 		// Existing user but their grown row is missing / has a stale email (e.g.
@@ -244,7 +265,7 @@ func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, 
 
 	tok, err := h.sessions.CreateWithContext(ctx, u.ID, h.cfg.SessionLifetime, ip, userAgent)
 	if err != nil {
-		return err
+		return users.User{}, err
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -257,7 +278,7 @@ func (h *LoginHandlers) mintSession(ctx context.Context, w http.ResponseWriter, 
 		Secure:   h.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
-	return nil
+	return u, nil
 }
 
 // resolveDefaultOrg returns the default org ID. Used when provisioning a user
