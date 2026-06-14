@@ -257,28 +257,30 @@ func (r *Recorder) readStream(ctx context.Context, rec *recording, br *bufio.Rea
 		currentTitle   string
 		cur            *songBuf
 		firstDiscarded bool
-		audioBytesRead int
-		readErr        error
 	)
 
-	audio := make([]byte, 0, metaint)
+	// Reusable buffer for one metaint-sized audio block.
+	block := make([]byte, 32<<10)
+	if metaint < len(block) {
+		block = block[:metaint]
+	}
 
 	for ctx.Err() == nil {
-		// Read exactly metaint audio bytes.
-		audio = audio[:0]
+		// Read exactly metaint audio bytes, appending them to the current song.
 		need := metaint
 		for need > 0 {
 			if ctx.Err() != nil {
 				return nil
 			}
-			chunk := make([]byte, need)
-			n, err := br.Read(chunk)
+			toRead := need
+			if toRead > len(block) {
+				toRead = len(block)
+			}
+			n, err := io.ReadFull(br, block[:toRead])
 			if n > 0 {
-				audio = append(audio, chunk[:n]...)
 				need -= n
-				audioBytesRead += n
 				if cur != nil && !cur.dropped {
-					cur.buf.Write(chunk[:n])
+					cur.buf.Write(block[:n])
 					if cur.buf.Len() > maxSongBytes {
 						cur.dropped = true
 						cur.buf.Reset()
@@ -286,17 +288,12 @@ func (r *Recorder) readStream(ctx context.Context, rec *recording, br *bufio.Rea
 				}
 			}
 			if err != nil {
-				readErr = err
-				break
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					return nil
+				}
+				return err
 			}
 		}
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
-				return nil
-			}
-			return readErr
-		}
-		audioBytesRead = 0
 
 		// Read the 1-byte metadata length (in 16-byte units).
 		lenByte, err := br.ReadByte()
