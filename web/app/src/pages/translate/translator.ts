@@ -147,8 +147,13 @@ async function getNllbPipeline(onProgress: ProgressFn): Promise<any> {
     // with the Supertonic TTS cache this keeps ~1 GB of models on-device.
     tf.env.useBrowserCache = true;
     tf.env.allowRemoteModels = true;
-    // Let the lib pick WebGPU when available and fall back to WASM itself.
+    // Pin the translation model to the **WASM (CPU)** backend. transformers.js
+    // already defaults to WASM in the browser, but we set it explicitly so a
+    // future library default can't silently move us onto WebGPU — whose driver
+    // crashes (seen with the TTS path on some GPUs) would otherwise take down
+    // the whole tab. CPU is plenty fast for a one-shot translation.
     return tf.pipeline("translation", NLLB_MODEL, {
+      device: "wasm",
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       progress_callback: (p: any) => {
         if (p?.status === "progress" && typeof p.progress === "number") {
