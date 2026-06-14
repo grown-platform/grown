@@ -20,6 +20,7 @@ import PeopleIcon from "@mui/icons-material/People";
 import GroupIcon from "@mui/icons-material/Group";
 import DevicesIcon from "@mui/icons-material/Devices";
 import ShieldIcon from "@mui/icons-material/Shield";
+import GppMaybeIcon from "@mui/icons-material/GppMaybe";
 import PublicIcon from "@mui/icons-material/Public";
 import HistoryIcon from "@mui/icons-material/History";
 import BarChartIcon from "@mui/icons-material/BarChart";
@@ -32,6 +33,7 @@ import {
   type AnalyticsResponse,
 } from "./analyticsApi";
 import { listAuditEvents, type AuditEvent } from "./auditApi";
+import { getHoneypotCounts, type HoneypotCounts } from "./honeypotApi";
 
 // Quick-action cards link to each working admin section. `section` is the
 // /admin/:section id consumed by the parent's navigate().
@@ -48,6 +50,7 @@ const QUICK_ACTIONS: {
   { section: "sessions", label: "Sessions", description: "Active logins", icon: <DevicesIcon /> },
   { section: "security", label: "Security", description: "Policies & 2FA", icon: <ShieldIcon /> },
   { section: "geo", label: "Region access", description: "Block or allow by country", icon: <PublicIcon /> },
+  { section: "honeypot", label: "Honeypot", description: "Intrusion alerts", icon: <GppMaybeIcon /> },
   { section: "audit", label: "Audit log", description: "Recent activity", icon: <HistoryIcon /> },
   { section: "analytics", label: "Analytics", description: "Usage & storage", icon: <BarChartIcon /> },
   { section: "settings", label: "Org settings", description: "Name & branding", icon: <SettingsIcon /> },
@@ -93,16 +96,18 @@ export function DashboardSection({
 }) {
   const [stats, setStats] = useState<AnalyticsResponse | null>(null);
   const [events, setEvents] = useState<AuditEvent[] | null>(null);
+  const [honeypot, setHoneypot] = useState<HoneypotCounts | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      // Both calls are best-effort: a failure (e.g. forbidden) just hides that
-      // panel rather than blocking the whole dashboard.
-      const [s, e] = await Promise.allSettled([
+      // All calls are best-effort: a failure (e.g. forbidden) just hides that
+      // panel/badge rather than blocking the whole dashboard.
+      const [s, e, h] = await Promise.allSettled([
         getAnalytics(),
         listAuditEvents({ limit: 5 }),
+        getHoneypotCounts(),
       ]);
       if (!alive) return;
       if (s.status === "fulfilled") setStats(s.value);
@@ -110,12 +115,16 @@ export function DashboardSection({
         // Non-forbidden errors still leave stats null; the panel just hides.
       }
       if (e.status === "fulfilled") setEvents(e.value);
+      if (h.status === "fulfilled") setHoneypot(h.value);
       setLoading(false);
     })();
     return () => {
       alive = false;
     };
   }, []);
+
+  // A small red badge on the Honeypot quick action when there are recent alerts.
+  const honeypotBadge = honeypot && honeypot.last_24h > 0 ? honeypot.last_24h : 0;
 
   return (
     <>
@@ -170,6 +179,7 @@ export function DashboardSection({
             onClick={() => onNavigate(a.section)}
             data-testid={`admin-quick-${a.section}`}
             sx={{
+              position: "relative",
               borderRadius: "md",
               p: 2,
               cursor: "pointer",
@@ -183,6 +193,17 @@ export function DashboardSection({
               },
             }}
           >
+            {a.section === "honeypot" && honeypotBadge > 0 && (
+              <Chip
+                size="sm"
+                variant="solid"
+                color="danger"
+                data-testid="admin-honeypot-badge"
+                sx={{ position: "absolute", top: 8, right: 8 }}
+              >
+                {honeypotBadge}
+              </Chip>
+            )}
             <Box
               sx={{
                 width: 40,
