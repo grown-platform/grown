@@ -13,6 +13,7 @@ import SkipNextIcon from "@mui/icons-material/SkipNext";
 import SkipPreviousIcon from "@mui/icons-material/SkipPrevious";
 import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
+import AirplayIcon from "@mui/icons-material/Airplay";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import RadioIcon from "@mui/icons-material/Radio";
 import StopIcon from "@mui/icons-material/Stop";
@@ -117,6 +118,17 @@ export function PlayerBar() {
             gap: 1,
           }}
         >
+          {p.airplayAvailable && (
+            <IconButton
+              size="sm"
+              variant="plain"
+              onClick={p.showAirplay}
+              aria-label="AirPlay"
+              title="Play on AirPlay device"
+            >
+              <AirplayIcon />
+            </IconButton>
+          )}
           <IconButton
             size="sm"
             variant="plain"
@@ -356,6 +368,17 @@ export function PlayerBar() {
           justifyContent: "flex-end",
         }}
       >
+        {p.airplayAvailable && (
+          <IconButton
+            size="sm"
+            variant="plain"
+            onClick={p.showAirplay}
+            aria-label="AirPlay"
+            title="Play on AirPlay device"
+          >
+            <AirplayIcon />
+          </IconButton>
+        )}
         <IconButton
           size="sm"
           variant="plain"

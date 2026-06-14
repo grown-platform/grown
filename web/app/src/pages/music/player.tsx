@@ -58,6 +58,12 @@ export interface PlayerState {
   cycleRepeat: () => void;
   /** Drop a track from the queue if present (e.g. after delete). */
   removeFromQueue: (trackId: string) => void;
+  /** True when an AirPlay route is available (Safari/iOS + a device on the
+   *  network). Always false in browsers without web AirPlay (e.g. Chrome). */
+  airplayAvailable: boolean;
+  /** Open the system AirPlay device picker for the backing <audio> element
+   *  (Safari/iOS only). No-op when unavailable. */
+  showAirplay: () => void;
 }
 
 const Ctx = createContext<PlayerState | null>(null);
@@ -80,6 +86,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [muted, setMuted] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>("off");
+  const [airplayAvailable, setAirplayAvailable] = useState(false);
   const [radioStation, setRadioStation] = useState<Station | null>(null);
   // Ref mirror so the audio "ended" handler doesn't advance a queue in radio mode.
   const radioRef = useRef<Station | null>(null);
@@ -112,6 +119,39 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   if (!audioRef.current && typeof Audio !== "undefined") {
     audioRef.current = new Audio();
   }
+
+  // AirPlay (Safari/iOS only): track route availability so the player can show
+  // an AirPlay button, and expose a picker opener. WebKit-specific APIs; a no-op
+  // in browsers without web AirPlay (Chrome/Firefox), where the button stays hidden.
+  useEffect(() => {
+    const audio = audioRef.current;
+    const supported =
+      typeof (
+        window as unknown as { WebKitPlaybackTargetAvailabilityEvent?: unknown }
+      ).WebKitPlaybackTargetAvailabilityEvent !== "undefined";
+    if (!audio || !supported) return;
+    const onAvail = (e: Event) => {
+      setAirplayAvailable(
+        (e as unknown as { availability?: string }).availability === "available",
+      );
+    };
+    audio.addEventListener(
+      "webkitplaybacktargetavailabilitychanged",
+      onAvail as EventListener,
+    );
+    return () =>
+      audio.removeEventListener(
+        "webkitplaybacktargetavailabilitychanged",
+        onAvail as EventListener,
+      );
+  }, []);
+
+  const showAirplay = useCallback(() => {
+    const audio = audioRef.current as
+      | (HTMLAudioElement & { webkitShowPlaybackTargetPicker?: () => void })
+      | null;
+    audio?.webkitShowPlaybackTargetPicker?.();
+  }, []);
 
   const loadAndPlay = useCallback((track: Track) => {
     const audio = audioRef.current;
@@ -405,6 +445,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     toggleShuffle,
     cycleRepeat,
     removeFromQueue,
+    airplayAvailable,
+    showAirplay,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

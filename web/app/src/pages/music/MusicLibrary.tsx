@@ -30,6 +30,7 @@ import PlaylistPlayIcon from "@mui/icons-material/PlaylistPlay";
 import RadioIcon from "@mui/icons-material/Radio";
 import AlbumIcon from "@mui/icons-material/Album";
 import PersonIcon from "@mui/icons-material/Person";
+import CastIcon from "@mui/icons-material/Cast";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
@@ -46,6 +47,7 @@ import { TrackRow } from "./TrackRow";
 import { UploadDialog } from "./UploadDialog";
 import { PlaylistFormDialog } from "./dialogs";
 import { RadioStations } from "./RadioStations";
+import { DevicesDialog } from "./DevicesDialog";
 
 // ---- Quality filter -------------------------------------------------------
 type QualityFilter = "all" | "hi" | "std" | "low";
@@ -100,6 +102,7 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
   const [query, setQuery] = useState("");
   const [quality, setQuality] = useState<QualityFilter>("all");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
   const [newPlaylistOpen, setNewPlaylistOpen] = useState(false);
 
   function applyLikeToggle(trackId: string, liked: boolean) {
@@ -338,6 +341,15 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
               </Option>
             ))}
           </Select>
+          <Button
+            variant="outlined"
+            color="neutral"
+            startDecorator={<CastIcon />}
+            onClick={() => setDevicesOpen(true)}
+            size="sm"
+          >
+            Play on…
+          </Button>
           <Button
             variant="solid"
             color="primary"
@@ -665,6 +677,8 @@ export function MusicLibrary({ user }: MusicLibraryProps) {
           }}
         />
       )}
+
+      <DevicesDialog open={devicesOpen} onClose={() => setDevicesOpen(false)} />
 
       {newPlaylistOpen && (
         <PlaylistFormDialog
