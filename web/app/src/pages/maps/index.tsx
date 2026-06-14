@@ -2,15 +2,13 @@
  * Maps — a slippy map with search, geolocation, layer switching, and
  * **optional offline data**.
  *
- * The map is Leaflet over self-servable OpenStreetMap raster tiles (street) plus
- * Esri World Imagery (satellite). Tiles are routed through a cache-aware tile
- * layer (see `offlineTileLayer`): every tile you view is stored in the Cache API
- * (`maps-tiles-v1`), so areas you've browsed — and any region you explicitly
- * "Save for offline" — render with no connection. `navigator.storage.persist()`
- * asks the browser not to evict the cache. Nothing here calls a grown backend.
- *
- * Leaflet + its CSS are imported at the top of this lazy-loaded route module, so
- * they land in the /maps chunk and never bloat the main app bundle.
+ * Leaflet over OpenStreetMap (streets) + Esri (satellite) raster tiles. Tiles
+ * route through a cache-aware layer (`offlineTileLayer`): every tile viewed is
+ * stored in the Cache API, and the user can explicitly "Save area offline" at a
+ * chosen **detail level**, then review/delete those selections in the "Cached
+ * data" panel. Nothing here calls a grown backend. Leaflet + its CSS live in
+ * this lazy /maps chunk, out of the main bundle. Region bookkeeping +
+ * download/delete live in ./offline.
  */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -25,59 +23,62 @@ import {
   Tooltip,
   LinearProgress,
   Chip,
+  Modal,
+  ModalDialog,
+  ModalClose,
+  DialogTitle,
+  DialogContent,
+  FormControl,
+  FormLabel,
+  RadioGroup,
+  Radio,
+  List,
+  ListItem,
+  ListItemContent,
+  IconButton,
+  Divider,
+  Sheet,
 } from "@mui/joy";
 import MapIcon from "@mui/icons-material/Map";
 import MyLocationIcon from "@mui/icons-material/MyLocation";
 import SearchIcon from "@mui/icons-material/Search";
 import DownloadForOfflineIcon from "@mui/icons-material/DownloadForOffline";
-import CloudDoneOutlinedIcon from "@mui/icons-material/CloudDoneOutlined";
+import StorageIcon from "@mui/icons-material/Storage";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
+import {
+  TILE_CACHE,
+  LAYERS,
+  type LayerDef,
+  type Bounds,
+  type OfflineRegion,
+  loadRegions,
+  estimateTiles,
+  downloadRegion,
+  deleteRegion,
+  storageEstimate,
+  fmtBytes,
+} from "./offline";
 
 const ACCENT = "#1565C0";
-const TILE_CACHE = "maps-tiles-v1";
-// How many extra zoom levels (beyond the current one) a "Save area" pulls, and
-// the hard cap on tiles per save so a careless click can't download forever.
-const SAVE_EXTRA_LEVELS = 2;
-const SAVE_TILE_CAP = 1500;
 
-interface LayerDef {
-  label: string;
-  url: string;
-  attribution: string;
-  maxZoom: number;
-}
-
-const LAYERS: Record<string, LayerDef> = {
-  streets: {
-    label: "Streets",
-    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: "&copy; OpenStreetMap contributors",
-    maxZoom: 19,
-  },
-  satellite: {
-    label: "Satellite",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics",
-    maxZoom: 19,
-  },
-};
+// Detail presets for "Save area offline": how many zoom levels DEEPER than the
+// current view to cache. More depth = sharper when you zoom in offline = more
+// tiles. The live tile estimate in the dialog shows the cost.
+const DETAIL_PRESETS = [
+  { id: "low", label: "This view", extra: 0 },
+  { id: "standard", label: "Standard (+2 zoom)", extra: 2 },
+  { id: "high", label: "High detail (+4 zoom)", extra: 4 },
+] as const;
+type DetailId = (typeof DETAIL_PRESETS)[number]["id"];
 
 // ---------------------------------------------------------------------------
-// Offline tile cache
+// Live cache-aware tile layer
 // ---------------------------------------------------------------------------
 
-let persistAsked = false;
-function askPersist(): void {
-  if (persistAsked) return;
-  persistAsked = true;
-  void navigator.storage?.persist?.().catch(() => {});
-}
-
-/** Cache-first fetch of one tile → an object URL, or null to fall back to the
- *  network <img>. Stores newly-fetched tiles so viewed areas work offline. */
 async function tileBlobURL(url: string): Promise<string | null> {
   if (typeof caches === "undefined") return null;
   try {
@@ -87,7 +88,7 @@ async function tileBlobURL(url: string): Promise<string | null> {
       const net = await fetch(url, { mode: "cors" });
       if (!net.ok) return null;
       await cache.put(url, net.clone());
-      askPersist();
+      void navigator.storage?.persist?.().catch(() => {});
       res = net;
     }
     return URL.createObjectURL(await res.blob());
@@ -96,17 +97,15 @@ async function tileBlobURL(url: string): Promise<string | null> {
   }
 }
 
-/** A Leaflet TileLayer whose tiles are served Cache-API-first (so saved/visited
- *  areas work offline), falling back to the network for anything uncached. */
 function offlineTileLayer(def: LayerDef): L.TileLayer {
   const Offline = L.TileLayer.extend({
     createTile(coords: L.Coords, done: L.DoneCallback) {
       const img = document.createElement("img");
       img.setAttribute("role", "presentation");
       img.alt = "";
-      // eslint-disable-next-line @typescript-eslint/no-this-alias
-      const self = this as unknown as L.TileLayer;
-      const url = (self as unknown as { getTileUrl(c: L.Coords): string }).getTileUrl(coords);
+      const url = (
+        this as unknown as { getTileUrl(c: L.Coords): string }
+      ).getTileUrl(coords);
       void tileBlobURL(url).then((blobUrl) => {
         if (blobUrl) {
           img.onload = () => {
@@ -115,7 +114,7 @@ function offlineTileLayer(def: LayerDef): L.TileLayer {
           };
           img.onerror = () => {
             URL.revokeObjectURL(blobUrl);
-            img.src = url; // last-ditch network try
+            img.src = url;
             done(undefined, img);
           };
           img.src = blobUrl;
@@ -138,60 +137,6 @@ function offlineTileLayer(def: LayerDef): L.TileLayer {
   });
 }
 
-/** Fill the tile URL template for a tile coordinate. */
-function tileURL(def: LayerDef, x: number, y: number, z: number): string {
-  return def.url
-    .replace("{z}", String(z))
-    .replace("{x}", String(x))
-    .replace("{y}", String(y));
-}
-
-/** Pre-fetch + cache every tile covering the map's current view across the
- *  current zoom and a couple deeper levels. Returns counts for the UI. */
-async function saveVisibleArea(
-  map: L.Map,
-  def: LayerDef,
-  onProgress: (done: number, total: number) => void,
-): Promise<{ saved: number; capped: boolean }> {
-  if (typeof caches === "undefined") return { saved: 0, capped: false };
-  const bounds = map.getBounds();
-  const z0 = map.getZoom();
-  const coords: Array<{ x: number; y: number; z: number }> = [];
-  for (let z = z0; z <= Math.min(z0 + SAVE_EXTRA_LEVELS, def.maxZoom); z++) {
-    const nw = map.project(bounds.getNorthWest(), z).divideBy(256).floor();
-    const se = map.project(bounds.getSouthEast(), z).divideBy(256).floor();
-    for (let x = nw.x; x <= se.x; x++) {
-      for (let y = nw.y; y <= se.y; y++) coords.push({ x, y, z });
-    }
-  }
-  const capped = coords.length > SAVE_TILE_CAP;
-  const work = coords.slice(0, SAVE_TILE_CAP);
-  const cache = await caches.open(TILE_CACHE);
-  let done = 0;
-  // Small concurrency pool so we don't open hundreds of sockets at once.
-  const POOL = 6;
-  let i = 0;
-  async function worker() {
-    while (i < work.length) {
-      const t = work[i++];
-      const url = tileURL(def, t.x, t.y, t.z);
-      try {
-        if (!(await cache.match(url))) {
-          const res = await fetch(url, { mode: "cors" });
-          if (res.ok) await cache.put(url, res.clone());
-        }
-      } catch {
-        /* skip unreachable tiles */
-      }
-      onProgress(++done, work.length);
-    }
-  }
-  await Promise.all(Array.from({ length: POOL }, worker));
-  askPersist();
-  return { saved: work.length, capped };
-}
-
-/** Geocode a free-text query via OSM Nominatim (low-volume, attributed use). */
 async function geocode(
   q: string,
 ): Promise<{ lat: number; lon: number; name: string } | null> {
@@ -208,6 +153,23 @@ async function geocode(
     : null;
 }
 
+async function reverseGeocode(lat: number, lon: number): Promise<string> {
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=${lat}&lon=${lon}`,
+      { headers: { "Accept-Language": "en" } },
+    );
+    const j = (await r.json()) as { name?: string; display_name?: string };
+    return (
+      j.name ||
+      j.display_name?.split(",").slice(0, 2).join(", ").trim() ||
+      ""
+    );
+  } catch {
+    return "";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -222,13 +184,27 @@ export default function MapsApp({ user }: { user: User }) {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [savePct, setSavePct] = useState(0);
   const [online, setOnline] = useState(
     typeof navigator === "undefined" ? true : navigator.onLine,
   );
 
-  // Create the map once.
+  // Save-area dialog state.
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveBounds, setSaveBounds] = useState<Bounds | null>(null);
+  const [saveZoom, setSaveZoom] = useState(3);
+  const [detail, setDetail] = useState<DetailId>("standard");
+  const [saveLabel, setSaveLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [savePct, setSavePct] = useState(0);
+
+  // Cached-data dialog state.
+  const [cacheOpen, setCacheOpen] = useState(false);
+  const [regions, setRegions] = useState<OfflineRegion[]>([]);
+  const [usage, setUsage] = useState<{ usage: number; quota: number }>({
+    usage: 0,
+    quota: 0,
+  });
+
   useEffect(() => {
     if (!mapElRef.current || mapRef.current) return;
     const map = L.map(mapElRef.current, { zoomControl: true }).setView(
@@ -236,9 +212,7 @@ export default function MapsApp({ user }: { user: User }) {
       3,
     );
     mapRef.current = map;
-    const tl = offlineTileLayer(LAYERS.streets).addTo(map);
-    layerRef.current = tl;
-    // Try to center on the user (best-effort, non-blocking).
+    layerRef.current = offlineTileLayer(LAYERS.streets).addTo(map);
     navigator.geolocation?.getCurrentPosition(
       (pos) => map.setView([pos.coords.latitude, pos.coords.longitude], 13),
       () => {},
@@ -250,7 +224,6 @@ export default function MapsApp({ user }: { user: User }) {
     };
   }, []);
 
-  // Swap the base layer when the selector changes.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -258,7 +231,6 @@ export default function MapsApp({ user }: { user: User }) {
     layerRef.current = offlineTileLayer(LAYERS[layer]).addTo(map);
   }, [layer]);
 
-  // Track connectivity so the UI can reassure the user offline.
   useEffect(() => {
     const on = () => setOnline(true);
     const off = () => setOnline(false);
@@ -307,21 +279,65 @@ export default function MapsApp({ user }: { user: User }) {
     );
   }
 
-  async function handleSaveOffline() {
-    if (!mapRef.current) return;
+  // Open the detail prompt, capturing the current view + a suggested name.
+  function openSaveDialog() {
+    const map = mapRef.current;
+    if (!map) return;
+    const b = map.getBounds();
+    setSaveBounds({
+      south: b.getSouth(),
+      west: b.getWest(),
+      north: b.getNorth(),
+      east: b.getEast(),
+    });
+    setSaveZoom(map.getZoom());
+    setDetail("standard");
+    setSaveLabel("");
+    setSavePct(0);
+    setSaveOpen(true);
+    const c = map.getCenter();
+    void reverseGeocode(c.lat, c.lng).then((name) => {
+      if (name) setSaveLabel((cur) => cur || name);
+    });
+  }
+
+  function zoomRangeFor(extra: number): { from: number; to: number } {
+    const def = LAYERS[layer];
+    return { from: saveZoom, to: Math.min(saveZoom + extra, def.maxZoom) };
+  }
+
+  function estimateFor(extra: number): number {
+    if (!saveBounds) return 0;
+    const { from, to } = zoomRangeFor(extra);
+    return estimateTiles(saveBounds, from, to);
+  }
+
+  async function handleConfirmSave() {
+    if (!saveBounds) return;
+    const def = LAYERS[layer];
+    const extra =
+      DETAIL_PRESETS.find((p) => p.id === detail)?.extra ?? 2;
+    const { from, to } = zoomRangeFor(extra);
+    const label =
+      saveLabel.trim() ||
+      `Area @ ${saveBounds.south.toFixed(2)},${saveBounds.west.toFixed(2)}`;
     setSaving(true);
     setSavePct(0);
-    setStatus(null);
     try {
-      const { saved, capped } = await saveVisibleArea(
-        mapRef.current,
-        LAYERS[layer],
+      const { capped } = await downloadRegion(
+        def,
+        layer,
+        saveBounds,
+        from,
+        to,
+        label,
         (d, t) => setSavePct(t ? Math.round((d / t) * 100) : 0),
       );
+      setSaveOpen(false);
       setStatus(
         capped
-          ? `Saved ${saved} tiles (area capped — zoom in for more detail offline).`
-          : `Saved ${saved} tiles for offline use ✓`,
+          ? `Saved “${label}” (capped — pick a smaller area or lower detail for full coverage).`
+          : `Saved “${label}” for offline use ✓`,
       );
     } catch {
       setStatus("Couldn't save this area.");
@@ -330,16 +346,23 @@ export default function MapsApp({ user }: { user: User }) {
     }
   }
 
+  async function openCacheDialog() {
+    setRegions(loadRegions());
+    setUsage(await storageEstimate());
+    setCacheOpen(true);
+  }
+
+  async function handleDeleteRegion(region: OfflineRegion) {
+    await deleteRegion(region);
+    setRegions(loadRegions());
+    setUsage(await storageEstimate());
+  }
+
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.body" }}>
       <Header user={user} />
       <Container sx={{ py: 3 }} maxWidth={false}>
-        <Stack
-          direction="row"
-          alignItems="center"
-          spacing={1.5}
-          sx={{ mb: 1 }}
-        >
+        <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 1 }}>
           <MapIcon sx={{ color: ACCENT, fontSize: 30 }} />
           <Typography level="h2">Maps</Typography>
           {!online && (
@@ -364,7 +387,7 @@ export default function MapsApp({ user }: { user: User }) {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void handleSearch()}
             startDecorator={<SearchIcon />}
-            sx={{ minWidth: 280, flex: 1 }}
+            sx={{ minWidth: 260, flex: 1 }}
           />
           <Button
             size="sm"
@@ -390,7 +413,7 @@ export default function MapsApp({ user }: { user: User }) {
             size="sm"
             value={layer}
             onChange={(_, v) => v && setLayer(v)}
-            sx={{ minWidth: 130 }}
+            sx={{ minWidth: 120 }}
           >
             {Object.entries(LAYERS).map(([id, def]) => (
               <Option key={id} value={id}>
@@ -398,40 +421,38 @@ export default function MapsApp({ user }: { user: User }) {
               </Option>
             ))}
           </Select>
-          <Tooltip title="Cache the tiles for the area you're viewing so it works with no connection.">
+          <Button
+            size="sm"
+            variant="outlined"
+            color="primary"
+            startDecorator={<DownloadForOfflineIcon />}
+            onClick={openSaveDialog}
+          >
+            Save area offline
+          </Button>
+          <Tooltip title="View & manage the offline areas you've downloaded">
             <Button
               size="sm"
               variant="outlined"
-              color="primary"
-              startDecorator={<DownloadForOfflineIcon />}
-              loading={saving}
-              onClick={() => void handleSaveOffline()}
+              color="neutral"
+              startDecorator={<StorageIcon />}
+              onClick={() => void openCacheDialog()}
             >
-              Save area offline
+              Cached data
             </Button>
           </Tooltip>
         </Stack>
 
-        {saving && (
-          <LinearProgress
-            determinate
-            value={savePct}
-            sx={{ mb: 1 }}
-          />
-        )}
         {status && (
-          <Typography
-            level="body-xs"
-            sx={{ mb: 1, color: ACCENT, display: "flex", alignItems: "center", gap: 0.5 }}
-          >
-            <CloudDoneOutlinedIcon fontSize="small" /> {status}
+          <Typography level="body-xs" sx={{ mb: 1, color: ACCENT }}>
+            {status}
           </Typography>
         )}
 
         <Box
           ref={mapElRef}
           sx={{
-            height: "calc(100vh - 220px)",
+            height: "calc(100vh - 210px)",
             minHeight: 420,
             borderRadius: "md",
             overflow: "hidden",
@@ -440,10 +461,149 @@ export default function MapsApp({ user }: { user: User }) {
           }}
         />
         <Typography level="body-xs" sx={{ mt: 1, opacity: 0.6 }}>
-          Tiles you view are cached for offline use. “Save area offline” stores
-          the current view (and two zoom levels deeper) on your device.
+          Tiles you view are cached automatically. “Save area offline” lets you
+          pick how much detail to download for the current view.
         </Typography>
       </Container>
+
+      {/* ---- Detail prompt before downloading ---- */}
+      <Modal open={saveOpen} onClose={() => !saving && setSaveOpen(false)}>
+        <ModalDialog sx={{ maxWidth: 440 }}>
+          <ModalClose disabled={saving} />
+          <DialogTitle>Save area offline</DialogTitle>
+          <DialogContent>
+            <Typography level="body-sm" sx={{ mb: 1.5 }}>
+              Download the area you're viewing so it works with no connection.
+              Higher detail caches deeper zoom levels (sharper, but more tiles).
+            </Typography>
+            <FormControl sx={{ mb: 1.5 }}>
+              <FormLabel>Name</FormLabel>
+              <Input
+                size="sm"
+                value={saveLabel}
+                onChange={(e) => setSaveLabel(e.target.value)}
+                placeholder="e.g. Rome city centre"
+              />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Detail level</FormLabel>
+              <RadioGroup
+                value={detail}
+                onChange={(e) => setDetail(e.target.value as DetailId)}
+              >
+                {DETAIL_PRESETS.map((p) => {
+                  const n = estimateFor(p.extra);
+                  const { to } = zoomRangeFor(p.extra);
+                  return (
+                    <Radio
+                      key={p.id}
+                      value={p.id}
+                      disabled={saving}
+                      label={
+                        <Box>
+                          <Typography level="body-sm">{p.label}</Typography>
+                          <Typography level="body-xs" sx={{ opacity: 0.65 }}>
+                            ~{n.toLocaleString()} tiles · to zoom {to}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                  );
+                })}
+              </RadioGroup>
+            </FormControl>
+            {saving && (
+              <LinearProgress
+                determinate
+                value={savePct}
+                sx={{ mt: 1.5 }}
+              />
+            )}
+            <Stack direction="row" spacing={1} sx={{ mt: 2 }} justifyContent="flex-end">
+              <Button
+                size="sm"
+                variant="plain"
+                color="neutral"
+                disabled={saving}
+                onClick={() => setSaveOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                loading={saving}
+                startDecorator={<DownloadForOfflineIcon />}
+                onClick={() => void handleConfirmSave()}
+                sx={{ bgcolor: ACCENT, "&:hover": { bgcolor: "#0d4f96" } }}
+              >
+                Download {estimateFor(
+                  DETAIL_PRESETS.find((p) => p.id === detail)?.extra ?? 2,
+                ).toLocaleString()}{" "}
+                tiles
+              </Button>
+            </Stack>
+          </DialogContent>
+        </ModalDialog>
+      </Modal>
+
+      {/* ---- Cached offline selections ---- */}
+      <Modal open={cacheOpen} onClose={() => setCacheOpen(false)}>
+        <ModalDialog sx={{ maxWidth: 520, width: "100%" }}>
+          <ModalClose />
+          <DialogTitle>Offline map data</DialogTitle>
+          <DialogContent>
+            <Typography level="body-xs" sx={{ mb: 1, opacity: 0.7 }}>
+              Saved areas render with no connection. Total on-device cache:{" "}
+              <strong>{fmtBytes(usage.usage)}</strong>
+              {usage.quota ? ` of ${fmtBytes(usage.quota)} available` : ""}.
+            </Typography>
+            <Divider />
+            {regions.length === 0 ? (
+              <Typography level="body-sm" sx={{ py: 3, textAlign: "center", opacity: 0.6 }}>
+                No saved areas yet. Pan to a place and tap “Save area offline”.
+              </Typography>
+            ) : (
+              <List sx={{ "--ListItem-paddingX": "0px" }}>
+                {regions.map((r) => (
+                  <ListItem
+                    key={r.id}
+                    endAction={
+                      <Tooltip title="Delete this offline area">
+                        <IconButton
+                          size="sm"
+                          color="danger"
+                          variant="plain"
+                          onClick={() => void handleDeleteRegion(r)}
+                        >
+                          <DeleteOutlineIcon />
+                        </IconButton>
+                      </Tooltip>
+                    }
+                  >
+                    <ListItemContent>
+                      <Typography level="body-sm" sx={{ fontWeight: 600 }}>
+                        {r.label}
+                      </Typography>
+                      <Typography level="body-xs" sx={{ opacity: 0.65 }}>
+                        {r.tiles.toLocaleString()} tiles · zoom {r.zoomFrom}–
+                        {r.zoomTo} · {LAYERS[r.layerId]?.label ?? r.layerId} ·{" "}
+                        {new Date(r.savedAt).toLocaleDateString()}
+                      </Typography>
+                    </ListItemContent>
+                  </ListItem>
+                ))}
+              </List>
+            )}
+            <Sheet
+              variant="soft"
+              sx={{ mt: 1, p: 1, borderRadius: "sm", fontSize: 12, opacity: 0.8 }}
+            >
+              Tip: deleting an area frees its tiles. Tiles shared with another
+              saved area may be re-fetched next time you view it online.
+            </Sheet>
+          </DialogContent>
+        </ModalDialog>
+      </Modal>
     </Box>
   );
 }
