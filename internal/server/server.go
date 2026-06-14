@@ -271,6 +271,15 @@ type Config struct {
 	// lets signed-in users share the session. Empty disables the proxy.
 	AssembleURL string
 
+	// LearnURL is the internal origin of the Learn platform container (the
+	// catalog-driven every-tongue PWA), e.g. http://every-tongue.<ns>.svc. grown
+	// reverse-proxies /learn/* to it with the /learn prefix stripped, so Learn
+	// lives under grown's own origin at /learn instead of a separate subdomain
+	// (learn.pick.haus). The Learn PWA uses relative asset paths + a hash router,
+	// so it works unchanged under the /learn base. Public content, so this path
+	// BYPASSES grown's auth wall (no forced sign-in). Empty disables the proxy.
+	LearnURL string
+
 	// StaticDir is the path to the built React SPA. Empty disables static
 	// serving (API-only mode for tests).
 	StaticDir string
@@ -1385,6 +1394,10 @@ func New(cfg Config) *Server {
 	// session. Configure Assemble's base path to /assemble.
 	assembleProxy := newStripPrefixProxy(cfg.AssembleURL, "/assemble")
 
+	// /learn/* → the Learn platform container (every-tongue PWA), /learn prefix
+	// stripped. Public content; bypasses grown's auth wall like Assemble.
+	learnProxy := newStripPrefixProxy(cfg.LearnURL, "/learn")
+
 	// ---- Cloud Import (plain HTTP, no gRPC) ----------------------------------
 	// Wire concrete app-repo closures into cloudimport via the injected-interface
 	// pattern so cloudimport has no import-time dependency on internal/calendar,
@@ -1984,6 +1997,19 @@ func New(cfg Config) *Server {
 			}
 			if strings.HasPrefix(r.URL.Path, "/assemble/") {
 				assembleProxy.ServeHTTP(w, r)
+				return
+			}
+		}
+		// Learn platform at /learn/* — reverse-proxied to its own container, the
+		// /learn prefix stripped, BYPASSING grown's auth wall (Learn is public).
+		// The PWA uses relative paths + a hash router, so it runs unchanged here.
+		if learnProxy != nil {
+			if r.URL.Path == "/learn" {
+				http.Redirect(w, r, "/learn/", http.StatusMovedPermanently)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, "/learn/") {
+				learnProxy.ServeHTTP(w, r)
 				return
 			}
 		}

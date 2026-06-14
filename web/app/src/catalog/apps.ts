@@ -65,6 +65,12 @@ const SPACELIGHT_URL =
  *  (pdf), proxied under grown's origin. Override with VITE_PDF_URL. */
 const PDF_URL = (import.meta.env.VITE_PDF_URL as string | undefined) || "/pdf/";
 
+/** LEARN_URL points the Learn tile at the Learn platform (every-tongue PWA),
+ *  served under grown's own origin at /learn (the server reverse-proxies
+ *  /learn/* to the Learn container). Override with VITE_LEARN_URL. */
+const LEARN_URL =
+  (import.meta.env.VITE_LEARN_URL as string | undefined) || "/learn/";
+
 /** CRM_URL points the CRM tile at the integrated Twenty (twentyhq/twenty) CRM,
  *  served on a dedicated subdomain that grown reverse-proxies (by Host) straight
  *  to Twenty at root. Override with VITE_CRM_URL. */
@@ -418,6 +424,22 @@ export const apps: AppTile[] = [
     phase: 4,
     comingSoon: false,
     iconName: "ViewInAr",
+  },
+  {
+    id: "learn",
+    name: "Learn",
+    blurb: "Courses, lessons & a universal topic search — offline-first.",
+    accentColor: "#1565C0",
+    phase: 4,
+    comingSoon: false,
+    iconName: "School",
+    externalUrl: LEARN_URL,
+    details: [
+      "A growing, Khan-Academy-style learning platform — catalog of courses, units and lessons.",
+      "Course 1: Every Tongue — a self-study kit for Bible translation, with a live global-progress map.",
+      "Universal search to learn (and teach) any topic; offline-first PWA.",
+      "Served under your workspace at /learn — same sign-in, no separate site.",
+    ],
   },
   {
     id: "orgsync",

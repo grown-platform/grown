@@ -326,6 +326,9 @@ func main() {
 		// Assemble (spatial collaboration) reverse-proxied at /assemble/* (prefix
 		// stripped, auth-wall bypassed so guests work). Empty disables.
 		AssembleURL: os.Getenv("GROWN_ASSEMBLE_URL"),
+		// Learn platform (every-tongue PWA) reverse-proxied at /learn/* (prefix
+		// stripped, auth-wall bypassed — Learn is public). Empty disables.
+		LearnURL: os.Getenv("GROWN_LEARN_URL"),
 		// Cloud Import — upload-based import from Google Takeout and Apple exports.
 		CloudImportRepo:      cloudimport.NewRepository(pool),
 		CloudImportDriveRepo: drive.NewRepository(pool),
