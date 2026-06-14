@@ -426,6 +426,20 @@ export const apps: AppTile[] = [
     iconName: "ViewInAr",
   },
   {
+    id: "podcasts",
+    name: "Podcasts",
+    blurb: "Discover & listen to podcasts (early preview).",
+    accentColor: "#8E44AD",
+    phase: 4,
+    comingSoon: false,
+    iconName: "Podcasts",
+    details: [
+      "Search and discover podcasts (powered by the open iTunes podcast directory).",
+      "Coming next: subscribe to shows, browse episodes, and play them in the built-in player with offline downloads.",
+      "Planned: OPML import to bring your subscriptions from another app.",
+    ],
+  },
+  {
     id: "maps",
     name: "Maps",
     blurb: "Browse the map, search places — with optional offline areas.",

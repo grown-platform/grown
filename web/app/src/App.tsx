@@ -58,6 +58,8 @@ const ThreeDApp = lazy(() => import("./pages/3d"));
 const TranslateApp = lazy(() => import("./pages/translate"));
 // Maps ships as its own chunk (Leaflet + its CSS live in this lazy route).
 const MapsApp = lazy(() => import("./pages/maps"));
+// Podcasts (early preview) — its own chunk.
+const PodcastsApp = lazy(() => import("./pages/podcasts"));
 // Public ticket intake: file a request without an account.
 const TicketSubmitPublic = lazy(() => import("./pages/tickets/Submit"));
 
@@ -478,6 +480,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<ChunkFallback />}>
                       <MapsApp user={auth.user} />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/podcasts"
+                  element={
+                    <Suspense fallback={<ChunkFallback />}>
+                      <PodcastsApp user={auth.user} />
                     </Suspense>
                   }
                 />
