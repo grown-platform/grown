@@ -261,11 +261,19 @@ func main() {
 			WHIPBase: defaultEnv("GROWN_LIVE_WEBRTC_BASE", "/live-webrtc"),
 			RTMPHost: defaultEnv("GROWN_LIVE_RTMP_HOST", "localhost:1935"),
 		},
-		LiveHLSURL:          defaultEnv("GROWN_LIVE_HLS_URL", "http://127.0.0.1:8888"),
-		LiveWebRTCURL:       defaultEnv("GROWN_LIVE_WEBRTC_URL", "http://127.0.0.1:8889"),
-		MusicRepo:           musicRepo,
-		MusicBlobs:          blobs,
-		MusicRadio:          musicRecorder,
+		LiveHLSURL:    defaultEnv("GROWN_LIVE_HLS_URL", "http://127.0.0.1:8888"),
+		LiveWebRTCURL: defaultEnv("GROWN_LIVE_WEBRTC_URL", "http://127.0.0.1:8889"),
+		MusicRepo:     musicRepo,
+		MusicBlobs:    blobs,
+		MusicRadio:    musicRecorder,
+		// Self-hosted Alexa music skill. GROWN_ALEXA_SECRET signs the session-free
+		// Echo stream URLs (no existing signing key to reuse, so it's its own env);
+		// empty disables the skill. GROWN_PUBLIC_BASE_URL is the public origin used
+		// to build absolute stream URLs (falls back to the OIDC redirect origin).
+		// GROWN_ALEXA_SKIP_VERIFY=true bypasses request-signature checks (dev only).
+		AlexaSecret:         []byte(os.Getenv("GROWN_ALEXA_SECRET")),
+		AlexaPublicBaseURL:  alexaPublicBaseURL(),
+		AlexaSkipVerify:     boolEnv("GROWN_ALEXA_SKIP_VERIFY"),
 		ProjectsRepo:        projects.NewRepository(pool),
 		KeepRepo:            keep.NewRepository(pool),
 		TasksRepo:           tasks.NewRepository(pool),
@@ -462,6 +470,26 @@ func defaultEnv(name, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// boolEnv parses a boolean env var; anything unparseable (incl. empty) is false.
+func boolEnv(name string) bool {
+	b, _ := strconv.ParseBool(os.Getenv(name))
+	return b
+}
+
+// alexaPublicBaseURL returns grown's public origin used to build absolute,
+// signed Alexa stream URLs. An explicit GROWN_PUBLIC_BASE_URL wins; otherwise it
+// is derived from the OIDC redirect URL's scheme+host (e.g. https://pick.haus).
+func alexaPublicBaseURL() string {
+	if v := os.Getenv("GROWN_PUBLIC_BASE_URL"); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	u, err := url.Parse(os.Getenv("GROWN_OIDC_REDIRECT_URL"))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // resolveUserOrg looks up the org_id for a given user id. Returns "" on any

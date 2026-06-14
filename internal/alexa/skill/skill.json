@@ -1,0 +1,51 @@
+{
+  "manifest": {
+    "manifestVersion": "1.0",
+    "publishingInformation": {
+      "locales": {
+        "en-US": {
+          "name": "Grown Music",
+          "summary": "Play your grown Music library on your Echo.",
+          "description": "A self-hosted Alexa skill that plays the music library from your grown workspace. Say \"Alexa, open grown music\" to start your library shuffled, or ask for a specific artist or album.",
+          "smallIconUri": "",
+          "largeIconUri": "",
+          "examplePhrases": [
+            "Alexa, open grown music",
+            "Alexa, ask grown music to play my music",
+            "Alexa, ask grown music to play the Beatles"
+          ],
+          "keywords": ["music", "library", "grown", "self hosted"]
+        }
+      },
+      "isAvailableWorldwide": true,
+      "testingInstructions": "Say 'Alexa, open grown music' to start playback. Requires the grown server reachable at the HTTPS endpoint with GROWN_ALEXA_SECRET set.",
+      "category": "MUSIC_AND_AUDIO",
+      "distributionCountries": []
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "https://pick.haus/alexa"
+        },
+        "interfaces": [
+          {
+            "type": "AUDIO_PLAYER"
+          }
+        ]
+      }
+    },
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "usesPersonalInfo": false,
+      "isChildDirected": false,
+      "isExportCompliant": true,
+      "containsAds": false,
+      "locales": {
+        "en-US": {
+          "privacyPolicyUrl": "",
+          "termsOfUseUrl": ""
+        }
+      }
+    }
+  }
+}

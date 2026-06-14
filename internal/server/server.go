@@ -25,6 +25,7 @@ import (
 	"code.pick.haus/grown/grown/internal/adminanalytics"
 	"code.pick.haus/grown/grown/internal/adminsecurity"
 	"code.pick.haus/grown/grown/internal/adminusers"
+	"code.pick.haus/grown/grown/internal/alexa"
 	"code.pick.haus/grown/grown/internal/apitokens"
 	"code.pick.haus/grown/grown/internal/audit"
 	"code.pick.haus/grown/grown/internal/auth"
@@ -135,7 +136,21 @@ type Config struct {
 	MusicBlobs music.BlobStore
 	// MusicRadio is the radio recorder driving start/stop of station taps. nil
 	// disables the radio control + proxy endpoints (stations still list).
-	MusicRadio        music.RadioController
+	MusicRadio music.RadioController
+
+	// ---- Alexa custom skill (self-hosted endpoint) --------------------------
+	// AlexaSecret is the HMAC key used to sign the session-free music stream
+	// URLs the Echo fetches. Empty disables the whole Alexa skill (the /alexa
+	// endpoint and the signed stream route are not mounted).
+	AlexaSecret []byte
+	// AlexaPublicBaseURL is grown's public origin (e.g. https://pick.haus) used
+	// to build absolute signed stream URLs for the Echo. Falls back to the OIDC
+	// redirect URL's origin when empty (wired in main.go).
+	AlexaPublicBaseURL string
+	// AlexaSkipVerify bypasses Alexa request-signature validation (local dev
+	// only). Leave false in production so every /alexa request is verified.
+	AlexaSkipVerify bool
+
 	ProjectsRepo      *projects.Repository
 	KeepRepo          *keep.Repository
 	TasksRepo         *tasks.Repository
@@ -640,6 +655,26 @@ func New(cfg Config) *Server {
 			musicHTTP = musicHTTP.WithRadio(cfg.MusicRadio)
 		}
 		grownv1.RegisterMusicServiceServer(grpcSrv, musicSvc)
+	}
+
+	// Self-hosted Alexa custom skill: plays the default org's music library on an
+	// Echo. Mounted PUBLIC (before grown's auth wall, below) — Alexa signs its own
+	// requests, which the handler verifies; the Echo fetches audio from a signed,
+	// session-free stream URL. Needs the music repo+blobs and a signing secret.
+	var alexaHandler *alexa.Handler
+	if cfg.MusicRepo != nil && cfg.MusicBlobs != nil && len(cfg.AlexaSecret) > 0 {
+		base := cfg.AlexaPublicBaseURL
+		if base == "" {
+			base = cfg.PublicHost
+		}
+		alexaHandler = alexa.New(alexa.Options{
+			Repo:       cfg.MusicRepo,
+			Blobs:      cfg.MusicBlobs,
+			OrgID:      cfg.DefaultOrg.ID,
+			Secret:     cfg.AlexaSecret,
+			BaseURL:    base,
+			SkipVerify: cfg.AlexaSkipVerify,
+		})
 	}
 
 	var projectsSvc *projects.Service
@@ -2014,6 +2049,24 @@ func New(cfg Config) *Server {
 			}
 			if strings.HasPrefix(r.URL.Path, "/learn/") {
 				learnProxy.ServeHTTP(w, r)
+				return
+			}
+		}
+		// Alexa custom skill — both routes BYPASS grown's auth wall on purpose:
+		//   POST /alexa                                  — Alexa signs its own
+		//     requests (the handler verifies the signature), so there is no grown
+		//     session; a forced sign-in would break the skill.
+		//   GET  /api/v1/music/alexa/stream/{trackID}    — the Echo fetches audio
+		//     with NO grown session; the URL is HMAC-signed + time-limited instead.
+		// Both must be matched BEFORE the /api/ auth-wall fallthrough below (the
+		// stream path lives under /api/).
+		if alexaHandler != nil {
+			if r.URL.Path == "/alexa" {
+				alexaHandler.Handler(w, r)
+				return
+			}
+			if _, ok := alexa.StreamTrackID(r.URL.Path); ok && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+				alexaHandler.StreamHandler().ServeHTTP(w, r)
 				return
 			}
 		}

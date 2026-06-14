@@ -1,0 +1,69 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "grown music",
+      "intents": [
+        {
+          "name": "PlayMusicIntent",
+          "slots": [],
+          "samples": [
+            "play my music",
+            "play my library",
+            "play music",
+            "shuffle my music",
+            "shuffle my library",
+            "play all my music",
+            "start my music"
+          ]
+        },
+        {
+          "name": "PlayArtistIntent",
+          "slots": [
+            {
+              "name": "artist",
+              "type": "AMAZON.MusicArtist"
+            }
+          ],
+          "samples": [
+            "play {artist}",
+            "play music by {artist}",
+            "play songs by {artist}",
+            "play artist {artist}",
+            "play some {artist}",
+            "put on {artist}"
+          ]
+        },
+        {
+          "name": "PlayAlbumIntent",
+          "slots": [
+            {
+              "name": "album",
+              "type": "AMAZON.MusicAlbum"
+            }
+          ],
+          "samples": [
+            "play the album {album}",
+            "play album {album}",
+            "play the station {album}",
+            "play {album} album",
+            "put on the album {album}"
+          ]
+        },
+        { "name": "AMAZON.NextIntent", "samples": [] },
+        { "name": "AMAZON.PreviousIntent", "samples": [] },
+        { "name": "AMAZON.PauseIntent", "samples": [] },
+        { "name": "AMAZON.ResumeIntent", "samples": [] },
+        { "name": "AMAZON.StartOverIntent", "samples": [] },
+        { "name": "AMAZON.ShuffleOnIntent", "samples": [] },
+        { "name": "AMAZON.ShuffleOffIntent", "samples": [] },
+        { "name": "AMAZON.LoopOnIntent", "samples": [] },
+        { "name": "AMAZON.LoopOffIntent", "samples": [] },
+        { "name": "AMAZON.CancelIntent", "samples": [] },
+        { "name": "AMAZON.StopIntent", "samples": [] },
+        { "name": "AMAZON.HelpIntent", "samples": [] },
+        { "name": "AMAZON.FallbackIntent", "samples": [] }
+      ],
+      "types": []
+    }
+  }
+}
