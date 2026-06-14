@@ -2699,6 +2699,74 @@ function AnalyticsSection() {
               </tbody>
             </Table>
           </Sheet>
+
+          {/* ---- Multiplayer game rooms (instance-wide) ---- */}
+          {data.games && (
+            <>
+              <Typography level="title-sm" sx={{ mb: 0.5 }}>
+                Multiplayer game rooms
+              </Typography>
+              <Typography level="body-xs" sx={{ opacity: 0.6, mb: 1.5 }}>
+                Instance-wide — the game relay is account-free, so these counts
+                span every org (not just yours).
+                {!data.games.enabled && " Multiplayer is currently disabled."}
+              </Typography>
+              <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 2 }}>
+                <StatCard
+                  label="Rooms created"
+                  value={data.games.rooms_created}
+                  new7d={data.games.rooms_created_7d}
+                />
+                <StatCard
+                  label="Sessions joined"
+                  value={data.games.peer_joins}
+                  new7d={data.games.peer_joins_7d}
+                />
+                <StatCard
+                  label="Active rooms (24h)"
+                  value={data.games.active_rooms}
+                />
+              </Box>
+              {data.games.per_game.length > 0 && (
+                <Sheet
+                  variant="outlined"
+                  sx={{
+                    borderRadius: "md",
+                    overflow: "hidden",
+                    overflowX: "auto",
+                    mb: 2,
+                  }}
+                >
+                  <Table
+                    size="sm"
+                    hoverRow
+                    sx={{ minWidth: 320, "--TableCell-paddingX": "12px" }}
+                  >
+                    <thead>
+                      <tr>
+                        <th style={{ width: "60%" }}>Game</th>
+                        <th>Rooms created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.games.per_game.map((g) => (
+                        <tr key={g.game}>
+                          <td>
+                            <Typography level="body-sm">{g.game}</Typography>
+                          </td>
+                          <td>
+                            <Typography level="body-sm" sx={{ fontWeight: 600 }}>
+                              {g.rooms.toLocaleString()}
+                            </Typography>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </Sheet>
+              )}
+            </>
+          )}
         </>
       )}
     </>

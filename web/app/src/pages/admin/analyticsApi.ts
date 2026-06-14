@@ -70,12 +70,41 @@ export interface AppStats {
   chat_messages: number;
 }
 
+/** One entry of the per-game room-created breakdown. */
+export interface GameCount {
+  game: string;
+  rooms: number;
+}
+
+/**
+ * Multiplayer game-room stats. INSTANCE-GLOBAL, not org-scoped: the relay is
+ * account-free, so grown.gamerooms_* carry no org id and every org's admin sees
+ * the same instance-wide numbers (labelled as such in the UI).
+ */
+export interface GameStats {
+  /** Global multiplayer on/off flag (grown.gamerooms_settings). */
+  enabled: boolean;
+  /** All-time rooms created. */
+  rooms_created: number;
+  /** Rooms created in the last 7 days. */
+  rooms_created_7d: number;
+  /** All-time peer joins (proxy for sessions joined). */
+  peer_joins: number;
+  /** Peer joins in the last 7 days. */
+  peer_joins_7d: number;
+  /** Distinct rooms with a join in the last 24h. */
+  active_rooms: number;
+  /** All-time rooms created per game slug, most-played first. */
+  per_game: GameCount[];
+}
+
 export interface AnalyticsResponse {
   org_id: string;
   collected_at: string;
   users: UserStats;
   storage: StorageStats;
   apps: AppStats;
+  games: GameStats;
 }
 
 export async function getAnalytics(): Promise<AnalyticsResponse> {

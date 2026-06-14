@@ -118,6 +118,49 @@ type AnalyticsResponse struct {
 	Storage StorageStats `json:"storage"`
 	// Apps contains per-app object counts.
 	Apps AppStats `json:"apps"`
+	// Games contains multiplayer game-room stats. Unlike every other block these
+	// are INSTANCE-GLOBAL, not org-scoped: the game-room relay is account-free
+	// (players join by link, no workspace login), so grown.gamerooms_* carry no
+	// org_id to filter on. The same value is therefore shown to every org's
+	// admin — see the GameStats doc comment.
+	Games GameStats `json:"games"`
+}
+
+// GameStats captures multiplayer game-room activity. The relay (internal/gamerooms)
+// is account-free, so these counts are derived from the instance-global tables
+// grown.gamerooms_audit (lifecycle/admin event trail, migration 0084) and
+// grown.gamerooms_settings (the on/off flag) — there is no org to scope to, so
+// every org's admin sees the same instance-wide numbers (documented in the UI).
+//
+// Live room/peer state is held in-memory by the hub and is NOT visible to this
+// read-only DB handler; admins watch live sessions on the dedicated game-room
+// admin panel instead. Here we report the historical trail: rooms ever created,
+// total peer joins, and a per-game breakdown of rooms created.
+type GameStats struct {
+	// Enabled mirrors grown.gamerooms_settings.enabled (the global multiplayer
+	// on/off switch). True when no row exists (the relay fails open).
+	Enabled bool `json:"enabled"`
+	// RoomsCreated is the all-time count of room_created events.
+	RoomsCreated int64 `json:"rooms_created"`
+	// RoomsCreated7d is room_created events in the last 7 days.
+	RoomsCreated7d int64 `json:"rooms_created_7d"`
+	// PeerJoins is the all-time count of peer_joined events (a proxy for total
+	// multiplayer sessions joined).
+	PeerJoins int64 `json:"peer_joins"`
+	// PeerJoins7d is peer_joined events in the last 7 days.
+	PeerJoins7d int64 `json:"peer_joins_7d"`
+	// ActiveRooms is the number of distinct rooms with at least one peer_joined
+	// in the last 24h — a rough "recently active" gauge from the audit trail.
+	ActiveRooms int64 `json:"active_rooms"`
+	// PerGame is the all-time room_created count per game slug, most-played
+	// first. Empty when no game labels were recorded.
+	PerGame []GameCount `json:"per_game"`
+}
+
+// GameCount is one row of the per-game breakdown.
+type GameCount struct {
+	Game  string `json:"game"`
+	Rooms int64  `json:"rooms"`
 }
 
 // UserStats captures membership and activity metrics.
@@ -391,6 +434,9 @@ func (h *Handler) collect(ctx context.Context, orgID string) AnalyticsResponse {
 
 	totalBytes := driveBytes + photoBytes + videoBytes + musicBytes + mailAttBytes
 
+	// --- multiplayer game-room stats (instance-global, not org-scoped) ---
+	games := gameStats(ctx, pool, ago7)
+
 	return AnalyticsResponse{
 		OrgID:       orgID,
 		CollectedAt: time.Now().UTC().Format(time.RFC3339),
@@ -450,7 +496,53 @@ func (h *Handler) collect(ctx context.Context, orgID string) AnalyticsResponse {
 			ChatChannels:     chatChannels,
 			ChatMessages:     chatMessages,
 		},
+		Games: games,
 	}
+}
+
+// gameStats collects instance-global multiplayer game-room metrics from the
+// account-free relay tables (grown.gamerooms_audit / grown.gamerooms_settings,
+// migration 0084). It is fully resilient: a missing table or column yields zero
+// values (the feature is simply absent) and never aborts the analytics response.
+// These counts are NOT org-scoped — the relay has no org context — so the same
+// numbers are returned for every caller (the UI labels them instance-wide).
+func gameStats(ctx context.Context, pool *pgxpool.Pool, ago7 time.Time) GameStats {
+	var g GameStats
+
+	// Global on/off flag. The relay fails open, so a missing row ⇒ enabled.
+	g.Enabled = true
+	_ = pool.QueryRow(ctx,
+		`SELECT enabled FROM grown.gamerooms_settings WHERE id = TRUE`).Scan(&g.Enabled)
+
+	g.RoomsCreated = countOne(ctx, pool,
+		`SELECT COUNT(*) FROM grown.gamerooms_audit WHERE event = 'room_created'`)
+	g.RoomsCreated7d = countOne(ctx, pool,
+		`SELECT COUNT(*) FROM grown.gamerooms_audit WHERE event = 'room_created' AND created_at > $1`, ago7)
+	g.PeerJoins = countOne(ctx, pool,
+		`SELECT COUNT(*) FROM grown.gamerooms_audit WHERE event = 'peer_joined'`)
+	g.PeerJoins7d = countOne(ctx, pool,
+		`SELECT COUNT(*) FROM grown.gamerooms_audit WHERE event = 'peer_joined' AND created_at > $1`, ago7)
+	g.ActiveRooms = countOne(ctx, pool,
+		`SELECT COUNT(DISTINCT room) FROM grown.gamerooms_audit
+		  WHERE event = 'peer_joined' AND room <> '' AND created_at > now() - interval '24 hours'`)
+
+	// Per-game breakdown of rooms created (most-played first). Best-effort: a
+	// query error simply yields an empty list.
+	g.PerGame = []GameCount{}
+	rows, err := pool.Query(ctx,
+		`SELECT game, COUNT(*) AS n FROM grown.gamerooms_audit
+		  WHERE event = 'room_created' AND game <> ''
+		  GROUP BY game ORDER BY n DESC, game ASC LIMIT 20`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var gc GameCount
+			if rows.Scan(&gc.Game, &gc.Rooms) == nil {
+				g.PerGame = append(g.PerGame, gc)
+			}
+		}
+	}
+	return g
 }
 
 // writeJSON writes v as a JSON response with the given status.
