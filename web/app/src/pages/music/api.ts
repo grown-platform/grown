@@ -143,6 +143,19 @@ export async function listStations(): Promise<Station[]> {
   return r.stations ?? [];
 }
 
+/** createStation adds a custom radio station (any http(s) stream URL). */
+export async function createStation(input: {
+  name: string;
+  stream_url: string;
+  genre?: string;
+}): Promise<Station> {
+  const r = await jsonFetch<{ station: Station }>("/music/radio/stations", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return r.station;
+}
+
 /** playStation starts server-side caching for the station and returns it. */
 export function playStation(id: string): Promise<Station> {
   return jsonFetch<Station>(`/music/radio/${id}/play`, {

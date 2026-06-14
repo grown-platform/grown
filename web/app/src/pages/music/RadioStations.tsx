@@ -11,13 +11,22 @@ import {
   MenuButton,
   MenuItem,
   Tooltip,
+  Button,
+  Input,
+  Stack,
 } from "@mui/joy";
 import RadioIcon from "@mui/icons-material/Radio";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PauseIcon from "@mui/icons-material/Pause";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import AlbumIcon from "@mui/icons-material/Album";
-import { listStations, playStation, setStationRetention } from "./api";
+import AddIcon from "@mui/icons-material/Add";
+import {
+  listStations,
+  playStation,
+  setStationRetention,
+  createStation,
+} from "./api";
 import type { Station, RetentionMode } from "./types";
 import { usePlayer } from "./player";
 
@@ -43,6 +52,13 @@ export function RadioStations({ query }: RadioStationsProps) {
   const player = usePlayer();
   const [stations, setStations] = useState<Station[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Add-station form.
+  const [showAdd, setShowAdd] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [addUrl, setAddUrl] = useState("");
+  const [addGenre, setAddGenre] = useState("");
+  const [adding, setAdding] = useState(false);
 
   async function reload() {
     try {
@@ -80,6 +96,34 @@ export function RadioStations({ query }: RadioStationsProps) {
     }
   }
 
+  async function handleAddStation() {
+    const name = addName.trim();
+    const url = addUrl.trim();
+    if (!name || !url) return;
+    setAdding(true);
+    try {
+      const created = await createStation({
+        name,
+        stream_url: url,
+        genre: addGenre.trim() || undefined,
+      });
+      // Upsert into the list (the endpoint is idempotent on stream_url).
+      setStations((cur) => {
+        const rest = (cur ?? []).filter((s) => s.id !== created.id);
+        return [created, ...rest];
+      });
+      setAddName("");
+      setAddUrl("");
+      setAddGenre("");
+      setShowAdd(false);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  }
+
   async function changeRetention(
     station: Station,
     mode: RetentionMode,
@@ -103,30 +147,95 @@ export function RadioStations({ query }: RadioStationsProps) {
     );
   }
 
+  const addBar = (
+    <Box sx={{ mb: 1.5 }}>
+      <Button
+        size="sm"
+        variant={showAdd ? "soft" : "outlined"}
+        color="neutral"
+        startDecorator={<AddIcon />}
+        onClick={() => setShowAdd((v) => !v)}
+      >
+        Add station
+      </Button>
+      {showAdd && (
+        <Sheet variant="soft" sx={{ mt: 1, p: 1.5, borderRadius: "md" }}>
+          <Stack spacing={1}>
+            <Input
+              size="sm"
+              placeholder="Station name"
+              value={addName}
+              onChange={(e) => setAddName(e.target.value)}
+            />
+            <Input
+              size="sm"
+              placeholder="Stream URL (https://…)"
+              value={addUrl}
+              onChange={(e) => setAddUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void handleAddStation()}
+            />
+            <Input
+              size="sm"
+              placeholder="Genre (optional)"
+              value={addGenre}
+              onChange={(e) => setAddGenre(e.target.value)}
+            />
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              <Button
+                size="sm"
+                variant="plain"
+                color="neutral"
+                disabled={adding}
+                onClick={() => setShowAdd(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                loading={adding}
+                disabled={!addName.trim() || !addUrl.trim()}
+                onClick={() => void handleAddStation()}
+              >
+                Add
+              </Button>
+            </Stack>
+          </Stack>
+        </Sheet>
+      )}
+    </Box>
+  );
+
   if (error) {
     return (
-      <Sheet color="danger" variant="soft" sx={{ p: 2, borderRadius: "md" }}>
-        <Typography color="danger">Could not load stations: {error}</Typography>
-      </Sheet>
+      <>
+        {addBar}
+        <Sheet color="danger" variant="soft" sx={{ p: 2, borderRadius: "md" }}>
+          <Typography color="danger">{error}</Typography>
+        </Sheet>
+      </>
     );
   }
 
   if (shown.length === 0) {
     return (
-      <Sheet
-        variant="soft"
-        sx={{ p: 6, borderRadius: "md", textAlign: "center" }}
-      >
-        <RadioIcon sx={{ fontSize: 48, opacity: 0.4 }} />
-        <Typography level="body-lg" sx={{ opacity: 0.7, mt: 1 }}>
-          {query ? "No matching stations." : "No stations yet."}
-        </Typography>
-      </Sheet>
+      <>
+        {addBar}
+        <Sheet
+          variant="soft"
+          sx={{ p: 6, borderRadius: "md", textAlign: "center" }}
+        >
+          <RadioIcon sx={{ fontSize: 48, opacity: 0.4 }} />
+          <Typography level="body-lg" sx={{ opacity: 0.7, mt: 1 }}>
+            {query ? "No matching stations." : "No stations yet."}
+          </Typography>
+        </Sheet>
+      </>
     );
   }
 
   return (
     <>
+      {addBar}
       <Typography level="body-xs" sx={{ opacity: 0.7, mb: 1 }}>
         Tune in to a station — songs are cached to the station's album in your
         library as they play.

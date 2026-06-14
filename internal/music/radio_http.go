@@ -90,6 +90,51 @@ func (h *HTTP) ListStationsHandler() http.Handler {
 	})
 }
 
+// CreateStationHandler adds a custom radio station for the caller's org.
+// POST /api/v1/music/radio/stations  body: {name, stream_url, genre, logo_url}.
+// Idempotent on (org, stream_url) — re-adding the same URL just refreshes the
+// name (see UpsertStation), so a user can paste any internet-radio stream.
+func (h *HTTP) CreateStationHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		o, ok := auth.OrgFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			Name      string `json:"name"`
+			StreamURL string `json:"stream_url"`
+			Genre     string `json:"genre"`
+			LogoURL   string `json:"logo_url"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&body); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		name := strings.TrimSpace(body.Name)
+		stream := strings.TrimSpace(body.StreamURL)
+		if name == "" || stream == "" {
+			http.Error(w, "name and stream_url are required", http.StatusBadRequest)
+			return
+		}
+		if !strings.HasPrefix(stream, "http://") && !strings.HasPrefix(stream, "https://") {
+			http.Error(w, "stream_url must be an http(s) URL", http.StatusBadRequest)
+			return
+		}
+		s, err := h.repo.UpsertStation(r.Context(), o.ID, StationFields{
+			Name:      name,
+			StreamURL: stream,
+			Genre:     strings.TrimSpace(body.Genre),
+			LogoURL:   strings.TrimSpace(body.LogoURL),
+		})
+		if err != nil {
+			http.Error(w, "create station", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"station": stationToJSON(s)})
+	})
+}
+
 // PlayHandler starts the live tap + recording for the caller (reference-counted
 // per station) and returns the station so the client can begin playback.
 // POST /api/v1/music/radio/{id}/play

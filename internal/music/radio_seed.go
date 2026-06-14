@@ -23,12 +23,15 @@ var seedStations = []seedStation{
 	{Name: "K-LOVE Pop · AAC 64kbps", StreamURL: "https://maestro.emfcdn.com/stream_for/k-love-pop/airable/aac", Genre: "Christian"},
 	{Name: "Christian Power Praise · AAC 136kbps", StreamURL: "https://listen.christianrock.net/stream/13/", Genre: "Christian Rock"},
 	{Name: "Abiding Radio Instrumental · MP3 128kbps", StreamURL: "https://streams.abidingradio.com:7800/1", Genre: "Instrumental"},
+	{Name: "1.FM Eternal Praise · MP3", StreamURL: "https://strm112.1.fm/eternalpraise_mobile_mp3", Genre: "Christian"},
 	{Name: "CBN Classic Christian · MP3 128kbps", StreamURL: "https://streams.cbnradio.com/Classic-Christian-128K?app=cbnplayer", Genre: "Christian"},
 	{Name: "KFUO · AAC 192kbps", StreamURL: "https://kfuo.streamguys1.com/kfuo", Genre: "Talk"},
 	{Name: "KGBI 100.7 · MP3 64kbps", StreamURL: "https://nwmedia-kgbi.streamguys1.com/kgbi-mp3", Genre: "Christian"},
 	{Name: "Praise 106.5 · AAC+ 64kbps", StreamURL: "https://crista-kwpz.streamguys1.com/kwpzaacp", Genre: "Christian"},
 	{Name: "HR3 · MP3 128kbps", StreamURL: "https://dispatcher.rndfnk.com/hr/hr3/live/mp3/high", Genre: "Pop"},
 	{Name: "Hit Radio FFH · MP3 128kbps", StreamURL: "http://mp3.ffh.de/radioffh/hqlivestream.mp3", Genre: "Pop"},
+	{Name: "Techno.fm Demo · MP3 128kbps", StreamURL: "https://mp3.techno.fm/t01-128.mp3", Genre: "Techno"},
+	{Name: "Techno.fm HQ · MP3 256kbps", StreamURL: "https://mp3.techno.fm/t01-256.mp3", Genre: "Techno"},
 }
 
 // SeedStations populates the built-in radio station list for orgID on first run

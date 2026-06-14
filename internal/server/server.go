@@ -1703,6 +1703,10 @@ func New(cfg Config) *Server {
 				auditRec.Log("music", "radio_stations", driveAuthWrap(musicHTTP.ListStationsHandler())).ServeHTTP(w, r)
 				return
 			}
+			if path == "/api/v1/music/radio/stations" && r.Method == http.MethodPost {
+				auditRec.Log("music", "radio_station_add", driveAuthWrap(musicHTTP.CreateStationHandler())).ServeHTTP(w, r)
+				return
+			}
 			if _, action, ok := music.RadioStationID(r.URL.Path); ok {
 				switch {
 				case action == "play" && r.Method == http.MethodPost:
