@@ -440,6 +440,20 @@ export const apps: AppTile[] = [
     ],
   },
   {
+    id: "archaeology",
+    name: "Archaeology",
+    blurb: "Browse the Earth and read up on archaeological sites & finds.",
+    accentColor: "#8d6e63",
+    phase: 4,
+    comingSoon: false,
+    iconName: "Museum",
+    details: [
+      "Pan and zoom anywhere — archaeological sites load for your view (live from Wikidata).",
+      "Tap a site to read about it and what's been found, with photos and structured facts.",
+      "Open the full Wikipedia article or the Wikidata record for sources. Fully client-side.",
+    ],
+  },
+  {
     id: "maps",
     name: "Maps",
     blurb: "Browse the map, search places — with optional offline areas.",

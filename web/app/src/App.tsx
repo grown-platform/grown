@@ -60,6 +60,8 @@ const TranslateApp = lazy(() => import("./pages/translate"));
 const MapsApp = lazy(() => import("./pages/maps"));
 // Podcasts (early preview) — its own chunk.
 const PodcastsApp = lazy(() => import("./pages/podcasts"));
+// Archaeology — Leaflet + live Wikidata, its own chunk.
+const ArchaeologyApp = lazy(() => import("./pages/archaeology"));
 // Public ticket intake: file a request without an account.
 const TicketSubmitPublic = lazy(() => import("./pages/tickets/Submit"));
 
@@ -488,6 +490,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<ChunkFallback />}>
                       <PodcastsApp user={auth.user} />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/archaeology"
+                  element={
+                    <Suspense fallback={<ChunkFallback />}>
+                      <ArchaeologyApp user={auth.user} />
                     </Suspense>
                   }
                 />
