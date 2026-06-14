@@ -53,6 +53,9 @@ const AccessPage = lazy(() => import("./pages/access"));
 const TicketsApp = lazy(() => import("./pages/tickets"));
 // 3D model viewer (three.js) — code-split so its loaders load on demand.
 const ThreeDApp = lazy(() => import("./pages/3d"));
+// Translate ships as its own chunk; the ML libs (transformers.js,
+// onnxruntime-web) are dynamically imported inside the page on first use.
+const TranslateApp = lazy(() => import("./pages/translate"));
 // Public ticket intake: file a request without an account.
 const TicketSubmitPublic = lazy(() => import("./pages/tickets/Submit"));
 
@@ -457,6 +460,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<ChunkFallback />}>
                       <ThreeDApp user={auth.user} />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/translate"
+                  element={
+                    <Suspense fallback={<ChunkFallback />}>
+                      <TranslateApp user={auth.user} />
                     </Suspense>
                   }
                 />
