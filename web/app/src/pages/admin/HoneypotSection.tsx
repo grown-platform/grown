@@ -33,9 +33,18 @@ function fmtTime(iso: string): string {
 }
 
 function kindColor(kind: string): "danger" | "warning" | "neutral" {
-  if (kind === "decoy_path") return "danger";
-  if (kind === "form_bot") return "warning";
-  return "neutral";
+  switch (kind) {
+    case "decoy_path":
+    case "path_traversal":
+    case "scan_burst":
+      return "danger";
+    case "form_bot":
+    case "api_scan":
+    case "bad_ua":
+      return "warning";
+    default:
+      return "neutral";
+  }
 }
 
 export function HoneypotSection() {

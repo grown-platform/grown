@@ -15,7 +15,14 @@ export class HoneypotForbiddenError extends Error {
 }
 
 /** Kind of trap that fired. */
-export type HoneypotKind = "decoy_path" | "form_bot" | string;
+export type HoneypotKind =
+  | "decoy_path"
+  | "form_bot"
+  | "api_scan"
+  | "bad_ua"
+  | "path_traversal"
+  | "scan_burst"
+  | string;
 
 export interface HoneypotAlert {
   id: string;
@@ -97,6 +104,14 @@ export function kindLabel(kind: HoneypotKind): string {
       return "Decoy path";
     case "form_bot":
       return "Form bot";
+    case "api_scan":
+      return "API scan";
+    case "bad_ua":
+      return "Scanner UA";
+    case "path_traversal":
+      return "Path traversal";
+    case "scan_burst":
+      return "Scan burst";
     default:
       return kind || "—";
   }

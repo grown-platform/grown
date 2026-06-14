@@ -31,6 +31,20 @@ import (
 const (
 	KindDecoyPath = "decoy_path"
 	KindFormBot   = "form_bot"
+	// KindAPIScan marks a request to a common probe path (e.g. /.env, /wp-*,
+	// /actuator) that no real grown UI links to — recorded but PASSED THROUGH to
+	// real routing (which returns its own 404), so it never shadows a route.
+	KindAPIScan = "api_scan"
+	// KindBadUA marks a request carrying a known scanner/exploitation User-Agent
+	// (sqlmap, nikto, nmap, …) or an empty UA on a sensitive path.
+	KindBadUA = "bad_ua"
+	// KindPathTraversal marks a request whose path/query contains traversal or
+	// null-byte sequences (../, %2e%2e, %00).
+	KindPathTraversal = "path_traversal"
+	// KindScanBurst marks an IP that exceeded the 404 burst threshold within the
+	// rolling window — a strong directory-bruteforce / scan signal. Recorded once
+	// per window per IP.
+	KindScanBurst = "scan_burst"
 )
 
 // Store persists honeypot alerts (grown.honeypot_alerts, migration 0087). A nil

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // clientIP extracts a best-effort client IP, preferring the edge-set headers
@@ -53,12 +54,53 @@ func alertFromRequest(r *http.Request, kind, detail string) Alert {
 // prober gets no signal that they hit a trap.
 const notFoundHTML = "404 page not found\n"
 
-// Middleware mounts the decoy-path tripwire. Only the EXACT decoy paths are
-// intercepted (IsDecoyPath); every other request passes straight through to
-// next, so this can be wired early in the router without shadowing any real
-// route. On a decoy hit it records a best-effort alert and returns a plain 404.
+// scanStatusWriter wraps http.ResponseWriter to capture the response status so
+// the middleware can feed 404s to the per-IP burst tracker. It forwards Flush so
+// streaming/range responses keep working through the outermost wrapper.
+type scanStatusWriter struct {
+	http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (s *scanStatusWriter) WriteHeader(code int) {
+	if !s.wrote {
+		s.status = code
+		s.wrote = true
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *scanStatusWriter) Write(b []byte) (int, error) {
+	if !s.wrote {
+		s.status = http.StatusOK
+		s.wrote = true
+	}
+	return s.ResponseWriter.Write(b)
+}
+
+func (s *scanStatusWriter) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Middleware mounts the intrusion tripwire at the OUTERMOST layer:
+//
+//  1. EXACT decoy paths (IsDecoyPath) are short-circuited with a canned 404 and
+//     a decoy_path alert — these paths no real route serves.
+//  2. SCAN signals (probe paths, scanner UAs, traversal/null-byte) are recorded
+//     (api_scan / bad_ua / path_traversal) but ALWAYS fall through to next, so a
+//     real route is never shadowed and a false positive can't break a request.
+//  3. A per-IP 404-burst tracker watches the downstream response status and
+//     records ONE scan_burst alert per window when an IP exceeds the threshold.
+//
+// All recording is best-effort + async (Store.Record); a nil Store no-ops the
+// alerts but the pass-through behavior is unchanged.
 func (s *Store) Middleware(next http.Handler) http.Handler {
+	tracker := newBurstTracker()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 1. Exact decoy paths: canned 404, never reaches real routing.
 		if IsDecoyPath(r.URL.Path) {
 			s.Record(alertFromRequest(r, KindDecoyPath, ""))
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -67,7 +109,20 @@ func (s *Store) Middleware(next http.Handler) http.Handler {
 			_, _ = w.Write([]byte(notFoundHTML))
 			return
 		}
-		next.ServeHTTP(w, r)
+
+		// 2. Scan signals: record but PASS THROUGH (do not shadow real routes).
+		if kind, detail := classifyScan(r); kind != "" {
+			s.Record(alertFromRequest(r, kind, detail))
+		}
+
+		// 3. Run the real handler, observing its status for the 404-burst tracker.
+		sw := &scanStatusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(sw, r)
+		if sw.status == http.StatusNotFound {
+			if tracker.record404(clientIP(r), time.Now()) {
+				s.Record(alertFromRequest(r, KindScanBurst, "exceeded 404 burst threshold"))
+			}
+		}
 	})
 }
 
