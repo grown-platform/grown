@@ -11,6 +11,7 @@ import {
   IconButton,
   Snackbar,
   Avatar,
+  Chip,
 } from "@mui/joy";
 import * as Icons from "@mui/icons-material";
 import { Header } from "../../components/Header";
@@ -414,6 +415,9 @@ export default function GamesApp({ user }: { user: User | null }) {
   // backend). Both are best-effort and degrade to empty.
   const [plays, setPlays] = useState<Record<string, number>>(() => readPlays());
   const [newIds, setNewIds] = useState<Set<string>>(() => new Set());
+  // Public 24h unique-visitor count for the "N players in the last 24h" badge.
+  // null until loaded; stays null (badge hidden) on fetch failure or 0.
+  const [activeUsers, setActiveUsers] = useState<number | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   // Multiplayer admin control panel — the settings button + panel are shown
   // ONLY to grown admins (resolved via GET /api/v1/admin/whoami, the same gate
@@ -474,6 +478,23 @@ export default function GamesApp({ user }: { user: User | null }) {
       .then((data: { recent?: { id: string }[] } | null) => {
         if (alive && data?.recent) {
           setNewIds(new Set(data.recent.map((g) => g.id)));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Fetch the public 24h unique-visitor count for the players badge. Public, no
+  // auth (same posture as /recent); a failure or 0 simply hides the badge.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/v1/games/active-users", { credentials: "same-origin" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { unique_24h?: number } | null) => {
+        if (alive && typeof data?.unique_24h === "number") {
+          setActiveUsers(data.unique_24h);
         }
       })
       .catch(() => {});
@@ -618,6 +639,19 @@ export default function GamesApp({ user }: { user: User | null }) {
             <Typography level="body-sm" sx={{ opacity: 0.7 }}>
               Play in your browser — no account required.
             </Typography>
+            {activeUsers !== null && activeUsers > 0 && (
+              <Chip
+                size="sm"
+                variant="soft"
+                color="success"
+                sx={{ mt: 1 }}
+                data-testid="games-active-users"
+              >
+                {`👥 ${activeUsers.toLocaleString()} ${
+                  activeUsers === 1 ? "player" : "players"
+                } in the last 24h`}
+              </Chip>
+            )}
           </Box>
           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
             {installPrompt && (

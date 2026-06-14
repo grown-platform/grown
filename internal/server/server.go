@@ -75,6 +75,7 @@ import (
 	"code.pick.haus/grown/grown/internal/useravatar"
 	"code.pick.haus/grown/grown/internal/users"
 	"code.pick.haus/grown/grown/internal/video"
+	"code.pick.haus/grown/grown/internal/visits"
 	"code.pick.haus/grown/grown/internal/vpn"
 	"code.pick.haus/grown/grown/internal/whiteboards"
 	"code.pick.haus/grown/grown/internal/zitadelproxy"
@@ -918,6 +919,13 @@ func New(cfg Config) *Server {
 	// at /api/v1/honeypot; the admin-gated listing is at /api/v1/admin/honeypot.
 	// A nil pool yields a nil *Store, which every method tolerates (feature off).
 	honeypotStore := honeypot.NewStore(cfg.Pool)
+
+	// Visitor tracker: privacy-preserving (hashed-IP) daily distinct-visitor set
+	// behind the public "N players in the last 24h" badge atop /games. A nil pool
+	// yields a nil store, which every method tolerates (feature off). A background
+	// pruner drops rows older than ~2 days so the table stays tiny.
+	visitsStore := visits.NewStore(cfg.Pool)
+	go visitsStore.StartPruner(context.Background())
 
 	// Ticketing service (Jira-like): authenticated project/ticket management plus
 	// an unauthenticated public intake surface for projects that opt into it.
@@ -1905,6 +1913,12 @@ func New(cfg Config) *Server {
 			recentGamesHandler(cfg.StaticDir)(w, r)
 			return
 		}
+		// Public 24h unique-visitor counter atop /games — no auth (same posture as
+		// the recent-games feed). Returns {"unique_24h": N} from grown.visits.
+		if r.URL.Path == visits.ActiveUsersPath {
+			visitsStore.Handler().ServeHTTP(w, r)
+			return
+		}
 		// Cloud Import — multipart upload + job-status polling (auth-wrapped).
 		if cloudImportHandler != nil && strings.HasPrefix(r.URL.Path, "/api/v1/import") {
 			driveAuthWrap(cloudImportHandler).ServeHTTP(w, r)
@@ -2003,7 +2017,12 @@ func New(cfg Config) *Server {
 	// returns 403 for disallowed CF-IPCountry values — EXCEPT the always-exempt
 	// recovery paths (/api/v1/admin/*, /api/v1/auth/*, health) so an admin can
 	// never lock themselves out. Unknown/absent country headers fail open.
-	geoMiddleware := geoCache.Middleware(router)
+	// Visitor tracker wraps the router (inside geo/honeypot) so it observes real
+	// navigations only — it records a hashed-IP daily visit for GET page/app
+	// requests, skipping API/relay/static/bot noise (and decoy 404s, which the
+	// honeypot layer short-circuits before this). Cheap, async, non-blocking.
+	tracked := visitsStore.Middleware(router)
+	geoMiddleware := geoCache.Middleware(tracked)
 
 	// Honeypot decoy tripwire wraps the OUTERMOST layer so the fixed decoy paths
 	// (/.env, /wp-login.php, …) are intercepted before anything else — recording
