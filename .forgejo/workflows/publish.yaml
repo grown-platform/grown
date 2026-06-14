@@ -51,9 +51,36 @@ jobs:
         run: |
           git config --global --add safe.directory '*'
           host="${GITHUB_SERVER_URL#*://}"; scheme="${GITHUB_SERVER_URL%%://*}"
-          git clone --depth 1 --branch "$GITHUB_REF_NAME" \
+          # Full commit history (lazy blobs) so we can read each game's last
+          # commit time for the "NEW" badge — a --depth 1 clone has only one
+          # commit, which would stamp every game identically.
+          git clone --filter=blob:none --branch "$GITHUB_REF_NAME" \
             "${scheme}://token:${{ github.token }}@${host}/${GITHUB_REPOSITORY}.git" src
           cd src && git rev-parse HEAD
+
+      - name: Generate games-updated manifest
+        run: |
+          # Map each bundled game's id → the ISO-8601 timestamp of the last git
+          # commit that touched its .html. Shipped at /games-updated.json (Vite
+          # copies web/app/public/* to the dist root) and read by the
+          # /api/v1/games/recent endpoint to drive the dynamic "NEW" badge.
+          cd src
+          OUT=web/app/public/games-updated.json
+          {
+            echo '{'
+            first=1
+            for f in web/app/public/games/*.html; do
+              [ -e "$f" ] || continue
+              id=$(basename "$f" .html)
+              ts=$(git log -1 --format=%cI -- "$f" 2>/dev/null)
+              [ -z "$ts" ] && continue
+              if [ $first -eq 1 ]; then first=0; else echo ','; fi
+              printf '  "%s": "%s"' "$id" "$ts"
+            done
+            echo
+            echo '}'
+          } > "$OUT"
+          echo "generated $OUT:"; cat "$OUT"
 
       - name: Build and push
         run: |

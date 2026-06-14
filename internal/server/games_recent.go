@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+// gamesUpdatedManifest is an optional build-generated map of game id → the
+// ISO-8601 timestamp of the LAST git commit that touched its .html file. It is
+// produced at build time (CI; see .forgejo/workflows/publish.yaml) and shipped
+// at <StaticDir>/games-updated.json. We prefer it over filesystem mtime because
+// a container build stamps every file with the same build time, which would
+// make "recently updated" meaningless. When the manifest is absent (e.g. local
+// dev), we fall back to file mtime.
+const gamesUpdatedManifest = "games-updated.json"
+
 // recentGamesPath is the public, read-only endpoint that reports which bundled
 // games' HTML files were updated recently. The /games frontend uses it to show
 // a small "NEW" badge on freshly-updated games.
@@ -37,6 +46,28 @@ type recentGame struct {
 // Only top-level games/*.html files are considered, which is exactly how the
 // arcade catalog maps a game id to its file (externalUrl: /games/<id>.html).
 // Native ports (games/<id>/play.html) live in subdirectories and are skipped.
+// loadGamesUpdated reads the build-generated games-updated.json manifest
+// (id → ISO-8601 last-commit time) from staticDir and parses the timestamps.
+// Returns nil when the file is missing or unparseable so the caller falls back
+// to filesystem mtime.
+func loadGamesUpdated(staticDir string) map[string]time.Time {
+	b, err := os.ReadFile(filepath.Join(staticDir, gamesUpdatedManifest))
+	if err != nil {
+		return nil
+	}
+	var raw map[string]string
+	if err := json.Unmarshal(b, &raw); err != nil || len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]time.Time, len(raw))
+	for id, iso := range raw {
+		if t, perr := time.Parse(time.RFC3339, iso); perr == nil {
+			out[id] = t
+		}
+	}
+	return out
+}
+
 func recentGamesHandler(staticDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -48,21 +79,34 @@ func recentGamesHandler(staticDir string) http.HandlerFunc {
 		}{Recent: []recentGame{}}
 
 		if staticDir != "" {
-			matches, _ := filepath.Glob(filepath.Join(staticDir, "games", "*.html"))
 			cutoff := time.Now().Add(-recentGamesWindow)
-			for _, m := range matches {
-				fi, err := os.Stat(m)
-				if err != nil || fi.IsDir() {
-					continue
+			// Prefer the build-generated git-commit-time manifest; fall back to
+			// file mtime when it's absent (local dev / un-built tree).
+			if times := loadGamesUpdated(staticDir); len(times) > 0 {
+				for id, t := range times {
+					if t.Before(cutoff) {
+						continue
+					}
+					out.Recent = append(out.Recent, recentGame{
+						ID: id, UpdatedAt: t.UTC().Format(time.RFC3339),
+					})
 				}
-				if fi.ModTime().Before(cutoff) {
-					continue
+			} else {
+				matches, _ := filepath.Glob(filepath.Join(staticDir, "games", "*.html"))
+				for _, m := range matches {
+					fi, err := os.Stat(m)
+					if err != nil || fi.IsDir() {
+						continue
+					}
+					if fi.ModTime().Before(cutoff) {
+						continue
+					}
+					id := strings.TrimSuffix(filepath.Base(m), ".html")
+					out.Recent = append(out.Recent, recentGame{
+						ID:        id,
+						UpdatedAt: fi.ModTime().UTC().Format(time.RFC3339),
+					})
 				}
-				id := strings.TrimSuffix(filepath.Base(m), ".html")
-				out.Recent = append(out.Recent, recentGame{
-					ID:        id,
-					UpdatedAt: fi.ModTime().UTC().Format(time.RFC3339),
-				})
 			}
 			// Newest first, then keep only the freshest few.
 			sort.Slice(out.Recent, func(i, j int) bool {
