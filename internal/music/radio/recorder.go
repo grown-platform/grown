@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -109,10 +110,20 @@ type Recorder struct {
 // NewRecorder constructs a Recorder. The retention sweep runs separately via
 // StartRetentionSweeper.
 func NewRecorder(repo Repo, store Store) *Recorder {
+	// Streams are long-lived, so the client has NO overall timeout. The
+	// connect/TLS/header phase is bounded by the transport timeouts; once the
+	// response headers arrive the body read is open-ended (until ctx cancel).
+	tr := &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: connectTimeout}).DialContext,
+		TLSHandshakeTimeout:   connectTimeout,
+		ResponseHeaderTimeout: connectTimeout,
+		// Per-station dedicated connection; don't pool live streams.
+		DisableKeepAlives: true,
+	}
 	return &Recorder{
 		repo:       repo,
 		store:      store,
-		hc:         &http.Client{Timeout: 0}, // streams are long-lived; no overall timeout
+		hc:         &http.Client{Transport: tr, Timeout: 0},
 		recordings: make(map[string]*recording),
 	}
 }
@@ -198,11 +209,14 @@ func (r *Recorder) run(ctx context.Context, rec *recording) {
 
 // tap opens the ICY stream once and reads until the connection ends or ctx is
 // cancelled. It returns nil on a clean close, or an error to trigger reconnect.
+//
+// The request uses the parent ctx (cancelled when the last listener leaves) —
+// NOT a timeout context — because a radio stream is intentionally long-lived;
+// the connect/header timeout is enforced by the client's transport instead, so
+// the open-ended body read isn't killed mid-stream.
 func (r *Recorder) tap(ctx context.Context, rec *recording) error {
 	url := rec.station.StreamURL
-	dialCtx, cancel := context.WithTimeout(ctx, connectTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(dialCtx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
