@@ -426,6 +426,20 @@ export const apps: AppTile[] = [
     iconName: "ViewInAr",
   },
   {
+    id: "maps",
+    name: "Maps",
+    blurb: "Browse the map, search places — with optional offline areas.",
+    accentColor: "#1565C0",
+    phase: 4,
+    comingSoon: false,
+    iconName: "Map",
+    details: [
+      "A slippy map (OpenStreetMap streets + satellite imagery) with place/address search and one-tap geolocation.",
+      "Optional offline data: tiles you view are cached on-device, and \"Save area offline\" stores the current view so it works with no connection.",
+      "Fully client-side — your location and searches never hit a grown backend.",
+    ],
+  },
+  {
     id: "learn",
     name: "Learn",
     blurb: "Courses, lessons & a universal topic search — offline-first.",

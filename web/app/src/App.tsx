@@ -56,6 +56,8 @@ const ThreeDApp = lazy(() => import("./pages/3d"));
 // Translate ships as its own chunk; the ML libs (transformers.js,
 // onnxruntime-web) are dynamically imported inside the page on first use.
 const TranslateApp = lazy(() => import("./pages/translate"));
+// Maps ships as its own chunk (Leaflet + its CSS live in this lazy route).
+const MapsApp = lazy(() => import("./pages/maps"));
 // Public ticket intake: file a request without an account.
 const TicketSubmitPublic = lazy(() => import("./pages/tickets/Submit"));
 
@@ -468,6 +470,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<ChunkFallback />}>
                       <TranslateApp user={auth.user} />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/maps"
+                  element={
+                    <Suspense fallback={<ChunkFallback />}>
+                      <MapsApp user={auth.user} />
                     </Suspense>
                   }
                 />
