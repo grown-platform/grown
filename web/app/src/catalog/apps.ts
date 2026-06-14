@@ -393,6 +393,21 @@ export const apps: AppTile[] = [
     iconName: "ConfirmationNumber",
   },
   {
+    id: "translate",
+    name: "Translate",
+    blurb: "Translate text on-device; speak it aloud with Supertonic TTS.",
+    accentColor: "#0E7C86",
+    phase: 4,
+    comingSoon: false,
+    iconName: "Translate",
+    details: [
+      "Fully in-browser translation — no backend, your text never leaves the device.",
+      "Prefers the browser's built-in on-device Translator API, falling back to a local NLLB-200 model (transformers.js).",
+      "Speak the translation aloud with Supertonic, an on-device multilingual TTS (onnxruntime-web, WebGPU with WASM fallback).",
+      "Falls back to the browser's speech voice if Supertonic can't load.",
+    ],
+  },
+  {
     id: "3d",
     name: "3D",
     blurb: "View 3D models; a SketchUp-style modeler in the making.",
