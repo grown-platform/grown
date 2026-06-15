@@ -2,7 +2,6 @@ import type { SxProps } from "@mui/joy/styles/types";
 import type { Indents } from "./Ruler";
 
 const PX_PER_INCH = 96;
-const MARGIN_Y = 1 * PX_PER_INCH; // 1" top/bottom margins
 const PAGE_GAP = 10; // gray gap drawn between pages
 
 export type Orientation = "portrait" | "landscape";
@@ -20,11 +19,19 @@ export function pageDims(orientation: Orientation): { w: number; h: number } {
  *  shadow, and a faint page-boundary guide every page so the document reads as
  *  discrete pages on the gray workspace. Ruler indents set the L/R margins and
  *  first-line indent. (True content reflow across pages is a follow-up.) */
+export interface VMargins {
+  top: number; // inches
+  bottom: number; // inches
+}
+
 export function editorPageSx(
   indents: Indents,
   orientation: Orientation = "portrait",
+  vMargins: VMargins = { top: 1, bottom: 1 },
 ): SxProps {
   const { w: PAGE_W, h: PAGE_H } = pageDims(orientation);
+  const MT = vMargins.top * PX_PER_INCH;
+  const MB = vMargins.bottom * PX_PER_INCH;
   return {
     width: { xs: "100%", md: `${PAGE_W}px` },
     maxWidth: "100%",
@@ -39,8 +46,8 @@ export function editorPageSx(
     // Footnote markers auto-number via this counter (incremented per
     // .footnote-ref::before), so they stay correct as notes move.
     counterReset: "footnote",
-    pt: `${MARGIN_Y}px`,
-    pb: `${MARGIN_Y}px`,
+    pt: `${MT}px`,
+    pb: `${MB}px`,
     pl: { xs: 2, md: `${indents.left * PX_PER_INCH}px` },
     pr: { xs: 2, md: `${indents.right * PX_PER_INCH}px` },
     // Page boundaries every page: a ${PAGE_GAP}px gray gap (matching the
@@ -56,7 +63,7 @@ export function editorPageSx(
       ` transparent ${PAGE_H}px)`,
     "& .ProseMirror": {
       outline: "none",
-      minHeight: `${PAGE_H - 2 * MARGIN_Y}px`,
+      minHeight: `${PAGE_H - MT - MB}px`,
       lineHeight: 1.6,
     },
     "& .ProseMirror p": {
@@ -81,8 +88,8 @@ export function editorPageSx(
       fontSize: "0.85rem",
       color: "#5f6368",
     },
-    "& .doc-header-region": { top: `${MARGIN_Y / 2 - 6}px` },
-    "& .doc-footer-region": { bottom: `${MARGIN_Y / 2 - 6}px` },
+    "& .doc-header-region": { top: `${MT / 2 - 6}px` },
+    "& .doc-footer-region": { bottom: `${MB / 2 - 6}px` },
     "& .margin-editor .ProseMirror": {
       outline: "none",
       minHeight: "1.4em",

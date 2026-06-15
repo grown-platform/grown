@@ -75,6 +75,7 @@ export function DocEditor({ user }: DocEditorProps) {
   });
   const [mode, setMode] = useState<EditorMode>("editing");
   const [orientation, setOrientation] = useState<Orientation>("portrait");
+  const [vMargins, setVMargins] = useState({ top: 1, bottom: 1 });
   const [showPageNumbers, setShowPageNumbers] = useState(false);
   const [pageCount, setPageCount] = useState(1);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -586,7 +587,7 @@ export function DocEditor({ user }: DocEditorProps) {
           <Sheet
             ref={pageRef}
             variant="plain"
-            sx={editorPageSx(indents, orientation)}
+            sx={editorPageSx(indents, orientation, vMargins)}
             data-testid="doc-editor"
           >
             {showHeaderFooter && (
@@ -764,6 +765,10 @@ export function DocEditor({ user }: DocEditorProps) {
         onClose={() => setDialog(null)}
         orientation={orientation}
         onChange={setOrientation}
+        vMargins={vMargins}
+        onVMarginsChange={setVMargins}
+        indents={indents}
+        onIndentsChange={setIndents}
       />
       <CommandPalette
         open={dialog === "menus"}

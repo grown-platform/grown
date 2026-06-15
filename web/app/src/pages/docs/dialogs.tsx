@@ -15,6 +15,8 @@ import {
 import type { Editor } from "@tiptap/react";
 import { DOWNLOAD_FORMATS, downloadDoc, type DownloadFormat } from "./export";
 import { replaceAll } from "./editorActions";
+import type { Indents } from "./Ruler";
+import type { VMargins } from "./editorStyles";
 
 interface BaseDialog {
   open: boolean;
@@ -182,12 +184,43 @@ export function PageSetupDialog({
   onClose,
   orientation,
   onChange,
+  vMargins,
+  onVMarginsChange,
+  indents,
+  onIndentsChange,
 }: {
   open: boolean;
   onClose: () => void;
   orientation: "portrait" | "landscape";
   onChange: (o: "portrait" | "landscape") => void;
+  vMargins: VMargins;
+  onVMarginsChange: (m: VMargins) => void;
+  indents: Indents;
+  onIndentsChange: (i: Indents) => void;
 }) {
+  // clamp to a sane page-margin range (inches)
+  const clamp = (n: number) => Math.max(0, Math.min(3, n));
+  const marginInput = (
+    label: string,
+    value: number,
+    set: (n: number) => void,
+  ) => (
+    <Box sx={{ flex: 1 }}>
+      <Typography level="body-xs" sx={{ mb: 0.25 }}>
+        {label}
+      </Typography>
+      <Input
+        type="number"
+        size="sm"
+        value={value}
+        onChange={(e) => set(clamp(parseFloat(e.target.value) || 0))}
+        slotProps={{
+          input: { step: 0.1, min: 0, max: 3, "aria-label": `${label} margin` },
+        }}
+        endDecorator="in"
+      />
+    </Box>
+  );
   return (
     <Modal open={open} onClose={onClose}>
       <ModalDialog
@@ -214,6 +247,27 @@ export function PageSetupDialog({
             </Button>
           ))}
         </Box>
+        <Typography level="title-sm" sx={{ mt: 2 }}>
+          Margins
+        </Typography>
+        <Stack spacing={1} sx={{ mt: 0.5 }}>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            {marginInput("Top", vMargins.top, (n) =>
+              onVMarginsChange({ ...vMargins, top: n }),
+            )}
+            {marginInput("Bottom", vMargins.bottom, (n) =>
+              onVMarginsChange({ ...vMargins, bottom: n }),
+            )}
+          </Box>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            {marginInput("Left", indents.left, (n) =>
+              onIndentsChange({ ...indents, left: n }),
+            )}
+            {marginInput("Right", indents.right, (n) =>
+              onIndentsChange({ ...indents, right: n }),
+            )}
+          </Box>
+        </Stack>
         <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 2 }}>
           <Button onClick={onClose}>OK</Button>
         </Box>
