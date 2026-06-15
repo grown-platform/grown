@@ -20,6 +20,7 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableCell from "@tiptap/extension-table-cell";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+import { InsertionMark, DeletionMark, Suggesting } from "./suggesting";
 import type * as Y from "yjs";
 import type { WebsocketProvider } from "y-websocket";
 
@@ -370,6 +371,9 @@ export function buildExtensions({
     TableCell,
     CommentMark,
     Footnote,
+    InsertionMark,
+    DeletionMark,
+    Suggesting.configure({ user: { name: userName, color: userColor } }),
     Collaboration.configure({ document: ydoc }),
     CollaborationCursor.configure({
       provider,

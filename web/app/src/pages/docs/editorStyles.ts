@@ -97,6 +97,14 @@ export function editorPageSx(
       borderTop: "1px solid #e0e0e0",
       paddingTop: "2px",
     },
+    "& .ProseMirror .suggestion-insert": {
+      color: "#188038",
+      textDecoration: "underline",
+    },
+    "& .ProseMirror .suggestion-delete": {
+      color: "#d93025",
+      textDecoration: "line-through",
+    },
     "& .ProseMirror .footnote-ref": {
       cursor: "pointer",
       color: "#1a73e8",

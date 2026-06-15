@@ -172,6 +172,7 @@ export interface DocActions {
   toggleOutline: () => void;
   insertFootnote: () => void;
   toggleHeaderFooter: () => void;
+  toggleSuggesting: () => void;
 }
 
 interface MenuBarProps {
@@ -253,7 +254,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Mode
           </Typography>
           <MenuItem onClick={run((e) => e.setEditable(true))}>Editing</MenuItem>
-          <MenuItem disabled>Suggesting</MenuItem>
+          <MenuItem onClick={actions.toggleSuggesting}>Suggesting</MenuItem>
           <MenuItem onClick={run((e) => e.setEditable(false))}>
             Viewing
           </MenuItem>

@@ -54,6 +54,7 @@ import { VersionHistory } from "./VersionHistory";
 import { Outline } from "./Outline";
 import { Footnotes } from "./Footnotes";
 import { MarginEditor } from "./MarginEditor";
+import { Suggestions } from "./Suggestions";
 import { Comments, type CommentsHandle } from "./Comments";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { ShortcutsDialog } from "./ShortcutsDialog";
@@ -89,8 +90,12 @@ export function DocEditor({ user }: DocEditorProps) {
     | "pagesetup"
     | "shortcuts"
   >(null);
-  // Right-hand side panel: version history or comments (mutually exclusive).
-  const [panel, setPanel] = useState<null | "versions" | "comments">(null);
+  // Right-hand side panel: version history, comments, or suggestions.
+  const [panel, setPanel] = useState<
+    null | "versions" | "comments" | "suggestions"
+  >(null);
+  // Track-changes ("Suggesting") mode.
+  const [suggesting, setSuggesting] = useState(false);
   // Left-hand outline (table of contents) pane.
   const [showOutline, setShowOutline] = useState(false);
   // Header/footer margin regions (bound to named Yjs fragments).
@@ -138,9 +143,15 @@ export function DocEditor({ user }: DocEditorProps) {
   }, [id]);
 
   // Editing vs Viewing mode: actually toggle ProseMirror editability.
+  // Suggesting implies editable (edits become tracked suggestions).
   useEffect(() => {
-    editor?.setEditable(mode === "editing");
-  }, [editor, mode]);
+    editor?.setEditable(mode === "editing" || suggesting);
+  }, [editor, mode, suggesting]);
+
+  // Mirror the Suggesting toggle into the editor's suggestion plugin storage.
+  useEffect(() => {
+    editor?.commands.setSuggesting(suggesting);
+  }, [editor, suggesting]);
 
   // Track how many pages the content spans, for page-number labels.
   useEffect(() => {
@@ -290,6 +301,13 @@ export function DocEditor({ user }: DocEditorProps) {
     toggleOutline: () => setShowOutline((s) => !s),
     insertFootnote: () => editor?.chain().focus().insertFootnote().run(),
     toggleHeaderFooter: () => setShowHeaderFooter((s) => !s),
+    toggleSuggesting: () => {
+      setSuggesting((s) => {
+        const next = !s;
+        setPanel(next ? "suggestions" : null);
+        return next;
+      });
+    },
   };
 
   // Global editor shortcuts not handled by TipTap: command palette (Alt+/),
@@ -441,6 +459,11 @@ export function DocEditor({ user }: DocEditorProps) {
         label: "Headers & footers",
         section: "Insert",
         run: actions.toggleHeaderFooter,
+      },
+      {
+        label: "Suggesting mode (track changes)",
+        section: "View",
+        run: actions.toggleSuggesting,
       },
       {
         label: "Comment on selection",
@@ -668,6 +691,34 @@ export function DocEditor({ user }: DocEditorProps) {
                 editor={editor}
                 onClose={() => setPanel(null)}
               />
+            </Box>
+          </>
+        )}
+        {panel === "suggestions" && (
+          <>
+            <Box
+              onClick={() => setPanel(null)}
+              sx={{
+                display: { xs: "block", md: "none" },
+                position: "fixed",
+                inset: 0,
+                bgcolor: "rgba(0,0,0,0.4)",
+                zIndex: 1200,
+              }}
+            />
+            <Box
+              sx={{
+                position: { xs: "fixed", md: "relative" },
+                top: { xs: 0, md: "auto" },
+                right: { xs: 0, md: "auto" },
+                bottom: { xs: 0, md: "auto" },
+                zIndex: { xs: 1201, md: 1 },
+                width: { xs: "min(320px, 100vw)", md: "auto" },
+                height: { xs: "100vh", md: "auto" },
+                overflowY: { xs: "auto", md: "visible" },
+              }}
+            >
+              <Suggestions editor={editor} onClose={() => setPanel(null)} />
             </Box>
           </>
         )}
