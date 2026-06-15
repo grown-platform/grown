@@ -61,6 +61,7 @@ import (
 	"code.pick.haus/grown/grown/internal/orgsync"
 	pdfapp "code.pick.haus/grown/grown/internal/pdf/app"
 	"code.pick.haus/grown/grown/internal/photos"
+	"code.pick.haus/grown/grown/internal/podcasts"
 	"code.pick.haus/grown/grown/internal/prefs"
 	"code.pick.haus/grown/grown/internal/profile"
 	"code.pick.haus/grown/grown/internal/projects"
@@ -137,6 +138,10 @@ type Config struct {
 	// MusicRadio is the radio recorder driving start/stop of station taps. nil
 	// disables the radio control + proxy endpoints (stations still list).
 	MusicRadio music.RadioController
+
+	// PodcastsRepo backs the Podcasts app: per-user RSS subscriptions plus the
+	// SSRF-guarded feed fetcher/parser. nil disables the podcasts routes.
+	PodcastsRepo *podcasts.Repository
 
 	// ---- Alexa custom skill (self-hosted endpoint) --------------------------
 	// AlexaSecret is the HMAC key used to sign the session-free music stream
@@ -655,6 +660,12 @@ func New(cfg Config) *Server {
 			musicHTTP = musicHTTP.WithRadio(cfg.MusicRadio)
 		}
 		grownv1.RegisterMusicServiceServer(grpcSrv, musicSvc)
+	}
+
+	// Podcasts: per-user RSS subscriptions + the SSRF-guarded feed proxy/parser.
+	var podcastsHTTP *podcasts.HTTP
+	if cfg.PodcastsRepo != nil {
+		podcastsHTTP = podcasts.NewHTTP(cfg.PodcastsRepo)
 	}
 
 	// Self-hosted Alexa custom skill: plays the default org's music library on an
@@ -1760,6 +1771,26 @@ func New(cfg Config) *Server {
 			}
 			if strings.HasPrefix(r.URL.Path, "/api/v1/music/") && strings.HasSuffix(r.URL.Path, "/content") && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 				auditRec.Log("music", "stream", driveAuthWrap(musicHTTP.StreamHandler())).ServeHTTP(w, r)
+				return
+			}
+		}
+		// Podcasts — per-user subscriptions + SSRF-guarded RSS feed proxy. All
+		// auth-wrapped (authed users only), like the music routes.
+		if podcastsHTTP != nil {
+			path := strings.TrimRight(r.URL.Path, "/")
+			switch {
+			case path == "/api/v1/podcasts/subscriptions" && r.Method == http.MethodGet:
+				auditRec.Log("podcasts", "list_subscriptions", driveAuthWrap(podcastsHTTP.ListSubscriptionsHandler())).ServeHTTP(w, r)
+				return
+			case path == "/api/v1/podcasts/subscriptions" && r.Method == http.MethodPost:
+				auditRec.Log("podcasts", "subscribe", driveAuthWrap(podcastsHTTP.SubscribeHandler())).ServeHTTP(w, r)
+				return
+			case strings.HasPrefix(r.URL.Path, "/api/v1/podcasts/subscriptions/") && r.Method == http.MethodDelete:
+				auditRec.Log("podcasts", "unsubscribe", driveAuthWrap(podcastsHTTP.UnsubscribeHandler())).ServeHTTP(w, r)
+				return
+			case path == "/api/v1/podcasts/feed" && r.Method == http.MethodGet:
+				// SSRF-sensitive: fetches a user-supplied URL server-side. Audited.
+				auditRec.Log("podcasts", "fetch_feed", driveAuthWrap(podcastsHTTP.FeedHandler())).ServeHTTP(w, r)
 				return
 			}
 		}

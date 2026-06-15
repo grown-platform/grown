@@ -46,6 +46,7 @@ import (
 	"code.pick.haus/grown/grown/internal/orgs"
 	pdfapp "code.pick.haus/grown/grown/internal/pdf/app"
 	"code.pick.haus/grown/grown/internal/photos"
+	"code.pick.haus/grown/grown/internal/podcasts"
 	"code.pick.haus/grown/grown/internal/prefs"
 	"code.pick.haus/grown/grown/internal/projects"
 	"code.pick.haus/grown/grown/internal/search"
@@ -266,6 +267,7 @@ func main() {
 		MusicRepo:     musicRepo,
 		MusicBlobs:    blobs,
 		MusicRadio:    musicRecorder,
+		PodcastsRepo:  podcasts.NewRepository(pool),
 		// Self-hosted Alexa music skill. GROWN_ALEXA_SECRET signs the session-free
 		// Echo stream URLs (no existing signing key to reuse, so it's its own env);
 		// empty disables the skill. GROWN_PUBLIC_BASE_URL is the public origin used
