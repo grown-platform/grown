@@ -53,6 +53,7 @@ import {
 import { VersionHistory } from "./VersionHistory";
 import { Outline } from "./Outline";
 import { Footnotes } from "./Footnotes";
+import { MarginEditor } from "./MarginEditor";
 import { Comments, type CommentsHandle } from "./Comments";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { ShortcutsDialog } from "./ShortcutsDialog";
@@ -92,9 +93,26 @@ export function DocEditor({ user }: DocEditorProps) {
   const [panel, setPanel] = useState<null | "versions" | "comments">(null);
   // Left-hand outline (table of contents) pane.
   const [showOutline, setShowOutline] = useState(false);
+  // Header/footer margin regions (bound to named Yjs fragments).
+  const [showHeaderFooter, setShowHeaderFooter] = useState(false);
 
   const collab = useMemo(() => createCollab(id), [id]);
   useEffect(() => () => collab.destroy(), [collab]);
+
+  // Reveal the header/footer regions automatically once their Yjs fragments
+  // gain content (so a doc that already has them shows them on open).
+  useEffect(() => {
+    const ydoc = collab.ydoc;
+    const check = () => {
+      const has =
+        ydoc.getXmlFragment("header").length > 0 ||
+        ydoc.getXmlFragment("footer").length > 0;
+      if (has) setShowHeaderFooter(true);
+    };
+    check();
+    ydoc.on("update", check);
+    return () => ydoc.off("update", check);
+  }, [collab]);
 
   const editor = useEditor(
     {
@@ -271,6 +289,7 @@ export function DocEditor({ user }: DocEditorProps) {
     shortcuts: () => setDialog("shortcuts"),
     toggleOutline: () => setShowOutline((s) => !s),
     insertFootnote: () => editor?.chain().focus().insertFootnote().run(),
+    toggleHeaderFooter: () => setShowHeaderFooter((s) => !s),
   };
 
   // Global editor shortcuts not handled by TipTap: command palette (Alt+/),
@@ -419,6 +438,11 @@ export function DocEditor({ user }: DocEditorProps) {
         run: actions.toggleOutline,
       },
       {
+        label: "Headers & footers",
+        section: "Insert",
+        run: actions.toggleHeaderFooter,
+      },
+      {
         label: "Comment on selection",
         section: "Insert",
         run: actions.commentOnSelection,
@@ -542,8 +566,28 @@ export function DocEditor({ user }: DocEditorProps) {
             sx={editorPageSx(indents, orientation)}
             data-testid="doc-editor"
           >
+            {showHeaderFooter && (
+              <Box className="doc-header-region">
+                <MarginEditor
+                  ydoc={collab.ydoc}
+                  field="header"
+                  editable={mode === "editing"}
+                  placeholder="Header"
+                />
+              </Box>
+            )}
             <EditorContent editor={editor} />
             <Footnotes editor={editor} />
+            {showHeaderFooter && (
+              <Box className="doc-footer-region">
+                <MarginEditor
+                  ydoc={collab.ydoc}
+                  field="footer"
+                  editable={mode === "editing"}
+                  placeholder="Footer"
+                />
+              </Box>
+            )}
             {showPageNumbers &&
               Array.from({ length: pageCount }, (_, i) => (
                 <Box

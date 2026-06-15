@@ -171,6 +171,7 @@ export interface DocActions {
   shortcuts: () => void;
   toggleOutline: () => void;
   insertFootnote: () => void;
+  toggleHeaderFooter: () => void;
 }
 
 interface MenuBarProps {
@@ -322,7 +323,9 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           </MenuItem>
           <MenuItem disabled>Page break</MenuItem>
           <MenuItem onClick={actions.insertFootnote}>Footnote</MenuItem>
-          <MenuItem disabled>Headers & footers</MenuItem>
+          <MenuItem onClick={actions.toggleHeaderFooter}>
+            Headers &amp; footers
+          </MenuItem>
           <ListDivider />
           <MenuItem onClick={actions.commentOnSelection}>
             Comment{kbd("Ctrl+Alt+M")}

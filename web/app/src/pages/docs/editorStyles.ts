@@ -72,6 +72,31 @@ export function editorPageSx(
       gap: "0.5em",
     },
     "& .ProseMirror img": { maxWidth: "100%", height: "auto" },
+    // Header/footer margin regions: placed inside the page's top/bottom margins,
+    // visually separated from the body, smaller and muted like Google Docs.
+    "& .doc-header-region, & .doc-footer-region": {
+      position: "absolute",
+      left: { xs: 16, md: `${indents.left * PX_PER_INCH}px` },
+      right: { xs: 16, md: `${indents.right * PX_PER_INCH}px` },
+      fontSize: "0.85rem",
+      color: "#5f6368",
+    },
+    "& .doc-header-region": { top: `${MARGIN_Y / 2 - 6}px` },
+    "& .doc-footer-region": { bottom: `${MARGIN_Y / 2 - 6}px` },
+    "& .margin-editor .ProseMirror": {
+      outline: "none",
+      minHeight: "1.4em",
+      lineHeight: 1.4,
+    },
+    "& .margin-editor .ProseMirror p": { margin: 0, textIndent: 0 },
+    "& .doc-header-region .margin-editor": {
+      borderBottom: "1px solid #e0e0e0",
+      paddingBottom: "2px",
+    },
+    "& .doc-footer-region .margin-editor": {
+      borderTop: "1px solid #e0e0e0",
+      paddingTop: "2px",
+    },
     "& .ProseMirror .footnote-ref": {
       cursor: "pointer",
       color: "#1a73e8",

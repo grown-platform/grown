@@ -57,7 +57,9 @@ export function Footnotes({ editor }: FootnotesProps) {
   useEffect(() => {
     if (items.length > prevCount.current) {
       const last = items[items.length - 1];
-      refs.current[last.id]?.focus();
+      // Defer so the editor's own focus() (from the insert command) settles
+      // first, otherwise the cursor stays in the body.
+      setTimeout(() => refs.current[last.id]?.focus(), 0);
     }
     prevCount.current = items.length;
   }, [items]);
