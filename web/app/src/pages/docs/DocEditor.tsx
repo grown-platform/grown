@@ -17,6 +17,7 @@ import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import { useEditor, EditorContent } from "@tiptap/react";
 
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import TocIcon from "@mui/icons-material/Toc";
 
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
@@ -50,6 +51,7 @@ import {
   PageSetupDialog,
 } from "./dialogs";
 import { VersionHistory } from "./VersionHistory";
+import { Outline } from "./Outline";
 import { Comments, type CommentsHandle } from "./Comments";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { ShortcutsDialog } from "./ShortcutsDialog";
@@ -87,6 +89,8 @@ export function DocEditor({ user }: DocEditorProps) {
   >(null);
   // Right-hand side panel: version history or comments (mutually exclusive).
   const [panel, setPanel] = useState<null | "versions" | "comments">(null);
+  // Left-hand outline (table of contents) pane.
+  const [showOutline, setShowOutline] = useState(false);
 
   const collab = useMemo(() => createCollab(id), [id]);
   useEffect(() => () => collab.destroy(), [collab]);
@@ -264,6 +268,7 @@ export function DocEditor({ user }: DocEditorProps) {
     },
     searchMenus: () => setDialog("menus"),
     shortcuts: () => setDialog("shortcuts"),
+    toggleOutline: () => setShowOutline((s) => !s),
   };
 
   // Global editor shortcuts not handled by TipTap: command palette (Alt+/),
@@ -402,6 +407,11 @@ export function DocEditor({ user }: DocEditorProps) {
       },
       { label: "Comments", section: "View", run: actions.comments },
       {
+        label: "Show document outline",
+        section: "View",
+        run: actions.toggleOutline,
+      },
+      {
         label: "Comment on selection",
         section: "Insert",
         run: actions.commentOnSelection,
@@ -459,6 +469,14 @@ export function DocEditor({ user }: DocEditorProps) {
           <Box sx={{ flex: 1 }} />
           <Presence provider={collab.provider} />
           <IconButton
+            variant={showOutline ? "soft" : "plain"}
+            size="sm"
+            aria-label="Show document outline"
+            onClick={() => setShowOutline((s) => !s)}
+          >
+            <TocIcon />
+          </IconButton>
+          <IconButton
             variant={panel === "comments" ? "soft" : "plain"}
             size="sm"
             aria-label="Comments"
@@ -505,6 +523,11 @@ export function DocEditor({ user }: DocEditorProps) {
       </Container>
 
       <Box sx={{ display: "flex", alignItems: "stretch", minHeight: "70vh" }}>
+        {showOutline && (
+          <Box sx={{ display: { xs: "none", md: "block" } }}>
+            <Outline editor={editor} onClose={() => setShowOutline(false)} />
+          </Box>
+        )}
         <Box sx={{ ...workspaceSx, flex: 1, minWidth: 0 }}>
           <Sheet
             ref={pageRef}

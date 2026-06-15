@@ -169,6 +169,7 @@ export interface DocActions {
   commentOnSelection: () => void;
   searchMenus: () => void;
   shortcuts: () => void;
+  toggleOutline: () => void;
 }
 
 interface MenuBarProps {
@@ -255,6 +256,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Viewing
           </MenuItem>
           <ListDivider />
+          <MenuItem onClick={actions.toggleOutline}>Show outline</MenuItem>
           <MenuItem onClick={actions.comments}>Comments</MenuItem>
           <MenuItem onClick={actions.togglePageNumbers}>
             Show page numbers
