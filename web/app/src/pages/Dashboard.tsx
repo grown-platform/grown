@@ -72,7 +72,10 @@ export function Dashboard({ user }: DashboardProps) {
       .then((w) => {
         if (!alive) return;
         setCanAddUser(w.isAdmin && w.userMgmtEnabled && !w.isPersonal);
-        setShowAdmin(w.isAdmin && !w.isPersonal);
+        // Show the Admin tile to any team-org member (not just admins) so the
+        // demo can browse the admin area + submenus. The backend still gates
+        // every admin endpoint, so non-admins see the UI shell with no data.
+        setShowAdmin(!w.isPersonal);
       })
       .catch(() => {});
     return () => {
