@@ -170,6 +170,7 @@ export interface DocActions {
   searchMenus: () => void;
   shortcuts: () => void;
   toggleOutline: () => void;
+  insertFootnote: () => void;
 }
 
 interface MenuBarProps {
@@ -320,7 +321,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Horizontal line
           </MenuItem>
           <MenuItem disabled>Page break</MenuItem>
-          <MenuItem disabled>Footnote</MenuItem>
+          <MenuItem onClick={actions.insertFootnote}>Footnote</MenuItem>
           <MenuItem disabled>Headers & footers</MenuItem>
           <ListDivider />
           <MenuItem onClick={actions.commentOnSelection}>

@@ -1,4 +1,4 @@
-import { Extension, Mark, mergeAttributes } from "@tiptap/core";
+import { Extension, Mark, Node, mergeAttributes } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
@@ -252,6 +252,85 @@ export const CommentMark = Mark.create({
   },
 });
 
+// Footnote is an inline atom marking a footnote reference. The note text lives
+// in the `content` attribute; the visible superscript number is supplied by a
+// CSS counter (.footnote-ref::before in editorStyles), so markers auto-renumber
+// as footnotes are inserted, deleted, or reordered. The Footnotes panel renders
+// the matching numbered notes at the bottom of the page.
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    footnote: {
+      insertFootnote: (content?: string) => ReturnType;
+      setFootnoteContent: (id: string, content: string) => ReturnType;
+    };
+  }
+}
+
+let footnoteSeq = 0;
+function newFootnoteId(): string {
+  footnoteSeq += 1;
+  return `fn-${Date.now().toString(36)}-${footnoteSeq}`;
+}
+
+export const Footnote = Node.create({
+  name: "footnote",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return {
+      id: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-footnote-id"),
+        renderHTML: (attrs) =>
+          attrs.id ? { "data-footnote-id": attrs.id } : {},
+      },
+      content: {
+        default: "",
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-content") || "",
+        renderHTML: (attrs) => ({ "data-content": attrs.content || "" }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "sup.footnote-ref" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    const content = (HTMLAttributes["data-content"] as string) || "";
+    return [
+      "sup",
+      mergeAttributes(HTMLAttributes, { class: "footnote-ref", title: content }),
+    ];
+  },
+  addCommands() {
+    return {
+      insertFootnote:
+        (content = "") =>
+        ({ chain }) =>
+          chain()
+            .insertContent({
+              type: this.name,
+              attrs: { id: newFootnoteId(), content },
+            })
+            .run(),
+      setFootnoteContent:
+        (id, content) =>
+        ({ state, dispatch, tr }) => {
+          let found = false;
+          state.doc.descendants((node, pos) => {
+            if (node.type.name === "footnote" && node.attrs.id === id) {
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, content });
+              found = true;
+            }
+          });
+          if (found && dispatch) dispatch(tr);
+          return found;
+        },
+    };
+  },
+});
+
 export interface BuildOpts {
   ydoc: Y.Doc;
   provider: WebsocketProvider;
@@ -290,6 +369,7 @@ export function buildExtensions({
     TableHeader,
     TableCell,
     CommentMark,
+    Footnote,
     Collaboration.configure({ document: ydoc }),
     CollaborationCursor.configure({
       provider,

@@ -52,6 +52,7 @@ import {
 } from "./dialogs";
 import { VersionHistory } from "./VersionHistory";
 import { Outline } from "./Outline";
+import { Footnotes } from "./Footnotes";
 import { Comments, type CommentsHandle } from "./Comments";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { ShortcutsDialog } from "./ShortcutsDialog";
@@ -269,6 +270,7 @@ export function DocEditor({ user }: DocEditorProps) {
     searchMenus: () => setDialog("menus"),
     shortcuts: () => setDialog("shortcuts"),
     toggleOutline: () => setShowOutline((s) => !s),
+    insertFootnote: () => editor?.chain().focus().insertFootnote().run(),
   };
 
   // Global editor shortcuts not handled by TipTap: command palette (Alt+/),
@@ -367,6 +369,11 @@ export function DocEditor({ user }: DocEditorProps) {
         label: "Horizontal line",
         section: "Insert",
         run: () => e.chain().focus().setHorizontalRule().run(),
+      },
+      {
+        label: "Footnote",
+        section: "Insert",
+        run: () => e.chain().focus().insertFootnote().run(),
       },
       { label: "Insert emoji", section: "Insert", run: actions.emoji },
       {
@@ -536,6 +543,7 @@ export function DocEditor({ user }: DocEditorProps) {
             data-testid="doc-editor"
           >
             <EditorContent editor={editor} />
+            <Footnotes editor={editor} />
             {showPageNumbers &&
               Array.from({ length: pageCount }, (_, i) => (
                 <Box

@@ -36,6 +36,9 @@ export function editorPageSx(
     borderRadius: 0,
     boxShadow: "0 1px 3px rgba(60,64,67,.24), 0 1px 2px rgba(60,64,67,.18)",
     minHeight: `${PAGE_H}px`,
+    // Footnote markers auto-number via this counter (incremented per
+    // .footnote-ref::before), so they stay correct as notes move.
+    counterReset: "footnote",
     pt: `${MARGIN_Y}px`,
     pb: `${MARGIN_Y}px`,
     pl: { xs: 2, md: `${indents.left * PX_PER_INCH}px` },
@@ -69,6 +72,16 @@ export function editorPageSx(
       gap: "0.5em",
     },
     "& .ProseMirror img": { maxWidth: "100%", height: "auto" },
+    "& .ProseMirror .footnote-ref": {
+      cursor: "pointer",
+      color: "#1a73e8",
+      fontWeight: 600,
+      userSelect: "none",
+    },
+    "& .ProseMirror .footnote-ref::before": {
+      counterIncrement: "footnote",
+      content: '"[" counter(footnote) "]"',
+    },
     "& .ProseMirror a": {
       color: "#1a73e8",
       textDecoration: "underline",
