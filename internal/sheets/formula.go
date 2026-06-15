@@ -144,7 +144,8 @@ const (
 	kindStr
 	kindBool
 	kindErr
-	kindArray // a 2D result that spills into neighbouring cells
+	kindArray  // a 2D result that spills into neighbouring cells
+	kindLambda // a LAMBDA function value (params + deferred body)
 )
 
 type value struct {
@@ -152,6 +153,7 @@ type value struct {
 	num  float64
 	str  string
 	arr  *spillArray // set only when kind == kindArray
+	lam  *lambdaVal  // set only when kind == kindLambda
 }
 
 // spillArray is a rectangular result produced by a dynamic-array function
@@ -626,6 +628,21 @@ func (ev *Evaluator) evalExpr(expr string) value {
 	if p.pos < len(p.tokens) {
 		return errValue // unconsumed tokens
 	}
+	// A bare LAMBDA value that reaches a cell has no meaning in Excel → #CALC!.
+	if v.kind == kindLambda {
+		return errVal("#CALC!")
+	}
+	return v
+}
+
+// evalTokens evaluates a captured token span (a LAMBDA body or a LET binding /
+// final expression) under the given variable environment.
+func (ev *Evaluator) evalTokens(tokens []token, env map[string]value) value {
+	p := &parser{tokens: tokens, ev: ev, env: env}
+	v := p.parseExpr()
+	if p.pos < len(p.tokens) {
+		return errValue
+	}
 	return v
 }
 
@@ -763,6 +780,9 @@ type parser struct {
 	tokens []token
 	pos    int
 	ev     *Evaluator
+	// env holds names bound by LET / LAMBDA in the current scope (keys uppercased).
+	// nil at the top level; populated for sub-expressions evaluated via evalTokens.
+	env map[string]value
 }
 
 func (p *parser) peek() token {
@@ -962,6 +982,21 @@ func (p *parser) parseUnary() value {
 }
 
 func (p *parser) parsePrimary() value {
+	v := p.parsePrimaryBase()
+	// Postfix application: a LAMBDA value (or expression yielding one) can be
+	// called immediately, e.g. =LAMBDA(x,x+1)(5).
+	for v.kind == kindLambda && p.peek().kind == tokLParen {
+		p.consume() // '('
+		args := p.parseArgList()
+		if p.peek().kind == tokRParen {
+			p.consume()
+		}
+		v = applyLambda(p.ev, v.lam, lambdaArgValues(args))
+	}
+	return v
+}
+
+func (p *parser) parsePrimaryBase() value {
 	t := p.peek()
 	switch t.kind {
 	case tokNum:
@@ -1001,12 +1036,36 @@ func (p *parser) parseIdentOrFunc() value {
 
 	// Function call.
 	if p.peek().kind == tokLParen {
+		// Special forms whose arguments must NOT be eagerly evaluated.
+		switch upper {
+		case "LAMBDA":
+			return p.parseLambda()
+		case "LET":
+			return p.parseLet()
+		}
 		p.consume() // '('
+		// A name bound to a lambda in scope can be invoked: name(args).
+		if p.env != nil {
+			if bv, ok := p.env[upper]; ok && bv.kind == kindLambda {
+				args := p.parseArgList()
+				if p.peek().kind == tokRParen {
+					p.consume()
+				}
+				return applyLambda(p.ev, bv.lam, lambdaArgValues(args))
+			}
+		}
 		args := p.parseArgList()
 		if p.peek().kind == tokRParen {
 			p.consume()
 		}
 		return p.callFunc(upper, args)
+	}
+
+	// Variable bound by LET / LAMBDA in the current scope.
+	if p.env != nil {
+		if bv, ok := p.env[upper]; ok {
+			return bv
+		}
 	}
 
 	// Range: IDENT ':' IDENT — return aggregate only if top-level; callers
@@ -1076,7 +1135,15 @@ func flattenArgs(args []interface{}) []value {
 	for _, a := range args {
 		switch v := a.(type) {
 		case value:
-			out = append(out, v)
+			// An array value (from a spill function or a lambda param) expands
+			// into its cells, so e.g. SUM(SEQUENCE(3)) and SUM(row) work.
+			if v.kind == kindArray && v.arr != nil {
+				for _, row := range v.arr.cells {
+					out = append(out, row...)
+				}
+			} else {
+				out = append(out, v)
+			}
 		case []value:
 			out = append(out, v...)
 		case rangeVal:
@@ -1180,6 +1247,11 @@ func (c *callCtx) rangeArg(i int) (rangeVal, bool) {
 	case rangeVal:
 		return v, true
 	case value:
+		// An array value (spill result or lambda param) keeps its shape so
+		// lookup/array functions can operate on it like a real range.
+		if v.kind == kindArray && v.arr != nil {
+			return rangeVal{rows: v.arr.rows, cols: v.arr.cols, cells: v.arr.cells}, true
+		}
 		return rangeVal{rows: 1, cols: 1, cells: [][]value{{v}}}, true
 	}
 	return rangeVal{}, false
