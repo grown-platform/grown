@@ -173,6 +173,7 @@ export interface DocActions {
   insertFootnote: () => void;
   toggleHeaderFooter: () => void;
   toggleSuggesting: () => void;
+  insertDrawing: () => void;
 }
 
 interface MenuBarProps {
@@ -310,7 +311,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           >
             Link…{kbd("Ctrl+K")}
           </MenuItem>
-          <MenuItem disabled>Drawing</MenuItem>
+          <MenuItem onClick={actions.insertDrawing}>Drawing</MenuItem>
           <MenuItem disabled>Chart</MenuItem>
           <ListDivider />
           <MenuItem onClick={actions.emoji}>Emoji…</MenuItem>

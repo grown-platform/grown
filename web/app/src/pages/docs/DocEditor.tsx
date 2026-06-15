@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Container,
@@ -55,6 +55,12 @@ import { Outline } from "./Outline";
 import { Footnotes } from "./Footnotes";
 import { MarginEditor } from "./MarginEditor";
 import { Suggestions } from "./Suggestions";
+import type { DrawingData } from "./DrawingDialog";
+
+// Excalidraw is heavy, so the drawing editor loads only when first opened.
+const DrawingDialog = lazy(() =>
+  import("./DrawingDialog").then((m) => ({ default: m.DrawingDialog })),
+);
 import { Comments, type CommentsHandle } from "./Comments";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { ShortcutsDialog } from "./ShortcutsDialog";
@@ -97,6 +103,12 @@ export function DocEditor({ user }: DocEditorProps) {
   >(null);
   // Track-changes ("Suggesting") mode.
   const [suggesting, setSuggesting] = useState(false);
+  // Drawing editor: open + the scene being edited + the node pos (null = new).
+  const [drawing, setDrawing] = useState<{
+    open: boolean;
+    scene?: string;
+    pos: number | null;
+  }>({ open: false, pos: null });
   // Left-hand outline (table of contents) pane.
   const [showOutline, setShowOutline] = useState(false);
   // Header/footer margin regions (bound to named Yjs fragments).
@@ -309,7 +321,45 @@ export function DocEditor({ user }: DocEditorProps) {
         return next;
       });
     },
+    insertDrawing: () => setDrawing({ open: true, pos: null }),
   };
+
+  function onDrawingSave(d: DrawingData) {
+    if (!editor) return;
+    if (drawing.pos == null) {
+      editor.chain().focus().insertDrawing(d).run();
+    } else {
+      editor.chain().focus().updateDrawing(drawing.pos, d).run();
+    }
+    setDrawing({ open: false, pos: null });
+  }
+
+  // Double-click a drawing image to re-open it in the Excalidraw editor.
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const onDbl = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const img = target?.closest?.("img.doc-drawing") as HTMLElement | null;
+      if (!img) return;
+      e.preventDefault();
+      try {
+        const pos = editor.view.posAtDOM(img, 0);
+        const node = editor.state.doc.nodeAt(pos);
+        if (node && node.type.name === "drawing") {
+          setDrawing({
+            open: true,
+            scene: node.attrs.scene as string,
+            pos,
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    dom.addEventListener("dblclick", onDbl);
+    return () => dom.removeEventListener("dblclick", onDbl);
+  }, [editor]);
 
   // Global editor shortcuts not handled by TipTap: command palette (Alt+/),
   // keyboard-shortcuts overlay (Ctrl+/), comment (Ctrl+Alt+M), and version
@@ -413,6 +463,7 @@ export function DocEditor({ user }: DocEditorProps) {
         section: "Insert",
         run: () => e.chain().focus().insertFootnote().run(),
       },
+      { label: "Drawing", section: "Insert", run: actions.insertDrawing },
       { label: "Insert emoji", section: "Insert", run: actions.emoji },
       {
         label: "Special characters",
@@ -775,6 +826,16 @@ export function DocEditor({ user }: DocEditorProps) {
         onClose={() => setDialog(null)}
         commands={commands}
       />
+      {drawing.open && (
+        <Suspense fallback={null}>
+          <DrawingDialog
+            open={drawing.open}
+            initialScene={drawing.scene}
+            onClose={() => setDrawing({ open: false, pos: null })}
+            onSave={onDrawingSave}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

@@ -79,6 +79,17 @@ export function editorPageSx(
       gap: "0.5em",
     },
     "& .ProseMirror img": { maxWidth: "100%", height: "auto" },
+    "& .ProseMirror img.doc-drawing": {
+      display: "block",
+      margin: "0.5em auto",
+      maxWidth: "100%",
+      cursor: "pointer",
+      border: "1px solid transparent",
+      borderRadius: "4px",
+    },
+    "& .ProseMirror img.doc-drawing:hover": {
+      border: "1px solid #c7d2fe",
+    },
     // Header/footer margin regions: placed inside the page's top/bottom margins,
     // visually separated from the body, smaller and muted like Google Docs.
     "& .doc-header-region, & .doc-footer-region": {
