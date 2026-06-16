@@ -15,7 +15,24 @@ export type ElementType =
   | "triangle"
   | "diamond"
   | "rightArrow"
-  | "roundRect";
+  | "roundRect"
+  | "table";
+
+/** Table element data: a grid of cell text (cells[row][col]). */
+export interface TableData {
+  rows: number;
+  cols: number;
+  cells: string[][];
+}
+
+/** newTable builds an r×c table with empty cells. */
+export function newTable(rows: number, cols: number): TableData {
+  return {
+    rows,
+    cols,
+    cells: Array.from({ length: rows }, () => Array.from({ length: cols }, () => "")),
+  };
+}
 
 // SHAPE_TYPES is every non-text/image/line element type — the "shape-like"
 // elements that share fill/stroke styling and an 8-handle resize box.
@@ -108,6 +125,8 @@ export interface SlideElement {
   strokeWidth?: number;
   // image
   src?: string;
+  // table
+  table?: TableData;
   /** Hyperlink target; clickable in present mode and exports. */
   url?: string;
   /** Clockwise rotation in degrees (absent/0 = upright). */
@@ -242,6 +261,19 @@ export function newElement(type: ElementType, src?: string): SlideElement {
       return { ...base, type, h: 0, w: 280, stroke: "#202124", strokeWidth: 3 };
     case "image":
       return { ...base, type, w: 320, h: 200, src: src || "" };
+    case "table":
+      return {
+        ...base,
+        type,
+        w: 480,
+        h: 220,
+        table: newTable(3, 3),
+        fill: "none",
+        stroke: "#bdc1c6",
+        strokeWidth: 1,
+        fontSize: 16,
+        color: "#202124",
+      };
   }
 }
 

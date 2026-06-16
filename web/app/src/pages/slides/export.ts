@@ -85,6 +85,22 @@ function elementHTML(el: SlideElement): string {
     return el.src
       ? `<img src="${el.src}" style="${box}object-fit:contain;"/>`
       : `<div style="${box}background:#f1f3f4;"></div>`;
+  if (el.type === "table" && el.table) {
+    const bcol = el.stroke && el.stroke !== "none" ? el.stroke : "#bbb";
+    const bg = el.fill && el.fill !== "none" ? el.fill : "transparent";
+    const rows = el.table.cells
+      .map(
+        (row) =>
+          `<tr>${row
+            .map(
+              (c) =>
+                `<td style="border:1px solid ${bcol};padding:4px;vertical-align:top;background:${bg};">${esc(c)}</td>`,
+            )
+            .join("")}</tr>`,
+      )
+      .join("");
+    return `<table style="${box}border-collapse:collapse;table-layout:fixed;font-size:${el.fontSize || 16}px;font-family:${el.fontFamily || "Arial"};color:${el.color || "#202124"};"><tbody>${rows}</tbody></table>`;
+  }
   return "";
 }
 

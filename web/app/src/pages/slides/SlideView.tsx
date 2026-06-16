@@ -250,5 +250,81 @@ function renderElementBody(
     );
   }
   if (el.type === "text") return <div style={merged}>{el.text}</div>;
+  if (el.type === "table")
+    return (
+      <div style={merged}>
+        <SlideTable el={el} />
+      </div>
+    );
   return <div style={merged} />;
+}
+
+/** SlideTable renders an element's table grid. When onCellChange is supplied the
+ *  cells become contentEditable (editor); otherwise read-only (view/present). */
+export function SlideTable({
+  el,
+  onCellChange,
+}: {
+  el: SlideElement;
+  onCellChange?: (row: number, col: number, value: string) => void;
+}) {
+  const t = el.table;
+  if (!t) return null;
+  const border = `1px solid ${el.stroke && el.stroke !== "none" ? el.stroke : "#bbb"}`;
+  const editable = !!onCellChange;
+  return (
+    <table
+      style={{
+        width: "100%",
+        height: "100%",
+        borderCollapse: "collapse",
+        tableLayout: "fixed",
+        fontSize: el.fontSize || 16,
+        fontFamily: el.fontFamily || "Arial",
+        color: el.color || "#202124",
+      }}
+    >
+      <tbody>
+        {t.cells.map((row, ri) => (
+          <tr key={ri}>
+            {row.map((cell, ci) => (
+              <td
+                key={ci}
+                style={{
+                  border,
+                  padding: 4,
+                  verticalAlign: "top",
+                  background: el.fill && el.fill !== "none" ? el.fill : undefined,
+                  overflow: "hidden",
+                  cursor: editable ? "text" : "default",
+                }}
+                contentEditable={editable}
+                suppressContentEditableWarning
+                onPointerDown={editable ? (e) => e.stopPropagation() : undefined}
+                onBlur={
+                  editable
+                    ? (e) =>
+                        onCellChange?.(
+                          ri,
+                          ci,
+                          (e.target as HTMLElement).innerText,
+                        )
+                    : undefined
+                }
+                ref={
+                  editable
+                    ? (n) => {
+                        if (n && n.innerText !== cell) n.innerText = cell;
+                      }
+                    : undefined
+                }
+              >
+                {editable ? undefined : cell}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }

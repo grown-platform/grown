@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Box } from "@mui/joy";
 import { CANVAS_W, CANVAS_H, type Slide, type SlideElement } from "./model";
-import { elementStyle } from "./SlideView";
+import { elementStyle, SlideTable } from "./SlideView";
 
 interface SlideCanvasProps {
   slide: Slide;
@@ -204,6 +204,17 @@ export function SlideCanvas({
                     {el.text}
                   </span>
                 )
+              ) : el.type === "table" ? (
+                <SlideTable
+                  el={el}
+                  onCellChange={(r, c, v) => {
+                    const t = el.table;
+                    if (!t) return;
+                    const cells = t.cells.map((row) => [...row]);
+                    cells[r][c] = v;
+                    onChange({ ...el, table: { ...t, cells } });
+                  }}
+                />
               ) : null}
 
               {/* resize handles */}

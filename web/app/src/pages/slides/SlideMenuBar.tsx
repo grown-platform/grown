@@ -187,7 +187,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           </MenuItem>
           <ListDivider />
           <MenuItem disabled>Diagram{arrow}</MenuItem>
-          <MenuItem disabled>Table{arrow}</MenuItem>
+          <MenuItem onClick={() => actions.insert("table")}>Table (3×3)</MenuItem>
           <MenuItem disabled>Chart{arrow}</MenuItem>
           <MenuItem disabled>Word art</MenuItem>
           <MenuItem disabled>Video</MenuItem>
