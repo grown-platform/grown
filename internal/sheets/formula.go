@@ -45,6 +45,68 @@ type FsSheet struct {
 	Row      int          `json:"row"`
 	Column   int          `json:"column"`
 	CellData []FsCellData `json:"celldata"`
+	// Extra preserves any other sheet-level fields (config, frozen, and our
+	// custom grownCharts / grownPivots / grownIconSets) across the
+	// RecomputeWorkbook round-trip, which would otherwise drop them.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// sheetKnownKeys are the fields FsSheet models directly; everything else in the
+// JSON object is captured into Extra so it survives a marshal round-trip.
+var sheetKnownKeys = map[string]bool{
+	"name": true, "id": true, "order": true, "row": true, "column": true, "celldata": true,
+}
+
+// MarshalJSON serialises FsSheet, merging Extra fields back at the top level.
+func (sh FsSheet) MarshalJSON() ([]byte, error) {
+	m := make(map[string]interface{}, 6+len(sh.Extra))
+	for k, v := range sh.Extra {
+		m[k] = v
+	}
+	m["name"] = sh.Name
+	m["id"] = sh.ID
+	m["order"] = sh.Order
+	m["row"] = sh.Row
+	m["column"] = sh.Column
+	m["celldata"] = sh.CellData
+	return json.Marshal(m)
+}
+
+// UnmarshalJSON deserialises FsSheet, capturing unknown fields in Extra.
+func (sh *FsSheet) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if v, ok := raw["name"]; ok {
+		_ = json.Unmarshal(v, &sh.Name)
+	}
+	if v, ok := raw["id"]; ok {
+		_ = json.Unmarshal(v, &sh.ID)
+	}
+	if v, ok := raw["order"]; ok {
+		_ = json.Unmarshal(v, &sh.Order)
+	}
+	if v, ok := raw["row"]; ok {
+		_ = json.Unmarshal(v, &sh.Row)
+	}
+	if v, ok := raw["column"]; ok {
+		_ = json.Unmarshal(v, &sh.Column)
+	}
+	if v, ok := raw["celldata"]; ok {
+		if err := json.Unmarshal(v, &sh.CellData); err != nil {
+			return err
+		}
+	}
+	for k := range raw {
+		if sheetKnownKeys[k] {
+			delete(raw, k)
+		}
+	}
+	if len(raw) > 0 {
+		sh.Extra = raw
+	}
+	return nil
 }
 
 // FsCellData is one element of the celldata array: row, column, value.

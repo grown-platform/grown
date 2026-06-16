@@ -1,6 +1,7 @@
 package sheets
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -640,6 +641,30 @@ func TestRecomputeWorkbook_EmptyCelldata(t *testing.T) {
 	out := RecomputeWorkbook(data)
 	if !strings.Contains(out, "Sheet1") {
 		t.Errorf("sheet name should survive: %s", out)
+	}
+}
+
+func TestRecomputeWorkbook_PreservesSheetExtras(t *testing.T) {
+	// Custom sheet-level fields (grownIconSets / grownCharts / grownPivots) and
+	// other unmodelled FortuneSheet config must survive the round-trip — they
+	// were being silently dropped before FsSheet captured an Extra map.
+	data := `[{"name":"Sheet1","id":"s1","row":50,"column":26,` +
+		`"celldata":[{"r":0,"c":0,"v":{"v":5}}],` +
+		`"config":{"merge":{}},` +
+		`"grownIconSets":[{"id":"is1","range":{"r0":0,"r1":7,"c0":0,"c1":0},"style":"traffic"}]}]`
+	out := RecomputeWorkbook(data)
+	for _, want := range []string{`"grownIconSets"`, `"style":"traffic"`, `"config"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("sheet extra %s should survive round-trip; got: %s", want, out)
+		}
+	}
+	// Re-parse to confirm it's valid and the rule is intact.
+	var wb FsWorkbook
+	if err := json.Unmarshal([]byte(out), &wb); err != nil {
+		t.Fatalf("re-parse failed: %v", err)
+	}
+	if len(wb) != 1 || wb[0].Extra["grownIconSets"] == nil {
+		t.Fatalf("grownIconSets missing from Extra after round-trip: %+v", wb)
 	}
 }
 
