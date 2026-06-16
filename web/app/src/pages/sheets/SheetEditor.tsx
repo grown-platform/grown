@@ -42,6 +42,14 @@ import type { ChartConfig } from "./chartData";
 import { PivotDialog } from "./PivotDialog";
 import { PivotPanel } from "./PivotPanel";
 import type { PivotConfig } from "./pivotData";
+import {
+  applyIconSets,
+  clearIconSets,
+  newIconSetId,
+  rangeFromSelection,
+  type IconSetRule,
+  type IconStyle,
+} from "./iconSets";
 import { downloadSheet } from "./export";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
@@ -106,6 +114,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [pivotsOpen, setPivotsOpen] = useState(false);
   const [pivots, setPivots] = useState<PivotConfig[]>([]);
   const pivotsRef = useRef<PivotConfig[]>([]);
+  const iconSetsRef = useRef<IconSetRule[]>([]);
   const dataRef = useRef<any[] | null>(null);
   const ref = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -137,8 +146,15 @@ export function SheetEditor({ user }: SheetEditorProps) {
             : [];
           pivotsRef.current = loadedPivots;
           setPivots(loadedPivots);
+          iconSetsRef.current = Array.isArray(parsed?.[0]?.grownIconSets)
+            ? parsed[0].grownIconSets
+            : [];
           dataRef.current = parsed;
           setData(parsed);
+          // Re-apply icon overlays once the grid has mounted.
+          if (iconSetsRef.current.length) {
+            setTimeout(() => applyIconSets(ref.current, iconSetsRef.current), 300);
+          }
         } catch {
           setData(DEFAULT_DATA);
         }
@@ -289,15 +305,40 @@ export function SheetEditor({ user }: SheetEditorProps) {
   function withExtras(d: any[]): any[] {
     if (!Array.isArray(d) || d.length === 0) return d;
     const copy = d.slice();
-    copy[0] = { ...copy[0], grownCharts: chartsRef.current, grownPivots: pivotsRef.current };
+    copy[0] = {
+      ...copy[0],
+      grownCharts: chartsRef.current,
+      grownPivots: pivotsRef.current,
+      grownIconSets: iconSetsRef.current,
+    };
     return copy;
   }
   function onChange(d: any[]) {
     dataRef.current = d;
+    // Re-apply icon-set overlays after edits. applyIconSets is idempotent, so
+    // the write it triggers settles in one pass without looping.
+    if (iconSetsRef.current.length) {
+      setTimeout(() => applyIconSets(ref.current, iconSetsRef.current), 0);
+    }
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       saveSheet(id, JSON.stringify(withExtras(d))).catch(() => {});
     }, 1500);
+  }
+  function addIconSet(style: IconStyle) {
+    const range = rangeFromSelection(ref.current);
+    if (!range) return;
+    iconSetsRef.current = [
+      ...iconSetsRef.current,
+      { id: newIconSetId(), range, style },
+    ];
+    applyIconSets(ref.current, iconSetsRef.current);
+    persistExtras();
+  }
+  function clearAllIconSets() {
+    clearIconSets(ref.current, iconSetsRef.current);
+    iconSetsRef.current = [];
+    persistExtras();
   }
   // persistExtras saves charts/pivots immediately (they aren't FortuneSheet
   // cell edits, so they won't trigger onChange).
@@ -413,6 +454,8 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onDataValidation={() => setDvOpen(true)}
               onInsertChart={() => setChartOpen(true)}
               onInsertPivot={() => setPivotOpen(true)}
+              onIconSet={addIconSet}
+              onClearIconSets={clearAllIconSets}
             />
           </Box>
           <Box sx={{ flex: 1 }} />

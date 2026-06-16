@@ -11,6 +11,7 @@ import {
 } from "@mui/joy";
 import ArrowRightIcon from "@mui/icons-material/ArrowRight";
 import { SHEET_DOWNLOAD_FORMATS, type SheetFormat } from "./export";
+import { ICON_STYLE_LABELS, type IconStyle } from "./iconSets";
 import {
   sortRange,
   sortSheet,
@@ -48,6 +49,10 @@ interface SheetMenuBarProps {
   onInsertChart: () => void;
   /** Opens the Insert pivot table dialog. */
   onInsertPivot: () => void;
+  /** Applies an icon-set rule to the current selection. */
+  onIconSet: (style: IconStyle) => void;
+  /** Clears all icon-set rules. */
+  onClearIconSets: () => void;
 }
 
 const menuButtonSx = {
@@ -97,6 +102,8 @@ export function SheetMenuBar({
   onDataValidation,
   onInsertChart,
   onInsertPivot,
+  onIconSet,
+  onClearIconSets,
 }: SheetMenuBarProps) {
   const wb = () => {
     try {
@@ -437,6 +444,15 @@ export function SheetMenuBar({
           <MenuItem disabled>Convert to table{kbd("Ctrl+Alt+T")}</MenuItem>
           <MenuItem onClick={onConditionalFormat}>
             Conditional formatting
+          </MenuItem>
+          {section("Icon set")}
+          {(Object.keys(ICON_STYLE_LABELS) as IconStyle[]).map((style) => (
+            <MenuItem key={style} sx={sub} onClick={() => onIconSet(style)}>
+              {ICON_STYLE_LABELS[style]}
+            </MenuItem>
+          ))}
+          <MenuItem sx={sub} onClick={onClearIconSets}>
+            Clear icon sets
           </MenuItem>
           <MenuItem disabled>Alternating colors</MenuItem>
           <MenuItem onClick={fmt("ct", { fa: "General", t: "g" })}>
