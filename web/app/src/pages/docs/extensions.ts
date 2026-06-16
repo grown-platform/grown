@@ -123,21 +123,23 @@ export const ParagraphSpacing = Extension.create({
       {
         types: this.options.types,
         attributes: {
-          spacingBefore: {
+          // A single attribute "before|after" so it emits ONE merged style —
+          // two separate style-emitting attributes don't combine reliably.
+          paragraphSpacing: {
             default: null,
-            parseHTML: (el) => (el as HTMLElement).style.marginTop || null,
-            renderHTML: (attrs) =>
-              attrs.spacingBefore
-                ? { style: `margin-top: ${attrs.spacingBefore}` }
-                : {},
-          },
-          spacingAfter: {
-            default: null,
-            parseHTML: (el) => (el as HTMLElement).style.marginBottom || null,
-            renderHTML: (attrs) =>
-              attrs.spacingAfter
-                ? { style: `margin-bottom: ${attrs.spacingAfter}` }
-                : {},
+            parseHTML: (el) => {
+              const e = el as HTMLElement;
+              const mt = e.style.marginTop;
+              const mb = e.style.marginBottom;
+              return mt || mb ? `${mt || "0"}|${mb || "0"}` : null;
+            },
+            renderHTML: (attrs) => {
+              if (!attrs.paragraphSpacing) return {};
+              const [before, after] = String(attrs.paragraphSpacing).split("|");
+              return {
+                style: `margin-top: ${before || "0"}; margin-bottom: ${after || "0"}`,
+              };
+            },
           },
         },
       },
@@ -148,14 +150,15 @@ export const ParagraphSpacing = Extension.create({
       setParagraphSpacing:
         (before, after) =>
         ({ tr, state, dispatch }) => {
+          const value =
+            before || after ? `${before || "0"}|${after || "0"}` : null;
           const { from, to } = state.selection;
           if (dispatch) {
             state.doc.nodesBetween(from, to, (node, pos) => {
               if (this.options.types.includes(node.type.name)) {
                 tr.setNodeMarkup(pos, undefined, {
                   ...node.attrs,
-                  spacingBefore: before,
-                  spacingAfter: after,
+                  paragraphSpacing: value,
                 });
               }
             });
