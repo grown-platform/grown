@@ -113,6 +113,28 @@ export function Tile({ app }: TileProps) {
             NEW
           </Box>
         )}
+        {app.isBeta && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: -4,
+              left: -4,
+              px: 0.5,
+              py: "1px",
+              borderRadius: "sm",
+              bgcolor: "#f59e0b",
+              color: "#fff",
+              fontSize: 9,
+              fontWeight: 700,
+              lineHeight: 1.4,
+              letterSpacing: 0.3,
+              boxShadow: "xs",
+              pointerEvents: "none",
+            }}
+          >
+            BETA
+          </Box>
+        )}
       </Box>
       <Typography level="body-sm" sx={{ fontWeight: 500 }}>
         {app.name}

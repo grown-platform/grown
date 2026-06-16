@@ -96,6 +96,7 @@ const GAMES: AppTile[] = [
     comingSoon: false,
     iconName: "Adjust",
     iconUrl: "/games/bolo/icon.png",
+    isBeta: true,
     // Entry is play.html (not index.html): http.ServeFile 301-redirects any
     // */index.html to the directory, which falls through to the SPA.
     externalUrl: "/games/bolo/play.html",
@@ -109,6 +110,7 @@ const GAMES: AppTile[] = [
     comingSoon: false,
     iconName: "Adjust",
     iconUrl: "/games/winbolo/icon.png",
+    isBeta: true,
     externalUrl: "/games/winbolo/play.html",
   },
   arcade("2048", "2048", "#EDC22E", "GridOn"),

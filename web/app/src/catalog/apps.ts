@@ -34,6 +34,9 @@ export interface AppTile {
   /** When true, the tile shows a small "NEW" badge on its icon (used by /games
    *  to flag recently-updated games). */
   isNew?: boolean;
+  /** When true, the tile shows a small "BETA" badge on its icon, flagging the
+   *  game as an early/in-progress preview that may have bugs. */
+  isBeta?: boolean;
   /** Optional callback fired when the tile is launched/clicked (used by /games
    *  to track per-device play counts). Does not prevent the navigation. */
   onLaunch?: () => void;
