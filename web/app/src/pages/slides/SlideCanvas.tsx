@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Box } from "@mui/joy";
 import { CANVAS_W, CANVAS_H, type Slide, type SlideElement } from "./model";
-import { elementStyle, SlideTable } from "./SlideView";
+import { elementStyle, SlideTable, renderSlideText } from "./SlideView";
 
 interface SlideCanvasProps {
   slide: Slide;
@@ -201,7 +201,7 @@ export function SlideCanvas({
                   />
                 ) : (
                   <span style={{ width: "100%", pointerEvents: "none" }}>
-                    {el.text}
+                    {renderSlideText(el)}
                   </span>
                 )
               ) : el.type === "table" ? (

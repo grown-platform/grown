@@ -30,7 +30,9 @@ export interface SlideActions {
   duplicateSlide: () => void;
   deleteSlide: () => void;
   present: () => void;
-  toggle: (attr: "bold" | "italic" | "underline") => void;
+  toggle: (attr: "bold" | "italic" | "underline" | "strike") => void;
+  setList: (v: "bullet" | "number" | null) => void;
+  setLineSpacing: (v: number) => void;
   setAlign: (a: "left" | "center" | "right") => void;
   arrange: (dir: "front" | "back" | "forward" | "backward") => void;
   rotate: (op: "cw" | "ccw" | "flipH" | "flipV") => void;
@@ -218,6 +220,9 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem sx={sub} onClick={() => actions.toggle("underline")}>
             Underline{kbd("Ctrl+U")}
           </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.toggle("strike")}>
+            Strikethrough
+          </MenuItem>
           {section("Align")}
           <MenuItem sx={sub} onClick={() => actions.setAlign("left")}>
             Left
@@ -229,8 +234,27 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
             Right
           </MenuItem>
           <ListDivider />
-          <MenuItem disabled>Line &amp; paragraph spacing{arrow}</MenuItem>
-          <MenuItem disabled>Bullets &amp; numbering{arrow}</MenuItem>
+          {section("Bullets & numbering")}
+          <MenuItem sx={sub} onClick={() => actions.setList("bullet")}>
+            Bulleted list
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.setList("number")}>
+            Numbered list
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.setList(null)}>
+            No list
+          </MenuItem>
+          {section("Line spacing")}
+          <MenuItem sx={sub} onClick={() => actions.setLineSpacing(1)}>
+            Single
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.setLineSpacing(1.5)}>
+            1.5
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.setLineSpacing(2)}>
+            Double
+          </MenuItem>
+          <ListDivider />
           <MenuItem disabled>Table{arrow}</MenuItem>
           <MenuItem disabled>Image{arrow}</MenuItem>
           <MenuItem disabled>Borders &amp; lines{arrow}</MenuItem>

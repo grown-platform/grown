@@ -116,6 +116,11 @@ export interface SlideElement {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  strike?: boolean;
+  /** Bullet / numbered list rendering for a multi-line text element. */
+  list?: "bullet" | "number";
+  /** Line height multiplier for text (default 1.2). */
+  lineSpacing?: number;
   color?: string;
   align?: "left" | "center" | "right";
   valign?: "top" | "middle" | "bottom";

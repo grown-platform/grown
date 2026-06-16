@@ -101,7 +101,10 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
       color: el.color,
       fontWeight: el.bold ? 700 : 400,
       fontStyle: el.italic ? "italic" : "normal",
-      textDecoration: el.underline ? "underline" : "none",
+      textDecoration:
+        [el.underline ? "underline" : "", el.strike ? "line-through" : ""]
+          .filter(Boolean)
+          .join(" ") || "none",
       textAlign: el.align,
       display: "flex",
       flexDirection: "column",
@@ -113,7 +116,7 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
             : "flex-start",
       whiteSpace: "pre-wrap",
       wordBreak: "break-word",
-      lineHeight: 1.2,
+      lineHeight: el.lineSpacing || 1.2,
       padding: 4,
       overflow: "hidden",
     };
@@ -249,7 +252,8 @@ function renderElementBody(
       </div>
     );
   }
-  if (el.type === "text") return <div style={merged}>{el.text}</div>;
+  if (el.type === "text")
+    return <div style={merged}>{renderSlideText(el)}</div>;
   if (el.type === "table")
     return (
       <div style={merged}>
@@ -257,6 +261,19 @@ function renderElementBody(
       </div>
     );
   return <div style={merged} />;
+}
+
+/** renderSlideText returns a text element's body, prefixing each line with a
+ *  bullet/number when the element has a list style (display-only; the stored
+ *  text stays plain). */
+export function renderSlideText(el: SlideElement): React.ReactNode {
+  if (!el.list) return el.text;
+  return (el.text || "").split("\n").map((ln, i) => (
+    <div key={i}>
+      {el.list === "number" ? `${i + 1}. ` : "• "}
+      {ln}
+    </div>
+  ));
 }
 
 /** SlideTable renders an element's table grid. When onCellChange is supplied the

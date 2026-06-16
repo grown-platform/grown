@@ -489,8 +489,15 @@ export function DeckEditor({ user }: { user: User }) {
     };
     r.readAsDataURL(f);
   }
-  function toggle(attr: "bold" | "italic" | "underline") {
+  function toggle(attr: "bold" | "italic" | "underline" | "strike") {
     if (selected) upsertElement({ ...selected, [attr]: !selected[attr] });
+  }
+  function setList(v: "bullet" | "number" | null) {
+    if (selected)
+      upsertElement({ ...selected, list: v === null ? undefined : v });
+  }
+  function setLineSpacing(v: number) {
+    if (selected) upsertElement({ ...selected, lineSpacing: v });
   }
   function setAlign(a: "left" | "center" | "right") {
     if (selected) upsertElement({ ...selected, align: a });
@@ -658,6 +665,8 @@ export function DeckEditor({ user }: { user: User }) {
       setPresent(true);
     },
     toggle,
+    setList,
+    setLineSpacing,
     setAlign,
     arrange,
     rotate,

@@ -52,10 +52,19 @@ function elementHTML(el: SlideElement): string {
       box +
       `font-size:${el.fontSize}px;font-family:${el.fontFamily || "Arial"};color:${el.color || "#000"};` +
       `font-weight:${el.bold ? 700 : 400};font-style:${el.italic ? "italic" : "normal"};` +
-      `text-decoration:${el.underline ? "underline" : "none"};text-align:${el.align || "left"};` +
+      `text-decoration:${[el.underline ? "underline" : "", el.strike ? "line-through" : ""].filter(Boolean).join(" ") || "none"};text-align:${el.align || "left"};` +
       `display:flex;flex-direction:column;justify-content:${el.valign === "middle" ? "center" : el.valign === "bottom" ? "flex-end" : "flex-start"};` +
-      `white-space:pre-wrap;word-break:break-word;line-height:1.2;padding:4px;overflow:hidden;box-sizing:border-box;`;
-    return `<div style="${style}">${esc(el.text || "").replace(/\n/g, "<br/>")}</div>`;
+      `white-space:pre-wrap;word-break:break-word;line-height:${el.lineSpacing || 1.2};padding:4px;overflow:hidden;box-sizing:border-box;`;
+    const body = el.list
+      ? (el.text || "")
+          .split("\n")
+          .map(
+            (ln, i) =>
+              `<div>${el.list === "number" ? `${i + 1}. ` : "• "}${esc(ln)}</div>`,
+          )
+          .join("")
+      : esc(el.text || "").replace(/\n/g, "<br/>");
+    return `<div style="${style}">${body}</div>`;
   }
   const bd =
     el.stroke && el.stroke !== "none"
