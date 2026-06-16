@@ -518,6 +518,20 @@ export function DeckEditor({ user }: { user: User }) {
     });
     scheduleSave();
   }
+  function rotate(op: "cw" | "ccw" | "flipH" | "flipV") {
+    if (!selected) return;
+    if (op === "flipH") {
+      upsertElement({ ...selected, flipH: !selected.flipH });
+      return;
+    }
+    if (op === "flipV") {
+      upsertElement({ ...selected, flipV: !selected.flipV });
+      return;
+    }
+    const delta = op === "cw" ? 90 : -90;
+    const rot = (((selected.rotation || 0) + delta) % 360 + 360) % 360;
+    upsertElement({ ...selected, rotation: rot });
+  }
   function setBackground() {
     if (!slide) return;
     const c =
@@ -639,6 +653,7 @@ export function DeckEditor({ user }: { user: User }) {
     toggle,
     setAlign,
     arrange,
+    rotate,
     deleteSelected: () => selId && removeElement(selId),
     setBackground,
     paste: pasteEl,

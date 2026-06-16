@@ -33,6 +33,7 @@ export interface SlideActions {
   toggle: (attr: "bold" | "italic" | "underline") => void;
   setAlign: (a: "left" | "center" | "right") => void;
   arrange: (dir: "front" | "back" | "forward" | "backward") => void;
+  rotate: (op: "cw" | "ccw" | "flipH" | "flipV") => void;
   deleteSelected: () => void;
   setBackground: () => void;
   paste: () => void;
@@ -282,7 +283,19 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem disabled>Align{arrow}</MenuItem>
           <MenuItem disabled>Distribute{arrow}</MenuItem>
           <MenuItem disabled>Center on page{arrow}</MenuItem>
-          <MenuItem disabled>Rotate{arrow}</MenuItem>
+          {section("Rotate")}
+          <MenuItem sx={sub} onClick={() => actions.rotate("cw")}>
+            Rotate clockwise 90°
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.rotate("ccw")}>
+            Rotate counter-clockwise 90°
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.rotate("flipH")}>
+            Flip horizontally
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.rotate("flipV")}>
+            Flip vertically
+          </MenuItem>
           <MenuItem disabled>Group{kbd("Ctrl+Alt+G")}</MenuItem>
           <MenuItem disabled>Ungroup{kbd("Ctrl+Alt+Shift+G")}</MenuItem>
         </>,

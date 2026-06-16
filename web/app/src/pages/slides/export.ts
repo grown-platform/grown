@@ -2,6 +2,7 @@ import {
   CANVAS_W,
   CANVAS_H,
   shapeClipPath,
+  elementTransform,
   type DeckDoc,
   type Slide,
   type SlideElement,
@@ -43,7 +44,9 @@ function esc(s: string): string {
 
 // Serialize one element to an absolutely-positioned HTML string (for print/HTML export).
 function elementHTML(el: SlideElement): string {
-  const box = `position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;`;
+  const tf = elementTransform(el);
+  const xform = tf ? `transform:${tf};transform-origin:center;` : "";
+  const box = `position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;${xform}`;
   if (el.type === "text") {
     const style =
       box +

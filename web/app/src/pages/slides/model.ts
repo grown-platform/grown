@@ -108,8 +108,23 @@ export interface SlideElement {
   strokeWidth?: number;
   // image
   src?: string;
+  /** Clockwise rotation in degrees (absent/0 = upright). */
+  rotation?: number;
+  /** Mirror horizontally / vertically. */
+  flipH?: boolean;
+  flipV?: boolean;
   /** Entrance animation for this element (optional; absent = no animation). */
   animation?: ElementAnimation;
+}
+
+// elementTransform builds the CSS transform for an element's rotation/flip.
+// Returns undefined when the element is upright and unflipped.
+export function elementTransform(el: SlideElement): string | undefined {
+  const parts: string[] = [];
+  if (el.rotation) parts.push(`rotate(${el.rotation}deg)`);
+  if (el.flipH || el.flipV)
+    parts.push(`scale(${el.flipH ? -1 : 1}, ${el.flipV ? -1 : 1})`);
+  return parts.length ? parts.join(" ") : undefined;
 }
 
 export interface Slide {

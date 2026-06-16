@@ -3,6 +3,7 @@ import {
   CANVAS_W,
   CANVAS_H,
   shapeClipPath,
+  elementTransform,
   type AnimationType,
   type Slide,
   type SlideElement,
@@ -82,6 +83,8 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
     top: el.y,
     width: el.w,
     height: el.h,
+    transform: elementTransform(el),
+    transformOrigin: "center",
   };
   if (el.type === "text") {
     return {
