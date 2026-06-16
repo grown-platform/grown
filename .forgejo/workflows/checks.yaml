@@ -15,8 +15,14 @@ on:
 jobs:
   go:
     runs-on: docker
+    # Pin the exact patch so the image's Go matches go.mod's `go 1.25.7`, and
+    # force GOTOOLCHAIN=local so the job never tries to download a toolchain at
+    # runtime (a stale cached `golang:1.25-alpine` < 1.25.7 would otherwise
+    # attempt that and fail).
     container:
-      image: golang:1.25-alpine
+      image: golang:1.25.7-alpine
+    env:
+      GOTOOLCHAIN: local
     steps:
       - name: Tools
         run: apk add --no-cache git build-base
