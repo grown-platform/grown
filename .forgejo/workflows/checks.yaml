@@ -68,12 +68,16 @@ jobs:
             "${scheme}://token:${{ github.token }}@${host}/${GITHUB_REPOSITORY}.git" src
           cd src && git checkout "$GITHUB_SHA" && git rev-parse HEAD
 
-      - name: web app — install, typecheck+build, unit tests
+      - name: web app — install, typecheck, unit tests
+        # Type-check with tsc -b but skip the heavy vite bundle here: the image
+        # build (publish.yaml) already runs the full `npm run build` on every
+        # push, so bundling again is redundant and only makes this job slow
+        # enough to get cancelled by the next push.
         run: |
           cd src/web/app
           npm ci --no-fund --no-audit
-          npm run build      # tsc -b && vite build
-          npm test           # vitest run
+          npx tsc -b          # type-check (build/bundle covered by the image build)
+          npm test            # vitest run
 
       - name: e2e specs — validate (no running stack needed)
         run: |
