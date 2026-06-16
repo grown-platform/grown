@@ -10,7 +10,9 @@ describe("catalog/apps", () => {
   it("every tile has a unique non-empty id", () => {
     const ids = new Set<string>();
     for (const a of apps) {
-      expect(a.id).toMatch(/^[a-z][a-z0-9-]*$/);
+      // URL-safe slug: lowercase alphanumerics and hyphens. A leading digit is
+      // fine (e.g. the "3d" models app).
+      expect(a.id).toMatch(/^[a-z0-9][a-z0-9-]*$/);
       expect(ids.has(a.id)).toBe(false);
       ids.add(a.id);
     }

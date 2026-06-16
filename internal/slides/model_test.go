@@ -23,7 +23,10 @@ type elementAnimation struct {
 type slideElement struct {
 	ID         string            `json:"id"`
 	Type       string            `json:"type"`
-	X, Y, W, H float64           `json:"x,omitempty"`
+	X          float64           `json:"x,omitempty"`
+	Y          float64           `json:"y,omitempty"`
+	W          float64           `json:"w,omitempty"`
+	H          float64           `json:"h,omitempty"`
 	Animation  *elementAnimation `json:"animation,omitempty"`
 }
 
