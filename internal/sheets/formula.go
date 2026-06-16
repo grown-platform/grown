@@ -783,6 +783,9 @@ type parser struct {
 	// env holds names bound by LET / LAMBDA in the current scope (keys uppercased).
 	// nil at the top level; populated for sub-expressions evaluated via evalTokens.
 	env map[string]value
+	// arrayMode is set while evaluating inside ARRAYFORMULA(...): operators and
+	// scalar functions then broadcast element-wise over array/range operands.
+	arrayMode bool
 }
 
 func (p *parser) peek() token {
@@ -809,9 +812,14 @@ func (p *parser) parseComparison() value {
 		}
 		switch t.val {
 		case "=", "<>", "<", "<=", ">", ">=":
+			op := t.val
 			p.consume()
 			right := p.parseConcat()
-			left = compareValues(t.val, left, right)
+			if p.arrayMode {
+				left = broadcast2(left, right, func(a, b value) value { return compareValues(op, a, b) })
+			} else {
+				left = compareValues(op, left, right)
+			}
 		default:
 			return left
 		}
@@ -872,13 +880,11 @@ func (p *parser) parseConcat() value {
 	for p.peek().kind == tokOp && p.peek().val == "&" {
 		p.consume()
 		right := p.parseAdditive()
-		if left.isErr() {
-			return left
+		if p.arrayMode {
+			left = broadcast2(left, right, scalarConcat)
+		} else {
+			left = scalarConcat(left, right)
 		}
-		if right.isErr() {
-			return right
-		}
-		left = strVal(left.toStr() + right.toStr())
 	}
 	return left
 }
@@ -888,21 +894,10 @@ func (p *parser) parseAdditive() value {
 	for p.peek().kind == tokOp && (p.peek().val == "+" || p.peek().val == "-") {
 		op := p.consume().val
 		right := p.parseMultiplicative()
-		if left.isErr() {
-			return left
-		}
-		if right.isErr() {
-			return right
-		}
-		ln, lok := left.toNum()
-		rn, rok := right.toNum()
-		if !lok || !rok {
-			return errValue
-		}
-		if op == "+" {
-			left = numVal(ln + rn)
+		if p.arrayMode {
+			left = broadcast2(left, right, func(a, b value) value { return scalarArith(op, a, b) })
 		} else {
-			left = numVal(ln - rn)
+			left = scalarArith(op, left, right)
 		}
 	}
 	return left
@@ -913,24 +908,10 @@ func (p *parser) parseMultiplicative() value {
 	for p.peek().kind == tokOp && (p.peek().val == "*" || p.peek().val == "/") {
 		op := p.consume().val
 		right := p.parsePower()
-		if left.isErr() {
-			return left
-		}
-		if right.isErr() {
-			return right
-		}
-		ln, lok := left.toNum()
-		rn, rok := right.toNum()
-		if !lok || !rok {
-			return errValue
-		}
-		if op == "/" {
-			if rn == 0 {
-				return errDiv0
-			}
-			left = numVal(ln / rn)
+		if p.arrayMode {
+			left = broadcast2(left, right, func(a, b value) value { return scalarArith(op, a, b) })
 		} else {
-			left = numVal(ln * rn)
+			left = scalarArith(op, left, right)
 		}
 	}
 	return left
@@ -941,22 +922,11 @@ func (p *parser) parsePower() value {
 	for p.peek().kind == tokOp && p.peek().val == "^" {
 		p.consume()
 		exp := p.parseUnary()
-		if base.isErr() {
-			return base
+		if p.arrayMode {
+			base = broadcast2(base, exp, func(a, b value) value { return scalarArith("^", a, b) })
+		} else {
+			base = scalarArith("^", base, exp)
 		}
-		if exp.isErr() {
-			return exp
-		}
-		bn, bok := base.toNum()
-		en, eok := exp.toNum()
-		if !bok || !eok {
-			return errValue
-		}
-		result := math.Pow(bn, en)
-		if math.IsNaN(result) || math.IsInf(result, 0) {
-			return errNum
-		}
-		base = numVal(result)
 	}
 	return base
 }
@@ -965,14 +935,10 @@ func (p *parser) parseUnary() value {
 	if p.peek().kind == tokOp && p.peek().val == "-" {
 		p.consume()
 		v := p.parseUnary()
-		if v.isErr() {
-			return v
+		if p.arrayMode {
+			return broadcast1(v, scalarNeg)
 		}
-		n, ok := v.toNum()
-		if !ok {
-			return errValue
-		}
-		return numVal(-n)
+		return scalarNeg(v)
 	}
 	if p.peek().kind == tokOp && p.peek().val == "+" {
 		p.consume()
@@ -1042,6 +1008,8 @@ func (p *parser) parseIdentOrFunc() value {
 			return p.parseLambda()
 		case "LET":
 			return p.parseLet()
+		case "ARRAYFORMULA":
+			return p.parseArrayFormula()
 		}
 		p.consume() // '('
 		// A name bound to a lambda in scope can be invoked: name(args).
@@ -1076,7 +1044,15 @@ func (p *parser) parseIdentOrFunc() value {
 		t2 := p.peek()
 		if t2.kind == tokIdent {
 			p.consume()
-			// Outside function context: return error.
+			// Inside ARRAYFORMULA a bare range materialises as an array so it can
+			// be broadcast; elsewhere a range is only meaningful as a func arg.
+			if p.arrayMode {
+				if a1, ok1 := parseCellRef(t.val); ok1 {
+					if a2, ok2 := parseCellRef(t2.val); ok2 {
+						return arrayValue(p.ev.makeRange(a1, a2).cells)
+					}
+				}
+			}
 			return errValue
 		}
 		return errValue
@@ -1112,8 +1088,10 @@ func (p *parser) parseArgList() []interface{} {
 // parseArg parses one argument, which may be a range yielding []value or a
 // single expression yielding value.
 func (p *parser) parseArg() interface{} {
-	// Peek ahead: is this IDENT ':' IDENT (range)?
-	if p.peek().kind == tokIdent && p.pos+1 < len(p.tokens) && p.tokens[p.pos+1].kind == tokColon {
+	// Peek ahead: is this IDENT ':' IDENT (range)? In ARRAYFORMULA mode we skip
+	// this greedy capture so a range inside a larger expression (e.g. A1:A3>0)
+	// parses as an operand that materialises into a broadcastable array.
+	if !p.arrayMode && p.peek().kind == tokIdent && p.pos+1 < len(p.tokens) && p.tokens[p.pos+1].kind == tokColon {
 		t1 := p.tokens[p.pos]
 		a1, ok1 := parseCellRef(t1.val)
 		if ok1 && p.pos+2 < len(p.tokens) && p.tokens[p.pos+2].kind == tokIdent {
@@ -1424,6 +1402,16 @@ func (c criteria) match(v value) bool {
 // ---- Built-in function implementations -------------------------------------
 
 func (p *parser) callFunc(name string, args []interface{}) value {
+	// Inside ARRAYFORMULA, scalar functions map element-wise over array args.
+	if p.arrayMode && arrayBroadcastFuncs[name] {
+		return p.broadcastCall(name, args)
+	}
+	return p.dispatch(name, args)
+}
+
+// dispatch invokes a registered function directly, without the ARRAYFORMULA
+// broadcast check (so broadcastCall can re-enter per element without looping).
+func (p *parser) dispatch(name string, args []interface{}) value {
 	if f, ok := funcTable[name]; ok {
 		return f(&callCtx{p: p, ev: p.ev, args: args})
 	}
