@@ -422,6 +422,22 @@ func txtTextjoin(c *callCtx) value {
 			if v.isErr() {
 				return v
 			}
+			// An array value (constant {…} or spill result) flattens like a range.
+			if v.kind == kindArray && v.arr != nil {
+				for _, row := range v.arr.cells {
+					for _, cell := range row {
+						if cell.isErr() {
+							return cell
+						}
+						s := cell.toStr()
+						if ignoreEmpty && s == "" {
+							continue
+						}
+						parts = append(parts, s)
+					}
+				}
+				continue
+			}
 			s := v.toStr()
 			if ignoreEmpty && s == "" {
 				continue

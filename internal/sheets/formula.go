@@ -722,6 +722,9 @@ const (
 	tokRParen                 // )
 	tokComma                  // ,
 	tokColon                  // :
+	tokLBrace                 // { (array constant start)
+	tokRBrace                 // } (array constant end)
+	tokSemi                   // ; (array constant row separator)
 	tokEOF
 )
 
@@ -821,6 +824,12 @@ func tokenise(s string) []token {
 			tokens = append(tokens, token{kind: tokComma, val: ","})
 		case ':':
 			tokens = append(tokens, token{kind: tokColon, val: ":"})
+		case '{':
+			tokens = append(tokens, token{kind: tokLBrace, val: "{"})
+		case '}':
+			tokens = append(tokens, token{kind: tokRBrace, val: "}"})
+		case ';':
+			tokens = append(tokens, token{kind: tokSemi, val: ";"})
 		}
 		i++
 	}
@@ -1044,10 +1053,55 @@ func (p *parser) parsePrimaryBase() value {
 			p.consume()
 		}
 		return v
+	case tokLBrace:
+		return p.parseArrayConstant()
 	case tokIdent:
 		return p.parseIdentOrFunc()
 	}
 	return errValue
+}
+
+// parseArrayConstant parses an inline array literal {1,2,3} (single row) or
+// {1,2;3,4} (rows separated by ';', columns by ','). Elements may be any
+// expression. Rows are padded with empty strings to a common width.
+func (p *parser) parseArrayConstant() value {
+	p.consume() // '{'
+	var rows [][]value
+	cur := []value{}
+	for {
+		t := p.peek()
+		if t.kind == tokRBrace || t.kind == tokEOF {
+			break
+		}
+		cur = append(cur, p.parseExpr())
+		switch p.peek().kind {
+		case tokComma:
+			p.consume()
+		case tokSemi:
+			p.consume()
+			rows = append(rows, cur)
+			cur = []value{}
+		}
+	}
+	if p.peek().kind == tokRBrace {
+		p.consume()
+	}
+	rows = append(rows, cur)
+	width := 0
+	for _, r := range rows {
+		if len(r) > width {
+			width = len(r)
+		}
+	}
+	if width == 0 {
+		return errVal("#CALC!")
+	}
+	for i := range rows {
+		for len(rows[i]) < width {
+			rows[i] = append(rows[i], strVal(""))
+		}
+	}
+	return arrayValue(rows)
 }
 
 func (p *parser) parseIdentOrFunc() value {
