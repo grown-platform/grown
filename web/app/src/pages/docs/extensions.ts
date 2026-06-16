@@ -100,6 +100,108 @@ export const LineHeight = Extension.create({
   },
 });
 
+// ParagraphSpacing adds space above/below paragraphs and headings (margin-top /
+// margin-bottom), independent of line-height — the "space before/after" control.
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    paragraphSpacing: {
+      setParagraphSpacing: (
+        before: string | null,
+        after: string | null,
+      ) => ReturnType;
+    };
+  }
+}
+
+export const ParagraphSpacing = Extension.create({
+  name: "paragraphSpacing",
+  addOptions() {
+    return { types: ["paragraph", "heading"] };
+  },
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          spacingBefore: {
+            default: null,
+            parseHTML: (el) => (el as HTMLElement).style.marginTop || null,
+            renderHTML: (attrs) =>
+              attrs.spacingBefore
+                ? { style: `margin-top: ${attrs.spacingBefore}` }
+                : {},
+          },
+          spacingAfter: {
+            default: null,
+            parseHTML: (el) => (el as HTMLElement).style.marginBottom || null,
+            renderHTML: (attrs) =>
+              attrs.spacingAfter
+                ? { style: `margin-bottom: ${attrs.spacingAfter}` }
+                : {},
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    return {
+      setParagraphSpacing:
+        (before, after) =>
+        ({ tr, state, dispatch }) => {
+          const { from, to } = state.selection;
+          if (dispatch) {
+            state.doc.nodesBetween(from, to, (node, pos) => {
+              if (this.options.types.includes(node.type.name)) {
+                tr.setNodeMarkup(pos, undefined, {
+                  ...node.attrs,
+                  spacingBefore: before,
+                  spacingAfter: after,
+                });
+              }
+            });
+            dispatch(tr);
+          }
+          return true;
+        },
+    };
+  },
+});
+
+// PageBreak is a block atom that forces the following content onto a new page
+// when printed/exported (CSS break-after: page) and shows a dashed divider on
+// screen.
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    pageBreak: {
+      setPageBreak: () => ReturnType;
+    };
+  }
+}
+
+export const PageBreak = Node.create({
+  name: "pageBreak",
+  group: "block",
+  atom: true,
+  selectable: true,
+  parseHTML() {
+    return [{ tag: "div[data-page-break]" }];
+  },
+  renderHTML() {
+    return ["div", { "data-page-break": "true", class: "page-break" }];
+  },
+  addCommands() {
+    return {
+      setPageBreak:
+        () =>
+        ({ chain }) =>
+          chain()
+            .insertContent({ type: this.name })
+            .insertContent({ type: "paragraph" })
+            .run(),
+    };
+  },
+});
+
 // ImagePaste lets users paste or drop image files into the document — TipTap's
 // Image extension doesn't handle this. Files are embedded as data URLs (MVP;
 // uploading to Drive is a follow-up).
@@ -356,6 +458,8 @@ export function buildExtensions({
     Color,
     FontSize,
     LineHeight,
+    ParagraphSpacing,
+    PageBreak,
     FontFamily,
     Highlight.configure({ multicolor: true }),
     Link.configure({ openOnClick: false, autolink: true, linkOnPaste: true }),

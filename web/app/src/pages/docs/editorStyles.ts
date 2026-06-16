@@ -90,6 +90,18 @@ export function editorPageSx(
     "& .ProseMirror img.doc-drawing:hover": {
       border: "1px solid #c7d2fe",
     },
+    // Page break: dashed divider on screen, real page break when printed.
+    "& .ProseMirror .page-break": {
+      borderTop: "2px dashed #c7d2fe",
+      margin: "1.5em 0",
+      height: 0,
+      position: "relative",
+      breakAfter: "page",
+      pageBreakAfter: "always",
+    },
+    "@media print": {
+      "& .ProseMirror .page-break": { borderTop: "none" },
+    },
     // Header/footer margin regions: placed inside the page's top/bottom margins,
     // visually separated from the body, smaller and muted like Google Docs.
     "& .doc-header-region, & .doc-footer-region": {

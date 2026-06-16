@@ -323,7 +323,11 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           >
             Horizontal line
           </MenuItem>
-          <MenuItem disabled>Page break</MenuItem>
+          <MenuItem
+            onClick={run((e) => e.chain().focus().setPageBreak().run())}
+          >
+            Page break
+          </MenuItem>
           <MenuItem onClick={actions.insertFootnote}>Footnote</MenuItem>
           <MenuItem onClick={actions.toggleHeaderFooter}>
             Headers &amp; footers
@@ -475,6 +479,21 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             onClick={run((e) => e.chain().focus().setLineHeight("2").run())}
           >
             Double
+          </MenuItem>
+          <ListDivider />
+          <MenuItem
+            onClick={run((e) =>
+              e.chain().focus().setParagraphSpacing("12px", "12px").run(),
+            )}
+          >
+            Add space before & after paragraph
+          </MenuItem>
+          <MenuItem
+            onClick={run((e) =>
+              e.chain().focus().setParagraphSpacing(null, null).run(),
+            )}
+          >
+            Remove paragraph spacing
           </MenuItem>
           <ListDivider />
           <MenuItem
