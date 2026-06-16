@@ -45,7 +45,7 @@ export function editorPageSx(
     minHeight: `${PAGE_H}px`,
     // Footnote markers auto-number via this counter (incremented per
     // .footnote-ref::before), so they stay correct as notes move.
-    counterReset: "footnote",
+    counterReset: "footnote endnote",
     pt: `${MT}px`,
     pb: `${MB}px`,
     pl: { xs: 2, md: `${indents.left * PX_PER_INCH}px` },
@@ -144,6 +144,16 @@ export function editorPageSx(
     "& .ProseMirror .footnote-ref::before": {
       counterIncrement: "footnote",
       content: '"[" counter(footnote) "]"',
+    },
+    "& .ProseMirror .endnote-ref": {
+      cursor: "pointer",
+      color: "#1a73e8",
+      fontWeight: 600,
+      userSelect: "none",
+    },
+    "& .ProseMirror .endnote-ref::before": {
+      counterIncrement: "endnote",
+      content: '"[" counter(endnote, lower-roman) "]"',
     },
     "& .ProseMirror a": {
       color: "#1a73e8",

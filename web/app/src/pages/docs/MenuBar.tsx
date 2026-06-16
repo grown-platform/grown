@@ -171,6 +171,7 @@ export interface DocActions {
   shortcuts: () => void;
   toggleOutline: () => void;
   insertFootnote: () => void;
+  insertEndnote: () => void;
   toggleHeaderFooter: () => void;
   toggleSuggesting: () => void;
   insertDrawing: () => void;
@@ -329,6 +330,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Page break
           </MenuItem>
           <MenuItem onClick={actions.insertFootnote}>Footnote</MenuItem>
+          <MenuItem onClick={actions.insertEndnote}>Endnote</MenuItem>
           <MenuItem onClick={actions.toggleHeaderFooter}>
             Headers &amp; footers
           </MenuItem>
@@ -512,6 +514,64 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Checklist
           </MenuItem>
           <MenuItem onClick={actions.pageSetup}>Page orientation…</MenuItem>
+          <ListDivider />
+          <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
+            Table
+          </Typography>
+          <MenuItem onClick={run((e) => e.chain().focus().addRowAfter().run())}>
+            Insert row below
+          </MenuItem>
+          <MenuItem onClick={run((e) => e.chain().focus().addRowBefore().run())}>
+            Insert row above
+          </MenuItem>
+          <MenuItem onClick={run((e) => e.chain().focus().addColumnAfter().run())}>
+            Insert column right
+          </MenuItem>
+          <MenuItem onClick={run((e) => e.chain().focus().addColumnBefore().run())}>
+            Insert column left
+          </MenuItem>
+          <MenuItem onClick={run((e) => e.chain().focus().deleteRow().run())}>
+            Delete row
+          </MenuItem>
+          <MenuItem onClick={run((e) => e.chain().focus().deleteColumn().run())}>
+            Delete column
+          </MenuItem>
+          <MenuItem onClick={run((e) => e.chain().focus().mergeOrSplit().run())}>
+            Merge / split cells
+          </MenuItem>
+          {(
+            [
+              ["Yellow", "#fff3a0"],
+              ["Green", "#d4edbc"],
+              ["Blue", "#cfe2f3"],
+              ["Pink", "#f4cccc"],
+              ["None", null],
+            ] as [string, string | null][]
+          ).map(([label, color]) => (
+            <MenuItem
+              key={label}
+              onClick={run((e) =>
+                e.chain().focus().setCellAttribute("backgroundColor", color).run(),
+              )}
+            >
+              {color != null && (
+                <Box
+                  sx={{
+                    width: 12,
+                    height: 12,
+                    mr: 1,
+                    borderRadius: "2px",
+                    bgcolor: color,
+                    border: "1px solid #dadce0",
+                  }}
+                />
+              )}
+              Cell color: {label}
+            </MenuItem>
+          ))}
+          <MenuItem onClick={run((e) => e.chain().focus().deleteTable().run())}>
+            Delete table
+          </MenuItem>
           <ListDivider />
           <MenuItem
             onClick={run((e) =>

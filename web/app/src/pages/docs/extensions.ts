@@ -442,6 +442,107 @@ export const Footnote = Node.create({
   },
 });
 
+// Endnote mirrors Footnote but its notes collect at the END of the document
+// (rendered by the Endnotes panel) rather than the bottom of the page. Markers
+// auto-number via a separate CSS counter (.endnote-ref::before, lower-roman).
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    endnote: {
+      insertEndnote: (content?: string) => ReturnType;
+      setEndnoteContent: (id: string, content: string) => ReturnType;
+    };
+  }
+}
+
+let endnoteSeq = 0;
+function newEndnoteId(): string {
+  endnoteSeq += 1;
+  return `en-${Date.now().toString(36)}-${endnoteSeq}`;
+}
+
+export const Endnote = Node.create({
+  name: "endnote",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return {
+      id: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-endnote-id"),
+        renderHTML: (attrs) =>
+          attrs.id ? { "data-endnote-id": attrs.id } : {},
+      },
+      content: {
+        default: "",
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-content") || "",
+        renderHTML: (attrs) => ({ "data-content": attrs.content || "" }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "sup.endnote-ref" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    const content = (HTMLAttributes["data-content"] as string) || "";
+    return [
+      "sup",
+      mergeAttributes(HTMLAttributes, { class: "endnote-ref", title: content }),
+    ];
+  },
+  addCommands() {
+    return {
+      insertEndnote:
+        (content = "") =>
+        ({ chain }) =>
+          chain()
+            .insertContent({
+              type: this.name,
+              attrs: { id: newEndnoteId(), content },
+            })
+            .run(),
+      setEndnoteContent:
+        (id, content) =>
+        ({ state, dispatch, tr }) => {
+          let found = false;
+          state.doc.descendants((node, pos) => {
+            if (node.type.name === "endnote" && node.attrs.id === id) {
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, content });
+              found = true;
+            }
+          });
+          if (found && dispatch) dispatch(tr);
+          return found;
+        },
+    };
+  },
+});
+
+// TableCell/TableHeader extended with a backgroundColor attribute so cells can
+// be shaded (Format > Table > Cell color), set via the table extension's
+// setCellAttribute command.
+function withCellBackground<T extends { extend: (c: object) => unknown }>(base: T) {
+  return (base.extend as (c: object) => unknown)({
+    addAttributes(this: { parent?: () => object }) {
+      return {
+        ...(this.parent?.() || {}),
+        backgroundColor: {
+          default: null,
+          parseHTML: (el: HTMLElement) => el.style.backgroundColor || null,
+          renderHTML: (attrs: { backgroundColor?: string }) =>
+            attrs.backgroundColor
+              ? { style: `background-color: ${attrs.backgroundColor}` }
+              : {},
+        },
+      };
+    },
+  });
+}
+
+export const TableCellBg = withCellBackground(TableCell) as typeof TableCell;
+export const TableHeaderBg = withCellBackground(TableHeader) as typeof TableHeader;
+
 export interface BuildOpts {
   ydoc: Y.Doc;
   provider: WebsocketProvider;
@@ -479,10 +580,11 @@ export function buildExtensions({
     Superscript,
     Table.configure({ resizable: true }),
     TableRow,
-    TableHeader,
-    TableCell,
+    TableHeaderBg,
+    TableCellBg,
     CommentMark,
     Footnote,
+    Endnote,
     InsertionMark,
     DeletionMark,
     Drawing,

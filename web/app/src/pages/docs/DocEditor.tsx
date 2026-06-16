@@ -53,6 +53,7 @@ import {
 import { VersionHistory } from "./VersionHistory";
 import { Outline } from "./Outline";
 import { Footnotes } from "./Footnotes";
+import { Endnotes } from "./Endnotes";
 import { MarginEditor } from "./MarginEditor";
 import { Suggestions } from "./Suggestions";
 import type { DrawingData } from "./DrawingDialog";
@@ -313,6 +314,7 @@ export function DocEditor({ user }: DocEditorProps) {
     shortcuts: () => setDialog("shortcuts"),
     toggleOutline: () => setShowOutline((s) => !s),
     insertFootnote: () => editor?.chain().focus().insertFootnote().run(),
+    insertEndnote: () => editor?.chain().focus().insertEndnote().run(),
     toggleHeaderFooter: () => setShowHeaderFooter((s) => !s),
     toggleSuggesting: () => {
       setSuggesting((s) => {
@@ -653,6 +655,7 @@ export function DocEditor({ user }: DocEditorProps) {
             )}
             <EditorContent editor={editor} />
             <Footnotes editor={editor} />
+            <Endnotes editor={editor} />
             {showHeaderFooter && (
               <Box className="doc-footer-region">
                 <MarginEditor
