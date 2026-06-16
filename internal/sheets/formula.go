@@ -521,6 +521,11 @@ type Evaluator struct {
 	// evaluated, so functions like ROW()/COLUMN() with no argument can resolve
 	// "this cell". Set by Recompute before each evalExpr.
 	curRow, curCol int
+	// sheetIndex is the 1-based position of the sheet being evaluated and
+	// sheetNames lists every sheet's name (workbook order); both power SHEET()
+	// and SHEETS(). Defaults: index 1, nil names (single-sheet Recompute).
+	sheetIndex int
+	sheetNames []string
 }
 
 // NewEvaluator constructs an Evaluator for the given FsSheet celldata.
@@ -536,7 +541,15 @@ func NewEvaluator(data []FsCellData) *Evaluator {
 // returns the updated celldata slice with computed values written into each
 // cell's V and M fields. Non-formula cells are returned unchanged.
 func Recompute(data []FsCellData) []FsCellData {
+	return recomputeCtx(data, 1, nil)
+}
+
+// recomputeCtx is Recompute with workbook context (1-based sheet index + all
+// sheet names) so SHEET()/SHEETS() resolve. Recompute defaults to a lone sheet.
+func recomputeCtx(data []FsCellData, sheetIndex int, names []string) []FsCellData {
 	ev := NewEvaluator(data)
+	ev.sheetIndex = sheetIndex
+	ev.sheetNames = names
 
 	// Build dependency graph.
 	formulaDeps := buildDeps(ev.grid)
@@ -1886,8 +1899,12 @@ func RecomputeWorkbook(data string) string {
 	if err := json.Unmarshal([]byte(data), &wb); err != nil {
 		return data // not a workbook array; return as-is
 	}
+	names := make([]string, len(wb))
 	for i := range wb {
-		wb[i].CellData = Recompute(wb[i].CellData)
+		names[i] = wb[i].Name
+	}
+	for i := range wb {
+		wb[i].CellData = recomputeCtx(wb[i].CellData, i+1, names)
 	}
 	out, err := json.Marshal(wb)
 	if err != nil {
