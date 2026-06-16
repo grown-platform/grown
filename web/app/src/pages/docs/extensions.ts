@@ -183,21 +183,25 @@ export const PageBreak = Node.create({
   group: "block",
   atom: true,
   selectable: true,
+  draggable: true,
   parseHTML() {
     return [{ tag: "div[data-page-break]" }];
   },
   renderHTML() {
-    return ["div", { "data-page-break": "true", class: "page-break" }];
+    return [
+      "div",
+      { "data-page-break": "true", class: "page-break", contenteditable: "false" },
+    ];
   },
   addCommands() {
     return {
+      // Mirror the proven Drawing-node insertion (a single atom-block insert);
+      // a trailing-paragraph insert in the same chain could fail and roll the
+      // whole transaction back, leaving nothing inserted.
       setPageBreak:
         () =>
         ({ chain }) =>
-          chain()
-            .insertContent({ type: this.name })
-            .insertContent({ type: "paragraph" })
-            .run(),
+          chain().insertContent({ type: "pageBreak" }).run(),
     };
   },
 });
