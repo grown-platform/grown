@@ -1747,6 +1747,7 @@ function PresentView({
         <SlideView
           slide={slide}
           width={pw}
+          linkable
           revealedIds={animatedSteps.length > 0 ? revealedIds : undefined}
         />
       </Box>
