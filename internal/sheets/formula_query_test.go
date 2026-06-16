@@ -88,6 +88,29 @@ func TestQueryAndOr(t *testing.T) {
 	wantCellStr(t, out, 1, 5, "cherry")
 }
 
+func TestQueryOrderByUnselectedColumn(t *testing.T) {
+	// select A where B > 3 order by B desc → cherry(8) before apple(5), even
+	// though B is not in the SELECT list.
+	out := Recompute(append([]FsCellData{
+		libFormula(0, 5, `=QUERY(A1:C4,"select A where B > 3 order by B desc")`),
+	}, queryData()...))
+	wantCellStr(t, out, 0, 5, "cherry")
+	wantCellStr(t, out, 1, 5, "apple")
+}
+
+func TestQueryGroupOrderBy(t *testing.T) {
+	// select C, sum(B) group by C order by C → brown, red, yellow (alphabetical).
+	out := Recompute(append([]FsCellData{
+		libFormula(0, 5, `=QUERY(A1:C4,"select C, sum(B) group by C order by C")`),
+	}, queryData()...))
+	wantCellStr(t, out, 0, 5, "brown")
+	wantCellNum(t, out, 0, 6, 2)
+	wantCellStr(t, out, 1, 5, "red")
+	wantCellNum(t, out, 1, 6, 13)
+	wantCellStr(t, out, 2, 5, "yellow")
+	wantCellNum(t, out, 2, 6, 3)
+}
+
 func TestQueryCountGroup(t *testing.T) {
 	// select C, count(A) group by C → red:2, yellow:1, brown:1
 	out := Recompute(append([]FsCellData{

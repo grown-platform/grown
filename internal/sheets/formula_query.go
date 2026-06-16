@@ -80,31 +80,46 @@ func fnQuery(c *callCtx) value {
 	var out [][]value
 	if len(groupCols) > 0 || hasAgg {
 		out = aggregate(rows, sels, groupCols)
+		// ORDER BY after aggregation: order on the matching selected column.
+		if len(orderKeys) > 0 {
+			sort.SliceStable(out, func(i, j int) bool {
+				for _, k := range orderKeys {
+					ci := selColPos(sels, k.col)
+					if ci < 0 || ci >= len(out[i]) {
+						continue
+					}
+					if cmp := arrCmp(out[i][ci], out[j][ci]); cmp != 0 {
+						if k.desc {
+							return cmp > 0
+						}
+						return cmp < 0
+					}
+				}
+				return false
+			})
+		}
 	} else {
+		// ORDER BY before projection so we can sort by any data column, even one
+		// not in the SELECT list.
+		if len(orderKeys) > 0 {
+			sort.SliceStable(rows, func(i, j int) bool {
+				for _, k := range orderKeys {
+					if k.col >= len(rows[i]) || k.col >= len(rows[j]) {
+						continue
+					}
+					if cmp := arrCmp(rows[i][k.col], rows[j][k.col]); cmp != 0 {
+						if k.desc {
+							return cmp > 0
+						}
+						return cmp < 0
+					}
+				}
+				return false
+			})
+		}
 		for _, r := range rows {
 			out = append(out, projectRow(r, sels))
 		}
-	}
-
-	// 3. ORDER BY (skipped after aggregation only if keys reference output; we
-	// order on the underlying column index, which still maps for plain selects).
-	if len(orderKeys) > 0 && len(groupCols) == 0 && !hasAgg {
-		sort.SliceStable(out, func(i, j int) bool {
-			for _, k := range orderKeys {
-				ci := selColPos(sels, k.col)
-				if ci < 0 || ci >= len(out[i]) {
-					continue
-				}
-				cmp := arrCmp(out[i][ci], out[j][ci])
-				if cmp != 0 {
-					if k.desc {
-						return cmp > 0
-					}
-					return cmp < 0
-				}
-			}
-			return false
-		})
 	}
 
 	// 4. OFFSET / LIMIT.
