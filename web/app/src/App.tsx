@@ -4,6 +4,7 @@ import { CssVarsProvider, CssBaseline, CircularProgress, Box } from "@mui/joy";
 
 import { grownTheme } from "./theme";
 import { BrandProvider } from "./brand/Brand";
+import { KeyboardHelpOverlay } from "./components/KeyboardHelpOverlay";
 import { whoami } from "./api/client";
 import type { User } from "./api/types";
 import { Dashboard } from "./pages/Dashboard";
@@ -201,6 +202,7 @@ export default function App() {
     <CssVarsProvider theme={grownTheme} defaultMode="light">
       <CssBaseline />
       <BrandProvider>
+        {auth.kind === "authenticated" && <KeyboardHelpOverlay />}
         {auth.kind === "loading" && null}
         {auth.kind !== "loading" && (
           <Routes>
