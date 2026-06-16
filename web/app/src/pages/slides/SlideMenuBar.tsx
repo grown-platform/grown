@@ -34,6 +34,7 @@ export interface SlideActions {
   setAlign: (a: "left" | "center" | "right") => void;
   arrange: (dir: "front" | "back" | "forward" | "backward") => void;
   rotate: (op: "cw" | "ccw" | "flipH" | "flipV") => void;
+  setLink: () => void;
   deleteSelected: () => void;
   setBackground: () => void;
   paste: () => void;
@@ -193,7 +194,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem disabled>Audio</MenuItem>
           <MenuItem disabled>Special characters</MenuItem>
           <MenuItem onClick={actions.openAnimations}>Animation</MenuItem>
-          <MenuItem disabled>Link{kbd("Ctrl+K")}</MenuItem>
+          <MenuItem onClick={actions.setLink}>Link…{kbd("Ctrl+K")}</MenuItem>
           <MenuItem disabled>Comment{kbd("Ctrl+Alt+M")}</MenuItem>
           <ListDivider />
           <MenuItem onClick={actions.newSlide}>

@@ -40,11 +40,13 @@ interface SlideViewProps {
    * If undefined, all elements are shown normally (editor / thumbnail mode).
    */
   revealedIds?: ReadonlySet<string>;
+  /** When true, elements with a `url` become clickable links (present mode). */
+  linkable?: boolean;
 }
 
 /** SlideView renders a slide read-only, scaled to fit `width` px (16:9).
  *  Used for the thumbnail rail and present mode. */
-export function SlideView({ slide, width, revealedIds }: SlideViewProps) {
+export function SlideView({ slide, width, revealedIds, linkable }: SlideViewProps) {
   const scale = width / CANVAS_W;
   const height = width * (CANVAS_H / CANVAS_W);
   return (
@@ -69,7 +71,12 @@ export function SlideView({ slide, width, revealedIds }: SlideViewProps) {
         }}
       >
         {slide.elements.map((el) => (
-          <ElementView key={el.id} el={el} revealedIds={revealedIds} />
+          <ElementView
+            key={el.id}
+            el={el}
+            revealedIds={revealedIds}
+            linkable={linkable}
+          />
         ))}
       </Box>
     </Box>
@@ -164,9 +171,11 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
 function ElementView({
   el,
   revealedIds,
+  linkable,
 }: {
   el: SlideElement;
   revealedIds?: ReadonlySet<string>;
+  linkable?: boolean;
 }) {
   const style = elementStyle(el);
 
@@ -184,6 +193,43 @@ function ElementView({
 
   const merged: React.CSSProperties = { ...style, ...animStyle };
 
+  // In present mode, an element with a url becomes a clickable overlay link.
+  const linkOverlay =
+    linkable && el.url ? (
+      <a
+        href={el.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={el.url}
+        style={{
+          position: "absolute",
+          left: el.x,
+          top: el.y,
+          width: el.w,
+          height: el.h,
+          transform: style.transform,
+          transformOrigin: "center",
+          cursor: "pointer",
+          zIndex: 5,
+        }}
+      />
+    ) : null;
+
+  const inner = renderElementBody(el, merged);
+  return linkOverlay ? (
+    <>
+      {inner}
+      {linkOverlay}
+    </>
+  ) : (
+    inner
+  );
+}
+
+function renderElementBody(
+  el: SlideElement,
+  merged: React.CSSProperties,
+): React.ReactElement {
   if (el.type === "image") {
     return el.src ? (
       <img src={el.src} alt="" style={{ ...merged, objectFit: "contain" }} />

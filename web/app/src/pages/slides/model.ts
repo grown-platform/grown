@@ -108,6 +108,8 @@ export interface SlideElement {
   strokeWidth?: number;
   // image
   src?: string;
+  /** Hyperlink target; clickable in present mode and exports. */
+  url?: string;
   /** Clockwise rotation in degrees (absent/0 = upright). */
   rotation?: number;
   /** Mirror horizontally / vertically. */

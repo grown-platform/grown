@@ -532,6 +532,13 @@ export function DeckEditor({ user }: { user: User }) {
     const rot = (((selected.rotation || 0) + delta) % 360 + 360) % 360;
     upsertElement({ ...selected, rotation: rot });
   }
+  function setLink() {
+    if (!selected) return;
+    const url = window.prompt("Link URL (blank to remove)", selected.url || "");
+    if (url === null) return;
+    const v = url.trim();
+    upsertElement({ ...selected, url: v || undefined });
+  }
   function setBackground() {
     if (!slide) return;
     const c =
@@ -654,6 +661,7 @@ export function DeckEditor({ user }: { user: User }) {
     setAlign,
     arrange,
     rotate,
+    setLink,
     deleteSelected: () => selId && removeElement(selId),
     setBackground,
     paste: pasteEl,
@@ -1641,6 +1649,7 @@ function PresentView({
                 <SlideView
                   slide={slide}
                   width={mainW}
+                  linkable
                   revealedIds={
                     animatedSteps.length > 0 ? revealedIds : undefined
                   }
