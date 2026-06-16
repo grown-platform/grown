@@ -14,6 +14,8 @@ against a locally-running dev stack.
 | `drive.spec.ts` | authed | upload → preview → trash |
 | `docs.spec.ts` | authed | **collab reload-persistence**, footnotes, headers/footers persistence, suggesting mode |
 | `sheets.spec.ts` | authed | server-side formula engine (SUM/LAMBDA/array/text) + UI reopen |
+| `api.spec.ts` | authed | per-app API smoke — ~25 list endpoints authorized + 200 (docs, mail, calendar, music, contacts, keep, tasks, projects, photos, …) |
+| `nav.spec.ts` | authed | route-render smoke — 16 apps mount the shell while authenticated |
 
 The **authed** project reuses a shared signed-in session (`storageState`), so
 specs start authenticated and the collaboration WebSocket connects normally —
