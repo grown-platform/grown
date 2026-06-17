@@ -30,6 +30,12 @@ type OrgEvent struct {
 type Provisioner struct {
 	client *Client
 
+	// webhookURL is grown's public webhook endpoint (GROWN_PUBLIC_URL +
+	// "/api/v1/forgejo/webhook"); webhookSecret is the shared HMAC secret.
+	// Both empty → webhook auto-registration is skipped.
+	webhookURL    string
+	webhookSecret string
+
 	// accessCache deduplicates access-time provisioning (EnsureAccess) so we
 	// don't hit the Forgejo API on every /git request. Keyed by
 	// "email|slug|admin"; an entry means "provisioned within accessTTL ago".
@@ -45,12 +51,20 @@ const accessTTL = 10 * time.Minute
 // GROWN_FORGEJO_URL and GROWN_FORGEJO_ADMIN_TOKEN from the environment. When
 // either is empty, the provisioner is a no-op.
 func NewProvisionerFromEnv() *Provisioner {
+	publicURL := strings.TrimRight(os.Getenv("GROWN_PUBLIC_URL"), "/")
+	secret := os.Getenv("GROWN_FORGEJO_WEBHOOK_SECRET")
+	webhookURL := ""
+	if publicURL != "" && secret != "" {
+		webhookURL = publicURL + "/api/v1/forgejo/webhook"
+	}
 	return &Provisioner{
 		client: NewClient(
 			os.Getenv("GROWN_FORGEJO_URL"),
 			os.Getenv("GROWN_FORGEJO_ADMIN_TOKEN"),
 		),
-		accessCache: make(map[string]time.Time),
+		webhookURL:    webhookURL,
+		webhookSecret: secret,
+		accessCache:   make(map[string]time.Time),
 	}
 }
 
@@ -81,6 +95,17 @@ func (p *Provisioner) clearProvision(key string) {
 	p.accessMu.Lock()
 	delete(p.accessCache, key)
 	p.accessMu.Unlock()
+}
+
+// ensureWebhook registers the org-level grown webhook (best-effort, idempotent).
+// No-op when webhook env is unset.
+func (p *Provisioner) ensureWebhook(ctx context.Context, slug string, log *slog.Logger) {
+	if p.webhookURL == "" {
+		return
+	}
+	if err := p.client.EnsureOrgWebhook(ctx, slug, p.webhookURL, p.webhookSecret); err != nil {
+		log.WarnContext(ctx, "forgejo: ensure webhook failed (non-fatal)", "err", err)
+	}
 }
 
 // EnsureAccess is the access-time provisioning hook: when an authenticated grown
@@ -119,6 +144,7 @@ func (p *Provisioner) EnsureAccess(ctx context.Context, slug, displayName, email
 		p.clearProvision(key) // retry next time
 		return
 	}
+	p.ensureWebhook(ctx, slug, log)
 
 	// 2. Add the user to the right team.
 	if isAdmin {
@@ -169,6 +195,7 @@ func (p *Provisioner) OnOrgCreated(ctx context.Context, e OrgEvent) {
 		return
 	}
 	log.InfoContext(ctx, "forgejo: org provisioned")
+	p.ensureWebhook(ctx, e.Slug, log)
 
 	if e.CreatorEmail == "" {
 		return
