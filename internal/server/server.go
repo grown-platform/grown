@@ -282,6 +282,11 @@ type Config struct {
 	// case on prod pick.haus. See internal/forgejo.
 	ForgejoProvisioner *forgejo.Provisioner
 
+	// ForgejoWebhookSecret is the shared HMAC-SHA256 secret for verifying inbound
+	// Forgejo webhook signatures (GROWN_FORGEJO_WEBHOOK_SECRET). Empty disables
+	// the /api/v1/forgejo/webhook endpoint.
+	ForgejoWebhookSecret string
+
 	// AssembleURL is the internal origin of the Assemble spatial-collaboration
 	// app, e.g. http://assemble.<ns>.svc:8080. grown reverse-proxies /assemble/*
 	// to it with the /assemble prefix stripped. Crucially this path BYPASSES
@@ -693,6 +698,7 @@ func New(cfg Config) *Server {
 	if cfg.ProjectsRepo != nil {
 		projectsHub = projects.NewHub()
 		projectsSvc = projects.NewService(cfg.ProjectsRepo, projectsHub)
+		projectsSvc.ForgejoWebhookSecret = cfg.ForgejoWebhookSecret
 		grownv1.RegisterProjectsServiceServer(grpcSrv, projectsSvc)
 	}
 
@@ -1926,6 +1932,12 @@ func New(cfg Config) *Server {
 				h.ServeHTTP(w, r)
 				return
 			}
+		}
+		// Forgejo → grown webhook (server-to-server, HMAC-verified, NOT
+		// session-auth-wrapped). MUST precede the /api/ auth fallthrough.
+		if projectsSvc != nil && r.URL.Path == "/api/v1/forgejo/webhook" {
+			projectsSvc.HandleForgejoWebhook(w, r)
+			return
 		}
 		// MediaMTX playback proxies under grown's origin. Auth-wrapped so only
 		// signed-in org members reach MediaMTX (org-stream gating). Truly public

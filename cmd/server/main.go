@@ -333,6 +333,9 @@ func main() {
 		// Same provisioner instance used for org-creation mirroring; also drives
 		// access-time /git SSO org/team provisioning. No-op when unconfigured.
 		ForgejoProvisioner: forgejoProvisioner,
+		// Shared HMAC secret for inbound Forgejo webhooks (server-to-server,
+		// HMAC-verified, bypasses session auth). Empty disables the endpoint.
+		ForgejoWebhookSecret: os.Getenv("GROWN_FORGEJO_WEBHOOK_SECRET"),
 		// Assemble (spatial collaboration) reverse-proxied at /assemble/* (prefix
 		// stripped, auth-wall bypassed so guests work). Empty disables.
 		AssembleURL: os.Getenv("GROWN_ASSEMBLE_URL"),
