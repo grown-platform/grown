@@ -42,6 +42,7 @@ import type {
   Label,
   Comment,
   IssuePatch,
+  GitLink,
 } from "./types";
 import {
   listComments,
@@ -49,6 +50,8 @@ import {
   listIssues,
   createIssue,
   updateIssue,
+  listIssueGitLinks,
+  gitBranchName,
 } from "./api";
 
 function Row({
@@ -126,6 +129,21 @@ export function IssueDetail({
       alive = false;
     };
   }, [issueId]);
+
+  const [gitLinks, setGitLinks] = useState<GitLink[]>([]);
+  useEffect(() => {
+    let live = true;
+    listIssueGitLinks(issue.id)
+      .then((ls) => live && setGitLinks(ls))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [issue.id, issue.updated_at]);
+
+  const copyBranch = () => {
+    void navigator.clipboard.writeText(gitBranchName(issue.identifier, issue.title));
+  };
 
   const addSubIssue = async () => {
     const t = subDraft.trim();
@@ -507,6 +525,64 @@ export function IssueDetail({
             </Box>
           )}
         </Box>
+
+        {/* ── Git ────────────────────────────────────────────────── */}
+        <Divider sx={{ my: 1.5 }} />
+        <Box sx={{ display: "flex", alignItems: "center", mb: 0.75 }}>
+          <Typography level="title-sm" sx={{ flex: 1 }}>
+            Git
+          </Typography>
+          <Button size="sm" variant="plain" onClick={copyBranch}>
+            Copy branch name
+          </Button>
+        </Box>
+        {gitLinks.length === 0 ? (
+          <Typography level="body-xs" sx={{ opacity: 0.6 }}>
+            No linked branches or pull requests yet. Reference{" "}
+            <code>{issue.identifier}</code> in a branch, commit, or PR.
+          </Typography>
+        ) : (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            {gitLinks.map((l) => (
+              <Box
+                key={l.id}
+                component="a"
+                href={l.url || undefined}
+                target="_blank"
+                rel="noreferrer"
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  textDecoration: "none",
+                  color: "inherit",
+                  fontSize: 13,
+                  "&:hover": { textDecoration: "underline" },
+                }}
+              >
+                <Chip
+                  size="sm"
+                  variant="soft"
+                  color={
+                    l.state === "merged"
+                      ? "success"
+                      : l.state === "closed"
+                        ? "danger"
+                        : "primary"
+                  }
+                >
+                  {l.kind === "pr" ? `PR #${l.ref}` : l.kind}
+                </Chip>
+                <Typography level="body-sm" noWrap sx={{ flex: 1 }}>
+                  {l.title || l.ref}
+                </Typography>
+                <Typography level="body-xs" sx={{ opacity: 0.5 }} noWrap>
+                  {l.repo}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
 
         <Divider sx={{ my: 1.5 }} />
         <Typography level="title-sm" sx={{ mb: 1 }}>

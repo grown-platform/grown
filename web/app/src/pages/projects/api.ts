@@ -7,6 +7,7 @@ import type {
   Member,
   TeamMember,
   IssuePatch,
+  GitLink,
 } from "./types";
 
 const API_BASE = "/api/v1";
@@ -193,4 +194,22 @@ export function createComment(issueId: string, body: string): Promise<Comment> {
     method: "POST",
     body: JSON.stringify({ body }),
   });
+}
+
+// ── Git links ──
+export async function listIssueGitLinks(issueId: string): Promise<GitLink[]> {
+  const r = await jsonFetch<{ links: GitLink[] }>(`/projects/issues/${issueId}/links`);
+  return r.links ?? [];
+}
+
+// gitBranchName builds a Forgejo-friendly branch name from an issue, e.g.
+// "eng-42-fix-the-thing". Pushing a branch with this name auto-links the issue.
+export function gitBranchName(identifier: string, title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50)
+    .replace(/-+$/g, "");
+  return slug ? `${identifier.toLowerCase()}-${slug}` : identifier.toLowerCase();
 }
