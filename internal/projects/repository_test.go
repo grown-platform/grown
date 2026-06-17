@@ -357,6 +357,105 @@ func TestRepository_AddTeamMember_RejectsNonOrgUser(t *testing.T) {
 	}
 }
 
+func TestGitLinkUpsertAndList(t *testing.T) {
+	pool, orgID, userID := setupDB(t)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	// Resolve the slug→ID path (the default org has slug "default").
+	resolvedID, err := repo.OrgIDBySlug(ctx, "default")
+	if err != nil {
+		t.Fatalf("OrgIDBySlug: %v", err)
+	}
+	if resolvedID != orgID {
+		t.Fatalf("OrgIDBySlug: got %q want %q", resolvedID, orgID)
+	}
+
+	// ErrNotFound for unknown slug.
+	if _, err := repo.OrgIDBySlug(ctx, "no-such-org"); err != ErrNotFound {
+		t.Fatalf("OrgIDBySlug unknown: got %v want ErrNotFound", err)
+	}
+
+	// Seed a team + issue.
+	team, err := repo.CreateTeam(ctx, orgID, "GitTest", "GT", "", "")
+	if err != nil {
+		t.Fatalf("CreateTeam: %v", err)
+	}
+	iss, err := repo.CreateIssue(ctx, orgID, team.ID, userID, IssueFields{Title: "link test"})
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+
+	// FindIssueByKeyNumber round-trips GT-1.
+	found, err := repo.FindIssueByKeyNumber(ctx, orgID, "GT", 1)
+	if err != nil {
+		t.Fatalf("FindIssueByKeyNumber: %v", err)
+	}
+	if found.ID != iss.ID {
+		t.Fatalf("FindIssueByKeyNumber: got id %q want %q", found.ID, iss.ID)
+	}
+
+	// Case-insensitive key lookup.
+	found2, err := repo.FindIssueByKeyNumber(ctx, orgID, "gt", 1)
+	if err != nil {
+		t.Fatalf("FindIssueByKeyNumber lowercase key: %v", err)
+	}
+	if found2.ID != iss.ID {
+		t.Fatalf("FindIssueByKeyNumber lowercase: got %q want %q", found2.ID, iss.ID)
+	}
+
+	// ErrNotFound for wrong number.
+	if _, err := repo.FindIssueByKeyNumber(ctx, orgID, "GT", 999); err != ErrNotFound {
+		t.Fatalf("FindIssueByKeyNumber missing: got %v want ErrNotFound", err)
+	}
+
+	// First upsert: state="open", IsMagic=false.
+	link1 := GitLink{
+		OrgID:   orgID,
+		IssueID: iss.ID,
+		Kind:    "branch",
+		Repo:    "myorg/myrepo",
+		Ref:     "feat/GT-1-link-test",
+		URL:     "https://git.example.com/myorg/myrepo/src/branch/feat/GT-1-link-test",
+		Title:   "feat/GT-1-link-test",
+		State:   "open",
+		IsMagic: false,
+	}
+	if err := repo.UpsertGitLink(ctx, link1); err != nil {
+		t.Fatalf("UpsertGitLink first: %v", err)
+	}
+
+	// Second upsert: state="merged", IsMagic=true — should update in place.
+	link2 := link1
+	link2.State = "merged"
+	link2.IsMagic = true
+	if err := repo.UpsertGitLink(ctx, link2); err != nil {
+		t.Fatalf("UpsertGitLink second: %v", err)
+	}
+
+	// ListGitLinks must return exactly 1 row with the updated values.
+	links, err := repo.ListGitLinks(ctx, orgID, iss.ID)
+	if err != nil {
+		t.Fatalf("ListGitLinks: %v", err)
+	}
+	if len(links) != 1 {
+		t.Fatalf("ListGitLinks: got %d rows want 1", len(links))
+	}
+	got := links[0]
+	if got.State != "merged" {
+		t.Errorf("State: got %q want merged", got.State)
+	}
+	if !got.IsMagic {
+		t.Errorf("IsMagic: got false want true")
+	}
+	if got.Kind != "branch" {
+		t.Errorf("Kind: got %q want branch", got.Kind)
+	}
+	if got.IssueID != iss.ID {
+		t.Errorf("IssueID: got %q want %q", got.IssueID, iss.ID)
+	}
+}
+
 func TestRepository_ListAssignable(t *testing.T) {
 	pool, orgID, userID := setupDB(t)
 	repo := NewRepository(pool)
