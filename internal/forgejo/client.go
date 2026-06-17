@@ -272,6 +272,12 @@ func (c *Client) ownersTeamID(ctx context.Context, orgName string) (int64, error
 // The hook fires push + pull_request events as JSON, signed with secret
 // (Forgejo sends X-Forgejo-Signature = HMAC-SHA256(body, secret)). Best-effort:
 // callers log and continue.
+//
+// Rotation caveat: existing hooks are matched by config.url only, so this never
+// updates a hook that already exists. If GROWN_FORGEJO_WEBHOOK_SECRET is rotated,
+// Forgejo keeps signing with the old secret while grown verifies with the new one
+// and every delivery silently fails verification (401). After rotating the secret,
+// delete the org's grown webhook in Forgejo so it is recreated with the new secret.
 func (c *Client) EnsureOrgWebhook(ctx context.Context, orgName, targetURL, secret string) error {
 	if !c.configured() || targetURL == "" || secret == "" {
 		return nil

@@ -23,6 +23,13 @@ var refPattern = regexp.MustCompile(`(?i)\b(?:(close[sd]?|fix(?:e[sd])?|resolve[
 // ParseRefs extracts every issue reference from s. Duplicates (same Key+Number)
 // are merged; if any occurrence is magic the merged ref is magic. Order follows
 // first appearance.
+//
+// Known limitation: the pattern matches any "word-number" token, so strings like
+// "UTF-8" or "v2-3" parse as candidate refs. This is harmless unless an org has a
+// team whose key collides (e.g. a team keyed "UTF" with an issue #8): a webhook
+// only links / advances a ref when it resolves to a live issue in that org (see
+// Service.linkRef → Repository.FindIssueByKeyNumber). Org-wide identifier matching
+// has this inherent ambiguity; resolution to a real issue gates any side effect.
 func ParseRefs(s string) []Ref {
 	matches := refPattern.FindAllStringSubmatch(s, -1)
 	if len(matches) == 0 {

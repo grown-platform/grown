@@ -133,8 +133,8 @@ func (s *Service) processPush(ctx context.Context, p pushPayload) {
 	for _, c := range p.Commits {
 		for _, ref := range ParseRefs(c.Message) {
 			title := c.Message
-			if i := firstNewline(title); i >= 0 {
-				title = title[:i]
+			if i := strings.IndexByte(title, '\n'); i >= 0 {
+				title = title[:i] // first line only
 			}
 			s.linkRef(ctx, orgID, ref, GitLink{
 				Kind: "commit", Repo: p.Repository.FullName, Ref: c.ID, URL: c.URL,
@@ -224,13 +224,4 @@ func (s *Service) broadcastIssue(ctx context.Context, orgID, issueID string) {
 // any user/topic slashes so distinct branches don't collide on the link key.
 func branchFromRef(ref string) string {
 	return strings.TrimPrefix(ref, "refs/heads/")
-}
-
-func firstNewline(s string) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			return i
-		}
-	}
-	return -1
 }
