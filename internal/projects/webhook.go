@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 // ── Forgejo webhook payloads (only the fields we use) ────────────────────────
@@ -122,10 +123,7 @@ func (s *Service) processPush(ctx context.Context, p pushPayload) {
 	if orgID == "" {
 		return
 	}
-	branch := p.Ref
-	if i := lastSlash(branch); i >= 0 {
-		branch = branch[i+1:]
-	}
+	branch := branchFromRef(p.Ref)
 	for _, ref := range ParseRefs(p.Ref) {
 		s.linkRef(ctx, orgID, ref, GitLink{
 			Kind: "branch", Repo: p.Repository.FullName, Ref: branch, Title: branch,
@@ -221,13 +219,11 @@ func (s *Service) broadcastIssue(ctx context.Context, orgID, issueID string) {
 	s.hub.BroadcastIssue(fresh.TeamID, issueProto(fresh))
 }
 
-func lastSlash(s string) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '/' {
-			return i
-		}
-	}
-	return -1
+// branchFromRef turns a git ref ("refs/heads/alice/eng-42-fix") into a branch
+// name ("alice/eng-42-fix") by stripping only the refs/heads/ prefix — keeping
+// any user/topic slashes so distinct branches don't collide on the link key.
+func branchFromRef(ref string) string {
+	return strings.TrimPrefix(ref, "refs/heads/")
 }
 
 func firstNewline(s string) int {

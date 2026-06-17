@@ -42,6 +42,20 @@ func TestHandleForgejoWebhook_RejectsBadSignature(t *testing.T) {
 	}
 }
 
+func TestBranchFromRef(t *testing.T) {
+	cases := map[string]string{
+		"refs/heads/main":             "main",
+		"refs/heads/alice/eng-42-fix": "alice/eng-42-fix",
+		"refs/heads/bob/eng-42-fix":   "bob/eng-42-fix",
+		"feature/x":                   "feature/x", // no refs/heads prefix → unchanged
+	}
+	for in, want := range cases {
+		if got := branchFromRef(in); got != want {
+			t.Errorf("branchFromRef(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
 func TestHandleForgejoWebhook_DisabledWhenNoSecret(t *testing.T) {
 	s := &Service{}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/forgejo/webhook", strings.NewReader(`{}`))
