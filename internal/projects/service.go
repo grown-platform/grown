@@ -17,6 +17,10 @@ import (
 type Service struct {
 	repo *Repository
 	hub  *Hub
+	// ForgejoWebhookSecret is the shared HMAC-SHA256 secret for verifying
+	// inbound Forgejo webhook signatures. Empty disables the webhook endpoint
+	// (handler returns 503). Set by the server during wiring.
+	ForgejoWebhookSecret string
 }
 
 // NewService constructs a Service. hub may be nil (no realtime broadcasts).
