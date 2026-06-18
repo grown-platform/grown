@@ -726,6 +726,96 @@ func (r *Repository) CreateComment(ctx context.Context, orgID, issueID, authorID
 	return c, nil
 }
 
+// ── Git links ────────────────────────────────────────────────────────────────
+
+// GitLink is a stored reference from an issue to a Forgejo branch/PR/commit.
+type GitLink struct {
+	ID        string
+	OrgID     string
+	IssueID   string
+	Kind      string // "branch" | "pr" | "commit"
+	Repo      string // "owner/name"
+	Ref       string // branch name | PR number | commit sha
+	URL       string
+	Title     string
+	State     string // "open" | "merged" | "closed"
+	IsMagic   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// OrgIDBySlug resolves a grown org UUID from its URL slug (also the Forgejo org
+// name). Returns ErrNotFound when no such org exists.
+func (r *Repository) OrgIDBySlug(ctx context.Context, slug string) (string, error) {
+	var id string
+	err := r.pool.QueryRow(ctx,
+		`SELECT id::text FROM grown.orgs WHERE slug=$1`, slug).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("projects.OrgIDBySlug: %w", err)
+	}
+	return id, nil
+}
+
+// FindIssueByKeyNumber resolves an issue from its team key + per-team number
+// within an org (the two halves of a KEY-N identifier). Returns ErrNotFound
+// when no matching live issue exists.
+func (r *Repository) FindIssueByKeyNumber(ctx context.Context, orgID, key string, number int32) (Issue, error) {
+	i, err := scanIssue(r.pool.QueryRow(ctx,
+		issueSelect+` WHERE i.org_id=$1 AND upper(t.key)=upper($2) AND i.number=$3 AND i.trashed_at IS NULL`,
+		orgID, key, number))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Issue{}, ErrNotFound
+	}
+	return i, err
+}
+
+// UpsertGitLink inserts or updates a git link, keyed by (issue, kind, repo, ref).
+// On conflict it refreshes url/title/state and OR-s is_magic so a later magic
+// reference is never downgraded.
+func (r *Repository) UpsertGitLink(ctx context.Context, l GitLink) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO grown.project_git_links
+		   (org_id, issue_id, kind, repo, ref, url, title, state, is_magic)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		 ON CONFLICT (issue_id, kind, repo, ref) DO UPDATE SET
+		   url       = EXCLUDED.url,
+		   title     = EXCLUDED.title,
+		   state     = EXCLUDED.state,
+		   is_magic  = grown.project_git_links.is_magic OR EXCLUDED.is_magic,
+		   updated_at = now()`,
+		l.OrgID, l.IssueID, l.Kind, l.Repo, l.Ref, l.URL, l.Title, l.State, l.IsMagic)
+	if err != nil {
+		return fmt.Errorf("projects.UpsertGitLink: %w", err)
+	}
+	return nil
+}
+
+// ListGitLinks returns all git links for an issue, newest first.
+func (r *Repository) ListGitLinks(ctx context.Context, orgID, issueID string) ([]GitLink, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id::text, org_id::text, issue_id::text, kind, repo, ref, url, title, state, is_magic, created_at, updated_at
+		   FROM grown.project_git_links
+		  WHERE org_id=$1 AND issue_id=$2
+		  ORDER BY updated_at DESC`, orgID, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("projects.ListGitLinks: %w", err)
+	}
+	defer rows.Close()
+	var out []GitLink
+	for rows.Next() {
+		var l GitLink
+		if err := rows.Scan(&l.ID, &l.OrgID, &l.IssueID, &l.Kind, &l.Repo, &l.Ref,
+			&l.URL, &l.Title, &l.State, &l.IsMagic, &l.CreatedAt, &l.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
 func joinComma(parts []string) string {
 	out := ""
 	for i, p := range parts {

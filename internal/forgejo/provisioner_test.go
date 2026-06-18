@@ -139,3 +139,31 @@ func TestEnsureAccess_UnconfiguredIsNoop(t *testing.T) {
 		t.Error("Configured() should be false for an empty client")
 	}
 }
+
+func TestOnOrgCreated_RegistersWebhook(t *testing.T) {
+	var hookCreated bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/hooks") && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`[]`))
+		case strings.HasSuffix(r.URL.Path, "/hooks") && r.Method == http.MethodPost:
+			hookCreated = true
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":1}`))
+		default:
+			w.WriteHeader(http.StatusOK) // CreateOrg / AddOrgOwner etc.
+		}
+	}))
+	defer srv.Close()
+
+	p := &Provisioner{
+		client:        NewClient(srv.URL, "tok"),
+		webhookURL:    "https://grown/api/v1/forgejo/webhook",
+		webhookSecret: "secret",
+		accessCache:   map[string]time.Time{},
+	}
+	p.OnOrgCreated(context.Background(), OrgEvent{OrgID: "o1", Slug: "acme", DisplayName: "Acme"})
+	if !hookCreated {
+		t.Fatalf("expected webhook to be registered")
+	}
+}

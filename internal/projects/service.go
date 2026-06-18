@@ -17,6 +17,10 @@ import (
 type Service struct {
 	repo *Repository
 	hub  *Hub
+	// ForgejoWebhookSecret is the shared HMAC-SHA256 secret for verifying
+	// inbound Forgejo webhook signatures. Empty disables the webhook endpoint
+	// (handler returns 503). Set by the server during wiring.
+	ForgejoWebhookSecret string
 }
 
 // NewService constructs a Service. hub may be nil (no realtime broadcasts).
@@ -67,6 +71,15 @@ func labelProto(l Label) *grownv1.Label {
 
 func commentProto(c Comment) *grownv1.Comment {
 	return &grownv1.Comment{Id: c.ID, IssueId: c.IssueID, AuthorId: c.AuthorID, AuthorName: c.AuthorName, Body: c.Body, CreatedAt: c.CreatedAt.UTC().Format(time.RFC3339)}
+}
+
+func gitLinkProto(l GitLink) *grownv1.GitLink {
+	return &grownv1.GitLink{
+		Id: l.ID, IssueId: l.IssueID, Kind: l.Kind, Repo: l.Repo, Ref: l.Ref,
+		Url: l.URL, Title: l.Title, State: l.State, IsMagic: l.IsMagic,
+		CreatedAt: l.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt: l.UpdatedAt.UTC().Format(time.RFC3339),
+	}
 }
 
 func toStatus(err error, what string) error {
@@ -464,4 +477,20 @@ func (s *Service) CreateComment(ctx context.Context, req *grownv1.CreateCommentR
 		return nil, toStatus(err, "create comment")
 	}
 	return commentProto(c), nil
+}
+
+func (s *Service) ListIssueGitLinks(ctx context.Context, req *grownv1.ListIssueGitLinksRequest) (*grownv1.ListIssueGitLinksResponse, error) {
+	orgID, err := callerOrg(ctx)
+	if err != nil {
+		return nil, err
+	}
+	links, err := s.repo.ListGitLinks(ctx, orgID, req.GetIssueId())
+	if err != nil {
+		return nil, toStatus(err, "list git links")
+	}
+	resp := &grownv1.ListIssueGitLinksResponse{Links: make([]*grownv1.GitLink, 0, len(links))}
+	for _, l := range links {
+		resp.Links = append(resp.Links, gitLinkProto(l))
+	}
+	return resp, nil
 }

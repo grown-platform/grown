@@ -266,6 +266,67 @@ func (c *Client) ownersTeamID(ctx context.Context, orgName string) (int64, error
 	return 0, nil
 }
 
+// EnsureOrgWebhook makes sure an org-level webhook targeting targetURL exists on
+// orgName. It is idempotent: it lists existing hooks (GET /api/v1/orgs/{org}/hooks)
+// and creates one (POST same path) only when none already points at targetURL.
+// The hook fires push + pull_request events as JSON, signed with secret
+// (Forgejo sends X-Forgejo-Signature = HMAC-SHA256(body, secret)). Best-effort:
+// callers log and continue.
+//
+// Rotation caveat: existing hooks are matched by config.url only, so this never
+// updates a hook that already exists. If GROWN_FORGEJO_WEBHOOK_SECRET is rotated,
+// Forgejo keeps signing with the old secret while grown verifies with the new one
+// and every delivery silently fails verification (401). After rotating the secret,
+// delete the org's grown webhook in Forgejo so it is recreated with the new secret.
+func (c *Client) EnsureOrgWebhook(ctx context.Context, orgName, targetURL, secret string) error {
+	if !c.configured() || targetURL == "" || secret == "" {
+		return nil
+	}
+	// 1. Already present?
+	path := fmt.Sprintf("/api/v1/orgs/%s/hooks", orgName)
+	status, body, err := c.do(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return fmt.Errorf("forgejo.EnsureOrgWebhook list: %w", err)
+	}
+	if status == http.StatusOK {
+		var hooks []struct {
+			Config struct {
+				URL string `json:"url"`
+			} `json:"config"`
+		}
+		if err := json.Unmarshal(body, &hooks); err == nil {
+			for _, h := range hooks {
+				if h.Config.URL == targetURL {
+					return nil // already configured
+				}
+			}
+		}
+	} else if status != http.StatusNotFound {
+		return fmt.Errorf("forgejo.EnsureOrgWebhook list: unexpected status %d", status)
+	}
+	// 2. Create it.
+	create := map[string]any{
+		"type":   "forgejo",
+		"active": true,
+		"events": []string{"push", "pull_request"},
+		"config": map[string]string{
+			"url":          targetURL,
+			"content_type": "json",
+			"secret":       secret,
+		},
+	}
+	cstatus, _, cerr := c.do(ctx, http.MethodPost, path, create)
+	if cerr != nil {
+		return fmt.Errorf("forgejo.EnsureOrgWebhook create: %w", cerr)
+	}
+	switch cstatus {
+	case http.StatusCreated, http.StatusOK, http.StatusUnprocessableEntity:
+		return nil // 201/200 created, 422 already exists → success
+	default:
+		return fmt.Errorf("forgejo.EnsureOrgWebhook create: unexpected status %d", cstatus)
+	}
+}
+
 // do executes an authenticated JSON request against the Forgejo API.
 // It returns the HTTP status code, the raw response body, and any transport
 // or encoding error. A non-2xx status is NOT returned as an error; callers

@@ -105,3 +105,18 @@ export interface IssuePatch {
   parent_issue_id?: string;
   parent_set?: boolean;
 }
+
+// Git link: ties an issue to a Forgejo branch / PR / commit (from webhooks).
+export interface GitLink {
+  id: string;
+  issue_id: string;
+  kind: "branch" | "pr" | "commit";
+  repo: string;       // "owner/name"
+  ref: string;        // branch name | PR number | commit sha
+  url: string;
+  title: string;
+  state: "open" | "merged" | "closed";
+  is_magic: boolean;
+  created_at: string;
+  updated_at: string;
+}

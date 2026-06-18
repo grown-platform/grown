@@ -212,6 +212,57 @@ func TestAuthHeader(t *testing.T) {
 	}
 }
 
+// ---------- EnsureOrgWebhook ------------------------------------------------
+
+func TestEnsureOrgWebhook_CreatesWhenAbsent(t *testing.T) {
+	var listed, created bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/hooks":
+			listed = true
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/hooks":
+			created = true
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":1}`))
+		default:
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv)
+	if err := c.EnsureOrgWebhook(context.Background(), "acme", "https://grown/api/v1/forgejo/webhook", "secret"); err != nil {
+		t.Fatalf("EnsureOrgWebhook: %v", err)
+	}
+	if !listed || !created {
+		t.Fatalf("listed=%v created=%v want both true", listed, created)
+	}
+}
+
+func TestEnsureOrgWebhook_IdempotentWhenPresent(t *testing.T) {
+	var created bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/hooks" {
+			_, _ = w.Write([]byte(`[{"id":1,"config":{"url":"https://grown/api/v1/forgejo/webhook"}}]`))
+			return
+		}
+		if r.Method == http.MethodPost {
+			created = true
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(srv)
+	if err := c.EnsureOrgWebhook(context.Background(), "acme", "https://grown/api/v1/forgejo/webhook", "secret"); err != nil {
+		t.Fatalf("EnsureOrgWebhook: %v", err)
+	}
+	if created {
+		t.Fatalf("created a duplicate hook; should have been a no-op")
+	}
+}
+
 // ---------- UsernameFromEmail -----------------------------------------------
 
 func TestUsernameFromEmail(t *testing.T) {

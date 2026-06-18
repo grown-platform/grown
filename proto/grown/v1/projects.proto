@@ -96,6 +96,11 @@ service ProjectsService {
   rpc CreateComment(CreateCommentRequest) returns (Comment) {
     option (google.api.http) = { post: "/api/v1/projects/issues/{issue_id}/comments" body: "*" };
   }
+
+  // ── Git links ──────────────────────────────────────────────────────────────
+  rpc ListIssueGitLinks(ListIssueGitLinksRequest) returns (ListIssueGitLinksResponse) {
+    option (google.api.http) = { get: "/api/v1/projects/issues/{issue_id}/links" };
+  }
 }
 
 // Team owns a set of issues and supplies the identifier prefix (KEY-N).
@@ -302,3 +307,21 @@ message CreateCommentRequest {
   string issue_id = 1;
   string body = 2;
 }
+
+// GitLink ties an issue to a Forgejo branch / pull request / commit.
+message GitLink {
+  string id = 1;
+  string issue_id = 2;
+  string kind = 3;   // branch | pr | commit
+  string repo = 4;   // owner/name
+  string ref = 5;    // branch name | PR number | commit sha
+  string url = 6;
+  string title = 7;
+  string state = 8;  // open | merged | closed
+  bool is_magic = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+message ListIssueGitLinksRequest  { string issue_id = 1; }
+message ListIssueGitLinksResponse { repeated GitLink links = 1; }
