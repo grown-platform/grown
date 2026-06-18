@@ -304,7 +304,7 @@ Twenty was deployed but crash-loops on two DB issues:
 - [ ] CNPG `twenty-db-superuser` secret URI has dbname `*` (superuser isn't db-scoped) → `database "*" does not exist`. Point PG_DATABASE_URL at the `default` db (twenty-db-app uri) or build the URL with the right dbname.
 - [ ] Twenty requires Postgres **extensions** (pg_graphql / wrappers) the vanilla CNPG image lacks → migrations fail even with the right db. Needs a Twenty-compatible Postgres image, or pre-created extensions via CNPG `postInitApplicationSQL` (uuid-ossp ok; pg_graphql is NOT in vanilla postgres).
 - [ ] Dragonfly thread cap fixed (`--proactor_threads=2`); keep that.
-- [ ] After it boots: add Cloudflare Published Application Route `crm.pick.haus` → public-gateway-istio:443 (Origin Server Name crm.pick.haus); configure the OIDC provider in Twenty Settings for Zitadel SSO.
+- [ ] After it boots: add a Cloudflare Published Application Route for the CRM host → public-gateway-istio:443 (Origin Server Name = that host); configure the OIDC provider in Twenty Settings for Zitadel SSO. (CRM host is deployment-specific — set `VITE_CRM_URL` in the deploy's build env.)
       Disabled in the aggregator + namespace deleted until a focused effort provides the DB.
 
 ## 13. Auth/profile workstream — DECISIONS LOCKED (next, after org-scoping merges)

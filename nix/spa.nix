@@ -10,7 +10,8 @@
   buildNpmPackage,
   # VITE_* build args — defaults mirror the Dockerfile. Override per-environment.
   vitePdfUrl ? "/pdf/",
-  viteCrmUrl ? "https://crm.pick.haus/",
+  # CRM host is deployment-specific; inject per-environment (not baked here).
+  viteCrmUrl ? "",
   viteGitUrl ? "https://code.pick.haus",
   viteAssembleUrl ? "https://assemble.pick.haus",
 }:

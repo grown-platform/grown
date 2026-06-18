@@ -23,7 +23,8 @@
   tag ? "nix",
   # VITE_* build args forwarded to the SPA build.
   vitePdfUrl ? "/pdf/",
-  viteCrmUrl ? "https://crm.pick.haus/",
+  # CRM host is deployment-specific; inject per-environment (not baked here).
+  viteCrmUrl ? "",
   viteGitUrl ? "https://code.pick.haus",
   viteAssembleUrl ? "https://assemble.pick.haus",
 }:

@@ -14,7 +14,10 @@ WORKDIR /web
 # GROWN_PDF_STATIC_DIR); the standalone pdf.pick.haus host is retired, so the
 # tiles point at the same-domain /pdf rather than a dead external host.
 ARG VITE_PDF_URL=/pdf/
-ARG VITE_CRM_URL=https://crm.pick.haus/
+# CRM host is deployment-specific — inject VITE_CRM_URL at build time rather than
+# baking an instance hostname into the public image. Empty => the app's built-in
+# localtest fallback (see web/app/src/catalog/apps.ts).
+ARG VITE_CRM_URL=
 ARG VITE_GIT_URL=https://code.pick.haus
 ARG VITE_ASSEMBLE_URL=https://assemble.pick.haus
 ENV VITE_PDF_URL=$VITE_PDF_URL \
