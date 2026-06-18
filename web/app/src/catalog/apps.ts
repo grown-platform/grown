@@ -54,7 +54,7 @@ const GIT_URL =
  *  it silently signs them in against the shared Zitadel (no second login). */
 const ASSEMBLE_BASE =
   (import.meta.env.VITE_ASSEMBLE_URL as string | undefined) ||
-  "https://assemble.pick.haus";
+  "https://assemble.example.com";
 const ASSEMBLE_URL =
   ASSEMBLE_BASE + (ASSEMBLE_BASE.includes("?") ? "&" : "?") + "sso=grown";
 
@@ -62,7 +62,7 @@ const ASSEMBLE_URL =
  *  Override with VITE_SPACELIGHT_URL. */
 const SPACELIGHT_URL =
   (import.meta.env.VITE_SPACELIGHT_URL as string | undefined) ||
-  "https://spacelight.pick.haus";
+  "https://spacelight.example.com";
 
 /** PDF_URL points the PDF tile at the integrated PDF editor & signing app
  *  (pdf), proxied under grown's origin. Override with VITE_PDF_URL. */
@@ -276,7 +276,7 @@ export const apps: AppTile[] = [
   {
     // Renamed from "Spacelight" → "Lightsky" (same app, same logo/URL). The id
     // stays "spacelight" so existing service-settings/routes keyed on it keep
-    // working and the self-hosted app at spacelight.pick.haus is unchanged.
+    // working and the self-hosted Spacelight app is unchanged.
     id: "spacelight",
     name: "Lightsky",
     blurb: "Family hub & home dashboard.",

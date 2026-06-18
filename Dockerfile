@@ -9,9 +9,10 @@
 FROM node:22-alpine AS web
 WORKDIR /web
 # Build-time public URLs baked into the SPA. Override per-environment with
-# --build-arg. Defaults point at the pick.haus deployment's sibling apps.
+# --build-arg. Instance-specific app hosts (CRM/Assemble) are left empty here and
+# injected per-deployment; same-origin apps (PDF/Learn) keep their defaults.
 # PDF is served IN-PROCESS at /pdf on the same origin (GROWN_PDF_BUILTIN +
-# GROWN_PDF_STATIC_DIR); the standalone pdf.pick.haus host is retired, so the
+# GROWN_PDF_STATIC_DIR); the standalone external PDF host is retired, so the
 # tiles point at the same-domain /pdf rather than a dead external host.
 ARG VITE_PDF_URL=/pdf/
 # CRM host is deployment-specific — inject VITE_CRM_URL at build time rather than
@@ -19,7 +20,8 @@ ARG VITE_PDF_URL=/pdf/
 # localtest fallback (see web/app/src/catalog/apps.ts).
 ARG VITE_CRM_URL=
 ARG VITE_GIT_URL=https://code.pick.haus
-ARG VITE_ASSEMBLE_URL=https://assemble.pick.haus
+# Assemble host is deployment-specific too — inject VITE_ASSEMBLE_URL per-deploy.
+ARG VITE_ASSEMBLE_URL=
 ENV VITE_PDF_URL=$VITE_PDF_URL \
     VITE_CRM_URL=$VITE_CRM_URL \
     VITE_GIT_URL=$VITE_GIT_URL \

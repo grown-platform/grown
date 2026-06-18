@@ -26,7 +26,7 @@
   # CRM host is deployment-specific; inject per-environment (not baked here).
   viteCrmUrl ? "",
   viteGitUrl ? "https://code.pick.haus",
-  viteAssembleUrl ? "https://assemble.pick.haus",
+  viteAssembleUrl ? "",
 }:
 let
   inherit (pkgs) dockerTools;
