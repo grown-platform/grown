@@ -19,6 +19,7 @@ import (
 
 	"code.pick.haus/grown/grown/internal/access"
 	"code.pick.haus/grown/grown/internal/admin"
+	"code.pick.haus/grown/grown/internal/desktops"
 	"code.pick.haus/grown/grown/internal/audit"
 	"code.pick.haus/grown/grown/internal/auth"
 	"code.pick.haus/grown/grown/internal/books"
@@ -219,11 +220,40 @@ func main() {
 		}
 	}
 
+	// On-demand container desktops (Guacamole Phase 2) — pick.haus only. Enabled
+	// by GROWN_DESKTOPS_ENABLED; needs the in-cluster kube API + a Guacamole admin
+	// credential. Disabled or not-in-cluster ⇒ a nil service (routes 404, no reaper).
+	var desktopsSvc *desktops.Service
+	if os.Getenv("GROWN_DESKTOPS_ENABLED") == "true" {
+		ns := defaultEnv("GROWN_DESKTOPS_NAMESPACE", "grown-desktops")
+		if kube, kerr := desktops.NewInClusterKube(ns); kerr != nil {
+			logger.Warn("desktops disabled: not running in-cluster", "err", kerr)
+		} else {
+			desktopsSvc = desktops.NewService(desktops.Config{
+				Enabled:         true,
+				Namespace:       ns,
+				StorageClass:    defaultEnv("GROWN_DESKTOPS_STORAGE_CLASS", "ceph-block"),
+				IdleTTL:         30 * time.Minute,
+				MaxPerUser:      2,
+				GuacOpenBaseURL: os.Getenv("GROWN_GUAC_URL"),
+			},
+				desktops.NewRepository(pool),
+				kube,
+				desktops.NewGuacClient(
+					os.Getenv("GROWN_GUAC_API_URL"),
+					os.Getenv("GROWN_GUAC_ADMIN_USER"),
+					os.Getenv("GROWN_GUAC_ADMIN_PASSWORD"),
+				),
+			)
+		}
+	}
+
 	srv := server.New(server.Config{
 		Version:           version,
 		Commit:            commit,
 		StartedAt:         time.Now(),
 		AuthConfig:        authCfg,
+		DesktopsService:   desktopsSvc,
 		OIDC:              oidcClient,
 		Sessions:          auth.NewSessionStore(pool),
 		UsersRepo:         users.NewRepository(pool),
