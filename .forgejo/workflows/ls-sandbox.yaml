@@ -1,0 +1,54 @@
+name: Build ls-sandbox image
+# Builds the Phase 1 Guacamole connection target (cmd/ls-sandbox) and pushes it
+# to the Forgejo registry as code.pick.haus/grown/ls-sandbox. Mirrors
+# publish.yaml (in-cluster `docker` runner + the org REGISTRY_USER/REGISTRY_TOKEN
+# secrets). Runs only when the sandbox sources change, or on manual dispatch.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cmd/ls-sandbox/**"
+      - "go.mod"
+      - "go.sum"
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: docker
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: code.pick.haus
+      IMAGE: code.pick.haus/grown/ls-sandbox
+    steps:
+      - name: Ensure docker + git
+        run: |
+          if ! command -v docker >/dev/null 2>&1; then
+            (apt-get update -qq && apt-get install -y -qq docker.io git) \
+              || (apk add --no-cache docker-cli git) || true
+          fi
+          docker version
+
+      - name: Registry auth
+        run: |
+          docker info >/dev/null
+          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login "$REGISTRY" -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+
+      - name: Checkout
+        run: |
+          git config --global --add safe.directory '*'
+          host="${GITHUB_SERVER_URL#*://}"; scheme="${GITHUB_SERVER_URL%%://*}"
+          git clone --depth 1 --branch "$GITHUB_REF_NAME" \
+            "${scheme}://token:${{ github.token }}@${host}/${GITHUB_REPOSITORY}.git" src
+          cd src && git rev-parse HEAD
+
+      - name: Build and push
+        run: |
+          cd src
+          VERSION="$(date -u +%Y%m%d-%H%M%S)-$(echo "$GITHUB_SHA" | cut -c1-8)"
+          export DOCKER_BUILDKIT=1
+          docker build -f cmd/ls-sandbox/Dockerfile \
+            -t "$IMAGE:$VERSION" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:latest"
+          echo "Pushed $IMAGE:$VERSION"

@@ -291,6 +291,7 @@ export default function AccessPage({ user }: AccessPageProps) {
 
   // Tailnet status (optional — only shown when configured).
   const [tailnet, setTailnet] = useState<TailnetStatus | null>(null);
+  const [guac, setGuac] = useState<{ url: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -337,6 +338,14 @@ export default function AccessPage({ user }: AccessPageProps) {
           }
         },
       )
+      .catch(() => {});
+
+    // Browser-desktop gateway (Guacamole) — present only when GROWN_GUAC_URL is set.
+    fetch("/api/v1/access/gateway", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { enabled?: boolean; url?: string } | null) => {
+        if (alive && d?.enabled && d.url) setGuac({ url: d.url });
+      })
       .catch(() => {});
 
     return () => {
@@ -456,35 +465,48 @@ export default function AccessPage({ user }: AccessPageProps) {
         {/* ---------------------------------------------------------------- */}
         <Box sx={{ mb: 4 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
-            <TerminalIcon sx={{ fontSize: 20, color: "neutral.500" }} />
+            <TerminalIcon
+              sx={{ fontSize: 20, color: guac ? "primary.500" : "neutral.500" }}
+            />
             <Typography level="title-md">
               Browser terminal &amp; desktop
             </Typography>
-            <Chip size="sm" color="warning" variant="soft">
-              Coming soon
-            </Chip>
+            {guac ? (
+              <Chip size="sm" color="success" variant="soft">
+                Live
+              </Chip>
+            ) : (
+              <Chip size="sm" color="warning" variant="soft">
+                Coming soon
+              </Chip>
+            )}
           </Box>
           <Typography level="body-sm" sx={{ color: "neutral.600", mb: 2 }}>
             Clientless SSH, RDP, and VNC into internal hosts — entirely in the
             browser, nothing to install. Powered by an Apache Guacamole gateway
             deployed alongside your workspace.
           </Typography>
-          <Card variant="soft" sx={{ bgcolor: "neutral.50" }}>
-            <CardContent>
-              <Typography level="body-sm" sx={{ color: "neutral.600" }}>
-                <strong>Preparing:</strong> The Guacamole gateway manifests are
-                ready in gitops. Once deployed at{" "}
-                <Typography
-                  component="code"
-                  sx={{ fontFamily: "monospace", fontSize: "0.85em" }}
-                >
-                  guac.pick.haus
+          {guac ? (
+            <Button
+              component="a"
+              href={guac.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              startDecorator={<TerminalIcon />}
+              endDecorator={<OpenInNewIcon sx={{ fontSize: 16 }} />}
+            >
+              Open browser terminal
+            </Button>
+          ) : (
+            <Card variant="soft" sx={{ bgcolor: "neutral.50" }}>
+              <CardContent>
+                <Typography level="body-sm" sx={{ color: "neutral.600" }}>
+                  <strong>Preparing:</strong> The Guacamole gateway will appear
+                  here once it's deployed for this workspace.
                 </Typography>
-                , this section will activate and display your registered hosts
-                here.
-              </Typography>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </Box>
 
         {/* ---------------------------------------------------------------- */}

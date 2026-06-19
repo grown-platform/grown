@@ -1,0 +1,80 @@
+# Dedicated Postgres for Guacamole's own config (users, connections, history).
+# Kept SEPARATE from grown's database to keep trust boundaries clean.
+#
+# storageClass ceph-block matches the cluster default. Replace the placeholder
+# password with a real secret (sealed-secret / SOPS) when wiring into gitops.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: guac-postgres
+  namespace: grown
+  labels: { app: guac-postgres, part-of: guacamole }
+type: Opaque
+stringData:
+  POSTGRES_USER: guacamole
+  POSTGRES_DB: guacamole
+  POSTGRES_PASSWORD: "CHANGE-ME-IN-GITOPS" # replace via sealed-secret/SOPS
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guac-postgres
+  namespace: grown
+  labels: { app: guac-postgres, part-of: guacamole }
+spec:
+  clusterIP: None
+  selector: { app: guac-postgres }
+  ports:
+    - { name: postgres, port: 5432, targetPort: 5432 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: guac-postgres
+  namespace: grown
+  labels: { app: guac-postgres, part-of: guacamole }
+spec:
+  serviceName: guac-postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: guac-postgres }
+  template:
+    metadata:
+      labels: { app: guac-postgres, part-of: guacamole }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70 # alpine postgres uid
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: postgres
+          image: postgres:17.2-alpine
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef: { name: guac-postgres }
+          env:
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ceph-block
+        resources:
+          requests: { storage: 10Gi }

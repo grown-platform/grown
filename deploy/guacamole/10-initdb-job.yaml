@@ -1,0 +1,65 @@
+# One-shot Job that loads Guacamole's schema into the dedicated Postgres.
+# The guacamole image emits its schema via initdb.sh; a postgres-client container
+# applies it. Idempotent: it skips if the schema is already present, so a gitops
+# re-apply is safe (the Job object is immutable once complete).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: guac-initdb
+  namespace: grown
+  labels: { app: guacamole, part-of: guacamole }
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels: { app: guac-initdb, part-of: guacamole }
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        # Generate the PostgreSQL schema from the Guacamole image into a shared dir.
+        - name: gen-schema
+          image: guacamole/guacamole:1.5.5
+          command: ["sh", "-c", "/opt/guacamole/bin/initdb.sh --postgresql > /schema/initdb.sql && wc -l /schema/initdb.sql"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: schema, mountPath: /schema }
+      containers:
+        # Apply the schema, skipping if Guacamole's tables already exist.
+        - name: apply-schema
+          image: postgres:17.2-alpine
+          envFrom:
+            - secretRef: { name: guac-postgres }
+          env:
+            - { name: PGHOST, value: guac-postgres }
+            - { name: PGUSER, value: guacamole }
+            - { name: PGDATABASE, value: guacamole }
+            - { name: PGPASSWORD_FILE, value: "" } # PGPASSWORD comes from the secret env
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              export PGPASSWORD="$POSTGRES_PASSWORD"
+              until pg_isready -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE"; do
+                echo "waiting for guac-postgres..."; sleep 2
+              done
+              if psql -tAc "SELECT to_regclass('public.guacamole_connection')" | grep -q guacamole_connection; then
+                echo "guacamole schema already present — nothing to do"
+                exit 0
+              fi
+              echo "applying guacamole schema..."
+              psql -v ON_ERROR_STOP=1 -f /schema/initdb.sql
+              echo "schema applied"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: schema, mountPath: /schema, readOnly: true }
+      volumes:
+        - { name: schema, emptyDir: {} }

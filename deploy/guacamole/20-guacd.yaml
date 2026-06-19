@@ -1,0 +1,44 @@
+# guacd — the native proxy daemon that speaks SSH/RDP/VNC to targets.
+# Internal only (no ingress); reached by the Guacamole webapp on :4822.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacd
+  namespace: grown
+  labels: { app: guacd, part-of: guacamole }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: guacd }
+  template:
+    metadata:
+      labels: { app: guacd, part-of: guacamole }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: guacd
+          image: guacamole/guacd:1.5.5
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: guacd, containerPort: 4822 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacd
+  namespace: grown
+  labels: { app: guacd, part-of: guacamole }
+spec:
+  selector: { app: guacd }
+  ports:
+    - { name: guacd, port: 4822, targetPort: 4822 }

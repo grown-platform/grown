@@ -55,6 +55,10 @@ type Handler struct {
 	repo       *Repository
 	callerOf   CallerFunc
 	isOrgAdmin AdminChecker
+	// gatewayURL is the public Guacamole gateway URL (GROWN_GUAC_URL). Empty =>
+	// the gateway isn't deployed for this instance and the Access page keeps its
+	// "coming soon" placeholder.
+	gatewayURL string
 }
 
 // NewHandler constructs a Handler. Call WithCaller / WithAdminChecker to inject
@@ -77,6 +81,13 @@ func (h *Handler) WithAdminChecker(c AdminChecker) *Handler {
 	return h
 }
 
+// WithGatewayURL injects the public Guacamole gateway URL (GROWN_GUAC_URL) and
+// returns the handler for chaining. Empty leaves the gateway "not configured".
+func (h *Handler) WithGatewayURL(u string) *Handler {
+	h.gatewayURL = strings.TrimSpace(u)
+	return h
+}
+
 // ServeHTTP routes on method + path suffix after MountPrefix.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Require an authenticated session for every route.
@@ -94,6 +105,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rest = strings.Trim(rest, "/")
 
 	switch {
+	case rest == "gateway":
+		// GET /api/v1/access/gateway → the browser-desktop gateway status for the
+		// Access page. Any authenticated member may read it.
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"enabled": h.gatewayURL != "",
+			"url":     h.gatewayURL,
+		})
+
 	case rest == "apps":
 		switch r.Method {
 		case http.MethodGet:
