@@ -39,3 +39,6 @@ gen/
 # Research-capture material kept out of git on principle (large, sensitive, kept
 # locally as architectural reference only). Entire dir is intentionally untracked.
 research/
+
+# stray go build artifact from cmd/ls-sandbox
+/ls-sandbox
