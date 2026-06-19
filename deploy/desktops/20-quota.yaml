@@ -1,0 +1,28 @@
+# Caps total desktop resource usage and gives every desktop pod sane default +
+# max limits (so a flavor that omits limits, or a hostile request, can't exhaust
+# the node).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: grown-desktops-quota
+  namespace: grown-desktops
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    persistentvolumeclaims: "20"
+    count/pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: grown-desktops-limits
+  namespace: grown-desktops
+spec:
+  limits:
+    - type: Container
+      default: { cpu: "2", memory: 2Gi }
+      defaultRequest: { cpu: 500m, memory: 1Gi }
+      max: { cpu: "4", memory: 4Gi }

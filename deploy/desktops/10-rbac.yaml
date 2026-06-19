@@ -1,0 +1,32 @@
+# Scoped RBAC: grown's in-cluster ServiceAccount may manage ONLY the pods,
+# services, and PVCs in grown-desktops — nothing cluster-wide. grown's k8s REST
+# client (internal/desktops/kube.go) uses this via its mounted SA token.
+#
+# grown runs under the `default` ServiceAccount in namespace `grown` (confirmed
+# via the grown deployment); adjust the subject if that changes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: grown-desktops-manager
+  namespace: grown-desktops
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: grown-desktops-manager
+  namespace: grown-desktops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: grown-desktops-manager
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: grown

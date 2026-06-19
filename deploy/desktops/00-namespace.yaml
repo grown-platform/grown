@@ -1,0 +1,9 @@
+# Dedicated namespace for on-demand container desktops (Guacamole Phase 2).
+# Isolated from the grown app namespace so quota/limits/NetworkPolicy bound the
+# blast radius of user-launched desktops.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grown-desktops
+  labels:
+    part-of: grown-desktops

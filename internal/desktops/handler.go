@@ -43,7 +43,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case rest == "flavors" && r.Method == http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"flavors": h.svc.ListFlavors()})
+		out := make([]flavorView, 0)
+		for _, f := range h.svc.ListFlavors() {
+			out = append(out, flavorView{
+				ID: f.ID, Name: f.Name, Description: f.Description,
+				Protocol: string(f.Protocol), Persistent: f.PersistentPath != "",
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"flavors": out})
 
 	case rest == "sessions" && r.Method == http.MethodGet:
 		sess, err := h.svc.ListSessions(ctx, u)
@@ -51,10 +58,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		if sess == nil {
-			sess = []Session{}
+		out := make([]sessionView, 0, len(sess))
+		for _, s := range sess {
+			out = append(out, toSessionView(s))
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"sessions": sess})
+		writeJSON(w, http.StatusOK, map[string]any{"sessions": out})
 
 	case rest == "launch" && r.Method == http.MethodPost:
 		var in struct{ Flavor, Mode string }
@@ -67,7 +75,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, launchStatus(err), map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusAccepted, sess)
+		writeJSON(w, http.StatusAccepted, toSessionView(sess))
 
 	case strings.HasPrefix(rest, "sessions/") && r.Method == http.MethodPost:
 		// sessions/{id}/stop | sessions/{id}/heartbeat
@@ -112,6 +120,32 @@ func launchStatus(err error) int {
 		return http.StatusNotFound
 	default:
 		return http.StatusInternalServerError
+	}
+}
+
+// flavorView is the trimmed catalog entry exposed to the SPA.
+type flavorView struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Protocol    string `json:"protocol"`
+	Persistent  bool   `json:"persistent"` // supports a persistent home
+}
+
+// sessionView is the session shape exposed to the SPA.
+type sessionView struct {
+	ID      string `json:"id"`
+	Flavor  string `json:"flavor"`
+	Mode    string `json:"mode"`
+	State   string `json:"state"`
+	OpenURL string `json:"open_url"`
+	Detail  string `json:"detail"`
+}
+
+func toSessionView(s Session) sessionView {
+	return sessionView{
+		ID: s.ID, Flavor: s.Flavor, Mode: s.Mode, State: s.State,
+		OpenURL: s.OpenURL, Detail: s.Detail,
 	}
 }
 
