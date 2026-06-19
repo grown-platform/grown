@@ -1,0 +1,69 @@
+# The single Phase 1 connection target: the ls-only sandbox (cmd/ls-sandbox).
+# Hardened to be worthless to an attacker — shell-less image, non-root, read-only
+# rootfs, all caps dropped, and a NetworkPolicy allowing ingress ONLY from guacd
+# and NO egress at all.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ls-sandbox
+  namespace: grown
+  labels: { app: ls-sandbox, part-of: guacamole }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ls-sandbox }
+  template:
+    metadata:
+      labels: { app: ls-sandbox, part-of: guacamole }
+    spec:
+      imagePullSecrets:
+        - name: forgejo-registry
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: ls-sandbox
+          image: code.pick.haus/grown/ls-sandbox:latest
+          imagePullPolicy: Always
+          ports:
+            - { name: ssh, containerPort: 2222 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 50m, memory: 32Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ls-sandbox
+  namespace: grown
+  labels: { app: ls-sandbox, part-of: guacamole }
+spec:
+  selector: { app: ls-sandbox }
+  ports:
+    - { name: ssh, port: 2222, targetPort: 2222 }
+---
+# Ingress only from guacd; egress denied entirely. (Requires a NetworkPolicy-
+# enforcing CNI, e.g. Cilium/Calico — harmless no-op otherwise.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ls-sandbox
+  namespace: grown
+  labels: { app: ls-sandbox, part-of: guacamole }
+spec:
+  podSelector:
+    matchLabels: { app: ls-sandbox }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: guacd }
+      ports:
+        - { protocol: TCP, port: 2222 }
+  egress: [] # deny all egress

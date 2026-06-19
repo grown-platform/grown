@@ -215,6 +215,11 @@ type Config struct {
 	// disables the /api/v1/access/* routes.
 	AccessRepo *access.Repository
 
+	// GuacURL is the public Guacamole gateway URL (GROWN_GUAC_URL). When set, the
+	// Access page surfaces a "Browser terminal & desktop" launch button; empty
+	// keeps the "coming soon" placeholder. Surfaced via GET /api/v1/access/gateway.
+	GuacURL string
+
 	// PDFFrontendURL / PDFBackendURL enable the integrated PDF (editor & sign)
 	// app: requests to /pdf/* are reverse-proxied to the PDF frontend and
 	// /pdf-api/* (prefix stripped) to the PDF backend, so the separate React-19
@@ -1373,7 +1378,8 @@ func New(cfg Config) *Server {
 				}
 				return u.ID, org.ID, true
 			}).
-			WithAdminChecker(orgAdminFromCtx)
+			WithAdminChecker(orgAdminFromCtx).
+			WithGatewayURL(cfg.GuacURL)
 	}
 
 	// Integrated PDF app reverse proxies (optional). The PDF app does its own

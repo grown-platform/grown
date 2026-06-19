@@ -285,6 +285,7 @@ func main() {
 		GroupsRepo:          groups.NewRepository(pool),
 		SearchRepo:          search.NewRepository(pool),
 		AccessRepo:          access.NewRepository(pool),
+		GuacURL:             os.Getenv("GROWN_GUAC_URL"),
 		AdminRepo:           admin.NewRepository(pool),
 		AdminEmails:         os.Getenv("GROWN_ADMIN_EMAILS"),
 		OrgAdminRepo:        orgadmin.NewRepository(pool),

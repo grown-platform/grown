@@ -1,0 +1,85 @@
+# Guacamole webapp — served at guac.pick.haus (root context), authenticating via
+# Zitadel OIDC. Connects to guacd and to its own Postgres. The cloudflared
+# ingress rule (see README) routes guac.pick.haus -> this Service on :8080.
+#
+# Non-secret OIDC endpoints live in this ConfigMap; the OIDC client-id comes from
+# the `guac-zitadel-secret` you create per the README. Postgres password comes
+# from the guac-postgres Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: guac-oidc
+  namespace: grown
+  labels: { app: guacamole, part-of: guacamole }
+data:
+  OPENID_ISSUER: "https://auth.pick.haus"
+  OPENID_AUTHORIZATION_ENDPOINT: "https://auth.pick.haus/oauth/v2/authorize"
+  OPENID_JWKS_ENDPOINT: "https://auth.pick.haus/oauth/v2/keys"
+  OPENID_REDIRECT_URI: "https://guac.pick.haus/"
+  OPENID_USERNAME_CLAIM_TYPE: "email"
+  # Make OIDC the primary auth so users never see Guacamole's built-in login.
+  EXTENSION_PRIORITY: "openid"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacamole
+  namespace: grown
+  labels: { app: guacamole, part-of: guacamole }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: guacamole }
+  template:
+    metadata:
+      labels: { app: guacamole, part-of: guacamole }
+    spec:
+      # NOTE: the upstream Tomcat image is happiest as root (writable work dirs);
+      # the gateway's real protection is SSO + the tunnel, not the container user.
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: guacamole
+          image: guacamole/guacamole:1.5.5
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: guac-oidc }
+          env:
+            - { name: WEBAPP_CONTEXT, value: ROOT } # serve at / not /guacamole
+            - { name: GUACD_HOSTNAME, value: guacd }
+            - { name: GUACD_PORT, value: "4822" }
+            - { name: POSTGRESQL_HOSTNAME, value: guac-postgres }
+            - { name: POSTGRESQL_PORT, value: "5432" }
+            - { name: POSTGRESQL_DATABASE, value: guacamole }
+            - { name: POSTGRESQL_USER, value: guacamole }
+            - { name: POSTGRESQL_AUTO_CREATE_ACCOUNTS, value: "true" }
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: guac-postgres, key: POSTGRES_PASSWORD }
+            - name: OPENID_CLIENT_ID
+              valueFrom:
+                secretKeyRef: { name: guac-zitadel-secret, key: client-id }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          readinessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacamole
+  namespace: grown
+  labels: { app: guacamole, part-of: guacamole }
+spec:
+  selector: { app: guacamole }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }
