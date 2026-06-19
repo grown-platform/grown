@@ -42,6 +42,7 @@ import LanIcon from "@mui/icons-material/Lan";
 import TerminalIcon from "@mui/icons-material/Terminal";
 import RouterIcon from "@mui/icons-material/Router";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import Desktops from "./Desktops";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import {
@@ -508,6 +509,9 @@ export default function AccessPage({ user }: AccessPageProps) {
             </Card>
           )}
         </Box>
+
+        {/* Section 2b — On-demand container desktops (Phase 2, when enabled) */}
+        <Desktops />
 
         {/* ---------------------------------------------------------------- */}
         {/* Section 3 — Tailscale tailnet status (secondary, only when set)   */}

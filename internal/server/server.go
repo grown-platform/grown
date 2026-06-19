@@ -21,6 +21,7 @@ import (
 
 	grownv1 "code.pick.haus/grown/grown/gen/go/grown/v1"
 	"code.pick.haus/grown/grown/internal/access"
+	"code.pick.haus/grown/grown/internal/desktops"
 	"code.pick.haus/grown/grown/internal/admin"
 	"code.pick.haus/grown/grown/internal/adminanalytics"
 	"code.pick.haus/grown/grown/internal/adminsecurity"
@@ -219,6 +220,11 @@ type Config struct {
 	// Access page surfaces a "Browser terminal & desktop" launch button; empty
 	// keeps the "coming soon" placeholder. Surfaced via GET /api/v1/access/gateway.
 	GuacURL string
+
+	// DesktopsService powers on-demand container desktops (Guacamole Phase 2),
+	// constructed in main.go (pick.haus only). nil/disabled ⇒ /api/v1/desktops
+	// routes 404 and no reaper runs.
+	DesktopsService *desktops.Service
 
 	// PDFFrontendURL / PDFBackendURL enable the integrated PDF (editor & sign)
 	// app: requests to /pdf/* are reverse-proxied to the PDF frontend and
@@ -1382,6 +1388,26 @@ func New(cfg Config) *Server {
 			WithGatewayURL(cfg.GuacURL)
 	}
 
+	// On-demand container desktops (Guacamole Phase 2). Constructed in main.go
+	// (in-cluster kube + guac clients); here we mount the HTTP handler and start
+	// the idle reaper. Disabled/nil ⇒ routes 404, no reaper.
+	var desktopsHandler *desktops.Handler
+	if cfg.DesktopsService != nil && cfg.DesktopsService.Enabled() {
+		desktopsHandler = desktops.NewHandler(cfg.DesktopsService).
+			WithCaller(func(ctx context.Context) (desktops.User, bool) {
+				u, ok := auth.UserFromContext(ctx)
+				if !ok {
+					return desktops.User{}, false
+				}
+				org, ok := auth.OrgFromContext(ctx)
+				if !ok {
+					return desktops.User{}, false
+				}
+				return desktops.User{ID: u.ID, OrgID: org.ID, Email: u.Email}, true
+			})
+		go cfg.DesktopsService.RunReaper(context.Background(), time.Minute)
+	}
+
 	// Integrated PDF app reverse proxies (optional). The PDF app does its own
 	// OIDC auth, so these bypass grown's auth middleware (like Drive's raw routes).
 	pdfFrontend := newReverseProxy(cfg.PDFFrontendURL)               // serves /pdf/*
@@ -1923,6 +1949,11 @@ func New(cfg Config) *Server {
 		// Published-apps registry (Access feature). GET = any member; mutations admin-gated.
 		if accessHandler != nil && strings.HasPrefix(r.URL.Path, access.MountPrefix+"/") {
 			driveAuthWrap(accessHandler).ServeHTTP(w, r)
+			return
+		}
+		// On-demand container desktops (Guacamole Phase 2). Auth-wrapped.
+		if desktopsHandler != nil && strings.HasPrefix(r.URL.Path, desktops.MountPrefix+"/") {
+			driveAuthWrap(desktopsHandler).ServeHTTP(w, r)
 			return
 		}
 		// Self-service profile editor: GET/PATCH /api/v1/me/profile (auth-wrapped).

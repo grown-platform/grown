@@ -1,0 +1,42 @@
+# Network isolation for desktops: default-deny, then allow only (a) ingress from
+# guacd so the gateway can reach the desktop, and (b) egress to DNS + the public
+# internet — but NOT to cluster-internal / RFC1918 ranges (so a desktop can't
+# pivot into the cluster). Requires a NetworkPolicy-enforcing CNI (Cilium/Calico).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: grown-desktops
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: desktops-access
+  namespace: grown-desktops
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Only guacd (in the grown namespace) may reach desktops.
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: grown }
+          podSelector:
+            matchLabels: { app: guacd }
+  egress:
+    # DNS (kube-dns lives in-cluster; allow 53 to anywhere).
+    - ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # Internet, but exclude cluster-internal / private ranges.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
