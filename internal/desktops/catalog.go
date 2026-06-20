@@ -27,7 +27,15 @@ type Flavor struct {
 	MemLimit       string   // e.g. "2Gi"
 	PersistentPath string   // home dir to PVC-mount in persistent mode; "" = none
 	NeedsEgress    bool     // whether the flavor needs internet egress
+
+	// VM-specific (Kind == "vm"; Phase 3 / KubeVirt). Ignored for pod flavors.
+	Kind     string // "pod" (default / "") | "vm"
+	OSImage  string // VM root: containerDisk image (ephemeral) or CDI source (persistent)
+	DiskSize string // persistent root size, e.g. "20Gi"
 }
+
+// IsVM reports whether the flavor is backed by a KubeVirt VM rather than a Pod.
+func (f Flavor) IsVM() bool { return f.Kind == "vm" }
 
 // catalog is the ordered list of all flavors.
 var catalog = []Flavor{
@@ -77,6 +85,39 @@ var catalog = []Flavor{
 		MemLimit:       "1Gi",
 		PersistentPath: "/config",
 		NeedsEgress:    true,
+	},
+	// ── KubeVirt VM flavors (Phase 3; shown only when VMsEnabled) ──────────────
+	{
+		ID:          "vm-ubuntu",
+		Name:        "Ubuntu VM",
+		Description: "Ubuntu 22.04 virtual machine (KubeVirt), desktop over VNC",
+		Kind:        "vm",
+		// containerDisk for ephemeral; the same image is the CDI source for
+		// persistent. The guest must ship/enable a VNC server (confirmed at deploy).
+		OSImage:     "quay.io/containerdisks/ubuntu:22.04",
+		Protocol:    ProtoVNC,
+		Port:        5900,
+		CPURequest:  "1",
+		CPULimit:    "2",
+		MemRequest:  "2Gi",
+		MemLimit:    "4Gi",
+		DiskSize:    "20Gi",
+		NeedsEgress: true,
+	},
+	{
+		ID:          "vm-fedora",
+		Name:        "Fedora VM",
+		Description: "Fedora virtual machine (KubeVirt), SSH access",
+		Kind:        "vm",
+		OSImage:     "quay.io/containerdisks/fedora:latest",
+		Protocol:    ProtoSSH,
+		Port:        22,
+		CPURequest:  "1",
+		CPULimit:    "2",
+		MemRequest:  "2Gi",
+		MemLimit:    "4Gi",
+		DiskSize:    "20Gi",
+		NeedsEgress: true,
 	},
 }
 

@@ -4,12 +4,23 @@ import "testing"
 
 func TestFlavorsCount(t *testing.T) {
 	flavors := Flavors()
-	if len(flavors) != 3 {
-		t.Fatalf("Flavors() returned %d flavors, want 3", len(flavors))
+	// 3 pod flavors + 2 VM flavors (Phase 3).
+	if len(flavors) != 5 {
+		t.Fatalf("Flavors() returned %d flavors, want 5", len(flavors))
+	}
+	pods := 0
+	for _, f := range flavors {
+		if !f.IsVM() {
+			pods++
+		}
+	}
+	if pods != 3 {
+		t.Fatalf("got %d pod flavors, want 3", pods)
 	}
 }
 
 func TestFlavorsOrder(t *testing.T) {
+	// Pod flavors lead, in display order.
 	want := []string{"linux-desktop", "browser", "terminal"}
 	flavors := Flavors()
 	for i, id := range want {
@@ -68,7 +79,12 @@ func TestFlavorFieldsNonEmpty(t *testing.T) {
 		if f.Name == "" {
 			t.Errorf("flavor %q has empty Name", f.ID)
 		}
-		if f.Image == "" {
+		// Pod flavors carry a container Image; VM flavors carry an OSImage.
+		if f.IsVM() {
+			if f.OSImage == "" {
+				t.Errorf("VM flavor %q has empty OSImage", f.ID)
+			}
+		} else if f.Image == "" {
 			t.Errorf("flavor %q has empty Image", f.ID)
 		}
 		if !validProtocols[f.Protocol] {
