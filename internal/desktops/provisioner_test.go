@@ -92,6 +92,7 @@ func (f *memStore) ListIdle(context.Context, time.Time) ([]Session, error) {
 type memKube struct {
 	pods, svcs           map[string]bool
 	pvcs                 map[string]bool
+	vms                  map[string]bool
 	phase                string
 	createConnErr        error // unused here; for symmetry
 	failCreatePod        bool
@@ -99,7 +100,18 @@ type memKube struct {
 }
 
 func newMemKube() *memKube {
-	return &memKube{pods: map[string]bool{}, svcs: map[string]bool{}, pvcs: map[string]bool{}, phase: "Running"}
+	return &memKube{pods: map[string]bool{}, svcs: map[string]bool{}, pvcs: map[string]bool{}, vms: map[string]bool{}, phase: "Running"}
+}
+func (k *memKube) CreateVirtualMachine(_ context.Context, p VMParams) error {
+	k.vms[p.Name] = true
+	return nil
+}
+func (k *memKube) GetVMIPhase(context.Context, string) (string, string, error) {
+	return k.phase, "10.0.0.2", nil
+}
+func (k *memKube) DeleteVirtualMachine(_ context.Context, n string) error {
+	delete(k.vms, n)
+	return nil
 }
 func (k *memKube) EnsurePVC(_ context.Context, p PVCParams) error { k.pvcs[p.Name] = true; return nil }
 func (k *memKube) CreatePod(_ context.Context, p PodParams) error {
@@ -109,18 +121,25 @@ func (k *memKube) CreatePod(_ context.Context, p PodParams) error {
 	k.pods[p.Name] = true
 	return nil
 }
-func (k *memKube) CreateService(_ context.Context, s ServiceParams) error { k.svcs[s.Name] = true; return nil }
+func (k *memKube) CreateService(_ context.Context, s ServiceParams) error {
+	k.svcs[s.Name] = true
+	return nil
+}
 func (k *memKube) GetPodPhase(context.Context, string) (string, string, error) {
 	return k.phase, "10.0.0.1", nil
 }
-func (k *memKube) DeletePod(_ context.Context, n string) error    { delete(k.pods, n); k.deletedPods = append(k.deletedPods, n); return nil }
+func (k *memKube) DeletePod(_ context.Context, n string) error {
+	delete(k.pods, n)
+	k.deletedPods = append(k.deletedPods, n)
+	return nil
+}
 func (k *memKube) DeleteService(_ context.Context, n string) error { delete(k.svcs, n); return nil }
 
 type memGuac struct {
-	conns      map[string]bool
-	createErr  error
-	granted    []string
-	deleted    []string
+	conns     map[string]bool
+	createErr error
+	granted   []string
+	deleted   []string
 }
 
 func newMemGuac() *memGuac { return &memGuac{conns: map[string]bool{}} }
@@ -221,6 +240,48 @@ func TestLaunch_UnknownFlavor(t *testing.T) {
 	_, err := s.Launch(context.Background(), User{ID: "u1", OrgID: "o1", Email: "a@x.com"}, "nope", "ephemeral")
 	if !errors.Is(err, ErrBadRequest) {
 		t.Fatalf("err=%v want ErrBadRequest", err)
+	}
+}
+
+func TestProvision_VM(t *testing.T) {
+	s, st, k, g := testSvc(t)
+	s.cfg.VMsEnabled = true
+	flavor, _ := FlavorByID("vm-ubuntu")
+	sess, _ := st.Create(context.Background(), Session{UserID: "u1", OrgID: "o1", Flavor: flavor.ID, Mode: "ephemeral"})
+
+	s.provision(context.Background(), sess, flavor, User{ID: "u1", Email: "a@x.com"})
+
+	got, _ := st.Get(context.Background(), sess.ID)
+	if got.State != "running" {
+		t.Fatalf("state=%q detail=%q want running", got.State, got.Detail)
+	}
+	if len(k.vms) != 1 {
+		t.Errorf("vms=%d want 1 (a VirtualMachine, not a Pod)", len(k.vms))
+	}
+	if len(k.pods) != 0 {
+		t.Errorf("a VM flavor must not create a Pod (pods=%d)", len(k.pods))
+	}
+	if got.GuacConnID != "C1" || len(g.granted) != 1 {
+		t.Errorf("conn=%q grants=%v", got.GuacConnID, g.granted)
+	}
+}
+
+func TestListFlavors_VMFilter(t *testing.T) {
+	s, _, _, _ := testSvc(t) // VMsEnabled false by default
+	for _, f := range s.ListFlavors() {
+		if f.IsVM() {
+			t.Fatalf("VM flavor %q leaked while VMs disabled", f.ID)
+		}
+	}
+	s.cfg.VMsEnabled = true
+	hasVM := false
+	for _, f := range s.ListFlavors() {
+		if f.IsVM() {
+			hasVM = true
+		}
+	}
+	if !hasVM {
+		t.Fatal("VM flavors missing while VMs enabled")
 	}
 }
 

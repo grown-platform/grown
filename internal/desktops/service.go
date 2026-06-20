@@ -25,7 +25,8 @@ type store interface {
 	ListIdle(ctx context.Context, cutoff time.Time) ([]Session, error)
 }
 
-// orchestrator is the Kubernetes surface (satisfied by *KubeClient).
+// orchestrator is the Kubernetes surface (satisfied by *KubeClient). The VM*
+// methods (Phase 3 / KubeVirt) are only exercised for vm flavors.
 type orchestrator interface {
 	EnsurePVC(ctx context.Context, p PVCParams) error
 	CreatePod(ctx context.Context, p PodParams) error
@@ -33,6 +34,9 @@ type orchestrator interface {
 	GetPodPhase(ctx context.Context, name string) (phase, podIP string, err error)
 	DeletePod(ctx context.Context, name string) error
 	DeleteService(ctx context.Context, name string) error
+	CreateVirtualMachine(ctx context.Context, p VMParams) error
+	GetVMIPhase(ctx context.Context, name string) (phase, ip string, err error)
+	DeleteVirtualMachine(ctx context.Context, name string) error
 }
 
 // gateway is the Guacamole surface (satisfied by *GuacClient).
@@ -48,6 +52,7 @@ type gateway interface {
 // subsystem is inert (handler 404s, no Access section).
 type Config struct {
 	Enabled         bool
+	VMsEnabled      bool          // expose KubeVirt VM flavors (Phase 3)
 	Namespace       string        // grown-desktops
 	StorageClass    string        // PVC storage class (persistent mode)
 	IdleTTL         time.Duration // reap sessions idle longer than this
@@ -90,8 +95,21 @@ func NewService(cfg Config, st store, kube orchestrator, guac gateway) *Service 
 // Enabled reports whether the subsystem is active.
 func (s *Service) Enabled() bool { return s != nil && s.cfg.Enabled }
 
-// ListFlavors returns the launchable catalog.
-func (s *Service) ListFlavors() []Flavor { return Flavors() }
+// ListFlavors returns the launchable catalog — VM flavors are filtered out
+// unless VMs are enabled (KubeVirt installed).
+func (s *Service) ListFlavors() []Flavor {
+	all := Flavors()
+	if s.cfg.VMsEnabled {
+		return all
+	}
+	out := make([]Flavor, 0, len(all))
+	for _, f := range all {
+		if !f.IsVM() {
+			out = append(out, f)
+		}
+	}
+	return out
+}
 
 // ListSessions returns the user's live sessions.
 func (s *Service) ListSessions(ctx context.Context, u User) ([]Session, error) {
@@ -125,6 +143,9 @@ func (s *Service) Launch(ctx context.Context, u User, flavorID, mode string) (Se
 	flavor, ok := FlavorByID(flavorID)
 	if !ok {
 		return Session{}, fmt.Errorf("%w: unknown flavor %q", ErrBadRequest, flavorID)
+	}
+	if flavor.IsVM() && !s.cfg.VMsEnabled {
+		return Session{}, fmt.Errorf("%w: VMs are not enabled on this instance", ErrBadRequest)
 	}
 	if mode != "ephemeral" && mode != "persistent" {
 		return Session{}, fmt.Errorf("%w: mode must be ephemeral|persistent", ErrBadRequest)

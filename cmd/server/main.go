@@ -231,6 +231,7 @@ func main() {
 		} else {
 			desktopsSvc = desktops.NewService(desktops.Config{
 				Enabled:         true,
+				VMsEnabled:      os.Getenv("GROWN_DESKTOP_VMS_ENABLED") == "true",
 				Namespace:       ns,
 				StorageClass:    defaultEnv("GROWN_DESKTOPS_STORAGE_CLASS", "ceph-block"),
 				IdleTTL:         30 * time.Minute,

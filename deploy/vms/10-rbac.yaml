@@ -1,0 +1,29 @@
+# Extends grown's scoped RBAC in grown-desktops with the KubeVirt + CDI resources
+# the VM provisioner needs. Still namespace-scoped (no cluster-wide power). Apply
+# alongside deploy/desktops/10-rbac.yaml (the pod-level Role).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: grown-desktops-vm-manager
+  namespace: grown-desktops
+rules:
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachines", "virtualmachineinstances"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["cdi.kubevirt.io"]
+    resources: ["datavolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: grown-desktops-vm-manager
+  namespace: grown-desktops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: grown-desktops-vm-manager
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: grown
