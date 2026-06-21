@@ -1,0 +1,26 @@
+# REFERENCE SNIPPET — not applied by this repo.
+#
+# To make https://guac.pick.haus/ public, the Guacamole gateway Service (running
+# in ns `grown`) must be routed through the Cloudflare tunnel. The tunnel is a
+# LOCALLY-MANAGED tunnel (config.yaml + credentials) whose `cloudflared` ConfigMap
+# lives in the GITOPS repo (ns `network`, Flux-managed) — so this rule goes there,
+# not here. Three steps:
+#
+# 1. Add this ingress rule to the cloudflared ConfigMap's data.config.yaml,
+#    ABOVE the catch-all `- service: http_status:503`:
+#
+#        - hostname: "guac.pick.haus"
+#          service: http://guacamole.grown.svc.cluster.local:8080
+#
+# 2. Create a proxied DNS CNAME for guac.pick.haus → the tunnel (once):
+#
+#        cloudflared tunnel route dns test-tunnel guac.pick.haus
+#        # or: Cloudflare dashboard → DNS → CNAME `guac` → <tunnel-id>.cfargotunnel.com (proxied)
+#
+# 3. cloudflared reads config.yaml at startup, so after Flux applies the change:
+#
+#        kubectl -n network rollout restart deploy/cloudflared
+#
+# After that, https://guac.pick.haus/ reaches the in-cluster Guacamole. Switch
+# guacadmin → SSO via deploy/guacamole/30-guacamole.yaml (+ the Zitadel client),
+# and set GROWN_GUAC_URL on the grown deployment for the Access-page button.
