@@ -1,26 +1,30 @@
-# REFERENCE SNIPPET — not applied by this repo.
+# REFERENCE — how to publicly route https://guac.pick.haus/ to the in-cluster
+# Guacamole gateway (Service guacamole.grown.svc.cluster.local:8080, ns grown).
 #
-# To make https://guac.pick.haus/ public, the Guacamole gateway Service (running
-# in ns `grown`) must be routed through the Cloudflare tunnel. The tunnel is a
-# LOCALLY-MANAGED tunnel (config.yaml + credentials) whose `cloudflared` ConfigMap
-# lives in the GITOPS repo (ns `network`, Flux-managed) — so this rule goes there,
-# not here. Three steps:
+# IMPORTANT: this cloudflared tunnel is REMOTELY-MANAGED. cloudflared pulls its
+# ingress config from the Cloudflare API ("Updated to new configuration
+# version=N" in its logs) and IGNORES the local config.yaml ConfigMap in ns
+# network. So the route must be added in Cloudflare, NOT in the ConfigMap/gitops.
 #
-# 1. Add this ingress rule to the cloudflared ConfigMap's data.config.yaml,
-#    ABOVE the catch-all `- service: http_status:503`:
+# Two parts:
 #
-#        - hostname: "guac.pick.haus"
-#          service: http://guacamole.grown.svc.cluster.local:8080
+# 1. DNS — DONE: a proxied CNAME guac.pick.haus -> <tunnel-id>.cfargotunnel.com
+#    was created via the Cloudflare API (tunnel d8f930ef-73c0-4283-bd8a-d9180e8f9ed0).
 #
-# 2. Create a proxied DNS CNAME for guac.pick.haus → the tunnel (once):
+# 2. Tunnel public hostname — TODO (needs a "Cloudflare Tunnel: Edit" token or the
+#    dashboard; the in-cluster DNS token can't do it):
 #
-#        cloudflared tunnel route dns test-tunnel guac.pick.haus
-#        # or: Cloudflare dashboard → DNS → CNAME `guac` → <tunnel-id>.cfargotunnel.com (proxied)
+#    Dashboard: Zero Trust → Networks → Tunnels → <the tunnel> → Public Hostnames
+#      → Add a public hostname:
+#         Subdomain: guac   Domain: pick.haus
+#         Service:   HTTP   URL: guacamole.grown.svc.cluster.local:8080
 #
-# 3. cloudflared reads config.yaml at startup, so after Flux applies the change:
+#    Or via API (PUT the tunnel configuration with the extra ingress rule):
+#      PUT https://api.cloudflare.com/client/v4/accounts/<acct>/cfd_tunnel/<tunnel>/configurations
+#      adding: { "hostname": "guac.pick.haus",
+#                "service": "http://guacamole.grown.svc.cluster.local:8080" }
+#      before the catch-all { "service": "http_status:503" }.
 #
-#        kubectl -n network rollout restart deploy/cloudflared
-#
-# After that, https://guac.pick.haus/ reaches the in-cluster Guacamole. Switch
-# guacadmin → SSO via deploy/guacamole/30-guacamole.yaml (+ the Zitadel client),
-# and set GROWN_GUAC_URL on the grown deployment for the Access-page button.
+# After that, https://guac.pick.haus/ reaches Guacamole. Then switch guacadmin →
+# SSO (deploy/guacamole/30-guacamole.yaml + the Zitadel client) and set
+# GROWN_GUAC_URL on the grown deployment for the Access-page button.
