@@ -306,7 +306,9 @@ export function EditorPage() {
   const loadFromBytes = useCallback(async (bytes: Uint8Array, name: string) => {
     setError(null);
     try {
-      const doc = await PDFDocument.load(bytes);
+      // ignoreEncryption: load PDFs that carry permissions encryption (no user
+      // password), e.g. many gov/AF forms — pdf-lib throws on them otherwise.
+      const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
       const count = doc.getPageCount();
       setPdfBytes(bytes);
       setDocName(name);
@@ -355,7 +357,7 @@ export function EditorPage() {
       if (!pdfBytes) return;
       setBusy(true);
       try {
-        const src = await PDFDocument.load(pdfBytes);
+        const src = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
         const out = await PDFDocument.create();
         for (const entry of nextPages) {
           if (entry.srcIndex >= 0 && entry.srcIndex < src.getPageCount()) {
@@ -678,7 +680,7 @@ export function EditorPage() {
   // ---- Export ---------------------------------------------------------------
   const buildFinalPdf = useCallback(async (): Promise<Uint8Array> => {
     if (!pdfBytes) throw new Error("Nothing to export");
-    const doc = await PDFDocument.load(pdfBytes);
+    const doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
     const docPages = doc.getPages();
 
     const fontCache = new Map<string, PDFFont>();

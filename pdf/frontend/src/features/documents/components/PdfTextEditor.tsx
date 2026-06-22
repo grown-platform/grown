@@ -877,7 +877,9 @@ export async function applyTextEdits(
   const response = await fetch(src);
   if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.status}`);
   const original = await response.arrayBuffer();
-  const pdf = await PDFDocument.load(original);
+  // ignoreEncryption: many real-world PDFs (e.g. gov/AF forms) ship with
+  // permissions encryption and no user password; pdf-lib throws otherwise.
+  const pdf = await PDFDocument.load(original, { ignoreEncryption: true });
   // Embed all four Helvetica variants so we can pick based on bold+italic.
   const fonts = {
     regular: await pdf.embedFont(StandardFonts.Helvetica),
