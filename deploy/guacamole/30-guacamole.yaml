@@ -17,6 +17,7 @@ data:
   OPENID_JWKS_ENDPOINT: "https://auth.pick.haus/oauth/v2/keys"
   OPENID_REDIRECT_URI: "https://guac.pick.haus/"
   OPENID_USERNAME_CLAIM_TYPE: "email"
+  OPENID_SCOPE: "openid email profile"
   # Make OIDC the primary auth so users never see Guacamole's built-in login.
   EXTENSION_PRIORITY: "openid"
 ---
