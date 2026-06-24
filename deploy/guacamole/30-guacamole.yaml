@@ -23,6 +23,12 @@ data:
   OPENID_REDIRECT_URI: "https://guac.pick.haus/"
   OPENID_USERNAME_CLAIM_TYPE: "email"
   OPENID_SCOPE: "openid email profile"
+  # Zitadel issues a 12-hour id_token. Guacamole's OpenID extension defaults
+  # openid-max-token-validity to 300 minutes (5h) and rejects any token whose
+  # exp is further out than that ("exp claim value cannot be more than 300
+  # minutes in the future"), which caused a redirect loop after a successful
+  # Zitadel login. Raise the ceiling to 24h so the 12h token is accepted.
+  OPENID_MAX_TOKEN_VALIDITY: "1440"
   # Make OIDC the primary auth so users never see Guacamole's built-in login.
   EXTENSION_PRIORITY: "openid"
 ---
