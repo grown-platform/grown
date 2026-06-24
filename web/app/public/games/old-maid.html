@@ -82,16 +82,16 @@
   .hand.opponent.active .card { cursor: pointer; }
 
   .card {
-    width: 34px;
-    height: 48px;
-    border-radius: 5px;
+    width: 40px;
+    height: 54px;
+    border-radius: 6px;
     position: relative;
     flex: 0 0 auto;
     font-weight: 700;
     transition: transform .15s, box-shadow .15s;
     box-shadow: 0 1px 3px rgba(0,0,0,.4);
   }
-  .card.small { width: 28px; height: 40px; }
+  .card.small { width: 31px; height: 44px; }
 
   /* face down */
   .card.back {
@@ -132,14 +132,25 @@
     justify-content: center;
     line-height: 1;
   }
-  .card.face .rank { font-size: .95rem; }
-  .card.face .suit { font-size: .85rem; }
-  .card.face.red { color: #d4322c; }
-  .card.face.black { color: #1a1a1a; }
+  .card.face .char { font-size: 1.5rem; line-height: 1; }
+  .card.face.small .char { font-size: 1.15rem; }
+  .card.face .name {
+    font-size: .42rem;
+    margin-top: 2px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: .65;
+    letter-spacing: 0;
+  }
+  .card.face.small .name { display: none; }
   .card.face.maid {
     background: linear-gradient(160deg, #fff6d6, #ffe08a);
     border-color: #d9af4a;
+    box-shadow: 0 0 6px 1px rgba(255,211,77,.5);
   }
+  .card.face.maid .name { opacity: .85; color: #6b4a00; font-weight: 700; }
 
   .card.dealt { animation: pop .25s ease; }
   @keyframes pop {
@@ -323,7 +334,7 @@
 <body>
   <header>
     <h1>Old <span class="maid">Maid</span></h1>
-    <div class="subtitle">Don't get stuck with the lonely Queen!</div>
+    <div class="subtitle">Match the characters — don't get stuck with the Old Maid! 👵</div>
   </header>
 
   <div class="board">
@@ -355,7 +366,7 @@
 
   <!-- Mode-select overlay (shown on load) -->
   <div class="overlay" id="modeOverlay">
-    <div class="emoji">👸</div>
+    <div class="emoji">👵</div>
     <h2>Old Maid</h2>
     <p>Choose a mode</p>
     <div class="mode-btns">
@@ -408,34 +419,45 @@
   function sndWin()   { [523,659,784,1047].forEach(function(f,i){ setTimeout(function(){ beep(f,0.16,"triangle",0.2); }, i*130); }); }
   function sndLose()  { [392,330,262].forEach(function(f,i){ setTimeout(function(){ beep(f,0.22,"sawtooth",0.16); }, i*170); }); }
 
-  // ---------- Deck ----------
-  var SUITS = [
-    { ch: "♠", color: "black" }, // spade
-    { ch: "♥", color: "red" },   // heart
-    { ch: "♦", color: "red" },   // diamond
-    { ch: "♣", color: "black" }  // club
+  // ---------- Characters ----------
+  // The deck is a cast of characters. Every character appears as a matching
+  // PAIR (two identical copies) — except the Old Maid, who is alone with no
+  // partner. Match two identical characters to discard them; whoever is stuck
+  // holding the lonely Old Maid at the end loses. (`key` is what pairs up.)
+  var CHARACTERS = [
+    { key: "dog",      emoji: "🐶", name: "Dog" },
+    { key: "cat",      emoji: "🐱", name: "Cat" },
+    { key: "bunny",    emoji: "🐰", name: "Bunny" },
+    { key: "fox",      emoji: "🦊", name: "Fox" },
+    { key: "bear",     emoji: "🐻", name: "Bear" },
+    { key: "panda",    emoji: "🐼", name: "Panda" },
+    { key: "koala",    emoji: "🐨", name: "Koala" },
+    { key: "tiger",    emoji: "🐯", name: "Tiger" },
+    { key: "lion",     emoji: "🦁", name: "Lion" },
+    { key: "frog",     emoji: "🐸", name: "Frog" },
+    { key: "monkey",   emoji: "🐵", name: "Monkey" },
+    { key: "pig",      emoji: "🐷", name: "Pig" },
+    { key: "chick",    emoji: "🐔", name: "Chicken" },
+    { key: "penguin",  emoji: "🐧", name: "Penguin" },
+    { key: "owl",      emoji: "🦉", name: "Owl" },
+    { key: "unicorn",  emoji: "🦄", name: "Unicorn" },
+    { key: "cow",      emoji: "🐮", name: "Cow" },
+    { key: "mouse",    emoji: "🐭", name: "Mouse" }
   ];
-  var RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+  var MAID = { key: "__maid", emoji: "👵", name: "Old Maid" };
   var uid = 0;
 
   function buildDeck() {
     var deck = [];
-    for (var r = 0; r < RANKS.length; r++) {
-      for (var s = 0; s < SUITS.length; s++) {
-        deck.push({
-          id: ++uid,
-          rank: RANKS[r],
-          suit: SUITS[s].ch,
-          color: SUITS[s].color
-        });
+    for (var i = 0; i < CHARACTERS.length; i++) {
+      var c = CHARACTERS[i];
+      for (var n = 0; n < 2; n++) {
+        deck.push({ id: ++uid, key: c.key, emoji: c.emoji, name: c.name, isMaid: false });
       }
     }
-    // Remove ONE queen -> 51 cards, leaving an unpaired Queen (the Old Maid).
-    // Find a Queen and splice exactly one out.
-    for (var i = 0; i < deck.length; i++) {
-      if (deck[i].rank === "Q") { deck.splice(i, 1); break; }
-    }
-    return deck; // 51 cards: three Queens (one unpaired), all other ranks have 4 = 2 pairs
+    // One lonely Old Maid — no partner to pair with.
+    deck.push({ id: ++uid, key: MAID.key, emoji: MAID.emoji, name: MAID.name, isMaid: true });
+    return deck; // 18 character pairs + 1 Old Maid = 37 cards
   }
 
   function shuffle(arr) {
@@ -446,11 +468,11 @@
     return arr;
   }
 
-  // Remove all pairs from a hand. Returns array of discarded ranks (one entry per pair).
+  // Remove all matched pairs from a hand. Returns array of discarded keys (one entry per pair).
   function discardPairs(hand) {
     var byRank = {};
     for (var i = 0; i < hand.length; i++) {
-      var r = hand[i].rank;
+      var r = hand[i].key;
       (byRank[r] = byRank[r] || []).push(hand[i]);
     }
     var discarded = [];
@@ -515,20 +537,20 @@
     elLog.innerHTML = html + (pairsLine ? '<span class="pairs">' + pairsLine + "</span>" : "");
   }
 
-  function isMaid(card) { return card.rank === "Q"; }
+  function isMaid(card) { return !!card.isMaid; }
 
   function makeFaceCard(card, small, animate) {
     var d = document.createElement("div");
-    d.className = "card face " + card.color + (small ? " small" : "") + (animate ? " dealt" : "");
+    d.className = "card face" + (small ? " small" : "") + (animate ? " dealt" : "");
     if (isMaid(card)) d.className += " maid";
-    var rank = document.createElement("span");
-    rank.className = "rank";
-    rank.textContent = card.rank;
-    var suit = document.createElement("span");
-    suit.className = "suit";
-    suit.textContent = card.suit;
-    d.appendChild(rank);
-    d.appendChild(suit);
+    var ch = document.createElement("span");
+    ch.className = "char";
+    ch.textContent = card.emoji;
+    var nm = document.createElement("span");
+    nm.className = "name";
+    nm.textContent = card.name;
+    d.appendChild(ch);
+    d.appendChild(nm);
     return d;
   }
 
@@ -577,7 +599,7 @@
     elYouHand.innerHTML = "";
     var ownSmall = ownArr.length > 9;
     var sorted = ownArr.slice().sort(function (a, b) {
-      return RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank);
+      return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
     });
     for (var j = 0; j < sorted.length; j++) {
       elYouHand.appendChild(makeFaceCard(sorted[j], ownSmall, false));
@@ -587,7 +609,6 @@
   // ---------- Privacy handoff (2-player only) ----------
   // Full-screen OPAQUE gate between humans. Revealing requires a deliberate
   // slide-all-the-way gesture, so an accidental tap can't expose the new hand.
-  var slideMove = null, slideUp = null; // active window listeners (cleaned on reveal)
   function showHandoff(toName, subText, cb) {
     elHandoffTitle.textContent = "Pass to " + toName;
     elHandoffSub.textContent = subText;
@@ -600,7 +621,7 @@
     var handle = document.getElementById("omRevealHandle");
     var fill   = document.getElementById("omRevealFill");
     var text   = document.getElementById("omRevealText");
-    var dragging = false, done = false, grabDX = 0, x = 0, maxX = 0;
+    var dragging = false, done = false, grabDX = 0, x = 0, maxX = 0, pid = null;
 
     function layout(){ maxX = Math.max(0, track.clientWidth - handle.offsetWidth - 8); }
     function paint(px){
@@ -613,11 +634,11 @@
       handle.style.transition = on ? "left .2s" : "";
       fill.style.transition   = on ? "width .2s" : "";
     }
-    function cleanup(){
-      window.removeEventListener("pointermove", slideMove);
-      window.removeEventListener("pointerup", slideUp);
-      window.removeEventListener("pointercancel", slideUp);
-      slideMove = slideUp = null;
+    function releaseCapture(){
+      if(pid != null && track.releasePointerCapture){
+        try { track.releasePointerCapture(pid); } catch(_){}
+      }
+      pid = null;
     }
     function reset(){
       animate(true); paint(0);
@@ -626,38 +647,46 @@
     function complete(){
       done = true;
       animate(true); paint(maxX);
-      cleanup();
       setTimeout(onReveal, 190);
     }
     function ptX(e){ return e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0); }
 
+    // Bind the drag handlers to the track itself and capture the pointer on
+    // press, so every pointermove/up is delivered to the track even if the
+    // finger strays off it. Window listeners without capture could miss events
+    // on touch (the pointer gets retargeted or cancelled mid-drag), which left
+    // the handle stuck.
     function down(e){
       if(done) return;
       layout();
       dragging = true;
       animate(false);
       grabDX = ptX(e) - x;
+      pid = (e.pointerId != null) ? e.pointerId : null;
+      if(pid != null && track.setPointerCapture){
+        try { track.setPointerCapture(pid); } catch(_){}
+      }
       e.preventDefault();
     }
-    slideMove = function(e){
+    function move(e){
       if(!dragging || done) return;
       e.preventDefault();
       paint(ptX(e) - grabDX);
-    };
-    slideUp = function(){
+    }
+    function up(){
       if(!dragging || done) return;
       dragging = false;
+      releaseCapture();
       if(x >= maxX - 4) complete(); else reset();
-    };
+    }
 
-    // Reset any prior state and (re)wire fresh listeners for this handoff.
-    cleanup();
-    done = false; dragging = false;
+    // Reset any prior state and (re)wire fresh handlers for this handoff.
+    done = false; dragging = false; pid = null;
     layout(); animate(false); paint(0); text.style.opacity = "1";
-    track.onpointerdown = down;
-    window.addEventListener("pointermove", slideMove, { passive: false });
-    window.addEventListener("pointerup", slideUp);
-    window.addEventListener("pointercancel", slideUp);
+    track.onpointerdown   = down;
+    track.onpointermove   = move;
+    track.onpointerup     = up;
+    track.onpointercancel = up;
   }
 
   // ---------- Game flow ----------
@@ -705,23 +734,23 @@
   // then discards a pair if formed. Returns {paired:bool, rank:string}.
   function takeCard(drawerHand, card) {
     drawerHand.push(card);
-    // check if this rank now forms a pair we can discard
+    // check if this character now forms a matching pair we can discard
     var same = [];
     for (var i = 0; i < drawerHand.length; i++) {
-      if (drawerHand[i].rank === card.rank) same.push(drawerHand[i]);
+      if (drawerHand[i].key === card.key) same.push(drawerHand[i]);
     }
     if (same.length >= 2) {
-      // remove two cards of that rank (the just-drawn + one existing)
+      // remove two copies of that character (the just-drawn + one existing)
       var removed = 0;
       for (var k = drawerHand.length - 1; k >= 0 && removed < 2; k--) {
-        if (drawerHand[k].rank === card.rank) {
+        if (drawerHand[k].key === card.key) {
           drawerHand.splice(k, 1);
           removed++;
         }
       }
-      return { paired: true, rank: card.rank };
+      return { paired: true, key: card.key };
     }
-    return { paired: false, rank: card.rank };
+    return { paired: false, key: card.key };
   }
 
   // The active human (turn === view) draws a face-down card at `index` from the
@@ -744,11 +773,11 @@
     if (res.paired) {
       if (turn === "you") youPairs++; else cpuPairs++;
       sndPair();
-      logMsg("Drew the <b>" + card.rank + card.suit + "</b> and made a pair! 🎉");
+      logMsg("Drew the <b>" + card.emoji + " " + card.name + "</b> and matched a pair! 🎉");
     } else {
       sndDraw();
-      logMsg("Drew the <b>" + card.rank + card.suit + "</b>." +
-        (isMaid(card) ? " Uh oh, that's the lonely Queen!" : ""));
+      logMsg("Drew the <b>" + card.emoji + " " + card.name + "</b>." +
+        (isMaid(card) ? " Uh oh — that's the Old Maid! 👵" : ""));
     }
 
     render();
@@ -796,7 +825,7 @@
     if (res.paired) {
       cpuPairs++;
       sndPair();
-      logMsg("CPU drew a card and made a pair of <b>" + card.rank + "</b>s.");
+      logMsg("CPU drew a card and matched a pair of <b>" + card.emoji + " " + card.name + "</b>.");
     } else {
       sndDraw();
       logMsg("CPU drew one of your cards.");
@@ -813,15 +842,15 @@
     render();
   }
 
-  // Game ends when only the lone Queen remains in play (one player has exactly
-  // the Old Maid and the other is empty).
+  // Game ends when only the lone Old Maid remains in play (one player has
+  // exactly the Old Maid and the other is empty).
   function checkEnd() {
     var total = you.length + cpu.length;
     // Normal terminal state: exactly 1 card left total => it's the Old Maid.
     if (total <= 1) {
       gameOver = true;
       busy = true;
-      // The seat still holding a card is stuck with the lonely Queen (the loser).
+      // The seat still holding a card is stuck with the lonely Old Maid (the loser).
       var loserSeat = you.length === 1 ? "you" : "cpu";
       // Drop any privacy gate so the result is visible to both players.
       elHandoff.classList.remove("show");
@@ -843,21 +872,21 @@
         elOverlay.className = "overlay show win";
         elOvEmoji.textContent = "🎉";
         elOvTitle.textContent = sideName(winnerSeat) + " Wins!";
-        elOvText.textContent = sideName(loserSeat) + " is the Old Maid — stuck with the lonely Queen!";
+        elOvText.textContent = sideName(loserSeat) + " is stuck with the lonely Old Maid 👵!";
         logMsg(sideName(loserSeat) + " held the Old Maid. " + sideName(winnerSeat) + " wins! 🎊");
       } else if (loserSeat === "you") {
         sndLose();
         elOverlay.className = "overlay show lose";
-        elOvEmoji.textContent = "🙅";
+        elOvEmoji.textContent = "👵";
         elOvTitle.textContent = "You're the Old Maid!";
-        elOvText.textContent = "You got stuck holding the lonely Queen. Better luck next time!";
-        logMsg("Game over - you held the Old Maid. 👸");
+        elOvText.textContent = "You got stuck holding the lonely Old Maid. Better luck next time!";
+        logMsg("Game over - you held the Old Maid. 👵");
       } else {
         sndWin();
         elOverlay.className = "overlay show win";
         elOvEmoji.textContent = "🎉";
         elOvTitle.textContent = "You Win!";
-        elOvText.textContent = "The CPU got stuck with the lonely Queen. Well played!";
+        elOvText.textContent = "The CPU got stuck with the Old Maid 👵. Well played!";
         logMsg("You win! The CPU is the Old Maid. 🎊");
       }
     }, 500);

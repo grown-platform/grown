@@ -498,7 +498,6 @@
   // Full-screen privacy gate between players (2-player mode only).
   // Revealing requires a deliberate slide-all-the-way gesture, so the board
   // is never exposed by an accidental tap when handing over the device.
-  var slideMove = null, slideUp = null; // active window listeners (cleaned up on reveal)
   function showHandoff(toName, subText, cb){
     phase = "handoff";
     document.getElementById("handoffTitle").textContent = "Pass to " + toName;
@@ -512,7 +511,7 @@
     var handle = document.getElementById("revealHandle");
     var fill   = document.getElementById("revealFill");
     var text   = document.getElementById("revealText");
-    var dragging = false, done = false, grabDX = 0, x = 0, maxX = 0;
+    var dragging = false, done = false, grabDX = 0, x = 0, maxX = 0, pid = null;
 
     function layout(){ maxX = Math.max(0, track.clientWidth - handle.offsetWidth - 8); }
     function paint(px){
@@ -525,11 +524,11 @@
       handle.style.transition = on ? "left .2s" : "";
       fill.style.transition   = on ? "width .2s" : "";
     }
-    function cleanup(){
-      window.removeEventListener("pointermove", slideMove);
-      window.removeEventListener("pointerup", slideUp);
-      window.removeEventListener("pointercancel", slideUp);
-      slideMove = slideUp = null;
+    function releaseCapture(){
+      if(pid != null && track.releasePointerCapture){
+        try { track.releasePointerCapture(pid); } catch(_){}
+      }
+      pid = null;
     }
     function reset(){
       animate(true); paint(0);
@@ -538,38 +537,46 @@
     function complete(){
       done = true;
       animate(true); paint(maxX);
-      cleanup();
       setTimeout(onReveal, 190);
     }
     function ptX(e){ return e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0); }
 
+    // Bind the drag handlers to the track itself and capture the pointer on
+    // press. Pointer capture guarantees every pointermove/up is delivered to
+    // the track even if the finger strays off it — window listeners without
+    // capture could miss events on touch (the pointer gets retargeted or
+    // cancelled mid-drag), which left the handle stuck. See showHandoff.
     function down(e){
       if(done) return;
       layout();
       dragging = true;
       animate(false);
       grabDX = ptX(e) - x;
+      pid = (e.pointerId != null) ? e.pointerId : null;
+      if(pid != null && track.setPointerCapture){
+        try { track.setPointerCapture(pid); } catch(_){}
+      }
       e.preventDefault();
     }
-    slideMove = function(e){
+    function move(e){
       if(!dragging || done) return;
       e.preventDefault();
       paint(ptX(e) - grabDX);
-    };
-    slideUp = function(){
+    }
+    function up(){
       if(!dragging || done) return;
       dragging = false;
+      releaseCapture();
       if(x >= maxX - 4) complete(); else reset();
-    };
+    }
 
-    // Reset any prior state and (re)wire fresh listeners for this handoff.
-    cleanup();
-    done = false; dragging = false;
+    // Reset any prior state and (re)wire fresh handlers for this handoff.
+    done = false; dragging = false; pid = null;
     layout(); animate(false); paint(0); text.style.opacity = "1";
-    track.onpointerdown = down;
-    window.addEventListener("pointermove", slideMove, { passive: false });
-    window.addEventListener("pointerup", slideUp);
-    window.addEventListener("pointercancel", slideUp);
+    track.onpointerdown   = down;
+    track.onpointermove   = move;
+    track.onpointerup     = up;
+    track.onpointercancel = up;
   }
 
   // ---------- Menu ----------
