@@ -238,9 +238,26 @@ var mushrooms;   // 2D array [ROWS][COLS] -> health 0..4 (0 = none)
 var segments;    // array of centipede segments
 var bullets;     // array of bullets
 var player;      // shooter
+var powerups;    // falling power-up pickups dropped by destroyed mushrooms
 var waveTimer = 0;
 var deadTimer = 0;
 var floatTexts = [];
+var flash = 0;   // white screen flash timer (bomb pickup)
+
+// ---------- Power-ups ----------
+// Destroyed mushrooms have a chance to drop one of these. It falls; the player
+// catches it by moving onto it. Timed effects live on the player object.
+// weight = relative drop frequency (higher = more common).
+var POWERUPS = {
+  shield: { label: 'S', name: 'SHIELD',      color: '#5fb8ff', weight: 30, dur: 8 },
+  rapid:  { label: 'R', name: 'RAPID FIRE',  color: '#ffd24a', weight: 28, dur: 8 },
+  triple: { label: '3', name: 'TRIPLE SHOT', color: '#b46cff', weight: 22, dur: 10 },
+  life:   { label: '+', name: 'EXTRA LIFE',  color: '#ff6c9c', weight: 7,  dur: 0 },
+  bomb:   { label: '*', name: 'BOMB',        color: '#ff8a3c', weight: 13, dur: 0 }
+};
+var POWERUP_KEYS = ['shield','rapid','triple','life','bomb'];
+var DROP_CHANCE = 0.14;   // chance a fully-destroyed mushroom drops a power-up
+var MAX_LIVES = 6;        // cap so the lives HUD stays readable
 
 // ---------- Sizing ----------
 function resize(){
@@ -302,6 +319,8 @@ function sHitMush(){ beep(180, 0.05, 'square', 0.04); }
 function sKillSeg(){ beep(330, 0.08, 'square', 0.07); beep(440,0.08,'square',0.05); }
 function sDie(){ beep(120, 0.5, 'sawtooth', 0.1); beep(80,0.5,'sawtooth',0.08); }
 function sWave(){ beep(523,0.1,'triangle',0.08); beep(659,0.12,'triangle',0.08); beep(784,0.16,'triangle',0.08); }
+function sPower(){ beep(784,0.08,'square',0.07); setTimeout(function(){ beep(1047,0.12,'square',0.07); }, 70); }
+function sBomb(){ beep(140,0.35,'sawtooth',0.12); beep(90,0.4,'sawtooth',0.1); }
 
 // ---------- Mushroom helpers ----------
 function newMushrooms(){
@@ -407,11 +426,11 @@ function gridStep(){
       // if the cell we'd drop into is blocked by a mushroom, eat through by
       // dropping straight down anyway (classic behavior: drop has priority).
       if (nr >= ROWS){
-        // reached the bottom row -> costs a life
+        // reached the bottom row -> costs a life (unless shielded: it just
+        // crawls along the bottom and you live).
         nr = ROWS - 1;
         head.row = nr;
-        if (state === STATE_PLAY){ loseLife(); }
-        return;
+        if (state === STATE_PLAY && !shielded()){ loseLife(); return; }
       }
       // if reversed-into cell is also a wall (corner), just drop straight down
       if (nc < 0 || nc >= COLS) nc = head.col;
@@ -429,8 +448,9 @@ function gridStep(){
     }
   }
 
-  // Player / bottom collision check after the step.
-  if (state === STATE_PLAY){
+  // Player / bottom collision check after the step. A live shield makes the
+  // player invulnerable — the centipede passes right through.
+  if (state === STATE_PLAY && !shielded()){
     var prow = Math.floor(player.y / cell);
     var pcol = Math.floor(player.x / cell);
     for (var k = 0; k < chain.length; k++){
@@ -468,16 +488,30 @@ function newPlayer(){
     y: H - cell * 1.2,
     w: cell * 0.8,
     speed: 6 * cell,   // px per second (desktop keys)
-    cooldown: 0
+    cooldown: 0,
+    shieldT: 0,        // seconds of shield bubble remaining
+    rapidT: 0,         // seconds of rapid fire remaining
+    tripleT: 0         // seconds of triple shot remaining
   };
 }
+function shielded(){ return player && player.shieldT > 0; }
 
 // ---------- Bullets ----------
 function fire(){
   if (state !== STATE_PLAY) return;
   if (player.cooldown > 0) return;
-  bullets.push({ x: player.x, y: player.y - cell*0.5, speed: 14 * cell });
-  player.cooldown = 0.16;
+  var rapid = player.rapidT > 0;
+  var speed = (rapid ? 20 : 14) * cell;
+  var by = player.y - cell*0.5;
+  if (player.tripleT > 0){
+    // center + two angled side bullets
+    bullets.push({ x: player.x, y: by, speed: speed, vx: 0 });
+    bullets.push({ x: player.x, y: by, speed: speed, vx: -4.5 * cell });
+    bullets.push({ x: player.x, y: by, speed: speed, vx:  4.5 * cell });
+  } else {
+    bullets.push({ x: player.x, y: by, speed: speed, vx: 0 });
+  }
+  player.cooldown = rapid ? 0.07 : 0.16;
   sFire();
 }
 
@@ -485,13 +519,14 @@ function stepBullets(dt){
   for (var i = bullets.length - 1; i >= 0; i--){
     var b = bullets[i];
     b.y -= b.speed * dt;
-    if (b.y < -cell){ bullets.splice(i,1); continue; }
+    if (b.vx) b.x += b.vx * dt;
+    if (b.y < -cell || b.x < -cell || b.x > W + cell){ bullets.splice(i,1); continue; }
     var c = Math.floor(b.x / cell);
     var r = Math.floor(b.y / cell);
     // hit mushroom?
     if (r >= 0 && r < ROWS && c >= 0 && c < COLS && mushrooms[r][c] > 0){
       mushrooms[r][c]--;
-      if (mushrooms[r][c] === 0){ addScore(1); }
+      if (mushrooms[r][c] === 0){ addScore(1); maybeDropPowerup(r, c); }
       sHitMush();
       bullets.splice(i,1);
       continue;
@@ -538,6 +573,65 @@ function killSegment(idx){
   if (segments.length > 0) segments[0].isHead = true;
 
   if (segments.length === 0){ winWave(); }
+}
+
+// ---------- Power-ups ----------
+function maybeDropPowerup(r, c){
+  if (Math.random() > DROP_CHANCE) return;
+  powerups.push({
+    type: weightedPowerupType(),
+    x: (c + 0.5) * cell,
+    y: (r + 0.5) * cell,
+    vy: 3.2 * cell,   // fall speed (px/s) — slow enough to chase down
+    t: 0              // animation clock
+  });
+}
+function weightedPowerupType(){
+  var total = 0, k;
+  for (var i = 0; i < POWERUP_KEYS.length; i++){ total += POWERUPS[POWERUP_KEYS[i]].weight; }
+  var roll = Math.random() * total;
+  for (var j = 0; j < POWERUP_KEYS.length; j++){
+    k = POWERUP_KEYS[j];
+    roll -= POWERUPS[k].weight;
+    if (roll <= 0) return k;
+  }
+  return 'shield';
+}
+function stepPowerups(dt){
+  var pr = cell * 0.42;                 // pickup radius of the player
+  for (var i = powerups.length - 1; i >= 0; i--){
+    var p = powerups[i];
+    p.t += dt;
+    p.y += p.vy * dt;
+    if (p.y > H + cell){ powerups.splice(i,1); continue; }   // missed, off the bottom
+    // caught? (player center within reach)
+    if (Math.abs(p.x - player.x) < pr + cell*0.45 && Math.abs(p.y - player.y) < pr + cell*0.45){
+      applyPowerup(p.type);
+      powerups.splice(i,1);
+    }
+  }
+}
+function applyPowerup(type){
+  var def = POWERUPS[type];
+  floatTexts.push({ x: player.x, y: player.y - cell*0.8, t: 1.0, v: def.name, color: def.color });
+  if (type === 'shield')      player.shieldT = def.dur;
+  else if (type === 'rapid')  player.rapidT  = def.dur;
+  else if (type === 'triple') player.tripleT = def.dur;
+  else if (type === 'life'){ if (lives < MAX_LIVES){ lives++; setLivesHud(); } }
+  else if (type === 'bomb')   doBomb();
+  if (type === 'bomb') sBomb(); else sPower();
+}
+// Bomb: detonate every mushroom on the field (scoring each), and clear the
+// falling powerup's own cell already handled. A bright flash sells the blast.
+function doBomb(){
+  var cleared = 0;
+  for (var r = 0; r < ROWS; r++){
+    for (var c = 0; c < COLS; c++){
+      if (mushrooms[r][c] > 0){ mushrooms[r][c] = 0; cleared++; }
+    }
+  }
+  if (cleared > 0){ addScore(cleared); }
+  flash = 0.25;
 }
 
 // ---------- Scoring / lives ----------
@@ -592,6 +686,7 @@ function nextWave(){
   spawnCentipede();
   player = newPlayer();
   bullets = [];
+  powerups = [];
   state = STATE_PLAY;
 }
 
@@ -604,6 +699,8 @@ function startGame(){
   setLivesHud();
   mushrooms = newMushrooms();
   bullets = [];
+  powerups = [];
+  flash = 0;
   floatTexts = [];
   spawnCentipede();
   player = newPlayer();
@@ -708,12 +805,17 @@ function update(dt){
     player.y = clamp(player.y, H - PLAYER_ROWS*cell + cell*0.5, H - cell*0.5);
 
     if (player.cooldown > 0) player.cooldown -= dt;
+    // tick down timed power-up effects
+    if (player.shieldT > 0) player.shieldT = Math.max(0, player.shieldT - dt);
+    if (player.rapidT  > 0) player.rapidT  = Math.max(0, player.rapidT  - dt);
+    if (player.tripleT > 0) player.tripleT = Math.max(0, player.tripleT - dt);
 
     // Auto-fire continuously during play (fire() self-throttles via cooldown).
     // dragging / fireHeld are still honored but auto-fire keeps it always firing.
     fire();
 
     stepBullets(dt);
+    stepPowerups(dt);
     stepCentipede(dt);
   } else if (state === STATE_DEAD){
     deadTimer -= dt;
@@ -729,6 +831,7 @@ function update(dt){
     floatTexts[i].y -= 20 * dt;
     if (floatTexts[i].t <= 0) floatTexts.splice(i,1);
   }
+  if (flash > 0) flash = Math.max(0, flash - dt);
 }
 
 // ---------- Render ----------
@@ -743,15 +846,78 @@ function render(){
   ctx.fillRect(0, H - PLAYER_ROWS*cell, W, PLAYER_ROWS*cell);
 
   drawMushrooms();
+  drawPowerups();
   drawSegments();
   drawBullets();
   if (state === STATE_PLAY || state === STATE_DEAD || state === STATE_WAVECLEAR) drawPlayer();
   drawFloatTexts();
+  drawEffectHud();
+
+  // bomb flash
+  if (flash > 0){
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.6 * (flash / 0.25)).toFixed(3) + ')';
+    ctx.fillRect(0, 0, W, H);
+  }
 
   if (state === STATE_WAVECLEAR){
     bannerText('WAVE ' + wave + ' CLEARED!', '#7cff7c');
   } else if (state === STATE_DEAD){
     bannerText('LIFE LOST', '#ff7c9c');
+  }
+}
+
+function drawPowerups(){
+  if (!powerups) return;
+  for (var i = 0; i < powerups.length; i++){
+    var p = powerups[i];
+    var def = POWERUPS[p.type];
+    var rad = cell * 0.34;
+    var bob = Math.sin(p.t * 6) * cell * 0.04;
+    var x = p.x, y = p.y + bob;
+    // glow halo
+    ctx.globalAlpha = 0.30 + 0.15 * Math.sin(p.t * 6);
+    ctx.fillStyle = def.color;
+    ctx.beginPath(); ctx.arc(x, y, rad * 1.5, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+    // capsule body
+    ctx.fillStyle = def.color;
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI*2); ctx.fill();
+    ctx.lineWidth = Math.max(1, cell*0.05);
+    ctx.strokeStyle = '#0b0b18';
+    ctx.stroke();
+    // label
+    ctx.fillStyle = '#0b0b18';
+    ctx.font = 'bold ' + Math.round(cell*0.42) + 'px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(def.label, x, y + cell*0.02);
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'start';
+  }
+}
+
+// Small badges (bottom-left) showing active timed effects + remaining time bar.
+function drawEffectHud(){
+  if (state !== STATE_PLAY && state !== STATE_DEAD) return;
+  var actives = [];
+  if (player.shieldT > 0) actives.push({ d: POWERUPS.shield, t: player.shieldT });
+  if (player.rapidT  > 0) actives.push({ d: POWERUPS.rapid,  t: player.rapidT });
+  if (player.tripleT > 0) actives.push({ d: POWERUPS.triple, t: player.tripleT });
+  var bw = cell * 1.9, bh = cell * 0.5, gap = cell * 0.16;
+  var x0 = cell * 0.25, y0 = H - cell * 0.25 - bh;
+  for (var i = 0; i < actives.length; i++){
+    var a = actives[i];
+    var y = y0 - i * (bh + gap);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(x0, y, bw, bh);
+    // time bar
+    ctx.fillStyle = a.d.color;
+    ctx.globalAlpha = 0.35;
+    ctx.fillRect(x0, y, bw * Math.min(1, a.t / a.d.dur), bh);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = a.d.color;
+    ctx.font = 'bold ' + Math.round(cell*0.34) + 'px monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(a.d.label + ' ' + a.d.name + ' ' + Math.ceil(a.t), x0 + cell*0.18, y + bh*0.5);
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'start';
   }
 }
 
@@ -840,16 +1006,37 @@ function drawPlayer(){
   ctx.strokeStyle = '#cdebff';
   ctx.lineWidth = Math.max(1, cell*0.05);
   ctx.stroke();
+
+  // Shield bubble — pulses, and blinks during its final 2 seconds.
+  if (player.shieldT > 0){
+    var t = player.shieldT;
+    var blink = t > 2 ? 1 : (Math.sin(t * 18) > -0.2 ? 1 : 0.25);
+    var pulse = 0.5 + 0.25 * Math.sin(t * 6);
+    ctx.save();
+    ctx.globalAlpha = blink * pulse;
+    ctx.strokeStyle = POWERUPS.shield.color;
+    ctx.lineWidth = Math.max(1.5, cell * 0.10);
+    ctx.beginPath();
+    ctx.arc(x, y, cell * 0.78, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.globalAlpha = blink * 0.12;
+    ctx.fillStyle = POWERUPS.shield.color;
+    ctx.beginPath();
+    ctx.arc(x, y, cell * 0.78, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawFloatTexts(){
-  ctx.font = Math.round(cell*0.5) + 'px monospace';
   ctx.textAlign = 'center';
   for (var i = 0; i < floatTexts.length; i++){
     var f = floatTexts[i];
-    ctx.globalAlpha = Math.max(0, f.t / 0.7);
-    ctx.fillStyle = '#ffe07c';
-    ctx.fillText('+' + f.v, f.x, f.y);
+    var isNum = (typeof f.v === 'number');
+    ctx.globalAlpha = Math.max(0, f.t / (isNum ? 0.7 : 1.0));
+    ctx.font = (isNum ? '' : 'bold ') + Math.round(cell*(isNum ? 0.5 : 0.42)) + 'px monospace';
+    ctx.fillStyle = f.color || '#ffe07c';
+    ctx.fillText(isNum ? ('+' + f.v) : f.v, f.x, f.y);
   }
   ctx.globalAlpha = 1;
   ctx.textAlign = 'start';
@@ -873,10 +1060,11 @@ function boot(){
   mushrooms = newMushrooms();
   segments = [];
   bullets = [];
+  powerups = [];
   player = newPlayer();
   state = STATE_MENU;
   showOverlay('CENTIPEDE',
-    'Drag your finger near the bottom to move &mdash; it auto-fires.<br>Desktop: Arrow keys / WASD + Space.<br>Shoot every segment to clear the wave!',
+    'Drag your finger near the bottom to move &mdash; it auto-fires.<br>Desktop: Arrow keys / WASD + Space.<br>Shoot segments to clear the wave. Blasted mushrooms sometimes drop <b>power-ups</b> &mdash; move under them to grab a <b style="color:#5fb8ff">shield</b>, <b style="color:#ffd24a">rapid fire</b>, <b style="color:#b46cff">triple shot</b>, a life, or a bomb!',
     'START');
   rafId = requestAnimationFrame(loop);
 }
