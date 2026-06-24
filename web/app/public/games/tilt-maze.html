@@ -208,12 +208,14 @@
           if (!w.W) solid[gr][gc - 1] = false;
         }
         goal = { gx: 2 * (C - 1) + 1, gy: 2 * (R - 1) + 1 };
-        // Scatter a few holes in open dead-end-ish cells (not start/goal).
+        // Scatter holes through the maze as hazards (start + goal excluded). Holes
+        // are small relative to the corridor (see the radii in checkSpecial/draw
+        // and the marble radius), so the marble can be steered around one even
+        // when it sits in a corridor on the route.
         holes = [];
         const open = [];
         for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
-          if ((r === 0 && c === 0) || (r === C - 1 && c === R - 1)) continue;
-          if ((r === R - 1 && c === C - 1)) continue;
+          if ((r === 0 && c === 0) || (r === R - 1 && c === C - 1)) continue;
           open.push({ gx: 2 * c + 1, gy: 2 * r + 1 });
         }
         const nHoles = Math.round(C * R * cfg.holeF);
@@ -234,7 +236,7 @@
       }
 
       function resetBall() {
-        ball = { x: 1.5 * cellPx, y: 1.5 * cellPx, vx: 0, vy: 0, rad: cellPx * 0.36 };
+        ball = { x: 1.5 * cellPx, y: 1.5 * cellPx, vx: 0, vy: 0, rad: cellPx * 0.28 };
         won = false; lost = false; betaRef = null;
         startTime = performance.now ? 0 : 0;
         elapsed = 0;
@@ -304,7 +306,7 @@
         // holes
         for (const h of holes) {
           const hx = h.gx * cellPx + cellPx / 2, hy = h.gy * cellPx + cellPx / 2;
-          if (Math.hypot(ball.x - hx, ball.y - hy) < cellPx * 0.32) { lost = true; beep(120, 0.3); return; }
+          if (Math.hypot(ball.x - hx, ball.y - hy) < cellPx * 0.13) { lost = true; beep(120, 0.3); return; }
         }
       }
 
@@ -329,7 +331,7 @@
         for (const h of holes) {
           ctx.fillStyle = "#0b1220";
           ctx.beginPath();
-          ctx.arc(h.gx * cellPx + cellPx / 2, h.gy * cellPx + cellPx / 2, cellPx * 0.34, 0, 7);
+          ctx.arc(h.gx * cellPx + cellPx / 2, h.gy * cellPx + cellPx / 2, cellPx * 0.16, 0, 7);
           ctx.fill();
           ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 2; ctx.stroke();
         }
@@ -416,7 +418,7 @@
       const keymap = { ArrowLeft: "l", ArrowRight: "r", ArrowUp: "u", ArrowDown: "d", a: "l", d: "r", w: "u", s: "d" };
       window.addEventListener("keydown", (e) => { const k = keymap[e.key]; if (k) { keys[k] = true; e.preventDefault(); } });
       window.addEventListener("keyup", (e) => { const k = keymap[e.key]; if (k) keys[k] = false; });
-      window.addEventListener("resize", () => { if (solid) { const bx = ball.x / (GW * cellPx), by = ball.y / (GH * cellPx); layout(); ball.x = bx * GW * cellPx; ball.y = by * GH * cellPx; ball.rad = cellPx * 0.36; draw(); } });
+      window.addEventListener("resize", () => { if (solid) { const bx = ball.x / (GW * cellPx), by = ball.y / (GH * cellPx); layout(); ball.x = bx * GW * cellPx; ball.y = by * GH * cellPx; ball.rad = cellPx * 0.28; draw(); } });
 
       buildLevel();
       draw();

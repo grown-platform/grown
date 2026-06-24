@@ -14,7 +14,12 @@ metadata:
 data:
   OPENID_ISSUER: "https://auth.pick.haus"
   OPENID_AUTHORIZATION_ENDPOINT: "https://auth.pick.haus/oauth/v2/authorize"
-  OPENID_JWKS_ENDPOINT: "https://auth.pick.haus/oauth/v2/keys"
+  # JWKS is fetched server-side to verify the id_token signature. Point it at the
+  # in-cluster Zitadel (via the hostAlias on the Deployment below) so it does NOT
+  # round-trip through Cloudflare — Cloudflare bot/rate protection was returning 403
+  # on the repeated fetches during login, breaking the flow. http:// because the
+  # in-cluster zitadel-proxy is plain HTTP; the hostAlias supplies the right Host.
+  OPENID_JWKS_ENDPOINT: "http://auth.pick.haus/oauth/v2/keys"
   OPENID_REDIRECT_URI: "https://guac.pick.haus/"
   OPENID_USERNAME_CLAIM_TYPE: "email"
   OPENID_SCOPE: "openid email profile"
@@ -35,6 +40,14 @@ spec:
     metadata:
       labels: { app: guacamole, part-of: guacamole }
     spec:
+      # Resolve auth.pick.haus to the in-cluster zitadel-proxy so the server-side
+      # JWKS fetch (OPENID_JWKS_ENDPOINT, http) bypasses Cloudflare. The proxy
+      # requires Host: auth.pick.haus, which this alias provides. NOTE: the IP is
+      # the zitadel-proxy Service ClusterIP — update it if that Service is recreated
+      # (`kubectl -n zitadel get svc zitadel-proxy`).
+      hostAliases:
+        - ip: "172.23.178.252"
+          hostnames: ["auth.pick.haus"]
       # NOTE: the upstream Tomcat image is happiest as root (writable work dirs);
       # the gateway's real protection is SSO + the tunnel, not the container user.
       securityContext:
