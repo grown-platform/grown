@@ -245,6 +245,8 @@ var waveTimer = 0;
 var deadTimer = 0;
 var floatTexts = [];
 var flash = 0;   // white screen flash timer (bomb pickup)
+var announceMsg = '';
+var announceT = 0;   // transient on-screen banner timer (e.g., "SPIDERS INCOMING")
 
 // Bottom-crossers: every spawn sends one spider (hazard) and one power-up
 // (reward) across the player's zone from opposite sides — equal amounts of each.
@@ -749,6 +751,8 @@ function winWave(){
 function nextWave(){
   wave++;
   waveEl.textContent = 'WAVE ' + wave;
+  // Telegraph the medium-difficulty bump when the bottom-crossers first arrive.
+  if (wave === CROSSER_START_WAVE){ announceMsg = '⚠ SPIDERS INCOMING'; announceT = 2.6; }
   // add a few mushrooms, keep existing
   var add = 6;
   var tries = 0;
@@ -780,6 +784,7 @@ function startGame(){
   crossers = [];
   crosserTimer = 4;          // first spider/power-up runner a few seconds in
   flash = 0;
+  announceT = 0;
   floatTexts = [];
   spawnCentipede();
   player = newPlayer();
@@ -922,6 +927,7 @@ function update(dt){
     if (floatTexts[i].t <= 0) floatTexts.splice(i,1);
   }
   if (flash > 0) flash = Math.max(0, flash - dt);
+  if (announceT > 0) announceT = Math.max(0, announceT - dt);
 }
 
 // ---------- Render ----------
@@ -954,6 +960,11 @@ function render(){
     bannerText('WAVE ' + wave + ' CLEARED!', '#7cff7c');
   } else if (state === STATE_DEAD){
     bannerText('LIFE LOST', '#ff7c9c');
+  } else if (announceT > 0 && state === STATE_PLAY){
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, announceT / 0.6); // hold, then fade out
+    bannerText(announceMsg, '#ff7c7c');
+    ctx.restore();
   }
 }
 
