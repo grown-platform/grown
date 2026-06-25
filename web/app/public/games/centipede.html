@@ -239,10 +239,19 @@ var segments;    // array of centipede segments
 var bullets;     // array of bullets
 var player;      // shooter
 var powerups;    // falling power-up pickups dropped by destroyed mushrooms
+var crossers;    // things that skitter across the bottom: spiders (hurt) + powerups (help)
+var crosserTimer = 0;
 var waveTimer = 0;
 var deadTimer = 0;
 var floatTexts = [];
 var flash = 0;   // white screen flash timer (bomb pickup)
+
+// Bottom-crossers: every spawn sends one spider (hazard) and one power-up
+// (reward) across the player's zone from opposite sides — equal amounts of each.
+var CROSSER_BASE_INTERVAL = 8;   // seconds between spawns (eases down with wave)
+var CROSSER_MIN_INTERVAL = 4;
+var SPIDER_SCORE = 150;
+var CROSSER_START_WAVE = 5;      // bottom-crossers begin at "medium" difficulty
 
 // ---------- Power-ups ----------
 // Destroyed mushrooms have a chance to drop one of these. It falls; the player
@@ -531,6 +540,19 @@ function stepBullets(dt){
       bullets.splice(i,1);
       continue;
     }
+    // hit a bottom-crosser spider?
+    var sp = -1;
+    for (var ci = 0; ci < crossers.length; ci++){
+      var cr = crossers[ci];
+      if (cr.kind !== 'spider') continue;
+      if (Math.abs(b.x - cr.x) < cell*0.55 && Math.abs(b.y - cr.y) < cell*0.55){ sp = ci; break; }
+    }
+    if (sp >= 0){
+      killSpider(crossers[sp]);
+      crossers.splice(sp, 1);
+      bullets.splice(i, 1);
+      continue;
+    }
     // hit segment? (use smoothed render position so it matches the visuals)
     var hit = -1;
     for (var j = 0; j < segments.length; j++){
@@ -634,6 +656,57 @@ function doBomb(){
   flash = 0.25;
 }
 
+// ---------- Bottom crossers (spider hazard + power-up runner) ----------
+function bottomBand(){
+  return { top: H - PLAYER_ROWS * cell + cell*0.6, bot: H - cell*0.6 };
+}
+function spawnCrossers(){
+  var z = bottomBand();
+  var fromLeft = Math.random() < 0.5;
+  var spd = (3.2 + Math.min(wave, 8) * 0.12) * cell;
+  // Spider enters from one side; the power-up enters from the other — same count.
+  crossers.push({
+    kind: 'spider',
+    x: fromLeft ? -cell : W + cell,
+    baseY: z.top + Math.random() * (z.bot - z.top),
+    y: 0, vx: fromLeft ? spd : -spd,
+    phase: Math.random() * 6.28, t: 0
+  });
+  crossers.push({
+    kind: 'power', type: weightedPowerupType(),
+    x: fromLeft ? W + cell : -cell,
+    baseY: z.top + Math.random() * (z.bot - z.top),
+    y: 0, vx: fromLeft ? -spd : spd,
+    phase: Math.random() * 6.28, t: 0
+  });
+}
+function stepCrossers(dt){
+  var amp = cell * 0.5;
+  var hitR = cell * 0.6;
+  for (var i = crossers.length - 1; i >= 0; i--){
+    var cr = crossers[i];
+    cr.t += dt;
+    cr.x += cr.vx * dt;
+    cr.y = cr.baseY + Math.sin(cr.t * 4 + cr.phase) * amp;
+    if (cr.x < -cell*1.5 || cr.x > W + cell*1.5){ crossers.splice(i,1); continue; }
+    var dx = cr.x - player.x, dy = cr.y - player.y;
+    if (dx*dx + dy*dy < hitR*hitR){
+      if (cr.kind === 'spider'){
+        if (!shielded()){ crossers.splice(i,1); loseLife(); return; }
+        // shielded: spider harmlessly passes
+      } else {
+        applyPowerup(cr.type);
+        crossers.splice(i,1);
+      }
+    }
+  }
+}
+function killSpider(cr){
+  addScore(SPIDER_SCORE);
+  floatTexts.push({ x: cr.x, y: cr.y, t: 0.7, v: SPIDER_SCORE });
+  sKillSeg();
+}
+
 // ---------- Scoring / lives ----------
 function addScore(n){ score += n; scoreEl.textContent = 'SCORE ' + score; if (window.GrownGame) window.GrownGame.setHighScore(score); }
 function setLivesHud(){
@@ -647,6 +720,8 @@ function loseLife(){
   setLivesHud();
   sDie();
   bullets = [];
+  crossers = [];          // clear the bottom so you don't respawn onto a spider
+  crosserTimer = Math.max(CROSSER_MIN_INTERVAL, 3);
   if (lives <= 0){
     state = STATE_OVER;
     if (window.GrownGame) window.GrownGame.setHighScore(score);
@@ -687,6 +762,8 @@ function nextWave(){
   player = newPlayer();
   bullets = [];
   powerups = [];
+  crossers = [];
+  crosserTimer = 4;
   state = STATE_PLAY;
 }
 
@@ -700,6 +777,8 @@ function startGame(){
   mushrooms = newMushrooms();
   bullets = [];
   powerups = [];
+  crossers = [];
+  crosserTimer = 4;          // first spider/power-up runner a few seconds in
   flash = 0;
   floatTexts = [];
   spawnCentipede();
@@ -814,9 +893,20 @@ function update(dt){
     // dragging / fireHeld are still honored but auto-fire keeps it always firing.
     fire();
 
+    // bottom-crosser spawns (spider hazard + power-up runner) — these only kick
+    // in at "medium" difficulty (wave CROSSER_START_WAVE+) as an added challenge.
+    if (wave >= CROSSER_START_WAVE){
+      crosserTimer -= dt;
+      if (crosserTimer <= 0){
+        spawnCrossers();
+        crosserTimer = Math.max(CROSSER_MIN_INTERVAL, CROSSER_BASE_INTERVAL - wave * 0.3);
+      }
+    }
+
     stepBullets(dt);
     stepPowerups(dt);
     stepCentipede(dt);
+    stepCrossers(dt);
   } else if (state === STATE_DEAD){
     deadTimer -= dt;
     if (deadTimer <= 0) reviveAfterDeath();
@@ -850,6 +940,7 @@ function render(){
   drawSegments();
   drawBullets();
   if (state === STATE_PLAY || state === STATE_DEAD || state === STATE_WAVECLEAR) drawPlayer();
+  drawCrossers();
   drawFloatTexts();
   drawEffectHud();
 
@@ -866,32 +957,63 @@ function render(){
   }
 }
 
+function drawPowerCapsule(x, y, type, t){
+  var def = POWERUPS[type];
+  var rad = cell * 0.34;
+  // glow halo
+  ctx.globalAlpha = 0.30 + 0.15 * Math.sin(t * 6);
+  ctx.fillStyle = def.color;
+  ctx.beginPath(); ctx.arc(x, y, rad * 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 1;
+  // capsule body
+  ctx.fillStyle = def.color;
+  ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI*2); ctx.fill();
+  ctx.lineWidth = Math.max(1, cell*0.05);
+  ctx.strokeStyle = '#0b0b18';
+  ctx.stroke();
+  // label
+  ctx.fillStyle = '#0b0b18';
+  ctx.font = 'bold ' + Math.round(cell*0.42) + 'px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(def.label, x, y + cell*0.02);
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'start';
+}
 function drawPowerups(){
   if (!powerups) return;
   for (var i = 0; i < powerups.length; i++){
     var p = powerups[i];
-    var def = POWERUPS[p.type];
-    var rad = cell * 0.34;
     var bob = Math.sin(p.t * 6) * cell * 0.04;
-    var x = p.x, y = p.y + bob;
-    // glow halo
-    ctx.globalAlpha = 0.30 + 0.15 * Math.sin(p.t * 6);
-    ctx.fillStyle = def.color;
-    ctx.beginPath(); ctx.arc(x, y, rad * 1.5, 0, Math.PI*2); ctx.fill();
-    ctx.globalAlpha = 1;
-    // capsule body
-    ctx.fillStyle = def.color;
-    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI*2); ctx.fill();
-    ctx.lineWidth = Math.max(1, cell*0.05);
-    ctx.strokeStyle = '#0b0b18';
-    ctx.stroke();
-    // label
-    ctx.fillStyle = '#0b0b18';
-    ctx.font = 'bold ' + Math.round(cell*0.42) + 'px monospace';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(def.label, x, y + cell*0.02);
-    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'start';
+    drawPowerCapsule(p.x, p.y + bob, p.type, p.t);
   }
+}
+function drawCrossers(){
+  if (!crossers) return;
+  for (var i = 0; i < crossers.length; i++){
+    var cr = crossers[i];
+    if (cr.kind === 'spider') drawSpider(cr);
+    else drawPowerCapsule(cr.x, cr.y, cr.type, cr.t);
+  }
+}
+function drawSpider(cr){
+  var x = cr.x, y = cr.y, rad = cell * 0.30;
+  // legs
+  ctx.strokeStyle = '#ff5c5c';
+  ctx.lineWidth = Math.max(1, cell*0.05);
+  for (var k = -1; k <= 1; k++){
+    ctx.beginPath();
+    ctx.moveTo(x - rad*0.5, y); ctx.lineTo(x - rad*1.4, y + k*rad*0.7);
+    ctx.moveTo(x + rad*0.5, y); ctx.lineTo(x + rad*1.4, y + k*rad*0.7);
+    ctx.stroke();
+  }
+  // body
+  ctx.fillStyle = '#ff5c5c';
+  ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#7a1010';
+  ctx.beginPath(); ctx.arc(x, y, rad*0.55, 0, Math.PI*2); ctx.fill();
+  // eyes
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - rad*0.32, y - rad*0.18, rad*0.16, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + rad*0.32, y - rad*0.18, rad*0.16, 0, Math.PI*2); ctx.fill();
 }
 
 // Small badges (bottom-left) showing active timed effects + remaining time bar.
@@ -1074,6 +1196,7 @@ function boot(){
   segments = [];
   bullets = [];
   powerups = [];
+  crossers = [];
   player = newPlayer();
   state = STATE_MENU;
   showOverlay('CENTIPEDE',
