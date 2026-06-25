@@ -361,7 +361,7 @@ var enteringTimer = 0;     // staggered entry from the top edge
 function spawnCentipede(){
   segments = [];
   var len = 9 + Math.min(wave, 6);                 // grows a little with waves
-  stepInterval = Math.max(0.05, 0.18 - (wave - 1) * 0.018); // faster each wave
+  stepInterval = Math.max(0.08, 0.18 - (wave - 1) * 0.01); // gently faster each wave, capped
   stepAccum = 0;
   enteringTimer = 0;
   // Build chain head-first. Head starts just off the left edge on row 0, moving
