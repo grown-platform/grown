@@ -930,13 +930,13 @@ function drawMushrooms(){
       var dmg = (4 - hp) / 4; // 0 = full
       // cap
       var cx = x + cell*0.5;
-      ctx.fillStyle = shadeGreen(hp);
+      ctx.fillStyle = mushCapColor(hp);
       ctx.beginPath();
       ctx.arc(cx, y + cell*0.42, cell*0.34, Math.PI, 0);
       ctx.closePath();
       ctx.fill();
       // stem
-      ctx.fillStyle = hp >= 3 ? '#caa15a' : '#8a6e3a';
+      ctx.fillStyle = mushStemColor(hp);
       ctx.fillRect(cx - cell*0.10, y + cell*0.42, cell*0.20, cell*0.34);
       // damage spots
       if (dmg > 0){
@@ -953,6 +953,19 @@ function shadeGreen(hp){
     case 2: return '#46a846';
     default: return '#2e7a2e';
   }
+}
+// Mushroom palette. Stays green through wave 9; from wave 10 on the hue cycles
+// each level (Apeiron-style garden recolor). Damage still darkens the cap.
+function mushHue(){ return ((wave - 10) * 40) % 360; }
+function mushCapColor(hp){
+  if (wave < 10) return shadeGreen(hp);
+  var light = hp >= 4 ? 66 : (hp === 3 ? 55 : (hp === 2 ? 45 : 34));
+  return 'hsl(' + mushHue() + ',62%,' + light + '%)';
+}
+function mushStemColor(hp){
+  if (wave < 10) return hp >= 3 ? '#caa15a' : '#8a6e3a';
+  var light = hp >= 3 ? 50 : 38;
+  return 'hsl(' + mushHue() + ',34%,' + light + '%)';
 }
 
 function drawSegments(){
