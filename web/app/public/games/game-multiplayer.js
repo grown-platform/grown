@@ -51,12 +51,32 @@
   var cb = { ready: null, move: null, reset: null, left: null };
   var gameName = "Game";
 
+  // Local two-tab smoke-test transport. With ?mp=local the game skips the real
+  // gamerooms WebSocket relay entirely and pairs two SAME-BROWSER tabs over a
+  // BroadcastChannel, so you can play any online game across two tabs with no
+  // backend. Open the same ?mp=local URL in exactly two tabs; the first becomes
+  // Player 1, the second Player 2. Purely a dev/QA affordance — it never engages
+  // without the explicit query param.
+  var LOCAL = (function () {
+    try { return new URLSearchParams(location.search).get("mp") === "local"; }
+    catch (e) { return false; }
+  })();
+  var localChan = null, localSend = null;
+
   var GameMP = {
     setup: function (opts) {
       opts = opts || {};
       gameName = opts.gameName || "Game";
       buildUI();
       injectModeButton();
+      // Two-tab smoke test: with ?mp=local, auto-pair this tab with another
+      // same-browser tab on the same URL (no relay, no panel). Open the URL in
+      // exactly two tabs to start a match.
+      if (LOCAL) {
+        var lroom = new URLSearchParams(location.search).get("room") || "LOCAL";
+        connect(lroom, "", suggestName(), null, true);
+        return;
+      }
       // Auto-open the join flow when arriving via a share link.
       var room = new URLSearchParams(location.search).get("room");
       if (room) openPanel(room);
@@ -95,9 +115,35 @@
     b.onclick = function () { openPanel(null); };
   }
 
-  function sendMsg(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+  function sendMsg(obj) {
+    if (localSend) { localSend(obj); return; }
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+  }
+
+  // Shared handling of relay/server messages (same shape for the real WebSocket
+  // and the local BroadcastChannel transport).
+  function handleServer(m) {
+    if (m.type === "roster") {
+      role = (m.peers && m.peers.length <= 1) ? 0 : 1;
+      peers = (m.peers || []).length;
+      setStatus(role === 0 ? "Waiting for an opponent…" : "Connected — get ready!");
+      if (peers >= 2) fireReady();
+    } else if (m.type === "join") {
+      peers++;
+      if (peers >= 2) fireReady();
+    } else if (m.type === "leave") {
+      peers = Math.max(0, peers - 1);
+      setStatus("Opponent left.");
+      if (cb.left) cb.left();
+    } else if (m.type === "move") {
+      if (cb.move) cb.move(m);
+    } else if (m.type === "reset") {
+      if (cb.reset) cb.reset();
+    }
+  }
 
   function connect(code, pass, name, onErr, isHost) {
+    if (LOCAL) { connectLocal(code); return; }
     var proto = location.protocol === "https:" ? "wss://" : "ws://";
     var url = proto + location.host + "/api/v1/gamerooms/ws?room=" + encodeURIComponent(code) +
       "&password=" + encodeURIComponent(pass) + "&name=" + encodeURIComponent(name) +
@@ -109,26 +155,68 @@
     active = true;
     ws.onmessage = function (ev) {
       var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-      if (m.type === "roster") {
-        role = (m.peers && m.peers.length <= 1) ? 0 : 1;
-        peers = (m.peers || []).length;
-        setStatus(role === 0 ? "Waiting for an opponent…" : "Connected — get ready!");
-        if (peers >= 2) fireReady();
-      } else if (m.type === "join") {
-        peers++;
-        if (peers >= 2) fireReady();
-      } else if (m.type === "leave") {
-        peers = Math.max(0, peers - 1);
-        setStatus("Opponent left.");
-        if (cb.left) cb.left();
-      } else if (m.type === "move") {
-        if (cb.move) cb.move(m);
-      } else if (m.type === "reset") {
-        if (cb.reset) cb.reset();
-      }
+      handleServer(m);
     };
     ws.onerror = function () { onErr && onErr("Connection error."); };
     ws.onclose = function () { if (active && peers < 2) setStatus("Disconnected."); };
+  }
+
+  // ---- Local two-tab transport (?mp=local) ---------------------------------
+  // Pairs two same-browser tabs over a BroadcastChannel, emulating just enough
+  // of the relay (roster / join / leave / move / reset) for a turn-based game.
+  // Role is elected deterministically: earliest (timestamp, id) is Player 1.
+  function connectLocal(code) {
+    var chan = new BroadcastChannel("grown-mp-local-" + (code || "LOCAL"));
+    localChan = chan;
+    active = true;
+    var myId = Math.random().toString(36).slice(2);
+    var myT = Date.now();
+    var seen = {};            // id -> timestamp (includes self)
+    seen[myId] = myT;
+    var settled = false;
+
+    function rank() {
+      var ids = Object.keys(seen).sort(function (a, b) {
+        return (seen[a] - seen[b]) || (a < b ? -1 : 1);
+      });
+      return ids.indexOf(myId);
+    }
+    function settle() {
+      if (settled) return;
+      settled = true;
+      role = rank() === 0 ? 0 : 1;
+      handleServer({ type: "roster", peers: new Array(Object.keys(seen).length) });
+    }
+
+    chan.onmessage = function (ev) {
+      var m = ev.data;
+      if (!m) return;
+      if (m.kind === "presence") {
+        var had = (seen[m.id] !== undefined);
+        seen[m.id] = m.t;
+        // Let the newcomer learn we exist so both sides see the full roster.
+        chan.postMessage({ kind: "ack", id: myId, t: myT });
+        if (settled && !had) handleServer({ type: "join" });
+      } else if (m.kind === "ack") {
+        seen[m.id] = m.t;
+      } else if (m.kind === "data") {
+        handleServer(m.payload);
+      } else if (m.kind === "bye") {
+        if (seen[m.id] !== undefined) {
+          delete seen[m.id];
+          if (settled) handleServer({ type: "leave" });
+        }
+      }
+    };
+
+    localSend = function (obj) { chan.postMessage({ kind: "data", payload: obj }); };
+    window.addEventListener("pagehide", function () {
+      try { chan.postMessage({ kind: "bye", id: myId }); } catch (e) {}
+    });
+
+    chan.postMessage({ kind: "presence", id: myId, t: myT });
+    // Give the other tab a beat to announce itself before electing roles.
+    setTimeout(settle, 400);
   }
 
   function fireReady() {
