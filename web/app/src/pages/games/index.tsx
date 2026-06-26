@@ -165,6 +165,7 @@ const GAMES: AppTile[] = [
   arcade("war", "War", "#7F1D1D", "Style"),
   arcade("slot-machine", "Slot Machine", "#B91C1C", "Casino"),
   arcade("yahtzee", "Yahtzee", "#4F46E5", "Casino"),
+  arcade("liars-dice", "Liar's Dice", "#7C2D12", "Casino"),
   arcade("pig", "Pig", "#DB2777", "Casino"),
   arcade("word-scramble", "Word Scramble", "#0D9488", "Shuffle"),
   arcade("wordle", "Wordle", "#16A34A", "Apps"),
@@ -236,6 +237,7 @@ const CATEGORIES: { key: string; label: string; icon: string }[] = [
   { key: "Speed", label: "Speed", icon: "Bolt" },
   { key: "Group", label: "Group", icon: "Groups" },
   { key: "2-Player", label: "2-Player", icon: "People" },
+  { key: "Online", label: "Online", icon: "Wifi" },
   { key: "Adventure", label: "Adventure", icon: "Explore" },
   { key: "Port", label: "Port", icon: "ImportExport" },
 ];
@@ -256,7 +258,7 @@ const CATEGORY_IDS: Record<string, string[]> = {
   Card: ["solitaire", "spider-solitaire", "freecell", "pyramid-solitaire", "tri-peaks", "golf-solitaire", "war", "crazy-eights", "go-fish", "old-maid", "snap", "higher-lower", "monopoly-deal", "mahjong-solitaire"],
   Board: ["tic-tac-toe", "connect-four", "reversi", "checkers", "gomoku", "dots-and-boxes", "mancala", "nine-mens-morris", "dominoes", "battleship", "chinese-checkers", "ludo", "snakes-and-ladders", "chess", "ultimate-tic-tac-toe"],
   Word: ["hangman", "crossword", "word-search", "word-scramble", "wordle", "typing-test", "boggle", "cryptogram", "word-ladder"],
-  Casino: ["blackjack", "video-poker", "baccarat", "slot-machine", "yahtzee", "pig"],
+  Casino: ["blackjack", "video-poker", "baccarat", "slot-machine", "yahtzee", "pig", "liars-dice"],
   Kids: ["memory-game", "whack-a-mole", "simon", "rock-paper-scissors", "coloring", "math-quiz", "balloon-pop", "fruit-catch", "dot-to-dot", "cookie-clicker", "guess-the-number"],
   Speed: ["reaction-time", "aim-trainer", "piano-tiles"],
 };
@@ -293,6 +295,14 @@ const TWO_PLAYER_IDS = new Set<string>([
   // Hidden-hand card/tile games — 2-player uses a slide-to-reveal privacy
   // handoff between turns so neither player sees the other's hand.
   "dominoes", "go-fish", "crazy-eights", "old-maid", "monopoly-deal",
+]);
+
+// "Online" surfaces games that support real-time networked multiplayer via the
+// shared GameMP layer (create/join a room, share a link). Keep in sync with the
+// games that call GameMP.setup(). liars-dice is online-ONLY.
+const ONLINE_IDS = new Set<string>([
+  "battleship", "chess", "checkers", "connect-four", "dots-and-boxes",
+  "gomoku", "mancala", "reversi", "tic-tac-toe", "liars-dice",
 ]);
 
 // Per-device play counts, persisted in localStorage under grown.games.plays as
@@ -595,7 +605,9 @@ export default function GamesApp({ user }: { user: User | null }) {
       ? GROUP_IDS.has(id)
       : cat === "2-Player"
         ? TWO_PLAYER_IDS.has(id)
-        : CATEGORY_OF[id] === cat || (EXTRA_CATS[id]?.includes(cat) ?? false));
+        : cat === "Online"
+          ? ONLINE_IDS.has(id)
+          : CATEGORY_OF[id] === cat || (EXTRA_CATS[id]?.includes(cat) ?? false));
   let filteredGames = GAMES.filter(
     (g) =>
       matchesCat(g.id) &&
