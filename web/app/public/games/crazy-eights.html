@@ -426,6 +426,7 @@
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function(){
   "use strict";
@@ -483,9 +484,13 @@
   var busy = false;    // lock input during animations / cpu turn / handoff
   var drewThisTurn = false; // whether active seat has drawn at least once this turn
 
-  // mode: 'ai' = vs computer (DEFAULT, unchanged), '2p' = pass & play hot seat.
+  // mode: 'ai' = vs computer (DEFAULT, unchanged), '2p' = pass & play hot seat,
+  // 'online' = N-player networked match over GameMP (2–6 players).
   // In 'ai', seat "player" is the human and seat "cpu" is the computer.
   // In '2p', seat "player" is Player 1 and seat "cpu" is Player 2 (both human).
+  // In 'online' the local/AI seat model is bypassed entirely — see the ONLINE
+  // section below (onSeat / onCount / onHands / onTurnSeat), which has its own
+  // deterministic deal, render, and action paths.
   var mode = "ai";
 
   // In '2p', the hand area always renders from the perspective of the seat whose
@@ -605,6 +610,8 @@
   }
 
   function render(){
+    // In online mode, the seat-indexed network renderer owns the board.
+    if(mode === "online"){ onRender(); return; }
     // Perspective: the seat whose hand we render face-up (active human viewer).
     // In 'ai' this is always "player"; in '2p' it follows whose turn it is.
     var viewer = viewerSeat();
@@ -724,6 +731,7 @@
   }
 
   function onDraw(){
+    if(mode === "online") return; // online draws are handled by onDrawNet()
     if(gameOver || busy || !isHumanTurn()) return;
     var hand = handOf(turn);
     ensureStock();
@@ -995,8 +1003,9 @@
   elStockPile.addEventListener("click", onDraw);
   // "New Game" returns to the mode picker so you can switch AI / 2-player.
   document.getElementById("newBtn").addEventListener("click", function(){ try{ac()&&ac().resume();}catch(e){} showModeSelect(); });
-  // "Play Again" from the win overlay restarts the SAME mode.
-  document.getElementById("winNewBtn").addEventListener("click", newGame);
+  // "Play Again" from the win overlay restarts the SAME mode (local only; the
+  // online rematch is wired separately and uses host-broadcast re-deal).
+  document.getElementById("winNewBtn").addEventListener("click", function(){ if(mode !== "online") newGame(); });
   document.getElementById("modeAi").addEventListener("click", function(){ startMode("ai"); });
   document.getElementById("modeTwo").addEventListener("click", function(){ startMode("2p"); });
 
@@ -1010,6 +1019,371 @@
   // prevent double-tap zoom / context menu
   document.addEventListener("gesturestart", function(e){ e.preventDefault(); });
   document.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+
+  // ======================================================================
+  // ONLINE MULTIPLAYER (GameMP) — N players, 2–6
+  // ----------------------------------------------------------------------
+  // Lockstep, host-seeded. There is no authoritative server: seat 0 picks a
+  // seed and broadcasts {action:"start", seed}; EVERY client builds the same
+  // 52-card deck, shuffles it with the same seeded PRNG, and deals identically
+  // (7 cards each for 2 players, 5 otherwise). From then on each move
+  // ({play|draw|pass|reshuffle}) is applied deterministically on every client,
+  // so all clients stay in sync from the one shared deal. Hands are soft-hidden
+  // (every client technically holds the full deal in memory) — fine for casual
+  // play. Turn order follows seat order; we only ACT on our own seat and we
+  // gate input so we can never play out of turn.
+  //
+  // Reuses the shared globals/DOM where it can: discard[], activeSuit, topCard(),
+  // canPlay(), cardHTML(), and the same hand / pile / overlay elements. It keeps
+  // its own seat-indexed hands (onHands) and stock so the 2-seat local model is
+  // untouched.
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function seededShuffle(arr,rng){for(var i=arr.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var t=arr[i];arr[i]=arr[j];arr[j]=t;}return arr;}
+
+  var onSeat = 0;        // our seat index (0..N-1); seat 0 = host
+  var onCount = 2;       // number of players in this match
+  var onHands = [];      // onHands[seat] -> array of card objects
+  var onTurnSeat = 0;    // whose turn it is (seat index)
+  var onStock = [];      // shared draw pile (deterministic; top = end)
+  var onDrewThisTurn = false; // did the active seat already draw once this turn?
+  var onAwaitSuit = false;    // true while WE (host or us) are picking a suit for our 8
+  var onOver = false;
+  var onSeed = 0;        // current deal seed (for reshuffle derivation)
+  var reshuffleCounter = 0;
+
+  function onMyTurn(){ return mode === "online" && !onOver && onTurnSeat === onSeat && !onAwaitSuit; }
+  function onName(seat){ return seat === onSeat ? "You" : "Player " + (seat + 1); }
+  function onNextSeat(seat){ return (seat + 1) % onCount; }
+
+  // Build the identical deal on every client from a seed.
+  function onDeal(seed){
+    onSeed = seed >>> 0;
+    reshuffleCounter = 0;
+    var rng = mulberry32(onSeed);
+    var deck = seededShuffle(buildDeck(), rng); // top = end (we pop)
+    onHands = [];
+    for(var s=0;s<onCount;s++) onHands.push([]);
+    var per = (onCount === 2) ? 7 : 5;
+    // Deal round-robin starting at seat 0, mirroring a real deal.
+    for(var n=0;n<per;n++){
+      for(var s2=0;s2<onCount;s2++){ onHands[s2].push(deck.pop()); }
+    }
+    // Flip one card to start the discard pile; remainder is the stock.
+    discard = [deck.pop()];
+    onStock = deck; // top = end (we pop)
+    activeSuit = topCard().suit;
+    onTurnSeat = 0;
+    onOver = false;
+    onDrewThisTurn = false;
+    onAwaitSuit = false;
+    sortCards(onHands[onSeat]);
+  }
+
+  // Refill the stock from the discard pile when it empties — done in lockstep.
+  // This is only ever called by the player who is currently drawing (it's their
+  // turn), so THAT seat is the authority: it derives a deterministic reshuffle
+  // seed, broadcasts it, and applies it; every other client applies the same
+  // seed on receipt (onMove), so all stocks end up identical. Returns true once
+  // the stock has cards again.
+  function onEnsureStock(){
+    if(onStock.length > 0) return true;
+    if(discard.length <= 1) return false; // nothing to recycle
+    var seed = (onSeed ^ (0x9E3779B9 * (reshuffleCounter + 1))) >>> 0;
+    GameMP.send({ action: "reshuffle", seat: onSeat, seed: seed });
+    onApplyReshuffle(seed);
+    return onStock.length > 0;
+  }
+  function onApplyReshuffle(seed){
+    if(discard.length <= 1) return;
+    reshuffleCounter++;
+    var keep = discard.pop();
+    var rng = mulberry32(seed >>> 0);
+    onStock = seededShuffle(discard, rng);
+    discard = [keep];
+  }
+
+  // ---- Online rendering -------------------------------------------------
+  function onRender(){
+    if(mode !== "online") return;
+    // Opponents row: show every OTHER seat as a stack of card-backs + count,
+    // with a turn highlight. (Reuses the single opponents row.)
+    var html = "";
+    var labelParts = [];
+    for(var s=0;s<onCount;s++){
+      if(s === onSeat) continue;
+      var n = onHands[s].length;
+      var show = Math.min(n, 6);
+      var isTurn = (onTurnSeat === s && !onOver);
+      html += '<span style="display:inline-flex;flex-direction:column;align-items:center;margin:0 6px;'+
+              (isTurn ? 'filter:drop-shadow(0 0 4px #ffd54a);' : '') + '">';
+      html += '<span style="display:flex;gap:2px;">';
+      for(var i=0;i<show;i++){ html += '<span class="mini-back"></span>'; }
+      if(show === 0){ html += '<span style="height:38px;display:inline-block;"></span>'; }
+      html += '</span>';
+      html += '<span class="label" style="'+(isTurn?'color:#ffd54a;font-weight:700;':'')+'">'+
+              'Player '+(s+1)+': '+n+(n===1?' card':' cards')+'</span>';
+      html += '</span>';
+      labelParts.push("P"+(s+1)+" "+n);
+    }
+    elOppRow.innerHTML = html;
+    elOppLabel.textContent = "";
+
+    // discard top + active suit badge
+    var top = topCard();
+    var td = document.createElement("div");
+    td.className = "card";
+    td.innerHTML = cardHTML(top);
+    elDiscardTop.innerHTML = "";
+    elDiscardTop.appendChild(td);
+    if(top.rank === "8" || activeSuit !== top.suit){
+      var red = SUIT_RED[activeSuit];
+      elSuitBadge.innerHTML = 'Suit: <span style="'+(red?"color:#ff8a8a":"color:#fff")+'">'+SUIT_SYM[activeSuit]+" "+SUIT_NAME[activeSuit]+'</span>';
+    } else { elSuitBadge.innerHTML = ""; }
+
+    elStockCount.textContent = onStock.length + " left";
+
+    // our hand (face-up); legal cards highlighted only on our turn
+    elHand.innerHTML = "";
+    var myHand = onHands[onSeat];
+    var canAct = onMyTurn();
+    var anyPlayable = false;
+    for(var k=0;k<myHand.length;k++){
+      (function(card){
+        var c = document.createElement("div");
+        c.className = "card";
+        c.innerHTML = cardHTML(card);
+        if(canAct){
+          if(canPlay(card)){ c.classList.add("playable"); anyPlayable = true; }
+          else { c.classList.add("dim"); }
+        }
+        c.addEventListener("click", function(){ onPlayCardNet(card); });
+        elHand.appendChild(c);
+      })(myHand[k]);
+    }
+
+    // turn indicator
+    if(onOver){
+      elTurn.textContent = "";
+    } else if(onTurnSeat === onSeat){
+      elTurn.textContent = anyPlayable ? "Your turn — play a card" : "Your turn — draw a card";
+      elTurn.style.color = "#ffd54a";
+    } else {
+      elTurn.textContent = "Player " + (onTurnSeat + 1) + "'s turn…";
+      elTurn.style.color = "#fff";
+    }
+  }
+
+  // ---- Online actions ---------------------------------------------------
+  // Play a card from OUR hand. 8s are wild: we pick the suit, then broadcast.
+  function onPlayCardNet(card){
+    if(!onMyTurn()) return;
+    var hand = onHands[onSeat];
+    if(hand.indexOf(card) < 0) return;
+    if(!canPlay(card)){
+      sfx.bad();
+      setMsg("Can't play that — match suit ("+SUIT_NAME[activeSuit]+") or rank ("+topCard().rank+"), or an 8.");
+      return;
+    }
+    if(card.rank === "8"){
+      onAwaitSuit = true;
+      sfx.wild();
+      render();
+      openSuitPickerOnline(function(chosen){
+        onAwaitSuit = false;
+        onApplyPlay(onSeat, card, chosen);
+        GameMP.send({ action: "play", seat: onSeat, card: card, declaredSuit: chosen });
+      });
+      return;
+    }
+    onApplyPlay(onSeat, card, null);
+    GameMP.send({ action: "play", seat: onSeat, card: card });
+  }
+
+  // Apply a play (ours or a peer's) deterministically. declaredSuit only for 8s.
+  function onApplyPlay(seat, card, declaredSuit){
+    var hand = onHands[seat];
+    // remove the matching card object (peer cards are value-equal, not identical)
+    var idx = -1;
+    for(var i=0;i<hand.length;i++){ if(hand[i].rank === card.rank && hand[i].suit === card.suit){ idx = i; break; } }
+    if(idx >= 0) hand.splice(idx,1);
+    discard.push({ rank: card.rank, suit: card.suit });
+    if(card.rank === "8"){
+      activeSuit = declaredSuit || card.suit;
+      if(seat !== onSeat) sfx.wild();
+      setMsg(onName(seat) + " played an 8 → " + SUIT_NAME[activeSuit] + ".");
+    } else {
+      activeSuit = card.suit;
+      sfx.play();
+      setMsg(onName(seat) + " played " + card.rank + SUIT_SYM[card.suit] + ".");
+    }
+    onDrewThisTurn = false;
+    if(hand.length === 0){ onEndGame(seat); return; }
+    onTurnSeat = onNextSeat(seat);
+    onRender();
+  }
+
+  // Draw one card. If it isn't playable, the player may draw again or pass.
+  function onDrawNet(){
+    if(!onMyTurn()) return;
+    if(onStock.length === 0){
+      if(!onEnsureStock()){
+        // No cards left to draw at all → pass.
+        setMsg("Stock empty — you pass.");
+        sfx.draw();
+        onApplyPass(onSeat);
+        GameMP.send({ action: "pass", seat: onSeat });
+        return;
+      }
+    }
+    var card = onStock.pop();
+    onHands[onSeat].push(card);
+    sortCards(onHands[onSeat]);
+    onDrewThisTurn = true;
+    sfx.draw();
+    GameMP.send({ action: "draw", seat: onSeat, card: card });
+    if(canPlay(card)){
+      setMsg("Drew the " + card.rank + SUIT_SYM[card.suit] + " — you can play it.");
+    } else {
+      setMsg("Drew the " + card.rank + SUIT_SYM[card.suit] + ". Draw again or pass.");
+    }
+    onRender();
+  }
+
+  // A peer drew (we remove the same card from the shared stock to stay in sync).
+  function onApplyDraw(seat, card){
+    // The card is removed from the deterministic stock; locate & splice it so the
+    // pile order stays identical for everyone.
+    if(onStock.length){
+      var top = onStock[onStock.length-1];
+      if(top && top.rank === card.rank && top.suit === card.suit){ onStock.pop(); }
+      else {
+        for(var i=onStock.length-1;i>=0;i--){ if(onStock[i].rank===card.rank && onStock[i].suit===card.suit){ onStock.splice(i,1); break; } }
+      }
+    }
+    onHands[seat].push({ rank: card.rank, suit: card.suit });
+    sfx.draw();
+    setMsg("Player " + (seat+1) + " drew a card.");
+    onRender();
+  }
+
+  function onApplyPass(seat){
+    onDrewThisTurn = false;
+    onTurnSeat = onNextSeat(seat);
+    if(seat !== onSeat) setMsg("Player " + (seat+1) + " passed.");
+    onRender();
+  }
+
+  // Suit picker for an 8 in online mode (own dedicated callback path).
+  function openSuitPickerOnline(cb){
+    elSuitPrompt.textContent = "You played an 8 — pick the next suit.";
+    elSuitPicker.innerHTML = "";
+    SUITS.forEach(function(s){
+      var b = document.createElement("button");
+      b.className = "suit-btn";
+      b.textContent = SUIT_SYM[s];
+      b.style.color = SUIT_RED[s] ? "#d11" : "#111";
+      b.addEventListener("click", function(){
+        elSuitOverlay.classList.remove("show");
+        setMsg("You chose " + SUIT_NAME[s] + ".");
+        cb(s);
+      });
+      elSuitPicker.appendChild(b);
+    });
+    elSuitOverlay.classList.add("show");
+  }
+
+  function onEndGame(winnerSeat){
+    onOver = true;
+    onRender();
+    var iWon = winnerSeat === onSeat;
+    if(iWon){ sfx.win(); } else { sfx.lose(); }
+    elWinTitle.textContent = iWon ? "You Win! \u{1F389}" : (onName(winnerSeat) + " Wins!");
+    elWinText.textContent = iWon
+      ? "You emptied your hand first. Nicely played!"
+      : "Player " + (winnerSeat+1) + " emptied their hand first.";
+    if(window.GrownGame && iWon) window.GrownGame.setHighScore(window.GrownGame.highScore() + 1);
+    // Host-only rematch (re-seeds + broadcasts a fresh deal via onReset).
+    var wb = document.getElementById("winNewBtn");
+    wb.textContent = onSeat === 0 ? "Play again" : "Waiting for host…";
+    wb.style.display = onSeat === 0 ? "" : "none";
+    elWinOverlay.classList.add("show");
+  }
+
+  function onStartFresh(){
+    // Seat 0 picks a seed, broadcasts the deal, and everyone deals identically.
+    var seed = (Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
+    GameMP.send({ action: "start", seat: 0, seed: seed });
+    onBeginMatch(seed);
+  }
+  function onBeginMatch(seed){
+    mode = "online";
+    elModeOverlay.classList.remove("show");
+    elWinOverlay.classList.remove("show");
+    elSuitOverlay.classList.remove("show");
+    setHandoff(false);
+    busy = false; gameOver = false;
+    onDeal(seed);
+    setMsg("");
+    onRender();
+  }
+
+  // GameMP wiring -------------------------------------------------------
+  GameMP.setup({ gameName: "Crazy Eights", minPlayers: 2, maxPlayers: 6 });
+  GameMP.onReady(function(seat, count){
+    try{ac()&&ac().resume();}catch(e){}
+    onSeat = seat;
+    onCount = count;
+    mode = "online";
+    // Host (seat 0) generates the seed and tells everyone to deal.
+    if(seat === 0){ onStartFresh(); }
+    else { setMsg("Waiting for the deal…"); }
+  });
+  GameMP.onMove(function(m){
+    // onReady already flipped us into online mode before any move can arrive.
+    if(m.action === "start"){
+      onBeginMatch(m.seed);
+    } else if(m.action === "play"){
+      onApplyPlay(m.seat, m.card, m.declaredSuit || null);
+    } else if(m.action === "draw"){
+      onApplyDraw(m.seat, m.card);
+    } else if(m.action === "pass"){
+      onApplyPass(m.seat);
+    } else if(m.action === "reshuffle"){
+      onApplyReshuffle(m.seed);
+      onRender();
+    }
+  });
+  GameMP.onReset(function(){
+    // Host pressed Play again → it will broadcast a fresh "start" deal next.
+    elWinOverlay.classList.remove("show");
+    setMsg("New deal coming…");
+  });
+  GameMP.onPeerLeft(function(){
+    // No authoritative server: a drop breaks the deterministic turn order, so end
+    // the match cleanly rather than stall.
+    if(mode !== "online" || onOver) return;
+    onOver = true;
+    onRender();
+    elWinTitle.textContent = "Player left";
+    elWinText.textContent = "Someone disconnected, so this match can't continue. Start a new online game to play again.";
+    var wb = document.getElementById("winNewBtn");
+    wb.textContent = "New game";
+    wb.style.display = "";
+    elWinOverlay.classList.add("show");
+  });
+
+  // Online play & rematch hooks layered onto the existing buttons/pile. These
+  // short-circuit when not in online mode so local/AI behavior is unchanged.
+  elStockPile.addEventListener("click", function(){ if(mode === "online") onDrawNet(); });
+  document.getElementById("winNewBtn").addEventListener("click", function(){
+    if(mode !== "online") return; // local handler already wired below/above
+    if(onPeerLeftPending()){ GameMP.openCreate(); return; }
+    if(onSeat === 0){
+      GameMP.sendReset();
+      onStartFresh();
+    }
+  });
+  function onPeerLeftPending(){ return mode === "online" && onOver && elWinTitle.textContent === "Player left"; }
 
   // Deal an initial (default 'ai') game behind the picker, then ask for a mode.
   newGame();

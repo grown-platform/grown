@@ -200,6 +200,48 @@
     font-weight: 700;
     opacity: .9;
   }
+
+  /* online: N-seat layout */
+  .counts.mp { flex-wrap: wrap; }
+  .counts.mp .count { min-width: 0; flex: 1 1 22%; }
+  .count.turn { border-color: #ffd34d; background: rgba(255,211,77,.16); box-shadow: 0 0 10px rgba(255,211,77,.3); }
+  .count.out { opacity: .42; filter: grayscale(.6); }
+  .count .lbl .crown { font-size: 11px; }
+
+  .center-pile { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .center-pile .who { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; opacity: .75; }
+  .center-pile .pile-count { opacity: .8; }
+
+  /* online entry button on the controls */
+  .btn-online {
+    flex: 1;
+    padding: 15px 0;
+    font-size: clamp(15px, 4.5vw, 18px);
+    background: linear-gradient(180deg, #3b82f6, #2563eb);
+    box-shadow: 0 4px 0 #1748a8;
+  }
+  .btn-online:active { box-shadow: 0 1px 0 #1748a8; transform: translateY(2px) scale(.99); }
+
+  /* game-over / disconnect overlay (online) */
+  .mp-overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(8,22,38,.9);
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; padding: 24px; text-align: center;
+  }
+  .mp-overlay.show { display: flex; }
+  .mp-overlay .emoji { font-size: 3.2rem; }
+  .mp-overlay h2 { font-size: 1.9rem; color: #ffd34d; }
+  .mp-overlay.lose h2 { color: #ff8a8a; }
+  .mp-overlay.win h2 { color: #7dffa3; }
+  .mp-overlay p { font-size: .95rem; opacity: .9; max-width: 320px; line-height: 1.45; }
+  .mp-overlay button {
+    min-width: 220px; padding: 14px 0; font-size: 18px;
+    background: linear-gradient(180deg, #ffd34d, #f0b400); color: #4a3400;
+    box-shadow: 0 4px 0 #a87f00;
+  }
+  .mp-overlay button:active { box-shadow: 0 1px 0 #a87f00; transform: translateY(2px) scale(.99); }
 </style>
     <!-- pwa:start -->
     <link rel="icon" type="image/svg+xml" href="/games/icons/snap.svg">
@@ -294,9 +336,21 @@
       <button class="btn-flip" id="flipBtn">FLIP</button>
       <button class="btn-new" id="newBtn">New Game</button>
     </div>
+    <div class="row">
+      <button class="btn-online" id="onlineBtn" type="button">🌐 Online Game</button>
+    </div>
   </div>
 </div>
 
+<!-- online game-over / disconnect overlay -->
+<div class="mp-overlay" id="mpOverlay">
+  <div class="emoji" id="mpEmoji">🏆</div>
+  <h2 id="mpTitle"></h2>
+  <p id="mpText"></p>
+  <button id="mpRematchBtn">New game</button>
+</div>
+
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -354,6 +408,10 @@
   var resolving = false;     // briefly lock input while resolving a round
   var gameOver = false;
   var nextFlipIsYou = true;  // whose card the FLIP button turns next
+
+  // When an online match is running, the local (You-vs-CPU) engine is fully
+  // suspended and all input is routed through the online engine instead.
+  var online = false;
 
   // DOM
   var youNum = document.getElementById("youNum");
@@ -501,6 +559,7 @@
 
   // Flip one card from the player whose turn it is onto the center.
   function doFlip() {
+    if (online) { mpFlip(); return; }
     if (gameOver || resolving) return;
     if (matchActive) {
       // there's an open match — flipping is disabled; ignore
@@ -576,6 +635,7 @@
   }
 
   function youSnap() {
+    if (online) { mpSnap(); return; }
     if (gameOver || resolving) return;
     if (matchActive) {
       // valid snap — you beat the CPU's timer
@@ -633,6 +693,8 @@
   }
 
   function newGame() {
+    // Leaving any online match returns to the classic local You-vs-CPU game.
+    if (online) { online = false; mpHideOverlay(); restoreLocalLayout(); }
     clearCpuTimer();
     var deck = shuffle(buildDeck());
     youPile = deck.slice(0, 26);
@@ -674,6 +736,346 @@
   bind(snapBtn, youSnap);
   bind(flipBtn, doFlip);
   bind(newBtn, newGame);
+
+  // ==========================================================================
+  // ONLINE N-PLAYER MODE (2–4 players) — uses GameMP.
+  //
+  // Netcode is fully peer-symmetric: there is no authoritative server. Every
+  // client runs the same deterministic simulation:
+  //   • seat 0 picks an integer seed on match start and broadcasts it; EVERY
+  //     client (seat 0 included) builds the same 52-card deck and shuffles it
+  //     with a seeded PRNG (mulberry32), then deals evenly into N face-down
+  //     piles by seat. Because the RNG + deal order are identical everywhere,
+  //     all clients hold byte-identical piles.
+  //   • A flip is broadcast as {action:"flip", seat}; receivers pop the SAME
+  //     known card from that seat's pile, so the central pile stays in sync.
+  //   • The snap RACE is resolved by seat 0 as tiebreaker: anyone may send
+  //     {action:"snap"} when the top two ranks match; seat 0 accepts only the
+  //     FIRST snap it processes for a given central pile (a monotonic pileId
+  //     guards against stale snaps) and broadcasts {action:"snapwin", winner}.
+  //     Everyone (seat 0 included) applies snapwin identically.
+  // ==========================================================================
+
+  // Seeded PRNG + Fisher–Yates so every client deals the identical deck.
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function seededShuffle(arr, rng){for(var i=arr.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var t=arr[i];arr[i]=arr[j];arr[j]=t;}return arr;}
+
+  // ---- online state ----
+  var mpSeat = 0;            // our seat 0..N-1 (seat 0 = host = tiebreaker)
+  var mpCount = 2;           // number of players
+  var mpPiles = [];          // mpPiles[seat] = face-down draw pile (index 0 = top)
+  var mpCenter = [];         // shared central pile, oldest..newest (last = top)
+  var mpAlive = [];          // mpAlive[seat] = still has cards / in the game
+  var mpTurn = 0;            // seat whose turn it is to flip
+  var mpPileId = 0;          // monotonic id of the current central pile run
+  var mpSnapClaimed = false; // seat-0 only: a snap already accepted for this pileId
+  var mpResolving = false;   // brief lock while a snap is being applied
+  var mpOver = false;        // online match finished
+
+  // online DOM (built dynamically over the existing .counts / .table)
+  var countsEl = document.querySelector(".counts");
+  var pilesEl = document.querySelector(".piles");
+  var mpOverlay = document.getElementById("mpOverlay");
+  var mpEmoji = document.getElementById("mpEmoji");
+  var mpTitle = document.getElementById("mpTitle");
+  var mpText = document.getElementById("mpText");
+  var mpRematchBtn = document.getElementById("mpRematchBtn");
+
+  // Snapshot the original local markup so "New Game" can restore it exactly.
+  var localCountsHTML = countsEl.innerHTML;
+  var localPilesHTML = pilesEl.innerHTML;
+
+  function mpName(seat){ return seat === mpSeat ? "You" : "Player " + (seat + 1); }
+  function mpTopRank(){ return mpCenter.length ? mpCenter[mpCenter.length - 1].rank : null; }
+  function mpMatchShowing(){
+    return mpCenter.length >= 2 &&
+      mpCenter[mpCenter.length - 1].rank === mpCenter[mpCenter.length - 2].rank;
+  }
+  function mpAliveSeats(){ var a=[]; for (var s=0;s<mpCount;s++) if (mpAlive[s]) a.push(s); return a; }
+  function mpNextAlive(seat){
+    for (var i=1;i<=mpCount;i++){ var s=(seat+i)%mpCount; if (mpAlive[s]) return s; }
+    return seat;
+  }
+  function mpMyTurn(){ return online && !mpOver && !mpResolving && mpTurn === mpSeat && mpAlive[mpSeat]; }
+
+  // Build the identical deck + deal for everyone from the shared seed.
+  function mpDeal(seed){
+    var rng = mulberry32(seed >>> 0);
+    var deck = seededShuffle(buildDeck(), rng);
+    mpPiles = []; mpAlive = [];
+    for (var s=0;s<mpCount;s++){ mpPiles[s] = []; mpAlive[s] = true; }
+    // Deal round-robin by seat so every client deals identically.
+    for (var i=0;i<deck.length;i++){ mpPiles[i % mpCount].push(deck[i]); }
+    mpCenter = [];
+    mpTurn = 0;
+    mpPileId = 0;
+    mpSnapClaimed = false;
+    mpResolving = false;
+    mpOver = false;
+  }
+
+  // Replace the 2-pile local layout with an N-seat online layout.
+  function buildMpLayout(){
+    countsEl.classList.add("mp");
+    countsEl.innerHTML = "";
+    for (var s=0;s<mpCount;s++){
+      var c = document.createElement("div");
+      c.className = "count"; c.id = "mpCount" + s;
+      c.innerHTML = '<div class="lbl"></div><div class="num"></div>';
+      countsEl.appendChild(c);
+    }
+    pilesEl.innerHTML = "";
+    var slot = document.createElement("div");
+    slot.className = "center-pile";
+    slot.innerHTML =
+      '<div class="who">Central pile</div>' +
+      '<div id="mpCenterCard" class="card empty"></div>' +
+      '<div class="pile-count" id="mpCenterLbl">pile: 0</div>';
+    pilesEl.appendChild(slot);
+  }
+
+  // Restore the original local DOM (used when leaving an online match).
+  function restoreLocalLayout(){
+    countsEl.classList.remove("mp");
+    countsEl.innerHTML = localCountsHTML;
+    pilesEl.innerHTML = localPilesHTML;
+    // re-grab the local element handles that newGame() relies on
+    youNum = document.getElementById("youNum");
+    cpuNum = document.getElementById("cpuNum");
+    youPileLbl = document.getElementById("youPileLbl");
+    cpuPileLbl = document.getElementById("cpuPileLbl");
+    youCardEl = document.getElementById("youCard");
+    cpuCardEl = document.getElementById("cpuCard");
+    cYou = document.getElementById("cYou");
+    cCpu = document.getElementById("cCpu");
+  }
+
+  function mpRender(){
+    for (var s=0;s<mpCount;s++){
+      var c = document.getElementById("mpCount" + s);
+      if (!c) continue;
+      c.className = "count" +
+        (mpTurn === s && mpAlive[s] && !mpOver ? " turn" : "") +
+        (!mpAlive[s] ? " out" : "");
+      c.querySelector(".lbl").innerHTML =
+        (s === mpSeat ? "You" : "P" + (s + 1)) + (s === 0 ? ' <span class="crown">👑</span>' : "");
+      c.querySelector(".num").textContent = mpPiles[s] ? mpPiles[s].length : 0;
+    }
+    var card = document.getElementById("mpCenterCard");
+    var lbl = document.getElementById("mpCenterLbl");
+    if (card) renderCard(card, mpCenter.length ? mpCenter[mpCenter.length - 1] : null);
+    if (lbl) lbl.textContent = "pile: " + mpCenter.length;
+
+    var match = mpMatchShowing();
+    snapBtn.disabled = mpOver || mpResolving || !match;
+    flipBtn.disabled = !mpMyTurn() || match;
+    flipBtn.textContent = "FLIP";
+
+    if (!mpOver){
+      if (match) setMsg("MATCH! Hit SNAP!", "good");
+      else if (mpMyTurn()) setMsg("Your turn — tap FLIP.", "neutral");
+      else setMsg("Waiting for " + mpName(mpTurn) + "…", "neutral");
+    }
+  }
+
+  // A flip request from the FLIP button (local seat's turn only).
+  function mpFlip(){
+    if (!mpMyTurn() || mpMatchShowing()) return;
+    GameMP.send({ action: "flip", seat: mpSeat });
+    mpApplyFlip(mpSeat);
+  }
+
+  // Apply a flip (locally or from a peer): pop that seat's known top card onto
+  // the central pile. Identical on every client because piles are seeded.
+  function mpApplyFlip(seat){
+    if (mpOver || mpResolving) return;
+    if (seat !== mpTurn || !mpAlive[seat]) return;          // stale/illegal flip
+    if (mpMatchShowing()) return;                            // pile must be cleared by a snap first
+    if (!mpPiles[seat] || mpPiles[seat].length === 0) return;
+    var card = mpPiles[seat].shift();
+    mpCenter.push(card);
+    sndFlip();
+    var cardEl = document.getElementById("mpCenterCard");
+    if (cardEl) flash(cardEl);
+    // If this player just ran out, they're out; check for a winner.
+    if (mpPiles[seat].length === 0){
+      mpAlive[seat] = false;
+      if (mpCheckGameOver()) { mpRender(); return; }
+    }
+    // Advance turn to the next player still in the game.
+    mpTurn = mpNextAlive(seat);
+    mpRender();
+  }
+
+  // A snap claim from the SNAP button.
+  function mpSnap(){
+    if (mpOver || mpResolving || !mpMatchShowing()) return;
+    if (mpSeat === 0){
+      // We ARE the tiebreaker — accept our own snap immediately if unclaimed.
+      mpAcceptSnap(0);
+    } else {
+      // Defer to seat 0; it will broadcast the winner.
+      GameMP.send({ action: "snap", seat: mpSeat, pileId: mpPileId });
+    }
+  }
+
+  // Seat-0 only: accept the FIRST snap seen for this central pile, declare the
+  // winner, and broadcast it. Later snaps for the same pileId are ignored.
+  function mpAcceptSnap(winner){
+    if (mpSeat !== 0 || mpSnapClaimed || !mpMatchShowing() || mpOver) return;
+    mpSnapClaimed = true;
+    GameMP.send({ action: "snapwin", seat: 0, winner: winner, pileId: mpPileId });
+    mpApplySnapWin(winner);
+  }
+
+  // Everyone applies the declared snap winner: they take the whole central pile
+  // onto the BOTTOM of their face-down pile. Then a new pile run begins.
+  function mpApplySnapWin(winner){
+    if (mpOver || mpResolving) return;
+    if (!mpMatchShowing()) return;            // guards against a duplicate apply
+    mpResolving = true;
+    var cardEl = document.getElementById("mpCenterCard");
+    if (cardEl) flash(cardEl);
+    if (winner === mpSeat) sndWin(); else sndFlip();
+    setMsg(mpName(winner) + " snapped! Wins the pile.", winner === mpSeat ? "good" : "neutral");
+    // Move the central pile to the winner (only if still alive; eliminated
+    // players can't win — but a player who emptied their pile may still snap
+    // their way back in, which is fine: they receive cards and rejoin).
+    for (var i=0;i<mpCenter.length;i++) mpPiles[winner].push(mpCenter[i]);
+    if (mpPiles[winner].length > 0) mpAlive[winner] = true;
+    mpCenter = [];
+    mpPileId++;
+    mpSnapClaimed = false;
+    // Winner leads the next flip (if still in); else next alive after them.
+    mpTurn = mpAlive[winner] ? winner : mpNextAlive(winner);
+    setTimeout(function(){
+      mpResolving = false;
+      if (!mpCheckGameOver()) mpRender();
+    }, 600);
+    mpRender();
+  }
+
+  // Last player holding cards wins. Returns true if the match is over.
+  function mpCheckGameOver(){
+    if (mpOver) return true;
+    var live = mpAliveSeats();
+    if (live.length <= 1){
+      mpOver = true;
+      mpGameOver(live.length === 1 ? live[0] : -1);
+      return true;
+    }
+    return false;
+  }
+
+  function mpGameOver(winner){
+    flipBtn.disabled = true;
+    snapBtn.disabled = true;
+    var iWon = winner === mpSeat;
+    mpOverlay.className = "mp-overlay show " + (iWon ? "win" : (winner < 0 ? "" : "lose"));
+    mpEmoji.textContent = iWon ? "🏆" : (winner < 0 ? "🤝" : "💀");
+    mpTitle.textContent = iWon ? "You win!" : (winner < 0 ? "Draw" : mpName(winner) + " wins");
+    mpText.textContent = iWon
+      ? "You scooped up every card. Nicely snapped!"
+      : (winner < 0 ? "Nobody has cards left." : mpName(winner) + " collected all the cards.");
+    if (iWon) sndGameWin(); else if (winner >= 0) sndLose();
+    if (window.GrownGame && iWon) window.GrownGame.setHighScore(window.GrownGame.highScore() + 1);
+    // Host-only rematch; others just see the result and can start a new game.
+    mpRematchBtn.textContent = mpSeat === 0 ? "Rematch" : "New game";
+  }
+
+  function mpHideOverlay(){ mpOverlay.className = "mp-overlay"; }
+
+  // Reset to a fresh online match. Seat 0 picks + broadcasts a new seed.
+  function mpStartFromSeed(seed){
+    online = true;
+    mpHideOverlay();
+    mpDeal(seed);
+    flipBtn.disabled = false;
+    snapBtn.disabled = false;
+    mpRender();
+  }
+
+  // ---- GameMP wiring ----
+  GameMP.setup({ gameName: "Snap", minPlayers: 2, maxPlayers: 4 });
+
+  GameMP.onReady(function (seat, count) {
+    audio();
+    mpSeat = seat;
+    mpCount = count;
+    online = true;
+    clearCpuTimer();          // suspend the local engine
+    buildMpLayout();
+    setMsg("Online — seat " + (seat + 1) + " of " + count + ".", "neutral");
+    if (seat === 0){
+      // Host generates the shared seed and tells everyone to deal it.
+      var seed = (Math.random() * 0xFFFFFFFF) >>> 0;
+      GameMP.send({ action: "start", seat: 0, seed: seed });
+      mpStartFromSeed(seed);
+    } else {
+      setMsg("Waiting for the deal…", "neutral");
+    }
+  });
+
+  GameMP.onMove(function (m) {
+    if (!online) return;
+    if (m.action === "start"){
+      mpStartFromSeed(m.seed >>> 0);
+    } else if (m.action === "flip"){
+      mpApplyFlip(m.seat);
+    } else if (m.action === "snap"){
+      // Only seat 0 adjudicates the race; first valid snap for this pile wins.
+      if (mpSeat === 0 && m.pileId === mpPileId) mpAcceptSnap(m.seat);
+    } else if (m.action === "snapwin"){
+      if (m.pileId === mpPileId) mpApplySnapWin(m.winner);
+    }
+  });
+
+  GameMP.onReset(function () {
+    // Host pressed Rematch — host re-seeds; non-hosts wait for the new seed.
+    mpHideOverlay();
+    if (mpSeat === 0){
+      var seed = (Math.random() * 0xFFFFFFFF) >>> 0;
+      GameMP.send({ action: "start", seat: 0, seed: seed });
+      mpStartFromSeed(seed);
+    } else {
+      mpOver = false;
+      setMsg("Waiting for the deal…", "neutral");
+    }
+  });
+
+  GameMP.onPeerLeft(function () {
+    if (!online) return;
+    // No authoritative server: a mid-match disconnect breaks the deterministic
+    // turn/deal sync, so end the match cleanly with an overlay.
+    mpOver = true;
+    flipBtn.disabled = true;
+    snapBtn.disabled = true;
+    mpOverlay.className = "mp-overlay show";
+    mpEmoji.textContent = "🔌";
+    mpTitle.textContent = "Player left";
+    mpText.textContent = "Someone disconnected, so this match can't continue. Start a new online game to play again.";
+    mpRematchBtn.textContent = "New game";
+  });
+
+  bind(document.getElementById("onlineBtn"), function(){ audio(); GameMP.openCreate(); });
+
+  bind(mpRematchBtn, function(){
+    if (mpSeat === 0 && online){
+      // Host rematch: reset everyone, then re-seed via onReset path.
+      mpHideOverlay();
+      GameMP.sendReset();
+      var seed = (Math.random() * 0xFFFFFFFF) >>> 0;
+      GameMP.send({ action: "start", seat: 0, seed: seed });
+      mpStartFromSeed(seed);
+    } else {
+      // Non-host or post-disconnect: leave online and open a fresh online panel.
+      online = false;
+      mpHideOverlay();
+      restoreLocalLayout();
+      newGame();
+      GameMP.openCreate();
+    }
+  });
 
   // prevent double-tap zoom / scroll
   document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
