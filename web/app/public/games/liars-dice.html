@@ -33,6 +33,17 @@
   .zone-label { font-size: .75rem; font-weight: 600; opacity: .9; display: flex; align-items: center; gap: 8px; }
   .pill { background: rgba(0,0,0,.35); border-radius: 10px; padding: 1px 8px; font-size: .7rem; font-weight: 700; }
 
+  .opponents { flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 10px; padding: 2px 4px; }
+  .opp { flex: 0 1 auto; min-width: 92px; max-width: 220px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+         background: rgba(0,0,0,.22); border: 2px solid transparent; border-radius: 10px; padding: 5px 8px; }
+  .opp.turn-now { border-color: #ffb454; box-shadow: 0 0 8px rgba(255,180,84,.35); }
+  .opp.dead { opacity: .4; filter: grayscale(.7); }
+  .opp .nm { font-size: .72rem; font-weight: 700; display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .opp .nm .pill { font-size: .62rem; padding: 0 6px; }
+  .opp .dice { gap: 3px; min-height: 0; }
+  .opp .die { width: 26px; height: 26px; font-size: 1.15rem; border-radius: 5px; }
+  .opp .die.back { font-size: .9rem; }
+
   .dice { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; min-height: 44px; }
   .die {
     width: 44px; height: 44px; border-radius: 8px;
@@ -145,10 +156,7 @@
   </header>
 
   <div class="board">
-    <div class="zone">
-      <div class="zone-label"><span id="oppName">Opponent</span> <span class="pill" id="oppCount">5 dice</span></div>
-      <div class="dice" id="oppDice"></div>
-    </div>
+    <div class="opponents" id="opponents"></div>
 
     <div class="center">
       <div class="bid-now" id="bidNow">Waiting…</div>
@@ -180,9 +188,9 @@
   <div class="overlay show" id="lobby">
     <div class="emoji">🎲</div>
     <h2>Liar's Dice</h2>
-    <p>Liar's Dice is <b>online multiplayer only</b>. Create a game and share the link, or join one — then bluff your friend out of all their dice.</p>
+    <p>Liar's Dice is <b>online multiplayer only</b> for <b>2–6 players</b>. Create a game and share the link, or join one — then use the waiting room to ready up.</p>
     <button id="startOnline">🌐 Create / Join online game</button>
-    <p style="font-size:.78rem;opacity:.7">Each player has 5 dice. Bid how many of a face are on the table (both hands). Raise the bid or call "Liar!". Wrong caller — or caught bluffer — loses a die. Lose all 5 and you're out. (Each die counts as its own face — no wilds.)</p>
+    <p style="font-size:.78rem;opacity:.7">Each player has 5 dice. Bid how many of a face are on the table (across <i>all</i> hands). Raise the bid or call "Liar!". Wrong caller — or caught bluffer — loses a die. Lose all 5 and you're out. Last player standing wins. (Each die counts as its own face — no wilds.)</p>
   </div>
 
   <!-- Game over -->
@@ -211,19 +219,29 @@
   // ---------- State ----------
   var FACES = ['⚀','⚁','⚂','⚃','⚄','⚅']; // index 0..5 => face 1..6
   var DICE_PER = 5;
-  var myRole = null, oppRole = null;
-  var diceCount = [DICE_PER, DICE_PER];   // indexed by role (0,1)
-  var myDice = [];
-  var currentBid = null;   // { q, face, byRole }
-  var turnRole = null;     // role whose turn it is to act
-  var starterRole = 0;     // who bids first this round
+
+  var mySeat = 0;          // our seat index (0..N-1); seat 0 is host
+  var nPlayers = 2;        // total players in the match
+  var diceCount = [];      // diceCount[seat] -> remaining dice
+  var alive = [];          // alive[seat] -> bool (false once eliminated)
+  var myDice = [];         // our own current roll
+  var currentBid = null;   // { q, face, bySeat }
+  var turnSeat = 0;        // seat whose turn it is to act
+  var starterSeat = 0;     // who opens the current round
   var phase = "lobby";     // lobby | play | reveal | over
   var selQ = 1, selFace = 3;
-  var pendingChallenge = false;
+
+  // Challenge bookkeeping: when someone calls Liar, every alive player reveals
+  // their dice. We collect them into revealMap until ALL alive seats are known,
+  // then resolve() deterministically (same inputs on every client).
+  var challengeBid = null;     // the bid being challenged
+  var challengerSeat = null;   // who called Liar
+  var revealMap = null;        // seat -> dice[]  (collected reveals)
+  var resolved = false;        // guard so resolve() runs once per challenge
 
   // ---------- DOM ----------
   var $ = function(id){ return document.getElementById(id); };
-  var elOppName=$("oppName"), elOppCount=$("oppCount"), elOppDice=$("oppDice");
+  var elOpponents=$("opponents");
   var elMyName=$("myName"), elMyCount=$("myCount"), elMyDice=$("myDice");
   var elBidNow=$("bidNow"), elTurn=$("turn"), elReveal=$("reveal"), elControls=$("controls");
   var elQVal=$("qVal"), elFaceRow=$("faceRow"), elSelFaceShow=$("selFaceShow");
@@ -231,9 +249,21 @@
   var elLobby=$("lobby"), elOver=$("over"), elOverTitle=$("overTitle"), elOverText=$("overText"), elOverEmoji=$("overEmoji");
 
   // ---------- Helpers ----------
-  function totalDice(){ return diceCount[0] + diceCount[1]; }
-  function myTurn(){ return phase === "play" && turnRole === myRole; }
-  function rollMyDice(){ myDice = []; for (var i=0;i<diceCount[myRole];i++) myDice.push(1+Math.floor(Math.random()*6)); myDice.sort(function(a,b){return a-b;}); }
+  function pName(seat){ return seat === mySeat ? "You" : "Player " + (seat + 1); }
+  function totalDice(){ var t = 0; for (var s=0;s<nPlayers;s++) t += diceCount[s]; return t; }
+  function aliveSeats(){ var a=[]; for (var s=0;s<nPlayers;s++) if (alive[s]) a.push(s); return a; }
+  function aliveCount(){ return aliveSeats().length; }
+  function myTurn(){ return phase === "play" && turnSeat === mySeat && alive[mySeat]; }
+  // Next alive seat strictly after `seat` in seat order (wraps around).
+  function nextAlive(seat){
+    for (var i=1;i<=nPlayers;i++){ var s=(seat+i)%nPlayers; if (alive[s]) return s; }
+    return seat;
+  }
+  function rollMyDice(){
+    myDice = [];
+    for (var i=0;i<diceCount[mySeat];i++) myDice.push(1+Math.floor(Math.random()*6));
+    myDice.sort(function(a,b){return a-b;});
+  }
   function bidValid(q, face){
     if (q < 1 || q > totalDice() || face < 1 || face > 6) return false;
     if (!currentBid) return true;
@@ -251,109 +281,161 @@
   function bidText(b){ return b.q + " × " + FACES[b.face-1] + " (" + b.q + " of the " + b.face + "s)"; }
 
   // ---------- Match / round flow ----------
-  function startMatch(role){
-    myRole = role; oppRole = 1 - role;
-    elMyName.textContent = "You (Player " + (myRole+1) + ")";
-    elOppName.textContent = "Player " + (oppRole+1);
-    diceCount = [DICE_PER, DICE_PER];
-    starterRole = 0;
+  function freshMatch(){
+    diceCount = []; alive = [];
+    for (var s=0;s<nPlayers;s++){ diceCount[s] = DICE_PER; alive[s] = true; }
+    starterSeat = 0;
+  }
+  function startMatch(seat, count){
+    mySeat = seat;
+    nPlayers = count;
+    elMyName.textContent = "You (Player " + (mySeat+1) + ")";
+    freshMatch();
     elLobby.classList.remove("show");
     elOver.classList.remove("show");
+    elControls.style.display = "flex";
     startRound();
   }
   function startRound(){
     rollMyDice();
     currentBid = null;
-    turnRole = starterRole;
+    turnSeat = alive[starterSeat] ? starterSeat : nextAlive(starterSeat);
     phase = "play";
-    pendingChallenge = false;
+    challengeBid = null; challengerSeat = null; revealMap = null; resolved = false;
     elReveal.style.display = "none";
     resetSelection();
     render();
   }
   function doBid(){
     if (!myTurn() || !bidValid(selQ, selFace)) return;
-    currentBid = { q: selQ, face: selFace, byRole: myRole };
-    turnRole = oppRole;
-    GameMP.send({ action: "bid", q: selQ, face: selFace });
+    currentBid = { q: selQ, face: selFace, bySeat: mySeat };
+    turnSeat = nextAlive(mySeat);
+    GameMP.send({ action: "bid", seat: mySeat, q: selQ, face: selFace });
     sBid();
     render();
   }
   function doChallenge(){
     if (!myTurn() || !currentBid) return;
-    GameMP.send({ action: "challenge", dice: myDice });
-    pendingChallenge = true;
+    challengeBid = currentBid;
+    challengerSeat = mySeat;
+    revealMap = {};
+    revealMap[mySeat] = myDice;
+    resolved = false;
     phase = "reveal";
+    GameMP.send({ action: "challenge", seat: mySeat, dice: myDice });
     sChallenge();
     elTurn.textContent = "You called LIAR — revealing…";
     render();
+    maybeResolve();
   }
-  function resolve(bid, challengerRole, diceByRole){
+  // Once we know the bid being challenged, the challenger, and every alive
+  // player's dice, resolve identically on every client.
+  function maybeResolve(){
+    if (resolved || !challengeBid || challengerSeat === null || !revealMap) return;
+    var seats = aliveSeats();
+    for (var i=0;i<seats.length;i++){ if (!revealMap.hasOwnProperty(seats[i])) return; }
+    resolved = true;
+    resolve(challengeBid, challengerSeat, revealMap);
+  }
+  function resolve(bid, chSeat, diceBySeat){
     var face = bid.face, total = 0;
-    [0,1].forEach(function(r){ var arr = diceByRole[r] || []; for (var i=0;i<arr.length;i++) if (arr[i] === face) total++; });
+    aliveSeats().forEach(function(s){
+      var arr = diceBySeat[s] || [];
+      for (var i=0;i<arr.length;i++) if (arr[i] === face) total++;
+    });
     var bidStands = total >= bid.q;
-    var loserRole = bidStands ? challengerRole : bid.byRole;
-    diceCount[loserRole]--;
+    var loserSeat = bidStands ? chSeat : bid.bySeat;
+    diceCount[loserSeat]--;
+    var eliminated = false;
+    if (diceCount[loserSeat] <= 0){ diceCount[loserSeat] = 0; alive[loserSeat] = false; eliminated = true; }
     phase = "reveal";
-    pendingChallenge = false;
     sReveal();
-    showReveal(bid, challengerRole, diceByRole, total, bidStands, loserRole);
+    showReveal(bid, chSeat, diceBySeat, total, bidStands, loserSeat, eliminated);
     setTimeout(function(){
-      if (diceCount[loserRole] <= 0){
+      if (aliveCount() <= 1){
         phase = "over";
-        gameOver(loserRole);
+        gameOver(aliveSeats()[0]);
       } else {
-        starterRole = loserRole;     // the player who lost a die opens next round
+        // Loser opens the next round (or, if just eliminated, the next survivor).
+        starterSeat = alive[loserSeat] ? loserSeat : nextAlive(loserSeat);
         startRound();
       }
-    }, 3400);
+    }, 3500);
   }
-  function gameOver(loserRole){
-    var iWon = loserRole !== myRole;
+  function gameOver(winnerSeat){
+    var iWon = winnerSeat === mySeat;
     elControls.style.display = "none";
     elOver.className = "overlay show " + (iWon ? "win" : "lose");
     elOverEmoji.textContent = iWon ? "🏆" : "💀";
-    elOverTitle.textContent = iWon ? "You win!" : "You lose!";
+    elOverTitle.textContent = iWon ? "You win!" : "You're out!";
     elOverText.textContent = iWon
-      ? "Your opponent ran out of dice. Nicely bluffed!"
-      : "You ran out of dice. Better luck next round!";
+      ? "Everyone else ran out of dice. Nicely bluffed!"
+      : pName(winnerSeat) + " takes the table. Better luck next round!";
     if (iWon) sWin(); else sLose();
     if (window.GrownGame && iWon) window.GrownGame.setHighScore(window.GrownGame.highScore() + 1);
+    // Only the host offers a rematch (sendReset() restarts everyone).
+    var rb = $("rematchBtn");
+    rb.textContent = "Play again";
+    rb.style.display = mySeat === 0 ? "" : "none";
   }
   function rematch(){
-    diceCount = [DICE_PER, DICE_PER];
-    starterRole = 0;
+    freshMatch();
     GameMP.sendReset();
     startRound();
+    elOver.classList.remove("show");
+    elControls.style.display = "flex";
   }
 
   // ---------- Rendering ----------
   function diceEl(face, cls){ var d = document.createElement("div"); d.className = "die " + cls; d.textContent = FACES[face-1]; return d; }
   function backEl(){ var d = document.createElement("div"); d.className = "die back"; d.textContent = "?"; return d; }
 
+  // The seats array reveals all dice; pass it during the reveal phase so each
+  // opponent card shows face-up dice with the bid face highlighted.
+  function renderOpponents(revealDice, hitFace){
+    elOpponents.innerHTML = "";
+    for (var s=0;s<nPlayers;s++){
+      if (s === mySeat) continue;
+      var card = document.createElement("div");
+      card.className = "opp" + (turnSeat === s && phase === "play" ? " turn-now" : "") + (!alive[s] ? " dead" : "");
+      var nm = document.createElement("div"); nm.className = "nm";
+      var label = document.createElement("span");
+      label.textContent = "Player " + (s+1) + (!alive[s] ? " 💀" : "");
+      var pill = document.createElement("span"); pill.className = "pill";
+      pill.textContent = diceCount[s] + (diceCount[s] === 1 ? " die" : " dice");
+      nm.appendChild(label); nm.appendChild(pill);
+      card.appendChild(nm);
+      var dd = document.createElement("div"); dd.className = "dice";
+      if (revealDice && revealDice[s]){
+        var arr = revealDice[s];
+        for (var i=0;i<arr.length;i++) dd.appendChild(diceEl(arr[i], arr[i]===hitFace ? "hit" : ""));
+      } else {
+        for (var j=0;j<diceCount[s];j++) dd.appendChild(backEl());
+      }
+      card.appendChild(dd);
+      elOpponents.appendChild(card);
+    }
+  }
+
   function render(){
     if (phase === "lobby"){ elLobby.classList.add("show"); return; }
-    // counts
-    elMyCount.textContent = diceCount[myRole] + (diceCount[myRole] === 1 ? " die" : " dice");
-    elOppCount.textContent = diceCount[oppRole] + (diceCount[oppRole] === 1 ? " die" : " dice");
-    // my dice (always visible)
+    // my count + dice (always visible)
+    elMyName.textContent = (alive[mySeat] ? "You (Player " + (mySeat+1) + ")" : "You 💀");
+    elMyCount.textContent = diceCount[mySeat] + (diceCount[mySeat] === 1 ? " die" : " dice");
     elMyDice.innerHTML = "";
     for (var i=0;i<myDice.length;i++) elMyDice.appendChild(diceEl(myDice[i], "mine"));
-    // opponent dice — hidden backs during play
-    elOppDice.innerHTML = "";
-    if (phase !== "reveal"){
-      for (var j=0;j<diceCount[oppRole];j++) elOppDice.appendChild(backEl());
-    }
-    // current bid
+
     if (phase === "play"){
+      renderOpponents(null);
       elReveal.style.display = "none";
       elBidNow.innerHTML = currentBid
-        ? ('Current bid: <span class="v">' + bidText(currentBid) + '</span> by ' + (currentBid.byRole === myRole ? "you" : "opponent"))
-        : "No bid yet — " + (turnRole === myRole ? "you" : "opponent") + " opens.";
-      elTurn.textContent = myTurn() ? "Your turn — raise the bid or call Liar!" : "Waiting for opponent…";
-      elControls.style.display = "flex";
+        ? ('Current bid: <span class="v">' + bidText(currentBid) + '</span> by ' + (currentBid.bySeat === mySeat ? "you" : "Player " + (currentBid.bySeat+1)))
+        : "No bid yet — " + (turnSeat === mySeat ? "you open" : "Player " + (turnSeat+1) + " opens") + ".";
+      if (!alive[mySeat]) elTurn.textContent = "You're out — watching the table.";
+      else elTurn.textContent = myTurn() ? "Your turn — raise the bid or call Liar!" : "Waiting for Player " + (turnSeat+1) + "…";
+      elControls.style.display = alive[mySeat] ? "flex" : "none";
       renderControls();
-    } else {
+    } else if (phase === "reveal"){
       elControls.style.display = "none";
     }
   }
@@ -378,64 +460,82 @@
     elChallengeBtn.disabled = !canChallenge;
   }
 
-  function showReveal(bid, challengerRole, diceByRole, total, bidStands, loserRole){
-    // Reveal both hands with the matching face highlighted.
-    elOppDice.innerHTML = "";
-    var oppArr = diceByRole[oppRole] || [];
-    for (var i=0;i<oppArr.length;i++) elOppDice.appendChild(diceEl(oppArr[i], oppArr[i]===bid.face ? "hit" : ""));
+  function showReveal(bid, chSeat, diceBySeat, total, bidStands, loserSeat, eliminated){
+    // Reveal every alive hand with the bid face highlighted.
+    renderOpponents(diceBySeat, bid.face);
     elMyDice.innerHTML = "";
-    var myArr = diceByRole[myRole] || [];
+    var myArr = diceBySeat[mySeat] || myDice;
     for (var j=0;j<myArr.length;j++) elMyDice.appendChild(diceEl(myArr[j], myArr[j]===bid.face ? "mine hit" : "mine"));
 
-    var challengerName = challengerRole === myRole ? "You" : "Opponent";
-    var iLost = loserRole === myRole;
-    elBidNow.innerHTML = '<span class="v">' + bidText(bid) + '</span>';
+    var iLost = loserSeat === mySeat;
+    var loserName = loserSeat === mySeat ? "you lose a die" : "Player " + (loserSeat+1) + " loses a die";
+    if (eliminated) loserName += (loserSeat === mySeat ? " — you're eliminated!" : " — eliminated!");
+    var challengerName = chSeat === mySeat ? "You" : "Player " + (chSeat+1);
+    elBidNow.innerHTML = '<span class="v">' + bidText(bid) + '</span> by ' +
+      (bid.bySeat === mySeat ? "you" : "Player " + (bid.bySeat+1));
     elReveal.style.display = "block";
     elReveal.innerHTML =
       challengerName + ' called <b>Liar!</b><br>' +
       'There ' + (total === 1 ? "was" : "were") + ' <b>' + total + '</b> ' + FACES[bid.face-1] +
-      ' — bid needed ' + bid.q + '.<br>' +
+      ' across all hands — bid needed ' + bid.q + '.<br>' +
       '<span class="res ' + (iLost ? "lose" : "win") + '">' +
-        (bidStands ? "Bid was good — " : "Bluff caught — ") +
-        (iLost ? "you lose a die." : "opponent loses a die.") +
+        (bidStands ? "Bid was good — " : "Bluff caught — ") + loserName + '.' +
       '</span>';
     elTurn.textContent = "";
   }
 
   // ---------- Online wiring (GameMP) ----------
-  GameMP.setup({ gameName: "Liar's Dice" });
-  GameMP.onReady(function (role) { audio(); startMatch(role); });
+  GameMP.setup({ gameName: "Liar's Dice", minPlayers: 2, maxPlayers: 6 });
+  GameMP.onReady(function (seat, count) { audio(); startMatch(seat, count); });
   GameMP.onPeerLeft(function () {
+    // No host-authoritative server: if a peer drops mid-match the deterministic
+    // turn order can no longer complete, so we end the match cleanly rather than
+    // stall. (A disconnect during the waiting room is handled by GameMP itself.)
+    if (phase === "lobby") return;
     phase = "over";
     elControls.style.display = "none";
     elOver.className = "overlay show";
     elOverEmoji.textContent = "🔌";
-    elOverTitle.textContent = "Opponent left";
-    elOverText.textContent = "Your opponent disconnected. Start a new online game to play again.";
-    $("rematchBtn").textContent = "New game";
+    elOverTitle.textContent = "Player left";
+    elOverText.textContent = "Someone disconnected, so this match can't continue. Start a new online game to play again.";
+    var rb = $("rematchBtn"); rb.textContent = "New game"; rb.style.display = "";
   });
   GameMP.onReset(function () {
-    diceCount = [DICE_PER, DICE_PER];
-    starterRole = 0;
+    // Host pressed Play again — everyone resets to a fresh match.
+    freshMatch();
+    elOver.classList.remove("show");
+    elControls.style.display = "flex";
     startRound();
   });
   GameMP.onMove(function (m) {
     if (m.action === "bid"){
-      currentBid = { q: m.q, face: m.face, byRole: oppRole };
-      turnRole = myRole;
+      currentBid = { q: m.q, face: m.face, bySeat: m.seat };
+      turnSeat = nextAlive(m.seat);
       resetSelection();
       sBid();
       render();
     } else if (m.action === "challenge"){
-      // Opponent challenged MY current bid; m.dice are their dice. Reveal mine
-      // back so they can resolve too, then resolve identically on both ends.
-      var d1 = {}; d1[myRole] = myDice; d1[oppRole] = m.dice;
-      GameMP.send({ action: "reveal", dice: myDice });
-      resolve(currentBid, oppRole, d1);   // challenger = opponent
+      // Someone called Liar. Start collecting reveals (theirs comes in here),
+      // broadcast our own dice, then resolve once everyone's are in.
+      if (!revealMap){
+        challengeBid = currentBid;
+        challengerSeat = m.seat;
+        revealMap = {};
+        resolved = false;
+      }
+      revealMap[m.seat] = m.dice;
+      phase = "reveal";
+      sChallenge();
+      if (!revealMap.hasOwnProperty(mySeat) && alive[mySeat]){
+        revealMap[mySeat] = myDice;
+        GameMP.send({ action: "reveal", seat: mySeat, dice: myDice });
+      }
+      render();
+      maybeResolve();
     } else if (m.action === "reveal"){
-      // Response to MY challenge; m.dice are opponent's dice.
-      var d2 = {}; d2[myRole] = myDice; d2[oppRole] = m.dice;
-      resolve(currentBid, myRole, d2);    // challenger = me
+      if (!revealMap) revealMap = {};
+      revealMap[m.seat] = m.dice;
+      maybeResolve();
     }
   });
 
@@ -446,8 +546,8 @@
   elBidBtn.addEventListener("click", doBid);
   elChallengeBtn.addEventListener("click", doChallenge);
   $("rematchBtn").addEventListener("click", function(){
-    if (phase === "over" && diceCount[0] > 0 && diceCount[1] > 0) {
-      // opponent-left case: just reopen the online panel
+    if (phase === "over" && aliveCount() > 1) {
+      // peer-left case: just reopen the online panel for a new match
       GameMP.openCreate();
     } else {
       rematch();
