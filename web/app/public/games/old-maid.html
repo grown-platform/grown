@@ -81,6 +81,61 @@
   }
   .hand.opponent.active .card { cursor: pointer; }
 
+  /* Online N-player opponents */
+  .online-opps {
+    flex: 1 1 auto;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: center;
+    gap: 6px 8px;
+    min-height: 0;
+    padding: 2px 4px;
+    overflow: auto;
+  }
+  .opp {
+    flex: 0 1 auto;
+    min-width: 96px;
+    max-width: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: rgba(0,0,0,.22);
+    border: 2px solid transparent;
+    border-radius: 10px;
+    padding: 5px 8px;
+  }
+  .opp.turn-now {
+    border-color: #ffd34d;
+    box-shadow: 0 0 8px rgba(255,211,77,.4);
+  }
+  .opp.out { opacity: .45; filter: grayscale(.6); }
+  .opp .opp-nm {
+    font-size: .72rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .opp .opp-nm .count { font-size: .62rem; padding: 0 6px; }
+  .opp .opp-hand {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px;
+    max-width: 100%;
+  }
+  .opp .card { width: 24px; height: 33px; border-radius: 4px; }
+  .opp .card.back::after { font-size: .8rem; }
+  .opp.drawable .opp-hand { cursor: pointer; }
+  .opp.drawable .card.back { animation: glow 1.6s ease-in-out infinite; }
+  .opp.drawable .card.back:active { transform: translateY(-4px) scale(1.06); }
+
   .card {
     width: 40px;
     height: 54px;
@@ -338,17 +393,21 @@
   </header>
 
   <div class="board">
-    <div class="zone">
+    <div class="zone" id="cpuZone">
       <div class="zone-label">CPU's hand <span class="count" id="cpuCount">0</span></div>
       <div class="hand opponent" id="cpuHand"></div>
     </div>
+
+    <!-- Online N-player opponents (each: name + face-down hand). Hidden in
+         local modes; shown only in online mode in place of the single CPU zone. -->
+    <div class="online-opps" id="onlineOpps" style="display:none"></div>
 
     <div class="center">
       <div class="log" id="log">Tap <b>New Game</b> to start!</div>
     </div>
 
     <div class="zone">
-      <div class="zone-label">Your hand <span class="count" id="youCount">0</span></div>
+      <div class="zone-label" id="youZoneLabel">Your hand <span class="count" id="youCount">0</span></div>
       <div class="hand you" id="youHand"></div>
     </div>
   </div>
@@ -386,6 +445,7 @@
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -468,6 +528,13 @@
     return arr;
   }
 
+  // Seeded PRNG + shuffle for the ONLINE deterministic deal: every client builds
+  // the identical deck and shuffles it with the SAME seed (broadcast by seat 0),
+  // so all clients agree on every hand without a server. (Hands are soft-hidden —
+  // a determined cheater could recompute the deal — acceptable for casual play.)
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function shuffleSeeded(arr,rng){for(var i=arr.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var t=arr[i];arr[i]=arr[j];arr[j]=t;}return arr;}
+
   // Remove all matched pairs from a hand. Returns array of discarded keys (one entry per pair).
   function discardPairs(hand) {
     var byRank = {};
@@ -495,7 +562,7 @@
   // Two seats: "you" (Player 1 / bottom) and "cpu" (Player 2 / top).
   // mode 'ai': "cpu" is the computer (auto-draws). mode '2p': "cpu" is a human
   // (Player 2) — no AI, turns alternate between humans via a privacy handoff.
-  var mode = "ai";      // 'ai' | '2p'   (DEFAULT 'ai' — must stay unchanged)
+  var mode = "ai";      // 'ai' | '2p' | 'online'   (DEFAULT 'ai' — must stay unchanged)
   var you = [];
   var cpu = [];
   var youPairs = 0;
@@ -506,6 +573,19 @@
   var view = "you";     // "you" | "cpu" — whose perspective is on screen
   var busy = false;     // lock input during animations / CPU turn / handoffs
   var gameOver = false;
+
+  // ---------- Online N-player state ----------
+  // Every client tracks ALL hands as arrays (built identically from the seeded
+  // deal), so a broadcast draw {fromSeat, index} can be applied the same way on
+  // every device. mySeat 0 = host. turnSeat advances seat-order, skipping any
+  // seat that is already OUT (empty hand).
+  var onMySeat = 0;       // our seat (0..N-1)
+  var onN = 2;            // total players in the match
+  var onHands = [];       // onHands[seat] -> array of card objects (full deal)
+  var onTurn = 0;         // seat whose turn it is to draw
+  var onStarted = false;  // online match has begun
+  var onLoser = -1;       // seat stuck with the Old Maid (set at game over)
+  var onPeerLeft = false; // a peer dropped mid-match (rematch reopens the panel)
 
   // In 2p both seats are human, so the seat to move is always human.
   function isHumanTurn() { return mode === "2p" ? true : turn === "you"; }
@@ -529,6 +609,9 @@
   var elHandoff = document.getElementById("handoff");
   var elHandoffTitle = document.getElementById("handoffTitle");
   var elHandoffSub = document.getElementById("handoffSub");
+  var elCpuZone = document.getElementById("cpuZone");
+  var elOnlineOpps = document.getElementById("onlineOpps");
+  var elYouZoneLabel = document.getElementById("youZoneLabel");
   // Zone labels (text differs between ai and 2p modes).
   var elCpuLabel = elCpuHand.parentNode.querySelector(".zone-label");
   var elYouLabel = elYouHand.parentNode.querySelector(".zone-label");
@@ -902,6 +985,252 @@
     if (!isNaN(idx)) youDraw(idx);
   });
 
+  // ========== ONLINE N-PLAYER (GameMP) ==========
+  // Netcode: seat 0 broadcasts {action:"start", seed}; every client builds the
+  // same character deck (buildDeck), shuffles it with mulberry32(seed), deals
+  // round-robin by seat, and auto-discards its own (and every) initial pair.
+  // On a turn, the active player picks a RANDOM index into the next still-in
+  // player's hand and broadcasts {action:"draw", seat, fromSeat, index}; every
+  // client applies that exact transfer + auto-pair, keeping all hands in sync.
+
+  // Next seat (after `seat`, wrapping) that still holds cards. Returns -1 if the
+  // only player left with cards is `seat` itself (terminal: they hold the Maid).
+  function onNextActive(seat) {
+    for (var i = 1; i <= onN; i++) {
+      var s = (seat + i) % onN;
+      if (onHands[s] && onHands[s].length > 0) return s;
+    }
+    return -1;
+  }
+  // How many seats still hold cards.
+  function onInCount() {
+    var n = 0;
+    for (var s = 0; s < onN; s++) if (onHands[s] && onHands[s].length > 0) n++;
+    return n;
+  }
+
+  // Apply matched pairs to every seat's hand (used after the deal and after each
+  // draw). Mutates onHands in place.
+  function onDiscardAllPairs() {
+    for (var s = 0; s < onN; s++) if (onHands[s]) discardPairs(onHands[s]);
+  }
+
+  // Build the identical deal on every client from the shared seed.
+  function onDeal(seed) {
+    uid = 0; // deterministic ids: deck built identically on all clients
+    var deck = shuffleSeeded(buildDeck(), mulberry32(seed >>> 0));
+    onHands = [];
+    for (var s = 0; s < onN; s++) onHands[s] = [];
+    for (var i = 0; i < deck.length; i++) onHands[i % onN].push(deck[i]);
+    onDiscardAllPairs();
+  }
+
+  // Advance the turn from `fromSeat` to the next still-in player. If only one
+  // player remains holding cards, that's the loser (stuck with the Old Maid).
+  // onNextActive already skips empty seats (including fromSeat, if it just
+  // emptied out — that player is safely OUT and won't be given a turn).
+  function onAdvanceTurn(fromSeat) {
+    if (onInCount() <= 1) {
+      var stuck = -1;
+      for (var s = 0; s < onN; s++) if (onHands[s] && onHands[s].length > 0) { stuck = s; break; }
+      onFinish(stuck);
+      return;
+    }
+    onTurn = onNextActive(fromSeat);
+    onRender();
+  }
+
+  // Perform a draw that some seat made from its left neighbour, then auto-pair.
+  // `drawer` draws card at `index` from `fromSeat`'s hand. Same on every client.
+  function onApplyDraw(drawer, fromSeat, index) {
+    var src = onHands[fromSeat], dst = onHands[drawer];
+    if (!src || !dst || index < 0 || index >= src.length) return null;
+    var card = src.splice(index, 1)[0];
+    var res = takeCard(dst, card); // pushes + discards a pair if formed
+    return { card: card, paired: res.paired };
+  }
+
+  function onStartMatch(seat, count) {
+    mode = "online";
+    onMySeat = seat;
+    onN = count;
+    onStarted = true;
+    gameOver = false;
+    onLoser = -1;
+    onPeerLeft = false;
+    busy = false;
+    elModeOverlay.className = "overlay";
+    elOverlay.className = "overlay";
+    // Swap the single-CPU zone for the multi-opponent strip.
+    elCpuZone.style.display = "none";
+    elOnlineOpps.style.display = "flex";
+    document.getElementById("newGame").style.display = "none"; // online uses rematch overlay
+    // Seat 0 (host) picks the seed and broadcasts the deal.
+    if (seat === 0) {
+      var seed = (Math.random() * 0xFFFFFFFF) >>> 0;
+      onDeal(seed);
+      onTurn = 0;
+      GameMP.send({ action: "start", seat: 0, seed: seed });
+      onAfterDeal();
+    } else {
+      // Non-host waits for the start broadcast.
+      logMsg("Connected as Player " + (seat + 1) + " — waiting for the deal…");
+    }
+  }
+
+  function onAfterDeal() {
+    // If, after the auto-discard, the starting player already emptied out, skip.
+    if (onHands[onTurn] && onHands[onTurn].length === 0) onTurn = onNextActive(onTurn);
+    audio();
+    sndDraw();
+    if (onInCount() <= 1) { onAdvanceTurn(onTurn); return; }
+    onRender();
+  }
+
+  // The active player draws a card from the next still-in player (their "left").
+  function onYouDraw(fromSeat, indexInOpp) {
+    if (mode !== "online" || gameOver || busy) return;
+    if (onTurn !== onMySeat) return;
+    var src = onHands[fromSeat];
+    if (!src || indexInOpp < 0 || indexInOpp >= src.length) return;
+    busy = true;
+    GameMP.send({ action: "draw", seat: onMySeat, fromSeat: fromSeat, index: indexInOpp });
+    var r = onApplyDraw(onMySeat, fromSeat, indexInOpp);
+    if (r) {
+      if (r.paired) { sndPair(); logMsg("You drew the <b>" + r.card.emoji + " " + r.card.name + "</b> and matched a pair! 🎉"); }
+      else { sndDraw(); logMsg("You drew the <b>" + r.card.emoji + " " + r.card.name + "</b>." + (isMaid(r.card) ? " Uh oh — the Old Maid! 👵" : "")); }
+    }
+    onAdvanceTurn(onMySeat);
+    busy = false;
+  }
+
+  // Apply a remote player's draw (received over the wire).
+  function onRemoteDraw(m) {
+    if (mode !== "online" || gameOver) return;
+    var r = onApplyDraw(m.seat, m.fromSeat, m.index);
+    if (r) {
+      if (r.paired) { sndPair(); logMsg("Player " + (m.seat + 1) + " drew a card and matched a pair! 🎉"); }
+      else { sndDraw(); logMsg("Player " + (m.seat + 1) + " drew a card from Player " + (m.fromSeat + 1) + "."); }
+    }
+    onAdvanceTurn(m.seat);
+  }
+
+  function onFinish(loserSeat) {
+    gameOver = true;
+    busy = false;
+    onLoser = loserSeat;
+    onRender();
+    var iLost = loserSeat === onMySeat;
+    setTimeout(function () {
+      if (iLost) {
+        sndLose();
+        elOverlay.className = "overlay show lose";
+        elOvEmoji.textContent = "👵";
+        elOvTitle.textContent = "You're the Old Maid!";
+        elOvText.textContent = "You got stuck holding the lonely Old Maid. Better luck next time!";
+        logMsg("Game over — you held the Old Maid. 👵");
+      } else {
+        sndWin();
+        elOverlay.className = "overlay show win";
+        elOvEmoji.textContent = "🎉";
+        elOvTitle.textContent = "You Win!";
+        elOvText.textContent = "Player " + (loserSeat + 1) + " is stuck with the lonely Old Maid 👵!";
+        logMsg("Player " + (loserSeat + 1) + " held the Old Maid. You win! 🎊");
+      }
+      // Host-only rematch.
+      var btn = document.getElementById("ovBtn");
+      btn.textContent = "Rematch";
+      btn.style.display = onMySeat === 0 ? "" : "none";
+    }, 500);
+  }
+
+  function onHostRematch() {
+    if (onMySeat !== 0) return;
+    var seed = (Math.random() * 0xFFFFFFFF) >>> 0;
+    gameOver = false; onLoser = -1;
+    onDeal(seed);
+    onTurn = 0;
+    elOverlay.className = "overlay";
+    GameMP.sendReset();
+    GameMP.send({ action: "start", seat: 0, seed: seed });
+    onAfterDeal();
+  }
+
+  // Render the online table: opponent strip (face-down backs + counts + turn /
+  // out markers) and your own face-up hand in the bottom zone.
+  function onRender() {
+    // Bottom zone = your face-up hand (reuse the existing youHand rendering).
+    var mine = onHands[onMySeat] || [];
+    var myOut = mine.length === 0;
+    setLabelText(elYouZoneLabel, myOut ? "You — safe! ✅" : "Your hand (Player " + (onMySeat + 1) + ")");
+    elYouCount.textContent = mine.length;
+    elYouHand.innerHTML = "";
+    var ownSmall = mine.length > 9;
+    var sorted = mine.slice().sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); });
+    for (var j = 0; j < sorted.length; j++) elYouHand.appendChild(makeFaceCard(sorted[j], ownSmall, false));
+
+    // Opponent strip: one card per other seat (in seat order starting after me).
+    elOnlineOpps.innerHTML = "";
+    // The seat we may draw FROM this turn (only when it's our turn).
+    var drawTarget = (onTurn === onMySeat && !gameOver && !busy) ? onNextActive(onMySeat) : -1;
+    for (var k = 1; k < onN; k++) {
+      var s = (onMySeat + k) % onN;
+      var hand = onHands[s] || [];
+      var isOut = hand.length === 0;
+      var canDraw = (s === drawTarget);
+      var card = document.createElement("div");
+      card.className = "opp" + (onTurn === s && !gameOver ? " turn-now" : "") + (isOut ? " out" : "") + (canDraw ? " drawable" : "");
+      var nm = document.createElement("div"); nm.className = "opp-nm";
+      var label = document.createElement("span");
+      label.textContent = "Player " + (s + 1) + (isOut ? " ✅" : "") + (onLoser === s ? " 👵" : "");
+      var cnt = document.createElement("span"); cnt.className = "count"; cnt.textContent = hand.length;
+      nm.appendChild(label); nm.appendChild(cnt);
+      card.appendChild(nm);
+      var hd = document.createElement("div"); hd.className = "opp-hand";
+      hd.dataset.seat = s;
+      for (var c = 0; c < hand.length; c++) {
+        var b = makeBackCard(true, c);
+        hd.appendChild(b);
+      }
+      card.appendChild(hd);
+      elOnlineOpps.appendChild(card);
+    }
+
+    // Turn / status line shown beneath the latest action message.
+    if (!gameOver) {
+      var line;
+      if (onTurn === onMySeat) {
+        var tgt = onNextActive(onMySeat);
+        line = tgt >= 0 ? "Your turn — tap a face-down card from Player " + (tgt + 1) + "." : "Your turn…";
+      } else {
+        line = "Player " + (onTurn + 1) + "'s turn…";
+      }
+      // Keep the last action sentence (everything before any prior turn prompt)
+      // and re-append the fresh prompt as a sub-line.
+      var base = elLog.innerHTML.replace(/<span class="pairs">.*?<\/span>/, "");
+      logMsg(base, line);
+    }
+  }
+
+  // Click handler for the online opponent strip (draw from your left neighbour).
+  elOnlineOpps.addEventListener("click", function (ev) {
+    if (mode !== "online") return;
+    var t = ev.target;
+    while (t && t !== elOnlineOpps && !t.classList.contains("opp-hand")) t = t.parentNode;
+    if (!t || !t.classList || !t.classList.contains("opp-hand")) return;
+    var seat = parseInt(t.dataset.seat, 10);
+    if (isNaN(seat)) return;
+    if (onTurn !== onMySeat || gameOver || busy) return;
+    // You may only draw from the NEXT still-in player (your left).
+    if (seat !== onNextActive(onMySeat)) return;
+    var src = onHands[seat] || [];
+    if (!src.length) return;
+    // Pick a RANDOM index into the source hand (blind draw); broadcast it so
+    // every client applies the identical transfer.
+    var index = Math.floor(Math.random() * src.length);
+    onYouDraw(seat, index);
+  });
+
   // ---------- Mode selection ----------
   function showModeSelect() {
     elModeOverlay.className = "overlay show";
@@ -909,15 +1238,63 @@
   function startMode(m) {
     mode = m;
     elModeOverlay.className = "overlay";
+    // Leaving online: restore the local layout.
+    onStarted = false;
+    elCpuZone.style.display = "";
+    elOnlineOpps.style.display = "none";
+    document.getElementById("newGame").style.display = "";
+    setLabelText(elYouZoneLabel, "Your hand");
     newGame();
   }
 
   // "New Game" returns to the mode picker (switch AI / 2-player).
   document.getElementById("newGame").addEventListener("click", showModeSelect);
-  // "Play Again" from the game-over overlay restarts the SAME mode.
-  document.getElementById("ovBtn").addEventListener("click", newGame);
+  // "Play Again" from the game-over overlay restarts the SAME mode (online =
+  // host-only rematch; local = restart the current local mode).
+  document.getElementById("ovBtn").addEventListener("click", function () {
+    if (mode !== "online") { newGame(); return; }
+    if (onPeerLeft) { onPeerLeft = false; GameMP.openCreate(); return; }
+    onHostRematch();
+  });
   document.getElementById("modeAi").addEventListener("click", function () { startMode("ai"); });
   document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
+
+  // ---------- Online wiring (GameMP) ----------
+  // setup() injects a "🌐 Online Game" button after #modeTwo and (for 2–6
+  // players) renders the waiting room itself. We render no lobby UI here.
+  GameMP.setup({ gameName: "Old Maid", minPlayers: 2, maxPlayers: 6 });
+  GameMP.onReady(function (seat, count) { audio(); onStartMatch(seat, count); });
+  GameMP.onMove(function (m) {
+    if (!m) return;
+    if (m.action === "start") {
+      // Host's deal broadcast — every client builds the identical deal.
+      onDeal(m.seed);
+      onTurn = 0;
+      onAfterDeal();
+    } else if (m.action === "draw") {
+      onRemoteDraw(m);
+    }
+  });
+  GameMP.onReset(function () {
+    // Host pressed Rematch — wait for the accompanying "start" broadcast to deal.
+    gameOver = false; onLoser = -1;
+    elOverlay.className = "overlay";
+    logMsg("Rematch! Waiting for the deal…");
+  });
+  GameMP.onPeerLeft(function () {
+    // No host-authoritative server: a mid-match drop breaks the deterministic
+    // turn order, so end the match cleanly rather than stall.
+    if (!onStarted || gameOver) return;
+    gameOver = true;
+    busy = false;
+    onPeerLeft = true;
+    elOverlay.className = "overlay show lose";
+    elOvEmoji.textContent = "🔌";
+    elOvTitle.textContent = "Player left";
+    elOvText.textContent = "Someone disconnected, so this match can't continue. Start a new online game to play again.";
+    var btn = document.getElementById("ovBtn"); btn.textContent = "New game";
+    btn.style.display = "";
+  });
 
   // Prevent gesture zoom / double-tap zoom leftovers
   document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
