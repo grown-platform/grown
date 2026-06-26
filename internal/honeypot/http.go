@@ -1,8 +1,10 @@
 package honeypot
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -83,6 +85,19 @@ func (s *scanStatusWriter) Flush() {
 	if f, ok := s.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack forwards connection takeover to the underlying ResponseWriter so
+// WebSocket upgrades keep working through this outermost wrapper. Embedding the
+// http.ResponseWriter INTERFACE hides the concrete writer's Hijacker, so without
+// this method coder/websocket (and any hijacking handler) sees a non-Hijacker
+// and fails the upgrade with 501 Not Implemented — which silently broke the
+// game-room relay and collab WebSockets.
+func (s *scanStatusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := s.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("honeypot: underlying ResponseWriter does not support hijacking")
 }
 
 // Middleware mounts the intrusion tripwire at the OUTERMOST layer:
