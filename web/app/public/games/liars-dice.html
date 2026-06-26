@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Liar's Dice</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(160deg, #3a1206, #1a0a04);
+    color: #fff;
+    display: flex; flex-direction: column;
+    height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header { text-align: center; padding: 8px 6px 4px; flex: 0 0 auto; }
+  h1 { font-size: 1.5rem; letter-spacing: 1px; text-shadow: 0 2px 4px rgba(0,0,0,.4); }
+  h1 .a { color: #ffb454; }
+  .subtitle { font-size: .72rem; opacity: .75; margin-top: 2px; }
+
+  .board { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; padding: 6px; }
+  .zone { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .zone.mine { margin-top: auto; }
+  .zone-label { font-size: .75rem; font-weight: 600; opacity: .9; display: flex; align-items: center; gap: 8px; }
+  .pill { background: rgba(0,0,0,.35); border-radius: 10px; padding: 1px 8px; font-size: .7rem; font-weight: 700; }
+
+  .dice { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; min-height: 44px; }
+  .die {
+    width: 44px; height: 44px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; line-height: 1;
+    background: #fdfdfd; color: #1a1a1a;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4);
+  }
+  .die.mine { background: #fff3e0; color: #7c2d12; }
+  .die.back { background: #5a2a16; color: rgba(255,255,255,.5); font-size: 1.4rem; }
+  .die.hit { background: #ffd34d; color: #5a3c00; box-shadow: 0 0 8px 2px rgba(255,211,77,.6); }
+
+  .center { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 0; }
+  .bid-now { font-size: 1.1rem; font-weight: 700; text-align: center; min-height: 26px; }
+  .bid-now .v { color: #ffb454; }
+  .turn { font-size: .82rem; opacity: .85; min-height: 18px; }
+  .reveal { text-align: center; font-size: .9rem; line-height: 1.4; }
+  .reveal .res { font-size: 1.15rem; font-weight: 700; margin-top: 4px; }
+  .reveal .win { color: #7dffa3; }
+  .reveal .lose { color: #ff8a8a; }
+
+  .controls { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 6px 8px calc(8px + env(safe-area-inset-bottom)); }
+  .stepper { display: flex; align-items: center; justify-content: center; gap: 12px; }
+  .stepper .q { font-size: 1.6rem; font-weight: 800; min-width: 40px; text-align: center; color: #ffb454; }
+  .face-row { display: flex; justify-content: center; gap: 6px; }
+  .face-btn {
+    width: 42px; height: 42px; border-radius: 8px; border: 2px solid transparent;
+    background: #2a1810; color: #fff; font-size: 1.6rem; line-height: 1;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .face-btn.sel { border-color: #ffb454; background: #4a2a16; }
+  .action-row { display: flex; gap: 10px; }
+  button {
+    font: inherit; font-weight: 700; border: none; border-radius: 10px; padding: 12px 16px;
+    cursor: pointer; touch-action: manipulation; flex: 1;
+  }
+  button:disabled { opacity: .4; cursor: default; }
+  .btn-round { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 50%; font-size: 1.5rem; background: #5a2a16; color: #fff; padding: 0; }
+  .btn-bid { background: #ffb454; color: #4a2400; box-shadow: 0 3px 0 #c77f1f; }
+  .btn-bid:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #c77f1f; }
+  .btn-challenge { background: #e23c3c; color: #fff; box-shadow: 0 3px 0 #9f1f1f; }
+  .btn-challenge:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #9f1f1f; }
+
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10,4,2,.86);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 10; padding: 24px; text-align: center; gap: 16px;
+  }
+  .overlay.show { display: flex; }
+  .overlay h2 { font-size: 1.8rem; color: #ffb454; }
+  .overlay p { font-size: .95rem; opacity: .9; max-width: 300px; line-height: 1.45; }
+  .overlay .emoji { font-size: 3.2rem; }
+  .overlay button { flex: 0 0 auto; min-width: 220px; background: #ffb454; color: #4a2400; box-shadow: 0 3px 0 #c77f1f; }
+  .overlay.win h2 { color: #7dffa3; }
+  .overlay.lose h2 { color: #ff8a8a; }
+</style>
+    <!-- pwa:start -->
+    <link rel="icon" type="image/svg+xml" href="/games/icons/liars-dice.svg">
+    <link rel="manifest" href="/games/liars-dice.webmanifest">
+    <meta name="theme-color" content="#7C2D12">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Liar's Dice">
+    <link rel="apple-touch-icon" href="/games/icons/liars-dice.svg">
+    <style>/* keep content clear of the iPhone notch / camera island (safe-area insets) */
+    body{padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
+    </style>
+    <script>
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/games/games-sw.js').catch(function(){})})}
+    window.addEventListener('DOMContentLoaded',function(){var a=document.createElement('a');a.href='/games';a.textContent='‹ Games';a.setAttribute('style','position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;padding:6px 12px;border-radius:20px;background:rgba(15,23,42,.6);color:#fff;font:600 13px system-ui,sans-serif;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);touch-action:manipulation');document.body.appendChild(a);});
+    (function(){
+      var ID="liars-dice",NAME="Liar's Dice",COLOR="#7C2D12",HK='grown-hi-'+ID;
+      window.GrownGame={
+        highScore:function(){return parseInt(localStorage.getItem(HK)||'0',10)||0;},
+        setHighScore:function(n){n=Math.floor(+n||0);try{if(n>this.highScore())localStorage.setItem(HK,String(n));}catch(e){}return this.highScore();}
+      };
+      var dp=null,scrim,sheet,hiEl,installItem,isOpen=false;
+      function css(el,s){el.setAttribute('style',s);}
+      function emit(n){try{window.dispatchEvent(new Event(n));}catch(e){}}
+      window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dp=e;if(installItem)installItem.style.display='';});
+      window.addEventListener('appinstalled',function(){dp=null;if(installItem)installItem.style.display='none';});
+      function item(label,fn){var b=document.createElement('button');b.textContent=label;css(b,'display:block;width:100%;text-align:left;margin:6px 0;padding:12px 14px;border:1px solid #243049;border-radius:10px;background:#16203a;color:#e8eefc;font:600 15px system-ui,sans-serif;cursor:pointer;touch-action:manipulation');b.onclick=fn;return b;}
+      function openMenu(){if(isOpen)return;isOpen=true;hiEl.textContent='High score: '+(window.GrownGame.highScore()||'—');scrim.style.pointerEvents='auto';scrim.style.opacity='1';sheet.style.transform='translateY(0)';emit('grown:pause');}
+      function closeMenu(){if(!isOpen)return;isOpen=false;scrim.style.opacity='0';scrim.style.pointerEvents='none';sheet.style.transform='translateY(-110%)';emit('grown:resume');}
+      function doInstall(){if(!dp)return;var d=dp;dp=null;installItem.style.display='none';d.prompt();d.userChoice.finally(function(){});closeMenu();}
+      function report(){var body='\n\n----\nGame: '+NAME+'\nURL: '+location.href+'\nDevice: '+navigator.userAgent;location.href='mailto:games@pick.haus?subject='+encodeURIComponent('Issue: '+NAME)+'&body='+encodeURIComponent(body);}
+      function build(){
+        var btn=document.createElement('button');btn.setAttribute('aria-label','Menu');btn.textContent='⏸';
+        css(btn,'position:fixed;right:calc(env(safe-area-inset-right,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:2147483646;width:40px;height:40px;padding:0;border:none;border-radius:50%;background:rgba(15,23,42,.6);color:#fff;font-size:17px;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;touch-action:manipulation');
+        btn.onclick=openMenu;document.body.appendChild(btn);
+        scrim=document.createElement('div');css(scrim,'position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.55);opacity:0;transition:opacity .18s;pointer-events:none');scrim.onclick=closeMenu;document.body.appendChild(scrim);
+        sheet=document.createElement('div');css(sheet,'position:fixed;left:0;right:0;top:0;z-index:2147483647;transform:translateY(-110%);transition:transform .22s;background:#0f172a;color:#e8eefc;border-bottom-left-radius:16px;border-bottom-right-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.5);padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 16px;max-width:480px;margin:0 auto');document.body.appendChild(sheet);
+        var h=document.createElement('div');css(h,'font-weight:700;font-size:17px;color:'+COLOR);h.textContent=NAME;sheet.appendChild(h);
+        hiEl=document.createElement('div');css(hiEl,'font-size:13px;color:#9fb3d9;margin:2px 0 12px');sheet.appendChild(hiEl);
+        sheet.appendChild(item('▶ Resume',closeMenu));
+        installItem=item('⬇ Install app',doInstall);installItem.style.display=dp?'':'none';sheet.appendChild(installItem);
+        sheet.appendChild(item('‹ All games',function(){location.href='/games';}));
+        sheet.appendChild(item('⚑ Report an issue',report));
+      }
+      if(document.body)build();else window.addEventListener('DOMContentLoaded',build);
+    })();
+    </script>
+    <!-- pwa:end -->
+</head>
+<body>
+  <header>
+    <h1>Liar's <span class="a">Dice</span></h1>
+    <div class="subtitle">Online bluffing — bid high or call their bluff!</div>
+  </header>
+
+  <div class="board">
+    <div class="zone">
+      <div class="zone-label"><span id="oppName">Opponent</span> <span class="pill" id="oppCount">5 dice</span></div>
+      <div class="dice" id="oppDice"></div>
+    </div>
+
+    <div class="center">
+      <div class="bid-now" id="bidNow">Waiting…</div>
+      <div class="turn" id="turn"></div>
+      <div class="reveal" id="reveal" style="display:none"></div>
+    </div>
+
+    <div class="zone mine">
+      <div class="zone-label"><span id="myName">You</span> <span class="pill" id="myCount">5 dice</span></div>
+      <div class="dice" id="myDice"></div>
+    </div>
+  </div>
+
+  <div class="controls" id="controls">
+    <div class="stepper">
+      <button class="btn-round" id="qDec">−</button>
+      <span class="q"><span id="qVal">1</span> ×</span>
+      <button class="btn-round" id="qInc">+</button>
+      <span id="selFaceShow" style="font-size:1.6rem"></span>
+    </div>
+    <div class="face-row" id="faceRow"></div>
+    <div class="action-row">
+      <button class="btn-bid" id="bidBtn">Bid</button>
+      <button class="btn-challenge" id="challengeBtn">Liar!</button>
+    </div>
+  </div>
+
+  <!-- Lobby (online-only) -->
+  <div class="overlay show" id="lobby">
+    <div class="emoji">🎲</div>
+    <h2>Liar's Dice</h2>
+    <p>Liar's Dice is <b>online multiplayer only</b>. Create a game and share the link, or join one — then bluff your friend out of all their dice.</p>
+    <button id="startOnline">🌐 Create / Join online game</button>
+    <p style="font-size:.78rem;opacity:.7">Each player has 5 dice. Bid how many of a face are on the table (both hands). Raise the bid or call "Liar!". Wrong caller — or caught bluffer — loses a die. Lose all 5 and you're out. (Each die counts as its own face — no wilds.)</p>
+  </div>
+
+  <!-- Game over -->
+  <div class="overlay" id="over">
+    <div class="emoji" id="overEmoji">🏆</div>
+    <h2 id="overTitle"></h2>
+    <p id="overText"></p>
+    <button id="rematchBtn">Rematch</button>
+  </div>
+
+<script src="/games/game-multiplayer.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Audio ----------
+  var actx = null;
+  function audio(){ if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ actx=null; } } if(actx&&actx.state==="suspended")actx.resume(); return actx; }
+  function beep(freq,dur,type,vol){ var a=audio(); if(!a)return; var o=a.createOscillator(),g=a.createGain(); o.type=type||"sine"; o.frequency.value=freq; var now=a.currentTime; g.gain.setValueAtTime(0.0001,now); g.gain.linearRampToValueAtTime(vol||0.15,now+0.01); g.gain.exponentialRampToValueAtTime(0.0001,now+(dur||0.15)); o.connect(g); g.connect(a.destination); o.start(now); o.stop(now+(dur||0.15)+0.02); }
+  function sBid(){ beep(520,0.07,"square",0.08); }
+  function sChallenge(){ beep(300,0.12,"sawtooth",0.1); }
+  function sReveal(){ beep(660,0.1,"sine",0.1); }
+  function sWin(){ [523,659,784,1047].forEach(function(f,i){ setTimeout(function(){ beep(f,0.16,"triangle",0.18); }, i*120); }); }
+  function sLose(){ [392,330,262].forEach(function(f,i){ setTimeout(function(){ beep(f,0.22,"sawtooth",0.14); }, i*150); }); }
+
+  // ---------- State ----------
+  var FACES = ['⚀','⚁','⚂','⚃','⚄','⚅']; // index 0..5 => face 1..6
+  var DICE_PER = 5;
+  var myRole = null, oppRole = null;
+  var diceCount = [DICE_PER, DICE_PER];   // indexed by role (0,1)
+  var myDice = [];
+  var currentBid = null;   // { q, face, byRole }
+  var turnRole = null;     // role whose turn it is to act
+  var starterRole = 0;     // who bids first this round
+  var phase = "lobby";     // lobby | play | reveal | over
+  var selQ = 1, selFace = 3;
+  var pendingChallenge = false;
+
+  // ---------- DOM ----------
+  var $ = function(id){ return document.getElementById(id); };
+  var elOppName=$("oppName"), elOppCount=$("oppCount"), elOppDice=$("oppDice");
+  var elMyName=$("myName"), elMyCount=$("myCount"), elMyDice=$("myDice");
+  var elBidNow=$("bidNow"), elTurn=$("turn"), elReveal=$("reveal"), elControls=$("controls");
+  var elQVal=$("qVal"), elFaceRow=$("faceRow"), elSelFaceShow=$("selFaceShow");
+  var elBidBtn=$("bidBtn"), elChallengeBtn=$("challengeBtn");
+  var elLobby=$("lobby"), elOver=$("over"), elOverTitle=$("overTitle"), elOverText=$("overText"), elOverEmoji=$("overEmoji");
+
+  // ---------- Helpers ----------
+  function totalDice(){ return diceCount[0] + diceCount[1]; }
+  function myTurn(){ return phase === "play" && turnRole === myRole; }
+  function rollMyDice(){ myDice = []; for (var i=0;i<diceCount[myRole];i++) myDice.push(1+Math.floor(Math.random()*6)); myDice.sort(function(a,b){return a-b;}); }
+  function bidValid(q, face){
+    if (q < 1 || q > totalDice() || face < 1 || face > 6) return false;
+    if (!currentBid) return true;
+    if (q > currentBid.q) return true;
+    if (q === currentBid.q && face > currentBid.face) return true;
+    return false;
+  }
+  function resetSelection(){
+    if (currentBid){
+      if (currentBid.face < 6){ selQ = currentBid.q; selFace = currentBid.face + 1; }
+      else { selQ = currentBid.q + 1; selFace = 1; }
+    } else { selQ = 1; selFace = 3; }
+    selQ = Math.max(1, Math.min(totalDice(), selQ));
+  }
+  function bidText(b){ return b.q + " × " + FACES[b.face-1] + " (" + b.q + " of the " + b.face + "s)"; }
+
+  // ---------- Match / round flow ----------
+  function startMatch(role){
+    myRole = role; oppRole = 1 - role;
+    elMyName.textContent = "You (Player " + (myRole+1) + ")";
+    elOppName.textContent = "Player " + (oppRole+1);
+    diceCount = [DICE_PER, DICE_PER];
+    starterRole = 0;
+    elLobby.classList.remove("show");
+    elOver.classList.remove("show");
+    startRound();
+  }
+  function startRound(){
+    rollMyDice();
+    currentBid = null;
+    turnRole = starterRole;
+    phase = "play";
+    pendingChallenge = false;
+    elReveal.style.display = "none";
+    resetSelection();
+    render();
+  }
+  function doBid(){
+    if (!myTurn() || !bidValid(selQ, selFace)) return;
+    currentBid = { q: selQ, face: selFace, byRole: myRole };
+    turnRole = oppRole;
+    GameMP.send({ action: "bid", q: selQ, face: selFace });
+    sBid();
+    render();
+  }
+  function doChallenge(){
+    if (!myTurn() || !currentBid) return;
+    GameMP.send({ action: "challenge", dice: myDice });
+    pendingChallenge = true;
+    phase = "reveal";
+    sChallenge();
+    elTurn.textContent = "You called LIAR — revealing…";
+    render();
+  }
+  function resolve(bid, challengerRole, diceByRole){
+    var face = bid.face, total = 0;
+    [0,1].forEach(function(r){ var arr = diceByRole[r] || []; for (var i=0;i<arr.length;i++) if (arr[i] === face) total++; });
+    var bidStands = total >= bid.q;
+    var loserRole = bidStands ? challengerRole : bid.byRole;
+    diceCount[loserRole]--;
+    phase = "reveal";
+    pendingChallenge = false;
+    sReveal();
+    showReveal(bid, challengerRole, diceByRole, total, bidStands, loserRole);
+    setTimeout(function(){
+      if (diceCount[loserRole] <= 0){
+        phase = "over";
+        gameOver(loserRole);
+      } else {
+        starterRole = loserRole;     // the player who lost a die opens next round
+        startRound();
+      }
+    }, 3400);
+  }
+  function gameOver(loserRole){
+    var iWon = loserRole !== myRole;
+    elControls.style.display = "none";
+    elOver.className = "overlay show " + (iWon ? "win" : "lose");
+    elOverEmoji.textContent = iWon ? "🏆" : "💀";
+    elOverTitle.textContent = iWon ? "You win!" : "You lose!";
+    elOverText.textContent = iWon
+      ? "Your opponent ran out of dice. Nicely bluffed!"
+      : "You ran out of dice. Better luck next round!";
+    if (iWon) sWin(); else sLose();
+    if (window.GrownGame && iWon) window.GrownGame.setHighScore(window.GrownGame.highScore() + 1);
+  }
+  function rematch(){
+    diceCount = [DICE_PER, DICE_PER];
+    starterRole = 0;
+    GameMP.sendReset();
+    startRound();
+  }
+
+  // ---------- Rendering ----------
+  function diceEl(face, cls){ var d = document.createElement("div"); d.className = "die " + cls; d.textContent = FACES[face-1]; return d; }
+  function backEl(){ var d = document.createElement("div"); d.className = "die back"; d.textContent = "?"; return d; }
+
+  function render(){
+    if (phase === "lobby"){ elLobby.classList.add("show"); return; }
+    // counts
+    elMyCount.textContent = diceCount[myRole] + (diceCount[myRole] === 1 ? " die" : " dice");
+    elOppCount.textContent = diceCount[oppRole] + (diceCount[oppRole] === 1 ? " die" : " dice");
+    // my dice (always visible)
+    elMyDice.innerHTML = "";
+    for (var i=0;i<myDice.length;i++) elMyDice.appendChild(diceEl(myDice[i], "mine"));
+    // opponent dice — hidden backs during play
+    elOppDice.innerHTML = "";
+    if (phase !== "reveal"){
+      for (var j=0;j<diceCount[oppRole];j++) elOppDice.appendChild(backEl());
+    }
+    // current bid
+    if (phase === "play"){
+      elReveal.style.display = "none";
+      elBidNow.innerHTML = currentBid
+        ? ('Current bid: <span class="v">' + bidText(currentBid) + '</span> by ' + (currentBid.byRole === myRole ? "you" : "opponent"))
+        : "No bid yet — " + (turnRole === myRole ? "you" : "opponent") + " opens.";
+      elTurn.textContent = myTurn() ? "Your turn — raise the bid or call Liar!" : "Waiting for opponent…";
+      elControls.style.display = "flex";
+      renderControls();
+    } else {
+      elControls.style.display = "none";
+    }
+  }
+
+  function renderControls(){
+    elQVal.textContent = selQ;
+    elSelFaceShow.textContent = FACES[selFace-1];
+    elFaceRow.innerHTML = "";
+    for (var f=1; f<=6; f++){
+      (function(face){
+        var b = document.createElement("button");
+        b.className = "face-btn" + (face === selFace ? " sel" : "");
+        b.textContent = FACES[face-1];
+        b.onclick = function(){ if(!myTurn())return; selFace = face; renderControls(); };
+        elFaceRow.appendChild(b);
+      })(f);
+    }
+    var canBid = myTurn() && bidValid(selQ, selFace);
+    var canChallenge = myTurn() && !!currentBid;
+    elBidBtn.disabled = !canBid;
+    elBidBtn.textContent = "Bid " + selQ + " × " + FACES[selFace-1];
+    elChallengeBtn.disabled = !canChallenge;
+  }
+
+  function showReveal(bid, challengerRole, diceByRole, total, bidStands, loserRole){
+    // Reveal both hands with the matching face highlighted.
+    elOppDice.innerHTML = "";
+    var oppArr = diceByRole[oppRole] || [];
+    for (var i=0;i<oppArr.length;i++) elOppDice.appendChild(diceEl(oppArr[i], oppArr[i]===bid.face ? "hit" : ""));
+    elMyDice.innerHTML = "";
+    var myArr = diceByRole[myRole] || [];
+    for (var j=0;j<myArr.length;j++) elMyDice.appendChild(diceEl(myArr[j], myArr[j]===bid.face ? "mine hit" : "mine"));
+
+    var challengerName = challengerRole === myRole ? "You" : "Opponent";
+    var iLost = loserRole === myRole;
+    elBidNow.innerHTML = '<span class="v">' + bidText(bid) + '</span>';
+    elReveal.style.display = "block";
+    elReveal.innerHTML =
+      challengerName + ' called <b>Liar!</b><br>' +
+      'There ' + (total === 1 ? "was" : "were") + ' <b>' + total + '</b> ' + FACES[bid.face-1] +
+      ' — bid needed ' + bid.q + '.<br>' +
+      '<span class="res ' + (iLost ? "lose" : "win") + '">' +
+        (bidStands ? "Bid was good — " : "Bluff caught — ") +
+        (iLost ? "you lose a die." : "opponent loses a die.") +
+      '</span>';
+    elTurn.textContent = "";
+  }
+
+  // ---------- Online wiring (GameMP) ----------
+  GameMP.setup({ gameName: "Liar's Dice" });
+  GameMP.onReady(function (role) { audio(); startMatch(role); });
+  GameMP.onPeerLeft(function () {
+    phase = "over";
+    elControls.style.display = "none";
+    elOver.className = "overlay show";
+    elOverEmoji.textContent = "🔌";
+    elOverTitle.textContent = "Opponent left";
+    elOverText.textContent = "Your opponent disconnected. Start a new online game to play again.";
+    $("rematchBtn").textContent = "New game";
+  });
+  GameMP.onReset(function () {
+    diceCount = [DICE_PER, DICE_PER];
+    starterRole = 0;
+    startRound();
+  });
+  GameMP.onMove(function (m) {
+    if (m.action === "bid"){
+      currentBid = { q: m.q, face: m.face, byRole: oppRole };
+      turnRole = myRole;
+      resetSelection();
+      sBid();
+      render();
+    } else if (m.action === "challenge"){
+      // Opponent challenged MY current bid; m.dice are their dice. Reveal mine
+      // back so they can resolve too, then resolve identically on both ends.
+      var d1 = {}; d1[myRole] = myDice; d1[oppRole] = m.dice;
+      GameMP.send({ action: "reveal", dice: myDice });
+      resolve(currentBid, oppRole, d1);   // challenger = opponent
+    } else if (m.action === "reveal"){
+      // Response to MY challenge; m.dice are opponent's dice.
+      var d2 = {}; d2[myRole] = myDice; d2[oppRole] = m.dice;
+      resolve(currentBid, myRole, d2);    // challenger = me
+    }
+  });
+
+  // ---------- Input ----------
+  $("startOnline").addEventListener("click", function(){ audio(); GameMP.openCreate(); });
+  $("qDec").addEventListener("click", function(){ if(!myTurn())return; selQ = Math.max(1, selQ-1); renderControls(); });
+  $("qInc").addEventListener("click", function(){ if(!myTurn())return; selQ = Math.min(totalDice(), selQ+1); renderControls(); });
+  elBidBtn.addEventListener("click", doBid);
+  elChallengeBtn.addEventListener("click", doChallenge);
+  $("rematchBtn").addEventListener("click", function(){
+    if (phase === "over" && diceCount[0] > 0 && diceCount[1] > 0) {
+      // opponent-left case: just reopen the online panel
+      GameMP.openCreate();
+    } else {
+      rematch();
+    }
+  });
+})();
+</script>
+</body>
+</html>
