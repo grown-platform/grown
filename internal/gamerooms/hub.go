@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +27,7 @@ const (
 type peer struct {
 	id       string
 	name     string
+	seq      int // stable join order within the room (0 = room creator / host)
 	out      chan []byte
 	joinedAt time.Time
 	// kick is closed by an admin Kick to force this peer's relay loop to exit
@@ -41,6 +43,7 @@ type room struct {
 	mu       sync.Mutex
 	password string
 	peers    map[string]*peer
+	nextSeq  int       // monotonic join counter -> peer.seq (stable seat order)
 	game     string    // display name, for the public lobby
 	listed   bool      // discoverable in the open-games lobby
 	created  time.Time // for lobby age display
@@ -314,6 +317,8 @@ func (h *Hub) Serve(w http.ResponseWriter, req *http.Request, code, password, pe
 		h.cleanup(code, cr)
 		return
 	}
+	self.seq = cr.nextSeq
+	cr.nextSeq++
 	cr.peers[peerID] = self
 	cr.mu.Unlock()
 	h.store.LogEvent(AuditEvent{Event: "peer_joined", Room: code, Game: game, PeerID: peerID, PeerName: name})
@@ -329,7 +334,7 @@ func (h *Hub) Serve(w http.ResponseWriter, req *http.Request, code, password, pe
 
 	// Send the joiner the current roster, then announce the join to others.
 	h.sendRoster(cr, self)
-	h.broadcast(cr, self, map[string]any{"type": "join", "from": peerID, "name": name})
+	h.broadcast(cr, self, map[string]any{"type": "join", "from": peerID, "name": name, "seq": self.seq})
 
 	// Write loop.
 	writeDone := make(chan struct{})
@@ -391,12 +396,19 @@ func (h *Hub) Serve(w http.ResponseWriter, req *http.Request, code, password, pe
 
 func (h *Hub) sendRoster(cr *room, to *peer) {
 	cr.mu.Lock()
-	peers := make([]map[string]string, 0, len(cr.peers))
+	peers := make([]*peer, 0, len(cr.peers))
 	for _, p := range cr.peers {
-		peers = append(peers, map[string]string{"id": p.id, "name": p.name})
+		peers = append(peers, p)
 	}
 	cr.mu.Unlock()
-	out, err := json.Marshal(map[string]any{"type": "roster", "peers": peers, "you": to.id})
+	// Order by join sequence so every client agrees on seat assignment (seat =
+	// index, seat 0 = room creator / host).
+	sort.Slice(peers, func(i, j int) bool { return peers[i].seq < peers[j].seq })
+	list := make([]map[string]any, 0, len(peers))
+	for _, p := range peers {
+		list = append(list, map[string]any{"id": p.id, "name": p.name, "seq": p.seq})
+	}
+	out, err := json.Marshal(map[string]any{"type": "roster", "peers": list, "you": to.id})
 	if err != nil {
 		return
 	}
