@@ -452,6 +452,7 @@
   </div>
 </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function(){
   "use strict";
@@ -518,7 +519,11 @@
   // mode '2p': seat 'you' = Player 1, seat 'cpu' = Player 2 — both human. The
   // ACTIVE seat's tiles render face-up at the bottom; the other seat's tiles
   // render face-down (count) at the top, since the opponent's hand is secret.
-  var mode = 'ai'; // 'ai' | '2p'  — default MUST stay 'ai'
+  // 'online' = N-player networked match over GameMP (2–4 players). In 'online'
+  // the local/AI seat model ('you'/'cpu') is bypassed entirely — see the ONLINE
+  // MULTIPLAYER section at the bottom, which keeps its own seat-indexed hands,
+  // deterministic seeded deal, render (onRender) and action paths.
+  var mode = 'ai'; // 'ai' | '2p' | 'online'  — default MUST stay 'ai'
   // Display name for a seat, used in labels/status/win text.
   function sideName(seat){
     if(mode === '2p') return seat === 'you' ? 'Player 1' : 'Player 2';
@@ -681,6 +686,8 @@
 
   // ---------- Rendering ----------
   function render(){
+    // In online mode, the seat-indexed network renderer owns the board.
+    if(mode === 'online'){ onRender(); return; }
     // Topbar counts: the top stat shows the OPPONENT (inactive seat), the bottom
     // stat shows the active player whose tiles are face-up. In 'ai' mode the
     // active player is always 'you', so this matches the original layout exactly.
@@ -1155,8 +1162,10 @@
 
   // "New Game" returns to the mode picker so you can switch AI / 2-player.
   el.newBtn.addEventListener('click', showModeSelect);
-  // "Play Again" from the game-over modal restarts the SAME mode.
-  el.modalBtn.addEventListener('click', function(){ el.overlay.classList.remove('show'); newGame(); });
+  // "Play Again" from the game-over modal restarts the SAME mode (local only;
+  // the online rematch is wired separately below and uses a host-broadcast
+  // re-deal, so skip the local restart entirely when online).
+  el.modalBtn.addEventListener('click', function(){ if(mode === 'online') return; el.overlay.classList.remove('show'); newGame(); });
   document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
   document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
 
@@ -1169,6 +1178,405 @@
     try{ if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); }catch(e){}
     document.removeEventListener('mousedown', unlockM);
   }, {once:true});
+
+  // ======================================================================
+  // ONLINE MULTIPLAYER (GameMP) — N players, 2–4
+  // ----------------------------------------------------------------------
+  // Lockstep, host-seeded. There is no authoritative server: seat 0 picks a
+  // seed and broadcasts {action:"start", seed}; EVERY client builds the same
+  // double-six set (28 tiles), shuffles it with the same seeded PRNG, and deals
+  // identically (7 each for 2 players, 5 otherwise) with the rest as the
+  // boneyard. From then on each move ({play|draw|pass}) is applied
+  // deterministically on every client, so all clients stay in sync from the one
+  // shared deal. Hands are soft-hidden (every client technically holds the full
+  // deal in memory) — fine for casual play. Turn order follows seat order; we
+  // only ACT on our own seat and gate input so we can never play out of turn.
+  //
+  // Reuses the shared globals/DOM where it can: line[], leftEnd/rightEnd,
+  // tileFits(), placeTile(), makeLineTile(), makeHalf(), and the same board /
+  // hand / overlay elements. It keeps its own seat-indexed hands (onHands) and
+  // boneyard so the 2-seat local model is untouched.
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function seededShuffle(arr,rng){for(var i=arr.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var t=arr[i];arr[i]=arr[j];arr[j]=t;}return arr;}
+
+  var onSeat = 0;        // our seat index (0..N-1); seat 0 = host
+  var onCount = 2;       // number of players in this match
+  var onHands = [];      // onHands[seat] -> array of {a,b} tiles
+  var onTurnSeat = 0;    // whose turn it is (seat index)
+  var onBone = [];       // shared boneyard (deterministic; draw from end)
+  var onOver = false;
+  var onSelIdx = -1;     // selected tile index in OUR hand (awaiting an end pick)
+
+  function onMyTurn(){ return mode === 'online' && !onOver && onTurnSeat === onSeat; }
+  function onName(seat){ return seat === onSeat ? 'You' : 'Player ' + (seat + 1); }
+  function onNextSeat(seat){ return (seat + 1) % onCount; }
+  function onHandHasPlay(hand){ return handHasPlay(hand); } // uses line/leftEnd/rightEnd
+  function onAnyoneCanPlay(){
+    for(var s=0;s<onCount;s++){ if(onHandHasPlay(onHands[s])) return true; }
+    return false;
+  }
+
+  // Build the identical deal on every client from a seed.
+  function onDeal(seed){
+    var rng = mulberry32(seed >>> 0);
+    var deck = seededShuffle(buildDeck(), rng); // draw from the end (we pop)
+    onHands = [];
+    for(var s=0;s<onCount;s++) onHands.push([]);
+    var per = (onCount === 2) ? 7 : 5;
+    // Deal round-robin starting at seat 0, mirroring a real deal.
+    for(var n=0;n<per;n++){
+      for(var s2=0;s2<onCount;s2++){ onHands[s2].push(deck.pop()); }
+    }
+    onBone = deck; // remainder is the boneyard (draw from end)
+    // Shared globals the reused helpers read from.
+    line = [];
+    leftEnd = rightEnd = null;
+    onTurnSeat = 0;     // seat 0 (host) leads the first tile
+    onOver = false;
+    onSelIdx = -1;
+    sortHand(onHands[onSeat]);
+  }
+
+  // Tidy our own hand: doubles first by value, then by pip sum (cosmetic only).
+  function sortHand(hand){
+    hand.sort(function(a,b){
+      var ad = a.a===a.b, bd = b.a===b.b;
+      if(ad !== bd) return ad ? -1 : 1;
+      return tilePipSum(b) - tilePipSum(a);
+    });
+  }
+
+  // ---- Online rendering -------------------------------------------------
+  function onRender(){
+    if(mode !== 'online') return;
+    var canAct = onMyTurn();
+
+    // Topbar: bottom stat = us; top stat repurposed to show the next opponent;
+    // the full per-player list lives in the face-down "cpu-hand" row below.
+    el.boneCount.textContent = onBone.length;
+    el.youCount.textContent = onHands[onSeat].length;
+    if(el.youCountLabel) el.youCountLabel.firstChild.textContent = 'You (P' + (onSeat+1) + ')';
+    // Pick one opponent for the small top stat (the next seat after us).
+    var topSeat = onNextSeat(onSeat);
+    el.cpuCount.textContent = onHands[topSeat].length;
+    if(el.cpuCountLabel) el.cpuCountLabel.firstChild.textContent = 'P' + (topSeat+1);
+    if(el.handLabel) el.handLabel.textContent = 'YOUR HAND (PLAYER ' + (onSeat+1) + ')';
+
+    // Per-player strip (every OTHER seat) with tile count + turn highlight.
+    el.cpuHand.innerHTML = '';
+    for(var s=0;s<onCount;s++){
+      if(s === onSeat) continue;
+      var isTurn = (onTurnSeat === s && !onOver);
+      var wrap = document.createElement('span');
+      wrap.setAttribute('style', 'display:inline-flex;flex-direction:column;align-items:center;margin:0 6px;' +
+        (isTurn ? 'filter:drop-shadow(0 0 4px #fde68a);' : ''));
+      var backs = document.createElement('span');
+      backs.setAttribute('style', 'display:flex;gap:2px;min-height:30px;');
+      var n = onHands[s].length, show = Math.min(n, 7);
+      for(var i=0;i<show;i++){ var d = document.createElement('span'); d.className = 'cpu-tile'; backs.appendChild(d); }
+      var lab = document.createElement('span');
+      lab.setAttribute('style', 'font-size:11px;margin-top:2px;' + (isTurn ? 'color:#fde68a;font-weight:700;' : 'color:#a7f3d0;'));
+      lab.textContent = 'P' + (s+1) + ': ' + n;
+      wrap.appendChild(backs); wrap.appendChild(lab);
+      el.cpuHand.appendChild(wrap);
+    }
+
+    // Board (line of play) with both open ends. End tap-zones appear only when
+    // it's our turn, a tile is selected, and that tile fits that end.
+    el.board.innerHTML = '';
+    if(line.length === 0){
+      el.board.className = 'board empty-msg';
+      el.board.textContent = canAct ? 'Board empty — play any tile to start.' : 'Waiting for the first tile…';
+    } else {
+      el.board.className = 'board';
+      var fit = (canAct && onSelIdx >= 0) ? tileFits(onHands[onSeat][onSelIdx]) : {left:false,right:false,any:false};
+      if(fit.left){ el.board.appendChild(onEndZone('left', leftEnd)); }
+      for(var li=0; li<line.length; li++){ el.board.appendChild(makeLineTile(line[li], li)); }
+      if(fit.right){ el.board.appendChild(onEndZone('right', rightEnd)); }
+    }
+
+    // Our hand (face-up); legal tiles highlighted only on our turn.
+    el.hand.innerHTML = '';
+    var myHand = onHands[onSeat];
+    myHand.forEach(function(t, idx){
+      var w = document.createElement('div');
+      w.className = 'hand-tile';
+      var fits = tileFits(t);
+      var playable = canAct && (fits.any || fits.left || fits.right);
+      if(canAct){ w.classList.add(playable ? 'playable' : 'dead'); }
+      if(idx === onSelIdx) w.classList.add('selected');
+      w.appendChild(makeHalf(t.a));
+      var div = document.createElement('div'); div.className = 'divider';
+      w.appendChild(div);
+      w.appendChild(makeHalf(t.b));
+      w.addEventListener('click', function(){ onTileTapNet(idx); });
+      el.hand.appendChild(w);
+    });
+
+    // Actions: when we can't play, offer Draw (boneyard has tiles) or Pass.
+    el.actions.innerHTML = '';
+    if(canAct && !onHandHasPlay(myHand)){
+      if(onBone.length > 0){
+        var b = document.createElement('button');
+        b.textContent = 'Draw from boneyard';
+        b.addEventListener('click', onDrawNet);
+        el.actions.appendChild(b);
+      } else {
+        var p = document.createElement('button');
+        p.className = 'pass';
+        p.textContent = 'Pass';
+        p.addEventListener('click', onPassNet);
+        el.actions.appendChild(p);
+      }
+    }
+
+    // Turn indicator.
+    if(onOver){
+      // left as-is (the win modal carries the result)
+    } else if(onTurnSeat === onSeat){
+      el.turnInd.className = 'turn you';
+      el.turnInd.textContent = onHandHasPlay(myHand) ? 'Your turn — play a tile'
+        : (onBone.length > 0 ? 'Your turn — draw a tile' : 'Your turn — pass');
+    } else {
+      el.turnInd.className = 'turn cpu';
+      el.turnInd.textContent = 'Player ' + (onTurnSeat + 1) + "'s turn…";
+    }
+  }
+
+  function onEndZone(side, val){
+    var z = document.createElement('div');
+    z.className = 'endplay';
+    z.innerHTML = (side === 'left' ? '◂' : '▸') + '<small>play ' + val + '</small>';
+    z.addEventListener('click', function(){ onPlaceNet(side); });
+    return z;
+  }
+
+  // ---- Online actions ---------------------------------------------------
+  // Tap a tile: select it, then auto-place if exactly one end fits (or the line
+  // is empty), else wait for an end-zone tap when it fits both ends.
+  function onTileTapNet(idx){
+    if(!onMyTurn()) return;
+    var t = onHands[onSeat][idx];
+    var fits = tileFits(t);
+    if(!(fits.any || fits.left || fits.right)){
+      setHint("That tile doesn't fit either end.");
+      beep(140,0.12,'sawtooth',0.05);
+      return;
+    }
+    onSelIdx = (onSelIdx === idx) ? -1 : idx;
+    if(onSelIdx >= 0){
+      if(fits.any){ onPlaceNet('right'); return; }           // first tile of the game
+      if(fits.left && fits.right){ setHint('Tap an end (◂ or ▸) to place this tile.'); }
+      else { onPlaceNet(fits.left ? 'left' : 'right'); return; } // only one end fits
+    } else { setHint(''); }
+    onRender();
+  }
+
+  // Place the selected tile on a side: apply locally, broadcast, advance turn.
+  function onPlaceNet(side){
+    if(!onMyTurn() || onSelIdx < 0) return;
+    var tile = onHands[onSeat][onSelIdx];
+    onApplyPlay(onSeat, { a: tile.a, b: tile.b }, side);
+    GameMP.send({ action: 'play', seat: onSeat, tile: { a: tile.a, b: tile.b }, end: side });
+  }
+
+  // Apply a play (ours or a peer's) deterministically. Validates the tile
+  // matches the chosen open end (or starts the line when empty).
+  function onApplyPlay(seat, tile, side){
+    var hand = onHands[seat];
+    // Find the matching tile object (peer tiles are value-equal, not identical).
+    var idx = -1;
+    for(var i=0;i<hand.length;i++){ if(hand[i].a === tile.a && hand[i].b === tile.b){ idx = i; break; } }
+    if(idx < 0){
+      // Tolerate the swapped orientation {a,b} vs {b,a}.
+      for(var j=0;j<hand.length;j++){ if(hand[j].a === tile.b && hand[j].b === tile.a){ idx = j; break; } }
+    }
+    if(idx < 0) return; // tile not present (out-of-sync guard)
+    // placeTile validates against the chosen open end; bail if it can't attach
+    // (defensive — both ends and orientation are handled inside placeTile).
+    var ok = placeTile(hand, idx, side);
+    if(!ok) return;
+    if(seat === onSeat){ sndPlace(); } else { sndPlace(); }
+    onSelIdx = -1;
+    setHint(onName(seat) + ' played ' + tile.a + '-' + tile.b + '.');
+    scrollEnd(side);
+    if(hand.length === 0){ onEndGame(seat); return; }
+    onTurnSeat = onNextSeat(seat);
+    onRender();
+  }
+
+  // Draw one tile from the boneyard. If it isn't playable the player may draw
+  // again or pass; if playable they may play it.
+  function onDrawNet(){
+    if(!onMyTurn()) return;
+    if(onBone.length === 0) return;
+    var tile = onBone.pop();
+    onHands[onSeat].push(tile);
+    sortHand(onHands[onSeat]);
+    sndDraw();
+    GameMP.send({ action: 'draw', seat: onSeat, tile: { a: tile.a, b: tile.b } });
+    if(handHasPlay(onHands[onSeat])){
+      setHint('Drew ' + tile.a + '-' + tile.b + ' — you can play it.');
+    } else if(onBone.length === 0){
+      setHint('Still no play and boneyard empty — you must pass.');
+    } else {
+      setHint('Drew ' + tile.a + '-' + tile.b + ' — still no play. Draw again or pass.');
+    }
+    onRender();
+  }
+
+  // A peer drew: remove the same tile from the shared boneyard so the deck order
+  // stays identical for everyone.
+  function onApplyDraw(seat, tile){
+    if(onBone.length){
+      var top = onBone[onBone.length-1];
+      if(top && top.a === tile.a && top.b === tile.b){ onBone.pop(); }
+      else { for(var i=onBone.length-1;i>=0;i--){ if(onBone[i].a===tile.a && onBone[i].b===tile.b){ onBone.splice(i,1); break; } } }
+    }
+    onHands[seat].push({ a: tile.a, b: tile.b });
+    sndDraw();
+    setHint('Player ' + (seat+1) + ' drew a tile.');
+    onRender();
+  }
+
+  // Pass (only legal when we can't play and the boneyard is empty).
+  function onPassNet(){
+    if(!onMyTurn()) return;
+    if(onBone.length > 0 || handHasPlay(onHands[onSeat])) return; // not allowed to pass yet
+    sndPass();
+    onApplyPass(onSeat);
+    GameMP.send({ action: 'pass', seat: onSeat });
+  }
+
+  function onApplyPass(seat){
+    if(seat !== onSeat) setHint('Player ' + (seat+1) + ' passed.');
+    else setHint(onName(seat) + ' passed.');
+    onTurnSeat = onNextSeat(seat);
+    // Blocked game: nobody can play and the boneyard is empty → lowest pip wins.
+    if(onBone.length === 0 && !onAnyoneCanPlay()){ onEndBlocked(); return; }
+    onRender();
+  }
+
+  // First to empty their hand wins the round.
+  function onEndGame(winnerSeat){
+    onOver = true;
+    onRender();
+    var iWon = winnerSeat === onSeat;
+    if(iWon){ sndWin(); } else { sndLose(); }
+    var pts = 0;
+    for(var s=0;s<onCount;s++){ if(s !== winnerSeat){ pts += onHands[s].reduce(function(a,t){return a+tilePipSum(t);},0); } }
+    el.modalTitle.textContent = iWon ? 'You Win! 🎉' : (onName(winnerSeat) + ' Wins!');
+    el.modalMsg.textContent = (iWon ? 'You' : 'Player ' + (winnerSeat+1)) +
+      ' emptied their hand first. Opponents held ' + pts + ' pips.';
+    if(window.GrownGame && iWon) window.GrownGame.setHighScore(window.GrownGame.highScore() + 1);
+    onShowResult();
+  }
+
+  // Blocked game: nobody can play, boneyard empty → lowest pip total wins.
+  function onEndBlocked(){
+    onOver = true;
+    onRender();
+    var best = -1, bestSeat = 0, tie = false;
+    var sums = [];
+    for(var s=0;s<onCount;s++){
+      var sum = onHands[s].reduce(function(a,t){return a+tilePipSum(t);},0);
+      sums.push(sum);
+      if(best < 0 || sum < best){ best = sum; bestSeat = s; tie = false; }
+      else if(sum === best){ tie = true; }
+    }
+    var iWon = !tie && bestSeat === onSeat;
+    if(iWon){ sndWin(); } else if(!tie){ sndLose(); } else { beep(440,0.2,'sine',0.08); }
+    var detail = sums.map(function(v,i){ return 'P'+(i+1)+': '+v; }).join(' • ');
+    el.modalTitle.textContent = tie ? "It's a Tie!" : (iWon ? 'You Win! 🎉' : (onName(bestSeat) + ' Wins!'));
+    el.modalMsg.textContent = 'Board blocked — lowest pip total wins.\n' + detail + ' pips.';
+    if(window.GrownGame && iWon) window.GrownGame.setHighScore(window.GrownGame.highScore() + 1);
+    onShowResult();
+  }
+
+  // Show the game-over modal with a host-only rematch button.
+  function onShowResult(){
+    var wasLeft = onPeerLeftPending();
+    el.modalBtn.textContent = wasLeft ? 'New game'
+      : (onSeat === 0 ? 'Play again' : 'Waiting for host…');
+    el.modalBtn.style.display = (wasLeft || onSeat === 0) ? '' : 'none';
+    el.overlay.classList.add('show');
+  }
+  function onPeerLeftPending(){ return mode === 'online' && onOver && el.modalTitle.textContent === 'Player left'; }
+
+  function onStartFresh(){
+    // Seat 0 picks a seed, broadcasts the deal, and everyone deals identically.
+    var seed = (Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
+    GameMP.send({ action: 'start', seat: 0, seed: seed });
+    onBeginMatch(seed);
+  }
+  function onBeginMatch(seed){
+    mode = 'online';
+    el.modeOverlay.classList.remove('show');
+    el.overlay.classList.remove('show');
+    el.handoff.classList.remove('show');
+    busy = false; gameOver = false;
+    onDeal(seed);
+    setHint('');
+    onRender();
+  }
+
+  // ---- GameMP wiring ----------------------------------------------------
+  GameMP.setup({ gameName: 'Dominoes', minPlayers: 2, maxPlayers: 4 });
+  GameMP.onReady(function(seat, count){
+    try{ if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); }catch(e){}
+    onSeat = seat;
+    onCount = count;
+    mode = 'online';
+    el.modalBtn.style.display = ''; // clear any prior host-only hide
+    // Host (seat 0) generates the seed and tells everyone to deal.
+    if(seat === 0){ onStartFresh(); }
+    else { onBeginMatch_waiting(); }
+  });
+  function onBeginMatch_waiting(){
+    mode = 'online';
+    el.modeOverlay.classList.remove('show');
+    setHint('Waiting for the deal…');
+  }
+  GameMP.onMove(function(m){
+    // onReady already flipped us into online mode before any move can arrive.
+    if(m.action === 'start'){
+      onBeginMatch(m.seed);
+    } else if(m.action === 'play'){
+      onApplyPlay(m.seat, m.tile, m.end);
+    } else if(m.action === 'draw'){
+      onApplyDraw(m.seat, m.tile);
+    } else if(m.action === 'pass'){
+      onApplyPass(m.seat);
+    }
+  });
+  GameMP.onReset(function(){
+    // Host pressed Play again → it will broadcast a fresh "start" deal next.
+    el.overlay.classList.remove('show');
+    setHint('New deal coming…');
+  });
+  GameMP.onPeerLeft(function(){
+    // No authoritative server: a drop breaks the deterministic turn order, so end
+    // the match cleanly rather than stall.
+    if(mode !== 'online' || onOver) return;
+    onOver = true;
+    onRender();
+    el.modalTitle.textContent = 'Player left';
+    el.modalMsg.textContent = 'Someone disconnected, so this match can\'t continue. Start a new online game to play again.';
+    el.modalBtn.textContent = 'New game';
+    el.modalBtn.style.display = '';
+    el.overlay.classList.add('show');
+  });
+
+  // Online rematch hook layered onto the existing modal button. Short-circuits
+  // when not in online mode so local/AI behavior is unchanged.
+  el.modalBtn.addEventListener('click', function(){
+    if(mode !== 'online') return; // local handler (wired above) already ran
+    if(onPeerLeftPending()){ GameMP.openCreate(); return; }
+    if(onSeat === 0){
+      GameMP.sendReset();
+      onStartFresh();
+    }
+  });
 
   // Deal an initial (idle) vs-CPU game behind the picker, then ask for a mode.
   // Default mode stays 'ai'; picking a mode (re)deals via startMode → newGame.

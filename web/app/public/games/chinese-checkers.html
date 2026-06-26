@@ -164,6 +164,7 @@
   </div>
 </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 "use strict";
 (function(){
@@ -222,10 +223,10 @@
     }
   }
 
-  // ---- Identify the two opposite triangular points for 2-player ----
+  // ---- Identify the six triangular points (tips) of the star ----
   // A tip along axis `ax` (sign +/-) is the set of board cells whose `ax`
   // coordinate exceeds N in that direction. We orient z as the vertical-ish
-  // axis: +z tip = bottom (human home), -z tip = top (CPU home).
+  // axis: +z tip = bottom, -z tip = top.
   function tipCells(ax, sign){
     const out=[];
     for(const c of board.values()){
@@ -235,13 +236,56 @@
     return out;
   }
 
-  const HUMAN_HOME = tipCells('z', 1);   // bottom tip (z = +5..+8)
-  const CPU_HOME   = tipCells('z', -1);  // top tip
-  // Targets are the opposite home:
-  const HUMAN_TARGET = CPU_HOME.slice();
-  const CPU_TARGET   = HUMAN_HOME.slice();
+  // The six star tips, in CLOCKWISE screen order starting from the bottom.
+  // Pixel layout is x=sqrt(3)*(q+r/2), y=1.5*r, so +z (r large) is the bottom
+  // tip. Going clockwise from the bottom in screen space the tips alternate as
+  // +z, -x, +y, -z, +x, -y. Each tip's opposite (the goal a player drives into)
+  // is the diametrically-opposed tip three steps around the ring.
+  //   TIPS[i] opposite = TIPS[(i+3)%6]
+  // `tag` is a stable single-char side id used in occupancy ('a'..'f').
+  const TIP_DEFS = [
+    {ax:'z', sign: 1, tag:'a'},  // 0 bottom
+    {ax:'x', sign:-1, tag:'b'},  // 1 bottom-left
+    {ax:'y', sign: 1, tag:'c'},  // 2 top-left
+    {ax:'z', sign:-1, tag:'d'},  // 3 top
+    {ax:'x', sign: 1, tag:'e'},  // 4 top-right
+    {ax:'y', sign:-1, tag:'f'},  // 5 bottom-right
+  ];
+  const TIPS = TIP_DEFS.map(function(t){ return tipCells(t.ax, t.sign); });
+  // each tip has 10 cells (1+2+3+4)
 
-  // each home has 10 cells (1+2+3+4)
+  // Per-tip color (peg gradient inner/outer + home tint + status dot).
+  const TIP_COLORS = [
+    {in:'#aee2ff', out:'#2b8fe6', tint:'rgba(80,180,255,0.10)', home:'#243a52', dot:'#3aa0ff', name:'Blue'},   // a bottom
+    {in:'#ffd9a8', out:'#e6862b', tint:'rgba(255,160,60,0.10)', home:'#523a24', dot:'#ff9a3a', name:'Orange'}, // b
+    {in:'#c2ffce', out:'#34c24d', tint:'rgba(80,255,120,0.10)', home:'#24522e', dot:'#3ad06a', name:'Green'},  // c
+    {in:'#ffc2d8', out:'#e64d86', tint:'rgba(255,110,160,0.10)', home:'#4a2438', dot:'#ff6fae', name:'Pink'},  // d top
+    {in:'#e3c2ff', out:'#9b4de6', tint:'rgba(160,80,255,0.10)', home:'#3a2452', dot:'#b07aff', name:'Purple'}, // e
+    {in:'#fff3a8', out:'#e6c52b', tint:'rgba(255,216,77,0.12)', home:'#52492a', dot:'#ffd84d', name:'Yellow'}, // f
+  ];
+
+  // Seat -> tip index assignments per player count (standard Chinese Checkers).
+  // 2: opposite tips. 3: alternating (mutually non-adjacent). 4: two opposite
+  // pairs. 6: all tips. The arrays index into TIPS; each player's GOAL is the
+  // opposite tip (index+3)%6, guaranteeing a full opposing star point.
+  const SEATING = {
+    2: [0, 3],
+    3: [0, 2, 4],
+    4: [0, 3, 1, 4],
+    5: [0, 3, 1, 4, 2],   // not a native count; nearest sensible spread
+    6: [0, 3, 1, 4, 2, 5],
+  };
+  function seatingFor(n){
+    return SEATING[n] || SEATING[Math.max(2, Math.min(6, n))] || SEATING[2];
+  }
+
+  // ---- Legacy 2-player aliases (local AI / pass-and-play) ----
+  // Local play keeps its original two sides: 'H' (human, bottom) and 'C' (CPU,
+  // top). These map onto tips a (bottom) and d (top).
+  const HUMAN_HOME = TIPS[0];            // bottom tip
+  const CPU_HOME   = TIPS[3];            // top tip
+  const HUMAN_TARGET = TIPS[3].slice();  // human drives into the top tip
+  const CPU_TARGET   = TIPS[0].slice();  // cpu drives into the bottom tip
 
   // ----- Hex neighbor directions (axial) -----
   const DIRS = [
@@ -254,15 +298,52 @@
   let occ = new Map();
   let selected = null;     // key of selected peg
   let legalMoves = new Map(); // destKey -> {type:'step'|'hop', path:[keys]}
-  let turn = 'H';          // 'H' or 'C'
+  let turn = 'H';          // current side to move (tag)
   let busy = false;        // animation / cpu thinking lock
   let gameOver = false;
-  let mode = 'ai';         // 'ai' = vs computer, '2p' = pass-and-play hot seat
+  let mode = 'ai';         // 'ai' = vs computer, '2p' = pass-and-play, 'online'
 
-  // In 2p mode both sides are human, so the side to move is always human.
+  // ----- Side model (unifies local + online) -----
+  // SIDES is the ordered list of active side tags this match. SIDE_INFO maps a
+  // tag -> { home:[keys], target:[keys], color, name, seat }. Local play uses
+  // tags 'H'/'C'; online uses 'a'..'f' (one per occupied star tip).
+  let SIDES = ['H','C'];
+  let SIDE_INFO = {};
+  function setupSides(tags, defs){
+    SIDES = tags.slice();
+    SIDE_INFO = {};
+    for(let i=0;i<tags.length;i++) SIDE_INFO[tags[i]] = defs[i];
+  }
+  function setupLocalSides(){
+    // Bottom (Blue) vs Top (Pink) — the original 2-player layout.
+    setupSides(['H','C'], [
+      {home:HUMAN_HOME, target:HUMAN_TARGET, color:TIP_COLORS[0], name:'Blue',  seat:0},
+      {home:CPU_HOME,   target:CPU_TARGET,   color:TIP_COLORS[3], name:'Pink',  seat:1},
+    ]);
+  }
+  function nextSideTag(tag){
+    const i = SIDES.indexOf(tag);
+    return SIDES[(i+1) % SIDES.length];
+  }
+
+  // ----- Online state -----
+  let online = false;      // true once an online match starts
+  let mySide = null;       // our side tag in online play
+  let finishedSides = {};  // tag -> true once that side fills its target
+  let onlinePeerLeft = false;
+
+  // In 2p / online-as-mover mode the side to move is always "human-controlled".
   // In ai mode only 'H' is human.
-  function isHumanTurn(){ return mode === '2p' ? true : turn === 'H'; }
+  function isHumanTurn(){
+    if(mode === 'online') return turn === mySide && !gameOver;
+    return mode === '2p' ? true : turn === 'H';
+  }
   function sideName(side){
+    if(mode === 'online'){
+      const info = SIDE_INFO[side];
+      const nm = info ? info.color.name : 'Player';
+      return side === mySide ? 'You ('+nm+')' : nm;
+    }
     if(mode === '2p') return side === 'H' ? 'Blue' : 'Pink';
     return side === 'H' ? 'You' : 'CPU';
   }
@@ -270,10 +351,18 @@
   function resetGame(){
     occ = new Map();
     for(const k of board.keys()) occ.set(k, null);
-    for(const k of HUMAN_HOME) occ.set(k,'H');
-    for(const k of CPU_HOME) occ.set(k,'C');
+    if(mode === 'online'){
+      for(const tag of SIDES){
+        for(const k of SIDE_INFO[tag].home) occ.set(k, tag);
+      }
+    } else {
+      setupLocalSides();
+      for(const k of HUMAN_HOME) occ.set(k,'H');
+      for(const k of CPU_HOME) occ.set(k,'C');
+    }
     selected=null; legalMoves=new Map();
-    turn='H'; busy=false; gameOver=false;
+    turn = SIDES[0]; busy=false; gameOver=false;
+    finishedSides = {};
     setStatus();
     overlay.classList.remove('show');
     layout();
@@ -325,9 +414,14 @@
   }
 
   // ----- Win check -----
+  // A side wins when its opposite target tip is completely full and contains at
+  // least one of its own pegs (so an opponent can't block by squatting it).
+  function targetOf(p){
+    if(SIDE_INFO[p]) return SIDE_INFO[p].target;
+    return (p==='H') ? HUMAN_TARGET : CPU_TARGET;
+  }
   function playerWon(p){
-    const target = (p==='H')? HUMAN_TARGET : CPU_TARGET;
-    // must fill ALL target cells, and at least one of them with own peg
+    const target = targetOf(p);
     let hasOwn=false;
     for(const k of target){
       const o=occ.get(k);
@@ -384,31 +478,32 @@
     draw();
   }
 
-  const HOME_TINT = {
-    H: 'rgba(80,180,255,0.10)',
-    C: 'rgba(255,110,160,0.10)',
-  };
+  // Map each home-tip cell to the color of the side that lives there, so every
+  // occupied star point is tinted in its owner's color (local: 2 sides; online:
+  // up to 6). Rebuilt on each draw — cheap, and keeps it correct after reset.
+  function homeFillMap(){
+    const m = new Map();
+    for(const tag of SIDES){
+      const info = SIDE_INFO[tag];
+      if(!info) continue;
+      for(const k of info.home) m.set(k, info.color.home);
+    }
+    return m;
+  }
 
   function draw(){
     if(!geom) return;
     const side = canvas.width / (Math.min(window.devicePixelRatio||1,2.5));
     ctx.clearRect(0,0,side,side);
 
-    // tint target/home triangles lightly
-    const targetSet = new Set(HUMAN_TARGET);     // CPU home (top) - human's goal
-    const homeSet   = new Set(HUMAN_HOME);       // bottom
-    const cpuHomeSet= new Set(CPU_HOME);
+    const homeFill = homeFillMap();
 
     // draw holes
     for(const [k,p] of geom.pts){
-      const o = occ.get(k);
       // base hole
       ctx.beginPath();
       ctx.arc(p.x,p.y,geom.holeR,0,Math.PI*2);
-      let fill='#2c2140';
-      if(homeSet.has(k)) fill='#243a52';
-      else if(cpuHomeSet.has(k)) fill='#4a2438';
-      ctx.fillStyle=fill;
+      ctx.fillStyle = homeFill.get(k) || '#2c2140';
       ctx.fill();
       ctx.lineWidth=1;
       ctx.strokeStyle='rgba(0,0,0,0.35)';
@@ -437,10 +532,14 @@
     }
   }
 
+  function pegColors(owner){
+    if(SIDE_INFO[owner]) return SIDE_INFO[owner].color;
+    return owner==='H' ? TIP_COLORS[0] : TIP_COLORS[3];
+  }
   function drawPeg(x,y,r,owner,isSel){
     const grd=ctx.createRadialGradient(x-r*0.35,y-r*0.4,r*0.2, x,y,r);
-    if(owner==='H'){ grd.addColorStop(0,'#aee2ff'); grd.addColorStop(1,'#2b8fe6'); }
-    else { grd.addColorStop(0,'#ffc2d8'); grd.addColorStop(1,'#e64d86'); }
+    const c=pegColors(owner);
+    grd.addColorStop(0, c.in); grd.addColorStop(1, c.out);
     ctx.beginPath();
     ctx.arc(x,y,r,0,Math.PI*2);
     ctx.fillStyle=grd;
@@ -534,6 +633,13 @@
     const dot=document.getElementById('turnDot');
     const txt=document.getElementById('statusText');
     if(gameOver){ return; }
+    if(mode==='online'){
+      const info=SIDE_INFO[turn];
+      dot.style.background = info ? info.color.dot : '#888';
+      txt.textContent = (turn===mySide) ? 'Your turn ('+(info?info.color.name:'')+')'
+                                        : sideName(turn)+'’s turn…';
+      return;
+    }
     if(mode==='2p'){
       if(turn==='H'){ dot.style.background='#3aa0ff'; txt.textContent=sideName('H')+'’s turn'; }
       else { dot.style.background='#ff6fae'; txt.textContent=sideName('C')+'’s turn'; }
@@ -542,6 +648,21 @@
   }
 
   function endMove(){
+    if(mode==='online'){
+      // First side to fill its opposite tip wins (mirrors the local rule).
+      if(playerWon(turn)){ finish(turn); return; }
+      // Advance to the next side that hasn't already finished.
+      let t=turn;
+      for(let i=0;i<SIDES.length;i++){
+        t=nextSideTag(t);
+        if(!finishedSides[t]) break;
+      }
+      turn=t;
+      selected=null; legalMoves=new Map();
+      setStatus();
+      draw();
+      return;
+    }
     // check win
     if(playerWon('H')){ finish('H'); return; }
     if(playerWon('C')){ finish('C'); return; }
@@ -559,6 +680,23 @@
     selected=null; legalMoves=new Map();
     draw();
     const ov=document.getElementById('overlay');
+    if(mode==='online'){
+      const iWon = winner===mySide;
+      document.getElementById('ovTitle').textContent = iWon ? 'You win! 🎉' : sideName(winner)+' wins';
+      document.getElementById('ovText').textContent = iWon
+        ? 'All your pegs reached the far triangle.'
+        : (SIDE_INFO[winner] ? SIDE_INFO[winner].color.name : 'A player') + ' filled the far triangle first.';
+      document.getElementById('statusText').textContent = iWon ? 'You win!' : sideName(winner)+' wins!';
+      const info=SIDE_INFO[winner];
+      document.getElementById('turnDot').style.background = info ? info.color.dot : '#888';
+      if(iWon) sndWin(); else sndLose();
+      // Host-only rematch.
+      const ob=document.getElementById('ovBtn');
+      ob.textContent = onlinePeerLeft ? 'New game' : 'Rematch';
+      ob.style.display = (mySide===SIDES[0] || onlinePeerLeft) ? '' : 'none';
+      ov.classList.add('show');
+      return;
+    }
     if(mode==='2p'){
       document.getElementById('ovTitle').textContent = sideName(winner)+' wins! 🎉';
       document.getElementById('ovText').textContent = sideName(winner)+' filled the far triangle first.';
@@ -589,8 +727,13 @@
       // make the move
       const mv=legalMoves.get(k);
       const path=mv.path;
-      selected=null; const saved=legalMoves; legalMoves=new Map();
+      selected=null; legalMoves=new Map();
       draw();
+      // Online: broadcast the full path so every client applies & animates the
+      // identical move (single step OR multi-hop chain) before advancing.
+      if(mode==='online'){
+        GameMP.send({ action:'move', seat:GameMP.seat(), side:turn, path:path });
+      }
       animateMove(path, turn, ()=>{ endMove(); });
       return;
     }
@@ -670,7 +813,7 @@
   }
 
   function cpuTurn(){
-    if(gameOver) return;
+    if(gameOver || mode!=='ai') return;
     busy=true;
     let bestMove=null, bestScore=-1e9;
 
@@ -742,10 +885,22 @@
     if(actx && actx.state==='suspended') actx.resume();
     showModeSelect();
   });
-  // "Play Again" from game over restarts the same mode.
+  // "Play Again" from game over restarts the same mode. Online: host broadcasts
+  // a reset to everyone; a "New game" (after a peer left) reopens the picker.
   document.getElementById('ovBtn').addEventListener('click', function(){
+    if(mode==='online'){
+      if(onlinePeerLeft){ leaveOnline(); showModeSelect(); return; }
+      if(mySide===SIDES[0]){ GameMP.sendReset(); resetGame(); }
+      return;
+    }
     resetGame();
   });
+
+  // Reset back to local play (used when leaving an online match).
+  function leaveOnline(){
+    online=false; mode='ai'; mySide=null; onlinePeerLeft=false;
+    finishedSides={}; setupLocalSides();
+  }
 
   let rT=null;
   window.addEventListener('resize', function(){
@@ -758,6 +913,77 @@
   document.addEventListener('touchmove', function(e){
     if(e.touches.length>1) e.preventDefault();
   }, {passive:false});
+
+  // ----- Online multiplayer (GameMP) -----------------------------------------
+  // Deterministic, no hidden info: on your turn you broadcast the full move path
+  // (single step or hop chain). Every client runs the SAME legality + apply +
+  // animate logic, so boards stay identical. Seats map to the standard starting
+  // tips for the player count; each side's goal is the diametrically-opposite
+  // tip. Turn cycles among seated sides; first to fill its target wins.
+  function startOnline(seat, count){
+    online=true; mode='online'; onlinePeerLeft=false;
+    const order=seatingFor(count);            // seat -> tip index (consistent on all clients)
+    const defs=order.map(function(tipIdx, s){
+      return {
+        home: TIPS[tipIdx],
+        target: TIPS[(tipIdx+3)%6],           // opposite tip is the goal
+        color: TIP_COLORS[tipIdx],
+        name: TIP_COLORS[tipIdx].name,
+        seat: s,
+      };
+    });
+    // Side tags are 'a'..'f' keyed by SEAT order (every client agrees on this).
+    const tags=order.map(function(_,s){ return String.fromCharCode(97+s); });
+    setupSides(tags, defs);
+    mySide=tags[seat];
+    finishedSides={};
+    modeOverlay.classList.remove('show'); modeOverlay.style.display='none';
+    resetGame();
+  }
+
+  // Apply a remote move: find the legal move matching the received path's
+  // destination from its origin and animate it identically, then advance.
+  function applyRemoteMove(m){
+    if(busy){ setTimeout(function(){ applyRemoteMove(m); }, 60); return; }
+    if(gameOver) return;
+    const path=m.path;
+    if(!path || path.length<2) return;
+    // Trust the sender's side == current turn (turn order is deterministic), but
+    // guard against stale/duplicate sends.
+    if(m.side && m.side!==turn) return;
+    selected=null; legalMoves=new Map();
+    animateMove(path, turn, function(){ endMove(); });
+  }
+
+  GameMP.setup({ gameName: "Chinese Checkers", minPlayers: 2, maxPlayers: 6 });
+  GameMP.onReady(function(seat, count){
+    if(actx && actx.state==='suspended') actx.resume();
+    startOnline(seat, count);
+  });
+  GameMP.onMove(function(m){
+    if(mode!=='online') return;
+    if(m.action==='move') applyRemoteMove(m);
+  });
+  GameMP.onReset(function(){
+    // Host pressed Rematch — everyone resets to a fresh match (same seats).
+    if(mode!=='online') return;
+    onlinePeerLeft=false;
+    resetGame();
+  });
+  GameMP.onPeerLeft(function(){
+    // No authoritative server: a mid-match drop breaks the deterministic turn
+    // order, so end cleanly and offer a fresh game.
+    if(mode!=='online' || gameOver) return;
+    onlinePeerLeft=true;
+    gameOver=true; busy=false;
+    selected=null; legalMoves=new Map();
+    draw();
+    document.getElementById('ovTitle').textContent='Player left';
+    document.getElementById('ovText').textContent='Someone disconnected, so this match can’t continue. Start a new game to play again.';
+    document.getElementById('statusText').textContent='Player left';
+    const ob=document.getElementById('ovBtn'); ob.textContent='New game'; ob.style.display='';
+    overlay.classList.add('show');
+  });
 
   // ----- Init -----
   const overlay=document.getElementById('overlay');

@@ -234,12 +234,29 @@
   let rolledThisTurn;
   let consecutiveSixes;
   let gameOver;
-  let mode = 'ai'; // 'ai' = you vs 3 CPUs, '2p' = pass-and-play, all 4 seats human
+  let mode = 'ai'; // 'ai' = you vs 3 CPUs, '2p' = pass-and-play, 'online' = networked
+
+  // ----- Online (GameMP) state -----
+  // In online mode the four board players map 1:1 to the four colors, but only
+  // the SEATED colors actually play. With <4 players the unseated colors are
+  // "inert": no tokens of theirs ever move, and turn rotation skips them. Each
+  // online client controls exactly one color: its own seat index (0..3).
+  let online = false;       // true while a networked match is live
+  let mySeat = 0;           // our seat / color index (0..3); seat 0 = host = Red
+  let nSeated = 4;          // how many colors are in the match (== player count)
+  let peerLeft = false;     // a peer dropped mid-match (room can't continue)
+  // seated[color] -> bool. Colors 0..nSeated-1 are in play; the rest are inert.
+  function seatedColor(c){ return c < nSeated; }
 
   // In 2p mode every seat is human; in ai mode only seat 0 is human.
-  function isHumanTurn(){ return mode === '2p' ? true : turn === 0; }
-  // Name of a seat. In 2p use the seat color; in ai seat 0 is "You".
+  // In online mode the human-controlled seat is OUR seat.
+  function isHumanTurn(){
+    if(mode === 'online') return turn === mySeat;
+    return mode === '2p' ? true : turn === 0;
+  }
+  // Name of a seat. In 2p / online use the seat color; in ai seat 0 is "You".
   function sideName(p){
+    if(mode === 'online') return p === mySeat ? 'You' : NAMES[p];
     if(mode === '2p') return NAMES[p];
     return p === 0 ? 'You' : NAMES[p];
   }
@@ -394,7 +411,10 @@
       });
     }
 
-    const movable = (!busy && !gameOver && dieVal>0 && players[turn].isCPU===false)
+    // Whose tokens get the "tap me" pulse. Locally: the current human seat.
+    // Online: only OUR own tokens, and only on our turn.
+    const canPick = mode==='online' ? (turn===mySeat) : (players[turn].isCPU===false);
+    const movable = (!busy && !gameOver && dieVal>0 && canPick)
                     ? legalMoves(turn,dieVal).map(m=>m.ti) : [];
 
     for(let p=0;p<4;p++){
@@ -539,15 +559,30 @@
 
   function updateDiceButton(){
     const d=document.getElementById('dice');
-    const canRoll = !busy && !gameOver && !players[turn].isCPU && !rolledThisTurn;
+    let canRoll;
+    if(mode==='online'){
+      // Only the seat whose turn it is may roll, and only once per turn.
+      canRoll = !busy && !gameOver && turn===mySeat && !rolledThisTurn;
+    }else{
+      canRoll = !busy && !gameOver && !players[turn].isCPU && !rolledThisTurn;
+    }
     d.disabled = !canRoll;
     d.classList.toggle('canroll', canRoll && dieVal===0);
   }
 
   function roll(){
     if(busy||gameOver) return;
-    if(players[turn].isCPU) return;
     if(rolledThisTurn) return;
+    if(mode==='online'){
+      // Only the active seat may roll; it picks the value and BROADCASTS it so
+      // every client applies the identical die (no hidden info).
+      if(turn!==mySeat) return;
+      const val=1+Math.floor(Math.random()*6);
+      GameMP.send({ action:'roll', seat:mySeat, value:val });
+      onlineRollAnim(mySeat, val);
+      return;
+    }
+    if(players[turn].isCPU) return;
     busy=true; sRoll();
     updateDiceButton();
     // animate quick faces
@@ -568,11 +603,18 @@
   function afterRoll(p){
     const moves=legalMoves(p,dieVal);
     if(moves.length===0){
-      // no move possible
+      // no move possible — turn passes. This is deterministic from the (shared)
+      // die value, so every online client runs it independently; no extra msg.
       setStatus(sideName(p)+' rolled '+dieVal+' — no move');
       render();
-      // a 6 with no moves still ends turn (rare). pass.
       setTimeout(()=>endTurn(p, false), 650);
+      return;
+    }
+    if(mode==='online'){
+      busy=false;
+      if(p===mySeat) setStatus('You rolled '+dieVal+' — tap a token');
+      else setStatus(sideName(p)+' rolled '+dieVal+'…');
+      render(); updateDiceButton();
       return;
     }
     if(players[p].isCPU){
@@ -586,8 +628,18 @@
 
   function onTokenTap(ti){
     if(busy||gameOver) return;
-    if(players[turn].isCPU) return;
     if(!rolledThisTurn||dieVal<1) return;
+    if(mode==='online'){
+      // Only our own seat moves, and only on our turn. Broadcast the chosen
+      // token; everyone (including us) applies it via the shared online path.
+      if(turn!==mySeat) return;
+      const mv=legalMoves(mySeat,dieVal).find(m=>m.ti===ti);
+      if(!mv) return;
+      GameMP.send({ action:'move', seat:mySeat, token:ti });
+      applyOnlineMove(mySeat, ti);
+      return;
+    }
+    if(players[turn].isCPU) return;
     const moves=legalMoves(turn,dieVal);
     const mv=moves.find(m=>m.ti===ti);
     if(!mv) return;
@@ -628,21 +680,96 @@
   function endTurn(p, sixChain){
     dieVal=0; rolledThisTurn=false; consecutiveSixes=0;
     diceFace(0);
-    // advance to next non-finished player
+    // advance to next non-finished player. Online: also skip inert (unseated)
+    // colors so the turn only ever cycles among the seated players.
     let nx=p;
     for(let i=0;i<4;i++){
       nx=(nx+1)%4;
-      if(!players[nx].done) break;
+      if(players[nx].done) continue;
+      if(mode==='online' && !seatedColor(nx)) continue;
+      break;
     }
     turn=nx;
     render();
     updateDiceButton();
+    if(mode==='online'){
+      onlineTurnUI();
+      return;
+    }
     if(players[turn].isCPU){
       setStatus(sideName(turn)+'’s turn');
       setTimeout(()=>cpuTurn(turn), 560);
     }else{
       setStatus((mode==='2p'?sideName(turn)+' — tap the dice':'Your turn — tap the dice'));
       document.getElementById('dice').classList.add('canroll');
+    }
+  }
+
+  // ---- Online turn flow (deterministic; mirrors the local rules) -----------
+  // Status / dice prompt at the start of an online turn (after rotation).
+  function onlineTurnUI(){
+    dieVal=0; rolledThisTurn=false; diceFace(0);
+    render(); updateDiceButton();
+    if(turn===mySeat){
+      setStatus('Your turn — tap the dice');
+      document.getElementById('dice').classList.add('canroll');
+    }else{
+      setStatus(sideName(turn)+'’s turn…');
+    }
+  }
+  // Animate the dice for the seat that rolled, then apply the (shared) value
+  // on every client identically. `seat` is the roller; `val` the broadcast die.
+  function onlineRollAnim(seat, val){
+    if(busy||gameOver) return;
+    busy=true; sRoll(); updateDiceButton();
+    let ticks=0;
+    const iv=setInterval(()=>{
+      diceFace(1+Math.floor(Math.random()*6)); ticks++;
+      if(ticks>=7){
+        clearInterval(iv);
+        dieVal=val; diceFace(val);
+        rolledThisTurn=true; busy=false;
+        afterRoll(seat);
+      }
+    },50);
+  }
+  // Apply a move chosen by `seat` (token index `ti`) — identical capture / home
+  // / extra-turn / win logic on every client, mirroring executeMove().
+  function applyOnlineMove(seat, ti){
+    if(gameOver || turn!==seat) return; // stale / not this seat's turn anymore
+    // A move can arrive on a remote peer that is still animating this turn's
+    // roll (dieVal not yet set). Retry shortly so we apply the SAME die.
+    if(busy || !rolledThisTurn || dieVal<1){
+      setTimeout(()=>applyOnlineMove(seat, ti), 60);
+      return;
+    }
+    const mv=legalMoves(seat,dieVal).find(m=>m.ti===ti);
+    if(!mv) return; // already applied / illegal (idempotency guard)
+    busy=true;
+    const res=applyMove(seat,mv);
+    if(res.captured) sCap(); else if(mv.type==='finish'||mv.type==='home') sHome(); else sMove();
+    render();
+
+    if(players[seat].tokens.every(t=>t.state==='done')){
+      players[seat].done=true;
+      win(seat);
+      return;
+    }
+
+    // Standard Ludo bonus: a 6, a capture, or finishing a token => roll again.
+    const extra = (dieVal===6) || res.captured || mv.type==='finish';
+    busy=false;
+    if(extra){
+      dieVal=0; rolledThisTurn=false; diceFace(0);
+      render(); updateDiceButton();
+      if(turn===mySeat){
+        setStatus('Bonus roll! Tap the dice');
+        document.getElementById('dice').classList.add('canroll');
+      }else{
+        setStatus(sideName(turn)+' goes again…');
+      }
+    }else{
+      endTurn(seat, false);
     }
   }
 
@@ -705,12 +832,26 @@
     render();
     sWin();
     const ov=document.getElementById('overlay');
-    document.getElementById('overTitle').textContent =
-      (mode==='2p' ? sideName(p)+' wins!' : (p===0? 'You win!' : NAMES[p]+' wins'));
+    if(mode==='online'){
+      const iWon = p===mySeat;
+      document.getElementById('overTitle').textContent = iWon ? 'You win!' : NAMES[p]+' wins';
+      document.getElementById('overSub').textContent = iWon
+        ? 'All four tokens home. Nicely done!'
+        : NAMES[p]+' got all four tokens home.';
+      // Only the host (seat 0) can start a rematch (sendReset resets everyone).
+      const ob=document.getElementById('overBtn');
+      ob.textContent = 'Play again';
+      ob.style.display = mySeat===0 ? '' : 'none';
+    }else{
+      document.getElementById('overTitle').textContent =
+        (mode==='2p' ? sideName(p)+' wins!' : (p===0? 'You win!' : NAMES[p]+' wins'));
+      document.getElementById('overSub').textContent =
+        (mode==='2p' ? sideName(p)+' got all four tokens home!'
+                     : (p===0? 'All four tokens home. Nicely done!' : 'Better luck next round.'));
+      const ob=document.getElementById('overBtn');
+      ob.textContent='New Game'; ob.style.display='';
+    }
     document.getElementById('overTitle').style.color = COLVAR[COLORS[p]];
-    document.getElementById('overSub').textContent =
-      (mode==='2p' ? sideName(p)+' got all four tokens home!'
-                   : (p===0? 'All four tokens home. Nicely done!' : 'Better luck next round.'));
     ov.classList.add('show');
     setStatus(sideName(p)+' won the game');
     updateDiceButton();
@@ -718,31 +859,38 @@
 
   // ---- New game ----
   function newGame(){
-    gameOver=false; busy=false; dieVal=0; rolledThisTurn=false; consecutiveSixes=0;
+    gameOver=false; busy=false; dieVal=0; rolledThisTurn=false; consecutiveSixes=0; peerLeft=false;
     document.getElementById('overlay').classList.remove('show');
     players=[];
     for(let p=0;p<4;p++){
       players.push({
         color:COLORS[p],
-        isCPU: mode==='2p' ? false : p!==0,
+        isCPU: (mode==='2p'||mode==='online') ? false : p!==0,
         done:false,
         tokens:[0,1,2,3].map(s=>({state:'base', pos:-1, slot:s}))
       });
     }
-    turn=0;
+    turn=0; // seat 0 (Red, the host) always opens
     buildBoard();
     diceFace(0);
     render();
+    buildLegend();
+    if(mode==='online'){
+      onlineTurnUI();
+      updateDiceButton();
+      return;
+    }
     setStatus(mode==='2p' ? (sideName(0)+' — tap the dice') : 'Your turn — tap the dice');
     document.getElementById('dice').classList.add('canroll');
     updateDiceButton();
-    buildLegend();
   }
 
   function buildLegend(){
     const el=document.getElementById('legend');
     el.innerHTML='';
     NAMES.forEach((nm,i)=>{
+      // Online with <4 players: only show the seated colors in the legend.
+      if(mode==='online' && !seatedColor(i)) return;
       const s=document.createElement('span');
       const dot=document.createElement('i'); dot.style.background=COLVAR[COLORS[i]];
       s.appendChild(dot);
@@ -752,8 +900,12 @@
   }
 
   // ---- Mode selection ----
-  function showModeSelect(){ document.getElementById('modeOverlay').classList.add('show'); }
+  function showModeSelect(){
+    online=false; // leaving any networked match when returning to the picker
+    document.getElementById('modeOverlay').classList.add('show');
+  }
   function startMode(m){
+    online = (m==='online');
     mode=m;
     document.getElementById('modeOverlay').classList.remove('show');
     newGame();
@@ -761,14 +913,66 @@
 
   // ---- Events ----
   document.getElementById('dice').addEventListener('click', roll);
-  // "New Game" returns to the mode picker so you can switch AI / pass-and-play.
+  // "New Game" returns to the mode picker so you can switch modes.
   document.getElementById('newgame').addEventListener('click', showModeSelect);
-  // "New Game" on the win overlay restarts the same mode.
-  document.getElementById('overBtn').addEventListener('click', newGame);
+  // Win-overlay button: online host rematch (resets everyone), "New game" after
+  // a disconnect (reopens the create panel), or a plain local restart.
+  document.getElementById('overBtn').addEventListener('click', function(){
+    if(mode==='online'){
+      if(peerLeft){ GameMP.openCreate(); return; } // can't rematch a broken room
+      if(mySeat!==0) return;        // only the host can rematch
+      GameMP.sendReset();           // tell every peer to reset
+      newGame();                    // and reset ourselves
+    }else{
+      newGame();
+    }
+  });
   document.getElementById('modeAi').addEventListener('click', function(){ startMode('ai'); });
   document.getElementById('modeTwo').addEventListener('click', function(){ startMode('2p'); });
-  // touch-action:manipulation + the viewport meta already kill double-tap zoom,
-  // so we let clicks fire normally (no touchend preventDefault that would eat taps).
+
+  // ---- Online multiplayer (GameMP) -----------------------------------------
+  // 2–4 players. GameMP's built-in waiting room handles lobby/seating; we render
+  // no lobby ourselves. It auto-injects a "🌐 Online Game" button after #modeTwo.
+  GameMP.setup({ gameName:'Ludo', minPlayers:2, maxPlayers:4 });
+  GameMP.onReady(function(seat, count){
+    // seat 0 = host = Red; each seat maps to color = seat. With <4 players only
+    // colors 0..count-1 play; the rest are inert and skipped in rotation.
+    mySeat = seat;
+    nSeated = count;
+    startMode('online');
+  });
+  GameMP.onMove(function(m){
+    if(!online || gameOver) return;
+    // Ignore anything not from the seat whose turn it currently is (stale/echo).
+    if(m.seat !== turn) return;
+    if(m.action==='roll'){
+      if(rolledThisTurn) return;          // already applied this turn
+      onlineRollAnim(m.seat, m.value);
+    }else if(m.action==='move'){
+      applyOnlineMove(m.seat, m.token);
+    }
+  });
+  GameMP.onReset(function(){
+    // Host pressed Play again — everyone resets to a fresh match.
+    if(!online) return;
+    newGame();
+  });
+  GameMP.onPeerLeft(function(){
+    // No host-authoritative server: a mid-match drop breaks the deterministic
+    // turn order, so end the match cleanly with a "New game" prompt.
+    if(!online || gameOver) return;
+    gameOver=true; busy=false; peerLeft=true;
+    const ov=document.getElementById('overlay');
+    document.getElementById('overTitle').textContent='Player left';
+    document.getElementById('overTitle').style.color='#fff';
+    document.getElementById('overSub').textContent=
+      'Someone disconnected, so this match can’t continue. Start a new online game to play again.';
+    const ob=document.getElementById('overBtn');
+    ob.textContent='New game'; ob.style.display='';
+    ov.classList.add('show');
+    setStatus('Player left the game');
+    updateDiceButton();
+  });
 
   // init — render an idle board behind the mode picker, then ask for a mode.
   newGame();
