@@ -124,6 +124,20 @@
   }
   .token.you { background: radial-gradient(circle at 35% 30%, #5fd3c4, #1f7a6f); }
   .token.cpu { background: radial-gradient(circle at 35% 30%, #ff9b7a, #c44a30); }
+  /* Online tokens (seat colors) */
+  .token.p0 { background: radial-gradient(circle at 35% 30%, #5fd3c4, #1f7a6f); }
+  .token.p1 { background: radial-gradient(circle at 35% 30%, #ff9b7a, #c44a30); }
+  .token.p2 { background: radial-gradient(circle at 35% 30%, #ffd56b, #d99a00); }
+  .token.p3 { background: radial-gradient(circle at 35% 30%, #b79bff, #6336c4); }
+  /* Online seat cards (built dynamically) */
+  .pcard.p0.active { border-color: #1f7a6f; }
+  .pcard.p1.active { border-color: #c44a30; }
+  .pcard.p2.active { border-color: #d99a00; }
+  .pcard.p3.active { border-color: #6336c4; }
+  .dot.p0 { background: #2a9d8f; }
+  .dot.p1 { background: #e76f51; }
+  .dot.p2 { background: #f4a200; }
+  .dot.p3 { background: #8257e6; }
 
   .controls {
     width: var(--board-size);
@@ -333,10 +347,11 @@
       <h2>🐍 Snakes &amp; Ladders 🪜</h2>
       <p>Choose a mode</p>
       <button id="modeAi" style="margin-bottom:10px;">🤖 vs Computer</button>
-      <button id="modeTwo">👥 Pass &amp; Play</button>
+      <button id="modeTwo" style="margin-bottom:10px;">👥 Pass &amp; Play</button>
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -751,9 +766,14 @@
     humanRoll();
   });
   // "New Game" returns to the mode picker so you can switch AI / pass-and-play.
-  newBtn.addEventListener("click", showModeSelect);
-  // "Play Again" from the win card restarts the same mode.
-  playAgain.addEventListener("click", newGame);
+  // In online mode it tears down the online board and returns to local play.
+  newBtn.addEventListener("click", function () {
+    if (online.on) { leaveOnline(); }
+    showModeSelect();
+  });
+  // "Play Again" from the win card restarts the same mode (LOCAL ONLY here; the
+  // online flow is handled by its own handler added later).
+  playAgain.addEventListener("click", function () { if (!online.on) newGame(); });
   document.getElementById("modeAi").addEventListener("click", function () {
     if (AC && AC.state === "suspended") { AC.resume(); }
     startMode("ai");
@@ -766,6 +786,310 @@
   // prevent double-tap zoom / accidental gestures on buttons
   [rollBtn, newBtn, playAgain].forEach(function (b) {
     b.addEventListener("touchend", function (e) { e.preventDefault(); b.click(); }, { passive: false });
+  });
+
+  // ====================================================================
+  // ONLINE MULTIPLAYER (2–4 players) — additive; local modes untouched.
+  //
+  // Deterministic, no hidden info: on your turn you broadcast the die you
+  // rolled {action:"roll", seat, value}; every client applies it identically
+  // using the SAME board map (jumps), the SAME overshoot win rule (reach 100+
+  // wins, snap to 100), and NO roll-6-again (mirrors the local game). Turn
+  // cycles among the seated players; only the current seat may roll. First
+  // token to 100 wins.
+  // ====================================================================
+  var online = {
+    on: false,
+    mySeat: 0,
+    n: 2,
+    pos: [],       // pos[seat] -> square (0..100)
+    turn: 0,       // seat whose turn it is
+    busy: false,
+    over: false,
+    tokens: [],    // seat -> token DOM element
+    cards: [],     // seat -> { card, name, pos } DOM refs
+    cleaned: false
+  };
+
+  var boardWrap = document.querySelector(".boardWrap");
+  var statusBar = document.querySelector(".status");
+
+  function seatLabel(seat) { return seat === online.mySeat ? "You (P" + (seat + 1) + ")" : "Player " + (seat + 1); }
+
+  // Place an online token. Spread tokens around the square center so several on
+  // the same square stay visible.
+  function placeOnlineToken(el, n, seat) {
+    var pct;
+    if (n <= 0) { pct = { x: 5, y: 98 }; }
+    else { pct = squareCenterPct(n); }
+    var ang = (seat / Math.max(1, online.n)) * Math.PI * 2;
+    var r = online.n > 1 ? 2.0 : 0;
+    el.style.left = (pct.x + Math.cos(ang) * r) + "%";
+    el.style.top = (pct.y + Math.sin(ang) * r) + "%";
+  }
+
+  // Build N seat cards + N tokens, hide the two static you/cpu ones.
+  function buildOnlineUI() {
+    // hide static local cards/tokens
+    cardYou.style.display = "none";
+    cardCpu.style.display = "none";
+    tokYou.style.display = "none";
+    tokCpu.style.display = "none";
+    statusBar.innerHTML = "";
+    // clear any stale online tokens from a previous match
+    for (var k = 0; k < online.tokens.length; k++) {
+      if (online.tokens[k] && online.tokens[k].parentNode) online.tokens[k].parentNode.removeChild(online.tokens[k]);
+    }
+    online.cards = [];
+    online.tokens = [];
+    for (var s = 0; s < online.n; s++) {
+      (function (seat) {
+        var card = document.createElement("div");
+        card.className = "pcard p" + seat;
+        var nameRow = document.createElement("div"); nameRow.className = "name";
+        var dot = document.createElement("span"); dot.className = "dot p" + seat;
+        var nm = document.createElement("span"); nm.textContent = seatLabel(seat);
+        nameRow.appendChild(dot); nameRow.appendChild(document.createTextNode(" ")); nameRow.appendChild(nm);
+        var pos = document.createElement("div"); pos.className = "pos"; pos.textContent = "0";
+        card.appendChild(nameRow); card.appendChild(pos);
+        statusBar.appendChild(card);
+        online.cards[seat] = { card: card, name: nm, pos: pos };
+
+        var tok = document.createElement("div");
+        tok.className = "token p" + seat;
+        boardWrap.appendChild(tok);
+        online.tokens[seat] = tok;
+        placeOnlineToken(tok, 0, seat);
+      })(s);
+    }
+  }
+
+  function renderOnline() {
+    for (var s = 0; s < online.n; s++) {
+      var c = online.cards[s];
+      if (!c) continue;
+      c.pos.textContent = online.pos[s];
+      c.card.classList.toggle("active", online.turn === s && !online.over);
+    }
+  }
+
+  // Step-move an online token square by square (same cadence/sound as local).
+  function onlineStepMove(seat, from, steps) {
+    return new Promise(function (resolve) {
+      var cur = from, remaining = steps;
+      function next() {
+        if (remaining <= 0) { resolve(cur); return; }
+        cur += 1; remaining -= 1;
+        online.pos[seat] = cur;
+        placeOnlineToken(online.tokens[seat], cur, seat);
+        renderOnline();
+        sndStep();
+        setTimeout(next, 160);
+      }
+      next();
+    });
+  }
+
+  function onlineApplyJump(seat, square) {
+    return new Promise(function (resolve) {
+      if (jumps[square] !== undefined) {
+        var dest = jumps[square];
+        var isLadder = dest > square;
+        setTimeout(function () {
+          online.pos[seat] = dest;
+          placeOnlineToken(online.tokens[seat], dest, seat);
+          renderOnline();
+          if (isLadder) { sndLadder(); msg.textContent = seatLabel(seat) + " climbed a ladder! 🪜 → " + dest; }
+          else { sndSnake(); msg.textContent = seatLabel(seat) + " hit a snake! 🐍 → " + dest; }
+          setTimeout(function () { resolve(dest); }, 360);
+        }, 280);
+      } else { resolve(square); }
+    });
+  }
+
+  // Apply a roll for `seat` deterministically (same on every client). Mirrors
+  // the local doTurn: overshoot wins (reach 100+ → snap to 100, win), no
+  // 6-again. Returns a promise resolving { won }.
+  function onlineApplyRoll(seat, value) {
+    return new Promise(function (resolve) {
+      var from = online.pos[seat];
+      onlineStepMove(seat, from, value).then(function (landed) {
+        if (landed >= 100) {
+          online.pos[seat] = 100;
+          placeOnlineToken(online.tokens[seat], 100, seat);
+          renderOnline();
+          resolve({ won: true });
+          return;
+        }
+        onlineApplyJump(seat, landed).then(function (finalSq) {
+          resolve({ won: finalSq >= 100 });
+        });
+      });
+    });
+  }
+
+  function onlineNextSeat(seat) { return (seat + 1) % online.n; }
+
+  function onlineUpdateButtons() {
+    if (online.over) { rollBtn.disabled = true; return; }
+    var myTurn = online.turn === online.mySeat && !online.busy;
+    rollBtn.disabled = !myTurn;
+    if (online.busy) return;
+    if (myTurn) msg.textContent = "Your turn — tap Roll Dice!";
+    else msg.textContent = "Waiting for " + seatLabel(online.turn) + "…";
+  }
+
+  // Run a roll (already-known value) for `seat` everywhere, then advance turn.
+  function onlineRunRoll(seat, value) {
+    if (online.over) return;
+    online.busy = true;
+    rollBtn.disabled = true;
+    msg.textContent = seatLabel(seat) + " rolled a " + value + "!";
+    animateDie(value).then(function () {
+      return onlineApplyRoll(seat, value);
+    }).then(function (res) {
+      if (res.won) { onlineEndGame(seat); return; }
+      online.turn = onlineNextSeat(seat);
+      online.busy = false;
+      renderOnline();
+      onlineUpdateButtons();
+    });
+  }
+
+  // Local player presses Roll: pick a value, broadcast it, run it everywhere.
+  function onlineHumanRoll() {
+    if (!online.on || online.over || online.busy) return;
+    if (online.turn !== online.mySeat) return;
+    var v = rollValue();
+    GameMP.send({ action: "roll", seat: online.mySeat, value: v });
+    onlineRunRoll(online.mySeat, v);
+  }
+
+  function onlineEndGame(winnerSeat) {
+    online.over = true;
+    rollBtn.disabled = true;
+    for (var s = 0; s < online.n; s++) if (online.cards[s]) online.cards[s].card.classList.remove("active");
+    sndWin();
+    var iWon = winnerSeat === online.mySeat;
+    winTitle.textContent = iWon ? "🎉 You Win!" : "🏁 " + seatLabel(winnerSeat) + " Wins!";
+    winText.textContent = iWon
+      ? "You reached 100 first. Great job!"
+      : seatLabel(winnerSeat) + " reached 100 first.";
+    if (window.GrownGame && iWon) window.GrownGame.setHighScore(window.GrownGame.highScore() + 1);
+    // Host-only rematch.
+    playAgain.textContent = "Play Again";
+    playAgain.style.display = online.mySeat === 0 ? "" : "none";
+    winOverlay.classList.add("show");
+  }
+
+  function onlineFreshMatch() {
+    online.pos = [];
+    for (var s = 0; s < online.n; s++) online.pos[s] = 0;
+    online.turn = 0;
+    online.busy = false;
+    online.over = false;
+    for (var t = 0; t < online.n; t++) {
+      if (online.tokens[t]) placeOnlineToken(online.tokens[t], 0, t);
+    }
+    winOverlay.classList.remove("show");
+    renderOnline();
+    onlineUpdateButtons();
+  }
+
+  // Called once the waiting room starts the match.
+  function startOnline(seat, count) {
+    online.on = true;
+    online.mySeat = seat;
+    online.n = Math.max(2, Math.min(4, count));
+    // Make sure the local game is no longer driving the board.
+    state.over = true;
+    state.busy = true;
+    mode = "online";
+    modeOverlay.classList.remove("show");
+    buildOnlineUI();
+    onlineFreshMatch();
+  }
+
+  // End an online match cleanly if a peer drops.
+  function onlinePeerLeft() {
+    if (!online.on) return;
+    online.over = true;
+    online.busy = true;
+    rollBtn.disabled = true;
+    for (var s = 0; s < online.n; s++) if (online.cards[s]) online.cards[s].card.classList.remove("active");
+    winTitle.textContent = "🔌 Player left";
+    winText.textContent = "Someone disconnected, so this match can't continue. Start a new online game to play again.";
+    playAgain.textContent = "New Game";
+    playAgain.style.display = "";
+    winOverlay.classList.add("show");
+  }
+
+  // Tear down the online board and restore the static local you/cpu UI so the
+  // local modes work again after leaving an online game.
+  function leaveOnline() {
+    online.on = false;
+    online.over = true;
+    // remove dynamic seat cards + tokens
+    for (var s = 0; s < online.tokens.length; s++) {
+      if (online.tokens[s] && online.tokens[s].parentNode) online.tokens[s].parentNode.removeChild(online.tokens[s]);
+    }
+    online.tokens = [];
+    if (online.cards.length) statusBar.innerHTML = "";
+    online.cards = [];
+    // restore static cards/tokens (re-add the originals)
+    statusBar.appendChild(cardYou);
+    statusBar.appendChild(cardCpu);
+    cardYou.style.display = "";
+    cardCpu.style.display = "";
+    tokYou.style.display = "";
+    tokCpu.style.display = "";
+    winOverlay.classList.remove("show");
+    playAgain.style.display = "";
+  }
+
+  // ---- GameMP wiring ----
+  if (window.GameMP) {
+    GameMP.setup({ gameName: "Snakes & Ladders", minPlayers: 2, maxPlayers: 4 });
+    GameMP.onReady(function (seat, count) {
+      if (AC && AC.state === "suspended") { AC.resume(); }
+      startOnline(seat, count);
+    });
+    GameMP.onMove(function (m) {
+      if (!online.on || !m || m.action !== "roll") return;
+      // Only honor a roll from the seat whose turn it is (ignore stale/dupes).
+      if (online.over || online.busy) return;
+      if (m.seat !== online.turn || m.seat === online.mySeat) return;
+      onlineRunRoll(m.seat, m.value);
+    });
+    GameMP.onReset(function () {
+      // Host pressed Play Again — everyone resets to a fresh match.
+      if (!online.on) return;
+      onlineFreshMatch();
+    });
+    GameMP.onPeerLeft(onlinePeerLeft);
+  }
+
+  // The win-card "Play Again": in online mode the HOST broadcasts a reset and
+  // everyone restarts; a non-host shouldn't see it. Peer-left → reopen panel.
+  playAgain.addEventListener("click", function () {
+    if (!online.on) return; // local handler (registered earlier) handles offline
+    if (winTitle.textContent.indexOf("Player left") !== -1) {
+      winOverlay.classList.remove("show");
+      GameMP.openCreate();
+      return;
+    }
+    if (online.mySeat === 0) {
+      GameMP.sendReset();
+      onlineFreshMatch();
+    }
+  });
+
+  // Online roll routes through the dedicated handler; local roll is untouched.
+  rollBtn.addEventListener("click", function () {
+    if (online.on) {
+      if (AC && AC.state === "suspended") { AC.resume(); }
+      onlineHumanRoll();
+    }
   });
 
   // init — render an idle board behind the mode picker, then ask for a mode.

@@ -305,6 +305,8 @@ const ONLINE_IDS = new Set<string>([
   "gomoku", "mancala", "reversi", "tic-tac-toe", "liars-dice",
   // N-player online card games (2–6 players via the waiting room)
   "snap", "old-maid", "go-fish", "crazy-eights",
+  // N-player online board games
+  "ludo", "chinese-checkers", "dominoes", "snakes-and-ladders",
 ]);
 
 // Per-device play counts, persisted in localStorage under grown.games.plays as
