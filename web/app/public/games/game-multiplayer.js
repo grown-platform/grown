@@ -48,8 +48,24 @@
   }
 
   var ws = null, role = null, ready = false, peers = 0, active = false;
-  var cb = { ready: null, move: null, reset: null, left: null };
+  var cb = { ready: null, move: null, reset: null, left: null, lobby: null };
   var gameName = "Game";
+
+  // Player-count config (set via setup). maxPlayers > 2 turns on the N-player
+  // WAITING ROOM: joiners gather, each presses Ready, and the match starts when
+  // a strict MAJORITY are ready (min 2). maxPlayers <= 2 keeps the classic
+  // behavior: auto-start as soon as the second player connects (the 9 existing
+  // 1-v-1 games are unchanged).
+  var minPlayers = 2, maxPlayers = 2;
+  var myId = null;          // our peer id (from the roster's "you")
+  var seatList = [];        // ordered [{id,name,seq}] — live waiting-room roster
+  var readySet = {};        // id -> true for peers who pressed Ready (pre-start)
+  var started = false;      // match has begun (locks the lobby)
+  var startSeats = null;    // authoritative ordered ids captured at start
+  var mySeat = null;        // our seat index once started (or live index pre-start)
+  var currentRoom = null;   // room code we're connected to (for the share link)
+  var iAmHost = false;      // we created the room
+  var myName = "Player";    // our display name
 
   // Local two-tab smoke-test transport. With ?mp=local the game skips the real
   // gamerooms WebSocket relay entirely and pairs two SAME-BROWSER tabs over a
@@ -67,6 +83,8 @@
     setup: function (opts) {
       opts = opts || {};
       gameName = opts.gameName || "Game";
+      maxPlayers = Math.max(2, Math.min(16, opts.maxPlayers || 2));
+      minPlayers = Math.max(2, Math.min(maxPlayers, opts.minPlayers || 2));
       buildUI();
       injectModeButton();
       // Two-tab smoke test: with ?mp=local, auto-pair this tab with another
@@ -81,14 +99,22 @@
       var room = new URLSearchParams(location.search).get("room");
       if (room) openPanel(room);
     },
+    // onReady(seat, playerCount) — fires once the match starts. For the 1-v-1
+    // games the first arg is still 0/1, so existing handlers keep working.
     onReady: function (fn) { cb.ready = fn; },
     onMove: function (fn) { cb.move = fn; },
     onReset: function (fn) { cb.reset = fn; },
     onPeerLeft: function (fn) { cb.left = fn; },
+    // onLobby(info) — N-player only; fires on every waiting-room change with
+    // { players:[{id,name,seat,ready}], you, seat, isHost, count, min, max, started }.
+    onLobby: function (fn) { cb.lobby = fn; },
+    setReady: function (v) { setMyReady(v); },
     send: function (payload) { sendMsg(Object.assign({ type: "move" }, payload)); },
     sendReset: function () { sendMsg({ type: "reset" }); },
     active: function () { return active; },
     role: function () { return role; },
+    seat: function () { return mySeat; },
+    players: function () { return startSeats ? startSeats.length : seatList.length; },
     openCreate: function () { openPanel(null); },
   };
 
@@ -124,25 +150,86 @@
   // and the local BroadcastChannel transport).
   function handleServer(m) {
     if (m.type === "roster") {
-      role = (m.peers && m.peers.length <= 1) ? 0 : 1;
-      peers = (m.peers || []).length;
-      setStatus(role === 0 ? "Waiting for an opponent…" : "Connected — get ready!");
-      if (peers >= 2) fireReady();
+      myId = m.you || myId;
+      seatList = normalizeRoster(m.peers);
+      onRosterChange();
     } else if (m.type === "join") {
-      peers++;
-      if (peers >= 2) fireReady();
+      if (m.from && !seatList.some(function (p) { return p.id === m.from; })) {
+        seatList.push({ id: m.from, name: m.name || "Player", seq: (m.seq != null ? m.seq : seatList.length) });
+      }
+      onRosterChange();
     } else if (m.type === "leave") {
-      peers = Math.max(0, peers - 1);
-      setStatus("Opponent left.");
-      if (cb.left) cb.left();
+      seatList = seatList.filter(function (p) { return p.id !== m.from; });
+      delete readySet[m.from];
+      onRosterChange();
+      if (started && cb.left) cb.left();
     } else if (m.type === "move") {
+      // Reserved control messages multiplex over the move channel.
+      if (m.__ctl === "ready") { readySet[m.from] = !!m.ready; onRosterChange(); return; }
+      if (m.__ctl === "start") { doStart(m.seats); return; }
       if (cb.move) cb.move(m);
     } else if (m.type === "reset") {
       if (cb.reset) cb.reset();
     }
   }
 
+  // Keep the ordered seat list (by join sequence) and derive our live seat.
+  function normalizeRoster(peers) {
+    var list = (peers || []).map(function (p, i) {
+      // Tolerate the older array-of-counts shape (local transport sends objects).
+      if (p && typeof p === "object") return { id: p.id, name: p.name || "Player", seq: (p.seq != null ? p.seq : i) };
+      return { id: "p" + i, name: "Player", seq: i };
+    });
+    list.sort(function (a, b) { return a.seq - b.seq; });
+    return list;
+  }
+  function seatIndex() {
+    for (var i = 0; i < seatList.length; i++) if (seatList[i].id === myId) return i;
+    return seatList.length <= 1 ? 0 : 1; // fallback for the count-only local shape
+  }
+  function readyCount() {
+    var n = 0;
+    for (var i = 0; i < seatList.length; i++) if (readySet[seatList[i].id]) n++;
+    return n;
+  }
+  function onRosterChange() {
+    if (started) return;
+    peers = seatList.length;
+    mySeat = seatIndex();
+    role = mySeat;
+    if (maxPlayers <= 2) {
+      // Classic 1-v-1: auto-start the instant the second player is present.
+      setStatus(peers <= 1 ? "Waiting for an opponent…" : "Connected — get ready!");
+      if (peers >= 2) doStart(seatList.map(function (p) { return p.id; }));
+      return;
+    }
+    // N-player waiting room: the host (seat 0) starts the match once a strict
+    // majority of the room has pressed Ready (and we have at least minPlayers).
+    renderWaitingRoom();
+    emitLobby();
+    if (mySeat === 0 && peers >= minPlayers && readyCount() * 2 > peers) {
+      var order = seatList.map(function (p) { return p.id; });
+      sendMsg({ type: "move", __ctl: "start", seats: order });
+      doStart(order);
+    }
+  }
+  function setMyReady(v) {
+    if (started || !myId) return;
+    readySet[myId] = !!v;
+    sendMsg({ type: "move", __ctl: "ready", ready: !!v });
+    onRosterChange();
+  }
+  function emitLobby() {
+    if (!cb.lobby) return;
+    cb.lobby({
+      players: seatList.map(function (p, i) { return { id: p.id, name: p.name, seat: i, ready: !!readySet[p.id] }; }),
+      you: myId, seat: mySeat, isHost: mySeat === 0,
+      count: seatList.length, min: minPlayers, max: maxPlayers, started: started
+    });
+  }
+
   function connect(code, pass, name, onErr, isHost) {
+    currentRoom = code; iAmHost = !!isHost; myName = name || suggestName();
     if (LOCAL) { connectLocal(code); return; }
     var proto = location.protocol === "https:" ? "wss://" : "ws://";
     var url = proto + location.host + "/api/v1/gamerooms/ws?room=" + encodeURIComponent(code) +
@@ -169,23 +256,20 @@
     var chan = new BroadcastChannel("grown-mp-local-" + (code || "LOCAL"));
     localChan = chan;
     active = true;
-    var myId = Math.random().toString(36).slice(2);
-    var myT = Date.now();
-    var seen = {};            // id -> timestamp (includes self)
-    seen[myId] = myT;
+    var meId = Math.random().toString(36).slice(2);
+    var meT = Date.now();
+    var seen = {};            // id -> { t, name } (includes self)
+    seen[meId] = { t: meT, name: myName };
     var settled = false;
 
-    function rank() {
+    // Rebuild the roster from everyone we've seen, ordered by join time (seq),
+    // and feed it to the shared handler — same shape the real relay sends.
+    function pushRoster() {
       var ids = Object.keys(seen).sort(function (a, b) {
-        return (seen[a] - seen[b]) || (a < b ? -1 : 1);
+        return (seen[a].t - seen[b].t) || (a < b ? -1 : 1);
       });
-      return ids.indexOf(myId);
-    }
-    function settle() {
-      if (settled) return;
-      settled = true;
-      role = rank() === 0 ? 0 : 1;
-      handleServer({ type: "roster", peers: new Array(Object.keys(seen).length) });
+      var list = ids.map(function (id, i) { return { id: id, name: seen[id].name, seq: i }; });
+      handleServer({ type: "roster", peers: list, you: meId });
     }
 
     chan.onmessage = function (ev) {
@@ -193,38 +277,51 @@
       if (!m) return;
       if (m.kind === "presence") {
         var had = (seen[m.id] !== undefined);
-        seen[m.id] = m.t;
-        // Let the newcomer learn we exist so both sides see the full roster.
-        chan.postMessage({ kind: "ack", id: myId, t: myT });
-        if (settled && !had) handleServer({ type: "join" });
+        seen[m.id] = { t: m.t, name: m.name || "Player" };
+        chan.postMessage({ kind: "ack", id: meId, t: meT, name: myName }); // announce back
+        if (settled && !had) pushRoster();
       } else if (m.kind === "ack") {
-        seen[m.id] = m.t;
+        seen[m.id] = { t: m.t, name: m.name || "Player" };
+        if (settled) pushRoster();
       } else if (m.kind === "data") {
-        handleServer(m.payload);
+        handleServer(m.payload); // payload already carries from/name (stamped on send)
       } else if (m.kind === "bye") {
         if (seen[m.id] !== undefined) {
           delete seen[m.id];
-          if (settled) handleServer({ type: "leave" });
+          if (settled) pushRoster();
         }
       }
     };
 
-    localSend = function (obj) { chan.postMessage({ kind: "data", payload: obj }); };
+    // Stamp from/name like the relay does, so ready/move messages attribute.
+    localSend = function (obj) {
+      chan.postMessage({ kind: "data", payload: Object.assign({}, obj, { from: meId, name: myName }) });
+    };
     window.addEventListener("pagehide", function () {
-      try { chan.postMessage({ kind: "bye", id: myId }); } catch (e) {}
+      try { chan.postMessage({ kind: "bye", id: meId }); } catch (e) {}
     });
 
-    chan.postMessage({ kind: "presence", id: myId, t: myT });
+    function settle() { if (!settled) { settled = true; pushRoster(); } }
+    chan.postMessage({ kind: "presence", id: meId, t: meT, name: myName });
     // Give the other tab a beat to announce itself before electing roles.
     setTimeout(settle, 400);
   }
 
-  function fireReady() {
-    if (ready) return;
+  // Begin the match with an authoritative seat order (the same ordered id list
+  // on every client), so all peers agree on seats and player count. Idempotent.
+  function doStart(order) {
+    if (started) return;
+    started = true;
     ready = true;
+    startSeats = (order && order.length) ? order.slice() : seatList.map(function (p) { return p.id; });
+    mySeat = startSeats.indexOf(myId);
+    if (mySeat < 0) mySeat = role || 0;
+    role = mySeat;
+    peers = startSeats.length;
     closePanel();
-    setStatus("Online — you are " + (role === 0 ? "Player 1" : "Player 2"));
-    if (cb.ready) cb.ready(role);
+    emitLobby();
+    setStatus("Online — seat " + (mySeat + 1) + " of " + peers);
+    if (cb.ready) cb.ready(mySeat, peers);
   }
 
   // ---- UI ------------------------------------------------------------------
@@ -402,6 +499,73 @@
 
     scrim.style.opacity = "1"; scrim.style.pointerEvents = "auto";
     panel.style.opacity = "1"; panel.style.pointerEvents = "auto"; panel.style.transform = "translate(-50%,-50%) scale(1)";
+  }
+
+  function showPanel() {
+    scrim.style.opacity = "1"; scrim.style.pointerEvents = "auto";
+    panel.style.opacity = "1"; panel.style.pointerEvents = "auto"; panel.style.transform = "translate(-50%,-50%) scale(1)";
+  }
+
+  // N-player WAITING ROOM: rendered into the panel once connected. Shows the
+  // share link (host), the live player list with ready ticks, and a Ready
+  // toggle. The match auto-starts when a strict majority have readied up.
+  function renderWaitingRoom() {
+    if (started || maxPlayers <= 2 || !active) return;
+    showPanel();
+    panel.innerHTML = "";
+    var h = document.createElement("h3");
+    h.textContent = "Waiting room — " + gameName;
+    css(h, "margin:0 0 4px;font-size:18px");
+    panel.appendChild(h);
+
+    var sub = document.createElement("div");
+    var need = Math.floor(seatList.length / 2) + 1; // strict majority
+    sub.textContent = seatList.length < minPlayers
+      ? ("Need at least " + minPlayers + " players (" + seatList.length + " here)…")
+      : (readyCount() + "/" + seatList.length + " ready — starts at " + need + " (majority).");
+    css(sub, "font-size:13px;opacity:.8;margin-bottom:10px");
+    panel.appendChild(sub);
+
+    if (iAmHost && currentRoom) {
+      var link = location.origin + location.pathname + "?room=" + currentRoom;
+      var box = document.createElement("div");
+      box.textContent = link;
+      css(box, "font:12px ui-monospace,monospace;word-break:break-all;background:#0b1220;border:1px solid #243049;border-radius:8px;padding:8px;margin-bottom:6px");
+      panel.appendChild(box);
+      var shareRow = document.createElement("div"); css(shareRow, "display:flex;gap:8px;margin-bottom:10px");
+      if (navigator.share) {
+        var sBtn = button("📤 Share invite", true); sBtn.style.marginTop = "0";
+        sBtn.onclick = function () { navigator.share({ title: gameName, text: "Join my " + gameName + " game!", url: link }).catch(function () {}); };
+        shareRow.appendChild(sBtn);
+      }
+      var cBtn = button("Copy link"); cBtn.style.marginTop = "0";
+      cBtn.onclick = function () { navigator.clipboard && navigator.clipboard.writeText(link); cBtn.textContent = "Copied!"; };
+      shareRow.appendChild(cBtn);
+      panel.appendChild(shareRow);
+    }
+
+    var listEl = document.createElement("div"); css(listEl, "margin-bottom:10px");
+    seatList.forEach(function (p, i) {
+      var row = document.createElement("div");
+      css(row, "display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:5px;border:1px solid #243049;border-radius:9px;background:#0b1220");
+      var tick = document.createElement("span"); tick.textContent = readySet[p.id] ? "✅" : "⏳"; css(tick, "font-size:14px");
+      var nm = document.createElement("span");
+      nm.textContent = p.name + (p.id === myId ? " (you)" : "") + (i === 0 ? " 👑" : "");
+      css(nm, "flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis");
+      var st = document.createElement("span"); st.textContent = readySet[p.id] ? "Ready" : "Not ready"; css(st, "font-size:12px;opacity:.7");
+      row.appendChild(tick); row.appendChild(nm); row.appendChild(st);
+      listEl.appendChild(row);
+    });
+    panel.appendChild(listEl);
+
+    var iAmReady = !!readySet[myId];
+    var rBtn = button(iAmReady ? "✓ I'm ready (tap to undo)" : "I'm ready", !iAmReady);
+    if (iAmReady) css(rBtn, "width:100%;padding:11px 14px;margin-top:6px;border:0;border-radius:10px;cursor:pointer;font:600 15px system-ui;background:#16a34a;color:#fff");
+    rBtn.onclick = function () { setMyReady(!iAmReady); };
+    panel.appendChild(rBtn);
+
+    var leave = button("Leave"); leave.onclick = function () { closePanel(); };
+    panel.appendChild(leave);
   }
 
   function closePanel() {
