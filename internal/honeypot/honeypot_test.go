@@ -1,12 +1,54 @@
 package honeypot
 
 import (
+	"bufio"
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// hijackableRecorder is a ResponseRecorder that ALSO supports Hijack, modeling
+// the real net/http connection writer that WebSocket upgrades need.
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	hijacked bool
+}
+
+func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijacked = true
+	return nil, nil, nil
+}
+
+// The status wrapper MUST forward Hijack, or WebSocket upgrades (the game-room
+// relay, collab) fail with 501 because the writer isn't an http.Hijacker.
+func TestMiddlewarePreservesHijackerForWebSockets(t *testing.T) {
+	var _ http.Hijacker = (*scanStatusWriter)(nil) // compile-time guard
+
+	var s *Store
+	var gotHijacker bool
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		gotHijacker = ok
+		if ok {
+			_, _, _ = hj.Hijack()
+		}
+	})
+	h := s.Middleware(next)
+
+	rec := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/gamerooms/ws", nil)
+	h.ServeHTTP(rec, req)
+
+	if !gotHijacker {
+		t.Fatal("next handler did not receive an http.Hijacker; WebSocket upgrades will 501")
+	}
+	if !rec.hijacked {
+		t.Error("Hijack did not forward to the underlying ResponseWriter")
+	}
+}
 
 // A nil store stands in for "no DB configured": every method must tolerate it,
 // so the middleware/handlers can be tested without a database. Record is a
