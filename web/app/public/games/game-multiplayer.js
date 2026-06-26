@@ -56,6 +56,7 @@
       opts = opts || {};
       gameName = opts.gameName || "Game";
       buildUI();
+      injectModeButton();
       // Auto-open the join flow when arriving via a share link.
       var room = new URLSearchParams(location.search).get("room");
       if (room) openPanel(room);
@@ -68,7 +69,31 @@
     sendReset: function () { sendMsg({ type: "reset" }); },
     active: function () { return active; },
     role: function () { return role; },
+    openCreate: function () { openPanel(null); },
   };
+
+  // Add a "🌐 Online Game" button into the game's start-screen mode picker,
+  // right after its "2 Players" button, so online play is discoverable there
+  // (not only via the top-right icon). We CLONE the existing 2-player button so
+  // the new one inherits that game's exact styling (class / id / container CSS),
+  // then strip its handlers and wire it to open the online panel.
+  function injectModeButton() {
+    if (document.getElementById("mpOnlineBtn")) return;
+    var anchor = document.getElementById("modeTwo") || document.getElementById("twoBtn");
+    if (!anchor) {
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", injectModeButton, { once: true });
+      }
+      return;
+    }
+    var b = anchor.cloneNode(false); // shallow clone: no children, no JS listeners
+    b.id = "mpOnlineBtn";
+    b.removeAttribute("disabled");
+    b.disabled = false;
+    b.textContent = "🌐 Online Game";
+    anchor.parentNode.insertBefore(b, anchor.nextSibling);
+    b.onclick = function () { openPanel(null); };
+  }
 
   function sendMsg(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
@@ -179,6 +204,9 @@
       panel.appendChild(shareBox);
       panel.appendChild(statusEl);
       var createBtn = button("Create game & get link", true);
+      // Native share sheet (iOS/Android) — lets you send the link straight to
+      // iMessage, WhatsApp, etc. Falls back to copy where Web Share is absent.
+      var shareBtn = button("📤 Share invite", true); shareBtn.style.display = "none";
       var copyBtn = button("Copy link"); copyBtn.style.display = "none";
       createBtn.onclick = function () {
         var code = randCode();
@@ -186,10 +214,21 @@
         shareBox.style.display = "block"; shareBox.textContent = link;
         createBtn.style.display = "none"; copyBtn.style.display = "";
         copyBtn.onclick = function () { navigator.clipboard && navigator.clipboard.writeText(link); copyBtn.textContent = "Copied!"; };
+        if (navigator.share) {
+          shareBtn.style.display = "";
+          shareBtn.onclick = function () {
+            navigator.share({
+              title: gameName,
+              text: "Join my " + gameName + " game!",
+              url: link
+            }).catch(function () {});
+          };
+        }
         setStatus("Share the link, then wait for a player…");
         connect(code, passC._input.value, nameF._input.value || suggestName(), errEl, true);
       };
       panel.appendChild(createBtn);
+      panel.appendChild(shareBtn);
       panel.appendChild(copyBtn);
 
       // ---- Browse open games --------------------------------------------
