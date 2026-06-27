@@ -308,6 +308,8 @@ const ONLINE_IDS = new Set<string>([
   // N-player online board games
   "ludo", "chinese-checkers", "dominoes", "snakes-and-ladders",
   "monopoly-deal",
+  // additional online games (2-player) + dots-and-boxes now 2–4 (in the set above)
+  "war", "nine-mens-morris", "rock-paper-scissors",
 ]);
 
 // Per-device play counts, persisted in localStorage under grown.games.plays as

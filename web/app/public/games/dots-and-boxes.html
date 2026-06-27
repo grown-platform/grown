@@ -38,19 +38,17 @@
   }
   .score {
     flex: 1;
+    min-width: 0;
     border-radius: 12px;
     padding: 8px 6px;
     text-align: center;
     background: #1c2230;
     border: 2px solid transparent;
     transition: border-color 0.2s, transform 0.15s;
+    color: var(--c, #e8edf2);
   }
-  .score.active { transform: translateY(-2px); }
-  .score.p1 { color: #ff5c7a; }
-  .score.p2 { color: #4db8ff; }
-  .score.p1.active { border-color: #ff5c7a; box-shadow: 0 0 14px rgba(255,92,122,0.4); }
-  .score.p2.active { border-color: #4db8ff; box-shadow: 0 0 14px rgba(77,184,255,0.4); }
-  .score .name { font-size: 12px; opacity: 0.85; }
+  .score.active { transform: translateY(-2px); border-color: var(--c, #888); box-shadow: 0 0 14px var(--glow, rgba(255,255,255,0.35)); }
+  .score .name { font-size: 12px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .score .val { font-size: 24px; font-weight: 800; line-height: 1.1; }
   #turn {
     text-align: center;
@@ -203,16 +201,7 @@
 <body>
 <div id="app">
   <h1>Dots &amp; Boxes</h1>
-  <div id="scores">
-    <div class="score p1" id="s1">
-      <div class="name">You</div>
-      <div class="val" id="v1">0</div>
-    </div>
-    <div class="score p2" id="s2">
-      <div class="name">CPU</div>
-      <div class="val" id="v2">0</div>
-    </div>
-  </div>
+  <div id="scores"></div>
   <div id="turn">Your turn</div>
   <div id="boardWrap">
     <canvas id="board"></canvas>
@@ -254,22 +243,34 @@
 
   var canvas = document.getElementById("board");
   var ctx = canvas.getContext("2d");
-  var v1 = document.getElementById("v1");
-  var v2 = document.getElementById("v2");
-  var s1 = document.getElementById("s1");
-  var s2 = document.getElementById("s2");
+  var scoresEl = document.getElementById("scores");
   var turnEl = document.getElementById("turn");
   var sizeSel = document.getElementById("size");
   var overlay = document.getElementById("overlay");
   var resTitle = document.getElementById("resTitle");
   var resText = document.getElementById("resText");
   var modeOverlay = document.getElementById("modeOverlay");
-  var n1 = document.querySelector("#s1 .name");
-  var n2 = document.querySelector("#s2 .name");
 
   var mode = "ai"; // "ai" = vs computer (P1 human), "2p" = pass-and-play, "online" = networked
-  // Player 1 always moves first. When online, role 0 = host = player 1.
-  var mySide = 1; // which side this client controls when online
+
+  // ---- Player model (generalized to N players) ----
+  // Players are numbered 1..playerCount. `current` is the player whose turn it
+  // is. Local modes always use 2 players (1 & 2). Online uses 2..4, where seat S
+  // (0-based) maps to player number S+1 and seat 0 (host) goes first.
+  var playerCount = 2;  // number of players this match
+  var mySide = 1;       // which player number this client controls when online
+  var onlineSize = 4;   // shared (host-chosen) board size for online matches
+  var onlinePeerLeft = false; // true once a player drops mid-match
+
+  // Distinct color per player (index 0 = player 1). Up to 4 players online.
+  var COLORS = [
+    { line: "#ff5c7a", fill: "rgba(255,92,122,0.22)", glow: "rgba(255,92,122,0.4)", name: "Pink" },
+    { line: "#4db8ff", fill: "rgba(77,184,255,0.22)", glow: "rgba(77,184,255,0.4)", name: "Blue" },
+    { line: "#5ddf8e", fill: "rgba(93,223,142,0.22)", glow: "rgba(93,223,142,0.4)", name: "Green" },
+    { line: "#ffd84d", fill: "rgba(255,216,77,0.22)", glow: "rgba(255,216,77,0.4)", name: "Gold" },
+  ];
+  function pColor(player) { return COLORS[(player - 1) % COLORS.length]; }
+
   // In 2p both players are human, so the current player is always human.
   // In ai mode only player 1 is human. Online: only your own side is human.
   function isHumanTurn() {
@@ -277,15 +278,41 @@
     return mode === "2p" ? true : current === 1;
   }
   function sideName(player) {
-    if (mode === "online") return player === mySide ? "You" : "Opponent";
+    if (mode === "online") {
+      return (player === mySide ? "You (" + pColor(player).name + ")" : "Player " + player);
+    }
     if (mode === "2p") return player === 1 ? "Player 1" : "Player 2";
     return player === 1 ? "You" : "CPU";
   }
+  function shortName(player) {
+    if (mode === "online") return (player === mySide ? "You" : "P" + player);
+    if (mode === "2p") return "P" + player;
+    return player === 1 ? "You" : "CPU";
+  }
 
-  var P1 = "#ff5c7a"; // human
-  var P2 = "#4db8ff"; // cpu
-  var P1_FILL = "rgba(255,92,122,0.22)";
-  var P2_FILL = "rgba(77,184,255,0.22)";
+  // Score-card DOM elements, rebuilt for the current player count.
+  var cardEls = []; // [{ box, val }] indexed by player-1
+  function buildScoreCards() {
+    scoresEl.innerHTML = "";
+    cardEls = [];
+    for (var p = 1; p <= playerCount; p++) {
+      var col = pColor(p);
+      var box = document.createElement("div");
+      box.className = "score";
+      box.style.setProperty("--c", col.line);
+      box.style.setProperty("--glow", col.glow);
+      var nm = document.createElement("div");
+      nm.className = "name";
+      nm.textContent = shortName(p);
+      var val = document.createElement("div");
+      val.className = "val";
+      val.textContent = "0";
+      box.appendChild(nm);
+      box.appendChild(val);
+      scoresEl.appendChild(box);
+      cardEls.push({ box: box, val: val, name: nm });
+    }
+  }
 
   // ---- Game state ----
   var N;            // boxes per side
@@ -293,9 +320,9 @@
   //   hEdges[r][c]: horizontal edge below... actually horizontal lines at row r (0..N), col c (0..N-1)
   //   vEdges[r][c]: vertical lines at row r (0..N-1), col c (0..N)
   var hEdges, vEdges;   // boolean: drawn?
-  var hOwner, vOwner;   // player index who drew it (for line color) 1 or 2
-  var owner;            // owner[r][c] of box (0 none, 1, 2)
-  var current;          // 1 human, 2 cpu
+  var hOwner, vOwner;   // player number who drew it (for line color) 1..count
+  var owner;            // owner[r][c] of box (0 none, else player number)
+  var current;          // player number whose turn it is (1..playerCount)
   var gameOver;
   var busy;             // input locked during cpu move / animation
 
@@ -324,8 +351,7 @@
     gameOver = false;
     busy = false;
     overlay.classList.remove("show");
-    n1.textContent = sideName(1);
-    n2.textContent = sideName(2);
+    buildScoreCards();
     updateUI();
     resize();
   }
@@ -365,7 +391,7 @@
       for (var c = 0; c < N; c++) {
         if (owner[r][c]) {
           var p = dotXY(r, c);
-          ctx.fillStyle = owner[r][c] === 1 ? P1_FILL : P2_FILL;
+          ctx.fillStyle = pColor(owner[r][c]).fill;
           ctx.fillRect(p.x, p.y, cellPx, cellPx);
         }
       }
@@ -402,7 +428,7 @@
       for (c = 0; c < N; c++) {
         if (hEdges[r][c] !== drawnOnes) continue;
         a = dotXY(r, c); b = dotXY(r, c + 1);
-        if (drawnOnes) ctx.strokeStyle = hOwner[r][c] === 1 ? P1 : P2;
+        if (drawnOnes) ctx.strokeStyle = pColor(hOwner[r][c]).line;
         seg(a, b);
       }
     }
@@ -411,7 +437,7 @@
       for (c = 0; c <= N; c++) {
         if (vEdges[r][c] !== drawnOnes) continue;
         a = dotXY(r, c); b = dotXY(r + 1, c);
-        if (drawnOnes) ctx.strokeStyle = vOwner[r][c] === 1 ? P1 : P2;
+        if (drawnOnes) ctx.strokeStyle = pColor(vOwner[r][c]).line;
         seg(a, b);
       }
     }
@@ -486,33 +512,49 @@
     return completed;
   }
 
+  // Per-player box counts, indexed by player-1 (length === playerCount).
   function scores() {
-    var a = 0, b = 0;
+    var arr = [];
+    for (var i = 0; i < playerCount; i++) arr.push(0);
+    var claimed = 0;
     for (var r = 0; r < N; r++)
       for (var c = 0; c < N; c++) {
-        if (owner[r][c] === 1) a++;
-        else if (owner[r][c] === 2) b++;
+        var o = owner[r][c];
+        if (o >= 1 && o <= playerCount) { arr[o - 1]++; claimed++; }
       }
-    return { p1: a, p2: b };
+    arr.claimed = claimed;
+    return arr;
   }
 
   function totalBoxes() { return N * N; }
 
   function isFull() {
+    return scores().claimed === totalBoxes();
+  }
+
+  // Index (0-based) of the leading player; ties broken by lowest player number.
+  // Returns { tie:bool, leaders:[playerNumbers], top:count }.
+  function standings() {
     var s = scores();
-    return s.p1 + s.p2 === totalBoxes();
+    var top = -1;
+    for (var i = 0; i < s.length; i++) if (s[i] > top) top = s[i];
+    var leaders = [];
+    for (var j = 0; j < s.length; j++) if (s[j] === top) leaders.push(j + 1);
+    return { scores: s, top: top, leaders: leaders, tie: leaders.length > 1 };
   }
 
   function updateUI() {
     var s = scores();
-    v1.textContent = s.p1;
-    v2.textContent = s.p2;
-    s1.classList.toggle("active", current === 1 && !gameOver);
-    s2.classList.toggle("active", current === 2 && !gameOver);
+    for (var i = 0; i < cardEls.length; i++) {
+      cardEls[i].val.textContent = s[i];
+      cardEls[i].box.classList.toggle("active", current === i + 1 && !gameOver);
+    }
     if (gameOver) {
       turnEl.textContent = "Game over";
     } else if (mode === "online") {
-      turnEl.textContent = current === mySide ? "Your turn — tap a line" : "Opponent's turn…";
+      turnEl.textContent = current === mySide
+        ? "Your turn — tap a line"
+        : sideName(current) + "'s turn…";
     } else if (mode === "2p") {
       turnEl.textContent = sideName(current) + " — tap a line";
     } else {
@@ -523,20 +565,37 @@
   function finish() {
     gameOver = true;
     updateUI();
-    var s = scores();
-    if (s.p1 > s.p2) {
-      if (mode === "online") resTitle.textContent = mySide === 1 ? "You win!" : "Opponent wins!";
-      else resTitle.textContent = mode === "2p" ? sideName(1) + " wins!" : "You win!";
-      resTitle.style.color = P1;
-    } else if (s.p2 > s.p1) {
-      if (mode === "online") resTitle.textContent = mySide === 2 ? "You win!" : "Opponent wins!";
-      else resTitle.textContent = mode === "2p" ? sideName(2) + " wins!" : "CPU wins";
-      resTitle.style.color = P2;
-    } else {
-      resTitle.textContent = "It's a tie!";
+    var st = standings();
+    if (st.tie) {
+      if (mode === "online" && st.leaders.indexOf(mySide) >= 0) resTitle.textContent = "It's a tie — you share the lead!";
+      else resTitle.textContent = "It's a tie!";
       resTitle.style.color = "#e8edf2";
+    } else {
+      var win = st.leaders[0];
+      if (mode === "online") resTitle.textContent = win === mySide ? "You win!" : sideName(win) + " wins!";
+      else if (mode === "2p") resTitle.textContent = sideName(win) + " wins!";
+      else resTitle.textContent = win === 1 ? "You win!" : "CPU wins";
+      resTitle.style.color = pColor(win).line;
     }
-    resText.textContent = sideName(1) + " " + s.p1 + " — " + s.p2 + " " + sideName(2);
+    // Final standings, highest first.
+    var s = st.scores;
+    var order = [];
+    for (var i = 0; i < s.length; i++) order.push(i + 1);
+    order.sort(function (a, b) { return s[b - 1] - s[a - 1] || a - b; });
+    resText.textContent = order.map(function (p) {
+      return sideName(p) + " " + s[p - 1];
+    }).join("  •  ");
+
+    // Online: host-only rematch (other seats just see the result). After a peer
+    // left, anyone can start a new game.
+    if (mode === "online") {
+      var ob = document.getElementById("againBtn");
+      if (onlinePeerLeft) { ob.textContent = "New game"; ob.style.display = ""; }
+      else { ob.textContent = "Rematch"; ob.style.display = (mySide === 1 ? "" : "none"); }
+    } else {
+      var ob2 = document.getElementById("againBtn");
+      ob2.textContent = "Play Again"; ob2.style.display = "";
+    }
     setTimeout(function () { overlay.classList.add("show"); beepEnd(); }, 350);
   }
 
@@ -545,12 +604,17 @@
     if (busy || gameOver || !isHumanTurn()) return;
     if (edgeDrawn(e)) return;
     var mover = current;
-    // Broadcast BEFORE committing so the peer applies the exact same edge and
-    // runs the identical commitMove() logic (extra-turn/score/turn-switch),
-    // keeping `current` in sync on both peers.
-    if (mode === "online") GameMP.send({ t: e.type, r: e.r, c: e.c, side: mover });
+    // Broadcast BEFORE committing so every peer applies the exact same edge and
+    // runs the identical commitMove() logic (extra-turn/score/turn-advance),
+    // keeping `current` in sync on all peers.
+    if (mode === "online") {
+      GameMP.send({ action: "edge", seat: GameMP.seat(), side: mover, t: e.type, r: e.r, c: e.c });
+    }
     commitMove(e, mover);
   }
+
+  // Advance to the next seat (player number) in 1..playerCount, wrapping.
+  function nextPlayer(p) { return (p % playerCount) + 1; }
 
   // Apply an edge for `mover` and run the shared turn-flow. Used by both the
   // local tap and the remote (networked) move so both peers stay identical.
@@ -566,8 +630,8 @@
       // completing a box grants another turn — same player goes again
       updateUI();
     } else if (mode === "2p" || mode === "online") {
-      // pass-and-play / networked: hand off to the other player
-      current = mover === 1 ? 2 : 1;
+      // pass-and-play / networked: hand off to the next player in seat order
+      current = nextPlayer(mover);
       updateUI();
     } else {
       current = 2;
@@ -578,19 +642,22 @@
   }
 
   // ---- Online multiplayer (drop-in via game-multiplayer.js) ----
-  // Apply an opponent's edge. We guard against echo (GameMP.send mirrors our own
-  // message back) two ways: (a) only act in online mode and while it is NOT our
-  // turn (current !== mySide), and (b) ignore any move tagged with our own side.
-  // Because a player can make several moves in a row (each completing a box), the
-  // turn does NOT reliably alternate — so the m.side tag is the robust guard, and
-  // the current-turn check is a belt-and-suspenders backstop. We run commitMove()
-  // (the same path as a local tap) so the extra-turn/score/turn-switch logic is
-  // byte-for-byte identical on both peers and `current` never diverges.
+  // Apply a remote player's edge. The board is deterministic with no hidden info,
+  // so every client runs the identical commitMove() (same edge -> same box check,
+  // scores, and turn-advance), keeping `current` in lock-step across all peers.
+  // Guards (generalized from 2 to N players):
+  //   (a) ignore our own echoed message (GameMP mirrors our send back);
+  //   (b) only the player whose turn it currently is may draw — drop anything
+  //       tagged with a different side (stale / out-of-turn / duplicate);
+  //   (c) ignore an edge that's already drawn (double-apply).
+  // Because completing a box keeps the turn, the active side does NOT alternate
+  // predictably — so the m.side === current check (not seat parity) is the robust
+  // gate that works for any player count.
   function applyRemoteMove(m) {
     if (mode !== "online" || gameOver) return;
     var mover = m.side;
     if (mover === mySide) return;          // our own echo — ignore
-    if (current === mySide) return;        // not the opponent's turn — stale/echo
+    if (mover !== current) return;         // out-of-turn / stale — ignore
     var e = { type: m.t, r: m.r, c: m.c };
     if (edgeDrawn(e)) return;              // already applied — avoid double-apply
     commitMove(e, mover);
@@ -788,13 +855,19 @@
   // ---- Controls ----
   function newGame() {
     if (ac()) { try { actx.resume(); } catch (e) {} }
-    init(parseInt(sizeSel.value, 10));
+    // Online matches use the host-chosen size (shared by all clients); local
+    // modes use the selector directly.
+    var n = (mode === "online") ? onlineSize : parseInt(sizeSel.value, 10);
+    init(n);
   }
   // ---- Mode selection ----
   function showModeSelect() { modeOverlay.classList.add("show"); }
   function startMode(m) {
     if (ac()) { try { actx.resume(); } catch (e) {} }
     mode = m;
+    playerCount = 2;       // local modes are always 2 players
+    sizeSel.disabled = false;
+    onlinePeerLeft = false;
     modeOverlay.classList.remove("show");
     newGame();
   }
@@ -802,43 +875,114 @@
   document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
 
   // "New Game" returns to the mode picker so you can switch AI / 2-player.
-  // When online, it restarts the shared board and tells the opponent (no picker).
+  // When online, the host restarts the shared board and tells everyone; non-host
+  // seats can't unilaterally restart (it would desync), so it's a no-op for them.
   function newOrModeSelect() {
-    if (mode === "online") { newGame(); GameMP.sendReset(); return; }
+    if (mode === "online") {
+      if (onlinePeerLeft) { leaveOnline(); showModeSelect(); return; }
+      if (mySide === 1) { newGame(); GameMP.sendReset(); }
+      return;
+    }
     showModeSelect();
   }
   document.getElementById("newBtn").addEventListener("click", newOrModeSelect);
-  // "Play Again" restarts the same mode.
+  // "Play Again" restarts the same mode. Online: host-only rematch.
   document.getElementById("againBtn").addEventListener("click", function () {
-    if (mode === "online") { newGame(); GameMP.sendReset(); return; }
+    if (mode === "online") {
+      if (onlinePeerLeft) { leaveOnline(); showModeSelect(); return; }
+      if (mySide === 1) { newGame(); GameMP.sendReset(); }
+      return;
+    }
     newGame();
   });
-  // Changing size restarts the current mode at the new size (and the opponent's).
+  // Changing size restarts the current mode at the new size. Online: only the
+  // host may pick the size (broadcast so every client matches); other seats can't
+  // change it mid-match (would desync), so we snap their selector back.
   sizeSel.addEventListener("change", function () {
+    if (mode === "online") {
+      if (mySide === 1) {
+        onlineSize = parseInt(sizeSel.value, 10);
+        newGame();
+        // Broadcast the new size; every other client re-inits on receipt.
+        GameMP.send({ action: "size", seat: GameMP.seat(), size: onlineSize });
+      } else {
+        sizeSel.value = String(onlineSize);
+      }
+      return;
+    }
     newGame();
-    if (mode === "online") GameMP.sendReset();
   });
 
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", function () { setTimeout(resize, 200); });
 
   // ---- Online wiring (game-multiplayer.js) ----
-  GameMP.setup({ gameName: "Dots and Boxes" });
-  GameMP.onReady(function (role) {
-    // role 0 = host = player 1 (moves first); role 1 = guest = player 2.
+  // Reset back to local play (used after leaving / a peer dropping out).
+  function leaveOnline() {
+    mode = "ai";
+    mySide = 1;
+    playerCount = 2;
+    onlinePeerLeft = false;
+    var ob = document.getElementById("againBtn");
+    ob.textContent = "Play Again"; ob.style.display = "";
+    sizeSel.disabled = false;
+  }
+
+  // Up to 4 players gather in the waiting room, press Ready, and the match
+  // starts on a majority. seat 0 = host = player 1 (moves first); seat S maps to
+  // player number S+1. The host's board size (onlineSize) is shared by everyone.
+  GameMP.setup({ gameName: "Dots & Boxes", minPlayers: 2, maxPlayers: 4 });
+  GameMP.onReady(function (seat, count) {
     mode = "online";
-    mySide = role === 0 ? 1 : 2;
+    onlinePeerLeft = false;
+    playerCount = count;
+    mySide = seat + 1;          // seat 0 -> player 1 (host, first), etc.
+    // Host's selector defines the size; everyone else adopts it (host will also
+    // re-broadcast on the first reset, but starting from the selector is fine
+    // since the same default is shared). Lock the selector for non-hosts.
+    onlineSize = (mySide === 1) ? parseInt(sizeSel.value, 10) : onlineSize;
+    sizeSel.value = String(onlineSize);
+    sizeSel.disabled = (mySide !== 1);
     modeOverlay.classList.remove("show");
     newGame();
+    // Host announces the agreed board size so every client (including late
+    // joiners whose default differed) re-inits to the same dimensions.
+    if (mySide === 1) GameMP.send({ action: "size", seat: GameMP.seat(), size: onlineSize });
   });
-  GameMP.onMove(applyRemoteMove);
-  GameMP.onReset(function () { if (mode === "online") newGame(); });
-  GameMP.onPeerLeft(function () {
+  GameMP.onMove(function (m) {
     if (mode !== "online") return;
+    if (m.action === "size") {
+      // Host set/changed the board size — adopt it and re-init to match.
+      // Ignore our own echoed message.
+      if (m.seat !== GameMP.seat() && m.size !== N) {
+        onlineSize = m.size;
+        sizeSel.value = String(onlineSize);
+        newGame();
+      }
+      return;
+    }
+    if (m.action === "edge") applyRemoteMove(m);
+  });
+  GameMP.onReset(function () {
+    if (mode !== "online") return;
+    onlinePeerLeft = false;
+    newGame();
+  });
+  GameMP.onPeerLeft(function () {
+    // No authoritative server: a mid-match drop breaks the deterministic turn
+    // order, so end cleanly and offer a fresh game (anyone can start one).
+    if (mode !== "online" || onlinePeerLeft) return;
+    onlinePeerLeft = true;
     gameOver = true;
+    busy = false;
     updateUI();
-    turnEl.textContent = "Opponent left.";
-    overlay.classList.remove("show");
+    turnEl.textContent = "A player left.";
+    resTitle.textContent = "Player left";
+    resTitle.style.color = "#e8edf2";
+    resText.textContent = "Someone disconnected, so this match can't continue.";
+    var ob = document.getElementById("againBtn");
+    ob.textContent = "New game"; ob.style.display = "";
+    overlay.classList.add("show");
   });
 
   // start: render an idle board behind the mode picker, then ask for a mode.
