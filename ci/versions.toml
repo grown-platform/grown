@@ -1,0 +1,212 @@
+# =============================================================================
+# ci/versions.toml — central versions manifest for the container images this
+# repo builds, bundles, or deploys. SINGLE SOURCE OF TRUTH for the
+# dependency-update system: ci/check-updates.sh reads this to report which pins
+# have newer upstream releases, and the planned daily Claude agent reads it to
+# know exactly which file/field to edit when bumping a pin.
+#
+# This file is REPORT/METADATA ONLY. Editing it does NOT change any build or
+# deployment — it only records where the real pins live.
+#
+# -----------------------------------------------------------------------------
+# Schema — one `[[image]]` table per tracked dependency. Fields:
+#
+#   key          stable identifier used in checker output + JSON (unique).
+#   kind         one of:
+#                  "self"     — built by this repo's CI (Forgejo workflows).
+#                               No upstream version to chase; we record the
+#                               workflow + tag scheme and FLAG gaps (e.g. a
+#                               deploy that pulls :latest, or an image with no
+#                               version tag at all).
+#                  "nix"      — built from nixpkgs via nix/images.nix. The
+#                               version is whatever the pinned nixpkgs rev in a
+#                               flake.lock evaluates to. Bumped via
+#                               `nix flake update`, not by editing a tag.
+#                  "upstream" — a third-party image pinned to an explicit tag in
+#                               a deploy/helm file. Bumped by editing that tag.
+#   image        registry/repository reference (no tag).
+#   current      the version CURRENTLY pinned, read verbatim from `pin_file`.
+#                For "self" this is the tag scheme/string actually deployed.
+#   pin_file     repo-relative file that holds the pin a bumper must edit.
+#   pin_field    human description of WHERE in pin_file the pin lives
+#                (yaml path, attr name, etc.) so an editor can find it.
+#   registry     the container registry the image lives in / is pulled from.
+#   notes        free-form context + gap flags.
+#
+# Check-source fields (how check-updates.sh finds newer versions):
+#   check_type   "dockerhub" | "quay" | "ghcr" | "github_releases" | "nix" | "none"
+#   check_url    endpoint to query (dockerhub/quay/ghcr) — omitted for github_releases/nix/none.
+#   check_repo   "owner/repo" (github_releases) OR ghcr image path OR nixpkgs lock path (nix).
+#   tag_filter   ERE the candidate tag must match to be considered (upstream only).
+#   nix_attr     nixpkgs attribute name to `nix eval` (nix only).
+#   lock_file    flake.lock whose nixpkgs rev drives this image (nix only).
+#   gap          short tag naming a known gap the checker should surface (optional).
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# self — CI-built images (no upstream check; flag gaps).
+# -----------------------------------------------------------------------------
+
+[[image]]
+key        = "grown"
+kind       = "self"
+image      = "code.pick.haus/grown/grown"
+current    = "YYYYMMDD-HHMMSS-<sha8> (+ :latest)"
+pin_file   = ".forgejo/workflows/publish.yaml"
+pin_field  = "jobs.build.steps['Build and push'] — VERSION=$(date -u +%Y%m%d-%H%M%S)-<sha8>, tags :$VERSION and :latest"
+registry   = "code.pick.haus"
+check_type = "none"
+notes      = "Built on push to main by the in-cluster Forgejo docker runner. Flux ImagePolicy grown:grown picks the newest YYYYMMDD-HHMMSS-<sha> tag. Has a real version tag AND :latest. No gap."
+
+[[image]]
+key        = "ls-sandbox"
+kind       = "self"
+image      = "code.pick.haus/grown/ls-sandbox"
+current    = "YYYYMMDD-HHMMSS-<sha8> (+ :latest)"
+pin_file   = ".forgejo/workflows/ls-sandbox.yaml"
+pin_field  = "jobs.build.steps['Build and push'] — VERSION=$(date -u +%Y%m%d-%H%M%S)-<sha8>, tags :$VERSION and :latest"
+registry   = "code.pick.haus"
+check_type = "none"
+gap        = "deployed-as-latest"
+notes      = "GAP: deploy/guacamole/40-ls-sandbox.yaml pins image as ':latest' with imagePullPolicy: Always, ignoring the version tag the workflow produces — no pinned/auditable version in the deploy."
+
+[[image]]
+key        = "pdf"
+kind       = "self"
+image      = "code.pick.haus/grown/pdf"
+current    = "YYYYMMDD-HHMMSS-<sha8> (NO :latest)"
+pin_file   = "pdf/.forgejo/workflows/publish.yaml"
+pin_field  = "jobs.build.steps['Build and push'] — DEST=...grown/pdf:${VERSION}, VERSION=$(date -u +%Y%m%d-%H%M%S)-<sha8>"
+registry   = "code.pick.haus"
+check_type = "none"
+gap        = "no-latest-tag"
+notes      = "Built via nix2container copyTo on the nix-arc runner. Pushes ONLY the versioned tag (no :latest). Driven by its own pdf/flake.lock (independent flake)."
+
+# -----------------------------------------------------------------------------
+# nix — dockerTools images built from pinned nixpkgs (nix/images.nix).
+# Versions come from the root flake.lock nixpkgs rev (nixos-unstable).
+# GAP (all three): tagged only ':nix' in nix/images.nix and NOT published with
+# version tags; deploys use the upstream images, not these.
+# -----------------------------------------------------------------------------
+
+[[image]]
+key        = "nix-postgres"
+kind       = "nix"
+image      = "grown/postgres (nix-built)"
+current    = ":nix tag; version = nixpkgs.postgresql_17"
+pin_file   = "nix/images.nix"
+pin_field  = "pkgs.postgresql_17 (postgresImage contents) + tag arg (default \"nix\")"
+registry   = "(not published with version tags)"
+check_type = "nix"
+nix_attr   = "postgresql_17"
+lock_file  = "flake.lock"
+gap        = "not-version-tagged"
+notes      = "Built for x86_64-linux / aarch64-linux. Version is whatever postgresql_17 resolves to in the locked nixos-unstable rev. Bump via `nix flake update`."
+
+[[image]]
+key        = "nix-minio"
+kind       = "nix"
+image      = "grown/minio (nix-built)"
+current    = ":nix tag; version = nixpkgs.minio"
+pin_file   = "nix/images.nix"
+pin_field  = "pkgs.minio (minioImage contents) + tag arg (default \"nix\")"
+registry   = "(not published with version tags)"
+check_type = "nix"
+nix_attr   = "minio"
+lock_file  = "flake.lock"
+gap        = "not-version-tagged"
+notes      = "nixpkgs minio is marked INSECURE and explicitly permitted in flake.nix (config.permittedInsecurePackages = minio-2025-10-15T17-29-55Z). Bump via `nix flake update`."
+
+[[image]]
+key        = "nix-zitadel"
+kind       = "nix"
+image      = "grown/zitadel (nix-built)"
+current    = ":nix tag; version = nixpkgs.zitadel"
+pin_file   = "nix/images.nix"
+pin_field  = "pkgs.zitadel (zitadelImage contents) + tag arg (default \"nix\")"
+registry   = "(not published with version tags)"
+check_type = "nix"
+nix_attr   = "zitadel"
+lock_file  = "flake.lock"
+gap        = "not-version-tagged"
+notes      = "Version is whatever zitadel resolves to in the locked nixos-unstable rev. Bump via `nix flake update`."
+
+# -----------------------------------------------------------------------------
+# upstream — third-party images pinned to explicit tags in deploy/helm.
+# -----------------------------------------------------------------------------
+
+[[image]]
+key        = "postgres"
+kind       = "upstream"
+image      = "docker.io/library/postgres"
+current    = "17.2-alpine"
+pin_file   = "deploy/helm/grown/values.yaml"
+pin_field  = "postgres.image.tag"
+registry   = "docker.io"
+check_type = "dockerhub"
+check_url  = "https://hub.docker.com/v2/repositories/library/postgres/tags"
+tag_filter = "^[0-9]+\\.[0-9]+-alpine$"
+notes      = "Bundled Postgres StatefulSet. Stay on the -alpine variant + same major (17) unless a major bump is intended."
+
+[[image]]
+key        = "minio"
+kind       = "upstream"
+image      = "quay.io/minio/minio"
+current    = "RELEASE.2025-04-08T15-41-24Z"
+pin_file   = "deploy/helm/grown/values.yaml"
+pin_field  = "minio.image.tag"
+registry   = "quay.io"
+check_type = "quay"
+check_url  = "https://quay.io/api/v1/repository/minio/minio/tag/"
+tag_filter = "^RELEASE\\."
+notes      = "Bundled object storage. Tags are RELEASE.<timestamp>; newest by timestamp. (mcImage minio/mc is pinned :latest in the same file — intentional, init job only.)"
+
+[[image]]
+key        = "zitadel"
+kind       = "upstream"
+image      = "ghcr.io/zitadel/zitadel"
+current    = "v2.71.0"
+pin_file   = "deploy/helm/grown/values.yaml"
+pin_field  = "zitadel.image.tag"
+registry   = "ghcr.io"
+check_type = "github_releases"
+check_repo = "zitadel/zitadel"
+tag_filter = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+notes      = "Bundled OIDC provider. GitHub releases are the queryable source (semver v-tags); ghcr OCI tags/list needs a token."
+
+[[image]]
+key        = "bolo-mp"
+kind       = "upstream"
+image      = "code.pick.haus/grown/bolo-mp"
+current    = "20260613-1"
+pin_file   = "deploy/helm/grown/values.yaml"
+pin_field  = "bolo.image.tag"
+registry   = "code.pick.haus"
+check_type = "none"
+notes      = "Multiplayer Bolo sidecar, built OUTSIDE this repo and pushed to the private registry. No public/queryable source; bump manually when a new bolo-mp build is published. Disabled by default (bolo.enabled=false)."
+
+[[image]]
+key        = "guacamole"
+kind       = "upstream"
+image      = "docker.io/guacamole/guacamole"
+current    = "1.5.5"
+pin_file   = "deploy/guacamole/30-guacamole.yaml"
+pin_field  = "Deployment guacamole .spec.template.spec.containers[guacamole].image"
+registry   = "docker.io"
+check_type = "dockerhub"
+check_url  = "https://hub.docker.com/v2/repositories/guacamole/guacamole/tags"
+tag_filter = "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+notes      = "Apache Guacamole webapp. Keep in lockstep with guacd (same version)."
+
+[[image]]
+key        = "guacd"
+kind       = "upstream"
+image      = "docker.io/guacamole/guacd"
+current    = "1.5.5"
+pin_file   = "deploy/guacamole/20-guacd.yaml"
+pin_field  = "Deployment guacd .spec.template.spec.containers[guacd].image"
+registry   = "docker.io"
+check_type = "dockerhub"
+check_url  = "https://hub.docker.com/v2/repositories/guacamole/guacd/tags"
+tag_filter = "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+notes      = "Guacamole proxy daemon. Keep in lockstep with guacamole (same version)."
