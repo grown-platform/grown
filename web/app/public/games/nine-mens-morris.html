@@ -287,6 +287,7 @@
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -378,17 +379,27 @@
   // ---- Game state ----
   const HUMAN = 1, CPU = 2;
   let board, turn, phase, handCount, selected, gameOver, awaitRemoval, flying;
-  let mode = "ai"; // "ai" = vs computer (human is player 1), "2p" = pass-and-play
+  let mode = "ai"; // "ai" = vs computer (human is player 1), "2p" = pass-and-play, "online" = networked
+  let mySide = HUMAN; // which side this client controls when online (seat 0 = player 1, moves first)
+  let peerGone = false; // online: opponent disconnected — buttons go back to mode select
 
   // In 2p both players are human, so the side to move is always human.
   // In ai mode only player 1 (HUMAN) is human.
-  function isHumanTurn() { return mode === "2p" ? true : turn === HUMAN; }
+  // In online mode only your own side is human (your turn when turn === mySide).
+  function isHumanTurn() {
+    if (mode === "online") return turn === mySide;
+    return mode === "2p" ? true : turn === HUMAN;
+  }
   function sideName(pl) {
+    if (mode === "online") return pl === mySide ? "You" : "Opponent";
     if (mode === "2p") return pl === 1 ? "Player 1" : "Player 2";
     return pl === HUMAN ? "You" : "CPU";
   }
 
   function newGame() {
+    peerGone = false;
+    var overBtn0 = document.getElementById("overBtn");
+    if (overBtn0) overBtn0.textContent = "Play Again";
     board = new Array(24).fill(0); // 0 empty, 1 human, 2 cpu
     turn = HUMAN;
     phase = "place"; // "place" or "move"
@@ -396,17 +407,25 @@
     selected = null;
     gameOver = false;
     awaitRemoval = false;
-    flying = document.getElementById("flyToggle").checked;
+    // Online play forces the standard "flying" rule on BOTH clients so the two
+    // sides share identical legality (the checkbox can't desync the games).
+    flying = mode === "online" ? true : document.getElementById("flyToggle").checked;
     document.querySelector("#score1 .name").innerHTML =
       '<span class="swatch p1"></span>' + sideName(1);
     document.querySelector("#score2 .name").innerHTML =
       '<span class="swatch p2"></span>' + sideName(2);
     hideOverlay();
     render();
-    setStatus(isHumanTurn()
-      ? (mode === "2p" ? sideName(turn) + ": tap an empty point to place a piece."
-                       : "Tap an empty point to place a piece.")
-      : "Tap an empty point to place a piece.");
+    if (mode === "online") {
+      setStatus(isHumanTurn()
+        ? "Your turn — tap an empty point to place a piece."
+        : "Opponent's turn — waiting…");
+    } else {
+      setStatus(isHumanTurn()
+        ? (mode === "2p" ? sideName(turn) + ": tap an empty point to place a piece."
+                         : "Tap an empty point to place a piece.")
+        : "Tap an empty point to place a piece.");
+    }
   }
 
   function piecesOnBoard(pl) {
@@ -512,6 +531,15 @@
   function endGame(winner, reason) {
     gameOver = true;
     const won = winner === HUMAN;
+    if (mode === "online") {
+      const youWon = winner === mySide;
+      setStatus((youWon ? "You win!" : "Opponent wins!") + " (" + reason + ")");
+      render();
+      showOverlay(youWon ? "You Win!" : "Opponent Wins",
+        (youWon ? "You" : "Opponent") + " won — " + reason + ".");
+      beep(youWon ? 660 : 180, 0.25);
+      return;
+    }
     if (mode === "2p") {
       const w = sideName(winner);
       setStatus(w + " wins! (" + reason + ")");
@@ -546,6 +574,7 @@
       // current player is removing an opponent piece
       const targets = removableTargets(me);
       if (targets.includes(p)) {
+        if (mode === "online") GameMP.send({ action: "remove", seat: GameMP.seat(), point: p });
         board[p] = 0;
         awaitRemoval = false;
         beep(520, 0.08);
@@ -557,6 +586,7 @@
     if (phase === "place" || handCount[me] > 0) {
       // placing
       if (board[p] === 0) {
+        if (mode === "online") GameMP.send({ action: "place", seat: GameMP.seat(), point: p });
         board[p] = me;
         handCount[me]--;
         beep(440, 0.06);
@@ -581,6 +611,7 @@
       if (board[p] === me) { selected = p; render(); return; }
       const dests = legalDestinations(selected, me);
       if (dests.includes(p)) {
+        if (mode === "online") GameMP.send({ action: "move", seat: GameMP.seat(), from: selected, to: p });
         board[p] = me;
         board[selected] = 0;
         const moved = p;
@@ -601,6 +632,22 @@
     if (targets.length === 0) {
       // nothing to remove
       afterMove();
+      return;
+    }
+    // Online: only the LOCAL mover taps to remove; a remote mover's removal
+    // arrives as a separate {action:"remove"} message (see applyRemote), so we
+    // just wait here without prompting locally.
+    if (mode === "online") {
+      if (pl === mySide) {
+        awaitRemoval = true;
+        setStatus("Mill! Tap a highlighted Opponent piece to remove.");
+        beep(700, 0.1);
+        render();
+      } else {
+        awaitRemoval = true; // opponent is choosing; their move will clear it
+        setStatus("Opponent formed a mill — removing one of your pieces…");
+        render();
+      }
       return;
     }
     if (mode === "2p" || pl === HUMAN) {
@@ -639,8 +686,11 @@
   function updateTurnStatus() {
     if (gameOver) return;
     const human = isHumanTurn();
-    const who = mode === "2p" ? sideName(turn) + "'s" : (turn === HUMAN ? "Your" : "CPU's");
-    const hint = human ? null : "thinking…";
+    const who = mode === "online"
+      ? (turn === mySide ? "Your" : "Opponent's")
+      : (mode === "2p" ? sideName(turn) + "'s"
+                       : (turn === HUMAN ? "Your" : "CPU's"));
+    const hint = human ? null : (mode === "online" ? "waiting…" : "thinking…");
     if (phase === "place") {
       setStatus(who + " turn — placing. " + (human ? "Tap an empty point." : hint));
     } else {
@@ -920,10 +970,119 @@
   document.getElementById("modeAi").addEventListener("click", function () { startMode("ai"); });
   document.getElementById("modeTwo").addEventListener("click", function () { startMode("2p"); });
 
-  // "New Game" returns to the mode picker so you can switch AI / 2-player.
-  document.getElementById("newGame").addEventListener("click", showModeSelect);
-  // "Play Again" restarts the same mode.
-  document.getElementById("overBtn").addEventListener("click", newGame);
+  // "New Game": offline → back to mode picker. Online → host-only rematch that
+  // resets BOTH clients (sendReset broadcasts; the other side's onReset mirrors).
+  document.getElementById("newGame").addEventListener("click", function () {
+    if (mode === "online") {
+      if (peerGone) { showModeSelect(); return; }
+      if (mySide === HUMAN) { newGame(); GameMP.sendReset(); }
+      return; // guest can't force a rematch
+    }
+    showModeSelect();
+  });
+  // "Play Again": offline restarts the same mode; online host triggers a shared
+  // rematch (guest's button is hidden by the overlay logic below).
+  document.getElementById("overBtn").addEventListener("click", function () {
+    if (mode === "online") {
+      if (peerGone) { showModeSelect(); return; }
+      if (mySide === HUMAN) { newGame(); GameMP.sendReset(); }
+      return;
+    }
+    newGame();
+  });
+
+  // =========================================================
+  //  Online multiplayer (drop-in via game-multiplayer.js)
+  // =========================================================
+  // Map seats to player ids: seat 0 = host = player 1 (HUMAN, moves first),
+  // seat 1 = guest = player 2 (CPU side). The local seat decides mySide.
+  function seatToPlayer(seat) { return seat === 0 ? HUMAN : CPU; }
+
+  // Apply an opponent's broadcast action through the EXACT same code paths the
+  // local mover uses, so both clients run identical placement / move / mill /
+  // capture / win logic. We ignore our own echoes and out-of-turn messages.
+  function applyRemote(m) {
+    if (mode !== "online" || gameOver) return;
+    if (m.seat == null) return;
+    const actor = seatToPlayer(m.seat);
+    if (actor === mySide) return; // our own echo — already applied locally
+
+    if (m.action === "remove") {
+      // Opponent just formed a mill and is removing one of OUR pieces. Only
+      // valid while we're awaiting their removal and the target is legal.
+      if (!awaitRemoval) return;
+      const targets = removableTargets(actor);
+      if (!targets.includes(m.point)) return;
+      board[m.point] = 0;
+      awaitRemoval = false;
+      beep(520, 0.08);
+      afterMove();
+      return;
+    }
+
+    // place / move are only legal when it's the opponent's turn and we are not
+    // mid-removal.
+    if (turn !== actor || awaitRemoval) return;
+
+    if (m.action === "place") {
+      if ((phase !== "place" && handCount[actor] === 0) || board[m.point] !== 0) return;
+      board[m.point] = actor;
+      handCount[actor]--;
+      beep(440, 0.06);
+      if (formsMillAt(m.point, actor)) { render(); beginRemoval(actor); }
+      else afterMove();
+      return;
+    }
+
+    if (m.action === "move") {
+      if (handCount[actor] > 0) return;            // still placing — illegal
+      if (board[m.from] !== actor || board[m.to] !== 0) return;
+      if (!legalDestinations(m.from, actor).includes(m.to)) return;
+      board[m.to] = actor;
+      board[m.from] = 0;
+      beep(400, 0.06);
+      if (formsMillAt(m.to, actor)) { render(); beginRemoval(actor); }
+      else afterMove();
+      return;
+    }
+  }
+
+  // Hide controls that don't apply online (flying is forced; New Game is
+  // host-only) and update the Play Again button for the guest.
+  function applyOnlineUI() {
+    const flyLabel = document.querySelector("#controls .toggle");
+    if (flyLabel) flyLabel.style.display = "none";
+    const newBtn = document.getElementById("newGame");
+    if (newBtn) newBtn.style.display = mySide === HUMAN ? "" : "none";
+    const overBtn = document.getElementById("overBtn");
+    if (overBtn) overBtn.style.display = mySide === HUMAN ? "" : "none";
+  }
+
+  GameMP.setup({ gameName: "Nine Men's Morris", minPlayers: 2, maxPlayers: 2 });
+  GameMP.onReady(function (seat) {
+    // seat 0 = host → player 1 (moves first); seat 1 = guest → player 2.
+    mode = "online";
+    mySide = seatToPlayer(seat);
+    document.getElementById("modeOverlay").classList.remove("show");
+    hideOverlay();
+    applyOnlineUI();
+    newGame();
+  });
+  GameMP.onMove(applyRemote);
+  GameMP.onReset(function () { if (mode === "online") newGame(); });
+  GameMP.onPeerLeft(function () {
+    if (mode !== "online") return;
+    gameOver = true;
+    awaitRemoval = false;
+    peerGone = true;
+    setStatus("Opponent left.");
+    render();
+    showOverlay("Opponent Left", "Your opponent disconnected. Start a New game.");
+    const overBtn = document.getElementById("overBtn");
+    if (overBtn) { overBtn.textContent = "New game"; overBtn.style.display = ""; }
+    const newBtn = document.getElementById("newGame");
+    if (newBtn) newBtn.style.display = "";
+  });
   document.getElementById("flyToggle").addEventListener("change", function () {
     flying = this.checked;
   });

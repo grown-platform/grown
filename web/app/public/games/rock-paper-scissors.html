@@ -317,9 +317,11 @@
 
     <div class="controls">
       <button class="reset" id="reset">↺ Reset Score</button>
+      <button class="reset" id="onlineBtn" style="margin-left:8px">🌐 Online Game</button>
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -337,11 +339,25 @@
     handYou: document.getElementById("handYou"),
     handCpu: document.getElementById("handCpu"),
     result: document.getElementById("result"),
-    reset: document.getElementById("reset")
+    reset: document.getElementById("reset"),
+    onlineBtn: document.getElementById("onlineBtn"),
+    labelCpu: document.querySelector(".score.cpu .label"),
+    whoCpu: document.querySelector(".hand.cpu .who")
   };
 
   var buttons = Array.prototype.slice.call(document.querySelectorAll(".choice"));
   var busy = false;
+
+  // --- Online state (local CPU play is the default; online is an extra mode) ---
+  // online === true once an online match has started. mySeat is our GameMP seat
+  // (0 = host). myThrow / oppThrow hold this round's secret choices keyed by who
+  // they came from; once BOTH are in we reveal + resolve identically on both
+  // clients. roundLock prevents acting twice in one round.
+  var online = false;
+  var mySeat = 0;
+  var myThrow = null;     // our choice this round (string) or null
+  var oppThrow = null;    // opponent's choice this round (string) or null
+  var roundLock = false;  // true after we've thrown, until the round resolves
 
   // --- WebAudio (lazy, optional) ---
   var actx = null;
@@ -448,7 +464,8 @@
 
   buttons.forEach(function (b) {
     b.addEventListener("click", function () {
-      play(b.getAttribute("data-move"));
+      if (online) onlineThrow(b.getAttribute("data-move"));
+      else play(b.getAttribute("data-move"));
     });
   });
 
@@ -463,9 +480,163 @@
     el.handCpu.textContent = "✊";
     el.handYou.classList.remove("reveal");
     el.handCpu.classList.remove("reveal");
-    el.result.textContent = "Pick one to play!";
+    el.result.textContent = online ? "Pick your throw!" : "Pick one to play!";
     el.result.className = "result tie";
+    if (online) {
+      // In online mode, "Reset Score" only zeroes the local tally; it does not
+      // disturb the round in progress. Don't unlock if we've already thrown.
+      if (!roundLock) setButtons(false);
+    }
     sndTick();
+  });
+
+  // ====================================================================
+  // ONLINE 2-PLAYER (GameMP) — simultaneous-reveal Rock Paper Scissors.
+  // ====================================================================
+  //
+  // Netcode: each round both players secretly pick rock/paper/scissors and
+  // broadcast {action:"throw", seat, choice}. Every client stashes both throws
+  // (its own immediately, the opponent's on receipt) keyed by seat. The moment
+  // BOTH throws are known, revealRound() runs on each client and resolves the
+  // winner from the SAME two inputs with the SAME pure function — so both
+  // screens agree without any server arbitration. After a short reveal both
+  // clients clear the round and re-enable the throw buttons for the next round.
+  //
+  // The opponent's choice is never shown in the UI until both throws are in
+  // (we hold their hand on the fist), so seeing the plaintext choice early
+  // can't leak their pick on screen.
+
+  function enterOnlineMode() {
+    online = true;
+    // Relabel the right-hand side from CPU to the opponent.
+    if (el.labelCpu) el.labelCpu.textContent = "Opp";
+    if (el.whoCpu) el.whoCpu.textContent = "Opponent";
+    // Fresh tally for the online match.
+    scores.you = 0; scores.cpu = 0; scores.tie = 0;
+    render();
+    startOnlineRound();
+  }
+
+  function startOnlineRound() {
+    myThrow = null;
+    oppThrow = null;
+    roundLock = false;
+    busy = false;
+    el.handYou.textContent = "✊";
+    el.handCpu.textContent = "✊";
+    el.handYou.classList.remove("reveal", "shaking");
+    el.handCpu.classList.remove("reveal", "shaking");
+    el.result.textContent = "Pick your throw!";
+    el.result.className = "result tie";
+    setButtons(false);
+  }
+
+  function onlineThrow(choice) {
+    if (!online || roundLock) return;
+    ensureAudio();
+    myThrow = choice;
+    roundLock = true;
+    setButtons(true);
+    sndTick();
+    // Reflect our own pick on our hand right away (opponent's stays a fist).
+    el.handYou.textContent = EMOJI[choice];
+    void el.handYou.offsetWidth;
+    el.handYou.classList.add("reveal");
+    GameMP.send({ action: "throw", seat: mySeat, choice: choice });
+    if (oppThrow == null) el.result.textContent = "Waiting for opponent…";
+    maybeReveal();
+  }
+
+  function maybeReveal() {
+    if (myThrow == null || oppThrow == null) return;
+    revealRound(myThrow, oppThrow);
+  }
+
+  // Pure resolution from the two throws — identical inputs on both clients give
+  // an identical outcome (standard RPS).
+  function revealRound(mine, theirs) {
+    el.handYou.textContent = EMOJI[mine];
+    el.handCpu.textContent = EMOJI[theirs];
+    el.handYou.classList.remove("reveal");
+    el.handCpu.classList.remove("reveal");
+    void el.handYou.offsetWidth;
+    el.handYou.classList.add("reveal");
+    el.handCpu.classList.add("reveal");
+
+    var outcome = decide(mine, theirs); // win/lose/tie from OUR perspective
+    if (outcome === "win") {
+      scores.you++;
+      el.result.textContent = "You win! 🎉";
+      el.result.className = "result win";
+      sndWin();
+    } else if (outcome === "lose") {
+      scores.cpu++;
+      el.result.textContent = "Opponent wins! 😤";
+      el.result.className = "result lose";
+      sndLose();
+    } else {
+      scores.tie++;
+      el.result.textContent = "It's a tie! 🤝";
+      el.result.className = "result tie";
+      sndTie();
+    }
+    render();
+
+    // Brief reveal, then both clients start the next round (buttons re-enable).
+    setTimeout(function () {
+      if (!online) return;
+      startOnlineRound();
+      el.result.textContent = "Next round — pick your throw!";
+      el.result.className = "result tie";
+    }, 1600);
+  }
+
+  // GameMP wiring -------------------------------------------------------
+  GameMP.setup({ gameName: "Rock Paper Scissors", minPlayers: 2, maxPlayers: 2 });
+
+  // No modeTwo/twoBtn anchor in this game, so GameMP won't auto-inject its
+  // online button — wire our own entry point instead (and avoid duplicating it
+  // if GameMP did somehow inject one).
+  if (el.onlineBtn) {
+    el.onlineBtn.addEventListener("click", function () {
+      ensureAudio();
+      GameMP.openCreate();
+    });
+  }
+
+  GameMP.onReady(function (seat, count) {
+    ensureAudio();
+    mySeat = seat;
+    enterOnlineMode();
+  });
+
+  GameMP.onMove(function (m) {
+    if (!online) return;
+    if (m.action === "throw" && m.seat !== mySeat) {
+      if (oppThrow != null) return; // already have their throw this round
+      oppThrow = m.choice;
+      // Don't reveal their hand yet — only the result line nudges that they're in
+      // if we haven't thrown. Reveal happens once we've thrown too.
+      if (myThrow == null) el.result.textContent = "Opponent threw — your move!";
+      maybeReveal();
+    }
+  });
+
+  GameMP.onReset(function () {
+    // Host pressed rematch — both clients zero the tally and start fresh.
+    scores.you = 0; scores.cpu = 0; scores.tie = 0;
+    render();
+    startOnlineRound();
+  });
+
+  GameMP.onPeerLeft(function () {
+    online = false;
+    roundLock = false;
+    setButtons(true);
+    el.result.textContent = "Opponent left — start a new game.";
+    el.result.className = "result lose";
+    if (el.labelCpu) el.labelCpu.textContent = "CPU";
+    if (el.whoCpu) el.whoCpu.textContent = "CPU";
   });
 
   render();

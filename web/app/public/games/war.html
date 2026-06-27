@@ -240,8 +240,10 @@
       </div>
     </div>
     <button class="btn" id="btn">PLAY</button>
+    <button class="btn" id="onlineBtn" style="margin-top:10px;font-size:18px;padding:14px;background:linear-gradient(180deg,#7fd0ff,#3aa0ff);box-shadow:0 6px 0 #1d6db9,0 8px 16px rgba(0,0,0,.4);color:#04223a;">🌐 ONLINE GAME</button>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 (function () {
   "use strict";
@@ -254,6 +256,13 @@
   ];
   // rank value: 2..14 (Ace high)
   var RANK_LABEL = { 11: "J", 12: "Q", 13: "K", 14: "A" };
+
+  // mode: "cpu" = local vs computer (DEFAULT, unchanged). "online" = networked
+  // 2-player match over GameMP. The local CPU game lives entirely in the
+  // youDeck/cpuDeck globals + playRound/resolveWar path and is never touched by
+  // the online code, which keeps its own seat-indexed state (see the ONLINE
+  // section near the bottom).
+  var mode = "cpu";
 
   var youDeck = []; // index 0 = top
   var cpuDeck = [];
@@ -578,6 +587,8 @@
     var c = ac();
     if (c && c.state === "suspended") { c.resume(); }
 
+    if (mode === "online") { onFlipTap(); return; }
+
     if (gameOver) {
       // restart
       el.btn.classList.remove("over");
@@ -602,7 +613,302 @@
   document.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
   document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
 
-  // init
+  // ======================================================================
+  // ONLINE MULTIPLAYER (GameMP) — exactly 2 players
+  // ----------------------------------------------------------------------
+  // Lockstep, host-seeded, no authoritative server. On match start seat 0 picks
+  // a seed and broadcasts {action:"start", seed}; BOTH clients build the same
+  // 52-card deck, shuffle it with the same seeded PRNG (mulberry32), and split it
+  // deterministically — seat 0 gets the first 26 cards, seat 1 the last 26. From
+  // then on the only network message is {action:"flip", seat}: each player taps
+  // FLIP to commit to the round; once BOTH have flipped, every client reveals the
+  // two top cards and resolves the battle identically (and any WAR chain) with
+  // NO further messages. War has no hidden info and no choices, so a single
+  // shared resolver run on each client stays in perfect sync.
+  //
+  // Determinism rules (must match byte-for-byte on both clients):
+  //  * Pile split: seat 0 = deck[0..25], seat 1 = deck[26..51].
+  //  * Battle: higher rank wins; on a tie a WAR (3 down + 1 up each, chaining).
+  //  * Won-card ordering into the winner's pile bottom is a FIXED order — we walk
+  //    the battle pot in the order cards were laid (mpPot, push order identical on
+  //    both clients) and append seat0's card before seat1's at each flip step, so
+  //    both clients build the same pile every time.
+  //  * Out of cards (can't produce a war/flip card) → the other player wins.
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function seededShuffle(arr,rng){for(var i=arr.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var t=arr[i];arr[i]=arr[j];arr[j]=t;}return arr;}
+
+  // Seat-indexed state (kept separate from the local youDeck/cpuDeck globals).
+  var mpSeat = 0;          // our seat (0 = host, 1 = guest)
+  var mpDecks = [[], []];  // mpDecks[seat] -> pile, index 0 = top
+  var mpPot = [];          // cards staked in the current battle (laid order)
+  var mpFlipped = [false, false]; // who has committed FLIP for this round
+  var mpPendingWar = false; // a tie is on the table; next mutual flip is the war
+  var mpOver = false;
+  var mpResolving = false;  // guard against re-entrant resolution
+  var mpPeerLeft = false;   // opponent disconnected → button starts a NEW game
+
+  function mpName(seat){ return seat === mpSeat ? "You" : "Opponent"; }
+  // Fixed, deterministic deck build (independent of the local buildDeck's shuffle).
+  function mpOrderedDeck(){
+    var d = [];
+    for (var s = 0; s < 4; s++) {
+      for (var r = 2; r <= 14; r++) d.push({ rank: r, suit: s });
+    }
+    return d;
+  }
+
+  function mpDeal(seed){
+    var rng = mulberry32(seed >>> 0);
+    var deck = seededShuffle(mpOrderedDeck(), rng);
+    // Deterministic split: seat 0 gets the first half, seat 1 the second half.
+    mpDecks = [deck.slice(0, 26), deck.slice(26, 52)];
+    mpPot = [];
+    mpFlipped = [false, false];
+    mpPendingWar = false;
+    mpOver = false;
+    mpResolving = false;
+  }
+
+  // Render the online board into the same DOM as the local game. We always show
+  // OUR pile as "You" (bottom) and the opponent as "CPU" (top) by mapping seats.
+  function mpRender(){
+    var mine = mpDecks[mpSeat].length;
+    var theirs = mpDecks[1 - mpSeat].length;
+    el.youCount.textContent = mine;
+    el.cpuCount.textContent = theirs;
+    document.querySelector(".count.cpu .lbl").textContent = "OPPONENT";
+    var total = mine + theirs;
+    el.bar.style.width = (total > 0 ? (mine / total) * 100 : 50) + "%";
+  }
+
+  // Reveal the staked cards for the current battle step onto the table. seat0's
+  // cards always render on the top pile or bottom pile by seat→side mapping.
+  function mpSideFor(seat){ return seat === mpSeat ? el.youPile : el.cpuPile; }
+
+  function onFlipTap(){
+    if (mpOver) {
+      if (mpPeerLeft) { GameMP.openCreate(); return; } // opponent gone → new game
+      // Host-only rematch from the game-over state.
+      if (mpSeat === 0) { GameMP.sendReset(); mpStartFresh(); }
+      return;
+    }
+    if (mpFlipped[mpSeat]) return; // already committed this round
+    mpFlipped[mpSeat] = true;
+    GameMP.send({ action: "flip", seat: mpSeat });
+    sFlip();
+    setMsg(mpPendingWar ? "WAR — waiting for opponent…" : "Flipped — waiting for opponent…", mpPendingWar);
+    el.btn.disabled = true;
+    mpMaybeResolve();
+  }
+
+  function onPeerFlip(seat){
+    if (mpOver) return;
+    mpFlipped[seat] = true;
+    mpMaybeResolve();
+  }
+
+  // Once BOTH players have committed FLIP for the round, resolve the battle (or
+  // the pending war). Identical computation on both clients → no desync.
+  function mpMaybeResolve(){
+    if (mpResolving || mpOver) return;
+    if (!(mpFlipped[0] && mpFlipped[1])) return;
+    mpResolving = true;
+    mpFlipped = [false, false];
+    if (mpPendingWar) mpResolveWar();
+    else mpPlayRound();
+    mpResolving = false;
+  }
+
+  function mpReenableFlip(label){
+    el.btn.disabled = false;
+    el.btn.textContent = label;
+  }
+
+  // A normal battle: each seat flips its top card. Higher rank wins both; a tie
+  // starts a WAR (resolved on the next mutual flip).
+  function mpPlayRound(){
+    if (mpDecks[0].length === 0 || mpDecks[1].length === 0) { mpFinish(); return; }
+    clearPiles();
+    mpPot = [];
+    var c0 = mpDecks[0].shift();
+    var c1 = mpDecks[1].shift();
+    mpPot.push(c0, c1); // fixed order: seat0 then seat1
+    mpSideFor(0).appendChild(cardFaceEl(c0, false));
+    mpSideFor(1).appendChild(cardFaceEl(c1, false));
+    sFlip();
+    if (c0.rank === c1.rank) {
+      mpPendingWar = true;
+      setMsg("WAR! Tie at " + rankText(c0.rank) + " — tap to battle", true);
+      sWar();
+      mpReenableFlip("BATTLE!");
+      mpRender();
+    } else {
+      var winner = c0.rank > c1.rank ? 0 : 1;
+      mpAward(winner);
+      mpResolveDone(winner, c0, c1);
+    }
+  }
+
+  function mpResolveDone(winner, c0, c1){
+    mpHighlight(winner);
+    setMsg(mpName(winner) + " wins (" +
+      rankText(Math.max(c0.rank, c1.rank)) + " beats " + rankText(Math.min(c0.rank, c1.rank)) + ")", false);
+    if (winner === mpSeat) sWin(); else sLose();
+    mpReenableFlip("FLIP");
+    mpRender();
+    mpCheckEnd();
+  }
+
+  // A WAR: each seat lays up to 3 cards face-down + 1 face-up. Resolution and
+  // card ordering are identical on both clients (seat0 laid before seat1).
+  function mpResolveWar(){
+    sWar();
+    mpPendingWar = false;
+    var faceDown = 3;
+    var down = [[], []];
+    var s, i;
+    for (s = 0; s < 2; s++) {
+      for (i = 0; i < faceDown; i++) {
+        if (mpDecks[s].length > 1) down[s].push(mpDecks[s].shift());
+        else break;
+      }
+    }
+    // Stake face-down cards (seat0's first, then seat1's) and render backs.
+    for (i = 0; i < down[0].length; i++) { mpPot.push(down[0][i]); mpSideFor(0).appendChild(cardBackEl()); }
+    for (i = 0; i < down[1].length; i++) { mpPot.push(down[1][i]); mpSideFor(1).appendChild(cardBackEl()); }
+
+    var has0 = mpDecks[0].length > 0;
+    var has1 = mpDecks[1].length > 0;
+    if (!has0 && !has1) { mpFinishByPot(); return; }
+    if (!has0 || !has1) {
+      var winner = has0 ? 0 : 1;
+      var wf = mpDecks[winner].shift();
+      mpPot.push(wf);
+      mpSideFor(winner).appendChild(cardFaceEl(wf, true));
+      mpAward(winner);
+      mpResolveWarDone(winner);
+      return;
+    }
+    var f0 = mpDecks[0].shift();
+    var f1 = mpDecks[1].shift();
+    mpPot.push(f0, f1); // fixed order
+    mpSideFor(0).appendChild(cardFaceEl(f0, false));
+    mpSideFor(1).appendChild(cardFaceEl(f1, false));
+    sFlip();
+    if (f0.rank === f1.rank) {
+      var l0 = mpSideFor(0).lastChild, l1 = mpSideFor(1).lastChild;
+      if (l0) l0.classList.add("win");
+      if (l1) l1.classList.add("win");
+      mpPendingWar = true;
+      setMsg("DOUBLE WAR! Tie at " + rankText(f0.rank) + " — tap again", true);
+      mpReenableFlip("BATTLE!");
+      mpRender();
+    } else {
+      var w2 = f0.rank > f1.rank ? 0 : 1;
+      mpHighlight(w2);
+      mpAward(w2);
+      mpResolveWarDone(w2);
+    }
+  }
+
+  function mpResolveWarDone(winner){
+    setMsg(mpName(winner) + " won the WAR! +" + mpPot.length + " cards", false);
+    if (winner === mpSeat) sWin(); else sLose();
+    mpReenableFlip("FLIP");
+    mpRender();
+    mpCheckEnd();
+  }
+
+  // Award the pot to the winner's pile bottom in the FIXED mpPot order (seat0's
+  // staked cards then seat1's, per the push order above) so both clients match.
+  function mpAward(winner){
+    for (var i = 0; i < mpPot.length; i++) mpDecks[winner].push(mpPot[i]);
+    mpPot = [];
+  }
+
+  function mpHighlight(winner){
+    var pile = mpSideFor(winner);
+    if (pile.children.length) pile.children[pile.children.length - 1].classList.add("win");
+  }
+
+  function mpFinishByPot(){
+    // Both ran out mid-war: award the pot to whoever still holds more cards
+    // (deterministic; identical on both clients).
+    var to = mpDecks[0].length >= mpDecks[1].length ? 0 : 1;
+    mpAward(to);
+    mpRender();
+    mpFinish();
+  }
+
+  function mpCheckEnd(){
+    if (mpDecks[0].length === 0 || mpDecks[1].length === 0) mpFinish();
+  }
+
+  function mpFinish(){
+    mpOver = true;
+    mpPendingWar = false;
+    var winner = mpDecks[mpSeat].length > mpDecks[1 - mpSeat].length ? mpSeat : (1 - mpSeat);
+    var iWon = winner === mpSeat;
+    setMsg(iWon ? "★ YOU WIN THE WAR! ★" : "Opponent conquered all 52 cards", false);
+    el.btn.disabled = false;
+    el.btn.classList.add("over");
+    el.btn.textContent = mpSeat === 0 ? "PLAY AGAIN" : "WAITING FOR HOST…";
+    sGameOver(iWon);
+    mpRender();
+  }
+
+  // Seat 0 seeds + broadcasts a fresh deal; both clients deal identically.
+  function mpStartFresh(){
+    var seed = (Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
+    GameMP.send({ action: "start", seat: 0, seed: seed });
+    mpBeginMatch(seed);
+  }
+  function mpBeginMatch(seed){
+    mode = "online";
+    mpPeerLeft = false;
+    el.btn.classList.remove("over");
+    el.btn.disabled = false;
+    el.btn.textContent = "FLIP";
+    mpDeal(seed);
+    clearPiles();
+    mpRender();
+    setMsg("Tap FLIP to reveal your card", false);
+  }
+
+  // GameMP wiring -------------------------------------------------------
+  document.getElementById("onlineBtn").addEventListener("click", function () {
+    try { var c = ac(); if (c && c.state === "suspended") c.resume(); } catch (e) {}
+    GameMP.openCreate();
+  });
+
+  GameMP.setup({ gameName: "War", minPlayers: 2, maxPlayers: 2 });
+  GameMP.onReady(function (seat, count) {
+    try { var c = ac(); if (c && c.state === "suspended") c.resume(); } catch (e) {}
+    mpSeat = seat;
+    mode = "online";
+    gameOver = false; // ensure local-game flags don't interfere
+    if (seat === 0) { mpStartFresh(); }
+    else { mpBeginMatch(0); setMsg("Waiting for the deal…", false); }
+  });
+  GameMP.onMove(function (m) {
+    if (m.action === "start") { mpBeginMatch(m.seed); }
+    else if (m.action === "flip") { if (m.seat !== mpSeat) onPeerFlip(m.seat); }
+  });
+  GameMP.onReset(function () {
+    // Host pressed Play again → a fresh "start" deal follows.
+    setMsg("New deal coming…", false);
+  });
+  GameMP.onPeerLeft(function () {
+    if (mode !== "online" || mpOver) return;
+    mpOver = true;
+    mpPeerLeft = true; // FLIP/PLAY button now reopens the create panel
+    setMsg("Opponent left — match ended", false);
+    el.btn.disabled = false;
+    el.btn.classList.add("over");
+    el.btn.textContent = "NEW GAME";
+  });
+
+  // init (local CPU game — the default; online is opt-in via the button)
   deal();
   clearPiles();
   updateCounts();
