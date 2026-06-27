@@ -529,7 +529,9 @@
       <div class="mode-opts">
         <button id="modeAi">🤖 vs Computer</button>
         <button id="modeTwo">👥 2 Players (pass &amp; play)</button>
-        <button id="modeOnline">🌐 Online (2–5 players)</button>
+        <!-- GameMP auto-injects a "🌐 Online Game" button right after #modeTwo
+             (the waiting-room entry point). We don't add our own here so there's
+             no duplicate; see GameMP.setup() / the ONLINE section below. -->
       </div>
     </div>
   </div>
@@ -548,15 +550,8 @@
     </div>
   </div>
 
-  <!-- Online connect (create / join) -->
-  <div class="overlay" id="onlineOverlay">
-    <div class="modal" id="onlineModal"></div>
-  </div>
-
-  <!-- Online lobby (waiting room before host starts) -->
-  <div class="overlay" id="lobbyOverlay">
-    <div class="modal" id="lobbyModal"></div>
-  </div>
+  <!-- Online create/join + waiting room are provided by game-multiplayer.js
+       (GameMP). No bespoke connect/lobby overlays are needed here. -->
 
   <!-- Privacy handoff overlay (2-player pass & play). Opaque; drag the handle
        all the way across to reveal the next player's hand. -->
@@ -572,6 +567,7 @@
     </div>
   </div>
 
+<script src="/games/game-multiplayer.js"></script>
 <script>
 "use strict";
 (function(){
@@ -786,6 +782,10 @@ function drawCard(){
 
 // ---------- Turn flow ----------
 function startTurn(pi){
+  // Online (lockstep) drives its own turn flow via onlineStartTurn(); the local
+  // startTurn() is only used by 'ai' / '2p'. (Kept as a guard so a stray call in
+  // online mode does no harm.)
+  if(mode==='online'){ onlineStartTurn(pi); return; }
   G.turn = pi;
   G.playsLeft = 3;
   G.selected = null;
@@ -793,14 +793,6 @@ function startTurn(pi){
   const p = G.players[pi];
   const n = (p.hand.length===0) ? 5 : 2;
   for(let i=0;i<n;i++){ const c=drawCard(); if(c) p.hand.push(c); }
-  if(mode==='online'){
-    // Host drives online turns; see hostStartTurn(). This branch only runs for
-    // the host's local engine — broadcast the new public state.
-    if(checkWin()) return;
-    broadcastState();
-    render();
-    return;
-  }
   if(isHumanSeat(pi)){
     const isYou = (mode==='ai' && pi===0);
     setStatus('you', (isYou ? 'Your turn — ' : seatName(pi)+': ')+'play up to 3 cards.');
@@ -859,7 +851,8 @@ function checkWin(){
   for(let i=0;i<numSeats;i++){
     if(completeSets(G.players[i]) >= 3){
       G.over = true;
-      if(mode==='online'){ hostGameOver(i); }
+      // Online is lockstep: every client runs checkWin() on identical state and
+      // shows the same winner — no broadcast needed.
       showWin(i);
       return true;
     }
@@ -2047,9 +2040,26 @@ function showWin(winnerPi){
       '<p style="text-align:center">'+wn+' completed 3 property sets first.</p>';
   }
   const btns=document.createElement('div'); btns.className='mbtns';
-  const go=document.createElement('button'); go.className='go'; go.textContent=(mode==='online')?'Back to menu':'Play Again';
-  go.onclick=()=>{ closeModal(); if(mode==='online'){ netDisconnect(); showModeSelect(); } else { newGame(); } };
-  btns.appendChild(go);
+  if(mode==='online'){
+    // Host-only rematch: re-seeds + re-deals everyone via onlineRematch();
+    // non-hosts wait for the host to start the next deal.
+    if(GameMP.seat()===0){
+      const again=document.createElement('button'); again.className='go'; again.textContent='Play again';
+      again.onclick=()=>{ closeModal(); onlineRematch(); };
+      btns.appendChild(again);
+    } else {
+      const wait=document.createElement('div'); wait.style.cssText='flex:1;text-align:center;font-size:13px;color:#94a3c4;padding:8px';
+      wait.textContent='Waiting for host…';
+      btns.appendChild(wait);
+    }
+    const menu=document.createElement('button'); menu.className='cancel'; menu.textContent='Back to menu';
+    menu.onclick=()=>{ closeModal(); netDisconnect(); showModeSelect(); };
+    btns.appendChild(menu);
+  } else {
+    const go=document.createElement('button'); go.className='go'; go.textContent='Play Again';
+    go.onclick=()=>{ closeModal(); newGame(); };
+    btns.appendChild(go);
+  }
   modal.appendChild(btns);
   overlay.classList.add('show');
 }
@@ -2124,670 +2134,192 @@ function initSlider(onReveal){
 }
 
 /* ============================================================================
- * ONLINE MULTIPLAYER (authoritative host) — Part B
+ * ONLINE MULTIPLAYER (GameMP) — seed-based deterministic LOCKSTEP, 2–5 players
  * ----------------------------------------------------------------------------
- * Transport: the game-room relay at /api/v1/gamerooms/ws. Messages are JSON;
- * the server stamps `from` (peerId) + `name`, sends roster/join/leave, supports
- * BROADCAST (no `to`) and PRIVATE (`to:"<peerId>"`).
+ * There is NO authoritative server. Every client runs the IDENTICAL engine from
+ * the same inputs (same as crazy-eights / liars-dice):
+ *   • seat 0 (host) picks a 32-bit seed and broadcasts {action:"start", seed}.
+ *   • EVERY client (incl. seat 0) rebuilds the same deck, shuffles it with the
+ *     same seeded PRNG, and deals 5 cards each round-robin + the draw pile, all
+ *     deterministically by seat. From then on every action is broadcast and
+ *     applied identically on every client, so all clients stay in lockstep.
+ *   • All clients track the FULL game state (every hand, bank, props, deck,
+ *     discard). Hands are SOFT-HIDDEN: a determined cheater could recompute the
+ *     deal locally, but the UI only renders YOUR hand face-up and opponents as
+ *     counts. Acceptable for casual play.
  *
- * Roles: the HOST is the earliest peer in the room. The host holds the FULL
- * authoritative game state (deck + every hand + every board). Thin clients keep
- * only their own private hand + the public board, and submit ACTION INTENTS to
- * the host. The host VALIDATES every action against the real state, applies it,
- * then broadcasts the new public state and privately re-deals any changed hands.
+ * Determinism notes:
+ *   • Card ids must match on every client (they appear in action descriptors:
+ *     cardId / targetCardId). So online deals RESET the UID counter and build the
+ *     deck the same way everywhere — see onlineBuildDeck().
+ *   • drawCard()'s local reshuffle is non-deterministic; online draws use the
+ *     deterministic onlineDraw() which broadcasts a reshuffle seed when the deck
+ *     empties (every client applies the same seed), like crazy-eights.
  *
- * Hidden-info privacy: each player's hand is sent ONLY to that player via a
- * private `{to:peerId, type:"deal"|"hand", hand:[...]}` message. The public
- * broadcast contains only counts + face-up tableaus (props/banks/sets).
- *
- * Interactive cards implemented end-to-end:
- *   • Rent / Debt / Birthday  → host charges each payer; payer's client picks
- *     cards (pay_req → pay_resp); host validates + transfers.
- *   • Sly Deal / Forced Deal / Deal Breaker → actor resolves targets locally
- *     (all target info is public), submits a resolved descriptor; host applies.
- *   • Just Say No → one exchange: host asks the victim (jsn_ask → jsn_resp); if
- *     the victim says no, the host asks the ACTOR to counter. (See GAPS for the
- *     documented simplifications around longer JSN chains.)
+ * Turn gating: only the seat whose turn it is may act, EXCEPT forced responses
+ * (payment by an ower, Just Say No by a target). Those are modelled as bounded,
+ * turn-gated broadcast exchanges so all clients resolve them identically.
  * ========================================================================== */
 
-let net = {
-  ws: null,
-  myId: null,           // our peerId (from roster.you)
-  hostId: null,         // peerId of the host (earliest peer)
-  isHost: false,
-  roster: [],           // [{id,name}] in join order
-  seatOf: {},           // peerId -> seat index (assigned at game start)
-  idOfSeat: [],         // seat index -> peerId
-  started: false,
-  code: null,
-  pendingReplies: {}    // requestId -> callback (host-side, for pay/jsn round-trips)
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function seededShuffle(arr,rng){for(var i=arr.length-1;i>0;i--){var j=Math.floor(rng()*(i+1));var t=arr[i];arr[i]=arr[j];arr[j]=t;}return arr;}
+
+// Online session state (this client's view of the lockstep match).
+let on = {
+  active: false,        // are we currently in an online match?
+  seed: 0,              // current deal seed
+  reshuffleCounter: 0,  // # of deterministic deck reshuffles so far (seed deriv.)
+  pendingPay: null,     // active payment round: {payee, amount, reason, owe:{seat:bool}, resume}
+  jsn: null             // active Just Say No exchange (see onlineTargeted)
 };
 
-function netSend(obj){ if(net.ws && net.ws.readyState===1) net.ws.send(JSON.stringify(obj)); }
-function netSendTo(peerId, obj){ obj.to = peerId; netSend(obj); }
+// Network identity comes from GameMP (seat index + player count).
+function onSeat(){ return GameMP.seat(); }
+function onCount(){ return GameMP.players(); }
+function onSend(payload){ GameMP.send(Object.assign({ seat: GameMP.seat() }, payload)); }
 
-function netDisconnect(){
-  net.started = false;
-  if(net.ws){ try{ net.ws.onclose=null; net.ws.close(); }catch(e){} }
-  net.ws = null;
+// ---- Deterministic deck + deal ------------------------------------------
+// Build the deck with a RESET id counter so every client's card ids match.
+function onlineBuildDeck(){
+  UID = 1;
+  return buildDeck();
 }
 
-// ---- Connect ----
-function netConnect(code, pass, name, isCreate, onErr){
-  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
-  let url = proto + location.host + '/api/v1/gamerooms/ws?room=' + encodeURIComponent(code) +
-    '&password=' + encodeURIComponent(pass||'') + '&name=' + encodeURIComponent(name) +
-    '&game=' + encodeURIComponent('Monopoly Deal');
-  if(isCreate) url += '&public=1';
-  net.code = code;
-  try { net.ws = new WebSocket(url); } catch(e){ if(onErr) onErr('Connection failed.'); return; }
-  net.ws.onmessage = (ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } onNetMessage(m); };
-  net.ws.onerror = ()=>{ if(onErr) onErr('Connection error.'); };
-  net.ws.onclose = ()=>{ onNetClose(); };
-}
-
-function onNetClose(){
-  if(!net.started) return;          // closed before/around lobby — ignore
-  // If we lost the connection mid-game, end the game with a message.
-  if(mode==='online'){
-    setStatus('cpu','Disconnected from the room.');
-    if(!G || !G.over){ announceFatal('Connection lost. Game ended.'); }
-  }
-}
-
-function announceFatal(msg){
-  if(G) G.over = true;
-  hideHandoff(); closeModal();
-  modal.innerHTML = '<div class="win-emoji">🔌</div><h2 style="text-align:center">Game ended</h2><p style="text-align:center">'+msg+'</p>';
-  const btns=document.createElement('div'); btns.className='mbtns';
-  const go=document.createElement('button'); go.className='go'; go.textContent='Back to menu';
-  go.onclick=()=>{ closeModal(); netDisconnect(); showModeSelect(); };
-  btns.appendChild(go); modal.appendChild(btns);
-  overlay.classList.add('show');
-}
-
-// ---- Incoming messages ----
-function onNetMessage(m){
-  switch(m.type){
-    case 'roster':
-      net.myId = m.you;
-      net.roster = m.peers || [];
-      recomputeHost();
-      if(!net.started) renderLobby();
-      else if(net.isHost) hostHandlePresence();
-      break;
-    case 'join':
-      if(!net.roster.find(p=>p.id===m.from)) net.roster.push({id:m.from, name:m.name});
-      recomputeHost();
-      if(!net.started) renderLobby();
-      break;
-    case 'leave': {
-      // Capture host identity BEFORE recompute so we can detect a host departure
-      // (after recompute the next peer would wrongly look like the host).
-      const leftWasHost = (m.from === net.hostId);
-      net.roster = net.roster.filter(p=>p.id!==m.from);
-      if(!net.started){ recomputeHost(); renderLobby(); }
-      else { handlePeerLeave(m.from, leftWasHost); }
-      break;
-    }
-    // ---- lobby/start ----
-    case 'start':        // host -> all: game begins (public seat assignment)
-      clientOnStart(m); break;
-    case 'deal':         // host -> me (private): my starting hand
-    case 'hand':         // host -> me (private): my updated hand
-      clientOnHand(m); break;
-    case 'state':        // host -> all: public board snapshot
-      clientOnState(m); break;
-    case 'gameover':
-      clientOnGameOver(m); break;
-    // ---- host-bound from clients ----
-    case 'action':       // client -> host: an action intent
-      if(net.isHost) hostOnAction(m); break;
-    case 'endturn':
-      if(net.isHost) hostOnEndTurn(m); break;
-    case 'discard':
-      if(net.isHost) hostOnDiscard(m); break;
-    // ---- round-trip replies ----
-    case 'pay_req':      clientOnPayReq(m); break;
-    case 'pay_resp':     if(net.isHost) hostOnReply(m); break;
-    case 'jsn_ask':      clientOnJsnAsk(m); break;
-    case 'jsn_resp':     if(net.isHost) hostOnReply(m); break;
-    case 'log':          if(m.msg) log(m.msg, m.who||'sys'); break;
-  }
-}
-
-function recomputeHost(){
-  // Host = earliest peer in roster order (index 0). The relay preserves order.
-  if(net.roster.length===0){ net.hostId=null; return; }
-  net.hostId = net.roster[0].id;
-  net.isHost = (net.hostId === net.myId);
-}
-
-// ============================ LOBBY ===========================================
-let lobbyOverlay = document.getElementById('lobbyOverlay');
-let lobbyModal = document.getElementById('lobbyModal');
-function renderLobby(){
-  document.getElementById('onlineOverlay').classList.remove('show');
-  lobbyOverlay.classList.add('show');
-  const n = net.roster.length;
-  let html = '<h2>Lobby</h2>';
-  html += '<p>Room code <b style="color:#ffcf33">'+(net.code||'')+'</b> · '+n+'/5 players'+(net.isHost?' · you are host':'')+'</p>';
-  html += '<div class="lobby-list">';
-  net.roster.slice(0,5).forEach((p,i)=>{
-    const youTag = p.id===net.myId ? ' <span class="badge">YOU</span>' : '';
-    const hostTag = (i===0) ? ' <span class="badge">HOST</span>' : '';
-    html += '<div class="lobby-row">'+ (i+1) +'. '+escapeHtml(p.name||('Player '+(i+1)))+youTag+hostTag+'</div>';
-  });
-  html += '</div>';
-  lobbyModal.innerHTML = html;
-  const link = location.origin + location.pathname + '?room=' + (net.code||'');
-  const share = document.createElement('div'); share.className='share-box'; share.textContent = link;
-  lobbyModal.appendChild(share);
-  const btns=document.createElement('div'); btns.className='mbtns';
-  if(net.isHost){
-    const start=document.createElement('button'); start.className='go'; start.textContent='Start game ('+n+')';
-    start.disabled = n<2 || n>5;
-    start.onclick=()=> hostStartGame();
-    btns.appendChild(start);
-    const copy=document.createElement('button'); copy.className='cancel'; copy.textContent='Copy link';
-    copy.onclick=()=>{ try{ navigator.clipboard.writeText(link); copy.textContent='Copied!'; }catch(e){} };
-    btns.appendChild(copy);
-  } else {
-    const wait=document.createElement('div'); wait.style.cssText='font-size:13px;color:#94a3c4;flex:1;text-align:center;padding:8px';
-    wait.textContent='Waiting for host to start…';
-    btns.appendChild(wait);
-  }
-  lobbyModal.appendChild(btns);
-}
-function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-// ======================== HOST: start & deal =================================
-function hostStartGame(){
-  const peers = net.roster.slice(0,5);
-  if(peers.length<2){ return; }
-  numSeats = peers.length;
+// onlineBeginMatch(seed): every client deals identically from `seed`.
+function onlineBeginMatch(seed){
   mode = 'online';
-  net.started = true;
-  // Assign seats in roster order; host takes its own seat too.
-  net.idOfSeat = peers.map(p=>p.id);
-  net.seatOf = {};
+  on.active = true;
+  on.seed = seed >>> 0;
+  on.reshuffleCounter = 0;
+  on.pendingPay = null;
+  on.jsn = null;
+  mySeatOnline = onSeat();
+  numSeats = onCount();
   seatLabels = [];
-  peers.forEach((p,i)=>{ net.seatOf[p.id]=i; seatLabels[i]=p.name||('Player '+(i+1)); });
-  mySeatOnline = net.seatOf[net.myId];
-  // Build the authoritative game.
-  const deck = shuffle(buildDeck());
-  G = { deck, discard:[], players:buildPlayers(), turn:0, playsLeft:0, over:false, selected:null, busy:false, viewSeat:null };
-  for(let i=0;i<5;i++){ for(const p of G.players){ p.hand.push(drawCard()); } }
-  // Tell everyone the game started + seat map (public).
-  netSend({ type:'start', seats: peers.map(p=>({id:p.id, name:p.name})), numSeats });
-  // Deal each player their private hand.
-  for(let s=0;s<numSeats;s++){ dealPrivateHand(s, 'deal'); }
-  // Local host UI setup.
-  lobbyOverlay.classList.remove('show');
-  buildOppZones();
-  G._renderedLocal = mySeatOnline;
-  log('Online game started ('+numSeats+' players).', 'sys');
-  hostStartTurn(0);
-}
-
-// dealPrivateHand: send seat s's hand to its peer privately (host's own seat is
-// applied directly to its local thin-view hand mirror).
-function dealPrivateHand(seat, kind){
-  const pid = net.idOfSeat[seat];
-  const hand = G.players[seat].hand;
-  if(pid===net.myId){ /* host renders from G directly */ return; }
-  netSendTo(pid, { type:kind||'hand', hand: hand });
-}
-
-// Public snapshot: everything EXCEPT hidden hands (hands -> counts only).
-function publicSnapshot(){
-  return {
-    turn: G.turn,
-    playsLeft: G.playsLeft,
-    over: G.over,
-    deckCount: G.deck.length,
-    players: G.players.map(p=>({
-      cpu: false,
-      handCount: p.hand.length,
-      bank: p.bank,
-      props: p.props
-    }))
+  for(let i=0;i<numSeats;i++) seatLabels[i] = (i===mySeatOnline) ? 'You' : ('Player '+(i+1));
+  // Identical deck + shuffle on every client.
+  const rng = mulberry32(on.seed);
+  const deck = seededShuffle(onlineBuildDeck(), rng); // top = end (we pop)
+  G = {
+    deck, discard: [], players: buildPlayers(), turn: 0, playsLeft: 0,
+    drawnThisTurn: false, over: false, selected: null, busy: false, viewSeat: null,
+    _renderedLocal: mySeatOnline
   };
-}
-function broadcastState(){
-  if(mode!=='online' || !net.isHost) return;
-  netSend({ type:'state', pub: publicSnapshot() });
+  // Deal 5 each, round-robin starting at seat 0 (mirrors a real deal).
+  for(let n=0;n<5;n++){ for(let s=0;s<numSeats;s++){ G.players[s].hand.push(G.deck.pop()); } }
+  closeModal(); hideHandoff();
+  document.getElementById('overlay').classList.remove('show');
+  buildOppZones();
+  log('Online game started ('+numSeats+' players). '+seatName(0)+' goes first!', 'sys');
+  onlineStartTurn(0);
 }
 
-// hostStartTurn: advance the authoritative turn, draw, broadcast.
-function hostStartTurn(seat){
+// onlineStartTurn(seat): every client advances the turn identically. The active
+// seat draws 2 (or 5 if their hand is empty) from the SHARED deterministic deck.
+function onlineStartTurn(seat){
   G.turn = seat;
   G.playsLeft = 3;
   G.selected = null;
   G.busy = false;
+  G.drawnThisTurn = false;
   const p = G.players[seat];
   const n = (p.hand.length===0) ? 5 : 2;
-  for(let i=0;i<n;i++){ const c=drawCard(); if(c) p.hand.push(c); }
-  if(checkWin()) return;             // checkWin -> hostGameOver + broadcast
-  dealPrivateHand(seat,'hand');      // the active player drew — update their hand
-  broadcastState();
-  hostRenderLocal();
-  netBroadcastLog(seatName(seat)+"'s turn.");
-}
-
-function netBroadcastLog(msg, who){
-  log(msg, who||'sys');
-  if(net.isHost) netSend({ type:'log', msg, who:'sys' });
-}
-
-// hostGameOver: announce winner to all.
-function hostGameOver(winnerSeat){
-  netSend({ type:'gameover', winner: winnerSeat });
-  broadcastState();
-}
-
-// hostHandlePresence / handlePeerLeave: disconnect handling. `leftWasHost` is
-// computed by the caller before the host is recomputed.
-function hostHandlePresence(){ /* roster already updated; nothing extra here */ }
-function handlePeerLeave(peerId, leftWasHost){
-  if(leftWasHost){
-    // The HOST left — game ends for everyone (mid-game, authoritative state is
-    // gone). Non-hosts simply cannot continue.
-    announceFatal('The host left the game.');
-    return;
-  }
-  // A non-host left. Only the (still-present) host mutates authoritative state.
-  if(net.isHost && G){
-    const seat = net.seatOf[peerId];
-    if(seat==null || !G.players[seat]) return;
-    netBroadcastLog(seatName(seat)+' disconnected — their assets are frozen.');
-    G.players[seat].gone = true;
-    broadcastState(); hostRenderLocal();
-    if(G.turn===seat && !G.over){ hostStartTurn(hostNextActiveSeat(seat)); }
-  }
-}
-function hostNextActiveSeat(seat){
-  let s=seat, guard=0;
-  do { s=nextSeat(s); guard++; } while(G.players[s] && G.players[s].gone && guard<numSeats);
-  return s;
-}
-
-// ======================== HOST: apply actions ================================
-// hostOnAction: a client (or the host's own UI) submitted a resolved action.
-// `m.seat` is the acting seat (host re-validates it's that peer's turn).
-function hostOnAction(m){
-  if(!validateActor(m)) return;
-  applyHostAction(m.seat, m.action);
-}
-function validateActor(m){
-  if(!net.isHost || !G || G.over) return false;
-  const seat = m.seat!=null ? m.seat : net.seatOf[m.from];
-  if(seat==null || seat!==G.turn) return false;            // not their turn
-  if(m.from!=null && net.seatOf[m.from]!==seat) return false; // spoofed seat
-  if(G.playsLeft<=0 && m.action && m.action.kind!=='__none') return false;
-  return true;
-}
-
-// applyHostAction: execute a validated action on the authoritative G.
-// action shapes:
-//   {kind:'bank', cardId}
-//   {kind:'lay', cardId, group}            (group chosen for wildcards)
-//   {kind:'passgo', cardId}
-//   {kind:'addon', cardId, group}          (house/hotel)
-//   {kind:'rent', cardId, group}           (charge all opponents)
-//   {kind:'debt', cardId, victim}
-//   {kind:'birthday', cardId}
-//   {kind:'sly', cardId, victim, group, targetCardId}
-//   {kind:'forced', cardId, victim, myGroup, myCardId, theirGroup, theirCardId}
-//   {kind:'dealbreaker', cardId, victim, group}
-function applyHostAction(seat, a){
-  const p = G.players[seat];
-  const card = p.hand.find(c=>c.id===a.cardId);
-  if(!card && a.kind!=='__none') return;                   // card not in hand
-  const finish = ()=>{ if(!checkWin()){ broadcastState(); hostRenderLocal(); } };
-  const afterPlay = ()=>{ G.playsLeft--; dealPrivateHand(seat,'hand'); finish(); };
-  switch(a.kind){
-    case 'bank':
-      removeFromHand(seat, card.id);
-      p.bank.push(card.type==='action'?{id:card.id,type:'action',name:card.name,value:card.value,act:card.act}:card);
-      netBroadcastLog(seatName(seat)+' banked '+card.name+'.');
-      afterPlay(); break;
-    case 'lay':
-      layProperty(seat, card, a.group||card.group);
-      netBroadcastLog(seatName(seat)+' laid a '+GROUPS[a.group||card.group].name+' property.');
-      afterPlay(); break;
-    case 'passgo':
-      removeFromHand(seat, card.id); G.discard.push(card);
-      for(let i=0;i<2;i++){ const d=drawCard(); if(d) p.hand.push(d); }
-      netBroadcastLog(seatName(seat)+' played Pass Go (drew 2).');
-      afterPlay(); break;
-    case 'addon': {
-      if(!G.players[seat].props[a.group]) return;
-      removeFromHand(seat, card.id);
-      p.props[a.group].push(Object.assign({},card,{assignedGroup:a.group}));
-      netBroadcastLog(seatName(seat)+' added '+card.name+' to '+GROUPS[a.group].name+'.');
-      afterPlay(); break;
-    }
-    case 'rent': {
-      const g=a.group;
-      if(!p.props[g]) return;
-      const cnt=Math.min(countPropsInGroup(p.props[g]),GROUPS[g].rent.length);
-      let amt=(GROUPS[g].rent[cnt-1]||0)+addonBonus(p.props[g]);
-      removeFromHand(seat, card.id); G.discard.push(card); G.playsLeft--;
-      dealPrivateHand(seat,'hand');
-      netBroadcastLog(seatName(seat)+' played Rent on '+GROUPS[g].name+' — everyone owes $'+amt+'M.');
-      broadcastState(); hostRenderLocal();
-      hostChargeSeats(activeOpponents(seat), seat, amt, 'Rent ('+GROUPS[g].name+')', finish);
-      break;
-    }
-    case 'debt': {
-      removeFromHand(seat, card.id); G.discard.push(card); G.playsLeft--;
-      dealPrivateHand(seat,'hand');
-      netBroadcastLog(seatName(seat)+' played Debt Collector — '+seatName(a.victim)+' owes $5M.');
-      broadcastState(); hostRenderLocal();
-      hostChargeSeats([a.victim], seat, 5, 'Debt Collector', finish);
-      break;
-    }
-    case 'birthday': {
-      removeFromHand(seat, card.id); G.discard.push(card); G.playsLeft--;
-      dealPrivateHand(seat,'hand');
-      netBroadcastLog(seatName(seat)+" played It's My Birthday — everyone pays $2M.");
-      broadcastState(); hostRenderLocal();
-      hostChargeSeats(activeOpponents(seat), seat, 2, "It's My Birthday", finish);
-      break;
-    }
-    case 'sly': {
-      hostTargetedAction(seat, a, 'Sly Deal', ()=>{
-        const arr=G.players[a.victim].props[a.group];
-        const tc=arr && arr.find(c=>c.id===a.targetCardId);
-        if(tc){ doSteal(a.victim, seat, a.group, tc); netBroadcastLog(seatName(seat)+' stole '+GROUPS[a.group].name+' from '+seatName(a.victim)+'.'); }
-      }, finish);
-      break;
-    }
-    case 'forced': {
-      hostTargetedAction(seat, a, 'Forced Deal', ()=>{
-        const tArr=G.players[a.victim].props[a.theirGroup];
-        const mArr=G.players[seat].props[a.myGroup];
-        const tc=tArr && tArr.find(c=>c.id===a.theirCardId);
-        const mc=mArr && mArr.find(c=>c.id===a.myCardId);
-        if(tc) doSteal(a.victim, seat, a.theirGroup, tc);
-        if(mc) doSteal(seat, a.victim, a.myGroup, mc);
-        netBroadcastLog(seatName(seat)+' swapped properties with '+seatName(a.victim)+'.');
-      }, finish);
-      break;
-    }
-    case 'dealbreaker': {
-      hostTargetedAction(seat, a, 'Deal Breaker', ()=>{
-        stealWholeSet(a.victim, seat, a.group);
-        netBroadcastLog(seatName(seat)+' stole '+seatName(a.victim)+"'s "+GROUPS[a.group].name+' set!');
-      }, finish);
-      break;
-    }
-    default: break;
-  }
-}
-
-function activeOpponents(seat){ return opponentSeats(seat).filter(o=>!G.players[o].gone); }
-
-// hostTargetedAction: spend the card, run a single Just Say No exchange with the
-// victim, then apply `effect` if not cancelled.
-function hostTargetedAction(actor, a, label, effect, done){
-  const card = G.players[actor].hand.find(c=>c.id===a.cardId);
-  if(card){ removeFromHand(actor, card.id); G.discard.push(card); }
-  G.playsLeft--;
-  dealPrivateHand(actor,'hand');
-  broadcastState(); hostRenderLocal();
-  hostAskJsn(a.victim, label, actor, (victimSaidNo)=>{
-    if(!victimSaidNo){ effect(); done(); return; }
-    netBroadcastLog(seatName(a.victim)+' played Just Say No!');
-    // offer the actor a counter
-    hostAskJsn(actor, 'counter '+label, a.victim, (actorCountered)=>{
-      if(actorCountered){ netBroadcastLog(seatName(actor)+' countered with Just Say No!'); effect(); }
-      done();
-    });
-  });
-}
-
-// hostAskJsn: ask `seat` whether to use Just Say No. If that seat has no JSN, or
-// is gone, auto-resolve to "no". Round-trips to a remote player; CPU n/a online.
-function hostAskJsn(seat, label, otherSeat, cb){
-  const p=G.players[seat];
-  const has = p.hand.some(c=>c.act==='sayno');
-  if(!has || p.gone){ cb(false); return; }
-  const pid = net.idOfSeat[seat];
-  if(pid===net.myId){
-    // host's own seat — ask locally
-    askYouSayNo(label, seatName(otherSeat), ()=>{ hostConsumeJsn(seat); cb(true); }, ()=>cb(false));
-    return;
-  }
-  const rid = 'jsn_'+(UID++);
-  net.pendingReplies[rid] = (resp)=>{
-    if(resp && resp.useNo){ hostConsumeJsn(seat); cb(true); } else cb(false);
-  };
-  netSendTo(pid, { type:'jsn_ask', rid, label, by: seatName(otherSeat) });
-  // safety timeout: if no reply in 20s, treat as "allow".
-  setTimeout(()=>{ if(net.pendingReplies[rid]){ const f=net.pendingReplies[rid]; delete net.pendingReplies[rid]; f({useNo:false}); } }, 20000);
-}
-function hostConsumeJsn(seat){
-  const p=G.players[seat];
-  const i=p.hand.findIndex(c=>c.act==='sayno');
-  if(i>=0){ G.discard.push(p.hand.splice(i,1)[0]); dealPrivateHand(seat,'hand'); }
-}
-
-// hostChargeSeats: charge each seat `amount`, sequentially.
-function hostChargeSeats(seats, payeeSeat, amount, reason, done){
-  let i=0;
-  function next(){
-    if(i>=seats.length){ if(done) done(); return; }
-    const s=seats[i++];
-    hostChargeOne(s, payeeSeat, amount, reason, next);
-  }
-  next();
-}
-function hostChargeOne(payerSeat, payeeSeat, amount, reason, done){
-  const payer=G.players[payerSeat];
-  if(payer.gone){ done(); return; }
-  const total = bankTotal(payer)+propAssetValue(payer);
-  if(amount<=0 || total===0){ netBroadcastLog(seatName(payerSeat)+' had nothing to pay.'); done(); return; }
-  const pid=net.idOfSeat[payerSeat];
-  if(pid===net.myId){
-    // host's own seat pays via the local payment modal
-    showPaymentModalOnline(payerSeat, payeeSeat, amount, reason, (cardIds)=>{ hostApplyPayment(payerSeat,payeeSeat,cardIds,amount,reason); done(); });
-    return;
-  }
-  const rid='pay_'+(UID++);
-  net.pendingReplies[rid]=(resp)=>{ hostApplyPayment(payerSeat, payeeSeat, (resp&&resp.cardIds)||[], amount, reason); done(); };
-  netSendTo(pid, { type:'pay_req', rid, amount, reason });
-  setTimeout(()=>{ if(net.pendingReplies[rid]){ const f=net.pendingReplies[rid]; delete net.pendingReplies[rid]; f({cardIds:hostAutoPayPick(payerSeat,amount)}); } }, 30000);
-}
-// hostAutoPayPick: fallback selection if a payer times out (greedy smallest).
-function hostAutoPayPick(payerSeat, amount){
-  const p=G.players[payerSeat]; const ids=[]; let acc=0;
-  const money=p.bank.slice().sort((a,b)=>(a.value||0)-(b.value||0));
-  for(const c of money){ if(acc>=amount) break; ids.push(c.id); acc+=(c.value||0); }
-  if(acc<amount){ for(const g of GROUP_KEYS){ if(p.props[g]) for(const c of p.props[g]){ if(acc>=amount) break; if(c.type==='property'||c.type==='wildcard'){ ids.push(c.id); acc+=(c.value||0); } } } }
-  return ids;
-}
-// hostApplyPayment: validate the payer's chosen cards cover the debt (or are
-// all their assets), then transfer them to the payee.
-function hostApplyPayment(payerSeat, payeeSeat, cardIds, amount, reason){
-  const payer=G.players[payerSeat], payee=G.players[payeeSeat];
-  const chosen=new Set(cardIds||[]);
-  let sum=0, transferred=0;
-  // money bank
-  for(const c of payer.bank.slice()){ if(chosen.has(c.id)){ sum+=(c.value||0); } }
-  for(const g of GROUP_KEYS){ if(payer.props[g]) for(const c of payer.props[g]){ if(chosen.has(c.id)) sum+=(c.value||0); } }
-  const totalAvail=bankTotal(payer)+propAssetValue(payer);
-  const need=Math.min(amount, totalAvail);
-  if(sum<need){
-    // invalid/short selection — fall back to auto-pick to keep the game moving.
-    cardIds=hostAutoPayPick(payerSeat, need); chosen.clear(); cardIds.forEach(id=>chosen.add(id));
-  }
-  // transfer money cards
-  for(const c of payer.bank.slice()){ if(chosen.has(c.id)){ const i=payer.bank.findIndex(x=>x.id===c.id); if(i>=0){ payee.bank.push(payer.bank.splice(i,1)[0]); transferred+=(c.value||0); } } }
-  // transfer property cards
-  for(const g of GROUP_KEYS){ if(payer.props[g]) for(const c of payer.props[g].slice()){ if(chosen.has(c.id)){ doStealCardObj(payerSeat, payeeSeat, g, c); transferred+=(c.value||0); } } }
-  netBroadcastLog(seatName(payerSeat)+' paid $'+transferred+'M to '+seatName(payeeSeat)+' for '+reason+'.');
-  dealPrivateHand(payerSeat,'hand'); dealPrivateHand(payeeSeat,'hand');
-  broadcastState(); hostRenderLocal();
-}
-
-// hostOnReply: route a pay_resp / jsn_resp back to its pending callback.
-function hostOnReply(m){
-  const f=net.pendingReplies[m.rid];
-  if(f){ delete net.pendingReplies[m.rid]; f(m); }
-}
-
-// hostOnEndTurn: the active player ended their turn.
-function hostOnEndTurn(m){
-  if(!net.isHost || !G || G.over) return;
-  const seat = m.seat!=null?m.seat:net.seatOf[m.from];
-  if(seat!==G.turn) return;
-  const p=G.players[seat];
-  if(p.hand.length>7){
-    // ask the player to discard down (handled client-side via discard message)
-    netSendTo(net.idOfSeat[seat], { type:'pay_req', rid:'discard', amount:0, reason:'__discard', discard:p.hand.length-7 });
-    // We reuse a discard round-trip below instead:
-    hostRequestDiscard(seat);
-    return;
-  }
-  hostStartTurn(hostNextActiveSeat(seat));
-}
-function hostRequestDiscard(seat){
-  const need=G.players[seat].hand.length-7;
-  const pid=net.idOfSeat[seat];
-  if(pid===net.myId){ promptDiscardOnline(seat, ()=>hostStartTurn(hostNextActiveSeat(seat))); return; }
-  const rid='disc_'+(UID++);
-  net.pendingReplies[rid]=(resp)=>{ hostApplyDiscard(seat,(resp&&resp.cardIds)||[]); hostStartTurn(hostNextActiveSeat(seat)); };
-  netSendTo(pid, { type:'pay_req', rid, amount:0, reason:'__discard', discard:need, isDiscard:true });
-  setTimeout(()=>{ if(net.pendingReplies[rid]){ const f=net.pendingReplies[rid]; delete net.pendingReplies[rid]; f({cardIds:G.players[seat].hand.slice(0,need).map(c=>c.id)}); } }, 30000);
-}
-function hostOnDiscard(m){ /* discard arrives via hostOnReply (pay_resp w/ isDiscard) */ }
-function hostApplyDiscard(seat, cardIds){
-  const p=G.players[seat]; const set=new Set(cardIds);
-  p.hand = p.hand.filter(c=>{ if(set.has(c.id)){ G.discard.push(c); return false; } return true; });
-  dealPrivateHand(seat,'hand');
-}
-
-// ======================== CLIENT (thin) side =================================
-// Thin clients keep their own hand + a public snapshot, and synthesize a G-like
-// object so the existing render() can draw the board.
-let clientHand = [];
-let clientPub = null;
-
-function clientOnStart(m){
-  mode='online'; net.started=true;
-  const seats = m.seats||[];
-  numSeats = m.numSeats || seats.length;
-  net.idOfSeat = seats.map(s=>s.id);
-  net.seatOf={}; seatLabels=[];
-  seats.forEach((s,i)=>{ net.seatOf[s.id]=i; seatLabels[i]=s.name||('Player '+(i+1)); });
-  mySeatOnline = net.seatOf[net.myId];
-  clientHand=[]; clientPub=null;
-  lobbyOverlay.classList.remove('show');
-  document.getElementById('onlineOverlay').classList.remove('show');
-  if(!net.isHost){ buildClientG(); buildOppZones(); G._renderedLocal=mySeatOnline; render(); onlineStatus(); }
-}
-function clientOnHand(m){
-  if(net.isHost) return;            // host renders from G
-  clientHand = m.hand||[];
-  if(G){ G.players[mySeatOnline].hand = clientHand.slice(); render(); }
-}
-function clientOnState(m){
-  if(net.isHost) return;
-  clientPub = m.pub;
-  buildClientG();
+  for(let i=0;i<n;i++){ const c=onlineDraw(); if(c) p.hand.push(c); }
+  if(checkWin()) return;
   render();
   onlineStatus();
 }
-function clientOnGameOver(m){ if(!net.isHost){ if(G) G.over=true; showWin(m.winner); } }
 
-// buildClientG: fold the public snapshot + our private hand into a G object the
-// renderer understands. Opponent hands are placeholders (count only).
-function buildClientG(){
-  if(!clientPub){
-    G = { players: [], turn:0, playsLeft:0, over:false, selected:null, busy:false, viewSeat:null };
-    for(let i=0;i<numSeats;i++) G.players.push(freshPlayer(false));
-    G.players[mySeatOnline].hand = clientHand.slice();
-    return;
+// onlineDraw(): pop one card from the shared deck. When the deck empties we
+// reshuffle the discard into a fresh deck DETERMINISTICALLY — NO broadcast: the
+// reshuffle seed is derived purely from on.seed + on.reshuffleCounter, and every
+// client replays the exact same sequence of draws/discards, so each client
+// reshuffles at the same logical moment with the same seed and gets an identical
+// deck. (Draws at turn start happen on every client, so a broadcast-based
+// reshuffle would desync clients that aren't the turn owner.)
+function onlineReshuffle(){
+  if(G.discard.length===0) return;
+  const seed = (on.seed ^ (0x9E3779B9 * (on.reshuffleCounter+1))) >>> 0;
+  on.reshuffleCounter++;
+  const rng = mulberry32(seed >>> 0);
+  G.deck = seededShuffle(G.discard.splice(0), rng);
+  log('Reshuffled discard into deck.', 'sys');
+}
+function onlineDraw(){
+  if(G.deck.length===0){
+    if(G.discard.length===0) return null;
+    onlineReshuffle();
   }
-  const prevSel = G && G.selected;
-  G = { players: [], turn:clientPub.turn, playsLeft:clientPub.playsLeft, over:clientPub.over, selected:prevSel, busy:false, viewSeat:null, _renderedLocal: mySeatOnline };
-  clientPub.players.forEach((pp,i)=>{
-    const pl = freshPlayer(false);
-    pl.bank = pp.bank||[];
-    pl.props = pp.props||{};
-    if(i===mySeatOnline){ pl.hand = clientHand.slice(); }
-    else { pl.hand = new Array(pp.handCount||0).fill(0).map(()=>({id:-1,type:'money',value:0,name:'?'})); } // placeholders for count
-    G.players[i]=pl;
-  });
+  return G.deck.pop();
 }
-
-// ---- Client: respond to host requests ----
-function clientOnPayReq(m){
-  if(net.isHost) return;            // host charges itself via local modal
-  if(m.reason==='__discard' || m.isDiscard){
-    promptDiscardOnline(mySeatOnline, (cardIds)=>{ netSendTo(net.hostId, { type:'pay_resp', rid:m.rid, cardIds, isDiscard:true }); }, m.discard);
-    return;
-  }
-  showPaymentModalOnline(mySeatOnline, null, m.amount, m.reason, (cardIds)=>{
-    netSendTo(net.hostId, { type:'pay_resp', rid:m.rid, cardIds });
-  });
-}
-function clientOnJsnAsk(m){
-  if(net.isHost) return;
-  // Does my hand actually contain a Just Say No? If not, auto-allow.
-  if(!clientHand.some(c=>c.act==='sayno')){ netSendTo(net.hostId, { type:'jsn_resp', rid:m.rid, useNo:false }); return; }
-  askYouSayNo(m.label, m.by||'Opponent',
-    ()=>netSendTo(net.hostId, { type:'jsn_resp', rid:m.rid, useNo:true }),
-    ()=>netSendTo(net.hostId, { type:'jsn_resp', rid:m.rid, useNo:false }));
-}
-
-// hostRenderLocal: the host is also a player — refresh its own board view from G.
-function hostRenderLocal(){ if(net.isHost){ G._renderedLocal=mySeatOnline; render(); onlineStatus(); } }
 
 // onlineStatus: refresh the top status line for online mode.
 function onlineStatus(){
   if(mode!=='online' || !G || G.over) return;
+  if(on.pendingPay){
+    if(on.pendingPay.owe[mySeatOnline]) setStatus('cpu', 'You owe $'+on.pendingPay.amount+'M ('+on.pendingPay.reason+').');
+    else setStatus('cpu', 'Waiting for payment…');
+    return;
+  }
+  if(on.jsn){ setStatus('cpu', 'Resolving Just Say No…'); return; }
   if(G.turn===mySeatOnline) setStatus('you', 'Your turn — play up to 3 cards.');
   else setStatus('cpu', seatName(G.turn)+"'s turn…");
 }
 
-// ======================= ONLINE: local action submission =====================
-// In online mode the player's UI builds a resolved action descriptor and submits
-// it to the host (the host submits to itself). The host is the single source of
-// truth, so we DON'T mutate G here — we wait for the rebroadcast.
+// activeOpponentsLocal: opponents from THIS client's view (online has no gone).
+function activeOpponentsLocal(seat){ return opponentSeats(seat).filter(o=>!(G.players[o]&&G.players[o].gone)); }
+
+// ======================= Acting (the active seat) ============================
+// Only fire when it's our turn and no forced exchange is pending.
+function onlineCanAct(){ return mode==='online' && G && !G.over && G.turn===mySeatOnline && !on.pendingPay && !on.jsn; }
+
+// submitOnlineAction / submitOnlineEndTurn / playOnlineCard keep their names so
+// the shared button handlers (youBankCard/youPlayCard/endTurn) call straight in.
+
+// A non-interactive action (bank/lay/passgo/addon/rent/debt/birthday): apply
+// locally AND broadcast; peers apply the identical descriptor in onMove.
 function submitOnlineAction(action){
-  const msg = { type:'action', seat:mySeatOnline, action };
-  if(net.isHost){ hostOnAction(Object.assign({from:net.myId}, msg)); }
-  else netSendTo(net.hostId, msg);
+  if(!onlineCanAct()) return;
+  onApplyAction(mySeatOnline, action);
+  onSend({ action:'act', act: action });
 }
 function submitOnlineEndTurn(){
-  if(net.isHost) hostOnEndTurn({from:net.myId, seat:mySeatOnline});
-  else netSendTo(net.hostId, { type:'endturn', seat:mySeatOnline });
+  if(!onlineCanAct()) return;
+  const me = G.players[mySeatOnline];
+  if(me.hand.length>7){
+    // Discard down LOCALLY, then broadcast the resolved discard + end-turn.
+    promptDiscardOnline(mySeatOnline, (cardIds)=>{
+      onApplyDiscard(mySeatOnline, cardIds);
+      onSend({ action:'discard', cardIds });
+      onApplyEndTurn(mySeatOnline);
+      onSend({ action:'endturn' });
+    });
+    return;
+  }
+  onApplyEndTurn(mySeatOnline);
+  onSend({ action:'endturn' });
 }
 
-// playOnlineCard: build a resolved action descriptor for the selected card using
-// PUBLIC board info (all target info is public) + the local choosers, then
-// submit it to the host. The host re-validates everything.
+// playOnlineCard: resolve the selected card's targets locally using PUBLIC board
+// info + the existing choosers, then submit a fully-resolved descriptor.
 function playOnlineCard(c){
+  if(!onlineCanAct()) return;
   const me = G.players[mySeatOnline];
   const opps = activeOpponentsLocal(mySeatOnline);
   G.selected = null;
   if(c.type==='property'){ submitOnlineAction({kind:'lay', cardId:c.id, group:c.group}); render(); return; }
-  if(c.type==='wildcard'){ chooseWildGroup(c, (g)=>{ submitOnlineAction({kind:'lay', cardId:c.id, group:g}); }); return; }
-  // action
+  if(c.type==='wildcard'){ chooseWildGroup(c, (g)=>{ submitOnlineAction({kind:'lay', cardId:c.id, group:g}); render(); }); return; }
   switch(c.act){
     case 'passgo': submitOnlineAction({kind:'passgo', cardId:c.id}); render(); break;
     case 'birthday': submitOnlineAction({kind:'birthday', cardId:c.id}); render(); break;
     case 'debt':
-      pickOpponent(opps, 'Debt Collector — charge whom $5M?', (v)=> submitOnlineAction({kind:'debt', cardId:c.id, victim:v}));
+      pickOpponent(opps, 'Debt Collector — charge whom $5M?', (v)=>{ submitOnlineAction({kind:'debt', cardId:c.id, victim:v}); render(); });
       break;
     case 'rent':
     case 'rent_any': {
       const owned = GROUP_KEYS.filter(g=> me.props[g] && countPropsInGroup(me.props[g])>0);
       if(owned.length===0){ toast('You have no properties to charge rent for.'); G.selected=c.id; render(); return; }
-      chooseColorForRent(owned, (g)=> submitOnlineAction({kind:'rent', cardId:c.id, group:g}));
+      chooseColorForRent(owned, (g)=>{ submitOnlineAction({kind:'rent', cardId:c.id, group:g}); render(); });
       break;
     }
     case 'slydeal': {
@@ -2795,7 +2327,7 @@ function playOnlineCard(c){
       if(valid.length===0){ toast('No opponent has a stealable property.'); G.selected=c.id; render(); return; }
       pickOpponent(valid, 'Sly Deal — steal from whom?', (v)=>{
         chooseStealTarget(stealableProps(G.players[v],false), 'Sly Deal — steal a property', v, (pick)=>{
-          submitOnlineAction({kind:'sly', cardId:c.id, victim:v, group:pick.group, targetCardId:pick.card.id});
+          submitOnlineAction({kind:'sly', cardId:c.id, victim:v, group:pick.group, targetCardId:pick.card.id}); render();
         });
       });
       break;
@@ -2807,7 +2339,7 @@ function playOnlineCard(c){
       if(valid.length===0){ toast('No opponent has a property to swap.'); G.selected=c.id; render(); return; }
       pickOpponent(valid, 'Forced Deal — swap with whom?', (v)=>{
         chooseForcedDeal(mine, stealableProps(G.players[v],false), v, (myPick, theirPick)=>{
-          submitOnlineAction({kind:'forced', cardId:c.id, victim:v, myGroup:myPick.group, myCardId:myPick.card.id, theirGroup:theirPick.group, theirCardId:theirPick.card.id});
+          submitOnlineAction({kind:'forced', cardId:c.id, victim:v, myGroup:myPick.group, myCardId:myPick.card.id, theirGroup:theirPick.group, theirCardId:theirPick.card.id}); render();
         });
       });
       break;
@@ -2816,7 +2348,7 @@ function playOnlineCard(c){
       const valid = opps.filter(o=> completeSetsList(G.players[o]).length>0);
       if(valid.length===0){ toast('No opponent has a complete set to steal.'); G.selected=c.id; render(); return; }
       pickOpponent(valid, 'Deal Breaker — steal from whom?', (v)=>{
-        chooseSetTarget(completeSetsList(G.players[v]), (g)=> submitOnlineAction({kind:'dealbreaker', cardId:c.id, victim:v, group:g}));
+        chooseSetTarget(completeSetsList(G.players[v]), (g)=>{ submitOnlineAction({kind:'dealbreaker', cardId:c.id, victim:v, group:g}); render(); });
       });
       break;
     }
@@ -2828,24 +2360,241 @@ function playOnlineCard(c){
         ? sets.filter(g=> me.props[g].some(x=>x.act==='house') && !me.props[g].some(x=>x.act==='hotel'))
         : sets.filter(g=> !me.props[g].some(x=>x.act==='house'));
       if(elig.length===0){ toast(c.act==='hotel'?'Need a set with a House and no Hotel.':'All your sets already have a House.'); G.selected=c.id; render(); return; }
-      chooseSetTarget(elig, (g)=> submitOnlineAction({kind:'addon', cardId:c.id, group:g}));
+      chooseSetTarget(elig, (g)=>{ submitOnlineAction({kind:'addon', cardId:c.id, group:g}); render(); });
       break;
     }
     case 'sayno': toast('Just Say No is played automatically to cancel actions against you.'); G.selected=c.id; render(); break;
     default: toast('Cannot play that now.'); G.selected=c.id; render();
   }
 }
-// activeOpponentsLocal: opponents from THIS client's view (skips disconnected).
-function activeOpponentsLocal(seat){
-  return opponentSeats(seat).filter(o=> !(G.players[o] && G.players[o].gone));
+
+// ======================= Applying actions (every client) =====================
+// onApplyAction runs the SAME mutation on every client for a resolved descriptor.
+// Non-charge, non-targeted actions resolve immediately. Charges open a payment
+// round (onlineCharge); targeted steals open a Just Say No exchange (onlineTargeted).
+function onApplyAction(seat, a){
+  const p = G.players[seat];
+  const card = (a.cardId!=null) ? p.hand.find(c=>c.id===a.cardId) : null;
+  if(a.kind!=='__none' && a.cardId!=null && !card) return; // out of sync guard
+  const afterSimple = ()=>{ G.playsLeft--; if(!checkWin()){ render(); onlineStatus(); } };
+  switch(a.kind){
+    case 'bank':
+      removeFromHand(seat, card.id);
+      p.bank.push(card.type==='action'?{id:card.id,type:'action',name:card.name,value:card.value,act:card.act}:card);
+      snd.bank(); log(seatName(seat)+' banked '+card.name+'.', seat===mySeatOnline?'you':'cpu');
+      afterSimple(); break;
+    case 'lay':
+      layProperty(seat, card, a.group||card.group);
+      snd.prop(); log(seatName(seat)+' laid '+GROUPS[a.group||card.group].name+' property.', seat===mySeatOnline?'you':'cpu');
+      afterSimple(); break;
+    case 'passgo':
+      removeFromHand(seat, card.id); G.discard.push(card);
+      for(let i=0;i<2;i++){ const d=onlineDraw(); if(d) p.hand.push(d); }
+      snd.action(); log(seatName(seat)+' played Pass Go (drew 2).', seat===mySeatOnline?'you':'cpu');
+      afterSimple(); break;
+    case 'addon':
+      if(!p.props[a.group]) { afterSimple(); break; }
+      removeFromHand(seat, card.id);
+      p.props[a.group].push(Object.assign({},card,{assignedGroup:a.group}));
+      snd.action(); log(seatName(seat)+' added '+card.name+' to '+GROUPS[a.group].name+'.', seat===mySeatOnline?'you':'cpu');
+      afterSimple(); break;
+    case 'rent': {
+      const g=a.group;
+      const cnt=Math.min(countPropsInGroup(p.props[g]||[]),GROUPS[g].rent.length);
+      let amt=(GROUPS[g].rent[cnt-1]||0)+addonBonus(p.props[g]||[]);
+      removeFromHand(seat, card.id); G.discard.push(card); G.playsLeft--;
+      snd.action(); log(seatName(seat)+' played Rent on '+GROUPS[g].name+' — everyone owes $'+amt+'M.', seat===mySeatOnline?'you':'cpu');
+      render();
+      onlineCharge(activeOpponentsLocal(seat), seat, amt, 'Rent ('+GROUPS[g].name+')');
+      break;
+    }
+    case 'debt': {
+      removeFromHand(seat, card.id); G.discard.push(card); G.playsLeft--;
+      snd.action(); log(seatName(seat)+' played Debt Collector — '+seatName(a.victim)+' owes $5M.', seat===mySeatOnline?'you':'cpu');
+      render();
+      onlineCharge([a.victim], seat, 5, 'Debt Collector');
+      break;
+    }
+    case 'birthday': {
+      removeFromHand(seat, card.id); G.discard.push(card); G.playsLeft--;
+      snd.action(); log(seatName(seat)+" played It's My Birthday — everyone pays $2M.", seat===mySeatOnline?'you':'cpu');
+      render();
+      onlineCharge(activeOpponentsLocal(seat), seat, 2, "It's My Birthday");
+      break;
+    }
+    case 'sly':
+      onlineTargeted(seat, a, 'Sly Deal', ()=>{
+        const arr=G.players[a.victim].props[a.group];
+        const tc=arr && arr.find(c=>c.id===a.targetCardId);
+        if(tc){ doSteal(a.victim, seat, a.group, tc); log(seatName(seat)+' stole '+GROUPS[a.group].name+' from '+seatName(a.victim)+'.', seat===mySeatOnline?'you':'cpu'); }
+      });
+      break;
+    case 'forced':
+      onlineTargeted(seat, a, 'Forced Deal', ()=>{
+        const tArr=G.players[a.victim].props[a.theirGroup];
+        const mArr=G.players[seat].props[a.myGroup];
+        const tc=tArr && tArr.find(c=>c.id===a.theirCardId);
+        const mc=mArr && mArr.find(c=>c.id===a.myCardId);
+        if(tc) doSteal(a.victim, seat, a.theirGroup, tc);
+        if(mc) doSteal(seat, a.victim, a.myGroup, mc);
+        log(seatName(seat)+' swapped properties with '+seatName(a.victim)+'.', seat===mySeatOnline?'you':'cpu');
+      });
+      break;
+    case 'dealbreaker':
+      onlineTargeted(seat, a, 'Deal Breaker', ()=>{
+        stealWholeSet(a.victim, seat, a.group);
+        log(seatName(seat)+' stole '+seatName(a.victim)+"'s "+GROUPS[a.group].name+' set!', seat===mySeatOnline?'you':'cpu');
+      });
+      break;
+    default: break;
+  }
 }
 
-// Online payment modal — reuses the same card-picker UI but returns chosen ids.
+function onApplyEndTurn(seat){
+  if(!G || G.over || G.turn!==seat) return;
+  log(seatName(seat)+' ended their turn.', seat===mySeatOnline?'you':'cpu');
+  if(checkWin()) return;
+  onlineStartTurn(nextSeat(seat));
+}
+
+function onApplyDiscard(seat, cardIds){
+  const p=G.players[seat]; const set=new Set(cardIds||[]);
+  p.hand = p.hand.filter(c=>{ if(set.has(c.id)){ G.discard.push(c); return false; } return true; });
+  render();
+}
+
+// ======================= Payment (forced response) ===========================
+// onlineCharge opens a payment ROUND for `payers`. Every client tracks who still
+// owes; each ower's OWN client lets them pick cards and broadcasts {action:'pay'}.
+// All clients apply the same transfer. When every ower has paid, the actor's turn
+// resumes (their playsLeft was already spent). If a payer has no assets, they're
+// auto-cleared (deterministic) with no cards moved.
+function onlineCharge(payers, payeeSeat, amount, reason){
+  const owe = {};
+  payers.forEach(s=>{
+    const payer=G.players[s];
+    const total=bankTotal(payer)+propAssetValue(payer);
+    if(amount>0 && total>0){ owe[s]=true; }
+    else { log(seatName(s)+' had nothing to pay.', s===mySeatOnline?'you':'cpu'); }
+  });
+  if(Object.keys(owe).length===0){ onlineResumeAfterCharge(); return; }
+  on.pendingPay = { payee: payeeSeat, amount, reason, owe };
+  render(); onlineStatus();
+  // It's MY debt → open the payment picker; my choice is broadcast to all.
+  if(owe[mySeatOnline]){ onlinePromptPay(); }
+}
+function onlinePromptPay(){
+  const pp = on.pendingPay; if(!pp) return;
+  showPaymentModalOnline(mySeatOnline, pp.payee, pp.amount, pp.reason, (cardIds)=>{
+    onApplyPay(mySeatOnline, cardIds);
+    onSend({ action:'pay', payerSeat: mySeatOnline, cards: cardIds });
+  });
+}
+// onApplyPay: transfer the chosen cards from payerSeat to the current payee on
+// every client, then clear that payer's debt. Validated against assets; an
+// invalid/short pick falls back to a deterministic auto-pick so all clients agree.
+function onApplyPay(payerSeat, cardIds){
+  const pp = on.pendingPay; if(!pp || !pp.owe[payerSeat]) return;
+  const payer=G.players[payerSeat], payee=G.players[pp.payee];
+  let chosen=new Set(cardIds||[]);
+  // verify the selection covers min(amount, all assets)
+  let sum=0;
+  for(const c of payer.bank){ if(chosen.has(c.id)) sum+=(c.value||0); }
+  for(const g of GROUP_KEYS){ if(payer.props[g]) for(const c of payer.props[g]){ if(chosen.has(c.id)) sum+=(c.value||0); } }
+  const need=Math.min(pp.amount, bankTotal(payer)+propAssetValue(payer));
+  if(sum<need){ const auto=onlineAutoPay(payerSeat, need); chosen=new Set(auto); }
+  let transferred=0;
+  for(const c of payer.bank.slice()){ if(chosen.has(c.id)){ const i=payer.bank.findIndex(x=>x.id===c.id); if(i>=0){ payee.bank.push(payer.bank.splice(i,1)[0]); transferred+=(c.value||0); } } }
+  for(const g of GROUP_KEYS){ if(payer.props[g]) for(const c of payer.props[g].slice()){ if(chosen.has(c.id)){ doStealCardObj(payerSeat, pp.payee, g, c); transferred+=(c.value||0); } } }
+  snd.pay();
+  log(seatName(payerSeat)+' paid $'+transferred+'M to '+seatName(pp.payee)+' for '+pp.reason+'.', payerSeat===mySeatOnline?'you':'cpu');
+  delete pp.owe[payerSeat];
+  if(Object.keys(pp.owe).length===0){ on.pendingPay=null; onlineResumeAfterCharge(); }
+  else { render(); onlineStatus(); }
+}
+// onlineAutoPay: deterministic fallback selection (greedy smallest money, then
+// properties) — identical on every client.
+function onlineAutoPay(payerSeat, amount){
+  const p=G.players[payerSeat]; const ids=[]; let acc=0;
+  const money=p.bank.slice().sort((a,b)=>(a.value||0)-(b.value||0)||(a.id-b.id));
+  for(const c of money){ if(acc>=amount) break; ids.push(c.id); acc+=(c.value||0); }
+  if(acc<amount){ for(const g of GROUP_KEYS){ if(p.props[g]) for(const c of p.props[g]){ if(acc>=amount) break; if(c.type==='property'||c.type==='wildcard'){ ids.push(c.id); acc+=(c.value||0); } } } }
+  return ids;
+}
+function onlineResumeAfterCharge(){
+  if(checkWin()) return;
+  render(); onlineStatus();
+}
+
+// ======================= Just Say No (forced response) =======================
+// A targeted steal (sly/forced/dealbreaker) first spends the card, then runs a
+// BOUNDED JSN ping-pong: the victim may cancel, the actor may counter, the victim
+// may counter again, and so on. Each step is decided by exactly one seat (the one
+// who currently may respond) and broadcast; the action's effect lands iff the
+// number of JSNs played is EVEN. The exchange ends when the responsible seat has
+// no Just Say No card, declines, or times out.
+function onlineTargeted(actor, a, label, effect){
+  const card = G.players[actor].hand.find(c=>c.id===a.cardId);
+  if(card){ removeFromHand(actor, card.id); G.discard.push(card); }
+  G.playsLeft--;
+  snd.action();
+  render();
+  on.jsn = { actor, victim:a.victim, label, effect, count:0, responder:a.victim };
+  onlineJsnStep();
+}
+// onlineJsnStep: it's `responder`'s decision. If that seat is US and we hold a
+// JSN, prompt; otherwise (no card, or someone else's decision) wait/auto-resolve.
+function onlineJsnStep(){
+  const j = on.jsn; if(!j) return;
+  const resp = j.responder;
+  const has = G.players[resp].hand.some(c=>c.act==='sayno');
+  if(!has){ onlineJsnResolve(); return; }   // deterministic: no card -> can't respond
+  render(); onlineStatus();
+  if(resp===mySeatOnline){
+    const other = (resp===j.victim) ? j.actor : j.victim;
+    const prompt = (j.count===0) ? j.label : ('counter '+j.label);
+    askYouSayNo(prompt, seatName(other), ()=>{
+      onApplyJsn(resp);
+      onSend({ action:'jsn', responder: resp });
+    }, ()=>{
+      onApplyJsnDecline(resp);
+      onSend({ action:'jsndecline', responder: resp });
+    });
+  }
+  // If responder is a remote seat, we just wait for their jsn / jsndecline.
+}
+// onApplyJsn: `resp` played a Just Say No — consume it, flip the count, and pass
+// the decision to the OTHER party (who may counter).
+function onApplyJsn(resp){
+  const j = on.jsn; if(!j || j.responder!==resp) return;
+  const p=G.players[resp];
+  const i=p.hand.findIndex(c=>c.act==='sayno');
+  if(i>=0){ G.discard.push(p.hand.splice(i,1)[0]); }
+  snd.no();
+  log(seatName(resp)+' played Just Say No!', resp===mySeatOnline?'you':'cpu');
+  j.count++;
+  j.responder = (resp===j.victim) ? j.actor : j.victim;
+  render();
+  onlineJsnStep();
+}
+// onApplyJsnDecline: `resp` declined to (counter-)JSN → the exchange ends now.
+function onApplyJsnDecline(resp){
+  const j = on.jsn; if(!j || j.responder!==resp) return;
+  onlineJsnResolve();
+}
+function onlineJsnResolve(){
+  const j = on.jsn; if(!j) return;
+  on.jsn = null;
+  if(j.count % 2 === 0){ j.effect(); }     // even # of JSNs → action proceeds
+  else { log('Action cancelled by Just Say No.', 'sys'); }
+  if(checkWin()) return;
+  render(); onlineStatus();
+}
+
+// ====================== Online card-picker modals ============================
+// Payment picker — same UI as local, returns chosen ids.
 function showPaymentModalOnline(payerSeat, payeeSeat, amount, reason, cb){
-  const me = (payerSeat===mySeatOnline) ? G.players[mySeatOnline] : G.players[payerSeat];
-  // Build the item list from the payer's OWN assets (host has full G; client has
-  // its own hand + public board which includes its own bank/props).
-  const src = (net.isHost) ? G.players[payerSeat] : G.players[mySeatOnline];
+  const src = G.players[payerSeat];
   const items=[]; const selected=new Set();
   src.bank.forEach(c=> items.push({id:c.id, kind:'bank', value:c.value||0, label:'$'+(c.value||0)+'M'+(c.type==='action'?' ('+c.name.split(' ')[0]+')':'')}));
   for(const g of GROUP_KEYS){ if(src.props[g]) src.props[g].forEach(c=>{ if(c.type==='property'||c.type==='wildcard') items.push({id:c.id, kind:'prop', group:g, value:c.value||0, label:GROUPS[g].name+(c.type==='wildcard'?'*':'')+' $'+(c.value||0)+'M'}); }); }
@@ -2864,9 +2613,9 @@ function showPaymentModalOnline(payerSeat, payeeSeat, amount, reason, cb){
   draw(); overlay.classList.add('show');
 }
 
-// Online discard modal — returns chosen ids.
+// Discard picker — returns chosen ids.
 function promptDiscardOnline(seat, cb, needOverride){
-  const src = (net.isHost) ? G.players[seat] : G.players[mySeatOnline];
+  const src = G.players[seat];
   const need = needOverride!=null ? needOverride : (src.hand.length-7);
   const sel=new Set();
   function draw(){
@@ -2876,17 +2625,81 @@ function promptDiscardOnline(seat, cb, needOverride){
     modal.appendChild(grid);
     const tot=document.createElement('div'); tot.className='pay-total'; tot.innerHTML='Selected <b>'+sel.size+'</b> / '+need; modal.appendChild(tot);
     const btns=document.createElement('div'); btns.className='mbtns'; const go=document.createElement('button'); go.className='go'; go.textContent='Discard'; go.disabled=sel.size!==need;
-    go.onclick=()=>{ closeModal(); if(net.isHost){ hostApplyDiscard(seat,[...sel]); } cb([...sel]); }; btns.appendChild(go); modal.appendChild(btns);
+    go.onclick=()=>{ closeModal(); cb([...sel]); }; btns.appendChild(go); modal.appendChild(btns);
   }
   draw(); overlay.classList.add('show');
 }
 
+// ====================== GameMP wiring (lockstep transport) ===================
+function netDisconnect(){ on.active=false; on.pendingPay=null; on.jsn=null; }
+
+GameMP.setup({ gameName: 'Monopoly Deal', minPlayers: 2, maxPlayers: 5 });
+
+// Match starts: seat 0 generates the seed and broadcasts it; everyone deals.
+GameMP.onReady(function(seat, count){
+  try{ if(audioCtx&&audioCtx.state==='suspended') audioCtx.resume(); }catch(e){}
+  mode = 'online';
+  mySeatOnline = seat; numSeats = count;
+  if(seat===0){
+    const seed = (Math.floor(Math.random()*0xFFFFFFFF)) >>> 0;
+    onSend({ action:'start', seed });
+    onlineBeginMatch(seed);
+  } else {
+    setStatus('cpu', 'Waiting for the deal…');
+  }
+});
+
+// Apply every peer broadcast identically. (Our own actions were already applied
+// locally before broadcasting, so we ignore echoes of our own seat.)
+GameMP.onMove(function(m){
+  if(m.seat===mySeatOnline) return;   // our own move — already applied locally
+  // start: (re)deal a fresh match from the host's seed. Always honored (covers
+  // the first deal AND host rematches), since seat 0 broadcasts a new seed.
+  if(m.action==='start'){ onlineBeginMatch(m.seed); return; }
+  if(!on.active || !G || G.over) return;
+  switch(m.action){
+    case 'act':         onApplyAction(m.seat, m.act); break;
+    case 'endturn':     onApplyEndTurn(m.seat); break;
+    case 'discard':     onApplyDiscard(m.seat, m.cardIds); break;
+    case 'pay':         onApplyPay(m.payerSeat, m.cards); break;
+    case 'jsn':         onApplyJsn(m.responder); break;
+    case 'jsndecline':  onApplyJsnDecline(m.responder); break;
+  }
+});
+
+// Host rematch: seat 0 re-seeds; onReset re-deals everyone from a fresh match.
+GameMP.onReset(function(){
+  closeModal();
+  setStatus('cpu', 'New deal coming…');
+});
+
+// A peer dropping breaks the deterministic turn order — end the match cleanly.
+GameMP.onPeerLeft(function(){
+  if(mode!=='online' || !on.active || (G && G.over)) return;
+  if(G) G.over = true;
+  on.active = false; on.pendingPay=null; on.jsn=null;
+  hideHandoff(); closeModal();
+  modal.innerHTML='<div class="win-emoji">🔌</div><h2 style="text-align:center">Player left</h2>'+
+    '<p style="text-align:center">Someone disconnected, so this match can\'t continue. Start a new online game to play again.</p>';
+  const btns=document.createElement('div'); btns.className='mbtns';
+  const go=document.createElement('button'); go.className='go'; go.textContent='New game';
+  go.onclick=()=>{ closeModal(); netDisconnect(); GameMP.openCreate(); };
+  btns.appendChild(go); modal.appendChild(btns);
+  overlay.classList.add('show');
+});
+
+// onlineRematch: host-only re-deal after a win (wired into the win overlay).
+function onlineRematch(){
+  if(onSeat()!==0) return;
+  GameMP.sendReset();
+  const seed = (Math.floor(Math.random()*0xFFFFFFFF)) >>> 0;
+  onSend({ action:'start', seed });
+  onlineBeginMatch(seed);
+}
 // ---------- Mode selection ----------
 const modeOverlay = document.getElementById('modeOverlay');
 function showModeSelect(){
   netDisconnect();
-  document.getElementById('onlineOverlay').classList.remove('show');
-  document.getElementById('lobbyOverlay').classList.remove('show');
   document.getElementById('aiSetupOverlay').classList.remove('show');
   modeOverlay.classList.add('show');
 }
@@ -2916,7 +2729,8 @@ document.getElementById('logToggle').addEventListener('click', (e)=>{
 });
 document.getElementById('modeAi').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); showAiSetup(); });
 document.getElementById('modeTwo').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); startMode('2p', 2); });
-document.getElementById('modeOnline').addEventListener('click', ()=>{ if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume(); showOnlineConnect(); });
+// The "🌐 Online Game" button is auto-injected by GameMP after #modeTwo and opens
+// the GameMP create/join panel + waiting room (no bespoke connect overlay here).
 
 // vs-Computer opponent count picker.
 function showAiSetup(){
@@ -2927,52 +2741,15 @@ document.querySelectorAll('#aiCountOpts button').forEach(b=>{
   b.addEventListener('click', ()=>{ const n=parseInt(b.getAttribute('data-n'),10)||1; startMode('ai', n+1); });
 });
 
-// ---- Online connect overlay (create / join) ----
-const onlineOverlay = document.getElementById('onlineOverlay');
-const onlineModal = document.getElementById('onlineModal');
-const NET_ADJ=['Swift','Brave','Clever','Lucky','Mighty','Sly','Witty','Bold','Cosmic','Turbo','Sneaky','Jolly','Nimble','Fuzzy','Zippy','Rad'];
-const NET_ANI=['Otter','Fox','Panda','Falcon','Tiger','Koala','Wolf','Lynx','Raven','Gecko','Moose','Heron','Badger','Orca','Yak','Wombat'];
-function suggestNick(){ function pk(a){ const b=new Uint8Array(1); crypto.getRandomValues(b); return a[b[0]%a.length]; } const n=new Uint8Array(1); crypto.getRandomValues(n); return pk(NET_ADJ)+' '+pk(NET_ANI)+' '+(10+(n[0]%90)); }
-function randCode(){ const s='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let o=''; const a=new Uint8Array(7); crypto.getRandomValues(a); for(let i=0;i<7;i++) o+=s[a[i]%s.length]; return o; }
-
-function showOnlineConnect(joinRoom){
-  modeOverlay.classList.remove('show');
-  onlineOverlay.classList.add('show');
-  const nick = suggestNick();
-  let html='<h2>'+(joinRoom?'Join online game':'Play online')+'</h2>';
-  html+='<p>2–5 players. Share a link to invite friends.</p>';
-  html+='<div style="margin-bottom:10px"><label style="font-size:12px;color:#94a3c4">Your nickname</label>'+
-    '<input id="onName" maxlength="40" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2c3a5c;background:#0b1220;color:#e8edf7;margin-top:4px"></div>';
-  html+='<div style="margin-bottom:10px"><label style="font-size:12px;color:#94a3c4">Room password (optional)</label>'+
-    '<input id="onPass" type="password" placeholder="optional" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2c3a5c;background:#0b1220;color:#e8edf7;margin-top:4px"></div>';
-  html+='<div id="onErr" style="font-size:13px;color:#ff5d6c;min-height:16px;margin-bottom:6px"></div>';
-  onlineModal.innerHTML=html;
-  document.getElementById('onName').value=nick;
-  const btns=document.createElement('div'); btns.className='mbtns';
-  if(joinRoom){
-    const go=document.createElement('button'); go.className='go'; go.textContent='Join';
-    go.onclick=()=>{ const name=document.getElementById('onName').value||nick; const pass=document.getElementById('onPass').value; document.getElementById('onErr').textContent='Connecting…'; netConnect(joinRoom, pass, name, false, (e)=>{ document.getElementById('onErr').textContent=e; }); };
-    btns.appendChild(go);
-  } else {
-    const go=document.createElement('button'); go.className='go'; go.textContent='Create room';
-    go.onclick=()=>{ const name=document.getElementById('onName').value||nick; const pass=document.getElementById('onPass').value; const code=randCode(); document.getElementById('onErr').textContent='Creating…'; netConnect(code, pass, name, true, (e)=>{ document.getElementById('onErr').textContent=e; }); };
-    btns.appendChild(go);
-  }
-  const cancel=document.createElement('button'); cancel.className='cancel'; cancel.textContent='Back';
-  cancel.onclick=()=>{ netDisconnect(); onlineOverlay.classList.remove('show'); modeOverlay.classList.add('show'); };
-  btns.appendChild(cancel);
-  onlineModal.appendChild(btns);
-}
-
 // prevent double-tap zoom on buttons
 document.addEventListener('dblclick', e=>e.preventDefault(), {passive:false});
 
-// Start: render an idle game behind the picker, then ask for a mode.
-// If arriving via a ?room= share link, jump straight to the join flow.
+// Start: render an idle (default 'ai') game behind the picker, then ask for a
+// mode. If arriving via a ?room= share link, GameMP.setup() auto-opens its join
+// panel; otherwise we show the local mode picker.
 const urlRoom = new URLSearchParams(location.search).get('room');
 newGame();
-if(urlRoom){ showOnlineConnect(urlRoom); }
-else showModeSelect();
+if(!urlRoom) showModeSelect();
 
 })();
 </script>
