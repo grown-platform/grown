@@ -114,6 +114,8 @@ function loadState(){
     var raw = localStorage.getItem(STORAGE_KEY);
     if(raw){ var p = JSON.parse(raw);
       if(p && Array.isArray(p.children)){
+        // Harden against a malformed saved blob: ensure each child has a levels map.
+        p.children.forEach(function(c){ if(!c.levels || typeof c.levels!=="object") c.levels={}; });
         STATE.children = p.children; STATE.lastChildId = p.lastChildId||null; } }
   }catch(e){ /* storage unavailable — run session-only */ }
 }
@@ -314,7 +316,6 @@ function renderPlay(opts){
     var wordHtml = isPhrase
       ? '<div class="phrase">'+esc(c.text)+'</div>'
       : '<div class="word">'+esc(c.text)
-        + (c.sub && c.sub!==c.text.toLowerCase() ? '' : '')
         + (L.key==="letters"||L.key==="sounds" ? '<span class="lc">'+esc(c.sub)+'</span>' : '')
         + '</div>';
     APP.innerHTML =
