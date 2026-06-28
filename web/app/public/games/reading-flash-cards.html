@@ -168,9 +168,44 @@ function shouldNudge(child){
   return child.currentLevel < LEVELS.length && readQuickly(child, child.currentLevel);
 }
 
-/* ============================ SPEAK (filled in Task 5) ============================ */
-function speakWord(card){ /* Task 5 */ }
-function speakSounds(card){ /* Task 5 */ }
+/* ============================ SPEAK ============================ */
+var TTS_OK = (typeof window !== "undefined" && "speechSynthesis" in window
+  && typeof window.SpeechSynthesisUtterance !== "undefined");
+var VOICE = null;
+function pickVoice(){
+  if(!TTS_OK) return;
+  var vs = window.speechSynthesis.getVoices() || [];
+  // Prefer an English, local voice; fall back to any English; else default.
+  VOICE = vs.filter(function(v){return /^en(-|_|$)/i.test(v.lang) && v.localService;})[0]
+       || vs.filter(function(v){return /^en(-|_|$)/i.test(v.lang);})[0]
+       || null;
+}
+function utter(text, rate){
+  var u = new SpeechSynthesisUtterance(text);
+  u.rate = rate; u.pitch = 1.05; if(VOICE) u.voice = VOICE;
+  return u;
+}
+function speakWord(card){
+  if(!TTS_OK) return;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utter(card.text, 0.85));
+}
+function speakSounds(card){
+  if(!TTS_OK) return;
+  window.speechSynthesis.cancel();
+  var parts = (card.sounds && card.sounds.length) ? card.sounds.slice() : [card.text];
+  // Speak each hint, then the whole word at the end (skip if last part already is it).
+  if(parts[parts.length-1] !== card.text) parts.push(card.text);
+  var i = 0;
+  function next(){
+    if(i >= parts.length) return;
+    var isWhole = (i === parts.length-1);
+    var u = utter(parts[i], isWhole ? 0.85 : 0.7);
+    u.onend = function(){ i++; setTimeout(next, isWhole ? 0 : 220); };
+    window.speechSynthesis.speak(u);
+  }
+  next();
+}
 
 /* ============================ VIEWS ============================ */
 var APP = document.getElementById("app");
@@ -306,6 +341,10 @@ function renderPlay(opts){
     }, 100);
     document.getElementById("bWord").onclick = function(){ speakWord(c); };
     document.getElementById("bSounds").onclick = function(){ speakSounds(c); };
+    if(!TTS_OK){
+      document.getElementById("bWord").classList.add("disabled");
+      document.getElementById("bSounds").classList.add("disabled");
+    }
     document.getElementById("bGot").onclick = onGot;
     document.getElementById("bSkip").onclick = function(){ advance(); };
     document.getElementById("bHard").onclick = function(){ recordTooHard(child, L.n); advance(); };
@@ -332,6 +371,12 @@ function renderSummary(opts){ APP.innerHTML = '<p class="muted">Summary — Task
 
 /* ============================ BOOT ============================ */
 loadState();
+if(TTS_OK){
+  pickVoice();
+  if(window.speechSynthesis.onvoiceschanged !== undefined){
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+  }
+}
 show("players");
 </script>
 </body>
