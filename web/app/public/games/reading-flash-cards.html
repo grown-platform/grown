@@ -255,8 +255,79 @@ function renderLevels(opts){
   });
 }
 
-// Filled in later tasks:
-function renderPlay(opts){ APP.innerHTML = '<p class="muted">Play — Task 4.</p>'; }
+function shuffle(a){ a=a.slice();
+  for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i];a[i]=a[j];a[j]=t; }
+  return a; }
+
+function renderPlay(opts){
+  var child = getChild(opts.childId);
+  var L = LEVELS[opts.levelN-1];
+  if(!child || !L){ show("players"); return; }
+  var deck = shuffle(L.cards);
+  var idx = 0;
+  var startedAt = 0;
+  var timerId = null;
+  var locked = false; // debounce Got it!
+  var session = { childId:child.id, levelN:L.n, results:[], fastest:null };
+
+  function card(){ return deck[idx]; }
+  function fmt(ms){ return (ms/1000).toFixed(1)+'s'; }
+
+  function paint(){
+    var c = card();
+    var isPhrase = (L.key==="phrases");
+    var wordHtml = isPhrase
+      ? '<div class="phrase">'+esc(c.text)+'</div>'
+      : '<div class="word">'+esc(c.text)
+        + (c.sub && c.sub!==c.text.toLowerCase() ? '' : '')
+        + (L.key==="letters"||L.key==="sounds" ? '<span class="lc">'+esc(c.sub)+'</span>' : '')
+        + '</div>';
+    APP.innerHTML =
+      '<div class="sub">'+esc(child.name)+' · Level '+L.n+': '+esc(L.title)
+        +' · card '+(idx+1)+'/'+deck.length+'</div>'
+      + '<div class="card">'+ wordHtml
+        + '<div class="soundbtns">'
+        +   '<button class="btn" id="bWord">🔊 Word</button>'
+        +   '<button class="btn" id="bSounds">🔉 Sounds</button>'
+        + '</div>'
+        + '<div class="timer" id="timer">0.0s</div>'
+      + '</div>'
+      + '<button class="btn go" id="bGot">✓ Got it!</button>'
+      + '<div class="row" style="margin-top:6px">'
+      +   '<button class="btn small" id="bSkip">Skip ›</button>'
+      +   '<span class="spacer"></span>'
+      +   '<button class="btn small" id="bHard">Too hard</button>'
+      + '</div>';
+    locked = false;
+    startedAt = Date.now();
+    if(timerId) clearInterval(timerId);
+    timerId = setInterval(function(){
+      var el=document.getElementById("timer"); if(el) el.textContent = fmt(Date.now()-startedAt);
+    }, 100);
+    document.getElementById("bWord").onclick = function(){ speakWord(c); };
+    document.getElementById("bSounds").onclick = function(){ speakSounds(c); };
+    document.getElementById("bGot").onclick = onGot;
+    document.getElementById("bSkip").onclick = function(){ advance(); };
+    document.getElementById("bHard").onclick = function(){ recordTooHard(child, L.n); advance(); };
+  }
+
+  function onGot(){
+    if(locked) return; locked = true;
+    var ms = Date.now()-startedAt;
+    recordTime(child, L.n, ms);
+    session.results.push({ text:card().text, ms:ms });
+    if(!session.fastest || ms < session.fastest.ms) session.fastest = { text:card().text, ms:ms };
+    advance();
+  }
+
+  function advance(){
+    idx++;
+    if(idx >= deck.length){ if(timerId) clearInterval(timerId); show("summary",{session:session}); return; }
+    paint();
+  }
+
+  paint();
+}
 function renderSummary(opts){ APP.innerHTML = '<p class="muted">Summary — Task 6.</p>'; }
 
 /* ============================ BOOT ============================ */
