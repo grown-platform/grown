@@ -20,6 +20,12 @@
 #   self     — reports CI-built, surfaces any recorded gap (no version
 #              tag / deployed as :latest). No upstream check.
 #
+# Plus a separate nix-containers ADOPTION pass over the [[nix_container]] tables:
+# for each grown component it queries ghcr.io/nix-containers/images/<name> and
+# reports AVAILABLE / HOLD / NOT-PUBLISHED / NO-VERSION vs grown's current pin,
+# so the daily/hourly agent can flag migration opportunities onto the nix image
+# set. Report-only, no deploy/build side effects.
+#
 # Degrades gracefully: a missing tool or a failed network call for ONE source
 # is reported (status=error/skipped) and the run continues. Exit is always 0.
 #
@@ -61,14 +67,17 @@ else
 fi
 
 # --------------------------------------------------------------------------- #
-# Tiny TOML parser for our known [[image]] schema. Emits, per image block, the
-# fields as KEY<TAB>VALUE lines, blocks separated by a line "---". Handles only
-# `key = "value"` / `key = value` scalars (sufficient for this manifest).
+# Tiny TOML parser for our known table schemas. Emits, per block of the given
+# section ($1, e.g. "image" or "nix_container"), the fields as KEY<TAB>VALUE
+# lines, blocks separated by a line "---". Handles only `key = "value"` /
+# `key = value` scalars (sufficient for this manifest). A different section's
+# `[[...]]` header ends the current block so sections don't bleed together.
 # --------------------------------------------------------------------------- #
 parse_manifest() {
-  awk '
+  awk -v section="[[${1:-image}]]" '
     /^[[:space:]]*#/ { next }
-    /^\[\[image\]\]/ { if (started) print "---"; started=1; next }
+    $0 == section { if (started) print "---"; started=1; next }
+    /^[[:space:]]*\[\[/ { if (started) { print "---"; started=0 } next }
     started && /^[[:space:]]*[A-Za-z_]+[[:space:]]*=/ {
       line=$0
       sub(/^[[:space:]]*/, "", line)
@@ -129,6 +138,37 @@ latest_github_releases() {
   printf '%s' "$body" \
     | jq -r '.[] | select(.prerelease==false and .draft==false) | .tag_name' 2>/dev/null \
     | grep -E "$filt" 2>/dev/null | sed 's/^v//' | sort -V | tail -n1 | sed 's/^/v/'
+}
+
+# ghcr.io anonymous tags for the nix-containers image set. Prints the newest
+# semver-ish tag (ignoring `latest` and 40-hex commit-sha tags), or one of the
+# sentinels __SKIP__ (curl/jq missing or offline) / __NONE__ (image not
+# published / token denied) / __NOVER__ (published but no usable version tag).
+# $1 = ghcr image path, e.g. ghcr.io/nix-containers/images/rustfs
+latest_ghcr_nixcontainers() {
+  local ref="$1" repo tok body tags
+  [ "$HAVE_CURL" = 1 ] || { echo "__SKIP__"; return; }
+  repo="${ref#ghcr.io/}"                       # nix-containers/images/<name>
+  tok="$(CURL "https://ghcr.io/token?scope=repository:${repo}:pull&service=ghcr.io" 2>/dev/null \
+        | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+  [ -n "$tok" ] || { echo "__NONE__"; return; }  # scope denied => image not published
+  body="$(CURL -H "Authorization: Bearer $tok" "https://ghcr.io/v2/${repo}/tags/list" 2>/dev/null)" \
+    || { echo "__SKIP__"; return; }
+  case "$body" in *'"errors"'*|'') echo "__NONE__"; return ;; esac
+  if [ "$HAVE_JQ" = 1 ]; then
+    tags="$(printf '%s' "$body" | jq -r '.tags[]?' 2>/dev/null)"
+  else
+    tags="$(printf '%s' "$body" | tr ',' '\n' | sed -n 's/.*"\([^"]*\)".*/\1/p')"
+  fi
+  # drop `latest` and 40-hex commit-sha tags; keep version-ish tags only.
+  tags="$(printf '%s\n' "$tags" \
+    | grep -vx 'latest' \
+    | grep -viE '^[0-9a-f]{40}$' \
+    | grep -E '[0-9]')"
+  [ -n "$tags" ] || { echo "__NOVER__"; return; }
+  # newest semver-ish: strip leading v for sort, restore. -V handles pre-release
+  # suffixes (…-beta.8) sanely.
+  printf '%s\n' "$tags" | sed 's/^v//' | sort -V | tail -n1
 }
 
 # Normalize a version for compare (strip leading v).
@@ -287,7 +327,55 @@ process_block() {
   add_json "$key" "$kind" "$current" "$latest" "$status"
 }
 
-# Drive: feed blocks to process_block.
+# --------------------------------------------------------------------------- #
+# nix-containers adoption pass — one [[nix_container]] block. Queries ghcr and
+# reports whether a nix-containers image is published, at what version, vs
+# grown's current pin. Emits a JSON row with kind="nix-container", current=the
+# grown pin, latest=the available nix version (or sentinel), and a status the
+# daily/hourly agent can switch on. Resilient: any failure -> a skipped/none
+# status, never aborts the run.
+# --------------------------------------------------------------------------- #
+process_nix_container() {
+  local key nix_image grown_pin hold note nixver status
+  key="$(get key)"; nix_image="$(get nix_image)"; grown_pin="$(get grown_pin)"
+  hold="$(get hold)"; note="$(get note)"
+  [ -n "$key" ] || return
+
+  nixver="$(latest_ghcr_nixcontainers "$nix_image")"
+
+  case "$nixver" in
+    __SKIP__)
+      status="skipped"
+      pp "  ${C_YEL}SKIPPED${C_RST}      $key  ${C_DIM}(curl/jq missing or offline)${C_RST}"
+      nixver="-"
+      ;;
+    __NONE__)
+      status="not-published"
+      pp "  ${C_DIM}NOT-PUBLISHED${C_RST} $key  ${C_DIM}${nix_image} — no nix-containers image yet${C_RST}"
+      [ -n "$note" ] && pp "                ${C_DIM}${note}${C_RST}"
+      nixver="-"
+      ;;
+    __NOVER__)
+      status="no-version-tag"
+      pp "  ${C_YEL}NO-VERSION${C_RST}   $key  ${C_DIM}${nix_image} — published but only :latest/commit-sha tags${C_RST}"
+      [ -n "$note" ] && pp "                ${C_DIM}${note}${C_RST}"
+      nixver="-"
+      ;;
+    *)
+      if [ -n "$hold" ]; then
+        status="hold"
+        pp "  ${C_YEL}HOLD${C_RST}         $key  nix=${C_BLD}${nixver}${C_RST} | grown=${grown_pin}  ${C_RED}hold: ${hold}${C_RST}"
+      else
+        status="available"
+        pp "  ${C_GRN}AVAILABLE${C_RST}    $key  nix=${C_BLD}${nixver}${C_RST} | grown=${grown_pin}  ${C_DIM}${note}${C_RST}"
+      fi
+      ;;
+  esac
+
+  add_json "$key" "nix-container" "$grown_pin" "$nixver" "$status"
+}
+
+# Drive: feed [[image]] blocks to process_block.
 while IFS= read -r line; do
   if [ "$line" = "---" ]; then
     [ "${#F[@]}" -gt 0 ] && process_block
@@ -295,8 +383,22 @@ while IFS= read -r line; do
   fi
   k="${line%%	*}"; v="${line#*	}"
   F["$k"]="$v"
-done < <(parse_manifest)
+done < <(parse_manifest image)
 [ "${#F[@]}" -gt 0 ] && process_block
+
+# Drive: feed [[nix_container]] blocks to process_nix_container.
+pp ""
+pp "${C_BLD}nix-containers adoption${C_RST}  ${C_DIM}(ghcr.io/nix-containers/images/*)${C_RST}"
+F=()
+while IFS= read -r line; do
+  if [ "$line" = "---" ]; then
+    [ "${#F[@]}" -gt 0 ] && process_nix_container
+    F=(); continue
+  fi
+  k="${line%%	*}"; v="${line#*	}"
+  F["$k"]="$v"
+done < <(parse_manifest nix_container)
+[ "${#F[@]}" -gt 0 ] && process_nix_container
 
 if [ "$JSON" -eq 1 ]; then
   printf '[\n'
