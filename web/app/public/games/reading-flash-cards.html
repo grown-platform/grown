@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Reading Flash Cards</title>
+<link rel="manifest" href="/games/reading-flash-cards.webmanifest">
+<meta name="theme-color" content="#7C3AED">
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#334155; --text:#f1f5f9;
+    --muted:#94a3b8; --accent:#7C3AED; --accent2:#22c55e; --warn:#f59e0b; --border:#334155;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:560px;margin:0 auto;padding:16px 14px 28px;min-height:100vh;display:flex;flex-direction:column;}
+  header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;}
+  h1{font-size:20px;margin:0;font-weight:800;letter-spacing:.3px;}
+  .sub{color:var(--muted);font-size:13px;}
+  button{font-family:inherit;cursor:pointer;border:0;}
+  .btn{background:var(--panel);color:var(--text);border:1px solid var(--border);
+    border-radius:14px;padding:14px 16px;font-size:17px;font-weight:600;width:100%;margin:6px 0;}
+  .btn.primary{background:var(--accent);border-color:var(--accent);}
+  .btn.go{background:var(--accent2);border-color:var(--accent2);font-size:22px;padding:20px;}
+  .btn.small{font-size:14px;padding:8px 12px;width:auto;}
+  .row{display:flex;gap:8px;align-items:center;}
+  .spacer{flex:1;}
+  .muted{color:var(--muted);}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:20px;
+    padding:28px 18px;text-align:center;margin:10px 0;}
+  .word{font-size:64px;font-weight:800;line-height:1.1;word-break:break-word;}
+  .word .lc{font-size:38px;color:var(--muted);margin-left:10px;}
+  .phrase{font-size:40px;font-weight:800;}
+  .timer{font-size:30px;font-variant-numeric:tabular-nums;margin:8px 0;color:var(--warn);}
+  .soundbtns{display:flex;gap:10px;justify-content:center;margin:6px 0 4px;}
+  .soundbtns .btn{width:auto;font-size:16px;}
+  .level-row{display:flex;align-items:center;gap:10px;}
+  .level-row .tick{color:var(--accent2);font-weight:800;}
+  .here{outline:2px solid var(--accent);}
+  .nudge{background:#3b2f10;border:1px solid var(--warn);color:#fde68a;border-radius:12px;padding:10px 12px;margin:8px 0;font-size:14px;}
+  .pill{display:inline-block;background:var(--panel2);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--muted);}
+  input[type=text]{font-family:inherit;font-size:17px;padding:12px;border-radius:12px;
+    border:1px solid var(--border);background:var(--panel);color:var(--text);width:100%;}
+  .disabled{opacity:.4;pointer-events:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📖 Reading Flash Cards</h1>
+    <button class="btn small" id="homeBtn" style="display:none">Home</button>
+  </header>
+  <div id="app"></div>
+</div>
+<script>
+"use strict";
+/* ============================ DATA ============================ */
+// Spoken phoneme hints — hand-tuned spellings so TTS approximates each sound.
+// (English isn't phonetically regular; these are deliberately rough. See spec.)
+var PHONEME = {a:"ah",b:"buh",c:"kuh",d:"duh",e:"eh",f:"ff",g:"guh",h:"huh",
+  i:"ih",j:"juh",k:"kuh",l:"ll",m:"mm",n:"nn",o:"aw",p:"puh",q:"kwuh",r:"rr",
+  s:"sss",t:"tuh",u:"uh",v:"vv",w:"wuh",x:"ks",y:"yuh",z:"zz"};
+// Keyword per letter for the letter-sounds level ("ah, as in apple").
+var KEYWORD = {a:"apple",b:"ball",c:"cat",d:"dog",e:"egg",f:"fish",g:"goat",
+  h:"hat",i:"igloo",j:"jam",k:"kite",l:"lion",m:"moon",n:"nest",o:"octopus",
+  p:"pig",q:"queen",r:"rain",s:"sun",t:"top",u:"umbrella",v:"van",w:"web",
+  x:"fox",y:"yo-yo",z:"zip"};
+var ALPHA = "abcdefghijklmnopqrstuvwxyz".split("");
+// Builds a sounds[] blend for a simple word from its letters, then the whole word.
+function blend(word){
+  var arr = word.toLowerCase().split("").map(function(ch){return PHONEME[ch]||ch;});
+  arr.push(word); return arr;
+}
+var CVC = ["cat","dog","sun","hat","pig","bed","cup","box","fan","log",
+  "mom","dad","red","run","big","sit","top","bug","net","jam"];
+var SIGHT = ["the","and","is","you","to","see","we","go","my","he",
+  "she","it","in","on","up","can","look","like","a","I"];
+var BIG = ["apple","happy","water","tiger","table","yellow",
+  "rabbit","pencil","garden","sunny","basket","monkey"];
+var PHRASES = ["I see a cat","the dog can run","we go up","I like you",
+  "look at me","the sun is hot","I can see","my red hat","a big dog","we can go"];
+
+var LEVELS = [
+  { n:1, key:"letters", title:"Letters",
+    cards: ALPHA.map(function(c){
+      return { text:c.toUpperCase(), sub:c, sounds:[c.toUpperCase()] }; }) },
+  { n:2, key:"sounds", title:"Letter Sounds",
+    cards: ALPHA.map(function(c){
+      return { text:c.toUpperCase(), sub:c,
+        sounds:[ PHONEME[c]+", as in "+KEYWORD[c] ] }; }) },
+  { n:3, key:"cvc", title:"CVC Words",
+    cards: CVC.map(function(w){ return { text:w, sounds:blend(w) }; }) },
+  { n:4, key:"sight", title:"Sight Words",
+    cards: SIGHT.map(function(w){ return { text:w, sounds:[w] }; }) },
+  { n:5, key:"big", title:"Big Words",
+    cards: BIG.map(function(w){ return { text:w, sounds:blend(w) }; }) },
+  { n:6, key:"phrases", title:"Short Phrases",
+    cards: PHRASES.map(function(p){
+      return { text:p, sounds:p.split(" ") }; }) },
+];
+
+// Tuning constants (all adjustable).
+var STORAGE_KEY = "grown_reading_flash_cards_v1";
+var LEVEL_TARGET_MS = [1500,2000,2500,2500,3500,6000]; // index = levelN-1
+var MIN_READS_FOR_NUDGE = 8;
+var RECENT_WINDOW = 8;
+
+/* ============================ STORE ============================ */
+var STATE = { children:[], lastChildId:null };
+
+function loadState(){
+  try{
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){ var p = JSON.parse(raw);
+      if(p && Array.isArray(p.children)){
+        // Harden against a malformed saved blob: ensure each child has a levels map.
+        p.children.forEach(function(c){ if(!c.levels || typeof c.levels!=="object") c.levels={}; });
+        STATE.children = p.children; STATE.lastChildId = p.lastChildId||null; } }
+  }catch(e){ /* storage unavailable — run session-only */ }
+}
+function saveState(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); }catch(e){}
+}
+function uid(){ return "c"+Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36); }
+function getChild(id){ for(var i=0;i<STATE.children.length;i++){ if(STATE.children[i].id===id) return STATE.children[i]; } return null; }
+function addChild(name){
+  var c = { id:uid(), name:name, currentLevel:1, levels:{} };
+  STATE.children.push(c); STATE.lastChildId = c.id; saveState(); return c;
+}
+function removeChild(id){
+  STATE.children = STATE.children.filter(function(c){return c.id!==id;});
+  if(STATE.lastChildId===id) STATE.lastChildId = STATE.children[0] ? STATE.children[0].id : null;
+  saveState();
+}
+function renameChild(id,name){ var c=getChild(id); if(c){ c.name=name; saveState(); } }
+function setLastChild(id){ STATE.lastChildId=id; saveState(); }
+function statFor(child, levelN){
+  var k=String(levelN);
+  if(!child.levels[k]) child.levels[k]={ reads:0, bestMs:null, recentMs:[] };
+  return child.levels[k];
+}
+function recordTime(child, levelN, ms){
+  var s=statFor(child,levelN); s.reads++;
+  s.bestMs = (s.bestMs===null)? ms : Math.min(s.bestMs, ms);
+  s.recentMs.push(ms); if(s.recentMs.length>RECENT_WINDOW) s.recentMs.shift();
+  saveState();
+}
+function recordTooHard(child, levelN){
+  // A "too hard" tap pushes a sentinel large time so the median rises and the
+  // nudge softens. Stored as the level target so it weighs against readiness.
+  var s=statFor(child,levelN);
+  s.recentMs.push(LEVEL_TARGET_MS[levelN-1]*3);
+  if(s.recentMs.length>RECENT_WINDOW) s.recentMs.shift();
+  saveState();
+}
+function medianRecent(stat){
+  if(!stat || !stat.recentMs.length) return null;
+  var a = stat.recentMs.slice().sort(function(x,y){return x-y;});
+  var m = Math.floor(a.length/2);
+  return a.length%2 ? a[m] : Math.round((a[m-1]+a[m])/2);
+}
+function readQuickly(child, levelN){
+  var s = child.levels[String(levelN)];
+  if(!s || s.reads < MIN_READS_FOR_NUDGE) return false;
+  var med = medianRecent(s);
+  return med!==null && med < LEVEL_TARGET_MS[levelN-1];
+}
+function shouldNudge(child){
+  return child.currentLevel < LEVELS.length && readQuickly(child, child.currentLevel);
+}
+
+/* ============================ SPEAK ============================ */
+var TTS_OK = (typeof window !== "undefined" && "speechSynthesis" in window
+  && typeof window.SpeechSynthesisUtterance !== "undefined");
+var VOICE = null;
+function pickVoice(){
+  if(!TTS_OK) return;
+  var vs = window.speechSynthesis.getVoices() || [];
+  // Prefer an English, local voice; fall back to any English; else default.
+  VOICE = vs.filter(function(v){return /^en(-|_|$)/i.test(v.lang) && v.localService;})[0]
+       || vs.filter(function(v){return /^en(-|_|$)/i.test(v.lang);})[0]
+       || null;
+}
+function utter(text, rate){
+  var u = new SpeechSynthesisUtterance(text);
+  u.rate = rate; u.pitch = 1.05; if(VOICE) u.voice = VOICE;
+  return u;
+}
+function speakWord(card){
+  if(!TTS_OK) return;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utter(card.text, 0.85));
+}
+function speakSounds(card){
+  if(!TTS_OK) return;
+  window.speechSynthesis.cancel();
+  var parts = (card.sounds && card.sounds.length) ? card.sounds.slice() : [card.text];
+  // Speak each hint, then the whole word at the end (skip if last part already is it).
+  if(parts[parts.length-1] !== card.text) parts.push(card.text);
+  var i = 0;
+  function next(){
+    if(i >= parts.length) return;
+    var isWhole = (i === parts.length-1);
+    var u = utter(parts[i], isWhole ? 0.85 : 0.7);
+    u.onend = function(){ i++; setTimeout(next, isWhole ? 0 : 220); };
+    window.speechSynthesis.speak(u);
+  }
+  next();
+}
+
+/* ============================ VIEWS ============================ */
+var APP = document.getElementById("app");
+var HOME = document.getElementById("homeBtn");
+function esc(s){ return String(s).replace(/[&<>"]/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); }
+
+// Router: view is one of "players","levels","play","summary".
+function show(view, opts){
+  opts = opts || {};
+  HOME.style.display = (view==="players") ? "none" : "";
+  if(view==="players") renderPlayers(opts);
+  else if(view==="levels") renderLevels(opts);
+  else if(view==="play") renderPlay(opts);
+  else if(view==="summary") renderSummary(opts);
+}
+HOME.addEventListener("click", function(){ show("players"); });
+
+function renderPlayers(opts){
+  var h = "";
+  h += '<p class="sub">Who is reading today?</p>';
+  if(!STATE.children.length){
+    h += '<p class="muted">No readers yet. Add your first child below.</p>';
+  }
+  STATE.children.forEach(function(c){
+    h += '<div class="row" style="margin:6px 0">'
+      +  '<button class="btn primary" data-go="'+c.id+'" style="flex:1;text-align:left">'
+      +    esc(c.name)+' <span class="pill">Level '+c.currentLevel+'</span></button>'
+      +  '<button class="btn small" data-rename="'+c.id+'">Rename</button>'
+      +  '<button class="btn small" data-del="'+c.id+'">✕</button>'
+      +  '</div>';
+  });
+  h += '<div class="card"><div class="row">'
+    +  '<input type="text" id="newName" placeholder="Add a child\'s name" maxlength="20">'
+    +  '<button class="btn primary small" id="addBtn" style="margin-left:8px">Add</button>'
+    +  '</div></div>';
+  APP.innerHTML = h;
+  document.getElementById("addBtn").onclick = function(){
+    var el=document.getElementById("newName"); var name=(el.value||"").trim();
+    if(!name){ el.focus(); return; }
+    var c=addChild(name); show("levels",{childId:c.id});
+  };
+  APP.querySelectorAll("[data-go]").forEach(function(b){
+    b.onclick=function(){ setLastChild(b.getAttribute("data-go")); show("levels",{childId:b.getAttribute("data-go")}); }; });
+  APP.querySelectorAll("[data-rename]").forEach(function(b){
+    b.onclick=function(){ var id=b.getAttribute("data-rename"); var c=getChild(id);
+      var nm=prompt("New name:", c?c.name:""); if(nm && nm.trim()){ renameChild(id,nm.trim()); show("players"); } }; });
+  APP.querySelectorAll("[data-del]").forEach(function(b){
+    b.onclick=function(){ var id=b.getAttribute("data-del"); var c=getChild(id);
+      if(confirm("Remove "+(c?c.name:"this child")+"?")){ removeChild(id); show("players"); } }; });
+}
+
+function renderLevels(opts){
+  var child = getChild(opts.childId);
+  if(!child){ show("players"); return; }
+  var h = '<p class="sub">'+esc(child.name)+' · pick a level</p>';
+  if(shouldNudge(child)){
+    var next = child.currentLevel+1;
+    h += '<div class="nudge">⭐ '+esc(child.name)+' is reading Level '+child.currentLevel
+      +  ' quickly — ready to try Level '+next+' ('+LEVELS[next-1].title+')?</div>';
+  }
+  LEVELS.forEach(function(L){
+    var here = (L.n===child.currentLevel);
+    var tick = readQuickly(child, L.n) ? '<span class="tick">✓</span> ' : '';
+    var s = child.levels[String(L.n)];
+    var med = medianRecent(s);
+    var meta = s ? (' · '+s.reads+' read'+(s.reads===1?'':'s')
+      + (med!==null ? ', ~'+(med/1000).toFixed(1)+'s' : '')) : '';
+    h += '<button class="btn level-row'+(here?' here':'')+'" data-level="'+L.n+'">'
+      +  '<span>'+tick+'Level '+L.n+': '+esc(L.title)+'</span>'
+      +  '<span class="spacer"></span>'
+      +  '<span class="muted" style="font-size:13px">'+(here?'here':'')+esc(meta)+'</span>'
+      +  '</button>';
+  });
+  APP.innerHTML = h;
+  APP.querySelectorAll("[data-level]").forEach(function(b){
+    b.onclick = function(){
+      var n = parseInt(b.getAttribute("data-level"),10);
+      child.currentLevel = n; saveState();
+      show("play",{childId:child.id, levelN:n});
+    };
+  });
+}
+
+function shuffle(a){ a=a.slice();
+  for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i];a[i]=a[j];a[j]=t; }
+  return a; }
+
+function renderPlay(opts){
+  var child = getChild(opts.childId);
+  var L = LEVELS[opts.levelN-1];
+  if(!child || !L){ show("players"); return; }
+  var deck = shuffle(L.cards);
+  var idx = 0;
+  var startedAt = 0;
+  var timerId = null;
+  var locked = false; // debounce Got it!
+  var session = { childId:child.id, levelN:L.n, results:[], fastest:null };
+
+  function card(){ return deck[idx]; }
+  function fmt(ms){ return (ms/1000).toFixed(1)+'s'; }
+
+  function paint(){
+    var c = card();
+    var isPhrase = (L.key==="phrases");
+    var wordHtml = isPhrase
+      ? '<div class="phrase">'+esc(c.text)+'</div>'
+      : '<div class="word">'+esc(c.text)
+        + (L.key==="letters"||L.key==="sounds" ? '<span class="lc">'+esc(c.sub)+'</span>' : '')
+        + '</div>';
+    APP.innerHTML =
+      '<div class="sub">'+esc(child.name)+' · Level '+L.n+': '+esc(L.title)
+        +' · card '+(idx+1)+'/'+deck.length+'</div>'
+      + '<div class="card">'+ wordHtml
+        + '<div class="soundbtns">'
+        +   '<button class="btn" id="bWord">🔊 Word</button>'
+        +   '<button class="btn" id="bSounds">🔉 Sounds</button>'
+        + '</div>'
+        + '<div class="timer" id="timer">0.0s</div>'
+      + '</div>'
+      + '<button class="btn go" id="bGot">✓ Got it!</button>'
+      + '<div class="row" style="margin-top:6px">'
+      +   '<button class="btn small" id="bSkip">Skip ›</button>'
+      +   '<span class="spacer"></span>'
+      +   '<button class="btn small" id="bHard">Too hard</button>'
+      + '</div>';
+    locked = false;
+    startedAt = Date.now();
+    if(timerId) clearInterval(timerId);
+    timerId = setInterval(function(){
+      var el=document.getElementById("timer"); if(el) el.textContent = fmt(Date.now()-startedAt);
+    }, 100);
+    document.getElementById("bWord").onclick = function(){ speakWord(c); };
+    document.getElementById("bSounds").onclick = function(){ speakSounds(c); };
+    if(!TTS_OK){
+      document.getElementById("bWord").classList.add("disabled");
+      document.getElementById("bSounds").classList.add("disabled");
+    }
+    document.getElementById("bGot").onclick = onGot;
+    document.getElementById("bSkip").onclick = function(){ advance(); };
+    document.getElementById("bHard").onclick = function(){ recordTooHard(child, L.n); advance(); };
+  }
+
+  function onGot(){
+    if(locked) return; locked = true;
+    var ms = Date.now()-startedAt;
+    recordTime(child, L.n, ms);
+    session.results.push({ text:card().text, ms:ms });
+    if(!session.fastest || ms < session.fastest.ms) session.fastest = { text:card().text, ms:ms };
+    advance();
+  }
+
+  function advance(){
+    idx++;
+    if(idx >= deck.length){ if(timerId) clearInterval(timerId); show("summary",{session:session}); return; }
+    paint();
+  }
+
+  paint();
+}
+function renderSummary(opts){
+  var sess = opts.session;
+  if(!sess){ show("players"); return; }
+  var child = getChild(sess.childId);
+  if(!child){ show("players"); return; }
+  var L = LEVELS[sess.levelN-1];
+  var n = sess.results.length;
+  var h = '<p class="sub">'+esc(child.name)+' · Level '+L.n+': '+esc(L.title)+'</p>';
+  h += '<div class="card">';
+  h += '<div class="word" style="font-size:40px">'+n+' read 🎉</div>';
+  if(sess.fastest){
+    h += '<p>Fastest: <strong>'+esc(sess.fastest.text)+'</strong> in '
+      +  (sess.fastest.ms/1000).toFixed(1)+'s</p>';
+  } else {
+    h += '<p class="muted">No cards recorded this round.</p>';
+  }
+  h += '</div>';
+  if(sess.results.length){
+    h += '<div class="card" style="text-align:left">';
+    sess.results.forEach(function(r){
+      h += '<div class="row"><span>'+esc(r.text)+'</span><span class="spacer"></span>'
+        +  '<span class="muted">'+(r.ms/1000).toFixed(1)+'s</span></div>';
+    });
+    h += '</div>';
+  }
+  if(shouldNudge(child)){
+    var next = child.currentLevel+1;
+    h += '<div class="nudge">⭐ Ready for Level '+next+' ('+LEVELS[next-1].title+')?</div>';
+  }
+  h += '<button class="btn primary" id="again">Play this level again</button>';
+  h += '<button class="btn" id="toLevels">Choose a level</button>';
+  APP.innerHTML = h;
+  document.getElementById("again").onclick = function(){ show("play",{childId:child.id, levelN:L.n}); };
+  document.getElementById("toLevels").onclick = function(){ show("levels",{childId:child.id}); };
+}
+
+/* ============================ BOOT ============================ */
+loadState();
+if(TTS_OK){
+  pickVoice();
+  if(window.speechSynthesis.onvoiceschanged !== undefined){
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+  }
+}
+show("players");
+</script>
+</body>
+</html>
