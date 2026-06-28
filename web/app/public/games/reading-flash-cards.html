@@ -174,17 +174,53 @@ function shouldNudge(child){
 var TTS_OK = (typeof window !== "undefined" && "speechSynthesis" in window
   && typeof window.SpeechSynthesisUtterance !== "undefined");
 var VOICE = null;
+var VOICE_KEY = "grown_reading_flash_cards_voice";
+// Stable identifier for a voice (voiceURI is stable across reloads; name is fallback).
+function voiceId(v){ return v ? (v.voiceURI || v.name) : ""; }
+// Quality ranking: built-in voices vary wildly. Prefer modern neural / premium
+// voices (Siri, "Natural", "Neural", Enhanced/Premium, Google) and known-good
+// named voices; penalize the old novelty/"compact" robotic ones.
+function voiceScore(v){
+  var n = (v.name || "").toLowerCase();
+  var lang = (v.lang || "").toLowerCase();
+  var s = 0;
+  if(/siri/.test(n)) s += 100;
+  if(/natural/.test(n)) s += 90;
+  if(/neural/.test(n)) s += 85;
+  if(/premium/.test(n)) s += 72;
+  if(/enhanced/.test(n)) s += 66;
+  if(/google/.test(n)) s += 50;
+  if(/\b(samantha|ava|allison|susan|zoe|joelle|serena|stephanie|kate|daniel|arthur|martha|moira|tessa|karen|catherine|matilda|nicky|aaron)\b/.test(n)) s += 30;
+  if(/\b(albert|fred|ralph|kathy|junior|princess|bad news|good news|bahh|bells|boing|bubbles|cellos|deranged|hysterical|jester|organ|superstar|trinoids|whisper|wobble|zarvox|grandma|grandpa|rocko|sandy|shelley|flo|eddy|reed|rishi|sangeeta|compact)\b/.test(n)) s -= 120;
+  if(/^en[-_]us/.test(lang)) s += 8;
+  else if(/^en[-_]gb/.test(lang)) s += 6;
+  else if(/^en/.test(lang)) s += 3;
+  return s;
+}
+function englishVoices(){
+  if(!TTS_OK) return [];
+  return (window.speechSynthesis.getVoices() || []).filter(function(v){ return /^en([-_]|$)/i.test(v.lang || ""); });
+}
 function pickVoice(){
   if(!TTS_OK) return;
-  var vs = window.speechSynthesis.getVoices() || [];
-  // Prefer an English, local voice; fall back to any English; else default.
-  VOICE = vs.filter(function(v){return /^en(-|_|$)/i.test(v.lang) && v.localService;})[0]
-       || vs.filter(function(v){return /^en(-|_|$)/i.test(v.lang);})[0]
-       || null;
+  var vs = englishVoices();
+  if(!vs.length){ VOICE = null; return; }
+  // Honor a parent's saved choice if it's still available.
+  var saved = null; try{ saved = localStorage.getItem(VOICE_KEY); }catch(e){}
+  if(saved){
+    var hit = vs.filter(function(v){ return voiceId(v) === saved; })[0];
+    if(hit){ VOICE = hit; return; }
+  }
+  // Otherwise auto-pick the highest-quality English voice available.
+  VOICE = vs.slice().sort(function(a,b){ return voiceScore(b) - voiceScore(a); })[0] || null;
+}
+function setVoice(id){
+  try{ localStorage.setItem(VOICE_KEY, id); }catch(e){}
+  pickVoice();
 }
 function utter(text, rate){
   var u = new SpeechSynthesisUtterance(text);
-  u.rate = rate; u.pitch = 1.05; if(VOICE) u.voice = VOICE;
+  u.rate = rate; u.pitch = 1.0; if(VOICE) u.voice = VOICE;
   return u;
 }
 function speakWord(card){
@@ -226,6 +262,32 @@ function show(view, opts){
 }
 HOME.addEventListener("click", function(){ show("players"); });
 
+// Parent-facing voice picker shown on the home screen. Hidden entirely when the
+// device has no speech support or no English voices.
+function voicePickerHtml(){
+  var vs = englishVoices();
+  if(!TTS_OK || !vs.length) return '';
+  var cur = voiceId(VOICE);
+  var opts = vs.slice().sort(function(a,b){ return voiceScore(b) - voiceScore(a); }).map(function(v){
+    var sel = (voiceId(v) === cur) ? ' selected' : '';
+    return '<option value="'+esc(voiceId(v))+'"'+sel+'>'+esc(v.name)+'</option>';
+  }).join('');
+  return '<div class="card" style="text-align:left">'
+    + '<div class="muted" style="font-size:13px;margin-bottom:6px">🔈 Reading voice</div>'
+    + '<div class="row">'
+    +   '<select id="voiceSel" style="flex:1;font-size:15px;padding:10px;border-radius:10px;background:var(--panel2);color:var(--text);border:1px solid var(--border)">'+opts+'</select>'
+    +   '<button class="btn small" id="voiceTest" style="margin-left:8px">▶︎ Test</button>'
+    + '</div>'
+    + '<div class="muted" style="font-size:12px;margin-top:6px">Voices come from your device. For the most natural sound, install a premium / enhanced voice in your device\'s speech settings.</div>'
+    + '</div>';
+}
+function wireVoicePicker(){
+  var sel = document.getElementById("voiceSel");
+  if(sel) sel.onchange = function(){ setVoice(sel.value); };
+  var test = document.getElementById("voiceTest");
+  if(test) test.onclick = function(){ speakWord({ text: "Hello! Let's read together." }); };
+}
+
 function renderPlayers(opts){
   var h = "";
   h += '<p class="sub">Who is reading today?</p>';
@@ -244,7 +306,9 @@ function renderPlayers(opts){
     +  '<input type="text" id="newName" placeholder="Add a child\'s name" maxlength="20">'
     +  '<button class="btn primary small" id="addBtn" style="margin-left:8px">Add</button>'
     +  '</div></div>';
+  h += voicePickerHtml();
   APP.innerHTML = h;
+  wireVoicePicker();
   document.getElementById("addBtn").onclick = function(){
     var el=document.getElementById("newName"); var name=(el.value||"").trim();
     if(!name){ el.focus(); return; }
