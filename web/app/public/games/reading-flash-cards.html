@@ -367,7 +367,41 @@ function renderPlay(opts){
 
   paint();
 }
-function renderSummary(opts){ APP.innerHTML = '<p class="muted">Summary — Task 6.</p>'; }
+function renderSummary(opts){
+  var sess = opts.session;
+  if(!sess){ show("players"); return; }
+  var child = getChild(sess.childId);
+  if(!child){ show("players"); return; }
+  var L = LEVELS[sess.levelN-1];
+  var n = sess.results.length;
+  var h = '<p class="sub">'+esc(child.name)+' · Level '+L.n+': '+esc(L.title)+'</p>';
+  h += '<div class="card">';
+  h += '<div class="word" style="font-size:40px">'+n+' read 🎉</div>';
+  if(sess.fastest){
+    h += '<p>Fastest: <strong>'+esc(sess.fastest.text)+'</strong> in '
+      +  (sess.fastest.ms/1000).toFixed(1)+'s</p>';
+  } else {
+    h += '<p class="muted">No cards recorded this round.</p>';
+  }
+  h += '</div>';
+  if(sess.results.length){
+    h += '<div class="card" style="text-align:left">';
+    sess.results.forEach(function(r){
+      h += '<div class="row"><span>'+esc(r.text)+'</span><span class="spacer"></span>'
+        +  '<span class="muted">'+(r.ms/1000).toFixed(1)+'s</span></div>';
+    });
+    h += '</div>';
+  }
+  if(shouldNudge(child)){
+    var next = child.currentLevel+1;
+    h += '<div class="nudge">⭐ Ready for Level '+next+' ('+LEVELS[next-1].title+')?</div>';
+  }
+  h += '<button class="btn primary" id="again">Play this level again</button>';
+  h += '<button class="btn" id="toLevels">Choose a level</button>';
+  APP.innerHTML = h;
+  document.getElementById("again").onclick = function(){ show("play",{childId:child.id, levelN:L.n}); };
+  document.getElementById("toLevels").onclick = function(){ show("levels",{childId:child.id}); };
+}
 
 /* ============================ BOOT ============================ */
 loadState();
