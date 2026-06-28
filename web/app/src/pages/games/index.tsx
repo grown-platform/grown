@@ -215,6 +215,7 @@ const GAMES: AppTile[] = [
   arcade("helix-jump", "Helix Jump", "#7C3AED", "Tornado"),
   arcade("cryptogram", "Cryptogram", "#475569", "Lock"),
   arcade("word-ladder", "Word Ladder", "#0D9488", "Stairs"),
+  arcade("reading-flash-cards", "Reading Flash Cards", "#7C3AED", "MenuBook"),
   arcade("dot-to-dot", "Dot to Dot", "#F59E0B", "Gesture"),
   arcade("cookie-clicker", "Cookie Clicker", "#B45309", "Cookie"),
   arcade("tilt-maze", "Tilt Maze", "#0EA5E9", "ScreenRotation"),
@@ -250,6 +251,7 @@ const EXTRA_CATS: Record<string, string[]> = {
   bolo: ["Port", "Arcade", "Board"],
   winbolo: ["Port", "Arcade", "Board"],
   maelstrom: ["Port", "Arcade", "Speed"],
+  "reading-flash-cards": ["Kids", "Word"],
 };
 
 const CATEGORY_IDS: Record<string, string[]> = {
@@ -259,7 +261,7 @@ const CATEGORY_IDS: Record<string, string[]> = {
   Board: ["tic-tac-toe", "connect-four", "reversi", "checkers", "gomoku", "dots-and-boxes", "mancala", "nine-mens-morris", "dominoes", "battleship", "chinese-checkers", "ludo", "snakes-and-ladders", "chess", "ultimate-tic-tac-toe"],
   Word: ["hangman", "crossword", "word-search", "word-scramble", "wordle", "typing-test", "boggle", "cryptogram", "word-ladder"],
   Casino: ["blackjack", "video-poker", "baccarat", "slot-machine", "yahtzee", "pig", "liars-dice"],
-  Kids: ["memory-game", "whack-a-mole", "simon", "rock-paper-scissors", "coloring", "math-quiz", "balloon-pop", "fruit-catch", "dot-to-dot", "cookie-clicker", "guess-the-number"],
+  Kids: ["memory-game", "whack-a-mole", "simon", "rock-paper-scissors", "coloring", "math-quiz", "balloon-pop", "fruit-catch", "dot-to-dot", "cookie-clicker", "guess-the-number", "reading-flash-cards"],
   Speed: ["reaction-time", "aim-trainer", "piano-tiles"],
 };
 
