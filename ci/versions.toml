@@ -210,3 +210,74 @@ check_type = "dockerhub"
 check_url  = "https://hub.docker.com/v2/repositories/guacamole/guacd/tags"
 tag_filter = "^[0-9]+\\.[0-9]+\\.[0-9]+$"
 notes      = "Guacamole proxy daemon. Keep in lockstep with guacamole (same version)."
+
+# =============================================================================
+# nix-containers adoption tracker — `[[nix_container]]` tables.
+#
+# REPORT-ONLY. These are NOT pins grown uses today; they record the OPPORTUNITY
+# to migrate a grown component onto the homelab nix image set published at
+# ghcr.io/nix-containers/images/<name>. The broader effort is to move grown's
+# cluster images to that set; this section lets check-updates.sh surface, per
+# component, whether a nix-containers image is published, at what version, vs
+# what grown currently pins — so the daily/hourly agent can flag adoptions.
+#
+# Schema — one `[[nix_container]]` table per grown component. Fields:
+#
+#   key        stable identifier (unique within nix_container; may reuse an
+#              [[image]] key — it's a separate namespace in the checker output).
+#   nix_image  the ghcr.io/nix-containers/images/<name> path to query.
+#   grown_pin  the version grown CURRENTLY runs for this component.
+#   pin_file   repo-relative file holding grown's current pin.
+#   pin_field  human description of WHERE in pin_file that pin lives.
+#   hold       (optional) if set to a non-empty string, the checker reports
+#              HOLD instead of AVAILABLE even when an image is published — used
+#              for migrations that need testing first (e.g. a major-version
+#              jump). The string is the reason.
+#   note       free-form context shown alongside the report line.
+#
+# The checker queries ghcr anonymously (token + /tags/list), ignores `latest`
+# and 40-hex commit-sha tags, and picks the newest semver-ish tag as the
+# available version. A DENIED/empty token or no version tags => NOT-PUBLISHED.
+# =============================================================================
+
+[[nix_container]]
+key       = "rustfs"
+nix_image = "ghcr.io/nix-containers/images/rustfs"
+grown_pin = "1.0.0-beta.7"
+pin_file  = "(chart) — currently Docker Hub rustfs/rustfs:1.0.0-beta.7"
+pin_field = "rustfs image tag; chart PR #26 adopts the nix-containers image"
+note      = "Adoption in flight: chart PR #26 switches prod from Docker Hub rustfs/rustfs to the nix-containers image. nix tag tracks rustfs upstream betas."
+
+[[nix_container]]
+key       = "postgres"
+nix_image = "ghcr.io/nix-containers/images/postgres"
+grown_pin = "17.2-alpine"
+pin_file  = "deploy/helm/grown/values.yaml"
+pin_field = "postgres.image.tag"
+note      = "grown runs the upstream docker.io/library/postgres:17.2-alpine StatefulSet. nix-containers/postgres exists but (as queried) publishes only commit-sha tags + :latest, no semver version tag — treat as not-adoptable until it carries a version tag matching grown's major (17)."
+
+[[nix_container]]
+key       = "zitadel"
+nix_image = "ghcr.io/nix-containers/images/zitadel"
+grown_pin = "v2.71.0"
+pin_file  = "deploy/helm/grown/values.yaml"
+pin_field = "zitadel.image.tag"
+hold      = "major v2 -> v4: needs auth-testing before adoption"
+note      = "grown pins v2.71.0. nix-containers publishes BOTH a v2.71.x tag AND v4.15.1 (newest). A same-major (v2.71.x) move is low-risk; v4 is a MAJOR jump that needs auth/login testing first — hence HOLD on the newest tag."
+
+[[nix_container]]
+key       = "guacamole-server"
+nix_image = "ghcr.io/nix-containers/images/guacamole-server"
+grown_pin = "1.5.5"
+pin_file  = "deploy/guacamole/20-guacd.yaml"
+pin_field = "Deployment guacd .spec.template.spec.containers[guacd].image (guacamole/guacd:1.5.5)"
+note      = "guacd only. NO guacamole WEB image in nix-containers — grown's guacamole/guacamole:1.5.5 web stays upstream. As queried the guacamole-server image is NOT yet published (token DENIED); may appear once a build runs."
+
+[[nix_container]]
+key       = "cloudnative-pg"
+nix_image = "ghcr.io/nix-containers/images/cloudnative-pg"
+grown_pin = "(none — grown is on standalone postgres)"
+pin_file  = "(n/a)"
+pin_field = "(n/a)"
+hold      = "n/a unless grown moves to CNPG"
+note      = "Only relevant if grown migrates from its standalone postgres StatefulSet to CloudNativePG. nix-containers publishes v1.29.1; no grown pin to compare against today."

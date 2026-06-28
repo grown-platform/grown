@@ -40,6 +40,25 @@ documented in the header comment of the file. Key fields:
   `deploy/`/`helm` file. Bumped by editing that tag. Tracked: `postgres`,
   `minio`, `zitadel`, `bolo-mp`, `guacamole`, `guacd`.
 
+### `[[nix_container]]` — nix-containers adoption tracker
+
+A separate array of tables, in the same manifest, that tracks the **migration
+opportunity** to move grown's cluster images onto the homelab nix image set at
+`ghcr.io/nix-containers/images/<name>`. These are **not pins grown uses today**
+— they record, per component, the nix-containers image to watch and grown's
+current pin, so the checker can flag when adoption is possible. Fields:
+
+- `key` — component id (its own namespace; may reuse an `[[image]]` key).
+- `nix_image` — the `ghcr.io/nix-containers/images/<name>` path to query.
+- `grown_pin` — the version grown currently runs.
+- `pin_file` / `pin_field` — where grown's current pin lives.
+- `hold` — optional reason; if set, the checker reports `HOLD` instead of
+  `AVAILABLE` even when an image is published (e.g. a major-version jump that
+  needs testing first).
+- `note` — free-form context.
+
+Tracked: `rustfs`, `postgres`, `zitadel`, `guacamole-server`, `cloudnative-pg`.
+
 ## `check-updates.sh` — the checker
 
 ```bash
@@ -55,7 +74,8 @@ documented in the header comment of the file. Key fields:
   continues — one failing source never aborts the whole report.
 - `--json` emits `[{key, kind, current, latest, status}, ...]` for the daily
   agent to consume. `status` is one of: `up-to-date`, `update`, `manual`,
-  `skipped`, `error`, `ci-built`, `gap:<name>`, `lock-behind-head`.
+  `skipped`, `error`, `ci-built`, `gap:<name>`, `lock-behind-head`, plus the
+  nix-containers statuses below.
 
 Per `kind` the checker does:
 
@@ -68,6 +88,26 @@ Per `kind` the checker does:
   also `nix eval`s the attribute version the current lock would build.
 - **self** — prints `SELF` (CI-built, no upstream check) and `SELF/GAP` with the
   recorded gap.
+
+### nix-containers adoption pass
+
+After the `[[image]]` passes the checker runs a **nix-containers adoption** pass
+over every `[[nix_container]]`. For each one it queries
+`ghcr.io/nix-containers/images/<name>` anonymously (token + `/v2/.../tags/list`),
+ignores `latest` and 40-hex commit-sha tags, picks the newest semver-ish tag,
+and prints one of:
+
+| line             | JSON `status`    | meaning                                                              |
+| ---------------- | ---------------- | ------------------------------------------------------------------- |
+| `AVAILABLE`      | `available`      | image published with a version tag; `nix=<ver>` vs `grown=<pin>`.   |
+| `HOLD`           | `hold`           | published, but `hold` is set in the manifest — do **not** adopt yet (e.g. major bump). |
+| `NOT-PUBLISHED`  | `not-published`  | no nix-containers image yet (token scope denied / errors).          |
+| `NO-VERSION`     | `no-version-tag` | image exists but only carries `:latest` / commit-sha tags.          |
+| `SKIPPED`        | `skipped`        | curl/jq missing or offline.                                         |
+
+These rows appear in `--json` with `kind="nix-container"`, `current` = grown's
+pin, `latest` = the available nix version (or `-`). The pass is report-only and,
+like everything else here, never aborts the run (exit is always 0).
 
 ## Known gaps the checker surfaces
 
@@ -90,7 +130,14 @@ Per `kind` the checker does:
    `current` to `latest`.
 3. For each `nix` entry with `status=lock-behind-head` (when a refresh is
    wanted): run `nix flake update` (and `pdf/` separately).
-4. Group changes, open a **PR for human review** — never auto-merge, never push
+4. For each `nix-container` entry with `status=available`: flag a
+   **nix-containers adoption opportunity** — the image is published with a
+   version tag (`latest` field) and grown can migrate `grown_pin` (in
+   `pin_file`/`pin_field`) onto `nix_image`. `status=hold` adoptions are
+   surfaced but **not acted on** until the recorded `hold` reason is cleared
+   (e.g. a major-version jump has been auth-tested). `not-published` /
+   `no-version-tag` are just watched until a versioned image appears.
+5. Group changes, open a **PR for human review** — never auto-merge, never push
    to a deploy directly. The gaps above become tracked follow-up issues.
 
 Editing `versions.toml` after a bump (to record the new `current`) keeps the
