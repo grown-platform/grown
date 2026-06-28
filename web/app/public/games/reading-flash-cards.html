@@ -223,8 +223,39 @@ function renderPlayers(opts){
       if(confirm("Remove "+(c?c.name:"this child")+"?")){ removeChild(id); show("players"); } }; });
 }
 
+function renderLevels(opts){
+  var child = getChild(opts.childId);
+  if(!child){ show("players"); return; }
+  var h = '<p class="sub">'+esc(child.name)+' · pick a level</p>';
+  if(shouldNudge(child)){
+    var next = child.currentLevel+1;
+    h += '<div class="nudge">⭐ '+esc(child.name)+' is reading Level '+child.currentLevel
+      +  ' quickly — ready to try Level '+next+' ('+LEVELS[next-1].title+')?</div>';
+  }
+  LEVELS.forEach(function(L){
+    var here = (L.n===child.currentLevel);
+    var tick = readQuickly(child, L.n) ? '<span class="tick">✓</span> ' : '';
+    var s = child.levels[String(L.n)];
+    var med = medianRecent(s);
+    var meta = s ? (' · '+s.reads+' read'+(s.reads===1?'':'s')
+      + (med!==null ? ', ~'+(med/1000).toFixed(1)+'s' : '')) : '';
+    h += '<button class="btn level-row'+(here?' here':'')+'" data-level="'+L.n+'">'
+      +  '<span>'+tick+'Level '+L.n+': '+esc(L.title)+'</span>'
+      +  '<span class="spacer"></span>'
+      +  '<span class="muted" style="font-size:13px">'+(here?'here':'')+esc(meta)+'</span>'
+      +  '</button>';
+  });
+  APP.innerHTML = h;
+  APP.querySelectorAll("[data-level]").forEach(function(b){
+    b.onclick = function(){
+      var n = parseInt(b.getAttribute("data-level"),10);
+      child.currentLevel = n; saveState();
+      show("play",{childId:child.id, levelN:n});
+    };
+  });
+}
+
 // Filled in later tasks:
-function renderLevels(opts){ APP.innerHTML = '<p class="muted">Level select — Task 3.</p>'; }
 function renderPlay(opts){ APP.innerHTML = '<p class="muted">Play — Task 4.</p>'; }
 function renderSummary(opts){ APP.innerHTML = '<p class="muted">Summary — Task 6.</p>'; }
 
