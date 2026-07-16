@@ -45,6 +45,8 @@ Baseline gaps → become the backlog below.
 
 **Test-hook cheat-sheet for future waves:** tools `tool-{select,text,draw,highlight,underline,strikethrough,rect,ellipse,line,arrow,whiteout,image}`; canvas `editor-canvas` (click/drag target) + `editor-textarea`; header `editor-{undo,redo,zoom-in,zoom-out,zoom-level,prev-page,next-page,page-indicator,download,save,docname,close}`; pages `page-{add,delete,up,down,rotate}`; props `props-{panel,duplicate,delete}`, `text-{font,bold,italic,color,size}`, `shape-{stroke-color,stroke-width,fill-color,opacity}`; empty state `editor-{dropzone,file-input,new-blank}`. e2e auth: `beforeEach` seeds `sessionStorage.lastLoginAttempt` via `addInitScript` to bypass the SSO redirect (editor needs no backend). Local port clash on :5173 → run with `PLAYWRIGHT_PORT=<free>`.
 
+**GOTCHA (bit two waves):** adding buttons to the CANVAS HEADER (a `flex-wrap` toolbar) can wrap it to a second line, growing the header, shrinking the canvas viewport, so `editor-arrange.spec.ts (e)`'s drag point (~61% down the page) falls outside the clipped canvas and its mousedown misses `editor-canvas`. → Put new controls in the LEFT side cards (Tools/Arrange/Pages/Sign&Fill/Comments), not the header. For pdfjs text extraction use a raw `pdfjs.getDocument`, never a react-pdf `<Page>`, so you don't add `.react-pdf__Page` DOM that confuses existing locators.
+
 ### Wave 2 — Selection & object model
 - [x] Multi-select (shift-click + marquee), group move/delete. `68d7ee1`
 - [x] Z-order: bring to front / send to back / forward / backward. `68d7ee1`
@@ -76,8 +78,8 @@ Baseline gaps → become the backlog below.
 - [x] Redaction tool (true content removal via page rasterize on export). `024d34e`
 - [x] Sticky-note comments / callouts; comment sidebar. `fed2e1a`
 - [x] Stamps (Approved/Draft/Confidential/custom image stamps). `fed2e1a`
-- [ ] Text search/find across pages (pdf.js text layer) + highlight-all. ← Wave 5d
-- [ ] Custom font embedding (fontkit) for Unicode text. ← Wave 5d
+- [x] Text search/find across pages (pdf.js text layer) + highlight-all. `b9ae4d1`
+- [ ] Custom font embedding (fontkit) for Unicode text. ← Wave 6 (needs a bundled font; lower priority than persistence/export).
 
 ### Wave 6 — Export, persistence, polish
 - [ ] Editable annotation sidecar (JSON) saved with doc → reopen keeps annotations editable.
@@ -103,6 +105,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-16** — Wave 5d DONE (`b9ae4d1`): cross-page text search (Ctrl/Cmd+F) via pdf.js text content, match counter, next/prev across pages, case toggle, highlight-all overlay, per-page text cache. Read-only. Hooks: `editor-search-open`, `editor-search-input`, `search-*`. 42/42 e2e (verified). **Wave 5 COMPLETE** (fontkit moved to Wave 6). Recorded the header-wrap gotcha in the cheat-sheet. Next: Wave 6 (persistence/export/polish) — start 6a (autosave draft + restore, shortcuts help overlay).
 - **2026-07-16** — Wave 5c DONE (`fed2e1a`): sticky-note comments (draggable markers + editable text) with a collapsible comment sidebar (jump-to/delete/count), preset stamps (APPROVED/DRAFT/CONFIDENTIAL/REVIEWED/FINAL/VOID + optional date) exported as vector, and custom image stamps. New `NoteAnnotation`/`StampAnnotation`. Hooks: `tool-note`, `tool-stamp`, `comment-*`, `note-*`, `stamp-*`. 39/39 e2e (verified). Next: Wave 5d (text search across pages + highlight-all; fontkit/Unicode font embedding) → then Wave 6 (export/persistence/polish).
 - **2026-07-15** — Wave 5b DONE (`024d34e`): TRUE redaction — `tool-redact` marks; on export, marked pages are rasterized via pdf.js (2x) with black-filled rects and replaced by a flattened image, destroying the underlying text layer; non-redacted pages stay vector; pdf-lib fallback. `redact-notice`. 36/36 e2e, removal proven by pdf.js text extraction. Next: Wave 5c (sticky-note comments + sidebar, preset/custom stamps), then Wave 5d (text search, fontkit/Unicode).
 - **2026-07-15** — Wave 5a DONE (`cbfc2f3`): true eraser (click/drag delete + partial ink-split), rounded rect + polygon + polyline + dashed strokes, richer text (align/lists/line-spacing). New `PolyAnnotation`; box gained `rx`/`dash`; text gained `align`/`list`/`lineSpacing`. Hooks: `tool-{eraser,rrect,polygon,polyline}`, `eraser-size`, `shape-{dash,corner-radius}`, `text-{align-*,list-*,line-spacing}`, `data-annot-kind`/`data-ink-points`/etc. 34/34 e2e (verified). Next: Wave 5b (redaction via rasterize, sticky-note comments + sidebar, preset/custom stamps).
