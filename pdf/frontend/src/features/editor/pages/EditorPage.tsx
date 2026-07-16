@@ -42,15 +42,15 @@ import {
   Copy,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
-// @ts-ignore - CSS imports from react-pdf
 import "react-pdf/dist/Page/AnnotationLayer.css";
-// @ts-ignore - CSS imports from react-pdf
 import "react-pdf/dist/Page/TextLayer.css";
 import { PDFDocument, rgb, StandardFonts, degrees, type PDFFont } from "pdf-lib";
 import { Card, LoadingSpinner } from "tibui";
 import { apiClient } from "@/utils/apiClient";
+// Self-host the pdf.js worker so the editor works offline / in CI (no CDN).
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const PAGE_RENDER_WIDTH = 700;
 const POINTS_WIDE = 612; // reference page width (pt) for points↔px scaling
@@ -63,6 +63,7 @@ function Button({
   className = "",
   onClick,
   title,
+  testId,
 }: {
   children: React.ReactNode;
   variant?: "primary" | "outline" | "ghost";
@@ -71,6 +72,7 @@ function Button({
   className?: string;
   onClick?: (e: React.MouseEvent) => void;
   title?: string;
+  testId?: string;
 }) {
   const sizeStyles = { sm: "px-2 py-1 text-sm", md: "px-4 py-2", lg: "px-6 py-3 text-lg" };
   const variants = {
@@ -81,6 +83,7 @@ function Button({
   return (
     <button
       type="button"
+      data-testid={testId}
       disabled={disabled}
       onClick={onClick}
       title={title}
@@ -850,6 +853,7 @@ export function EditorPage() {
         <Card>
           <div className="p-6 space-y-4">
             <div
+              data-testid="editor-dropzone"
               onDragEnter={(e: DragEvent) => {
                 e.preventDefault();
                 setDragActive(true);
@@ -871,7 +875,7 @@ export function EditorPage() {
               <p className="mb-2">Drag and drop a PDF here, or</p>
               <label className="cursor-pointer inline-block px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors">
                 Browse Files
-                <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => {
+                <input data-testid="editor-file-input" type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) handleFile(f);
                 }} />
@@ -882,7 +886,7 @@ export function EditorPage() {
               or
               <div className="flex-1 h-px bg-gray-200" />
             </div>
-            <Button variant="outline" className="w-full flex items-center justify-center gap-2" onClick={handleNewBlank}>
+            <Button testId="editor-new-blank" variant="outline" className="w-full flex items-center justify-center gap-2" onClick={handleNewBlank}>
               <FilePlus className="w-5 h-5" />
               New blank PDF
             </Button>
@@ -989,6 +993,21 @@ export function EditorPage() {
     { t: "whiteout", icon: Eraser, label: "Whiteout" },
     { t: "image", icon: ImageIcon, label: "Image" },
   ];
+  // Playwright hooks map each Tool to a stable `tool-<name>` testid.
+  const toolTestId: Record<Tool, string> = {
+    select: "tool-select",
+    text: "tool-text",
+    draw: "tool-draw",
+    highlight: "tool-highlight",
+    underline: "tool-underline",
+    strikethrough: "tool-strikethrough",
+    rect: "tool-rect",
+    ellipse: "tool-ellipse",
+    line: "tool-line",
+    arrow: "tool-arrow",
+    whiteout: "tool-whiteout",
+    image: "tool-image",
+  };
 
   const showStylePanel = SHAPE_TOOLS.includes(tool);
 
@@ -1003,10 +1022,10 @@ export function EditorPage() {
           <div className="p-3 border-b flex items-center justify-between">
             <h2 className="font-semibold">Tools</h2>
             <div className="flex gap-1">
-              <button onClick={undo} disabled={!undoStack.current.length} title="Undo (Ctrl+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
+              <button data-testid="editor-undo" onClick={undo} disabled={!undoStack.current.length} title="Undo (Ctrl+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
                 <Undo2 className="w-4 h-4" />
               </button>
-              <button onClick={redo} disabled={!redoStack.current.length} title="Redo (Ctrl+Shift+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
+              <button data-testid="editor-redo" onClick={redo} disabled={!redoStack.current.length} title="Redo (Ctrl+Shift+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
                 <Redo2 className="w-4 h-4" />
               </button>
             </div>
@@ -1015,6 +1034,7 @@ export function EditorPage() {
             {toolButtons.map(({ t, icon: Icon, label }) => (
               <button
                 key={t}
+                data-testid={toolTestId[t]}
                 onClick={() => {
                   setTool(t);
                   setSelectedId(null);
@@ -1076,19 +1096,19 @@ export function EditorPage() {
             <h2 className="font-semibold">Pages</h2>
           </div>
           <div className="p-3 grid grid-cols-2 gap-2">
-            <Button size="sm" variant="outline" onClick={addBlankPage} disabled={busy}>
+            <Button testId="page-add" size="sm" variant="outline" onClick={addBlankPage} disabled={busy}>
               <Plus className="w-4 h-4 inline mr-1" /> Add
             </Button>
-            <Button size="sm" variant="outline" onClick={deletePage} disabled={busy || pageCount <= 1}>
+            <Button testId="page-delete" size="sm" variant="outline" onClick={deletePage} disabled={busy || pageCount <= 1}>
               <Trash2 className="w-4 h-4 inline mr-1" /> Delete
             </Button>
-            <Button size="sm" variant="outline" onClick={() => movePage("up")} disabled={busy || currentPage <= 1}>
+            <Button testId="page-up" size="sm" variant="outline" onClick={() => movePage("up")} disabled={busy || currentPage <= 1}>
               <ArrowUp className="w-4 h-4 inline mr-1" /> Up
             </Button>
-            <Button size="sm" variant="outline" onClick={() => movePage("down")} disabled={busy || currentPage >= pageCount}>
+            <Button testId="page-down" size="sm" variant="outline" onClick={() => movePage("down")} disabled={busy || currentPage >= pageCount}>
               <ArrowDown className="w-4 h-4 inline mr-1" /> Down
             </Button>
-            <Button size="sm" variant="outline" onClick={rotatePage} disabled={busy} className="col-span-2">
+            <Button testId="page-rotate" size="sm" variant="outline" onClick={rotatePage} disabled={busy} className="col-span-2">
               <RotateCw className="w-4 h-4 inline mr-1" /> Rotate page
             </Button>
           </div>
@@ -1097,13 +1117,13 @@ export function EditorPage() {
         {/* Selected annotation properties */}
         {selected && (
           <Card>
-            <div className="p-3 border-b flex items-center justify-between">
+            <div data-testid="props-panel" className="p-3 border-b flex items-center justify-between">
               <h2 className="font-semibold capitalize">{selected.type} properties</h2>
               <div className="flex gap-1">
-                <button onClick={duplicateSelected} className="p-1 hover:bg-gray-100 rounded" title="Duplicate">
+                <button data-testid="props-duplicate" onClick={duplicateSelected} className="p-1 hover:bg-gray-100 rounded" title="Duplicate">
                   <Copy className="w-4 h-4 text-gray-600" />
                 </button>
-                <button onClick={deleteSelected} className="p-1 hover:bg-gray-100 rounded" title="Delete">
+                <button data-testid="props-delete" onClick={deleteSelected} className="p-1 hover:bg-gray-100 rounded" title="Delete">
                   <Trash2 className="w-4 h-4 text-red-500" />
                 </button>
               </div>
@@ -1113,25 +1133,25 @@ export function EditorPage() {
                 <>
                   <textarea className="w-full px-3 py-2 border rounded-lg text-sm" rows={2} value={selected.text} onChange={(e) => updateSelected({ text: e.target.value })} />
                   <div className="flex items-center gap-2">
-                    <select className="text-sm border rounded px-2 py-1 flex-1" value={selected.family} onChange={(e) => updateSelected({ family: e.target.value as FontFamily })}>
+                    <select data-testid="text-font" className="text-sm border rounded px-2 py-1 flex-1" value={selected.family} onChange={(e) => updateSelected({ family: e.target.value as FontFamily })}>
                       <option value="Helvetica">Helvetica</option>
                       <option value="Times">Times</option>
                       <option value="Courier">Courier</option>
                     </select>
-                    <button onClick={() => updateSelected({ bold: !selected.bold })} className={`p-1.5 rounded border ${selected.bold ? "bg-blue-50 border-blue-400" : ""}`} title="Bold">
+                    <button data-testid="text-bold" onClick={() => updateSelected({ bold: !selected.bold })} className={`p-1.5 rounded border ${selected.bold ? "bg-blue-50 border-blue-400" : ""}`} title="Bold">
                       <Bold className="w-4 h-4" />
                     </button>
-                    <button onClick={() => updateSelected({ italic: !selected.italic })} className={`p-1.5 rounded border ${selected.italic ? "bg-blue-50 border-blue-400" : ""}`} title="Italic">
+                    <button data-testid="text-italic" onClick={() => updateSelected({ italic: !selected.italic })} className={`p-1.5 rounded border ${selected.italic ? "bg-blue-50 border-blue-400" : ""}`} title="Italic">
                       <Italic className="w-4 h-4" />
                     </button>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Size: {selected.fontSize}pt</label>
-                    <input type="range" min={8} max={72} value={selected.fontSize} onChange={(e) => updateSelected({ fontSize: parseInt(e.target.value) })} className="w-full" />
+                    <input data-testid="text-size" type="range" min={8} max={72} value={selected.fontSize} onChange={(e) => updateSelected({ fontSize: parseInt(e.target.value) })} className="w-full" />
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-700">Color</span>
-                    <input type="color" value={selected.color} onChange={(e) => updateSelected({ color: e.target.value })} className="h-8 w-12 border rounded" />
+                    <input data-testid="text-color" type="color" value={selected.color} onChange={(e) => updateSelected({ color: e.target.value })} className="h-8 w-12 border rounded" />
                   </div>
                 </>
               )}
@@ -1140,19 +1160,19 @@ export function EditorPage() {
                   {selected.type !== "highlight" && (
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-700">Stroke</span>
-                      <input type="color" value={selected.strokeColor ?? "#000000"} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
+                      <input data-testid="shape-stroke-color" type="color" value={selected.strokeColor ?? "#000000"} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
                     </div>
                   )}
                   {selected.type !== "highlight" && (
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Thickness: {selected.strokeWidth}pt</label>
-                      <input type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
+                      <input data-testid="shape-stroke-width" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
                     </div>
                   )}
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700">{selected.type === "highlight" ? "Color" : "Fill"}</span>
                     <div className="flex items-center gap-2">
-                      {selected.fillColor && <input type="color" value={selected.fillColor} onChange={(e) => updateSelected({ fillColor: e.target.value })} className="h-7 w-10 border rounded" />}
+                      {selected.fillColor && <input data-testid="shape-fill-color" type="color" value={selected.fillColor} onChange={(e) => updateSelected({ fillColor: e.target.value })} className="h-7 w-10 border rounded" />}
                       {selected.type !== "highlight" && (
                         <button className="text-xs px-2 py-1 rounded border hover:bg-gray-50" onClick={() => updateSelected({ fillColor: selected.fillColor ? null : "#fde68a" })}>
                           {selected.fillColor ? "Clear" : "Add"}
@@ -1162,7 +1182,7 @@ export function EditorPage() {
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Opacity: {Math.round(selected.opacity * 100)}%</label>
-                    <input type="range" min={10} max={100} value={Math.round(selected.opacity * 100)} onChange={(e) => updateSelected({ opacity: parseInt(e.target.value) / 100 })} className="w-full" />
+                    <input data-testid="shape-opacity" type="range" min={10} max={100} value={Math.round(selected.opacity * 100)} onChange={(e) => updateSelected({ opacity: parseInt(e.target.value) / 100 })} className="w-full" />
                   </div>
                 </>
               )}
@@ -1170,11 +1190,11 @@ export function EditorPage() {
                 <>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700">Stroke</span>
-                    <input type="color" value={selected.strokeColor} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
+                    <input data-testid="shape-stroke-color" type="color" value={selected.strokeColor} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Thickness: {selected.strokeWidth}pt</label>
-                    <input type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
+                    <input data-testid="shape-stroke-width" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
                   </div>
                 </>
               )}
@@ -1189,40 +1209,40 @@ export function EditorPage() {
       <div className="flex-1 min-w-0">
         <Card className="h-full flex flex-col">
           <div className="p-3 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <input className="font-semibold border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none px-1 min-w-0" value={docName} onChange={(e) => setDocName(e.target.value)} title="Document name" />
+            <input data-testid="editor-docname" className="font-semibold border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none px-1 min-w-0" value={docName} onChange={(e) => setDocName(e.target.value)} title="Document name" />
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1">
-                <Button size="sm" variant="outline" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} title="Zoom out">
+                <Button testId="editor-zoom-out" size="sm" variant="outline" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} title="Zoom out">
                   <ZoomOut className="w-4 h-4" />
                 </Button>
-                <span className="text-sm w-12 text-center">{Math.round(zoom * 100)}%</span>
-                <Button size="sm" variant="outline" onClick={() => setZoom((z) => Math.min(2, +(z + 0.25).toFixed(2)))} title="Zoom in">
+                <span data-testid="editor-zoom-level" className="text-sm w-12 text-center">{Math.round(zoom * 100)}%</span>
+                <Button testId="editor-zoom-in" size="sm" variant="outline" onClick={() => setZoom((z) => Math.min(2, +(z + 0.25).toFixed(2)))} title="Zoom in">
                   <ZoomIn className="w-4 h-4" />
                 </Button>
               </div>
               <div className="flex items-center gap-1">
-                <Button size="sm" variant="outline" disabled={currentPage <= 1} onClick={() => {
+                <Button testId="editor-prev-page" size="sm" variant="outline" disabled={currentPage <= 1} onClick={() => {
                   setCurrentPage((p) => p - 1);
                   setSelectedId(null);
                 }}>
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <span className="text-sm">{currentPage} / {pageCount}</span>
-                <Button size="sm" variant="outline" disabled={currentPage >= pageCount} onClick={() => {
+                <span data-testid="editor-page-indicator" className="text-sm">{currentPage} / {pageCount}</span>
+                <Button testId="editor-next-page" size="sm" variant="outline" disabled={currentPage >= pageCount} onClick={() => {
                   setCurrentPage((p) => p + 1);
                   setSelectedId(null);
                 }}>
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
-              <Button variant="outline" size="sm" onClick={handleDownload} disabled={busy}>
+              <Button testId="editor-download" variant="outline" size="sm" onClick={handleDownload} disabled={busy}>
                 <Download className="w-4 h-4 inline mr-1" /> Download
               </Button>
-              <Button size="sm" onClick={() => saveToDocuments.mutate()} disabled={busy || saveToDocuments.isPending}>
+              <Button testId="editor-save" size="sm" onClick={() => saveToDocuments.mutate()} disabled={busy || saveToDocuments.isPending}>
                 <Save className="w-4 h-4 inline mr-1" />
                 {saveToDocuments.isPending ? "Saving…" : "Save"}
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => {
+              <Button testId="editor-close" variant="ghost" size="sm" onClick={() => {
                 setPdfBytes(null);
                 setAnnotations([]);
                 setPages([]);
@@ -1261,6 +1281,7 @@ export function EditorPage() {
                   {/* Interaction + text/image layer */}
                   <div
                     ref={overlayRef}
+                    data-testid="editor-canvas"
                     className="absolute inset-0"
                     style={{ zIndex: 6, cursor: cursorFor, pointerEvents: "auto" }}
                     onMouseDown={handleOverlayMouseDown}
@@ -1286,6 +1307,7 @@ export function EditorPage() {
                           return (
                             <textarea
                               key={ann.id}
+                              data-testid="editor-textarea"
                               autoFocus
                               value={ann.text}
                               onChange={(e) => setText(ann.id, e.target.value)}

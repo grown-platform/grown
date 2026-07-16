@@ -19,9 +19,7 @@ import {
   ListOrdered,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
-// @ts-ignore - CSS imports from react-pdf
 import "react-pdf/dist/Page/AnnotationLayer.css";
-// @ts-ignore - CSS imports from react-pdf
 import "react-pdf/dist/Page/TextLayer.css";
 import { Card, LoadingSpinner } from "tibui";
 import { apiClient } from "@/utils/apiClient";

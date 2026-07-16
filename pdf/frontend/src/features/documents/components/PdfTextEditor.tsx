@@ -264,6 +264,7 @@ export function PdfTextEditor({
   );
 
   const onPageRenderSuccess = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-pdf's onRenderSuccess callback exposes pdf.js page methods not in its public types
     async (page: any) => {
       const pageNumber: number = page.pageNumber;
       const viewport = page.getViewport({ scale: 1 });
@@ -287,6 +288,7 @@ export function PdfTextEditor({
       }
       try {
         const tc = await page.getTextContent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pdf.js text content items are loosely typed
         const extracted: EditableTextItem[] = (tc.items as any[])
           .map((it, idx) => ({
             pageNumber,
@@ -656,6 +658,7 @@ export function PdfTextEditor({
                   <Page
                     pageNumber={pageNumber}
                     scale={1}
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-pdf onRenderSuccess passes an untyped pdf.js page proxy
                     onRenderSuccess={(page: any) => onPageRenderSuccess(page)}
                     renderTextLayer={false}
                     renderAnnotationLayer={false}
