@@ -46,12 +46,12 @@ Baseline gaps → become the backlog below.
 **Test-hook cheat-sheet for future waves:** tools `tool-{select,text,draw,highlight,underline,strikethrough,rect,ellipse,line,arrow,whiteout,image}`; canvas `editor-canvas` (click/drag target) + `editor-textarea`; header `editor-{undo,redo,zoom-in,zoom-out,zoom-level,prev-page,next-page,page-indicator,download,save,docname,close}`; pages `page-{add,delete,up,down,rotate}`; props `props-{panel,duplicate,delete}`, `text-{font,bold,italic,color,size}`, `shape-{stroke-color,stroke-width,fill-color,opacity}`; empty state `editor-{dropzone,file-input,new-blank}`. e2e auth: `beforeEach` seeds `sessionStorage.lastLoginAttempt` via `addInitScript` to bypass the SSO redirect (editor needs no backend). Local port clash on :5173 → run with `PLAYWRIGHT_PORT=<free>`.
 
 ### Wave 2 — Selection & object model
-- [ ] Multi-select (shift-click + marquee), group move/delete.
-- [ ] Z-order: bring to front / send to back / forward / backward.
-- [ ] Clipboard: Ctrl+C/X/V (incl. cross-page paste), keep Duplicate.
-- [ ] Alignment & distribute (left/center/right/top/middle/bottom, distribute h/v).
-- [ ] Snapping / alignment guides + optional grid.
-- [ ] Rotate annotations; edge/corner resize handles on all sides; aspect-lock (shift).
+- [x] Multi-select (shift-click + marquee), group move/delete. `68d7ee1`
+- [x] Z-order: bring to front / send to back / forward / backward. `68d7ee1`
+- [x] Clipboard: Ctrl+C/X/V (incl. cross-page paste), keep Duplicate. `68d7ee1`
+- [ ] Alignment & distribute (left/center/right/top/middle/bottom, distribute h/v). ← Wave 2b
+- [ ] Snapping / alignment guides + optional grid. ← Wave 2b
+- [ ] Rotate annotations; edge/corner resize handles on all sides; aspect-lock (shift). ← Wave 2b
 
 ### Wave 3 — Page & document management
 - [ ] Thumbnail sidebar with drag-reorder, page context menu (duplicate/delete/rotate/insert).
@@ -100,6 +100,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-15** — Wave 2a DONE (`68d7ee1`): multi-select (shift-click + marquee), group move/delete, z-order + shortcuts, internal clipboard (C/X/V cross-page). New hooks: `data-annot-id`/`data-annot-index`, `z-*`, `clip-*`, `arrange-panel`. Fixed StrictMode double-draw + focus-swallow bugs. 7/7 e2e green (verified). `selectedIds[]` is now the selection source of truth (`selectedId` derived). Next: Wave 2b (align/distribute, snapping/guides/grid, rotate + full resize handles).
 - **2026-07-15** — Wave 1 (enablement) DONE (`e43dcd9`): self-hosted pdf.js worker, testids everywhere, Playwright `editor` project + 3 specs (smoke/scratch/existing) all green, eslint config added. Verified tsc/lint/e2e myself. Next: Wave 2 (selection & object model).
 - **2026-07-15** — Research deliverables committed: competitor analysis (`7df4e11`) + Docs/Sheets parity (`pdf/docs/feature-research/`). Key: existing-text-edit / true redaction / OCR need backend; everything else client-side-doable. Docs/Sheets already strong — main gaps are import + export fidelity.
 - **2026-07-15** — Scaffolding: branch + PR #32 created; hamburger services menu committed (`9fe7942`); roadmap doc added; competitor + Docs/Sheets research kicked off.
