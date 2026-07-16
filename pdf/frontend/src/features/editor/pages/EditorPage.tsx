@@ -212,6 +212,9 @@ interface TextAnnotation {
   align?: TextAlign;
   list?: ListMode;
   lineSpacing?: number; // line-height multiple (1.0 / 1.15 / 1.5 / 2.0)
+  // Wave 7 — rotation in degrees (clockwise on screen) about the box center.
+  // undefined ⇒ 0 (byte-identical, unrotated export).
+  rotation?: number;
 }
 interface ImageAnnotation {
   id: string;
@@ -223,6 +226,7 @@ interface ImageAnnotation {
   height: number;
   dataUrl: string;
   mime: "image/png" | "image/jpeg";
+  rotation?: number; // Wave 7 — degrees CW about center; undefined ⇒ 0
 }
 interface BoxAnnotation {
   id: string;
@@ -240,6 +244,7 @@ interface BoxAnnotation {
   // stroke. Both undefined for pre-Wave-5a snapshots (square / solid).
   rx?: number;
   dash?: boolean;
+  rotation?: number; // Wave 7 — degrees CW about center; undefined ⇒ 0
 }
 interface LineAnnotation {
   id: string;
@@ -331,6 +336,7 @@ interface StampAnnotation {
   color: string;
   withDate: boolean;
   date?: string; // captured once at placement when withDate
+  rotation?: number; // Wave 7 — degrees CW about center; undefined ⇒ 0
 }
 type Annotation =
   | TextAnnotation
@@ -352,6 +358,14 @@ const isPoly = (a: Annotation): a is PolyAnnotation => a.type === "poly";
 const isField = (a: Annotation): a is FieldAnnotation => a.type === "field";
 const isNote = (a: Annotation): a is NoteAnnotation => a.type === "note";
 const isStamp = (a: Annotation): a is StampAnnotation => a.type === "stamp";
+
+// Wave 7 — rotation. Only rectangular annotations rotate (box shapes, image,
+// text, stamp). line/ink/poly/note/field are out of scope (undefined ⇒ 0).
+type Rotatable = BoxAnnotation | ImageAnnotation | TextAnnotation | StampAnnotation;
+const isRotatable = (a: Annotation): a is Rotatable =>
+  isBox(a) || a.type === "image" || a.type === "text" || isStamp(a);
+// Read an annotation's rotation (degrees); 0 for non-rotatable / undefined.
+const getRotation = (a: Annotation): number => (isRotatable(a) ? a.rotation ?? 0 : 0);
 
 // Preset text stamps (Wave 5c). Each renders as a bold uppercase label in a
 // rounded bordered badge in its color.
@@ -697,6 +711,19 @@ function annotBBox(a: Annotation, pageAspect: number): NBox {
 }
 function boxesIntersect(a: NBox, b: NBox): boolean {
   return !(a.x1 < b.x0 || a.x0 > b.x1 || a.y1 < b.y0 || a.y0 > b.y1);
+}
+// Wave 7 — export helper. pdf-lib's `rotate: degrees(θ)` spins content about the
+// draw ANCHOR (not the center), so to rotate an annotation about its center we
+// move the anchor: newAnchor = C + R(θ)·(anchor − C). Screen rotation is
+// clockwise (CSS/SVG); PDF space is y-up so the equivalent pdf-lib angle is
+// −deg (see PDF_ROT). This computes the same R(−deg) applied to the anchor.
+// `deg` is the on-screen (clockwise) rotation in degrees.
+function rotateAnchorAboutCenter(ax: number, ay: number, cx: number, cy: number, deg: number): { x: number; y: number } {
+  if (!deg) return { x: ax, y: ay };
+  const phi = (-deg * Math.PI) / 180; // pdf-lib (y-up, CCW-positive) angle
+  const dx = ax - cx;
+  const dy = ay - cy;
+  return { x: cx + dx * Math.cos(phi) - dy * Math.sin(phi), y: cy + dx * Math.sin(phi) + dy * Math.cos(phi) };
 }
 // Distance (px) from point to a line segment — for click-selecting lines/ink.
 function segDistPx(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
@@ -1298,6 +1325,9 @@ export function EditorPage() {
     start: { x: number; y: number; width: number; height: number } | null;
     targets: { xs: number[]; ys: number[] };
   } | null>(null);
+  // Wave 7 — rotation drag. `cx`/`cy` are the annotation center in CLIENT (px)
+  // coords so the angle is atan2(pointer − center); `id` is the rotating annot.
+  const rotateState = useRef<{ id: string; cx: number; cy: number } | null>(null);
   // Marquee selection drag on empty canvas.
   const marqueeState = useRef<{ sx: number; sy: number; additive: boolean; box: NBox; moved: boolean } | null>(null);
   // A shape click/marquee-drag already resolved selection — stop the trailing
@@ -2374,6 +2404,21 @@ export function EditorPage() {
     const others = annotationsRef.current.filter((o) => o.page === currentPageRef.current && o.id !== id);
     resizeState.current = { id, handle, start, targets: snapTargets(others, pageAspectRef.current) };
   };
+  // Wave 7 — begin a rotation gesture on the rotate handle. Rotation is about the
+  // annotation's (axis-aligned bbox) center; we resolve that center in client px
+  // now so onMove can read the pointer angle directly. Snapshot once per gesture.
+  const startRotate = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setSelectedIds([id]);
+    const a = annotationsRef.current.find((x) => x.id === id);
+    if (!a || !overlayRef.current) return;
+    const rect = overlayRef.current.getBoundingClientRect();
+    const b = annotBBox(a, pageAspectRef.current);
+    const cx = rect.left + ((b.x0 + b.x1) / 2) * rect.width;
+    const cy = rect.top + ((b.y0 + b.y1) / 2) * rect.height;
+    snapshot();
+    rotateState.current = { id, cx, cy };
+  };
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -2381,6 +2426,20 @@ export function EditorPage() {
       const rect = overlayRef.current.getBoundingClientRect();
       const nx = clamp01((e.clientX - rect.left) / rect.width);
       const ny = clamp01((e.clientY - rect.top) / rect.height);
+
+      // Wave 7 — rotating. Angle = pointer relative to center; the handle points
+      // north at 0°, so rotation = atan2(dy,dx) + 90° (CW-positive on screen).
+      // Shift snaps to 15° steps. Live setAnnotations feeds the on-screen render
+      // + the angle readout (snapshot was taken on handle mousedown).
+      const rot = rotateState.current;
+      if (rot) {
+        let deg = (Math.atan2(e.clientY - rot.cy, e.clientX - rot.cx) * 180) / Math.PI + 90;
+        if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+        deg = ((Math.round(deg * 10) / 10) % 360 + 360) % 360; // normalize [0,360)
+        if (deg > 180) deg -= 360; // → (-180,180]
+        setAnnotations((prev) => prev.map((a) => (a.id === rot.id && isRotatable(a) ? ({ ...a, rotation: deg } as Annotation) : a)));
+        return;
+      }
 
       // Eraser drag: erase whatever the cursor passes over (snapshot already
       // taken on mousedown).
@@ -2604,6 +2663,10 @@ export function EditorPage() {
         }
         marqueeState.current = null;
         setMarquee(null);
+      }
+      if (rotateState.current) {
+        rotateState.current = null;
+        suppressCanvasClick.current = true;
       }
       dragState.current = null;
       resizeState.current = null;
@@ -3132,6 +3195,12 @@ export function EditorPage() {
       const { width: pw, height: ph } = page.getSize();
       const PX = (nx: number) => nx * pw;
       const PY = (ny: number) => ph - ny * ph; // normalized-top → PDF y (bottom-up)
+      // Wave 7 — rotation (degrees, screen-clockwise) about the annotation center.
+      // 0/undefined ⇒ the unrotated path below runs untouched (byte-identical).
+      // pdf-lib rotates about the draw anchor, so we translate anchors via
+      // rotateAnchorAboutCenter and pass rotate: degrees(-rot) (PDF y-up ⇒ negate).
+      const rot = Number.isFinite(getRotation(ann)) ? getRotation(ann) : 0;
+      const rotOpt = rot ? { rotate: degrees(-rot) } : {};
 
       if (ann.type === "text") {
         const { r, g, b } = hexToRgb(ann.color);
@@ -3157,6 +3226,10 @@ export function EditorPage() {
           const prefixed = listPrefix(ann.list, i) + ln;
           for (const w of wrapText(prefixed, font, size, maxWidth)) visual.push(w);
         });
+        // Rotate every line's baseline anchor about the text block's center so
+        // the whole block spins as one (each line shares rot + center).
+        const cxT = PX(ann.x) + maxWidth / 2;
+        const cyT = PY(ann.y) - (visual.length * lineHeight) / 2;
         let ty = PY(ann.y) - size;
         for (const line of visual) {
           const lw = font.widthOfTextAtSize(line, size);
@@ -3166,34 +3239,50 @@ export function EditorPage() {
               : align === "center"
                 ? PX(ann.x) + (maxWidth - lw) / 2
                 : PX(ann.x);
-          page.drawText(line, { x: lx, y: ty, size, font, color });
+          try {
+            const A = rotateAnchorAboutCenter(lx, ty, cxT, cyT, rot);
+            page.drawText(line, { x: A.x, y: A.y, size, font, color, ...rotOpt });
+          } catch {
+            page.drawText(line, { x: lx, y: ty, size, font, color });
+          }
           ty -= lineHeight;
         }
       } else if (ann.type === "image") {
         const bytes = Uint8Array.from(atob(ann.dataUrl.split(",")[1]), (c) => c.charCodeAt(0));
         const img = ann.mime === "image/jpeg" ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
-        page.drawImage(img, { x: PX(ann.x), y: PY(ann.y) - ann.height * ph, width: ann.width * pw, height: ann.height * ph });
+        const ix = PX(ann.x);
+        const iy = PY(ann.y) - ann.height * ph;
+        try {
+          const A = rotateAnchorAboutCenter(ix, iy, PX(ann.x + ann.width / 2), PY(ann.y + ann.height / 2), rot);
+          page.drawImage(img, { x: A.x, y: A.y, width: ann.width * pw, height: ann.height * ph, ...rotOpt });
+        } catch {
+          page.drawImage(img, { x: ix, y: iy, width: ann.width * pw, height: ann.height * ph });
+        }
       } else if (ann.type === "redact") {
         // Redaction: on a page we successfully rasterized the black region is
         // already baked into the flattened image — skip. Otherwise (rasterize
         // failed) draw an opaque black box so the region is never left exposed.
         if (rasterizedPages.has(ann.page - 1)) continue;
-        page.drawRectangle({
-          x: PX(ann.x),
-          y: PY(ann.y) - ann.height * ph,
-          width: ann.width * pw,
-          height: ann.height * ph,
-          color: rgb(0, 0, 0),
-          opacity: 1,
-        });
+        {
+          const rx0 = PX(ann.x);
+          const ry0 = PY(ann.y) - ann.height * ph;
+          const A = rotateAnchorAboutCenter(rx0, ry0, PX(ann.x + ann.width / 2), PY(ann.y + ann.height / 2), rot);
+          page.drawRectangle({ x: A.x, y: A.y, width: ann.width * pw, height: ann.height * ph, color: rgb(0, 0, 0), opacity: 1, ...rotOpt });
+        }
       } else if (isBox(ann)) {
         const dashArr = ann.dash ? DASH_PT.slice() : undefined;
         if (ann.type === "underline" || ann.type === "strikethrough") {
           const ny = ann.type === "underline" ? ann.y + ann.height : ann.y + ann.height / 2;
           const { r, g, b } = hexToRgb(ann.strokeColor ?? "#111111");
+          // A line is two points → rotate both endpoints about the box center
+          // directly (no anchor trick / rotate option needed; exact).
+          const cxL = PX(ann.x + ann.width / 2);
+          const cyL = PY(ann.y + ann.height / 2);
+          const s = rotateAnchorAboutCenter(PX(ann.x), PY(ny), cxL, cyL, rot);
+          const e2 = rotateAnchorAboutCenter(PX(ann.x + ann.width), PY(ny), cxL, cyL, rot);
           page.drawLine({
-            start: { x: PX(ann.x), y: PY(ny) },
-            end: { x: PX(ann.x + ann.width), y: PY(ny) },
+            start: { x: s.x, y: s.y },
+            end: { x: e2.x, y: e2.y },
             thickness: Math.max(1, ann.strokeWidth),
             color: rgb(r, g, b),
             opacity: ann.opacity,
@@ -3218,12 +3307,22 @@ export function EditorPage() {
             opts.borderColor = rgb(r, g, b);
             opts.borderWidth = ann.strokeWidth;
           }
+          // Wave 7 — translate the bottom-left anchor so the box rotates about its
+          // center (rot===0 ⇒ opts untouched). rotateAnchorAboutCenter is pure
+          // math (can't throw); the draw ops accept a `rotate` option.
+          const cxB = PX(ann.x + ann.width / 2);
+          const cyB = PY(ann.y + ann.height / 2);
+          if (rot) {
+            const A = rotateAnchorAboutCenter(opts.x!, opts.y!, cxB, cyB, rot);
+            opts.x = A.x;
+            opts.y = A.y;
+            opts.rotate = degrees(-rot);
+          }
           if (ann.type === "ellipse") {
-            const cx = PX(ann.x + ann.width / 2);
-            const cy = PY(ann.y + ann.height / 2);
+            // Ellipse anchor IS the center, so it rotates in place — just add rot.
             page.drawEllipse({
-              x: cx,
-              y: cy,
+              x: cxB,
+              y: cyB,
               xScale: (ann.width * pw) / 2,
               yScale: (ann.height * ph) / 2,
               color: opts.color,
@@ -3232,8 +3331,9 @@ export function EditorPage() {
               opacity: ann.opacity,
               borderOpacity: ann.opacity,
               borderDashArray: dashArr,
+              ...rotOpt,
             });
-          } else if (ann.rx && ann.rx > 0) {
+          } else if (ann.rx && ann.rx > 0 && !rot) {
             // Rounded rect: pdf-lib's drawRectangle has no radius, so draw a
             // rounded-rect SVG path (fill + stroke). Fall back to a plain rect if
             // the path fails for any reason (never break the whole export).
@@ -3324,11 +3424,21 @@ export function EditorPage() {
         const B = T + boxH;
         const rr = Math.min(6, boxW / 2, boxH / 2);
         const bw = Math.max(1.5, boxH * 0.05);
-        try {
-          const d = `M ${L + rr} ${T} L ${R - rr} ${T} A ${rr} ${rr} 0 0 1 ${R} ${T + rr} L ${R} ${B - rr} A ${rr} ${rr} 0 0 1 ${R - rr} ${B} L ${L + rr} ${B} A ${rr} ${rr} 0 0 1 ${L} ${B - rr} L ${L} ${T + rr} A ${rr} ${rr} 0 0 1 ${L + rr} ${T} Z`;
-          page.drawSvgPath(d, { x: 0, y: ph, borderColor: col, borderWidth: bw });
-        } catch {
-          page.drawRectangle({ x: L, y: ph - B, width: boxW, height: boxH, borderColor: col, borderWidth: bw });
+        // Wave 7 — stamp center in PDF coords; rotate the badge + text about it.
+        const cxS = PX(ann.x + ann.width / 2);
+        const cyS = PY(ann.y + ann.height / 2);
+        if (rot) {
+          // Rotated: draw a plain rect border (drops the rounded corners) at the
+          // rotated bottom-left anchor. Acceptable fidelity trade-off (documented).
+          const A = rotateAnchorAboutCenter(L, ph - B, cxS, cyS, rot);
+          page.drawRectangle({ x: A.x, y: A.y, width: boxW, height: boxH, borderColor: col, borderWidth: bw, ...rotOpt });
+        } else {
+          try {
+            const d = `M ${L + rr} ${T} L ${R - rr} ${T} A ${rr} ${rr} 0 0 1 ${R} ${T + rr} L ${R} ${B - rr} A ${rr} ${rr} 0 0 1 ${R - rr} ${B} L ${L + rr} ${B} A ${rr} ${rr} 0 0 1 ${L} ${B - rr} L ${L} ${T + rr} A ${rr} ${rr} 0 0 1 ${L + rr} ${T} Z`;
+            page.drawSvgPath(d, { x: 0, y: ph, borderColor: col, borderWidth: bw });
+          } catch {
+            page.drawRectangle({ x: L, y: ph - B, width: boxW, height: boxH, borderColor: col, borderWidth: bw });
+          }
         }
         if (stampBoldFont) {
           // Unicode-aware label/date: keep the Standard-14 stamp fonts for
@@ -3349,7 +3459,8 @@ export function EditorPage() {
           const tx = L + (boxW - tw) / 2;
           const labelCenterY = ann.withDate ? ann.y + ann.height * 0.4 : ann.y + ann.height * 0.5;
           const ty = ph - labelCenterY * ph - size * 0.35;
-          page.drawText(label, { x: tx, y: ty, size, font: labelFont, color: col });
+          const AL = rotateAnchorAboutCenter(tx, ty, cxS, cyS, rot);
+          page.drawText(label, { x: AL.x, y: AL.y, size, font: labelFont, color: col, ...rotOpt });
           if (ann.withDate && ann.date && stampDateFont) {
             let dateFont = stampDateFont;
             let dateStr = ann.date;
@@ -3361,7 +3472,8 @@ export function EditorPage() {
             const dsize = Math.max(6, boxH * 0.2);
             const dw = dateFont.widthOfTextAtSize(dateStr, dsize);
             const dCenterY = ann.y + ann.height * 0.74;
-            page.drawText(dateStr, { x: L + (boxW - dw) / 2, y: ph - dCenterY * ph - dsize * 0.35, size: dsize, font: dateFont, color: col });
+            const AD = rotateAnchorAboutCenter(L + (boxW - dw) / 2, ph - dCenterY * ph - dsize * 0.35, cxS, cyS, rot);
+            page.drawText(dateStr, { x: AD.x, y: AD.y, size: dsize, font: dateFont, color: col, ...rotOpt });
           }
         }
       } else if (ann.type === "note") {
@@ -3784,8 +3896,13 @@ export function EditorPage() {
     const Y = (ny: number) => ny * overlayH;
     const sw = (w: number) => Math.max(0.5, w * pxScale);
     if (isBox(a)) {
+      // Wave 7 — rotate the whole shape about its center (px). rotate(deg cx cy)
+      // is applied as an SVG transform attribute; deg matches the CSS-clockwise
+      // convention used by the DOM annotations + the rotate handle.
+      const rot = getRotation(a);
+      const rotTransform = rot ? `rotate(${rot} ${X(a.x + a.width / 2)} ${Y(a.y + a.height / 2)})` : undefined;
       // Test hook: normalized geometry on box nodes (used by align/snap specs).
-      const boxData = isDraft ? {} : { "data-annot-x": a.x, "data-annot-y": a.y, "data-annot-w": a.width, "data-annot-h": a.height };
+      const boxData = isDraft ? {} : { "data-annot-x": a.x, "data-annot-y": a.y, "data-annot-w": a.width, "data-annot-h": a.height, "data-annot-rotation": rot };
       const dashArray = a.dash ? `${DASH_PT[0] * pxScale} ${DASH_PT[1] * pxScale}` : undefined;
       if (a.type === "redact") {
         // Solid opaque black box + a red hatch/label so a redaction mark reads
@@ -3798,7 +3915,7 @@ export function EditorPage() {
         const kindData = isDraft ? {} : { "data-annot-kind": "redact" };
         const label = Math.min(11, Math.max(6, rh * 0.5));
         return (
-          <g key={a.id} {...kindData} {...boxData} {...common}>
+          <g key={a.id} transform={rotTransform} {...kindData} {...boxData} {...common}>
             <rect x={rx} y={ry} width={rw} height={rh} fill="#000000" fillOpacity={1} stroke="#dc2626" strokeWidth={1} />
             <line x1={rx} y1={ry} x2={rx + rw} y2={ry + rh} stroke="#dc2626" strokeWidth={1} strokeOpacity={0.55} />
             <line x1={rx + rw} y1={ry} x2={rx} y2={ry + rh} stroke="#dc2626" strokeWidth={1} strokeOpacity={0.55} />
@@ -3823,12 +3940,12 @@ export function EditorPage() {
       if (a.type === "underline" || a.type === "strikethrough") {
         const ly = a.type === "underline" ? Y(a.y + a.height) : Y(a.y + a.height / 2);
         return (
-          <line key={a.id} x1={X(a.x)} y1={ly} x2={X(a.x + a.width)} y2={ly} stroke={a.strokeColor ?? "#111"} strokeWidth={sw(Math.max(1.5, a.strokeWidth))} strokeOpacity={a.opacity} strokeDasharray={dashArray} {...boxData} {...common} />
+          <line key={a.id} transform={rotTransform} x1={X(a.x)} y1={ly} x2={X(a.x + a.width)} y2={ly} stroke={a.strokeColor ?? "#111"} strokeWidth={sw(Math.max(1.5, a.strokeWidth))} strokeOpacity={a.opacity} strokeDasharray={dashArray} {...boxData} {...common} />
         );
       }
       const stroke = a.strokeColor ?? "none";
       const fill = a.fillColor ?? "none";
-      const shared = { fill, fillOpacity: a.opacity, stroke, strokeWidth: sw(a.strokeWidth), strokeOpacity: a.opacity, strokeDasharray: dashArray, ...boxData, ...common };
+      const shared = { transform: rotTransform, fill, fillOpacity: a.opacity, stroke, strokeWidth: sw(a.strokeWidth), strokeOpacity: a.opacity, strokeDasharray: dashArray, ...boxData, ...common };
       return a.type === "ellipse" ? (
         <ellipse key={a.id} cx={X(a.x + a.width / 2)} cy={Y(a.y + a.height / 2)} rx={X(a.width / 2)} ry={Y(a.height / 2)} {...shared} />
       ) : (
@@ -3946,10 +4063,54 @@ export function EditorPage() {
         );
       }
     }
+
+    // Wave 7 — rotation handle: a small circle on a stalk above the bbox's
+    // top-center, for any single rotatable annotation (box/image/text/stamp).
+    // The stalk + knob rotate with the shape so they point out of its top edge;
+    // dragging the knob rotates about the center (see startRotate/onMove).
+    let rotateHandle: React.ReactNode = null;
+    if (selected && selected.page === currentPage && isRotatable(selected)) {
+      const b = annotBBox(selected, pageAspect);
+      const ccx = X((b.x0 + b.x1) / 2);
+      const ccy = Y((b.y0 + b.y1) / 2);
+      const topx = X((b.x0 + b.x1) / 2);
+      const topy = Y(b.y0);
+      const deg = getRotation(selected);
+      const rad = (deg * Math.PI) / 180;
+      // Rotate a point about the center by `deg` clockwise (screen y-down).
+      const rp = (px: number, py: number) => ({
+        x: ccx + (px - ccx) * Math.cos(rad) - (py - ccy) * Math.sin(rad),
+        y: ccy + (px - ccx) * Math.sin(rad) + (py - ccy) * Math.cos(rad),
+      });
+      const anchor = rp(topx, topy);
+      const knob = rp(topx, topy - 24);
+      rotateHandle = (
+        <>
+          <line x1={anchor.x} y1={anchor.y} x2={knob.x} y2={knob.y} stroke="#2563eb" strokeWidth={1} style={{ pointerEvents: "none" }} />
+          <circle
+            data-testid="rotate-handle"
+            cx={knob.x}
+            cy={knob.y}
+            r={6}
+            fill="#fff"
+            stroke="#2563eb"
+            strokeWidth={1.5}
+            style={{ pointerEvents: "auto", cursor: "grab" }}
+            onMouseDown={(e) => startRotate(e, selected.id)}
+          />
+          {Math.round(deg) !== 0 && (
+            <text x={knob.x + 9} y={knob.y + 3} fill="#2563eb" fontSize={11} style={{ pointerEvents: "none", userSelect: "none" }}>
+              {Math.round(deg)}°
+            </text>
+          )}
+        </>
+      );
+    }
     return (
       <>
         {outlines}
         {single}
+        {rotateHandle}
       </>
     );
   };
@@ -4789,6 +4950,35 @@ export function EditorPage() {
               )}
               {selected.type === "image" && <p className="text-xs text-gray-500">Drag the corner handle to resize, or drag the image to move it.</p>}
               {selected.type === "whiteout" && <p className="text-xs text-gray-500">Covers content with a solid white box. Drag to move, corner to resize.</p>}
+              {/* Wave 7 — rotation. Also draggable via the on-canvas rotate handle
+                  (Shift snaps to 15°). Number entry here for precise angles. */}
+              {isRotatable(selected) && (
+                <div className="flex items-center gap-2">
+                  <RotateCw className="w-4 h-4 text-gray-600" />
+                  <span className="text-xs text-gray-600">Rotation</span>
+                  <input
+                    data-testid="rotate-input"
+                    type="number"
+                    min={-180}
+                    max={180}
+                    value={Math.round(getRotation(selected))}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      updateSelected({ rotation: Number.isFinite(v) ? v : 0 });
+                    }}
+                    className="w-16 border rounded px-2 py-1 text-sm"
+                  />
+                  <span className="text-xs text-gray-500">°</span>
+                  <button
+                    data-testid="rotate-reset"
+                    onClick={() => updateSelected({ rotation: 0 })}
+                    className="ml-auto text-xs px-2 py-1 rounded border hover:bg-gray-50"
+                    title="Reset rotation"
+                  >
+                    Reset
+                  </button>
+                </div>
+              )}
             </div>
           </Card>
         )}
@@ -5280,6 +5470,7 @@ export function EditorPage() {
                             data-annot-id={ann.id}
                             data-annot-index={annIndex}
                             data-annot-kind="text"
+                            data-annot-rotation={ann.rotation ?? 0}
                             data-text-align={ann.align ?? "left"}
                             data-text-list={ann.list ?? "none"}
                             data-text-linespacing={ann.lineSpacing ?? 1.2}
@@ -5301,6 +5492,8 @@ export function EditorPage() {
                               wordBreak: "break-word",
                               overflow: "hidden",
                               pointerEvents: interactive ? "auto" : "none",
+                              transform: ann.rotation ? `rotate(${ann.rotation}deg)` : undefined,
+                              transformOrigin: "center",
                             }}
                           >
                             {displayText || " "}
@@ -5462,6 +5655,7 @@ export function EditorPage() {
                             data-annot-y={ann.y}
                             data-annot-w={ann.width}
                             data-annot-h={ann.height}
+                            data-annot-rotation={ann.rotation ?? 0}
                             onMouseDown={(e) => startMove(e, ann)}
                             onClick={selectOnClick}
                             className={`absolute flex flex-col items-center justify-center select-none ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-move" : ""}`}
@@ -5474,6 +5668,8 @@ export function EditorPage() {
                               borderRadius: 6 * pxScale,
                               color: ann.color,
                               pointerEvents: interactive ? "auto" : "none",
+                              transform: ann.rotation ? `rotate(${ann.rotation}deg)` : undefined,
+                              transformOrigin: "center",
                             }}
                           >
                             <span className="font-bold uppercase leading-none" style={{ fontSize: Math.max(9, ann.height * overlayH * (ann.withDate ? 0.42 : 0.5)), letterSpacing: 1 }}>
@@ -5496,10 +5692,11 @@ export function EditorPage() {
                           data-annot-y={ann.y}
                           data-annot-w={ann.width}
                           data-annot-h={ann.height}
+                          data-annot-rotation={ann.rotation ?? 0}
                           onMouseDown={(e) => startMove(e, ann)}
                           onClick={selectOnClick}
                           className={`absolute ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-move" : ""}`}
-                          style={{ left: `${ann.x * 100}%`, top: `${ann.y * 100}%`, width: `${ann.width * 100}%`, height: `${ann.height * 100}%`, pointerEvents: interactive ? "auto" : "none" }}
+                          style={{ left: `${ann.x * 100}%`, top: `${ann.y * 100}%`, width: `${ann.width * 100}%`, height: `${ann.height * 100}%`, pointerEvents: interactive ? "auto" : "none", transform: ann.rotation ? `rotate(${ann.rotation}deg)` : undefined, transformOrigin: "center" }}
                         >
                           <img src={ann.dataUrl} alt="" className="w-full h-full object-fill pointer-events-none select-none" draggable={false} />
                           {/* Resize handles for images render in the top chrome SVG layer. */}
