@@ -117,6 +117,8 @@ function Button({
   onClick,
   title,
   testId,
+  ariaLabel,
+  ariaPressed,
 }: {
   children: React.ReactNode;
   variant?: "primary" | "outline" | "ghost";
@@ -126,6 +128,10 @@ function Button({
   onClick?: (e: React.MouseEvent) => void;
   title?: string;
   testId?: string;
+  // a11y (Wave 9): give icon-only buttons an accessible name, and expose
+  // toggle state to assistive tech. Both are additive/optional.
+  ariaLabel?: string;
+  ariaPressed?: boolean;
 }) {
   const sizeStyles = { sm: "px-2 py-1 text-sm", md: "px-4 py-2", lg: "px-6 py-3 text-lg" };
   const variants = {
@@ -140,11 +146,70 @@ function Button({
       disabled={disabled}
       onClick={onClick}
       title={title}
+      aria-label={ariaLabel}
+      aria-pressed={ariaPressed}
       className={`rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${sizeStyles[size]} ${variants[variant]} ${className}`}
     >
       {children}
     </button>
   );
+}
+
+// Wave 9 — accessibility helper for modal dialogs. Given an `open` flag and an
+// `onClose` callback, it: moves focus into the dialog on open (first focusable
+// field, else the dialog container), restores focus to the opener on close, and
+// returns an `onKeyDown` handler that closes on Escape and keeps Tab focus
+// trapped inside the dialog. Attach `ref`/`onKeyDown` to the dialog's card
+// element (which also carries role="dialog"/aria-modal). Purely additive — it
+// does not change layout, testids, or existing behavior.
+const FOCUSABLE_SELECTOR =
+  'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+
+function useDialogA11y(open: boolean, onClose: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  const restoreRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    restoreRef.current = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    if (el) {
+      const first = el.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      (first ?? el).focus();
+    }
+    return () => {
+      const r = restoreRef.current;
+      if (r && typeof r.focus === "function" && document.contains(r)) r.focus();
+    };
+  }, [open]);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab" || !ref.current) return;
+    const nodes = Array.from(ref.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+      (n) => n.offsetParent !== null || n === document.activeElement,
+    );
+    if (nodes.length === 0) {
+      e.preventDefault();
+      ref.current.focus();
+      return;
+    }
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && (active === first || active === ref.current)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
+  return { ref, onKeyDown };
 }
 
 // ---- Edit model -------------------------------------------------------------
@@ -3216,6 +3281,13 @@ export function EditorPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [snapshot, undo, redo, copySelection, cutSelection, pasteClipboard, deleteSelection, reorderSelection, editingId, finishPoly, openSearch, nudgeSelection, shortcutsOpen]);
 
+  // Wave 9 — modal a11y (initial focus, Escape-to-close, focus trap, restore).
+  const stampA11y = useDialogA11y(stampDialog, () => setStampDialog(false));
+  const assembleA11y = useDialogA11y(!!dialog, () => setDialog(null));
+  const shortcutsA11y = useDialogA11y(shortcutsOpen, () => setShortcutsOpen(false));
+  const exportImageA11y = useDialogA11y(exportImageOpen, () => setExportImageOpen(false));
+  const metaA11y = useDialogA11y(metaOpen, () => setMetaOpen(false));
+
   const updateSelected = (patch: Record<string, unknown>) => {
     if (!selectedId) return;
     setAnnotations((prev) => prev.map((a) => (a.id === selectedId ? ({ ...a, ...patch } as Annotation) : a)));
@@ -4469,31 +4541,36 @@ export function EditorPage() {
                 data-testid="editor-search-open"
                 onClick={() => (searchOpen ? closeSearch() : openSearch())}
                 title="Find text (Ctrl+F)"
+                aria-label="Find text (Ctrl+F)"
+                aria-pressed={searchOpen}
                 className={`p-1.5 rounded ${searchOpen ? "bg-blue-50 text-blue-600" : "hover:bg-gray-100"}`}
               >
                 <Search className="w-4 h-4" />
               </button>
-              <button data-testid="editor-undo" onClick={undo} disabled={!undoStack.current.length} title="Undo (Ctrl+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
+              <button data-testid="editor-undo" onClick={undo} disabled={!undoStack.current.length} title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
                 <Undo2 className="w-4 h-4" />
               </button>
-              <button data-testid="editor-redo" onClick={redo} disabled={!redoStack.current.length} title="Redo (Ctrl+Shift+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
+              <button data-testid="editor-redo" onClick={redo} disabled={!redoStack.current.length} title="Redo (Ctrl+Shift+Z)" aria-label="Redo (Ctrl+Shift+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
                 <Redo2 className="w-4 h-4" />
               </button>
               <button
                 data-testid="shortcuts-open"
                 onClick={() => setShortcutsOpen(true)}
                 title="Keyboard shortcuts (?)"
+                aria-label="Keyboard shortcuts"
                 className="p-1.5 rounded hover:bg-gray-100 font-semibold text-sm leading-none w-7"
               >
                 ?
               </button>
             </div>
           </div>
-          <div className="p-2 grid grid-cols-3 gap-2">
+          <div className="p-2 grid grid-cols-3 gap-2" role="toolbar" aria-label="Editor tools">
             {toolButtons.map(({ t, icon: Icon, label }) => (
               <button
                 key={t}
                 data-testid={toolTestId[t]}
+                aria-label={label}
+                aria-pressed={tool === t}
                 onClick={() => {
                   setSelectedIds([]);
                   // Stamp opens the picker first; confirming enters place-mode.
@@ -4546,7 +4623,7 @@ export function EditorPage() {
             </button>
           </div>
           {/* Autosave draft status (Wave 6a) */}
-          <div className="px-2 pb-2 flex items-center gap-1 text-[11px] text-gray-400">
+          <div className="px-2 pb-2 flex items-center gap-1 text-[11px] text-gray-400" role="status" aria-live="polite">
             <span
               data-testid="draft-status"
               data-draft-state={draftStatus}
@@ -4711,17 +4788,17 @@ export function EditorPage() {
             <div className="p-3 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-700">Stroke</span>
-                <input type="color" value={strokeColor} onChange={(e) => setStrokeColor(e.target.value)} className="h-7 w-10 border rounded" />
+                <input type="color" aria-label="Stroke color" value={strokeColor} onChange={(e) => setStrokeColor(e.target.value)} className="h-7 w-10 border rounded" />
               </div>
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Thickness: {strokeWidth}pt</label>
-                <input type="range" min={1} max={12} value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} className="w-full" />
+                <input type="range" aria-label="Stroke thickness" min={1} max={12} value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} className="w-full" />
               </div>
               {(tool === "rect" || tool === "rrect" || tool === "ellipse" || tool === "polygon") && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-700">Fill</span>
                   <div className="flex items-center gap-2">
-                    {fillColor && <input type="color" value={fillColor} onChange={(e) => setFillColor(e.target.value)} className="h-7 w-10 border rounded" />}
+                    {fillColor && <input type="color" aria-label="Fill color" value={fillColor} onChange={(e) => setFillColor(e.target.value)} className="h-7 w-10 border rounded" />}
                     <button className="text-xs px-2 py-1 rounded border hover:bg-gray-50" onClick={() => setFillColor(fillColor ? null : "#fde68a")}>
                       {fillColor ? "Clear" : "Add fill"}
                     </button>
@@ -4749,7 +4826,7 @@ export function EditorPage() {
             </div>
             <div className="p-3">
               <label className="block text-xs text-gray-600 mb-1">Size: {eraserSize}px</label>
-              <input data-testid="eraser-size" type="range" min={4} max={60} value={eraserSize} onChange={(e) => setEraserSize(parseInt(e.target.value))} className="w-full" />
+              <input data-testid="eraser-size" aria-label="Eraser size" type="range" min={4} max={60} value={eraserSize} onChange={(e) => setEraserSize(parseInt(e.target.value))} className="w-full" />
               <p className="text-xs text-gray-500 mt-2">Click or drag over marks to erase. Ink strokes split where crossed.</p>
             </div>
           </Card>
@@ -4790,22 +4867,22 @@ export function EditorPage() {
               <div className="pt-1 border-t">
                 <p className="text-[11px] text-gray-500 mt-2 mb-1">Align</p>
                 <div className="grid grid-cols-3 gap-1">
-                  <button data-testid="align-left" onClick={() => alignSelection("left")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align left">
+                  <button data-testid="align-left" onClick={() => alignSelection("left")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align left" aria-label="Align left">
                     <AlignHorizontalJustifyStart className="w-4 h-4" />
                   </button>
-                  <button data-testid="align-hcenter" onClick={() => alignSelection("hcenter")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align center">
+                  <button data-testid="align-hcenter" onClick={() => alignSelection("hcenter")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align center" aria-label="Align center">
                     <AlignHorizontalJustifyCenter className="w-4 h-4" />
                   </button>
-                  <button data-testid="align-right" onClick={() => alignSelection("right")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align right">
+                  <button data-testid="align-right" onClick={() => alignSelection("right")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align right" aria-label="Align right">
                     <AlignHorizontalJustifyEnd className="w-4 h-4" />
                   </button>
-                  <button data-testid="align-top" onClick={() => alignSelection("top")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align top">
+                  <button data-testid="align-top" onClick={() => alignSelection("top")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align top" aria-label="Align top">
                     <AlignVerticalJustifyStart className="w-4 h-4" />
                   </button>
-                  <button data-testid="align-vmiddle" onClick={() => alignSelection("vmiddle")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align middle">
+                  <button data-testid="align-vmiddle" onClick={() => alignSelection("vmiddle")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align middle" aria-label="Align middle">
                     <AlignVerticalJustifyCenter className="w-4 h-4" />
                   </button>
-                  <button data-testid="align-bottom" onClick={() => alignSelection("bottom")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align bottom">
+                  <button data-testid="align-bottom" onClick={() => alignSelection("bottom")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align bottom" aria-label="Align bottom">
                     <AlignVerticalJustifyEnd className="w-4 h-4" />
                   </button>
                 </div>
@@ -4932,10 +5009,10 @@ export function EditorPage() {
             <div data-testid="props-panel" className="p-3 border-b flex items-center justify-between">
               <h2 className="font-semibold capitalize">{selected.type} properties</h2>
               <div className="flex gap-1">
-                <button data-testid="props-duplicate" onClick={duplicateSelected} className="p-1 hover:bg-gray-100 rounded" title="Duplicate">
+                <button data-testid="props-duplicate" onClick={duplicateSelected} className="p-1 hover:bg-gray-100 rounded" title="Duplicate" aria-label="Duplicate">
                   <Copy className="w-4 h-4 text-gray-600" />
                 </button>
-                <button data-testid="props-delete" onClick={deleteSelection} className="p-1 hover:bg-gray-100 rounded" title="Delete">
+                <button data-testid="props-delete" onClick={deleteSelection} className="p-1 hover:bg-gray-100 rounded" title="Delete" aria-label="Delete">
                   <Trash2 className="w-4 h-4 text-red-500" />
                 </button>
               </div>
@@ -4950,20 +5027,20 @@ export function EditorPage() {
                       <option value="Times">Times</option>
                       <option value="Courier">Courier</option>
                     </select>
-                    <button data-testid="text-bold" onClick={() => updateSelected({ bold: !selected.bold })} className={`p-1.5 rounded border ${selected.bold ? "bg-blue-50 border-blue-400" : ""}`} title="Bold">
+                    <button data-testid="text-bold" onClick={() => updateSelected({ bold: !selected.bold })} className={`p-1.5 rounded border ${selected.bold ? "bg-blue-50 border-blue-400" : ""}`} title="Bold" aria-label="Bold" aria-pressed={selected.bold}>
                       <Bold className="w-4 h-4" />
                     </button>
-                    <button data-testid="text-italic" onClick={() => updateSelected({ italic: !selected.italic })} className={`p-1.5 rounded border ${selected.italic ? "bg-blue-50 border-blue-400" : ""}`} title="Italic">
+                    <button data-testid="text-italic" onClick={() => updateSelected({ italic: !selected.italic })} className={`p-1.5 rounded border ${selected.italic ? "bg-blue-50 border-blue-400" : ""}`} title="Italic" aria-label="Italic" aria-pressed={selected.italic}>
                       <Italic className="w-4 h-4" />
                     </button>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Size: {selected.fontSize}pt</label>
-                    <input data-testid="text-size" type="range" min={8} max={72} value={selected.fontSize} onChange={(e) => updateSelected({ fontSize: parseInt(e.target.value) })} className="w-full" />
+                    <input data-testid="text-size" aria-label="Font size" type="range" min={8} max={72} value={selected.fontSize} onChange={(e) => updateSelected({ fontSize: parseInt(e.target.value) })} className="w-full" />
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-700">Color</span>
-                    <input data-testid="text-color" type="color" value={selected.color} onChange={(e) => updateSelected({ color: e.target.value })} className="h-8 w-12 border rounded" />
+                    <input data-testid="text-color" aria-label="Text color" type="color" value={selected.color} onChange={(e) => updateSelected({ color: e.target.value })} className="h-8 w-12 border rounded" />
                   </div>
                   {/* Wave 5a — alignment / lists / line spacing */}
                   <div className="flex items-center gap-1">
@@ -4979,6 +5056,8 @@ export function EditorPage() {
                         onClick={() => updateSelected({ align: mode })}
                         className={`p-1.5 rounded border ${(selected.align ?? "left") === mode ? "bg-blue-50 border-blue-400" : ""}`}
                         title={`Align ${mode}`}
+                        aria-label={`Align ${mode}`}
+                        aria-pressed={(selected.align ?? "left") === mode}
                       >
                         <Icon className="w-4 h-4" />
                       </button>
@@ -4991,6 +5070,8 @@ export function EditorPage() {
                       onClick={() => updateSelected({ list: (selected.list ?? "none") === "bullet" ? "none" : "bullet" })}
                       className={`p-1.5 rounded border ${selected.list === "bullet" ? "bg-blue-50 border-blue-400" : ""}`}
                       title="Bulleted list"
+                      aria-label="Bulleted list"
+                      aria-pressed={selected.list === "bullet"}
                     >
                       <List className="w-4 h-4" />
                     </button>
@@ -4999,6 +5080,8 @@ export function EditorPage() {
                       onClick={() => updateSelected({ list: (selected.list ?? "none") === "number" ? "none" : "number" })}
                       className={`p-1.5 rounded border ${selected.list === "number" ? "bg-blue-50 border-blue-400" : ""}`}
                       title="Numbered list"
+                      aria-label="Numbered list"
+                      aria-pressed={selected.list === "number"}
                     >
                       <ListOrdered className="w-4 h-4" />
                     </button>
@@ -5026,19 +5109,19 @@ export function EditorPage() {
                   {selected.type !== "highlight" && (
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-700">Stroke</span>
-                      <input data-testid="shape-stroke-color" type="color" value={selected.strokeColor ?? "#000000"} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
+                      <input data-testid="shape-stroke-color" aria-label="Stroke color" type="color" value={selected.strokeColor ?? "#000000"} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
                     </div>
                   )}
                   {selected.type !== "highlight" && (
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Thickness: {selected.strokeWidth}pt</label>
-                      <input data-testid="shape-stroke-width" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
+                      <input data-testid="shape-stroke-width" aria-label="Stroke thickness" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
                     </div>
                   )}
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700">{selected.type === "highlight" ? "Color" : "Fill"}</span>
                     <div className="flex items-center gap-2">
-                      {selected.fillColor && <input data-testid="shape-fill-color" type="color" value={selected.fillColor} onChange={(e) => updateSelected({ fillColor: e.target.value })} className="h-7 w-10 border rounded" />}
+                      {selected.fillColor && <input data-testid="shape-fill-color" aria-label="Fill color" type="color" value={selected.fillColor} onChange={(e) => updateSelected({ fillColor: e.target.value })} className="h-7 w-10 border rounded" />}
                       {selected.type !== "highlight" && (
                         <button className="text-xs px-2 py-1 rounded border hover:bg-gray-50" onClick={() => updateSelected({ fillColor: selected.fillColor ? null : "#fde68a" })}>
                           {selected.fillColor ? "Clear" : "Add"}
@@ -5048,13 +5131,13 @@ export function EditorPage() {
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Opacity: {Math.round(selected.opacity * 100)}%</label>
-                    <input data-testid="shape-opacity" type="range" min={10} max={100} value={Math.round(selected.opacity * 100)} onChange={(e) => updateSelected({ opacity: parseInt(e.target.value) / 100 })} className="w-full" />
+                    <input data-testid="shape-opacity" aria-label="Opacity" type="range" min={10} max={100} value={Math.round(selected.opacity * 100)} onChange={(e) => updateSelected({ opacity: parseInt(e.target.value) / 100 })} className="w-full" />
                   </div>
                   {/* Wave 5a — corner radius (rect only) + dashed toggle (rect/ellipse) */}
                   {selected.type === "rect" && (
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Corner radius: {Math.round(selected.rx ?? 0)}pt</label>
-                      <input data-testid="shape-corner-radius" type="range" min={0} max={60} value={Math.round(selected.rx ?? 0)} onChange={(e) => updateSelected({ rx: parseInt(e.target.value) || undefined })} className="w-full" />
+                      <input data-testid="shape-corner-radius" aria-label="Corner radius" type="range" min={0} max={60} value={Math.round(selected.rx ?? 0)} onChange={(e) => updateSelected({ rx: parseInt(e.target.value) || undefined })} className="w-full" />
                     </div>
                   )}
                   {(selected.type === "rect" || selected.type === "ellipse") && (
@@ -5073,11 +5156,11 @@ export function EditorPage() {
                 <>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700">Stroke</span>
-                    <input data-testid="shape-stroke-color" type="color" value={selected.strokeColor} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
+                    <input data-testid="shape-stroke-color" aria-label="Stroke color" type="color" value={selected.strokeColor} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Thickness: {selected.strokeWidth}pt</label>
-                    <input data-testid="shape-stroke-width" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
+                    <input data-testid="shape-stroke-width" aria-label="Stroke thickness" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
                   </div>
                   <button
                     data-testid="shape-dash"
@@ -5115,17 +5198,17 @@ export function EditorPage() {
                 <>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-700">Stroke</span>
-                    <input data-testid="shape-stroke-color" type="color" value={selected.strokeColor} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
+                    <input data-testid="shape-stroke-color" aria-label="Stroke color" type="color" value={selected.strokeColor} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Thickness: {selected.strokeWidth}pt</label>
-                    <input data-testid="shape-stroke-width" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
+                    <input data-testid="shape-stroke-width" aria-label="Stroke thickness" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
                   </div>
                   {selected.closed && (
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-700">Fill</span>
                       <div className="flex items-center gap-2">
-                        {selected.fillColor && <input data-testid="shape-fill-color" type="color" value={selected.fillColor} onChange={(e) => updateSelected({ fillColor: e.target.value })} className="h-7 w-10 border rounded" />}
+                        {selected.fillColor && <input data-testid="shape-fill-color" aria-label="Fill color" type="color" value={selected.fillColor} onChange={(e) => updateSelected({ fillColor: e.target.value })} className="h-7 w-10 border rounded" />}
                         <button className="text-xs px-2 py-1 rounded border hover:bg-gray-50" onClick={() => updateSelected({ fillColor: selected.fillColor ? null : "#fde68a" })}>
                           {selected.fillColor ? "Clear" : "Add"}
                         </button>
@@ -5200,7 +5283,7 @@ export function EditorPage() {
                   </label>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Font size: {selected.fontSize ?? 12}pt</label>
-                    <input data-testid="field-fontsize" type="range" min={6} max={36} value={selected.fontSize ?? 12} onChange={(e) => updateSelected({ fontSize: parseInt(e.target.value) })} className="w-full" />
+                    <input data-testid="field-fontsize" aria-label="Font size" type="range" min={6} max={36} value={selected.fontSize ?? 12} onChange={(e) => updateSelected({ fontSize: parseInt(e.target.value) })} className="w-full" />
                   </div>
                 </>
               )}
@@ -5331,34 +5414,36 @@ export function EditorPage() {
                 data-testid="thumb-toggle"
                 onClick={() => setShowThumbs((v) => !v)}
                 title={showThumbs ? "Hide page thumbnails" : "Show page thumbnails"}
+                aria-label={showThumbs ? "Hide page thumbnails" : "Show page thumbnails"}
+                aria-pressed={showThumbs}
                 className={`p-1.5 rounded border ${showThumbs ? "bg-blue-50 border-blue-400 text-blue-600" : "hover:bg-gray-100 border-gray-300"}`}
               >
                 <PanelLeft className="w-4 h-4" />
               </button>
               <div className="flex items-center gap-1">
-                <Button testId="editor-zoom-out" size="sm" variant="outline" onClick={() => { setZoomMode("manual"); setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2))); }} title="Zoom out">
+                <Button testId="editor-zoom-out" size="sm" variant="outline" onClick={() => { setZoomMode("manual"); setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2))); }} title="Zoom out" ariaLabel="Zoom out">
                   <ZoomOut className="w-4 h-4" />
                 </Button>
                 <span data-testid="editor-zoom-level" className="text-sm w-12 text-center">{Math.round(zoom * 100)}%</span>
-                <Button testId="editor-zoom-in" size="sm" variant="outline" onClick={() => { setZoomMode("manual"); setZoom((z) => Math.min(2, +(z + 0.25).toFixed(2))); }} title="Zoom in">
+                <Button testId="editor-zoom-in" size="sm" variant="outline" onClick={() => { setZoomMode("manual"); setZoom((z) => Math.min(2, +(z + 0.25).toFixed(2))); }} title="Zoom in" ariaLabel="Zoom in">
                   <ZoomIn className="w-4 h-4" />
                 </Button>
-                <Button testId="zoom-fit-width" size="sm" variant={zoomMode === "fit-width" ? "primary" : "outline"} onClick={() => applyFit("fit-width")} title="Fit width">
+                <Button testId="zoom-fit-width" size="sm" variant={zoomMode === "fit-width" ? "primary" : "outline"} onClick={() => applyFit("fit-width")} title="Fit width" ariaLabel="Fit width" ariaPressed={zoomMode === "fit-width"}>
                   <MoveHorizontal className="w-4 h-4" />
                 </Button>
-                <Button testId="zoom-fit-page" size="sm" variant={zoomMode === "fit-page" ? "primary" : "outline"} onClick={() => applyFit("fit-page")} title="Fit page">
+                <Button testId="zoom-fit-page" size="sm" variant={zoomMode === "fit-page" ? "primary" : "outline"} onClick={() => applyFit("fit-page")} title="Fit page" ariaLabel="Fit page" ariaPressed={zoomMode === "fit-page"}>
                   <Maximize className="w-4 h-4" />
                 </Button>
               </div>
               <div className="flex items-center gap-1">
-                <Button testId="editor-prev-page" size="sm" variant="outline" disabled={currentPage <= 1} onClick={() => {
+                <Button testId="editor-prev-page" size="sm" variant="outline" disabled={currentPage <= 1} ariaLabel="Previous page" onClick={() => {
                   setCurrentPage((p) => p - 1);
                   setSelectedIds([]);
                 }}>
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
                 <span data-testid="editor-page-indicator" className="text-sm">{currentPage} / {pageCount}</span>
-                <Button testId="editor-next-page" size="sm" variant="outline" disabled={currentPage >= pageCount} onClick={() => {
+                <Button testId="editor-next-page" size="sm" variant="outline" disabled={currentPage >= pageCount} ariaLabel="Next page" onClick={() => {
                   setCurrentPage((p) => p + 1);
                   setSelectedIds([]);
                 }}>
@@ -5404,7 +5489,7 @@ export function EditorPage() {
                 <Save className="w-4 h-4 inline mr-1" />
                 {saveToDocuments.isPending ? "Saving…" : "Save"}
               </Button>
-              <Button testId="editor-close" variant="ghost" size="sm" onClick={() => {
+              <Button testId="editor-close" variant="ghost" size="sm" ariaLabel="Close and open another" onClick={() => {
                 setPdfBytes(null);
                 setAnnotations([]);
                 setPages([]);
@@ -5481,7 +5566,7 @@ export function EditorPage() {
           )}
 
           {(error || saveMsg || restoreNotice) && (
-            <div className="px-4 pt-3 space-y-2">
+            <div className="px-4 pt-3 space-y-2" role="status" aria-live="polite">
               {error && <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
               {saveMsg && <div className="p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">{saveMsg}</div>}
               {restoreNotice && <div data-testid="editable-restored" className="p-2 bg-blue-50 border border-blue-200 rounded text-blue-700 text-sm">Editable layer restored ✓</div>}
@@ -5634,6 +5719,8 @@ export function EditorPage() {
                   <div
                     ref={overlayRef}
                     data-testid="editor-canvas"
+                    role="application"
+                    aria-label="Page editing canvas"
                     className="absolute inset-0"
                     style={{ zIndex: 6, cursor: cursorFor, pointerEvents: "auto" }}
                     onMouseDown={handleOverlayMouseDown}
@@ -6074,10 +6161,19 @@ export function EditorPage() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onMouseDown={() => setStampDialog(false)}
         >
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            ref={stampA11y.ref}
+            onKeyDown={stampA11y.onKeyDown}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stamp-dialog-title"
+            className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 focus:outline-none"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Add a stamp</h3>
-              <button type="button" onClick={() => setStampDialog(false)} className="p-1 rounded hover:bg-gray-100" title="Close">
+              <h3 id="stamp-dialog-title" className="text-lg font-semibold">Add a stamp</h3>
+              <button type="button" onClick={() => setStampDialog(false)} className="p-1 rounded hover:bg-gray-100" title="Close" aria-label="Close">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -6137,7 +6233,16 @@ export function EditorPage() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onMouseDown={() => setDialog(null)}
         >
-          <div className={`bg-white rounded-lg shadow-xl ${dialog === "headerfooter" ? "w-[30rem]" : "w-80"} max-w-[90vw] max-h-[90vh] overflow-y-auto p-4`} onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            ref={assembleA11y.ref}
+            onKeyDown={assembleA11y.onKeyDown}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label={dialog === "blank" ? "Insert blank page" : dialog === "headerfooter" ? "Headers and footers" : dialog === "extract" ? "Extract pages" : "Delete pages"}
+            className={`bg-white rounded-lg shadow-xl ${dialog === "headerfooter" ? "w-[30rem]" : "w-80"} max-w-[90vw] max-h-[90vh] overflow-y-auto p-4 focus:outline-none`}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             {dialog === "blank" && (
               <>
                 <h3 className="font-semibold mb-3">Insert blank page</h3>
@@ -6295,17 +6400,24 @@ export function EditorPage() {
           onMouseDown={() => setShortcutsOpen(false)}
         >
           <div
-            className="bg-white rounded-lg shadow-xl w-[34rem] max-w-[92vw] max-h-[85vh] overflow-y-auto p-5"
+            ref={shortcutsA11y.ref}
+            onKeyDown={shortcutsA11y.onKeyDown}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shortcuts-dialog-title"
+            className="bg-white rounded-lg shadow-xl w-[34rem] max-w-[92vw] max-h-[85vh] overflow-y-auto p-5 focus:outline-none"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Keyboard shortcuts</h3>
+              <h3 id="shortcuts-dialog-title" className="text-lg font-semibold">Keyboard shortcuts</h3>
               <button
                 type="button"
                 data-testid="shortcuts-close"
                 onClick={() => setShortcutsOpen(false)}
                 className="p-1 rounded hover:bg-gray-100"
                 title="Close (Esc)"
+                aria-label="Close"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -6338,8 +6450,17 @@ export function EditorPage() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onMouseDown={() => setExportImageOpen(false)}
         >
-          <div className="bg-white rounded-lg shadow-xl w-80 max-w-[90vw] p-4" onMouseDown={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold mb-1">Export as image</h3>
+          <div
+            ref={exportImageA11y.ref}
+            onKeyDown={exportImageA11y.onKeyDown}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-image-dialog-title"
+            className="bg-white rounded-lg shadow-xl w-80 max-w-[90vw] p-4 focus:outline-none"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 id="export-image-dialog-title" className="font-semibold mb-1">Export as image</h3>
             <p className="text-xs text-gray-500 mb-3">Render the flattened document (annotations, header/footer and redaction baked in) to PNG or JPEG.</p>
             <div className="space-y-3 text-sm">
               <label className="block">
@@ -6380,8 +6501,17 @@ export function EditorPage() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onMouseDown={() => setMetaOpen(false)}
         >
-          <div className="bg-white rounded-lg shadow-xl w-96 max-w-[90vw] max-h-[90vh] overflow-y-auto p-4" onMouseDown={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold mb-1">Document info</h3>
+          <div
+            ref={metaA11y.ref}
+            onKeyDown={metaA11y.onKeyDown}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="metadata-dialog-title"
+            className="bg-white rounded-lg shadow-xl w-96 max-w-[90vw] max-h-[90vh] overflow-y-auto p-4 focus:outline-none"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 id="metadata-dialog-title" className="font-semibold mb-1">Document info</h3>
             <p className="text-xs text-gray-500 mb-3">Metadata written to the PDF Info dictionary on download and save.</p>
             <div className="space-y-3 text-sm">
               <label className="block">

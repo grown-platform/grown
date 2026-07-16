@@ -60,6 +60,15 @@ export function SignatureDialog({
   const drawing = useRef(false);
   const [hasDrawn, setHasDrawn] = useState(false);
   const [upload, setUpload] = useState<SigResult | null>(null);
+  // Wave 9 — restore focus to whatever opened the dialog on close.
+  const restoreRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    restoreRef.current = document.activeElement as HTMLElement | null;
+    return () => {
+      const r = restoreRef.current;
+      if (r && typeof r.focus === "function" && document.contains(r)) r.focus();
+    };
+  }, []);
 
   const label = kind === "initials" ? "Create initials" : "Create signature";
 
@@ -166,10 +175,22 @@ export function SignatureDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onMouseDown={onCancel}
     >
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-5" onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sig-dialog-title"
+        className="bg-white rounded-lg shadow-xl max-w-lg w-full p-5 focus:outline-none"
+        onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            onCancel();
+          }
+        }}
+      >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">{label}</h3>
-          <button type="button" onClick={onCancel} className="p-1 rounded hover:bg-gray-100" title="Close">
+          <h3 id="sig-dialog-title" className="text-lg font-semibold">{label}</h3>
+          <button type="button" onClick={onCancel} className="p-1 rounded hover:bg-gray-100" title="Close" aria-label="Close">
             <X className="w-4 h-4" />
           </button>
         </div>
