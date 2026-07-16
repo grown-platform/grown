@@ -55,12 +55,13 @@ Baseline gaps → become the backlog below.
 - [ ] Rotate annotations — DEFERRED to its own wave (touches export math; isolate the risk).
 
 ### Wave 3 — Page & document management
-- [ ] Thumbnail sidebar with drag-reorder, page context menu (duplicate/delete/rotate/insert).
-- [ ] Fit-to-width / fit-page zoom; page-jump input; continuous-scroll toggle.
-- [ ] Page sizes/templates (A4, Legal, A3, custom; portrait/landscape); background grid/lines/dots.
-- [ ] Unify undo/redo to cover page ops.
-- [ ] Merge/insert pages from another PDF; extract/split pages; delete range.
-- [ ] Headers/footers, page numbers, Bates numbering, date stamps.
+- [x] Thumbnail sidebar with drag-reorder, page context menu (duplicate/delete/rotate/insert). `5a8275e`
+- [x] Fit-to-width / fit-page zoom; page-jump input. `5a8275e` (continuous-scroll still deferred — render rework)
+- [x] Unify undo/redo to cover page ops. `5a8275e`
+- [ ] Page sizes/templates (A4, Legal, A3, custom; portrait/landscape); background grid/lines/dots. ← Wave 3b
+- [ ] Merge/insert pages from another PDF; extract/split pages; delete range. ← Wave 3b
+- [ ] Headers/footers, page numbers, Bates numbering, date stamps. ← Wave 3b
+- [ ] Continuous-scroll multi-page render — DEFERRED (render rework).
 
 ### Wave 4 — Forms & signing (Acrobat parity, on-brand for a signing product)
 - [ ] AcroForm fields: text, checkbox, radio, dropdown, date. Create + fill.
@@ -101,6 +102,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-15** — Wave 3a DONE (`5a8275e`): collapsible thumbnail sidebar (click-jump, drag-reorder, per-page menu), page-jump input, fit-width/fit-page zoom, and UNIFIED history `{annotations, pages, bytes}` so page ops are undoable with annotations. Hooks: `thumb-*`, `editor-page-jump`, `zoom-fit-width`, `zoom-fit-page`. 17/17 e2e (verified). Sidebar default-collapsed to avoid react-pdf DOM collision with existing specs. Next: Wave 3b (page sizes/templates, insert/merge/extract pages, headers/footers/page-numbers/Bates).
 - **2026-07-15** — Wave 2b DONE (`b4fdb15`): align/distribute for multi-selection, 8-handle perimeter resize + Shift aspect-lock, snapping to edges/centers/page-midlines with magenta guides, snap toggle + grid overlay. New hooks: `align-*`, `distribute-*`, `resize-{nw,n,ne,e,se,s,sw,w}`, `toggle-snap`, `toggle-grid`, `snap-guide`, `editor-grid`, `data-annot-{x,y,w,h}`. 12/12 e2e green (verified). Moves are now absolute (group snaps as one). Next: Wave 3 (page & document management) — start with 3a (thumbnails, page-jump, fit zoom, unify page-op undo).
 - **2026-07-15** — Wave 2a DONE (`68d7ee1`): multi-select (shift-click + marquee), group move/delete, z-order + shortcuts, internal clipboard (C/X/V cross-page). New hooks: `data-annot-id`/`data-annot-index`, `z-*`, `clip-*`, `arrange-panel`. Fixed StrictMode double-draw + focus-swallow bugs. 7/7 e2e green (verified). `selectedIds[]` is now the selection source of truth (`selectedId` derived). Next: Wave 2b (align/distribute, snapping/guides/grid, rotate + full resize handles).
 - **2026-07-15** — Wave 1 (enablement) DONE (`e43dcd9`): self-hosted pdf.js worker, testids everywhere, Playwright `editor` project + 3 specs (smoke/scratch/existing) all green, eslint config added. Verified tsc/lint/e2e myself. Next: Wave 2 (selection & object model).
