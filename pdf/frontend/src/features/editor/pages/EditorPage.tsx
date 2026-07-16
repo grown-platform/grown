@@ -273,6 +273,84 @@ function parsePageRange(str: string, max: number): number[] {
   return out;
 }
 
+// ---- Headers / footers / page numbers / Bates (Wave 3c) ---------------------
+// Document-level config (not a per-object annotation): six text slots resolved
+// with tokens ({page}/{pages}/{date}/{time}/{filename}/{bates}) at render/export.
+// {date}/{time} are captured ONCE when the user clicks Apply (appliedDate/Time)
+// so the live preview and every re-render/export agree — never Date.now() at
+// render time.
+type HfSlot = "headerLeft" | "headerCenter" | "headerRight" | "footerLeft" | "footerCenter" | "footerRight";
+interface HeaderFooterConfig {
+  enabled: boolean;
+  headerLeft: string;
+  headerCenter: string;
+  headerRight: string;
+  footerLeft: string;
+  footerCenter: string;
+  footerRight: string;
+  batesPrefix: string;
+  batesStart: number;
+  batesDigits: number;
+  fontSize: number; // pt
+  color: string;
+  range: string; // "all" or a page-range like "1-3,5"
+  margin: number; // pt from the page edge
+  appliedDate: string; // captured at Apply
+  appliedTime: string; // captured at Apply
+}
+const DEFAULT_HF: HeaderFooterConfig = {
+  enabled: false,
+  headerLeft: "",
+  headerCenter: "",
+  headerRight: "",
+  footerLeft: "",
+  footerCenter: "",
+  footerRight: "",
+  batesPrefix: "",
+  batesStart: 1,
+  batesDigits: 4,
+  fontSize: 10,
+  color: "#444444",
+  range: "all",
+  margin: 24,
+  appliedDate: "",
+  appliedTime: "",
+};
+const HF_SLOTS: { key: HfSlot; testId: string; label: string }[] = [
+  { key: "headerLeft", testId: "hf-header-left", label: "Header left" },
+  { key: "headerCenter", testId: "hf-header-center", label: "Header center" },
+  { key: "headerRight", testId: "hf-header-right", label: "Header right" },
+  { key: "footerLeft", testId: "hf-footer-left", label: "Footer left" },
+  { key: "footerCenter", testId: "hf-footer-center", label: "Footer center" },
+  { key: "footerRight", testId: "hf-footer-right", label: "Footer right" },
+];
+function zeroPad(n: number, digits: number): string {
+  const s = String(Math.max(0, Math.floor(n)));
+  const d = Math.max(1, Math.floor(digits));
+  return s.length >= d ? s : "0".repeat(d - s.length) + s;
+}
+// {bates} = prefix + zeroPad(start + pageIndex, digits) (pageIndex 0-based).
+function batesFor(hf: HeaderFooterConfig, pageIndex: number): string {
+  return hf.batesPrefix + zeroPad(hf.batesStart + pageIndex, hf.batesDigits);
+}
+// Resolve all tokens in one slot's template for a given (0-based) page.
+function resolveHfText(template: string, hf: HeaderFooterConfig, pageIndex: number, pageCount: number, filename: string): string {
+  if (!template) return "";
+  return template
+    .replace(/\{page\}/g, String(pageIndex + 1))
+    .replace(/\{pages\}/g, String(pageCount))
+    .replace(/\{date\}/g, hf.appliedDate)
+    .replace(/\{time\}/g, hf.appliedTime)
+    .replace(/\{filename\}/g, filename)
+    .replace(/\{bates\}/g, batesFor(hf, pageIndex));
+}
+// Does the header/footer apply to this (0-based) page? "all"/empty ⇒ every page.
+function hfAppliesTo(hf: HeaderFooterConfig, pageIndex: number, pageCount: number): boolean {
+  const r = hf.range.trim().toLowerCase();
+  if (!r || r === "all") return true;
+  return parsePageRange(hf.range, pageCount).includes(pageIndex);
+}
+
 const DEFAULT_FONT_SIZE = 16;
 const SHAPE_TOOLS: Tool[] = ["rect", "ellipse", "line", "arrow", "draw", "highlight", "underline", "strikethrough", "whiteout"];
 
@@ -495,7 +573,12 @@ export function EditorPage() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   // ---- Assemble dialogs (Wave 3b): blank template / import / extract / delete-range
-  const [dialog, setDialog] = useState<null | "blank" | "extract" | "deleteRange">(null);
+  // + headerfooter (Wave 3c). All share the modal overlay below.
+  const [dialog, setDialog] = useState<null | "blank" | "extract" | "deleteRange" | "headerfooter">(null);
+  // Header/footer document config (Wave 3c). Its own state, persisted across
+  // page navigation; not part of the annotation undo stack.
+  const [hf, setHf] = useState<HeaderFooterConfig>(DEFAULT_HF);
+  const patchHf = (patch: Partial<HeaderFooterConfig>) => setHf((h) => ({ ...h, ...patch }));
   const [blankSize, setBlankSize] = useState<PageSizeName>("Letter");
   const [blankOrient, setBlankOrient] = useState<"portrait" | "landscape">("portrait");
   const [blankBg, setBlankBg] = useState<PageBg>("none");
@@ -1661,8 +1744,40 @@ export function EditorPage() {
         }
       }
     }
+
+    // ---- Header / footer / page numbers / Bates (Wave 3c) -------------------
+    // Draw the six resolved slots on every in-range page at its four anchors,
+    // respecting the margin. Tokens resolve per-page; {date}/{time} use the
+    // timestamp captured at Apply so the export matches the live preview.
+    if (hf.enabled) {
+      const hfFont = await doc.embedFont(StandardFonts.Helvetica);
+      const { r, g, b } = hexToRgb(hf.color);
+      const hfColor = rgb(r, g, b);
+      const filename = docName || "document";
+      for (let i = 0; i < docPages.length; i++) {
+        if (!hfAppliesTo(hf, i, docPages.length)) continue;
+        const page = docPages[i];
+        const { width: pw, height: ph } = page.getSize();
+        const topY = ph - hf.margin - hf.fontSize;
+        const botY = hf.margin;
+        const draw = (template: string, edge: "top" | "bottom", align: "left" | "center" | "right") => {
+          const text = resolveHfText(template, hf, i, docPages.length, filename);
+          if (!text) return;
+          const tw = hfFont.widthOfTextAtSize(text, hf.fontSize);
+          const x = align === "left" ? hf.margin : align === "right" ? pw - hf.margin - tw : (pw - tw) / 2;
+          const y = edge === "top" ? topY : botY;
+          page.drawText(text, { x, y, size: hf.fontSize, font: hfFont, color: hfColor });
+        };
+        draw(hf.headerLeft, "top", "left");
+        draw(hf.headerCenter, "top", "center");
+        draw(hf.headerRight, "top", "right");
+        draw(hf.footerLeft, "bottom", "left");
+        draw(hf.footerCenter, "bottom", "center");
+        draw(hf.footerRight, "bottom", "right");
+      }
+    }
     return doc.save();
-  }, [pdfBytes, annotations]);
+  }, [pdfBytes, annotations, hf, docName]);
 
   const handleDownload = async () => {
     setBusy(true);
@@ -1980,6 +2095,64 @@ export function EditorPage() {
     insertBlankAt(currentPageRef.current, { blankW: w, blankH: h, blankBg });
   };
 
+  // Apply the header/footer: capture {date}/{time} ONCE (stable across renders
+  // + export) and enable it. Clear turns it off (fields are kept so re-opening
+  // the dialog restores them).
+  const applyHeaderFooter = () => {
+    const now = new Date();
+    patchHf({ enabled: true, appliedDate: now.toLocaleDateString(), appliedTime: now.toLocaleTimeString() });
+    setDialog(null);
+  };
+  const clearHeaderFooter = () => {
+    patchHf({ enabled: false });
+    setDialog(null);
+  };
+
+  // Live header/footer preview overlay for the CURRENT page (tokens resolved
+  // per-page). Only shown when enabled and this page is in range.
+  const renderHfPreview = () => {
+    if (!hf.enabled || !hfAppliesTo(hf, currentPage - 1, pageCount)) return null;
+    const mPx = hf.margin * pxScale;
+    const fPx = hf.fontSize * pxScale;
+    const slot = (key: HfSlot, testId: string, edge: "top" | "bottom", align: "left" | "center" | "right") => {
+      const text = resolveHfText(hf[key] as string, hf, currentPage - 1, pageCount, docName);
+      if (!text) return null;
+      const style: React.CSSProperties = {
+        position: "absolute",
+        fontSize: fPx,
+        lineHeight: 1.2,
+        color: hf.color,
+        fontFamily: "Helvetica, Arial, sans-serif",
+        whiteSpace: "pre",
+        [edge]: mPx,
+      };
+      if (align === "left") style.left = mPx;
+      else if (align === "right") {
+        style.right = mPx;
+        style.textAlign = "right";
+      } else {
+        style.left = 0;
+        style.right = 0;
+        style.textAlign = "center";
+      }
+      return (
+        <div key={testId} data-testid={testId} style={style}>
+          {text}
+        </div>
+      );
+    };
+    return (
+      <div data-testid="hf-preview" className="absolute inset-0" style={{ zIndex: 3, pointerEvents: "none" }}>
+        {slot("headerLeft", "hf-preview-header-left", "top", "left")}
+        {slot("headerCenter", "hf-preview-header-center", "top", "center")}
+        {slot("headerRight", "hf-preview-header-right", "top", "right")}
+        {slot("footerLeft", "hf-preview-footer-left", "bottom", "left")}
+        {slot("footerCenter", "hf-preview-footer-center", "bottom", "center")}
+        {slot("footerRight", "hf-preview-footer-right", "bottom", "right")}
+      </div>
+    );
+  };
+
   // ---- Editor shell ---------------------------------------------------------
   return (
     <div className="flex flex-col lg:flex-row lg:h-[calc(100vh-3rem)] gap-4 p-2">
@@ -2212,6 +2385,9 @@ export function EditorPage() {
                 <Trash2 className="w-4 h-4 inline mr-1" /> Del range…
               </Button>
             </div>
+            <Button testId="headerfooter-open" size="sm" variant={hf.enabled ? "primary" : "outline"} onClick={() => setDialog("headerfooter")} disabled={busy} className="w-full">
+              <Type className="w-4 h-4 inline mr-1" /> Headers &amp; footers…
+            </Button>
           </div>
         </Card>
 
@@ -2501,6 +2677,9 @@ export function EditorPage() {
                     />
                   )}
 
+                  {/* Live header/footer preview (Wave 3c) */}
+                  {renderHfPreview()}
+
                   {/* Vector overlay (shapes/lines/ink) + selection chrome */}
                   <svg className="absolute inset-0" width={renderWidth} height={overlayH} style={{ zIndex: 5 }}>
                     {pageAnnotations.filter((a) => isBox(a) || isLine(a) || a.type === "ink").map((a) => renderShape(a))}
@@ -2687,7 +2866,7 @@ export function EditorPage() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onMouseDown={() => setDialog(null)}
         >
-          <div className="bg-white rounded-lg shadow-xl w-80 max-w-[90vw] p-4" onMouseDown={(e) => e.stopPropagation()}>
+          <div className={`bg-white rounded-lg shadow-xl ${dialog === "headerfooter" ? "w-[30rem]" : "w-80"} max-w-[90vw] max-h-[90vh] overflow-y-auto p-4`} onMouseDown={(e) => e.stopPropagation()}>
             {dialog === "blank" && (
               <>
                 <h3 className="font-semibold mb-3">Insert blank page</h3>
@@ -2759,6 +2938,79 @@ export function EditorPage() {
                   <Button size="sm" testId="delete-range-confirm" onClick={() => { setDialog(null); handleDeleteRange(deleteRangeStr); }}>Delete</Button>
                 </div>
               </>
+            )}
+            {dialog === "headerfooter" && (
+              <div data-testid="hf-dialog">
+                <h3 className="font-semibold mb-1">Headers &amp; footers</h3>
+                <p className="text-xs text-gray-500 mb-3">
+                  Tokens:{" "}
+                  <code className="bg-gray-100 px-1 rounded">{"{page}"}</code>{" "}
+                  <code className="bg-gray-100 px-1 rounded">{"{pages}"}</code>{" "}
+                  <code className="bg-gray-100 px-1 rounded">{"{date}"}</code>{" "}
+                  <code className="bg-gray-100 px-1 rounded">{"{time}"}</code>{" "}
+                  <code className="bg-gray-100 px-1 rounded">{"{filename}"}</code>{" "}
+                  <code className="bg-gray-100 px-1 rounded">{"{bates}"}</code>
+                </p>
+                <div className="space-y-2 text-sm">
+                  {HF_SLOTS.map(({ key, testId, label }) => (
+                    <label key={testId} className="block">
+                      <span className="text-gray-600 text-xs">{label}</span>
+                      <input
+                        data-testid={testId}
+                        value={hf[key] as string}
+                        onChange={(e) => patchHf({ [key]: e.target.value } as Partial<HeaderFooterConfig>)}
+                        placeholder="e.g. {page} / {pages}"
+                        className="w-full border rounded px-2 py-1 mt-0.5"
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                <div className="mt-3 pt-3 border-t">
+                  <p className="text-xs font-medium text-gray-700 mb-1">Bates numbering</p>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <label className="block">
+                      <span className="text-gray-600 text-xs">Prefix</span>
+                      <input data-testid="hf-bates-prefix" value={hf.batesPrefix} onChange={(e) => patchHf({ batesPrefix: e.target.value })} className="w-full border rounded px-2 py-1 mt-0.5" />
+                    </label>
+                    <label className="block">
+                      <span className="text-gray-600 text-xs">Start</span>
+                      <input data-testid="hf-bates-start" type="number" value={hf.batesStart} onChange={(e) => patchHf({ batesStart: parseInt(e.target.value) || 0 })} className="w-full border rounded px-2 py-1 mt-0.5" />
+                    </label>
+                    <label className="block">
+                      <span className="text-gray-600 text-xs">Digits</span>
+                      <input data-testid="hf-bates-digits" type="number" min={1} max={12} value={hf.batesDigits} onChange={(e) => patchHf({ batesDigits: parseInt(e.target.value) || 1 })} className="w-full border rounded px-2 py-1 mt-0.5" />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t grid grid-cols-2 gap-2 text-sm">
+                  <label className="block">
+                    <span className="text-gray-600 text-xs">Font size (pt)</span>
+                    <input data-testid="hf-fontsize" type="number" min={6} max={48} value={hf.fontSize} onChange={(e) => patchHf({ fontSize: parseInt(e.target.value) || 1 })} className="w-full border rounded px-2 py-1 mt-0.5" />
+                  </label>
+                  <label className="block">
+                    <span className="text-gray-600 text-xs">Color</span>
+                    <input data-testid="hf-color" type="color" value={hf.color} onChange={(e) => patchHf({ color: e.target.value })} className="w-full h-9 border rounded px-1 py-1 mt-0.5" />
+                  </label>
+                  <label className="block">
+                    <span className="text-gray-600 text-xs">Apply to pages</span>
+                    <input data-testid="hf-range" value={hf.range} onChange={(e) => patchHf({ range: e.target.value })} placeholder="all or 1-3,5" className="w-full border rounded px-2 py-1 mt-0.5" />
+                  </label>
+                  <label className="block">
+                    <span className="text-gray-600 text-xs">Margin (pt)</span>
+                    <input data-testid="hf-margin" type="number" min={0} value={hf.margin} onChange={(e) => patchHf({ margin: parseInt(e.target.value) || 0 })} className="w-full border rounded px-2 py-1 mt-0.5" />
+                  </label>
+                </div>
+
+                <div className="flex justify-between gap-2 mt-4">
+                  <Button size="sm" variant="ghost" testId="hf-clear" onClick={clearHeaderFooter}>Clear</Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => setDialog(null)}>Cancel</Button>
+                    <Button size="sm" testId="hf-apply" onClick={applyHeaderFooter}>Apply</Button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>
