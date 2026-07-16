@@ -59,6 +59,10 @@ import {
   MoveHorizontal,
   Maximize,
   MoreHorizontal,
+  FormInput,
+  CheckSquare,
+  CircleDot,
+  ChevronDownSquare,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -130,7 +134,11 @@ type Tool =
   | "highlight"
   | "underline"
   | "strikethrough"
-  | "whiteout";
+  | "whiteout"
+  | "field-text"
+  | "field-check"
+  | "field-radio"
+  | "field-dropdown";
 
 type FontFamily = "Helvetica" | "Times" | "Courier";
 
@@ -191,17 +199,42 @@ interface InkAnnotation {
   strokeColor: string;
   strokeWidth: number; // pt
 }
+// ---- AcroForm fields (Wave 4a) ---------------------------------------------
+// An interactive form field. Shares the x/y/width/height box shape with
+// box/image annotations so selection, move, resize, z-order, clipboard and
+// undo all reuse the existing infra. `value` is boolean for checkboxes,
+// string for text/dropdown/radio (the selected option). `options` drives the
+// choices for dropdown + radio; `groupName` is a radio group's export name.
+type FieldType = "text" | "checkbox" | "radio" | "dropdown";
+interface FieldAnnotation {
+  id: string;
+  type: "field";
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fieldType: FieldType;
+  name: string;
+  value: string | boolean;
+  options?: string[];
+  groupName?: string;
+  required?: boolean;
+  fontSize?: number;
+}
 type Annotation =
   | TextAnnotation
   | ImageAnnotation
   | BoxAnnotation
   | LineAnnotation
-  | InkAnnotation;
+  | InkAnnotation
+  | FieldAnnotation;
 
 const isBox = (a: Annotation): a is BoxAnnotation =>
   a.type === "rect" || a.type === "ellipse" || a.type === "highlight" ||
   a.type === "underline" || a.type === "strikethrough" || a.type === "whiteout";
 const isLine = (a: Annotation): a is LineAnnotation => a.type === "line" || a.type === "arrow";
+const isField = (a: Annotation): a is FieldAnnotation => a.type === "field";
 
 // A blank page (srcIndex === -1) can carry its own size + background template;
 // undefined ⇒ Letter / no background (back-compat with pre-Wave-3b snapshots).
@@ -353,6 +386,40 @@ function hfAppliesTo(hf: HeaderFooterConfig, pageIndex: number, pageCount: numbe
 
 const DEFAULT_FONT_SIZE = 16;
 const SHAPE_TOOLS: Tool[] = ["rect", "ellipse", "line", "arrow", "draw", "highlight", "underline", "strikethrough", "whiteout"];
+const FIELD_TOOLS: Tool[] = ["field-text", "field-check", "field-radio", "field-dropdown"];
+const isFieldTool = (t: Tool): boolean => FIELD_TOOLS.includes(t);
+// Map a field placement tool to the field variant it creates.
+const FIELD_TOOL_TYPE: Record<string, FieldType> = {
+  "field-text": "text",
+  "field-check": "checkbox",
+  "field-radio": "radio",
+  "field-dropdown": "dropdown",
+};
+// Default normalized field size for a click-placed field. Checkbox/radio need a
+// square-ish box, so height is derived from width via the page aspect (the px
+// scale is uniform) to look square on screen.
+function defaultFieldRect(ft: FieldType, x: number, y: number, pageAspect: number): { x: number; y: number; width: number; height: number } {
+  let width: number;
+  let height: number;
+  if (ft === "checkbox") {
+    width = 0.03;
+    height = width / pageAspect;
+  } else if (ft === "radio") {
+    width = 0.28;
+    height = 0.09; // ~2 stacked options
+  } else {
+    width = 0.28;
+    height = 0.035;
+  }
+  return { x: clamp01(Math.min(x, 1 - width)), y: clamp01(Math.min(y, 1 - height)), width, height };
+}
+// Parse a comma/newline-separated options list into a trimmed, non-empty array.
+function parseOptions(str: string): string[] {
+  return str
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
@@ -599,6 +666,10 @@ export function EditorPage() {
   const [strokeWidth, setStrokeWidth] = useState(2);
   const [fillColor, setFillColor] = useState<string | null>(null);
   const [textColor] = useState("#111111");
+  // Export option (Wave 4a): bake form fields into static content when ON.
+  const [flattenForms, setFlattenForms] = useState(false);
+  // Monotonic counter for default field names (text_1, checkbox_2, …).
+  const fieldSeq = useRef(0);
 
   // ---- Snapping + grid (Wave 2b) --------------------------------------------
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -646,6 +717,9 @@ export function EditorPage() {
   // A shape click/marquee-drag already resolved selection — stop the trailing
   // canvas onClick from clearing it.
   const suppressCanvasClick = useRef(false);
+  // True once a move gesture actually translated the selection, so a field's
+  // trailing onClick (fill/toggle) is skipped after a drag-move.
+  const gestureMoved = useRef(false);
 
   // ---- Undo / redo ----------------------------------------------------------
   // A snapshot captures BOTH annotations AND the page structure (+ the pdf bytes
@@ -1065,6 +1139,35 @@ export function EditorPage() {
     return false;
   };
 
+  // Build a new field annotation of the given variant at a normalized rect.
+  const makeField = (ft: FieldType, rect: { x: number; y: number; width: number; height: number }): FieldAnnotation => {
+    const n = ++fieldSeq.current;
+    const base: FieldAnnotation = {
+      id: uid(),
+      type: "field",
+      page: currentPageRef.current,
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      fieldType: ft,
+      name: `${ft}_${n}`,
+      value: ft === "checkbox" ? false : "",
+      fontSize: 12,
+    };
+    if (ft === "dropdown") base.options = ["Option 1", "Option 2"];
+    if (ft === "radio") {
+      base.options = ["Option 1", "Option 2"];
+      base.groupName = `radio_${n}`;
+    }
+    return base;
+  };
+  // Patch a field annotation by id (used by inline fill controls, which may act
+  // on a field that isn't the single selection).
+  const setFieldValue = (id: string, patch: Partial<FieldAnnotation>) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id && isField(a) ? { ...a, ...patch } : a)));
+  };
+
   // ---- Placement (text/image) + draw start ----------------------------------
   const handleOverlayMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     // Fresh gesture — clear any stale click-suppression from the previous one.
@@ -1074,7 +1177,7 @@ export function EditorPage() {
     // shortcuts like Ctrl+C/V aren't swallowed by the "editing a field" guard.
     const active = document.activeElement as HTMLElement | null;
     if (active && (active.tagName === "INPUT" || active.tagName === "SELECT")) active.blur();
-    if (SHAPE_TOOLS.includes(tool)) {
+    if (SHAPE_TOOLS.includes(tool) || isFieldTool(tool)) {
       e.preventDefault();
       const { x, y } = toNorm(e.clientX, e.clientY);
       drawState.current = {
@@ -1192,6 +1295,7 @@ export function EditorPage() {
     if (tool !== "select") return;
     // Don't drag the box you're currently typing into — let the caret work.
     if (editingId === ann.id) return;
+    gestureMoved.current = false;
     e.stopPropagation();
     // Shift/Cmd-click toggles the annotation in/out of the selection (no drag).
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
@@ -1220,7 +1324,7 @@ export function EditorPage() {
     setSelectedIds([id]);
     snapshot();
     const a = annotationsRef.current.find((x) => x.id === id);
-    const start = a && (isBox(a) || a.type === "image") ? { x: a.x, y: a.y, width: a.width, height: a.height } : null;
+    const start = a && (isBox(a) || a.type === "image" || isField(a)) ? { x: a.x, y: a.y, width: a.width, height: a.height } : null;
     const others = annotationsRef.current.filter((o) => o.page === currentPageRef.current && o.id !== id);
     resizeState.current = { id, handle, start, targets: snapTargets(others, pageAspectRef.current) };
   };
@@ -1248,6 +1352,25 @@ export function EditorPage() {
           y = Math.min(dw.sy, ny),
           w = Math.abs(nx - dw.sx),
           h = Math.abs(ny - dw.sy);
+        if (isFieldTool(dw.tool)) {
+          // Rubber-band preview box while dragging a field into place.
+          const ft = FIELD_TOOL_TYPE[dw.tool];
+          const draftField: FieldAnnotation = {
+            id: "draft",
+            type: "field",
+            page: currentPage,
+            x,
+            y,
+            width: w,
+            height: h,
+            fieldType: ft,
+            name: "",
+            value: ft === "checkbox" ? false : "",
+          };
+          draftRef.current = draftField;
+          setDraft(draftField);
+          return;
+        }
         let next: Annotation;
         if (dw.tool === "line" || dw.tool === "arrow") {
           next = { id: "draft", type: dw.tool, page: currentPage, x1: dw.sx, y1: dw.sy, x2: nx, y2: ny, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth };
@@ -1352,6 +1475,7 @@ export function EditorPage() {
         ds.applied.dx = finalDx;
         ds.applied.dy = finalDy;
         if (incDx !== 0 || incDy !== 0) {
+          gestureMoved.current = true;
           setAnnotations((prev) => prev.map((a) => (ds.ids.includes(a.id) ? translate(a, incDx, incDy) : a)));
         }
         setGuides(gs);
@@ -1359,7 +1483,27 @@ export function EditorPage() {
     };
     const onUp = () => {
       if (drawState.current) {
+        const dtool = drawState.current.tool;
         const d = draftRef.current;
+        if (isFieldTool(dtool)) {
+          // Commit a field: use the dragged box if big enough, else a default
+          // box at the mousedown point (a plain click places a default field).
+          const ft = FIELD_TOOL_TYPE[dtool];
+          const dragged = d && d.type === "field" && d.width > 0.02 && d.height > 0.01;
+          const rect = dragged
+            ? { x: d!.x, y: d!.y, width: (d as FieldAnnotation).width, height: (d as FieldAnnotation).height }
+            : defaultFieldRect(ft, drawState.current.sx, drawState.current.sy, pageAspectRef.current);
+          const committed = makeField(ft, rect);
+          snapshot();
+          setAnnotations((p) => [...p, committed]);
+          setSelectedIds([committed.id]);
+          setTool("select");
+          suppressCanvasClick.current = true;
+          draftRef.current = null;
+          setDraft(null);
+          drawState.current = null;
+          return;
+        }
         if (d) {
           const big =
             d.type === "ink"
@@ -1776,8 +1920,86 @@ export function EditorPage() {
         draw(hf.footerRight, "bottom", "right");
       }
     }
+
+    // ---- AcroForm fields (Wave 4a) ------------------------------------------
+    // Turn each field annotation into a REAL interactive AcroForm field via the
+    // pdf-lib Form API. Normalized top-left rects convert to pdf-lib's bottom-up
+    // rect: y = pageHeight - (top * pageHeight) - height. Field names are made
+    // unique (radios join by shared groupName, which is intentional). With
+    // `flattenForms` ON we bake the fields into static content after setting
+    // values; OFF leaves them live and fillable.
+    const fieldAnns = annotations.filter(isField);
+    if (fieldAnns.length) {
+      const form = doc.getForm();
+      const formFont = await doc.embedFont(StandardFonts.Helvetica);
+      const usedNames = new Set<string>();
+      const uniqueName = (base: string): string => {
+        const root = base || "field";
+        let name = root;
+        let i = 1;
+        while (usedNames.has(name)) name = `${root}_${i++}`;
+        usedNames.add(name);
+        return name;
+      };
+      // Original groupName → created PDFRadioGroup, so annotations that share a
+      // groupName add their options to the same group.
+      const radioGroups = new Map<string, ReturnType<typeof form.createRadioGroup>>();
+      for (const f of fieldAnns) {
+        const page = docPages[f.page - 1];
+        if (!page) continue;
+        const { width: pw, height: ph } = page.getSize();
+        const x = f.x * pw;
+        const w = f.width * pw;
+        const h = f.height * ph;
+        const y = ph - f.y * ph - h; // top-left (normalized) → bottom-left (PDF)
+        const size = f.fontSize ?? 12;
+        try {
+          if (f.fieldType === "text") {
+            const tf = form.createTextField(uniqueName(f.name));
+            if (typeof f.value === "string" && f.value) tf.setText(f.value);
+            if (f.required) tf.enableRequired();
+            tf.setFontSize(size);
+            tf.addToPage(page, { x, y, width: w, height: h, font: formFont, borderWidth: 1 });
+          } else if (f.fieldType === "checkbox") {
+            const cb = form.createCheckBox(uniqueName(f.name));
+            if (f.required) cb.enableRequired();
+            cb.addToPage(page, { x, y, width: w, height: h });
+            if (f.value === true) cb.check();
+            else cb.uncheck();
+          } else if (f.fieldType === "dropdown") {
+            const dd = form.createDropdown(uniqueName(f.name));
+            const opts = (f.options ?? []).filter(Boolean);
+            if (opts.length) dd.addOptions(opts);
+            if (f.required) dd.enableRequired();
+            if (typeof f.value === "string" && f.value && opts.includes(f.value)) dd.select(f.value);
+            dd.setFontSize(size);
+            dd.addToPage(page, { x, y, width: w, height: h, font: formFont });
+          } else if (f.fieldType === "radio") {
+            const key = f.groupName || f.name || "radio";
+            let rg = radioGroups.get(key);
+            if (!rg) {
+              rg = form.createRadioGroup(uniqueName(key));
+              if (f.required) rg.enableRequired();
+              radioGroups.set(key, rg);
+            }
+            const opts = (f.options ?? []).filter(Boolean);
+            const n = Math.max(1, opts.length);
+            const rowH = h / n;
+            opts.forEach((opt, i) => {
+              // Stack options top-to-bottom within the field box.
+              const oy = y + (n - 1 - i) * rowH;
+              rg!.addOptionToPage(opt, page, { x, y: oy, width: Math.min(rowH, w), height: rowH });
+            });
+            if (typeof f.value === "string" && f.value && opts.includes(f.value)) rg.select(f.value);
+          }
+        } catch {
+          // Skip a single malformed field rather than failing the whole export.
+        }
+      }
+      if (flattenForms) form.flatten();
+    }
     return doc.save();
-  }, [pdfBytes, annotations, hf, docName]);
+  }, [pdfBytes, annotations, hf, docName, flattenForms]);
 
   const handleDownload = async () => {
     setBusy(true);
@@ -2001,7 +2223,7 @@ export function EditorPage() {
 
     let single: React.ReactNode = null;
     if (selected && selected.page === currentPage) {
-      if (isBox(selected) || selected.type === "image") {
+      if (isBox(selected) || selected.type === "image" || isField(selected)) {
         const a = selected as BoxAnnotation;
         const lx = X(a.x);
         const cx = X(a.x + a.width / 2);
@@ -2059,6 +2281,10 @@ export function EditorPage() {
     { t: "arrow", icon: ArrowUpRight, label: "Arrow" },
     { t: "whiteout", icon: Eraser, label: "Whiteout" },
     { t: "image", icon: ImageIcon, label: "Image" },
+    { t: "field-text", icon: FormInput, label: "Text field" },
+    { t: "field-check", icon: CheckSquare, label: "Checkbox" },
+    { t: "field-radio", icon: CircleDot, label: "Radio" },
+    { t: "field-dropdown", icon: ChevronDownSquare, label: "Dropdown" },
   ];
   // Playwright hooks map each Tool to a stable `tool-<name>` testid.
   const toolTestId: Record<Tool, string> = {
@@ -2074,6 +2300,10 @@ export function EditorPage() {
     arrow: "tool-arrow",
     whiteout: "tool-whiteout",
     image: "tool-image",
+    "field-text": "tool-field-text",
+    "field-check": "tool-field-check",
+    "field-radio": "tool-field-radio",
+    "field-dropdown": "tool-field-dropdown",
   };
 
   const showStylePanel = SHAPE_TOOLS.includes(tool);
@@ -2227,7 +2457,9 @@ export function EditorPage() {
                   ? "Click the page, then choose an image."
                   : tool === "draw"
                     ? "Drag on the page to draw freehand."
-                    : "Drag on the page to draw."}
+                    : isFieldTool(tool)
+                      ? "Click or drag on the page to place a form field."
+                      : "Drag on the page to draw."}
             </p>
           )}
         </Card>
@@ -2475,6 +2707,68 @@ export function EditorPage() {
                   </div>
                 </>
               )}
+              {isField(selected) && (
+                <>
+                  <label className="block">
+                    <span className="text-xs text-gray-600">Field name</span>
+                    <input data-testid="field-name" value={selected.name} onChange={(e) => updateSelected({ name: e.target.value })} className="w-full border rounded px-2 py-1 mt-0.5 text-sm" />
+                  </label>
+                  {selected.fieldType === "radio" && (
+                    <label className="block">
+                      <span className="text-xs text-gray-600">Group name</span>
+                      <input data-testid="field-group" value={selected.groupName ?? ""} onChange={(e) => updateSelected({ groupName: e.target.value })} className="w-full border rounded px-2 py-1 mt-0.5 text-sm" />
+                    </label>
+                  )}
+                  {(selected.fieldType === "dropdown" || selected.fieldType === "radio") && (
+                    <label className="block">
+                      <span className="text-xs text-gray-600">Options (comma or newline)</span>
+                      <textarea
+                        data-testid="field-options"
+                        rows={2}
+                        value={(selected.options ?? []).join(", ")}
+                        onChange={(e) => updateSelected({ options: parseOptions(e.target.value) })}
+                        className="w-full border rounded px-2 py-1 mt-0.5 text-sm"
+                      />
+                    </label>
+                  )}
+                  <div>
+                    <span className="text-xs text-gray-600">Default value</span>
+                    {selected.fieldType === "checkbox" ? (
+                      <label className="flex items-center gap-2 mt-1 text-sm">
+                        <input data-testid="field-value" type="checkbox" checked={selected.value === true} onChange={(e) => { snapshot(); updateSelected({ value: e.target.checked }); }} />
+                        Checked by default
+                      </label>
+                    ) : selected.fieldType === "dropdown" || selected.fieldType === "radio" ? (
+                      <select
+                        data-testid="field-value"
+                        value={typeof selected.value === "string" ? selected.value : ""}
+                        onChange={(e) => { snapshot(); updateSelected({ value: e.target.value }); }}
+                        className="w-full border rounded px-2 py-1 mt-0.5 text-sm"
+                      >
+                        <option value=""></option>
+                        {(selected.options ?? []).map((opt, i) => (
+                          <option key={i} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        data-testid="field-value"
+                        value={typeof selected.value === "string" ? selected.value : ""}
+                        onChange={(e) => updateSelected({ value: e.target.value })}
+                        className="w-full border rounded px-2 py-1 mt-0.5 text-sm"
+                      />
+                    )}
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input data-testid="field-required" type="checkbox" checked={selected.required === true} onChange={(e) => updateSelected({ required: e.target.checked })} />
+                    Required
+                  </label>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Font size: {selected.fontSize ?? 12}pt</label>
+                    <input data-testid="field-fontsize" type="range" min={6} max={36} value={selected.fontSize ?? 12} onChange={(e) => updateSelected({ fontSize: parseInt(e.target.value) })} className="w-full" />
+                  </div>
+                </>
+              )}
               {selected.type === "image" && <p className="text-xs text-gray-500">Drag the corner handle to resize, or drag the image to move it.</p>}
               {selected.type === "whiteout" && <p className="text-xs text-gray-500">Covers content with a solid white box. Drag to move, corner to resize.</p>}
             </div>
@@ -2626,6 +2920,10 @@ export function EditorPage() {
                   }}
                 />
               </div>
+              <label data-testid="flatten-forms-label" className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer" title="Bake form fields into static content on export">
+                <input data-testid="flatten-forms" type="checkbox" checked={flattenForms} onChange={(e) => setFlattenForms(e.target.checked)} />
+                Flatten forms
+              </label>
               <Button testId="editor-download" variant="outline" size="sm" onClick={handleDownload} disabled={busy}>
                 <Download className="w-4 h-4 inline mr-1" /> Download
               </Button>
@@ -2684,6 +2982,19 @@ export function EditorPage() {
                   <svg className="absolute inset-0" width={renderWidth} height={overlayH} style={{ zIndex: 5 }}>
                     {pageAnnotations.filter((a) => isBox(a) || isLine(a) || a.type === "ink").map((a) => renderShape(a))}
                     {draft && (isBox(draft) || isLine(draft) || draft.type === "ink") && renderShape(draft, true)}
+                    {draft && draft.type === "field" && (
+                      <rect
+                        x={draft.x * renderWidth}
+                        y={draft.y * overlayH}
+                        width={draft.width * renderWidth}
+                        height={draft.height * overlayH}
+                        fill="rgba(37,99,235,0.06)"
+                        stroke="#2563eb"
+                        strokeDasharray="4 3"
+                        strokeWidth={1}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    )}
                     {marquee && (
                       <rect
                         data-testid="editor-marquee"
@@ -2717,7 +3028,7 @@ export function EditorPage() {
                     onMouseDown={handleOverlayMouseDown}
                     onClick={handleOverlayClick}
                   >
-                    {pageAnnotations.filter((a) => a.type === "text" || a.type === "image").map((ann) => {
+                    {pageAnnotations.filter((a) => a.type === "text" || a.type === "image" || a.type === "field").map((ann) => {
                       const isSel = isSelected(ann.id);
                       const isSingleSel = ann.id === selectedId;
                       const interactive = tool === "select";
@@ -2817,6 +3128,113 @@ export function EditorPage() {
                             {ann.text || " "}
                             {isSingleSel && interactive && (
                               <span onMouseDown={(e) => startResize(e, ann.id, "br")} className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-white border-2 border-blue-600" style={{ cursor: "ew-resize", pointerEvents: "auto" }} />
+                            )}
+                          </div>
+                        );
+                      }
+                      if (ann.type === "field") {
+                        // Interactive-looking form control on the page overlay.
+                        // Placing is via the field tools; filling happens here
+                        // with the select tool (interactive). Move/select come
+                        // from the container's startMove + onClick.
+                        const fontPx = ((ann.fontSize ?? 12) * renderWidth) / POINTS_WIDE;
+                        const fieldClick = (e: React.MouseEvent) => {
+                          e.stopPropagation();
+                          if (e.shiftKey || e.metaKey || e.ctrlKey) return; // toggle handled in startMove
+                          setSelectedIds([ann.id]);
+                          if (!interactive || gestureMoved.current) return;
+                          if (ann.fieldType === "checkbox") {
+                            snapshot();
+                            setFieldValue(ann.id, { value: ann.value !== true });
+                          }
+                        };
+                        const opts = ann.options ?? [];
+                        return (
+                          <div
+                            key={ann.id}
+                            data-testid={`field-${ann.id}`}
+                            data-annot-id={ann.id}
+                            data-annot-index={annIndex}
+                            data-annot-x={ann.x}
+                            data-annot-y={ann.y}
+                            data-annot-w={ann.width}
+                            data-annot-h={ann.height}
+                            data-field-type={ann.fieldType}
+                            onMouseDown={(e) => startMove(e, ann)}
+                            onClick={fieldClick}
+                            className={`absolute box-border ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-move" : ""}`}
+                            style={{
+                              left: `${ann.x * 100}%`,
+                              top: `${ann.y * 100}%`,
+                              width: `${ann.width * 100}%`,
+                              height: `${ann.height * 100}%`,
+                              border: ann.fieldType === "radio" ? "none" : "1px solid #6b7280",
+                              background: "rgba(219,234,254,0.35)",
+                              pointerEvents: interactive ? "auto" : "none",
+                            }}
+                          >
+                            {ann.fieldType === "text" && (
+                              <input
+                                type="text"
+                                data-testid={`field-input-${ann.id}`}
+                                value={typeof ann.value === "string" ? ann.value : ""}
+                                disabled={!interactive}
+                                onFocus={() => {
+                                  setSelectedIds([ann.id]);
+                                  snapshot();
+                                }}
+                                onChange={(e) => setFieldValue(ann.id, { value: e.target.value })}
+                                className="w-full h-full bg-transparent outline-none px-1"
+                                style={{ fontSize: fontPx, pointerEvents: interactive ? "auto" : "none" }}
+                              />
+                            )}
+                            {ann.fieldType === "checkbox" && (
+                              <div className="w-full h-full flex items-center justify-center select-none" style={{ fontSize: fontPx, color: "#1d4ed8", lineHeight: 1 }}>
+                                {ann.value === true ? "✓" : ""}
+                              </div>
+                            )}
+                            {ann.fieldType === "dropdown" && (
+                              <select
+                                data-testid={`field-input-${ann.id}`}
+                                value={typeof ann.value === "string" ? ann.value : ""}
+                                disabled={!interactive}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  setSelectedIds([ann.id]);
+                                  snapshot();
+                                  setFieldValue(ann.id, { value: e.target.value });
+                                }}
+                                className="w-full h-full bg-transparent outline-none px-1"
+                                style={{ fontSize: fontPx, pointerEvents: interactive ? "auto" : "none" }}
+                              >
+                                <option value=""></option>
+                                {opts.map((opt, i) => (
+                                  <option key={i} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            )}
+                            {ann.fieldType === "radio" && (
+                              <div className="w-full h-full flex flex-col justify-around px-0.5 select-none" style={{ fontSize: fontPx }}>
+                                {(opts.length ? opts : ["Option 1"]).map((opt, i) => (
+                                  <label
+                                    key={i}
+                                    className={`flex items-center gap-1 ${interactive ? "cursor-pointer" : ""}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedIds([ann.id]);
+                                      if (!interactive || gestureMoved.current) return;
+                                      snapshot();
+                                      setFieldValue(ann.id, { value: opt });
+                                    }}
+                                  >
+                                    <span
+                                      className="inline-block rounded-full border border-gray-600 flex-shrink-0"
+                                      style={{ width: fontPx * 0.85, height: fontPx * 0.85, background: ann.value === opt ? "#2563eb" : "transparent" }}
+                                    />
+                                    <span className="truncate">{opt}</span>
+                                  </label>
+                                ))}
+                              </div>
                             )}
                           </div>
                         );
