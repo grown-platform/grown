@@ -90,6 +90,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { PDFDocument, rgb, StandardFonts, degrees, type PDFFont, type PDFPage } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import { Card, LoadingSpinner } from "tibui";
 import { apiClient } from "@/utils/apiClient";
 import { SignatureDialog, type SigResult } from "@/features/editor/components/SignatureDialog";
@@ -607,6 +608,60 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   }
   if (cur) lines.push(cur);
   return lines.length ? lines : [""];
+}
+
+// ---- Wave 6d — Unicode text via font embedding --------------------------------
+// The Standard-14 fonts pdf-lib ships can only encode WinAnsi (CP1252). Text
+// with characters outside that (Cyrillic, Greek, most accented letters beyond
+// Latin-1, …) throws on export. When a string is pure-WinAnsi we keep using the
+// Standard-14 font (so all existing exports/tests are byte-for-byte unchanged);
+// only when it isn't do we lazily embed a bundled Noto Sans (SIL OFL) subset.
+
+// The CP1252 code points that live OUTSIDE the two contiguous WinAnsi ranges
+// (printable ASCII 0x20–0x7E and Latin-1 0xA0–0xFF): the 0x80–0x9F block maps to
+// these curly-quote / dash / symbol code points.
+const WINANSI_EXTRA = new Set<number>([
+  0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x017d, 0x2018,
+  0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x017e, 0x0178,
+]);
+
+// True iff every character in `str` is representable in the Standard-14 WinAnsi
+// encoding, so we can keep the built-in fonts (and leave current output intact).
+function isWinAnsiEncodable(str: string): boolean {
+  for (const ch of str) {
+    const c = ch.codePointAt(0)!;
+    if (c === 0x0a || c === 0x0d || c === 0x09) continue; // tab / CR / LF
+    if (c >= 0x20 && c <= 0x7e) continue; // printable ASCII
+    if (c >= 0xa0 && c <= 0xff) continue; // Latin-1 supplement
+    if (WINANSI_EXTRA.has(c)) continue;
+    return false;
+  }
+  return true;
+}
+
+// Last-resort so a fallback export never THROWS when the embedded Unicode font
+// is unavailable: replace characters a Standard-14 font can't encode with "?".
+function sanitizeWinAnsi(str: string): string {
+  let out = "";
+  for (const ch of str) out += isWinAnsiEncodable(ch) ? ch : "?";
+  return out;
+}
+
+// The TTFs are referenced via `new URL(..., import.meta.url)` so Vite emits each
+// as a SEPARATE asset (hashed file in dist/assets), never inlined into the main
+// JS bundle. `fetch(...).arrayBuffer()` pulls the bytes only the first time a
+// build actually needs them; the bytes are then cached module-wide.
+const NOTO_URLS: Record<"regular" | "bold", URL> = {
+  regular: new URL("../fonts/NotoSans-Regular.ttf", import.meta.url),
+  bold: new URL("../fonts/NotoSans-Bold.ttf", import.meta.url),
+};
+const notoBytesCache: Partial<Record<"regular" | "bold", ArrayBuffer>> = {};
+async function loadNotoBytes(weight: "regular" | "bold"): Promise<ArrayBuffer> {
+  if (!notoBytesCache[weight]) {
+    const res = await fetch(NOTO_URLS[weight]);
+    notoBytesCache[weight] = await res.arrayBuffer();
+  }
+  return notoBytesCache[weight]!;
 }
 
 // Translate an annotation by a normalized delta (for moving).
@@ -3046,6 +3101,27 @@ export function EditorPage() {
       return fontCache.get(key)!;
     };
 
+    // Wave 6d — embed the bundled Noto Sans (subset) on demand for text that the
+    // Standard-14 WinAnsi fonts can't encode. Registered once; the embedded font
+    // (one per weight) is cached per build. `subset: true` embeds only the glyphs
+    // actually used, keeping the OUTPUT small. On any failure return null so the
+    // caller can fall back to a sanitized Standard-14 draw (export never throws).
+    doc.registerFontkit(fontkit);
+    const unicodeFontCache = new Map<"regular" | "bold", PDFFont>();
+    const getUnicodeFont = async (bold: boolean): Promise<PDFFont | null> => {
+      const weight: "regular" | "bold" = bold ? "bold" : "regular";
+      if (unicodeFontCache.has(weight)) return unicodeFontCache.get(weight)!;
+      try {
+        const bytes = await loadNotoBytes(weight);
+        const f = await doc.embedFont(bytes, { subset: true });
+        unicodeFontCache.set(weight, f);
+        return f;
+      } catch {
+        // Bold fetch/embed failed → try Regular; if even that fails, give up.
+        return bold ? getUnicodeFont(false) : null;
+      }
+    };
+
     // Wave 5c — fonts for baked stamps (bold label + normal date line).
     const stampBoldFont = annotations.some(isStamp) ? await doc.embedFont(StandardFonts.HelveticaBold) : null;
     const stampDateFont = annotations.some((a) => isStamp(a) && a.withDate) ? await doc.embedFont(StandardFonts.Helvetica) : null;
@@ -3059,7 +3135,17 @@ export function EditorPage() {
 
       if (ann.type === "text") {
         const { r, g, b } = hexToRgb(ann.color);
-        const font = await getFont(ann);
+        // Keep the Standard-14 font for pure-WinAnsi text (unchanged output). For
+        // text outside WinAnsi, embed the Noto subset; if that fails, sanitize so
+        // the fallback Standard-14 draw can't throw. widthOfTextAtSize on the
+        // chosen font drives wrapping/alignment either way.
+        let font = await getFont(ann);
+        let text = ann.text;
+        if (!isWinAnsiEncodable(text)) {
+          const uni = await getUnicodeFont(!!ann.bold);
+          if (uni) font = uni;
+          else text = sanitizeWinAnsi(text);
+        }
         const color = rgb(r, g, b);
         const size = ann.fontSize;
         const maxWidth = ann.width * pw;
@@ -3067,7 +3153,7 @@ export function EditorPage() {
         const align = ann.align ?? "left";
         // Prefix each logical line per the list mode, then word-wrap to maxWidth.
         const visual: string[] = [];
-        ann.text.split("\n").forEach((ln, i) => {
+        text.split("\n").forEach((ln, i) => {
           const prefixed = listPrefix(ann.list, i) + ln;
           for (const w of wrapText(prefixed, font, size, maxWidth)) visual.push(w);
         });
@@ -3245,21 +3331,37 @@ export function EditorPage() {
           page.drawRectangle({ x: L, y: ph - B, width: boxW, height: boxH, borderColor: col, borderWidth: bw });
         }
         if (stampBoldFont) {
+          // Unicode-aware label/date: keep the Standard-14 stamp fonts for
+          // WinAnsi labels; embed Noto (bold for the label) otherwise.
+          let labelFont = stampBoldFont;
+          let label = ann.label;
+          if (!isWinAnsiEncodable(label)) {
+            const uni = await getUnicodeFont(true);
+            if (uni) labelFont = uni;
+            else label = sanitizeWinAnsi(label);
+          }
           // Fit the label to the badge width (with padding); cap by height.
           const maxTextW = boxW * 0.86;
           let size = boxH * (ann.withDate ? 0.42 : 0.5);
-          const labelW = () => stampBoldFont.widthOfTextAtSize(ann.label, size);
+          const labelW = () => labelFont.widthOfTextAtSize(label, size);
           if (labelW() > maxTextW) size = (size * maxTextW) / labelW();
           const tw = labelW();
           const tx = L + (boxW - tw) / 2;
           const labelCenterY = ann.withDate ? ann.y + ann.height * 0.4 : ann.y + ann.height * 0.5;
           const ty = ph - labelCenterY * ph - size * 0.35;
-          page.drawText(ann.label, { x: tx, y: ty, size, font: stampBoldFont, color: col });
+          page.drawText(label, { x: tx, y: ty, size, font: labelFont, color: col });
           if (ann.withDate && ann.date && stampDateFont) {
+            let dateFont = stampDateFont;
+            let dateStr = ann.date;
+            if (!isWinAnsiEncodable(dateStr)) {
+              const uni = await getUnicodeFont(false);
+              if (uni) dateFont = uni;
+              else dateStr = sanitizeWinAnsi(dateStr);
+            }
             const dsize = Math.max(6, boxH * 0.2);
-            const dw = stampDateFont.widthOfTextAtSize(ann.date, dsize);
+            const dw = dateFont.widthOfTextAtSize(dateStr, dsize);
             const dCenterY = ann.y + ann.height * 0.74;
-            page.drawText(ann.date, { x: L + (boxW - dw) / 2, y: ph - dCenterY * ph - dsize * 0.35, size: dsize, font: stampDateFont, color: col });
+            page.drawText(dateStr, { x: L + (boxW - dw) / 2, y: ph - dCenterY * ph - dsize * 0.35, size: dsize, font: dateFont, color: col });
           }
         }
       } else if (ann.type === "note") {
@@ -3294,6 +3396,10 @@ export function EditorPage() {
       const { r, g, b } = hexToRgb(hf.color);
       const hfColor = rgb(r, g, b);
       const filename = docName || "document";
+      // Unicode-aware header/footer: if any template slot or the filename carries
+      // non-WinAnsi characters, embed the Noto subset once and use it per-text.
+      const hfSources = [hf.headerLeft, hf.headerCenter, hf.headerRight, hf.footerLeft, hf.footerCenter, hf.footerRight, filename];
+      const hfUni = hfSources.some((t) => t && !isWinAnsiEncodable(t)) ? await getUnicodeFont(false) : null;
       for (let i = 0; i < docPages.length; i++) {
         if (!hfAppliesTo(hf, i, docPages.length)) continue;
         const page = docPages[i];
@@ -3301,12 +3407,17 @@ export function EditorPage() {
         const topY = ph - hf.margin - hf.fontSize;
         const botY = hf.margin;
         const draw = (template: string, edge: "top" | "bottom", align: "left" | "center" | "right") => {
-          const text = resolveHfText(template, hf, i, docPages.length, filename);
+          let text = resolveHfText(template, hf, i, docPages.length, filename);
           if (!text) return;
-          const tw = hfFont.widthOfTextAtSize(text, hf.fontSize);
+          let font = hfFont;
+          if (!isWinAnsiEncodable(text)) {
+            if (hfUni) font = hfUni;
+            else text = sanitizeWinAnsi(text);
+          }
+          const tw = font.widthOfTextAtSize(text, hf.fontSize);
           const x = align === "left" ? hf.margin : align === "right" ? pw - hf.margin - tw : (pw - tw) / 2;
           const y = edge === "top" ? topY : botY;
-          page.drawText(text, { x, y, size: hf.fontSize, font: hfFont, color: hfColor });
+          page.drawText(text, { x, y, size: hf.fontSize, font, color: hfColor });
         };
         draw(hf.headerLeft, "top", "left");
         draw(hf.headerCenter, "top", "center");
