@@ -92,7 +92,7 @@ Baseline gaps → become the backlog below.
 
 ### Wave 7+ — deferred editor polish (client-side, verifiable)
 - [x] Annotation rotation. `5d60a75`
-- [ ] Wave 8: page crop (crop box → export), line/arrowhead endpoint styles, configurable highlight colors.
+- [x] Wave 8: page crop (crop box → export), line/arrowhead endpoint styles, configurable highlight colors. `e15d977`
 - [ ] Wave 9: accessibility pass (roles/aria/focus on toolbar + dialogs).
 - [ ] (deferred, higher risk/needs backend) continuous-scroll render; load-Documents-item-by-id.
 
@@ -112,6 +112,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-16** — Wave 8 DONE (`e15d977`): page crop (per-page/all, non-destructive setCropBox on export, survives page ops), line/arrowhead endpoint styles (none/start/end/both), configurable highlight colors. Defaults byte-identical. Hooks: `page-crop`, `crop-*`, `line-arrow-*`, `highlight-color-*`. 57/57 e2e. Next: Wave 9 (a11y). After that the editor is deeply complete → consider Docs/Sheets (verify via Go `go test` on the formula/export backend, since Docs/Sheets UI e2e needs the full stack).
 - **2026-07-16** — Wave 7 DONE (`5d60a75`): annotation rotation (box/image/text/stamp) — rotation handle (Shift-snap 15°) + numeric field, CSS/SVG transforms, center-anchor pdf-lib export gated on nonzero angle (unrotated byte-identical). Resize/hit-test stay axis-aligned (approx). Hooks: `rotate-handle`, `rotate-input`, `data-annot-rotation`. 54/54 e2e. Next: Wave 8 (page crop + line/arrowhead styles + highlight colors).
 - **2026-07-16** — FINALIZE PASS: pdf `npm run build` ✓ (pre-existing bundle-size warning only), editor e2e 51/51 ✓, web/app tsc+build ✓. Base `app.spec` (chromium) fails ONLY on ECONNREFUSED /api/user/me — needs backend, pre-existing, NOT a regression (editor specs bypass auth via sessionStorage). PR #32 body updated with full feature list (33 files, +8200/-255, 36 commits). Continuing with deferred editor polish: annotation rotation next, then a11y, then Docs/Sheets parity if time.
 - **2026-07-16** — Wave 6d DONE (`339efb6`): Unicode text export via `@pdf-lib/fontkit` + bundled Noto Sans (lazy vite assets, subset on export). WinAnsi text keeps Standard-14 (existing exports unchanged); non-WinAnsi embeds Noto. 51/51 e2e (Cyrillic/Greek extracted via pdf.js). **Editor backlog essentially COMPLETE** (remaining: load-by-id [needs backend], a11y polish, continuous-scroll [render rework], annotation rotation). NEXT: FINALIZE — run full pdf build + all e2e projects, verify web/app hamburger build, update PR #32 body with the full feature list, update memory. Then optional: Docs/Sheets parity items (see feature-research) or the deferred polish items.
