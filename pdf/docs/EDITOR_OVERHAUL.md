@@ -60,7 +60,7 @@ Baseline gaps → become the backlog below.
 - [x] Unify undo/redo to cover page ops. `5a8275e`
 - [x] Page sizes/templates (A4, Legal, A3, Tabloid, custom; portrait/landscape); background grid/lines/dots. `253f470`
 - [x] Merge/insert pages from another PDF; extract pages; delete range. `253f470`
-- [ ] Headers/footers, page numbers, Bates numbering, date stamps. ← Wave 3c
+- [x] Headers/footers, page numbers, Bates numbering, date stamps. `c666883`
 - [ ] Continuous-scroll multi-page render — DEFERRED (render rework).
 
 ### Wave 4 — Forms & signing (Acrobat parity, on-brand for a signing product)
@@ -102,6 +102,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-15** — Wave 3c DONE (`c666883`): headers/footers dialog (6 slots, tokens {page}/{pages}/{date}/{time}/{filename}/{bates}), Bates numbering, range targeting, live preview + baked export. `{date}`/`{time}` captured once on Apply. Config is doc-level (not in undo stack). Hooks: `headerfooter-open`, `hf-*`. 24/24 e2e (verified). **Wave 3 COMPLETE.** Next: Wave 4 (forms & signing) — the big on-brand wave for a signing product.
 - **2026-07-15** — Wave 3b DONE (`253f470`): blank page templates (Letter/Legal/A4/A3/Tabloid/custom, orientation, lined/dotted/grid bg), import/merge pages from another PDF, extract range to download, delete-range. `PageEntry` gained `blankW/blankH/blankBg`; merge rebuilds an identity page map. Hooks: `page-import(-input)`, `page-extract`, `page-delete-range`, `blank-*`, `extract-*`, `delete-range*`. 21/21 e2e (verified). Next: Wave 3c (headers/footers/page-numbers/Bates/date stamps) OR jump to Wave 4 (forms & signing) — pick 3c (small, export-time) first, then Wave 4.
 - **2026-07-15** — Wave 3a DONE (`5a8275e`): collapsible thumbnail sidebar (click-jump, drag-reorder, per-page menu), page-jump input, fit-width/fit-page zoom, and UNIFIED history `{annotations, pages, bytes}` so page ops are undoable with annotations. Hooks: `thumb-*`, `editor-page-jump`, `zoom-fit-width`, `zoom-fit-page`. 17/17 e2e (verified). Sidebar default-collapsed to avoid react-pdf DOM collision with existing specs. Next: Wave 3b (page sizes/templates, insert/merge/extract pages, headers/footers/page-numbers/Bates).
 - **2026-07-15** — Wave 2b DONE (`b4fdb15`): align/distribute for multi-selection, 8-handle perimeter resize + Shift aspect-lock, snapping to edges/centers/page-midlines with magenta guides, snap toggle + grid overlay. New hooks: `align-*`, `distribute-*`, `resize-{nw,n,ne,e,se,s,sw,w}`, `toggle-snap`, `toggle-grid`, `snap-guide`, `editor-grid`, `data-annot-{x,y,w,h}`. 12/12 e2e green (verified). Moves are now absolute (group snaps as one). Next: Wave 3 (page & document management) — start with 3a (thumbnails, page-jump, fit zoom, unify page-op undo).
