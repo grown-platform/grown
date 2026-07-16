@@ -21,7 +21,6 @@ import (
 
 	grownv1 "code.pick.haus/grown/grown/gen/go/grown/v1"
 	"code.pick.haus/grown/grown/internal/access"
-	"code.pick.haus/grown/grown/internal/desktops"
 	"code.pick.haus/grown/grown/internal/admin"
 	"code.pick.haus/grown/grown/internal/adminanalytics"
 	"code.pick.haus/grown/grown/internal/adminsecurity"
@@ -36,6 +35,7 @@ import (
 	"code.pick.haus/grown/grown/internal/chat"
 	"code.pick.haus/grown/grown/internal/cloudimport"
 	"code.pick.haus/grown/grown/internal/contacts"
+	"code.pick.haus/grown/grown/internal/desktops"
 	"code.pick.haus/grown/grown/internal/directory"
 	"code.pick.haus/grown/grown/internal/docs"
 	"code.pick.haus/grown/grown/internal/drive"
@@ -882,6 +882,10 @@ func New(cfg Config) *Server {
 				}
 				if r.URL.Path == "/api/v1/docs/convert" && r.Method == http.MethodPost {
 					serveDocsConvert(w, r)
+					return
+				}
+				if r.URL.Path == "/api/v1/docs/import" && r.Method == http.MethodPost {
+					serveDocsImport(w, r)
 					return
 				}
 			}
@@ -2775,6 +2779,37 @@ func serveDocsConvert(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+"."+f.Ext))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// serveDocsImport is the inverse of serveDocsConvert: it converts an uploaded
+// document (docx/odt/rtf/epub/md/html/txt) to HTML via pandoc and returns that
+// HTML. ?from= selects the source format. The document body lives client-side as
+// a Yjs CRDT, so — mirroring convert — this endpoint is a stateless transform:
+// the client seeds a freshly created doc (CreateDoc) with the returned HTML
+// rather than the server writing into the CRDT.
+func serveDocsImport(w http.ResponseWriter, r *http.Request) {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	from := r.URL.Query().Get("from")
+	if _, ok := docs.ImportSupported(from); !ok {
+		http.Error(w, "unsupported format", http.StatusBadRequest)
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(r.Body, 16<<20))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+	html, err := docs.ImportToHTML(r.Context(), data, from)
+	if err != nil {
+		http.Error(w, "import failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(html)
 }
 
 // redirectOnAuthURL converts AuthService.Login responses into HTTP 302 redirects
