@@ -63,6 +63,12 @@ import {
   CheckSquare,
   CircleDot,
   ChevronDownSquare,
+  PenTool,
+  Signature,
+  CalendarDays,
+  Check,
+  Dot,
+  PenLine,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -70,6 +76,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 import { PDFDocument, rgb, StandardFonts, degrees, type PDFFont, type PDFPage } from "pdf-lib";
 import { Card, LoadingSpinner } from "tibui";
 import { apiClient } from "@/utils/apiClient";
+import { SignatureDialog, type SigResult } from "@/features/editor/components/SignatureDialog";
 // Self-host the pdf.js worker so the editor works offline / in CI (no CDN).
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -138,7 +145,16 @@ type Tool =
   | "field-text"
   | "field-check"
   | "field-radio"
-  | "field-dropdown";
+  | "field-dropdown"
+  // Wave 4b — signing / Fill & Sign. signature/initials drop a remembered PNG
+  // as an image annotation; date drops a text annotation; stamp-* drop small
+  // vector marks (reusing the ink/line/ellipse annotation + export paths).
+  | "signature"
+  | "initials"
+  | "date"
+  | "stamp-check"
+  | "stamp-x"
+  | "stamp-dot";
 
 type FontFamily = "Helvetica" | "Times" | "Courier";
 
@@ -388,6 +404,14 @@ const DEFAULT_FONT_SIZE = 16;
 const SHAPE_TOOLS: Tool[] = ["rect", "ellipse", "line", "arrow", "draw", "highlight", "underline", "strikethrough", "whiteout"];
 const FIELD_TOOLS: Tool[] = ["field-text", "field-check", "field-radio", "field-dropdown"];
 const isFieldTool = (t: Tool): boolean => FIELD_TOOLS.includes(t);
+// Wave 4b: click-to-place tools (signature/initials/date + quick stamps). A
+// single click on the page drops the mark, so they resolve in the overlay
+// onClick (like text/image) rather than via a drag.
+const STAMP_TOOLS: Tool[] = ["stamp-check", "stamp-x", "stamp-dot"];
+const PLACE_TOOLS: Tool[] = ["signature", "initials", "date", ...STAMP_TOOLS];
+const isPlaceTool = (t: Tool): boolean => PLACE_TOOLS.includes(t);
+// Stamp mark colors (fixed, so quick marks read consistently).
+const STAMP_COLOR: Record<string, string> = { "stamp-check": "#16a34a", "stamp-x": "#dc2626", "stamp-dot": "#111827" };
 // Map a field placement tool to the field variant it creates.
 const FIELD_TOOL_TYPE: Record<string, FieldType> = {
   "field-text": "text",
@@ -668,6 +692,15 @@ export function EditorPage() {
   const [textColor] = useState("#111111");
   // Export option (Wave 4a): bake form fields into static content when ON.
   const [flattenForms, setFlattenForms] = useState(false);
+  // ---- Signing / Fill & Sign (Wave 4b) --------------------------------------
+  // The remembered signature + initials assets (a PNG/JPEG + natural size), so
+  // repeated placement reuses them without reopening the dialog. `sigDialog`
+  // holds which kind is currently being created (null = closed). `fillSign`
+  // reveals the compact quick-fill toolbar.
+  const [sigAsset, setSigAsset] = useState<SigResult | null>(null);
+  const [initialsAsset, setInitialsAsset] = useState<SigResult | null>(null);
+  const [sigDialog, setSigDialog] = useState<null | "signature" | "initials">(null);
+  const [fillSign, setFillSign] = useState(false);
   // Monotonic counter for default field names (text_1, checkbox_2, …).
   const fieldSeq = useRef(0);
 
@@ -1243,6 +1276,46 @@ export function EditorPage() {
       imageInputRef.current?.click();
       return;
     }
+    // Wave 4b — click-to-place signing marks.
+    if (tool === "signature" || tool === "initials") {
+      const asset = tool === "initials" ? initialsAsset : sigAsset;
+      if (!asset) return;
+      const { x, y } = toNorm(e.clientX, e.clientY);
+      placeSignatureAt(asset, x, y, tool === "initials" ? 0.12 : 0.28);
+      return;
+    }
+    if (tool === "date") {
+      const { x, y } = toNorm(e.clientX, e.clientY);
+      // Capture the date ONCE, now — not during render.
+      const ann: TextAnnotation = {
+        id: uid(),
+        type: "text",
+        page: currentPage,
+        x: clamp01(Math.min(x, 0.75)),
+        y: clamp01(y),
+        width: 0.25,
+        text: new Date().toLocaleDateString(),
+        fontSize: 14,
+        color: textColor,
+        family: "Helvetica",
+        bold: false,
+        italic: false,
+      };
+      snapshot();
+      setAnnotations((p) => [...p, ann]);
+      setSelectedIds([ann.id]);
+      setTool("select");
+      return;
+    }
+    if (STAMP_TOOLS.includes(tool)) {
+      const { x, y } = toNorm(e.clientX, e.clientY);
+      const marks = makeStampAnnotations(tool, clamp01(x), clamp01(y));
+      snapshot();
+      setAnnotations((p) => [...p, ...marks]);
+      setSelectedIds(marks.map((m) => m.id));
+      setTool("select");
+      return;
+    }
     if (tool === "select") {
       // A shape click or marquee drag already settled the selection.
       if (suppressCanvasClick.current) {
@@ -1288,6 +1361,110 @@ export function EditorPage() {
     setSelectedIds([ann.id]);
     setTool("select");
     pendingImagePoint.current = null;
+  };
+
+  // ---- Signing / Fill & Sign placement (Wave 4b) ----------------------------
+  // Drop a remembered signature/initials PNG as a plain image annotation
+  // (aspect-correct from its natural size), reusing the existing image render +
+  // pdf-lib embed/export path. `normWidth` gives signatures a sensible default
+  // width; initials are placed smaller.
+  const placeSignatureAt = (asset: SigResult, x: number, y: number, normWidth: number) => {
+    const aspect = asset.h / asset.w;
+    const normHeight = (normWidth * aspect) / pageAspectRef.current;
+    const ann: ImageAnnotation = {
+      id: uid(),
+      type: "image",
+      page: currentPageRef.current,
+      x: clamp01(Math.min(x, 1 - normWidth)),
+      y: clamp01(y),
+      width: normWidth,
+      height: Math.max(0.03, normHeight),
+      dataUrl: asset.dataUrl,
+      mime: asset.mime,
+    };
+    snapshot();
+    setAnnotations((p) => [...p, ann]);
+    setSelectedIds([ann.id]);
+    setTool("select");
+  };
+
+  // Build the vector annotation(s) for a quick stamp centered at (cx, cy). Marks
+  // are drawn as ink/line/ellipse so they bake into the PDF via the existing
+  // export path — never as font glyphs. `hy` compresses vertical extent by the
+  // page aspect so a mark reads square on screen.
+  const makeStampAnnotations = (kind: Tool, cx: number, cy: number): Annotation[] => {
+    const hx = 0.02;
+    const hy = hx / pageAspectRef.current;
+    const page = currentPageRef.current;
+    const color = STAMP_COLOR[kind] ?? "#111827";
+    if (kind === "stamp-check") {
+      return [
+        {
+          id: uid(),
+          type: "ink",
+          page,
+          points: [
+            { x: clamp01(cx - hx), y: clamp01(cy + hy * 0.1) },
+            { x: clamp01(cx - hx * 0.3), y: clamp01(cy + hy) },
+            { x: clamp01(cx + hx), y: clamp01(cy - hy) },
+          ],
+          strokeColor: color,
+          strokeWidth: 3,
+        },
+      ];
+    }
+    if (kind === "stamp-x") {
+      return [
+        { id: uid(), type: "line", page, x1: clamp01(cx - hx), y1: clamp01(cy - hy), x2: clamp01(cx + hx), y2: clamp01(cy + hy), strokeColor: color, strokeWidth: 3 },
+        { id: uid(), type: "line", page, x1: clamp01(cx - hx), y1: clamp01(cy + hy), x2: clamp01(cx + hx), y2: clamp01(cy - hy), strokeColor: color, strokeWidth: 3 },
+      ];
+    }
+    // stamp-dot: a small filled ellipse.
+    return [
+      {
+        id: uid(),
+        type: "ellipse",
+        page,
+        x: clamp01(cx - hx / 2),
+        y: clamp01(cy - hy / 2),
+        width: hx,
+        height: hy,
+        strokeColor: null,
+        strokeWidth: 0,
+        fillColor: color,
+        opacity: 1,
+      },
+    ];
+  };
+
+  // Tool-button handlers. Signature/initials open the create dialog the first
+  // time, then go straight to place mode (asset remembered). Date + stamps just
+  // enter place mode.
+  const startSignatureTool = () => {
+    setSelectedIds([]);
+    if (sigAsset) setTool("signature");
+    else setSigDialog("signature");
+  };
+  const startInitialsTool = () => {
+    setSelectedIds([]);
+    if (initialsAsset) setTool("initials");
+    else setSigDialog("initials");
+  };
+  const selectTool = (t: Tool) => {
+    setTool(t);
+    setSelectedIds([]);
+  };
+  // Resolve the create-signature dialog: remember the asset + enter place mode.
+  const confirmSignature = (result: SigResult) => {
+    if (sigDialog === "initials") {
+      setInitialsAsset(result);
+      setTool("initials");
+    } else {
+      setSigAsset(result);
+      setTool("signature");
+    }
+    setSigDialog(null);
+    setSelectedIds([]);
   };
 
   // ---- Move / draw / resize via global pointer listeners --------------------
@@ -2266,7 +2443,7 @@ export function EditorPage() {
   };
 
   const cursorFor =
-    tool === "text" ? "text" : tool === "image" ? "crosshair" : SHAPE_TOOLS.includes(tool) ? "crosshair" : "default";
+    tool === "text" ? "text" : tool === "image" ? "crosshair" : SHAPE_TOOLS.includes(tool) || isPlaceTool(tool) ? "crosshair" : "default";
 
   const toolButtons: { t: Tool; icon: typeof Type; label: string }[] = [
     { t: "select", icon: MousePointer2, label: "Select" },
@@ -2304,6 +2481,12 @@ export function EditorPage() {
     "field-check": "tool-field-check",
     "field-radio": "tool-field-radio",
     "field-dropdown": "tool-field-dropdown",
+    signature: "tool-signature",
+    initials: "tool-initials",
+    date: "tool-date",
+    "stamp-check": "stamp-check",
+    "stamp-x": "stamp-x",
+    "stamp-dot": "stamp-dot",
   };
 
   const showStylePanel = SHAPE_TOOLS.includes(tool);
@@ -2459,8 +2642,109 @@ export function EditorPage() {
                     ? "Drag on the page to draw freehand."
                     : isFieldTool(tool)
                       ? "Click or drag on the page to place a form field."
-                      : "Drag on the page to draw."}
+                      : tool === "signature" || tool === "initials"
+                        ? `Click the page to place your ${tool}.`
+                        : tool === "date"
+                          ? "Click the page to stamp today's date."
+                          : STAMP_TOOLS.includes(tool)
+                            ? "Click the page to drop the mark."
+                            : "Drag on the page to draw."}
             </p>
+          )}
+        </Card>
+
+        {/* Sign & Fill (Wave 4b) */}
+        <Card>
+          <div className="p-3 border-b flex items-center justify-between">
+            <h2 className="font-semibold text-sm">Sign &amp; Fill</h2>
+            <button
+              data-testid="toggle-fillsign"
+              onClick={() => setFillSign((v) => !v)}
+              className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg border-2 transition-colors ${fillSign ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent text-gray-700 hover:bg-gray-100"}`}
+              title="Fill & Sign quick mode"
+            >
+              <PenLine className="w-4 h-4" /> Fill &amp; Sign
+            </button>
+          </div>
+          <div className="p-2 grid grid-cols-3 gap-2">
+            <button
+              data-testid="tool-signature"
+              onClick={startSignatureTool}
+              className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border-2 transition-colors ${tool === "signature" ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent hover:bg-gray-100 text-gray-700"}`}
+              title="Signature"
+            >
+              <Signature className="w-5 h-5" />
+              <span className="text-[10px]">Signature</span>
+            </button>
+            <button
+              data-testid="tool-initials"
+              onClick={startInitialsTool}
+              className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border-2 transition-colors ${tool === "initials" ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent hover:bg-gray-100 text-gray-700"}`}
+              title="Initials"
+            >
+              <PenTool className="w-5 h-5" />
+              <span className="text-[10px]">Initials</span>
+            </button>
+            <button
+              data-testid="tool-date"
+              onClick={() => selectTool("date")}
+              className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border-2 transition-colors ${tool === "date" ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent hover:bg-gray-100 text-gray-700"}`}
+              title="Date stamp"
+            >
+              <CalendarDays className="w-5 h-5" />
+              <span className="text-[10px]">Date</span>
+            </button>
+          </div>
+          {(sigAsset || initialsAsset) && (
+            <div className="px-2 pb-2 flex gap-2">
+              {sigAsset && (
+                <button data-testid="sig-new" onClick={() => setSigDialog("signature")} className="flex-1 text-xs py-1.5 rounded-lg border hover:bg-gray-50 text-gray-600">
+                  New signature…
+                </button>
+              )}
+              {initialsAsset && (
+                <button data-testid="initials-new" onClick={() => setSigDialog("initials")} className="flex-1 text-xs py-1.5 rounded-lg border hover:bg-gray-50 text-gray-600">
+                  New initials…
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Quick-fill toolbar (revealed by the Fill & Sign toggle) */}
+          {fillSign && (
+            <div data-testid="fillsign-toolbar" className="px-2 pb-3 pt-1 border-t">
+              <p className="text-[11px] text-gray-500 mt-2 mb-1">Quick fill</p>
+              <div className="grid grid-cols-4 gap-2">
+                <button data-testid="quick-signature" onClick={startSignatureTool} className="flex flex-col items-center gap-1 py-2 rounded-lg border hover:bg-gray-50 text-gray-700" title="Signature">
+                  <Signature className="w-4 h-4" />
+                  <span className="text-[9px]">Sign</span>
+                </button>
+                <button data-testid="quick-initials" onClick={startInitialsTool} className="flex flex-col items-center gap-1 py-2 rounded-lg border hover:bg-gray-50 text-gray-700" title="Initials">
+                  <PenTool className="w-4 h-4" />
+                  <span className="text-[9px]">Initials</span>
+                </button>
+                <button data-testid="quick-date" onClick={() => selectTool("date")} className="flex flex-col items-center gap-1 py-2 rounded-lg border hover:bg-gray-50 text-gray-700" title="Date">
+                  <CalendarDays className="w-4 h-4" />
+                  <span className="text-[9px]">Date</span>
+                </button>
+                <button data-testid="quick-text" onClick={() => selectTool("text")} className="flex flex-col items-center gap-1 py-2 rounded-lg border hover:bg-gray-50 text-gray-700" title="Add text">
+                  <Type className="w-4 h-4" />
+                  <span className="text-[9px]">Text</span>
+                </button>
+                <button data-testid="stamp-check" onClick={() => selectTool("stamp-check")} className={`flex flex-col items-center gap-1 py-2 rounded-lg border hover:bg-gray-50 ${tool === "stamp-check" ? "bg-blue-50 border-blue-500 text-blue-600" : "text-gray-700"}`} title="Checkmark">
+                  <Check className="w-4 h-4" />
+                  <span className="text-[9px]">Check</span>
+                </button>
+                <button data-testid="stamp-x" onClick={() => selectTool("stamp-x")} className={`flex flex-col items-center gap-1 py-2 rounded-lg border hover:bg-gray-50 ${tool === "stamp-x" ? "bg-blue-50 border-blue-500 text-blue-600" : "text-gray-700"}`} title="Cross">
+                  <X className="w-4 h-4" />
+                  <span className="text-[9px]">Cross</span>
+                </button>
+                <button data-testid="stamp-dot" onClick={() => selectTool("stamp-dot")} className={`flex flex-col items-center gap-1 py-2 rounded-lg border hover:bg-gray-50 ${tool === "stamp-dot" ? "bg-blue-50 border-blue-500 text-blue-600" : "text-gray-700"}`} title="Dot">
+                  <Dot className="w-4 h-4" />
+                  <span className="text-[9px]">Dot</span>
+                </button>
+              </div>
+            </div>
           )}
         </Card>
 
@@ -3276,6 +3560,11 @@ export function EditorPage() {
           </div>
         </Card>
       </div>
+
+      {/* Create-signature dialog (Wave 4b) */}
+      {sigDialog && (
+        <SignatureDialog kind={sigDialog} onConfirm={confirmSignature} onCancel={() => setSigDialog(null)} />
+      )}
 
       {/* Assemble dialogs: blank template / extract / delete-range */}
       {dialog && (
