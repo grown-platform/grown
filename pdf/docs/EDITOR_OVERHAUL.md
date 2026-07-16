@@ -82,7 +82,7 @@ Baseline gaps → become the backlog below.
 - [ ] Accessibility pass (roles, focus, ARIA on toolbar).
 
 ### Later — Docs/Sheets parity (only if editor exhausted)
-- [ ] See `docs/research/docs-sheets-parity.md`; pick highest-value gaps.
+- [ ] See `docs/feature-research/docs-sheets-parity.md`; pick highest-value gaps.
 
 ---
 
