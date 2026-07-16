@@ -82,12 +82,13 @@ Baseline gaps → become the backlog below.
 - [ ] Custom font embedding (fontkit) for Unicode text. ← Wave 6 (needs a bundled font; lower priority than persistence/export).
 
 ### Wave 6 — Export, persistence, polish
-- [ ] Editable annotation sidecar (JSON) saved with doc → reopen keeps annotations editable.
-- [ ] Autosave draft to localStorage (survive refresh) + "restore draft" prompt.
-- [ ] Export options: flatten toggle, per-page export, PNG/JPEG export, PDF/A, compression, password/encrypt.
-- [ ] Keyboard shortcut map + in-app shortcuts help overlay (`?`).
-- [ ] Load-existing-document-by-id (open a Documents item into the editor).
-- [ ] Accessibility pass (roles, focus, ARIA on toolbar).
+- [x] Autosave draft to IndexedDB (survive refresh) + "restore draft" prompt. `6786322`
+- [x] Keyboard shortcut map + in-app shortcuts help overlay (`?`); arrow-key nudge. `6786322`
+- [ ] Export options: PNG/JPEG page export, document metadata (title/author/subject/keywords). ← Wave 6b (note: pdf-lib has NO password/encryption or PDF/A — skip or backend-only)
+- [ ] Editable annotation sidecar embedded IN the exported PDF → reopen keeps annotations editable (client-side round-trip). ← Wave 6c
+- [ ] Custom font embedding (fontkit) for Unicode text. ← Wave 6c/later (needs bundled font)
+- [ ] Load-existing-document-by-id (open a Documents item into the editor) — needs backend fetch; lower priority.
+- [ ] Accessibility pass (roles, focus, ARIA on toolbar) — polish.
 
 ### Later — Docs/Sheets parity (only if editor exhausted)
 - [ ] See `docs/feature-research/docs-sheets-parity.md`; pick highest-value gaps.
@@ -105,6 +106,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-16** — Wave 6a DONE (`6786322`): autosave to IndexedDB (`draftDb.ts`) + restore prompt (cleared on new/close/open-other/save; IDB guarded), shortcuts help overlay (`?`), arrow-key nudge, Ctrl/Cmd+D duplicate. Hooks: `draft-status`, `restore-draft-*`, `shortcuts-*`. 45/45 e2e, 2x-stable. Next: Wave 6b (PNG/JPEG page export + document metadata), then 6c (embedded editable sidecar round-trip).
 - **2026-07-16** — Wave 5d DONE (`b9ae4d1`): cross-page text search (Ctrl/Cmd+F) via pdf.js text content, match counter, next/prev across pages, case toggle, highlight-all overlay, per-page text cache. Read-only. Hooks: `editor-search-open`, `editor-search-input`, `search-*`. 42/42 e2e (verified). **Wave 5 COMPLETE** (fontkit moved to Wave 6). Recorded the header-wrap gotcha in the cheat-sheet. Next: Wave 6 (persistence/export/polish) — start 6a (autosave draft + restore, shortcuts help overlay).
 - **2026-07-16** — Wave 5c DONE (`fed2e1a`): sticky-note comments (draggable markers + editable text) with a collapsible comment sidebar (jump-to/delete/count), preset stamps (APPROVED/DRAFT/CONFIDENTIAL/REVIEWED/FINAL/VOID + optional date) exported as vector, and custom image stamps. New `NoteAnnotation`/`StampAnnotation`. Hooks: `tool-note`, `tool-stamp`, `comment-*`, `note-*`, `stamp-*`. 39/39 e2e (verified). Next: Wave 5d (text search across pages + highlight-all; fontkit/Unicode font embedding) → then Wave 6 (export/persistence/polish).
 - **2026-07-15** — Wave 5b DONE (`024d34e`): TRUE redaction — `tool-redact` marks; on export, marked pages are rasterized via pdf.js (2x) with black-filled rects and replaced by a flattened image, destroying the underlying text layer; non-redacted pages stay vector; pdf-lib fallback. `redact-notice`. 36/36 e2e, removal proven by pdf.js text extraction. Next: Wave 5c (sticky-note comments + sidebar, preset/custom stamps), then Wave 5d (text search, fontkit/Unicode).
