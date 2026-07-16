@@ -86,7 +86,7 @@ Baseline gaps → become the backlog below.
 - [x] Keyboard shortcut map + in-app shortcuts help overlay (`?`); arrow-key nudge. `6786322`
 - [x] Export options: PNG/JPEG page export, document metadata (title/author/subject/keywords). `8ca7725` (pdf-lib has NO password/encryption or PDF/A — skipped, would need backend/native)
 - [x] Editable annotation sidecar embedded IN the exported PDF → reopen keeps annotations editable (client-side round-trip). `94bb633`
-- [ ] Custom font embedding (fontkit) for Unicode text. ← Wave 6c/later (needs bundled font)
+- [x] Custom font embedding (fontkit) for Unicode text (Noto Sans, lazy, subset). `339efb6`
 - [ ] Load-existing-document-by-id (open a Documents item into the editor) — needs backend fetch; lower priority.
 - [ ] Accessibility pass (roles, focus, ARIA on toolbar) — polish.
 
@@ -106,6 +106,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-16** — Wave 6d DONE (`339efb6`): Unicode text export via `@pdf-lib/fontkit` + bundled Noto Sans (lazy vite assets, subset on export). WinAnsi text keeps Standard-14 (existing exports unchanged); non-WinAnsi embeds Noto. 51/51 e2e (Cyrillic/Greek extracted via pdf.js). **Editor backlog essentially COMPLETE** (remaining: load-by-id [needs backend], a11y polish, continuous-scroll [render rework], annotation rotation). NEXT: FINALIZE — run full pdf build + all e2e projects, verify web/app hamburger build, update PR #32 body with the full feature list, update memory. Then optional: Docs/Sheets parity items (see feature-research) or the deferred polish items.
 - **2026-07-16** — Wave 6c DONE (`94bb633`): editable round-trip — "Save editable copy" embeds `grown-editor.json` (annotations/hf/meta/docName) via pdf-lib attach without flattening; on load pdf.js `getAttachments()` restores it as editable objects. Flattened Download stays sidecar-free. Hooks: `download-editable`, `editable-restored`. 49/49 e2e, 2x-stable. Next: Wave 6d (fontkit/Unicode font embedding) — needs a bundled font (watch bundle size); then final polish + PR finalize (update PR body with the full feature list).
 - **2026-07-16** — Wave 6b DONE (`8ca7725`): PNG/JPEG page export (pdf.js render of the baked PDF, 1x/2x/3x, current/all), document metadata dialog (title/author/subject/keywords/creator) via pdf-lib setters + draft round-trip. Hooks: `export-image-*`, `metadata-*`, `meta-*`. 47/47 e2e. Next: Wave 6c (embedded editable sidecar → reopen keeps annotations editable) — the round-trip standout. Then fontkit/Unicode, then final polish + PR finalize.
 - **2026-07-16** — Wave 6a DONE (`6786322`): autosave to IndexedDB (`draftDb.ts`) + restore prompt (cleared on new/close/open-other/save; IDB guarded), shortcuts help overlay (`?`), arrow-key nudge, Ctrl/Cmd+D duplicate. Hooks: `draft-status`, `restore-draft-*`, `shortcuts-*`. 45/45 e2e, 2x-stable. Next: Wave 6b (PNG/JPEG page export + document metadata), then 6c (embedded editable sidecar round-trip).
