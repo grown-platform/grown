@@ -93,6 +93,7 @@ import { PDFDocument, rgb, StandardFonts, degrees, type PDFFont, type PDFPage } 
 import { Card, LoadingSpinner } from "tibui";
 import { apiClient } from "@/utils/apiClient";
 import { SignatureDialog, type SigResult } from "@/features/editor/components/SignatureDialog";
+import { saveDraft, loadDraft, clearDraft, type EditorDraft } from "@/features/editor/draftDb";
 // Self-host the pdf.js worker so the editor works offline / in CI (no CDN).
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -899,6 +900,54 @@ function mat6(m1: number[], m2: number[]): number[] {
   ];
 }
 
+// ---- Keyboard shortcuts help (Wave 6a) -------------------------------------
+// Static reference shown in the `?` overlay. Grouped for scanability; the keys
+// are the same bindings wired in the global keydown handler + tool buttons.
+interface ShortcutItem {
+  label: string;
+  keys: string;
+}
+const SHORTCUT_GROUPS: { title: string; items: ShortcutItem[] }[] = [
+  {
+    title: "Edit",
+    items: [
+      { label: "Undo", keys: "Ctrl/⌘ Z" },
+      { label: "Redo", keys: "Ctrl/⌘ Shift Z / Y" },
+      { label: "Delete selection", keys: "Del / ⌫" },
+      { label: "Copy", keys: "Ctrl/⌘ C" },
+      { label: "Cut", keys: "Ctrl/⌘ X" },
+      { label: "Paste", keys: "Ctrl/⌘ V" },
+      { label: "Duplicate", keys: "Ctrl/⌘ D" },
+    ],
+  },
+  {
+    title: "Arrange",
+    items: [
+      { label: "Bring forward", keys: "Ctrl/⌘ ]" },
+      { label: "Bring to front", keys: "Ctrl/⌘ Shift ]" },
+      { label: "Send backward", keys: "Ctrl/⌘ [" },
+      { label: "Send to back", keys: "Ctrl/⌘ Shift [" },
+      { label: "Nudge selection", keys: "Arrow keys" },
+      { label: "Nudge (larger step)", keys: "Shift Arrow" },
+    ],
+  },
+  {
+    title: "Navigate",
+    items: [
+      { label: "Find in document", keys: "Ctrl/⌘ F" },
+      { label: "Next / previous match", keys: "Enter / Shift Enter" },
+      { label: "Deselect / cancel", keys: "Esc" },
+    ],
+  },
+  {
+    title: "Tools",
+    items: [
+      { label: "Finish polygon / polyline", keys: "Enter / Esc" },
+      { label: "Show this help", keys: "?" },
+    ],
+  },
+];
+
 export function EditorPage() {
   const navigate = useNavigate();
 
@@ -952,6 +1001,21 @@ export function EditorPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // ---- Autosave draft + shortcuts help (Wave 6a) ----------------------------
+  // A debounced IndexedDB draft survives an accidental refresh/tab-close. The
+  // status pill reflects the debounce ("Saving…" → "Draft saved"). `restorePrompt`
+  // holds a draft found on mount (only when nothing is loaded yet) so the user can
+  // choose to bring it back or discard it. `shortcutsOpen` drives the help modal.
+  const [draftStatus, setDraftStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [restorePrompt, setRestorePrompt] = useState<EditorDraft | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Coalesce a burst of arrow-key nudges into a single undo entry.
+  const nudgeBurstRef = useRef(0);
+  const toolRef = useRef<Tool>("select");
+  useEffect(() => {
+    toolRef.current = tool;
+  }, [tool]);
 
   // ---- Assemble dialogs (Wave 3b): blank template / import / extract / delete-range
   // + headerfooter (Wave 3c). All share the modal overlay below.
@@ -1169,6 +1233,56 @@ export function EditorPage() {
     return () => URL.revokeObjectURL(url);
   }, [pdfBytes]);
 
+  // ---- Autosave draft (Wave 6a) ---------------------------------------------
+  // On mount, surface a restore prompt if a draft exists AND nothing is loaded.
+  // (We never overwrite the just-found draft before the user decides, because
+  // autosave only runs while a document is loaded — and on mount none is.)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const rec = await loadDraft();
+      if (!cancelled && rec && !pdfBytesRef.current) setRestorePrompt(rec);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // Debounced persist: ~1.5s after the last change to the editable doc state,
+  // while a document is loaded. All IDB errors are swallowed inside saveDraft.
+  useEffect(() => {
+    if (!pdfBytes) {
+      setDraftStatus("idle");
+      return;
+    }
+    setDraftStatus("saving");
+    const handle = window.setTimeout(async () => {
+      await saveDraft({ pdfBytes, pages, annotations, docName, hf, savedAt: Date.now() });
+      setDraftStatus("saved");
+    }, 1500);
+    return () => window.clearTimeout(handle);
+  }, [pdfBytes, pages, annotations, docName, hf]);
+  // Restore a found draft into an editable state (its own path, so it does NOT
+  // clear the draft the way a fresh open/blank does). Resets undo history.
+  const restoreDraft = useCallback((rec: EditorDraft) => {
+    setError(null);
+    setPdfBytes(rec.pdfBytes);
+    setDocName(rec.docName);
+    setPages(rec.pages as PageEntry[]);
+    setAnnotations(rec.annotations as Annotation[]);
+    setHf(rec.hf as HeaderFooterConfig);
+    undoStack.current = [];
+    redoStack.current = [];
+    setCurrentPage(1);
+    setSelectedIds([]);
+    setEditingId(null);
+    setRestorePrompt(null);
+  }, []);
+  // Discard the found draft and continue to the normal empty state.
+  const discardDraft = useCallback(() => {
+    setRestorePrompt(null);
+    void clearDraft();
+  }, []);
+
   const renderWidth = PAGE_RENDER_WIDTH * zoom;
   const overlayH = renderWidth * pageAspect;
   const pxScale = renderWidth / POINTS_WIDE; // pt → screen px
@@ -1260,6 +1374,9 @@ export function EditorPage() {
       redoStack.current = [];
       setCurrentPage(1);
       setSelectedIds([]);
+      // Opening a different file replaces any prior draft (autosave rewrites it).
+      setRestorePrompt(null);
+      void clearDraft();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to read PDF — is it valid?");
     }
@@ -1291,6 +1408,9 @@ export function EditorPage() {
     redoStack.current = [];
     setCurrentPage(1);
     setSelectedIds([]);
+    // Starting fresh discards any prior draft; autosave writes the new one.
+    setRestorePrompt(null);
+    void clearDraft();
   }, []);
 
   // ---- Page structure -------------------------------------------------------
@@ -2412,6 +2532,24 @@ export function EditorPage() {
     [snapshot],
   );
 
+  // ---- Arrow-key nudge (Wave 6a) --------------------------------------------
+  // Move the selection by a small normalized step (Shift ⇒ a larger step). A
+  // rapid burst of nudges coalesces into ONE undo entry: we only snapshot when
+  // the previous nudge was long enough ago that it reads as a new gesture.
+  const NUDGE_SM = 0.004; // ~2.4pt on a 612pt-wide page
+  const NUDGE_LG = 0.02; // ~12pt
+  const nudgeSelection = useCallback(
+    (dx: number, dy: number) => {
+      const ids = selectedIdsRef.current;
+      if (!ids.length) return;
+      const now = Date.now();
+      if (now - nudgeBurstRef.current > 500) snapshot();
+      nudgeBurstRef.current = now;
+      setAnnotations((prev) => prev.map((a) => (ids.includes(a.id) ? translate(a, dx, dy) : a)));
+    },
+    [snapshot],
+  );
+
   // ---- Align & distribute (operate on the multi-selection's bounding boxes) --
   type AlignMode = "left" | "hcenter" | "right" | "top" | "vmiddle" | "bottom";
   const alignSelection = useCallback(
@@ -2641,6 +2779,18 @@ export function EditorPage() {
       // Don't hijack shortcuts while typing in a field / editing text inline.
       const editing = editingId != null || t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable;
       const mod = e.ctrlKey || e.metaKey;
+      // Shortcuts help overlay: Esc closes it; `?` (Shift+/) opens it — but never
+      // while typing/editing (so a literal "?" still lands in a text box/input).
+      if (shortcutsOpen && e.key === "Escape") {
+        e.preventDefault();
+        setShortcutsOpen(false);
+        return;
+      }
+      if (!editing && !mod && e.key === "?") {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
       // Ctrl/Cmd+F opens the find bar — but NOT while inline-editing text or
       // typing in one of the editor's own inputs (except the search input, so a
       // repeated Ctrl+F just refocuses it). Then the browser's native find is
@@ -2664,6 +2814,17 @@ export function EditorPage() {
         return;
       }
       if (editing) return;
+      // Arrow-key nudge: move the selection with the select tool active. Shift ⇒
+      // a larger step. (No modifier — Ctrl/Cmd+arrows are left to the browser.)
+      if (!mod && toolRef.current === "select" && selectedIdsRef.current.length && e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        const step = e.shiftKey ? NUDGE_LG : NUDGE_SM;
+        if (e.key === "ArrowLeft") nudgeSelection(-step, 0);
+        else if (e.key === "ArrowRight") nudgeSelection(step, 0);
+        else if (e.key === "ArrowUp") nudgeSelection(0, -step);
+        else if (e.key === "ArrowDown") nudgeSelection(0, step);
+        return;
+      }
       if (mod && e.key.toLowerCase() === "c") {
         e.preventDefault();
         copySelection();
@@ -2677,6 +2838,25 @@ export function EditorPage() {
       if (mod && e.key.toLowerCase() === "v") {
         e.preventDefault();
         pasteClipboard();
+        return;
+      }
+      // Ctrl/⌘+D duplicates the whole selection in place (offset slightly),
+      // without touching the internal clipboard.
+      if (mod && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        const ids = selectedIdsRef.current;
+        if (ids.length) {
+          snapshot();
+          const clones = annotationsRef.current
+            .filter((a) => ids.includes(a.id))
+            .map((a) => {
+              const c = translate(JSON.parse(JSON.stringify(a)) as Annotation, 0.02, 0.02);
+              c.id = uid();
+              return c;
+            });
+          setAnnotations((p) => [...p, ...clones]);
+          setSelectedIds(clones.map((c) => c.id));
+        }
         return;
       }
       // e.code is layout/shift-independent (Shift+] reports "}" as e.key).
@@ -2701,7 +2881,7 @@ export function EditorPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [snapshot, undo, redo, copySelection, cutSelection, pasteClipboard, deleteSelection, reorderSelection, editingId, finishPoly, openSearch]);
+  }, [snapshot, undo, redo, copySelection, cutSelection, pasteClipboard, deleteSelection, reorderSelection, editingId, finishPoly, openSearch, nudgeSelection, shortcutsOpen]);
 
   const updateSelected = (patch: Record<string, unknown>) => {
     if (!selectedId) return;
@@ -3186,6 +3366,9 @@ export function EditorPage() {
     },
     onSuccess: (r) => {
       setSaveMsg("Saved to Documents ✓");
+      // The document is safely persisted server-side — drop the local draft so a
+      // later visit doesn't offer to restore now-stale state over the fresh save.
+      void clearDraft();
       setTimeout(() => navigate(`/documents/${r.document.id}`), 1200);
     },
     onError: (e: Error) => setError(e.message || "Failed to save"),
@@ -3199,6 +3382,24 @@ export function EditorPage() {
         <p className="text-text-muted mb-6">
           Open a PDF or start blank, then add text, shapes, drawings, highlights and images, manage pages, and download or save.
         </p>
+        {/* Restore-draft prompt (Wave 6a): shown when a draft was found on mount. */}
+        {restorePrompt && (
+          <div data-testid="restore-draft-prompt" className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-lg">
+            <p className="font-medium text-amber-900">Unsaved draft found</p>
+            <p className="text-sm text-amber-800 mb-3">
+              We found “{restorePrompt.docName || "Untitled"}” from a previous session
+              {restorePrompt.savedAt ? ` (saved ${new Date(restorePrompt.savedAt).toLocaleString()})` : ""}. Restore it?
+            </p>
+            <div className="flex gap-2">
+              <Button testId="restore-draft-yes" size="sm" onClick={() => restoreDraft(restorePrompt)}>
+                Restore draft
+              </Button>
+              <Button testId="restore-draft-no" size="sm" variant="outline" onClick={discardDraft}>
+                Discard
+              </Button>
+            </div>
+          </div>
+        )}
         {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>}
         <Card>
           <div className="p-6 space-y-4">
@@ -3605,6 +3806,14 @@ export function EditorPage() {
               <button data-testid="editor-redo" onClick={redo} disabled={!redoStack.current.length} title="Redo (Ctrl+Shift+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
                 <Redo2 className="w-4 h-4" />
               </button>
+              <button
+                data-testid="shortcuts-open"
+                onClick={() => setShortcutsOpen(true)}
+                title="Keyboard shortcuts (?)"
+                className="p-1.5 rounded hover:bg-gray-100 font-semibold text-sm leading-none w-7"
+              >
+                ?
+              </button>
             </div>
           </div>
           <div className="p-2 grid grid-cols-3 gap-2">
@@ -3662,6 +3871,16 @@ export function EditorPage() {
                 </span>
               )}
             </button>
+          </div>
+          {/* Autosave draft status (Wave 6a) */}
+          <div className="px-2 pb-2 flex items-center gap-1 text-[11px] text-gray-400">
+            <span
+              data-testid="draft-status"
+              data-draft-state={draftStatus}
+              className={draftStatus === "saved" ? "text-green-600" : ""}
+            >
+              {draftStatus === "saving" ? "Saving…" : draftStatus === "saved" ? "Draft saved" : "Autosave on"}
+            </span>
           </div>
           {tool !== "select" && (
             <p className="px-4 pb-3 text-xs text-gray-500">
@@ -4402,6 +4621,8 @@ export function EditorPage() {
                 setPdfBytes(null);
                 setAnnotations([]);
                 setPages([]);
+                setRestorePrompt(null);
+                void clearDraft();
               }} title="Close and open another">
                 <X className="w-4 h-4" />
               </Button>
@@ -5265,6 +5486,50 @@ export function EditorPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Keyboard shortcuts help overlay (Wave 6a) */}
+      {shortcutsOpen && (
+        <div
+          data-testid="shortcuts-dialog"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={() => setShortcutsOpen(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl w-[34rem] max-w-[92vw] max-h-[85vh] overflow-y-auto p-5"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Keyboard shortcuts</h3>
+              <button
+                type="button"
+                data-testid="shortcuts-close"
+                onClick={() => setShortcutsOpen(false)}
+                className="p-1 rounded hover:bg-gray-100"
+                title="Close (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+              {SHORTCUT_GROUPS.map((group) => (
+                <div key={group.title}>
+                  <h4 className="font-semibold text-gray-800 mb-1.5">{group.title}</h4>
+                  <ul className="space-y-1">
+                    {group.items.map((it) => (
+                      <li key={it.label} className="flex items-center justify-between gap-3">
+                        <span className="text-gray-600">{it.label}</span>
+                        <kbd className="shrink-0 px-1.5 py-0.5 rounded border border-gray-300 bg-gray-50 text-xs font-mono text-gray-700">
+                          {it.keys}
+                        </kbd>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
