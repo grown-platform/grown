@@ -84,6 +84,7 @@ import {
   StickyNote,
   Stamp,
   MessageSquare,
+  Search,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -863,6 +864,41 @@ async function rasterizeRedactedPages(
   return out;
 }
 
+// ---- Text search / find (Wave 5d) ------------------------------------------
+// One extracted text run from a page, with its full-item box already mapped to
+// normalized 0-1 top-left / y-down space (the same space the overlays use).
+// `str`/`lower` are the original + lowercased text so a case-insensitive query
+// scans `lower` without re-casing per keystroke.
+interface PageTextItem {
+  str: string;
+  lower: string;
+  x: number; // normalized left
+  y: number; // normalized top (y-down)
+  w: number; // normalized width
+  h: number; // normalized height
+}
+// A single match: its 1-based page + the normalized highlight rect (a sub-rect
+// of the text run, approximated by character proportion of the run width).
+interface SearchMatch {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+// 6-element affine matrix multiply (m1 ∘ m2), matching pdfjs' Util.transform —
+// inlined so we never depend on Util being present on the re-exported module.
+function mat6(m1: number[], m2: number[]): number[] {
+  return [
+    m1[0] * m2[0] + m1[2] * m2[1],
+    m1[1] * m2[0] + m1[3] * m2[1],
+    m1[0] * m2[2] + m1[2] * m2[3],
+    m1[1] * m2[2] + m1[3] * m2[3],
+    m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
+    m1[1] * m2[4] + m1[3] * m2[5] + m1[5],
+  ];
+}
+
 export function EditorPage() {
   const navigate = useNavigate();
 
@@ -1003,6 +1039,22 @@ export function EditorPage() {
   const noteEditSnapped = useRef(false);
   // Monotonic counter for default field names (text_1, checkbox_2, …).
   const fieldSeq = useRef(0);
+
+  // ---- Text search / find (Wave 5d) -----------------------------------------
+  // A read-only find-across-pages feature. We extract each page's text (once,
+  // cached per pdfBytes) via a RAW pdfjs.getDocument (never react-pdf <Page>, so
+  // no extra .react-pdf__Page DOM), then substring-match into a flat match list
+  // with normalized (0-1 top-left) highlight rects. Navigation cycles all pages.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchCase, setSearchCase] = useState(false);
+  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
+  // Active match index into searchMatches (0-based); -1 when there are none.
+  const [searchActive, setSearchActive] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  // Extracted per-page text geometry, cached against the pdfBytes it came from
+  // so re-queries never re-parse unless the document bytes change.
+  const textCacheRef = useRef<{ bytes: Uint8Array | null; pages: PageTextItem[][] } | null>(null);
 
   // ---- Snapping + grid (Wave 2b) --------------------------------------------
   const [snapEnabled, setSnapEnabled] = useState(true);
@@ -2427,6 +2479,156 @@ export function EditorPage() {
   );
 
   // Keyboard: delete, escape, undo/redo, clipboard, z-order.
+  // ---- Text search / find (Wave 5d) -----------------------------------------
+  // Extract every page's text runs (cached against the current pdfBytes). Uses a
+  // RAW pdfjs document — NOT react-pdf's <Page> — so it adds no page DOM. Each
+  // run's baseline transform is composed with the (rotation-aware) viewport
+  // transform, giving device space (top-left, y-down); we normalize by the
+  // viewport size. The box spans one font-height up from the baseline.
+  const ensureTextCache = useCallback(async (): Promise<PageTextItem[][]> => {
+    const bytes = pdfBytesRef.current;
+    const cached = textCacheRef.current;
+    if (cached && cached.bytes === bytes) return cached.pages;
+    if (!bytes) return [];
+    const pagesText: PageTextItem[][] = [];
+    // pdfjs may detach the buffer it's given → hand it a fresh copy.
+    const task = pdfjs.getDocument({ data: bytes.slice() });
+    const pdf = await task.promise;
+    try {
+      for (let pi = 1; pi <= pdf.numPages; pi++) {
+        const page = await pdf.getPage(pi);
+        const viewport = page.getViewport({ scale: 1 });
+        const pw = viewport.width;
+        const ph = viewport.height;
+        const tc = await page.getTextContent();
+        const items: PageTextItem[] = [];
+        for (const it of tc.items) {
+          if (!("str" in it) || !it.str) continue;
+          // Compose baseline transform into device (viewport) space.
+          const m = mat6(viewport.transform as number[], it.transform as number[]);
+          const fontH = Math.hypot(m[2], m[3]) || it.height || 10;
+          const left = m[4];
+          const baseline = m[5];
+          const wDev = it.width || fontH * it.str.length * 0.5;
+          const top = baseline - fontH; // glyphs rise above the baseline
+          items.push({
+            str: it.str,
+            lower: it.str.toLowerCase(),
+            x: left / pw,
+            y: top / ph,
+            w: wDev / pw,
+            h: fontH / ph,
+          });
+        }
+        pagesText.push(items);
+      }
+    } finally {
+      try {
+        await pdf.cleanup();
+      } catch {
+        /* ignore */
+      }
+      try {
+        await task.destroy();
+      } catch {
+        /* ignore */
+      }
+    }
+    textCacheRef.current = { bytes, pages: pagesText };
+    return pagesText;
+  }, []);
+
+  // Scan the cached page text for `query`, building a flat match list. Each match
+  // approximates its sub-rect from the character offset within its run.
+  const computeMatches = useCallback(
+    async (query: string, caseSensitive: boolean): Promise<SearchMatch[]> => {
+      const pages = await ensureTextCache();
+      const needle = caseSensitive ? query : query.toLowerCase();
+      if (!needle) return [];
+      const out: SearchMatch[] = [];
+      for (let pi = 0; pi < pages.length; pi++) {
+        for (const item of pages[pi]) {
+          const hay = caseSensitive ? item.str : item.lower;
+          const n = item.str.length || 1;
+          let from = 0;
+          for (;;) {
+            const idx = hay.indexOf(needle, from);
+            if (idx < 0) break;
+            const subX = item.x + (idx / n) * item.w;
+            const subW = (needle.length / n) * item.w;
+            out.push({ page: pi + 1, x: subX, y: item.y, width: subW, height: item.h });
+            from = idx + Math.max(1, needle.length);
+          }
+        }
+      }
+      return out;
+    },
+    [ensureTextCache],
+  );
+
+  // Move the active match by a delta (cycles across ALL pages), switching the
+  // visible page when the target match lives elsewhere.
+  const stepMatch = useCallback(
+    (delta: number) => {
+      setSearchMatches((cur) => {
+        if (!cur.length) return cur;
+        setSearchActive((a) => {
+          const next = ((a + delta) % cur.length + cur.length) % cur.length;
+          const m = cur[next];
+          if (m && m.page !== currentPageRef.current) setCurrentPage(m.page);
+          return next;
+        });
+        return cur;
+      });
+    },
+    [],
+  );
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true);
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    });
+  }, []);
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchMatches([]);
+    setSearchActive(-1);
+  }, []);
+
+  // Debounced query → matches. Clears when closed/emptied. Re-runs when pdfBytes
+  // change (the cache invalidates on the byte-identity check inside).
+  useEffect(() => {
+    if (!searchOpen || !searchQuery) {
+      setSearchMatches((m) => (m.length ? [] : m));
+      setSearchActive((a) => (a === -1 ? a : -1));
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(async () => {
+      try {
+        const matches = await computeMatches(searchQuery, searchCase);
+        if (cancelled) return;
+        setSearchMatches(matches);
+        setSearchActive(matches.length ? 0 : -1);
+        if (matches.length && matches[0].page !== currentPageRef.current) {
+          setCurrentPage(matches[0].page);
+        }
+      } catch {
+        if (!cancelled) {
+          setSearchMatches([]);
+          setSearchActive(-1);
+        }
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [searchOpen, searchQuery, searchCase, pdfBytes, computeMatches]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
@@ -2439,6 +2641,17 @@ export function EditorPage() {
       // Don't hijack shortcuts while typing in a field / editing text inline.
       const editing = editingId != null || t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable;
       const mod = e.ctrlKey || e.metaKey;
+      // Ctrl/Cmd+F opens the find bar — but NOT while inline-editing text or
+      // typing in one of the editor's own inputs (except the search input, so a
+      // repeated Ctrl+F just refocuses it). Then the browser's native find is
+      // left alone for those fields.
+      if (mod && e.key.toLowerCase() === "f") {
+        const inSearchInput = (t as HTMLElement).dataset?.testid === "editor-search-input";
+        if (editing && !inSearchInput) return;
+        e.preventDefault();
+        openSearch();
+        return;
+      }
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -2488,7 +2701,7 @@ export function EditorPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [snapshot, undo, redo, copySelection, cutSelection, pasteClipboard, deleteSelection, reorderSelection, editingId, finishPoly]);
+  }, [snapshot, undo, redo, copySelection, cutSelection, pasteClipboard, deleteSelection, reorderSelection, editingId, finishPoly, openSearch]);
 
   const updateSelected = (patch: Record<string, unknown>) => {
     if (!selectedId) return;
@@ -3378,6 +3591,14 @@ export function EditorPage() {
           <div className="p-3 border-b flex items-center justify-between">
             <h2 className="font-semibold">Tools</h2>
             <div className="flex gap-1">
+              <button
+                data-testid="editor-search-open"
+                onClick={() => (searchOpen ? closeSearch() : openSearch())}
+                title="Find text (Ctrl+F)"
+                className={`p-1.5 rounded ${searchOpen ? "bg-blue-50 text-blue-600" : "hover:bg-gray-100"}`}
+              >
+                <Search className="w-4 h-4" />
+              </button>
               <button data-testid="editor-undo" onClick={undo} disabled={!undoStack.current.length} title="Undo (Ctrl+Z)" className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30">
                 <Undo2 className="w-4 h-4" />
               </button>
@@ -4187,6 +4408,69 @@ export function EditorPage() {
             </div>
           </div>
 
+          {/* Find / text-search bar (Wave 5d) */}
+          {searchOpen && (
+            <div data-testid="search-bar" className="px-3 py-2 border-b bg-gray-50 flex items-center gap-2">
+              <Search className="w-4 h-4 text-gray-500 shrink-0" />
+              <input
+                ref={searchInputRef}
+                data-testid="editor-search-input"
+                type="text"
+                autoFocus
+                placeholder="Find in document…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    stepMatch(e.shiftKey ? -1 : 1);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    closeSearch();
+                  }
+                }}
+                className="flex-1 min-w-0 text-sm border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+              <span data-testid="search-count" className="text-xs text-gray-600 tabular-nums whitespace-nowrap">
+                {searchMatches.length ? `${searchActive + 1} / ${searchMatches.length}` : `0 / 0`}
+              </span>
+              <button
+                data-testid="search-prev"
+                onClick={() => stepMatch(-1)}
+                disabled={!searchMatches.length}
+                title="Previous match (Shift+Enter)"
+                className="p-1 rounded border hover:bg-gray-100 disabled:opacity-40"
+              >
+                <ChevronUp className="w-4 h-4" />
+              </button>
+              <button
+                data-testid="search-next"
+                onClick={() => stepMatch(1)}
+                disabled={!searchMatches.length}
+                title="Next match (Enter)"
+                className="p-1 rounded border hover:bg-gray-100 disabled:opacity-40"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+              <button
+                data-testid="search-case"
+                onClick={() => setSearchCase((v) => !v)}
+                title="Match case"
+                className={`px-1.5 py-1 text-xs rounded border ${searchCase ? "bg-blue-50 border-blue-400 text-blue-600" : "hover:bg-gray-100"}`}
+              >
+                Aa
+              </button>
+              <button
+                data-testid="search-close"
+                onClick={closeSearch}
+                title="Close find (Esc)"
+                className="p-1 rounded border hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {(error || saveMsg) && (
             <div className="px-4 pt-3">
               {error && <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
@@ -4219,6 +4503,51 @@ export function EditorPage() {
                         backgroundSize: `${GRID_PX}px ${GRID_PX}px`,
                       }}
                     />
+                  )}
+
+                  {/* Text-search highlights (Wave 5d): all matches on this page,
+                      the active one emphasized. Read-only, never intercepts clicks. */}
+                  {searchOpen && searchMatches.length > 0 && (
+                    <div data-testid="search-highlights" className="absolute inset-0" style={{ zIndex: 4, pointerEvents: "none" }}>
+                      {searchMatches.map((m, i) =>
+                        m.page === currentPage ? (
+                          <div
+                            key={i}
+                            data-testid="search-hit"
+                            data-search-active={i === searchActive ? "true" : undefined}
+                            className="absolute"
+                            style={{
+                              left: `${m.x * 100}%`,
+                              top: `${m.y * 100}%`,
+                              width: `${m.width * 100}%`,
+                              height: `${m.height * 100}%`,
+                              minWidth: 2,
+                              minHeight: 6,
+                              backgroundColor: i === searchActive ? "rgba(249,115,22,0.45)" : "rgba(250,204,21,0.4)",
+                              outline: i === searchActive ? "1.5px solid #f97316" : "none",
+                              borderRadius: 1,
+                            }}
+                          />
+                        ) : null,
+                      )}
+                      {/* Emphasis ring for the active match when it is on this page. */}
+                      {searchActive >= 0 && searchMatches[searchActive]?.page === currentPage && (
+                        <div
+                          data-testid="search-hit-active"
+                          className="absolute"
+                          style={{
+                            left: `${searchMatches[searchActive].x * 100}%`,
+                            top: `${searchMatches[searchActive].y * 100}%`,
+                            width: `${searchMatches[searchActive].width * 100}%`,
+                            height: `${searchMatches[searchActive].height * 100}%`,
+                            minWidth: 2,
+                            minHeight: 6,
+                            outline: "2px solid #f97316",
+                            borderRadius: 1,
+                          }}
+                        />
+                      )}
+                    </div>
                   )}
 
                   {/* Live header/footer preview (Wave 3c) */}
