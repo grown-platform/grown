@@ -74,10 +74,10 @@ Baseline gaps → become the backlog below.
 - [x] Rich text in text boxes: alignment, bullet/numbered lists, line spacing. `cbfc2f3` (fontkit/Unicode embedding → Wave 5c)
 - [x] More shapes: rounded rect, polygon, polyline; dashed strokes. `cbfc2f3` (cloud/callout optional, later)
 - [x] Redaction tool (true content removal via page rasterize on export). `024d34e`
-- [ ] Sticky-note comments / callouts; comment sidebar. ← Wave 5c
-- [ ] Stamps (Approved/Draft/Confidential/custom image stamps). ← Wave 5c
-- [ ] Text search/find across pages (pdf.js text layer) + highlight-all. ← Wave 5c
-- [ ] Custom font embedding (fontkit) for Unicode text. ← Wave 5c
+- [x] Sticky-note comments / callouts; comment sidebar. `fed2e1a`
+- [x] Stamps (Approved/Draft/Confidential/custom image stamps). `fed2e1a`
+- [ ] Text search/find across pages (pdf.js text layer) + highlight-all. ← Wave 5d
+- [ ] Custom font embedding (fontkit) for Unicode text. ← Wave 5d
 
 ### Wave 6 — Export, persistence, polish
 - [ ] Editable annotation sidecar (JSON) saved with doc → reopen keeps annotations editable.
@@ -103,6 +103,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-16** — Wave 5c DONE (`fed2e1a`): sticky-note comments (draggable markers + editable text) with a collapsible comment sidebar (jump-to/delete/count), preset stamps (APPROVED/DRAFT/CONFIDENTIAL/REVIEWED/FINAL/VOID + optional date) exported as vector, and custom image stamps. New `NoteAnnotation`/`StampAnnotation`. Hooks: `tool-note`, `tool-stamp`, `comment-*`, `note-*`, `stamp-*`. 39/39 e2e (verified). Next: Wave 5d (text search across pages + highlight-all; fontkit/Unicode font embedding) → then Wave 6 (export/persistence/polish).
 - **2026-07-15** — Wave 5b DONE (`024d34e`): TRUE redaction — `tool-redact` marks; on export, marked pages are rasterized via pdf.js (2x) with black-filled rects and replaced by a flattened image, destroying the underlying text layer; non-redacted pages stay vector; pdf-lib fallback. `redact-notice`. 36/36 e2e, removal proven by pdf.js text extraction. Next: Wave 5c (sticky-note comments + sidebar, preset/custom stamps), then Wave 5d (text search, fontkit/Unicode).
 - **2026-07-15** — Wave 5a DONE (`cbfc2f3`): true eraser (click/drag delete + partial ink-split), rounded rect + polygon + polyline + dashed strokes, richer text (align/lists/line-spacing). New `PolyAnnotation`; box gained `rx`/`dash`; text gained `align`/`list`/`lineSpacing`. Hooks: `tool-{eraser,rrect,polygon,polyline}`, `eraser-size`, `shape-{dash,corner-radius}`, `text-{align-*,list-*,line-spacing}`, `data-annot-kind`/`data-ink-points`/etc. 34/34 e2e (verified). Next: Wave 5b (redaction via rasterize, sticky-note comments + sidebar, preset/custom stamps).
 - **2026-07-15** — Wave 4b DONE (`109f9f1`): signature/initials (Type/Draw/Upload → PNG image annotation), date stamp, Fill & Sign quick mode with vector check/cross/dot stamps. New `SignatureDialog.tsx`. Hooks: `tool-signature/initials/date`, `toggle-fillsign`, `sig-*`, `stamp-*`, `quick-*`. 30/30 e2e (verified). **Wave 4 COMPLETE.** Next: Wave 5 (markup: eraser, redaction, sticky notes, stamps, rich text/lists, text search, more shapes).
