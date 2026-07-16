@@ -85,7 +85,7 @@ Baseline gaps → become the backlog below.
 - [x] Autosave draft to IndexedDB (survive refresh) + "restore draft" prompt. `6786322`
 - [x] Keyboard shortcut map + in-app shortcuts help overlay (`?`); arrow-key nudge. `6786322`
 - [x] Export options: PNG/JPEG page export, document metadata (title/author/subject/keywords). `8ca7725` (pdf-lib has NO password/encryption or PDF/A — skipped, would need backend/native)
-- [ ] Editable annotation sidecar embedded IN the exported PDF → reopen keeps annotations editable (client-side round-trip). ← Wave 6c
+- [x] Editable annotation sidecar embedded IN the exported PDF → reopen keeps annotations editable (client-side round-trip). `94bb633`
 - [ ] Custom font embedding (fontkit) for Unicode text. ← Wave 6c/later (needs bundled font)
 - [ ] Load-existing-document-by-id (open a Documents item into the editor) — needs backend fetch; lower priority.
 - [ ] Accessibility pass (roles, focus, ARIA on toolbar) — polish.
@@ -106,6 +106,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-16** — Wave 6c DONE (`94bb633`): editable round-trip — "Save editable copy" embeds `grown-editor.json` (annotations/hf/meta/docName) via pdf-lib attach without flattening; on load pdf.js `getAttachments()` restores it as editable objects. Flattened Download stays sidecar-free. Hooks: `download-editable`, `editable-restored`. 49/49 e2e, 2x-stable. Next: Wave 6d (fontkit/Unicode font embedding) — needs a bundled font (watch bundle size); then final polish + PR finalize (update PR body with the full feature list).
 - **2026-07-16** — Wave 6b DONE (`8ca7725`): PNG/JPEG page export (pdf.js render of the baked PDF, 1x/2x/3x, current/all), document metadata dialog (title/author/subject/keywords/creator) via pdf-lib setters + draft round-trip. Hooks: `export-image-*`, `metadata-*`, `meta-*`. 47/47 e2e. Next: Wave 6c (embedded editable sidecar → reopen keeps annotations editable) — the round-trip standout. Then fontkit/Unicode, then final polish + PR finalize.
 - **2026-07-16** — Wave 6a DONE (`6786322`): autosave to IndexedDB (`draftDb.ts`) + restore prompt (cleared on new/close/open-other/save; IDB guarded), shortcuts help overlay (`?`), arrow-key nudge, Ctrl/Cmd+D duplicate. Hooks: `draft-status`, `restore-draft-*`, `shortcuts-*`. 45/45 e2e, 2x-stable. Next: Wave 6b (PNG/JPEG page export + document metadata), then 6c (embedded editable sidecar round-trip).
 - **2026-07-16** — Wave 5d DONE (`b9ae4d1`): cross-page text search (Ctrl/Cmd+F) via pdf.js text content, match counter, next/prev across pages, case toggle, highlight-all overlay, per-page text cache. Read-only. Hooks: `editor-search-open`, `editor-search-input`, `search-*`. 42/42 e2e (verified). **Wave 5 COMPLETE** (fontkit moved to Wave 6). Recorded the header-wrap gotcha in the cheat-sheet. Next: Wave 6 (persistence/export/polish) — start 6a (autosave draft + restore, shortcuts help overlay).
