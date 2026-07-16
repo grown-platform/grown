@@ -54,7 +54,7 @@ Baseline gaps → become the backlog below.
 - [x] Alignment & distribute (left/center/right/top/middle/bottom, distribute h/v). `b4fdb15`
 - [x] Snapping / alignment guides + optional grid. `b4fdb15`
 - [x] Edge/corner resize handles on all sides (8 handles); aspect-lock (shift). `b4fdb15`
-- [ ] Rotate annotations — DEFERRED to its own wave (touches export math; isolate the risk).
+- [x] Rotate annotations (box/image/text/stamp; handle + numeric; center-anchor export). `5d60a75`
 
 ### Wave 3 — Page & document management
 - [x] Thumbnail sidebar with drag-reorder, page context menu (duplicate/delete/rotate/insert). `5a8275e`
@@ -90,8 +90,14 @@ Baseline gaps → become the backlog below.
 - [ ] Load-existing-document-by-id (open a Documents item into the editor) — needs backend fetch; lower priority.
 - [ ] Accessibility pass (roles, focus, ARIA on toolbar) — polish.
 
+### Wave 7+ — deferred editor polish (client-side, verifiable)
+- [x] Annotation rotation. `5d60a75`
+- [ ] Wave 8: page crop (crop box → export), line/arrowhead endpoint styles, configurable highlight colors.
+- [ ] Wave 9: accessibility pass (roles/aria/focus on toolbar + dialogs).
+- [ ] (deferred, higher risk/needs backend) continuous-scroll render; load-Documents-item-by-id.
+
 ### Later — Docs/Sheets parity (only if editor exhausted)
-- [ ] See `docs/feature-research/docs-sheets-parity.md`; pick highest-value gaps.
+- [ ] See `docs/feature-research/docs-sheets-parity.md`; pick highest-value gaps. NOTE: Docs/Sheets e2e needs the full grown backend stack (Go+DB+auth) running — much harder to verify headless than the client-only PDF editor. Prefer editor work while it still has verifiable value; for Docs/Sheets, lean on tsc/build + targeted unit tests where e2e isn't feasible.
 
 ---
 
@@ -106,6 +112,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-16** — Wave 7 DONE (`5d60a75`): annotation rotation (box/image/text/stamp) — rotation handle (Shift-snap 15°) + numeric field, CSS/SVG transforms, center-anchor pdf-lib export gated on nonzero angle (unrotated byte-identical). Resize/hit-test stay axis-aligned (approx). Hooks: `rotate-handle`, `rotate-input`, `data-annot-rotation`. 54/54 e2e. Next: Wave 8 (page crop + line/arrowhead styles + highlight colors).
 - **2026-07-16** — FINALIZE PASS: pdf `npm run build` ✓ (pre-existing bundle-size warning only), editor e2e 51/51 ✓, web/app tsc+build ✓. Base `app.spec` (chromium) fails ONLY on ECONNREFUSED /api/user/me — needs backend, pre-existing, NOT a regression (editor specs bypass auth via sessionStorage). PR #32 body updated with full feature list (33 files, +8200/-255, 36 commits). Continuing with deferred editor polish: annotation rotation next, then a11y, then Docs/Sheets parity if time.
 - **2026-07-16** — Wave 6d DONE (`339efb6`): Unicode text export via `@pdf-lib/fontkit` + bundled Noto Sans (lazy vite assets, subset on export). WinAnsi text keeps Standard-14 (existing exports unchanged); non-WinAnsi embeds Noto. 51/51 e2e (Cyrillic/Greek extracted via pdf.js). **Editor backlog essentially COMPLETE** (remaining: load-by-id [needs backend], a11y polish, continuous-scroll [render rework], annotation rotation). NEXT: FINALIZE — run full pdf build + all e2e projects, verify web/app hamburger build, update PR #32 body with the full feature list, update memory. Then optional: Docs/Sheets parity items (see feature-research) or the deferred polish items.
 - **2026-07-16** — Wave 6c DONE (`94bb633`): editable round-trip — "Save editable copy" embeds `grown-editor.json` (annotations/hf/meta/docName) via pdf-lib attach without flattening; on load pdf.js `getAttachments()` restores it as editable objects. Flattened Download stays sidecar-free. Hooks: `download-editable`, `editable-restored`. 49/49 e2e, 2x-stable. Next: Wave 6d (fontkit/Unicode font embedding) — needs a bundled font (watch bundle size); then final polish + PR finalize (update PR body with the full feature list).
