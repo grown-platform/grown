@@ -112,6 +112,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-16** — Resumed on "keep going". Installed pandoc 3.10 locally to unblock Docs work. DOCS IMPORT DONE (`c3e38aa`): `ImportToHTML` (docx/odt/rtf/epub/md/txt/html → HTML via pandoc `--embed-resources`) + `POST /api/v1/docs/import` endpoint + round-trip Go tests (actually run — pandoc present). Closes the #1 Docs parity gap. FOLLOW-UP (unverified here, needs Docs frontend): add an "Import" button that calls the endpoint and seeds a new doc's CRDT with the returned HTML. Sheets LAMBDA-helper (MAP/REDUCE/…) wave running in parallel.
 - **2026-07-16** — SESSION CHECKPOINT. Verifiable backlog exhausted. Final gates all green: `go build ./...` clean, `go test ./internal/sheets/` pass, editor e2e **67/67** (25 specs, 2x-stable), web/app tsc clean. PR #32 = 48 commits ahead, tree clean. Delivered: hamburger menu; 2 research docs; **complete PDF editor** (9 feature waves + rotation + crop/styles + a11y, ~67 e2e); **42 Sheets formula fns** (2 Go batches, tested). PAUSED spawning further waves because remaining work isn't cleanly verifiable here → would risk a deploy-on-merge PR:
   - Docs import (docx→HTML) + PDF/Docs export fidelity: need **pandoc** (not installed locally).
   - Sheets xlsx/csv import + export-with-formulas, cell comments: need running backend + frontend wiring (no headless e2e path here).
