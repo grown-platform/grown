@@ -948,6 +948,23 @@ const SHORTCUT_GROUPS: { title: string; items: ShortcutItem[] }[] = [
   },
 ];
 
+// ---- Document metadata (Wave 6b) -------------------------------------------
+// Document-level Info dictionary fields applied to the exported/saved PDF via
+// pdf-lib setters. `keywords` is a raw comma-separated string in the editor
+// (split + trimmed at export time). Persisted in the autosave draft.
+interface DocMeta {
+  title: string;
+  author: string;
+  subject: string;
+  keywords: string;
+  creator: string;
+}
+const DEFAULT_META: DocMeta = { title: "", author: "", subject: "", keywords: "", creator: "" };
+const META_PRODUCER = "Grown PDF Editor";
+// Image-export options (Wave 6b).
+type ImageFormat = "png" | "jpeg";
+type ImageScope = "current" | "all";
+
 export function EditorPage() {
   const navigate = useNavigate();
 
@@ -1010,6 +1027,16 @@ export function EditorPage() {
   const [draftStatus, setDraftStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [restorePrompt, setRestorePrompt] = useState<EditorDraft | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // ---- Export & metadata (Wave 6b) ------------------------------------------
+  // Document metadata (persisted in the draft) + the two side-card dialogs:
+  // image export (PNG/JPEG page render) and the Info-dictionary editor.
+  const [meta, setMeta] = useState<DocMeta>(DEFAULT_META);
+  const [metaOpen, setMetaOpen] = useState(false);
+  const [exportImageOpen, setExportImageOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ImageFormat>("png");
+  const [exportScale, setExportScale] = useState(2);
+  const [exportScope, setExportScope] = useState<ImageScope>("current");
+  const patchMeta = (patch: Partial<DocMeta>) => setMeta((m) => ({ ...m, ...patch }));
   // Coalesce a burst of arrow-key nudges into a single undo entry.
   const nudgeBurstRef = useRef(0);
   const toolRef = useRef<Tool>("select");
@@ -1256,11 +1283,11 @@ export function EditorPage() {
     }
     setDraftStatus("saving");
     const handle = window.setTimeout(async () => {
-      await saveDraft({ pdfBytes, pages, annotations, docName, hf, savedAt: Date.now() });
+      await saveDraft({ pdfBytes, pages, annotations, docName, hf, meta, savedAt: Date.now() });
       setDraftStatus("saved");
     }, 1500);
     return () => window.clearTimeout(handle);
-  }, [pdfBytes, pages, annotations, docName, hf]);
+  }, [pdfBytes, pages, annotations, docName, hf, meta]);
   // Restore a found draft into an editable state (its own path, so it does NOT
   // clear the draft the way a fresh open/blank does). Resets undo history.
   const restoreDraft = useCallback((rec: EditorDraft) => {
@@ -1270,6 +1297,8 @@ export function EditorPage() {
     setPages(rec.pages as PageEntry[]);
     setAnnotations(rec.annotations as Annotation[]);
     setHf(rec.hf as HeaderFooterConfig);
+    // Back-compat: pre-Wave-6b drafts have no `meta` field.
+    setMeta((rec.meta as DocMeta | undefined) ?? DEFAULT_META);
     undoStack.current = [];
     redoStack.current = [];
     setCurrentPage(1);
@@ -3294,8 +3323,24 @@ export function EditorPage() {
       }
       if (flattenForms) form.flatten();
     }
+
+    // ---- Document metadata (Wave 6b) ---------------------------------------
+    // Apply any non-empty Info-dictionary fields via pdf-lib. Keywords are
+    // split on commas + trimmed. Producer is stamped whenever any field is set.
+    const mTitle = meta.title.trim();
+    const mAuthor = meta.author.trim();
+    const mSubject = meta.subject.trim();
+    const mCreator = meta.creator.trim();
+    const mKeywords = meta.keywords.split(",").map((k) => k.trim()).filter(Boolean);
+    if (mTitle) doc.setTitle(mTitle);
+    if (mAuthor) doc.setAuthor(mAuthor);
+    if (mSubject) doc.setSubject(mSubject);
+    if (mCreator) doc.setCreator(mCreator);
+    if (mKeywords.length) doc.setKeywords(mKeywords);
+    if (mTitle || mAuthor || mSubject || mCreator || mKeywords.length) doc.setProducer(META_PRODUCER);
+
     return doc.save();
-  }, [pdfBytes, annotations, hf, docName, flattenForms]);
+  }, [pdfBytes, annotations, hf, docName, flattenForms, meta]);
 
   const handleDownload = async () => {
     setBusy(true);
@@ -3315,6 +3360,70 @@ export function EditorPage() {
       setBusy(false);
     }
   };
+
+  // ---- Export pages as image (Wave 6b) --------------------------------------
+  // Render the FINAL pdf (buildFinalPdf → annotations/redaction/header-footer
+  // baked) with pdfjs to a canvas at the chosen scale, then canvas.toBlob →
+  // download. Current page ⇒ one file; all pages ⇒ one download per page.
+  // JPEG flattens alpha onto a white background at ~0.92 quality.
+  const handleExportImage = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    const type = exportFormat === "jpeg" ? "image/jpeg" : "image/png";
+    const ext = exportFormat === "jpeg" ? "jpg" : "png";
+    try {
+      const bytes = await buildFinalPdf();
+      // pdfjs may detach the buffer it's handed — pass a fresh copy.
+      const task = pdfjs.getDocument({ data: bytes.slice() });
+      const pdf = await task.promise;
+      try {
+        const total = pdf.numPages;
+        const indices =
+          exportScope === "all"
+            ? Array.from({ length: total }, (_, i) => i)
+            : [Math.min(Math.max(1, currentPage), total) - 1];
+        for (const pi of indices) {
+          const page = await pdf.getPage(pi + 1);
+          const viewport = page.getViewport({ scale: exportScale });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.ceil(viewport.width));
+          canvas.height = Math.max(1, Math.ceil(viewport.height));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("no 2d context");
+          if (exportFormat === "jpeg") {
+            // JPEG has no alpha — paint a white backdrop so transparency flattens.
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+          await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+          const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.92));
+          if (!blob) throw new Error("Failed to encode image");
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${docName || "document"}-p${pi + 1}.${ext}`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      } finally {
+        try {
+          await pdf.cleanup();
+        } catch {
+          /* ignore */
+        }
+        try {
+          await task.destroy();
+        } catch {
+          /* ignore */
+        }
+      }
+      setExportImageOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Image export failed");
+    } finally {
+      setBusy(false);
+    }
+  }, [buildFinalPdf, exportFormat, exportScale, exportScope, currentPage, docName]);
 
   // Extract a range of pages into a downloaded PDF. Built from the CURRENT doc
   // via buildFinalPdf so flattened annotations are included.
@@ -4186,6 +4295,21 @@ export function EditorPage() {
             </div>
             <Button testId="headerfooter-open" size="sm" variant={hf.enabled ? "primary" : "outline"} onClick={() => setDialog("headerfooter")} disabled={busy} className="w-full">
               <Type className="w-4 h-4 inline mr-1" /> Headers &amp; footers…
+            </Button>
+          </div>
+        </Card>
+
+        {/* Export & document info (Wave 6b) */}
+        <Card>
+          <div className="p-3 border-b">
+            <h2 className="font-semibold">Export</h2>
+          </div>
+          <div className="p-3 space-y-2">
+            <Button testId="export-image-open" size="sm" variant="outline" onClick={() => setExportImageOpen(true)} disabled={busy} className="w-full">
+              <ImageIcon className="w-4 h-4 inline mr-1" /> Export as image…
+            </Button>
+            <Button testId="metadata-open" size="sm" variant="outline" onClick={() => setMetaOpen(true)} disabled={busy} className="w-full">
+              <FormInput className="w-4 h-4 inline mr-1" /> Document info…
             </Button>
           </div>
         </Card>
@@ -5529,6 +5653,88 @@ export function EditorPage() {
                   </ul>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export as image dialog (Wave 6b) */}
+      {exportImageOpen && (
+        <div
+          data-testid="export-image-dialog"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={() => setExportImageOpen(false)}
+        >
+          <div className="bg-white rounded-lg shadow-xl w-80 max-w-[90vw] p-4" onMouseDown={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold mb-1">Export as image</h3>
+            <p className="text-xs text-gray-500 mb-3">Render the flattened document (annotations, header/footer and redaction baked in) to PNG or JPEG.</p>
+            <div className="space-y-3 text-sm">
+              <label className="block">
+                <span className="text-gray-600 text-xs">Format</span>
+                <select data-testid="export-image-format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value as ImageFormat)} className="w-full border rounded px-2 py-1 mt-1">
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPEG</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-gray-600 text-xs">Resolution</span>
+                <select data-testid="export-image-scale" value={exportScale} onChange={(e) => setExportScale(parseInt(e.target.value) || 1)} className="w-full border rounded px-2 py-1 mt-1">
+                  <option value={1}>1× (screen)</option>
+                  <option value={2}>2× (high)</option>
+                  <option value={3}>3× (print)</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-gray-600 text-xs">Pages</span>
+                <select data-testid="export-image-scope" value={exportScope} onChange={(e) => setExportScope(e.target.value as ImageScope)} className="w-full border rounded px-2 py-1 mt-1">
+                  <option value="current">Current page</option>
+                  <option value="all">All pages</option>
+                </select>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button size="sm" variant="ghost" onClick={() => setExportImageOpen(false)}>Cancel</Button>
+              <Button size="sm" testId="export-image-confirm" onClick={handleExportImage} disabled={busy}>Export</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document metadata dialog (Wave 6b) */}
+      {metaOpen && (
+        <div
+          data-testid="metadata-dialog"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={() => setMetaOpen(false)}
+        >
+          <div className="bg-white rounded-lg shadow-xl w-96 max-w-[90vw] max-h-[90vh] overflow-y-auto p-4" onMouseDown={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold mb-1">Document info</h3>
+            <p className="text-xs text-gray-500 mb-3">Metadata written to the PDF Info dictionary on download and save.</p>
+            <div className="space-y-3 text-sm">
+              <label className="block">
+                <span className="text-gray-600 text-xs">Title</span>
+                <input data-testid="meta-title" value={meta.title} onChange={(e) => patchMeta({ title: e.target.value })} className="w-full border rounded px-2 py-1 mt-0.5" />
+              </label>
+              <label className="block">
+                <span className="text-gray-600 text-xs">Author</span>
+                <input data-testid="meta-author" value={meta.author} onChange={(e) => patchMeta({ author: e.target.value })} className="w-full border rounded px-2 py-1 mt-0.5" />
+              </label>
+              <label className="block">
+                <span className="text-gray-600 text-xs">Subject</span>
+                <input data-testid="meta-subject" value={meta.subject} onChange={(e) => patchMeta({ subject: e.target.value })} className="w-full border rounded px-2 py-1 mt-0.5" />
+              </label>
+              <label className="block">
+                <span className="text-gray-600 text-xs">Keywords (comma-separated)</span>
+                <input data-testid="meta-keywords" value={meta.keywords} onChange={(e) => patchMeta({ keywords: e.target.value })} placeholder="invoice, 2026, final" className="w-full border rounded px-2 py-1 mt-0.5" />
+              </label>
+              <label className="block">
+                <span className="text-gray-600 text-xs">Creator</span>
+                <input data-testid="meta-creator" value={meta.creator} onChange={(e) => patchMeta({ creator: e.target.value })} className="w-full border rounded px-2 py-1 mt-0.5" />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button size="sm" variant="ghost" onClick={() => setMetaOpen(false)}>Cancel</Button>
+              <Button size="sm" testId="metadata-apply" onClick={() => setMetaOpen(false)}>Apply</Button>
             </div>
           </div>
         </div>

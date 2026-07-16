@@ -27,6 +27,9 @@ export interface EditorDraft {
   annotations: unknown[];
   docName: string;
   hf: unknown;
+  // Wave 6b — document metadata (Info dictionary). Optional for back-compat with
+  // drafts written before it existed.
+  meta?: unknown;
   savedAt: number;
 }
 
