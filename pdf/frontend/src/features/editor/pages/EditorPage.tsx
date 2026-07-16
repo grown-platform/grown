@@ -45,6 +45,16 @@ import {
   ChevronUp,
   ChevronDown,
   ClipboardPaste,
+  AlignHorizontalJustifyStart,
+  AlignHorizontalJustifyCenter,
+  AlignHorizontalJustifyEnd,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignHorizontalDistributeCenter,
+  AlignVerticalDistributeCenter,
+  Magnet,
+  Grid3x3,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -251,6 +261,115 @@ function segDistPx(px: number, py: number, x1: number, y1: number, x2: number, y
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
+// ---- Wave 2b geometry: resize / snapping / grid -----------------------------
+const MIN_SIZE = 0.02; // smallest normalized box/image edge
+const SNAP_PX = 6; // snap threshold, screen px
+const GRID_PX = 24; // grid cell size, screen px
+
+// The 8 perimeter handles for box/image, plus text ("br") and line endpoints.
+type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "br" | "p1" | "p2";
+
+// A live guide line while snapping: exactly one of x/y is set (normalized).
+type Guide = { x?: number; y?: number };
+
+// Snap candidate coordinates from a set of annotations: each edge + center on
+// both axes, plus the page mid-lines (0.5). Used for move + resize snapping.
+function snapTargets(annots: Annotation[], pageAspect: number): { xs: number[]; ys: number[] } {
+  const xs: number[] = [0.5];
+  const ys: number[] = [0.5];
+  for (const a of annots) {
+    const b = annotBBox(a, pageAspect);
+    xs.push(b.x0, (b.x0 + b.x1) / 2, b.x1);
+    ys.push(b.y0, (b.y0 + b.y1) / 2, b.y1);
+  }
+  return { xs, ys };
+}
+// Snap a single value to the nearest target within threshold (else unchanged).
+function snapValue(v: number, targets: number[], threshold: number): { value: number; snapped: boolean } {
+  let best: { d: number; v: number } | null = null;
+  for (const t of targets) {
+    const d = Math.abs(t - v);
+    if (d <= threshold && (best === null || d < best.d)) best = { d, v: t };
+  }
+  return best ? { value: best.v, snapped: true } : { value: v, snapped: false };
+}
+function snapToGrid(v: number, cell: number): number {
+  return Math.round(v / cell) * cell;
+}
+// Snap the moving selection's bbox (left/center/right, top/mid/bottom) to
+// nearby targets. Returns the delta to apply + the active guide lines.
+function computeMoveSnap(moving: NBox, targets: { xs: number[]; ys: number[] }, thX: number, thY: number): { dx: number; dy: number; guides: Guide[] } {
+  const guides: Guide[] = [];
+  let dx = 0;
+  let dy = 0;
+  const xs = [moving.x0, (moving.x0 + moving.x1) / 2, moving.x1];
+  let bestX: { d: number; line: number } | null = null;
+  for (const s of xs) {
+    for (const t of targets.xs) {
+      const d = t - s;
+      if (Math.abs(d) <= thX && (bestX === null || Math.abs(d) < Math.abs(bestX.d))) bestX = { d, line: t };
+    }
+  }
+  if (bestX) {
+    dx = bestX.d;
+    guides.push({ x: bestX.line });
+  }
+  const ys = [moving.y0, (moving.y0 + moving.y1) / 2, moving.y1];
+  let bestY: { d: number; line: number } | null = null;
+  for (const s of ys) {
+    for (const t of targets.ys) {
+      const d = t - s;
+      if (Math.abs(d) <= thY && (bestY === null || Math.abs(d) < Math.abs(bestY.d))) bestY = { d, line: t };
+    }
+  }
+  if (bestY) {
+    dy = bestY.d;
+    guides.push({ y: bestY.line });
+  }
+  return { dx, dy, guides };
+}
+// Resize a box/image from its start geometry, keeping the opposite edge/corner
+// anchored. `shift` on a corner locks the aspect ratio (normalized w:h — which,
+// since the px scale is uniform, preserves the visual ratio too).
+function resizeBox(
+  start: { x: number; y: number; width: number; height: number },
+  handle: ResizeHandle,
+  nx: number,
+  ny: number,
+  shift: boolean,
+  min: number,
+): { x: number; y: number; width: number; height: number } {
+  const sx0 = start.x;
+  const sy0 = start.y;
+  const sx1 = start.x + start.width;
+  const sy1 = start.y + start.height;
+  const west = handle.includes("w");
+  const east = handle.includes("e");
+  const north = handle.includes("n");
+  const south = handle.includes("s");
+  let x0 = sx0;
+  let x1 = sx1;
+  let y0 = sy0;
+  let y1 = sy1;
+  if (east) x1 = Math.max(sx0 + min, nx);
+  if (west) x0 = Math.min(sx1 - min, nx);
+  if (south) y1 = Math.max(sy0 + min, ny);
+  if (north) y0 = Math.min(sy1 - min, ny);
+  let w = x1 - x0;
+  let h = y1 - y0;
+  if (shift && (east || west) && (north || south) && start.width > 0 && start.height > 0) {
+    const scale = Math.max(w / start.width, h / start.height);
+    w = start.width * scale;
+    h = start.height * scale;
+  }
+  return {
+    x: west ? sx1 - w : sx0,
+    y: north ? sy1 - h : sy0,
+    width: w,
+    height: h,
+  };
+}
+
 export function EditorPage() {
   const navigate = useNavigate();
 
@@ -300,19 +419,47 @@ export function EditorPage() {
   const [fillColor, setFillColor] = useState<string | null>(null);
   const [textColor] = useState("#111111");
 
+  // ---- Snapping + grid (Wave 2b) --------------------------------------------
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [gridEnabled, setGridEnabled] = useState(false);
+  const snapEnabledRef = useRef(snapEnabled);
+  const gridEnabledRef = useRef(gridEnabled);
+  useEffect(() => {
+    snapEnabledRef.current = snapEnabled;
+  }, [snapEnabled]);
+  useEffect(() => {
+    gridEnabledRef.current = gridEnabled;
+  }, [gridEnabled]);
+  // Live alignment guide lines (normalized); cleared on mouse-up.
+  const [guides, setGuides] = useState<Guide[]>([]);
+
   const overlayRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pendingImagePoint = useRef<{ x: number; y: number } | null>(null);
 
-  // A move drags every id in `ids` (group move); startX/startY track the pointer.
-  const dragState = useRef<{ ids: string[]; startX: number; startY: number } | null>(null);
+  // A move drags every id in `ids` (group move). We track the pointer origin +
+  // the selection's start bbox so snapping can work off absolute positions, and
+  // `applied` remembers the delta committed so far (translate is incremental).
+  const dragState = useRef<{
+    ids: string[];
+    originX: number;
+    originY: number;
+    bbox0: NBox;
+    applied: { dx: number; dy: number };
+    targets: { xs: number[]; ys: number[] };
+  } | null>(null);
   const drawState = useRef<{
     tool: Tool;
     sx: number;
     sy: number;
     style: { strokeColor: string; strokeWidth: number; fillColor: string | null };
   } | null>(null);
-  const resizeState = useRef<{ id: string; handle: "br" | "p1" | "p2" } | null>(null);
+  const resizeState = useRef<{
+    id: string;
+    handle: ResizeHandle;
+    start: { x: number; y: number; width: number; height: number } | null;
+    targets: { xs: number[]; ys: number[] };
+  } | null>(null);
   // Marquee selection drag on empty canvas.
   const marqueeState = useRef<{ sx: number; sy: number; additive: boolean; box: NBox; moved: boolean } | null>(null);
   // A shape click/marquee-drag already resolved selection — stop the trailing
@@ -652,13 +799,25 @@ export function EditorPage() {
     setSelectedIds(movingIds);
     snapshot();
     const { x, y } = toNorm(e.clientX, e.clientY);
-    dragState.current = { ids: movingIds, startX: x, startY: y };
+    // Combined start bbox of the moving set (for snapping the whole group).
+    const pa = pageAspectRef.current;
+    const moving = annotationsRef.current.filter((a) => movingIds.includes(a.id));
+    const bbox0 = moving.reduce<NBox | null>((acc, a) => {
+      const b = annotBBox(a, pa);
+      return acc ? { x0: Math.min(acc.x0, b.x0), y0: Math.min(acc.y0, b.y0), x1: Math.max(acc.x1, b.x1), y1: Math.max(acc.y1, b.y1) } : b;
+    }, null) ?? { x0: x, y0: y, x1: x, y1: y };
+    // Snap against every other annotation on this page.
+    const others = annotationsRef.current.filter((a) => a.page === currentPageRef.current && !movingIds.includes(a.id));
+    dragState.current = { ids: movingIds, originX: x, originY: y, bbox0, applied: { dx: 0, dy: 0 }, targets: snapTargets(others, pa) };
   };
-  const startResize = (e: React.MouseEvent, id: string, handle: "br" | "p1" | "p2") => {
+  const startResize = (e: React.MouseEvent, id: string, handle: ResizeHandle) => {
     e.stopPropagation();
     setSelectedIds([id]);
     snapshot();
-    resizeState.current = { id, handle };
+    const a = annotationsRef.current.find((x) => x.id === id);
+    const start = a && (isBox(a) || a.type === "image") ? { x: a.x, y: a.y, width: a.width, height: a.height } : null;
+    const others = annotationsRef.current.filter((o) => o.page === currentPageRef.current && o.id !== id);
+    resizeState.current = { id, handle, start, targets: snapTargets(others, pageAspectRef.current) };
   };
 
   useEffect(() => {
@@ -704,21 +863,53 @@ export function EditorPage() {
       // Resizing.
       const rs = resizeState.current;
       if (rs) {
-        setAnnotations((prev) =>
-          prev.map((a) => {
-            if (a.id !== rs.id) return a;
-            if (isLine(a)) {
+        // Line endpoints: unchanged simple behavior.
+        if (rs.handle === "p1" || rs.handle === "p2") {
+          setAnnotations((prev) =>
+            prev.map((a) => {
+              if (a.id !== rs.id || !isLine(a)) return a;
               return rs.handle === "p1" ? { ...a, x1: nx, y1: ny } : { ...a, x2: nx, y2: ny };
+            }),
+          );
+          return;
+        }
+        // Text: width-only resize via the corner handle.
+        if (rs.handle === "br" && !rs.start) {
+          setAnnotations((prev) => prev.map((a) => (a.id === rs.id && a.type === "text" ? { ...a, width: Math.max(0.05, nx - a.x) } : a)));
+          return;
+        }
+        // Box/image: anchored perimeter resize with snapping + optional grid.
+        if (rs.start) {
+          const handle = rs.handle;
+          const horiz = handle.includes("e") || handle.includes("w");
+          const vert = handle.includes("n") || handle.includes("s");
+          let px = nx;
+          let py = ny;
+          const gs: Guide[] = [];
+          if (gridEnabledRef.current) {
+            if (horiz) px = clamp01(snapToGrid(px, GRID_PX / rect.width));
+            if (vert) py = clamp01(snapToGrid(py, GRID_PX / rect.height));
+          } else if (snapEnabledRef.current && !e.shiftKey) {
+            if (horiz) {
+              const s = snapValue(px, rs.targets.xs, SNAP_PX / rect.width);
+              if (s.snapped) {
+                px = s.value;
+                gs.push({ x: px });
+              }
             }
-            if (isBox(a) || a.type === "image") {
-              return { ...a, width: Math.max(0.02, nx - (a as BoxAnnotation).x), height: Math.max(0.02, ny - (a as BoxAnnotation).y) };
+            if (vert) {
+              const s = snapValue(py, rs.targets.ys, SNAP_PX / rect.height);
+              if (s.snapped) {
+                py = s.value;
+                gs.push({ y: py });
+              }
             }
-            if (a.type === "text") {
-              return { ...a, width: Math.max(0.05, nx - a.x) };
-            }
-            return a;
-          }),
-        );
+          }
+          const box = resizeBox(rs.start, handle, px, py, e.shiftKey, MIN_SIZE);
+          setAnnotations((prev) => prev.map((a) => (a.id === rs.id ? ({ ...a, x: box.x, y: box.y, width: box.width, height: box.height } as Annotation) : a)));
+          setGuides(gs);
+          return;
+        }
         return;
       }
 
@@ -731,14 +922,34 @@ export function EditorPage() {
         return;
       }
 
-      // Moving (group move: apply delta to every selected annotation).
+      // Moving (group move: apply the same delta to every selected annotation).
+      // We work off the drag origin + start bbox so snapping/grid can act on the
+      // absolute position, then translate by only the incremental change.
       const ds = dragState.current;
       if (ds) {
-        const dx = nx - ds.startX;
-        const dy = ny - ds.startY;
-        ds.startX = nx;
-        ds.startY = ny;
-        setAnnotations((prev) => prev.map((a) => (ds.ids.includes(a.id) ? translate(a, dx, dy) : a)));
+        const rawDx = nx - ds.originX;
+        const rawDy = ny - ds.originY;
+        const moving: NBox = { x0: ds.bbox0.x0 + rawDx, y0: ds.bbox0.y0 + rawDy, x1: ds.bbox0.x1 + rawDx, y1: ds.bbox0.y1 + rawDy };
+        let finalDx = rawDx;
+        let finalDy = rawDy;
+        let gs: Guide[] = [];
+        if (gridEnabledRef.current) {
+          finalDx = snapToGrid(ds.bbox0.x0 + rawDx, GRID_PX / rect.width) - ds.bbox0.x0;
+          finalDy = snapToGrid(ds.bbox0.y0 + rawDy, GRID_PX / rect.height) - ds.bbox0.y0;
+        } else if (snapEnabledRef.current) {
+          const snap = computeMoveSnap(moving, ds.targets, SNAP_PX / rect.width, SNAP_PX / rect.height);
+          finalDx = rawDx + snap.dx;
+          finalDy = rawDy + snap.dy;
+          gs = snap.guides;
+        }
+        const incDx = finalDx - ds.applied.dx;
+        const incDy = finalDy - ds.applied.dy;
+        ds.applied.dx = finalDx;
+        ds.applied.dy = finalDy;
+        if (incDx !== 0 || incDy !== 0) {
+          setAnnotations((prev) => prev.map((a) => (ds.ids.includes(a.id) ? translate(a, incDx, incDy) : a)));
+        }
+        setGuides(gs);
       }
     };
     const onUp = () => {
@@ -784,6 +995,7 @@ export function EditorPage() {
       }
       dragState.current = null;
       resizeState.current = null;
+      setGuides([]);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -859,6 +1071,72 @@ export function EditorPage() {
         }
         return arr;
       });
+    },
+    [snapshot],
+  );
+
+  // ---- Align & distribute (operate on the multi-selection's bounding boxes) --
+  type AlignMode = "left" | "hcenter" | "right" | "top" | "vmiddle" | "bottom";
+  const alignSelection = useCallback(
+    (mode: AlignMode) => {
+      const ids = selectedIdsRef.current;
+      if (ids.length < 2) return;
+      const pa = pageAspectRef.current;
+      const boxes = annotationsRef.current.filter((a) => ids.includes(a.id)).map((a) => ({ id: a.id, b: annotBBox(a, pa) }));
+      const minX = Math.min(...boxes.map((o) => o.b.x0));
+      const maxX = Math.max(...boxes.map((o) => o.b.x1));
+      const minY = Math.min(...boxes.map((o) => o.b.y0));
+      const maxY = Math.max(...boxes.map((o) => o.b.y1));
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const delta = new Map<string, { dx: number; dy: number }>();
+      for (const { id, b } of boxes) {
+        let dx = 0;
+        let dy = 0;
+        if (mode === "left") dx = minX - b.x0;
+        else if (mode === "right") dx = maxX - b.x1;
+        else if (mode === "hcenter") dx = cx - (b.x0 + b.x1) / 2;
+        else if (mode === "top") dy = minY - b.y0;
+        else if (mode === "bottom") dy = maxY - b.y1;
+        else if (mode === "vmiddle") dy = cy - (b.y0 + b.y1) / 2;
+        delta.set(id, { dx, dy });
+      }
+      snapshot();
+      setAnnotations((prev) =>
+        prev.map((a) => {
+          const d = delta.get(a.id);
+          return d ? translate(a, d.dx, d.dy) : a;
+        }),
+      );
+    },
+    [snapshot],
+  );
+  // Distribute so the selected annotations' centers are evenly spaced on the
+  // chosen axis (endpoints fixed, gaps equalized). Needs ≥3 selected.
+  const distributeSelection = useCallback(
+    (axis: "h" | "v") => {
+      const ids = selectedIdsRef.current;
+      if (ids.length < 3) return;
+      const pa = pageAspectRef.current;
+      const boxes = annotationsRef.current.filter((a) => ids.includes(a.id)).map((a) => ({ id: a.id, b: annotBBox(a, pa) }));
+      const center = (b: NBox) => (axis === "h" ? (b.x0 + b.x1) / 2 : (b.y0 + b.y1) / 2);
+      boxes.sort((p, q) => center(p.b) - center(q.b));
+      const first = center(boxes[0].b);
+      const last = center(boxes[boxes.length - 1].b);
+      const n = boxes.length;
+      const delta = new Map<string, { dx: number; dy: number }>();
+      boxes.forEach((o, i) => {
+        const target = first + ((last - first) * i) / (n - 1);
+        const off = target - center(o.b);
+        delta.set(o.id, axis === "h" ? { dx: off, dy: 0 } : { dx: 0, dy: off });
+      });
+      snapshot();
+      setAnnotations((prev) =>
+        prev.map((a) => {
+          const d = delta.get(a.id);
+          return d ? translate(a, d.dx, d.dy) : a;
+        }),
+      );
     },
     [snapshot],
   );
@@ -1173,15 +1451,17 @@ export function EditorPage() {
     const Y = (ny: number) => ny * overlayH;
     const sw = (w: number) => Math.max(0.5, w * pxScale);
     if (isBox(a)) {
+      // Test hook: normalized geometry on box nodes (used by align/snap specs).
+      const boxData = isDraft ? {} : { "data-annot-x": a.x, "data-annot-y": a.y, "data-annot-w": a.width, "data-annot-h": a.height };
       if (a.type === "underline" || a.type === "strikethrough") {
         const ly = a.type === "underline" ? Y(a.y + a.height) : Y(a.y + a.height / 2);
         return (
-          <line key={a.id} x1={X(a.x)} y1={ly} x2={X(a.x + a.width)} y2={ly} stroke={a.strokeColor ?? "#111"} strokeWidth={sw(Math.max(1.5, a.strokeWidth))} strokeOpacity={a.opacity} {...common} />
+          <line key={a.id} x1={X(a.x)} y1={ly} x2={X(a.x + a.width)} y2={ly} stroke={a.strokeColor ?? "#111"} strokeWidth={sw(Math.max(1.5, a.strokeWidth))} strokeOpacity={a.opacity} {...boxData} {...common} />
         );
       }
       const stroke = a.strokeColor ?? "none";
       const fill = a.fillColor ?? "none";
-      const shared = { fill, fillOpacity: a.opacity, stroke, strokeWidth: sw(a.strokeWidth), strokeOpacity: a.opacity, ...common };
+      const shared = { fill, fillOpacity: a.opacity, stroke, strokeWidth: sw(a.strokeWidth), strokeOpacity: a.opacity, ...boxData, ...common };
       return a.type === "ellipse" ? (
         <ellipse key={a.id} cx={X(a.x + a.width / 2)} cy={Y(a.y + a.height / 2)} rx={X(a.width / 2)} ry={Y(a.height / 2)} {...shared} />
       ) : (
@@ -1220,8 +1500,8 @@ export function EditorPage() {
     if (tool !== "select" || !selectedIds.length) return null;
     const X = (nx: number) => nx * renderWidth;
     const Y = (ny: number) => ny * overlayH;
-    const Handle = ({ cx, cy, on }: { cx: number; cy: number; on: (e: React.MouseEvent) => void }) => (
-      <rect x={cx - 5} y={cy - 5} width={10} height={10} fill="#fff" stroke="#2563eb" strokeWidth={1.5} style={{ pointerEvents: "auto", cursor: "nwse-resize" }} onMouseDown={on} />
+    const Handle = ({ cx, cy, on, cursor = "nwse-resize", testId }: { cx: number; cy: number; on: (e: React.MouseEvent) => void; cursor?: string; testId?: string }) => (
+      <rect data-testid={testId} x={cx - 5} y={cy - 5} width={10} height={10} fill="#fff" stroke="#2563eb" strokeWidth={1.5} style={{ pointerEvents: "auto", cursor }} onMouseDown={on} />
     );
     // Multi-select: dashed bbox on each selected SVG shape (text/image get a DOM
     // ring already). Skip when exactly one is selected — handled below.
@@ -1252,17 +1532,34 @@ export function EditorPage() {
     if (selected && selected.page === currentPage) {
       if (isBox(selected) || selected.type === "image") {
         const a = selected as BoxAnnotation;
+        const lx = X(a.x);
+        const cx = X(a.x + a.width / 2);
+        const rx = X(a.x + a.width);
+        const ty = Y(a.y);
+        const my = Y(a.y + a.height / 2);
+        const by = Y(a.y + a.height);
+        const H = (px: number, py: number, handle: ResizeHandle, cursor: string, testId: string) => (
+          <Handle key={testId} cx={px} cy={py} cursor={cursor} testId={testId} on={(e) => startResize(e, a.id, handle)} />
+        );
+        // 8 perimeter handles: 4 corners + 4 edge midpoints.
         single = (
           <>
             <rect x={X(a.x)} y={Y(a.y)} width={X(a.width)} height={Y(a.height)} fill="none" stroke="#2563eb" strokeDasharray="4 3" strokeWidth={1} style={{ pointerEvents: "none" }} />
-            <Handle cx={X(a.x + a.width)} cy={Y(a.y + a.height)} on={(e) => startResize(e, a.id, "br")} />
+            {H(lx, ty, "nw", "nwse-resize", "resize-nw")}
+            {H(cx, ty, "n", "ns-resize", "resize-n")}
+            {H(rx, ty, "ne", "nesw-resize", "resize-ne")}
+            {H(rx, my, "e", "ew-resize", "resize-e")}
+            {H(rx, by, "se", "nwse-resize", "resize-se")}
+            {H(cx, by, "s", "ns-resize", "resize-s")}
+            {H(lx, by, "sw", "nesw-resize", "resize-sw")}
+            {H(lx, my, "w", "ew-resize", "resize-w")}
           </>
         );
       } else if (isLine(selected)) {
         single = (
           <>
-            <Handle cx={X(selected.x1)} cy={Y(selected.y1)} on={(e) => startResize(e, selected.id, "p1")} />
-            <Handle cx={X(selected.x2)} cy={Y(selected.y2)} on={(e) => startResize(e, selected.id, "p2")} />
+            <Handle cx={X(selected.x1)} cy={Y(selected.y1)} cursor="crosshair" testId="resize-p1" on={(e) => startResize(e, selected.id, "p1")} />
+            <Handle cx={X(selected.x2)} cy={Y(selected.y2)} cursor="crosshair" testId="resize-p2" on={(e) => startResize(e, selected.id, "p2")} />
           </>
         );
       }
@@ -1346,6 +1643,24 @@ export function EditorPage() {
               </button>
             ))}
           </div>
+          <div className="px-2 pb-2 flex gap-2">
+            <button
+              data-testid="toggle-snap"
+              onClick={() => setSnapEnabled((v) => !v)}
+              className={`flex-1 flex items-center justify-center gap-1 text-xs py-1.5 rounded-lg border-2 transition-colors ${snapEnabled ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent text-gray-700 hover:bg-gray-100"}`}
+              title="Snap to guides"
+            >
+              <Magnet className="w-4 h-4" /> Snap
+            </button>
+            <button
+              data-testid="toggle-grid"
+              onClick={() => setGridEnabled((v) => !v)}
+              className={`flex-1 flex items-center justify-center gap-1 text-xs py-1.5 rounded-lg border-2 transition-colors ${gridEnabled ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent text-gray-700 hover:bg-gray-100"}`}
+              title="Snap to grid"
+            >
+              <Grid3x3 className="w-4 h-4" /> Grid
+            </button>
+          </div>
           {tool !== "select" && (
             <p className="px-4 pb-3 text-xs text-gray-500">
               {tool === "text"
@@ -1418,6 +1733,40 @@ export function EditorPage() {
                 <button data-testid="clip-paste" onClick={pasteClipboard} className="flex items-center justify-center gap-1 text-xs py-1.5 rounded border hover:bg-gray-50" title="Paste (Ctrl+V)">
                   <ClipboardPaste className="w-4 h-4" /> Paste
                 </button>
+              </div>
+
+              {/* Align (≥2 selected) + Distribute (≥3 selected) */}
+              <div className="pt-1 border-t">
+                <p className="text-[11px] text-gray-500 mt-2 mb-1">Align</p>
+                <div className="grid grid-cols-3 gap-1">
+                  <button data-testid="align-left" onClick={() => alignSelection("left")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align left">
+                    <AlignHorizontalJustifyStart className="w-4 h-4" />
+                  </button>
+                  <button data-testid="align-hcenter" onClick={() => alignSelection("hcenter")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align center">
+                    <AlignHorizontalJustifyCenter className="w-4 h-4" />
+                  </button>
+                  <button data-testid="align-right" onClick={() => alignSelection("right")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align right">
+                    <AlignHorizontalJustifyEnd className="w-4 h-4" />
+                  </button>
+                  <button data-testid="align-top" onClick={() => alignSelection("top")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align top">
+                    <AlignVerticalJustifyStart className="w-4 h-4" />
+                  </button>
+                  <button data-testid="align-vmiddle" onClick={() => alignSelection("vmiddle")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align middle">
+                    <AlignVerticalJustifyCenter className="w-4 h-4" />
+                  </button>
+                  <button data-testid="align-bottom" onClick={() => alignSelection("bottom")} disabled={selectedIds.length < 2} className="flex items-center justify-center py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Align bottom">
+                    <AlignVerticalJustifyEnd className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-2 mb-1">Distribute</p>
+                <div className="grid grid-cols-2 gap-1">
+                  <button data-testid="distribute-h" onClick={() => distributeSelection("h")} disabled={selectedIds.length < 3} className="flex items-center justify-center gap-1 text-xs py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Distribute horizontally">
+                    <AlignHorizontalDistributeCenter className="w-4 h-4" /> Horiz
+                  </button>
+                  <button data-testid="distribute-v" onClick={() => distributeSelection("v")} disabled={selectedIds.length < 3} className="flex items-center justify-center gap-1 text-xs py-1.5 rounded border hover:bg-gray-50 disabled:opacity-40" title="Distribute vertically">
+                    <AlignVerticalDistributeCenter className="w-4 h-4" /> Vert
+                  </button>
+                </div>
               </div>
             </div>
           </Card>
@@ -1604,11 +1953,25 @@ export function EditorPage() {
                     </Document>
                   </div>
 
+                  {/* Optional snap-to grid overlay */}
+                  {gridEnabled && (
+                    <div
+                      data-testid="editor-grid"
+                      className="absolute inset-0"
+                      style={{
+                        zIndex: 4,
+                        pointerEvents: "none",
+                        backgroundImage:
+                          "linear-gradient(to right, rgba(37,99,235,0.12) 1px, transparent 1px), linear-gradient(to bottom, rgba(37,99,235,0.12) 1px, transparent 1px)",
+                        backgroundSize: `${GRID_PX}px ${GRID_PX}px`,
+                      }}
+                    />
+                  )}
+
                   {/* Vector overlay (shapes/lines/ink) + selection chrome */}
                   <svg className="absolute inset-0" width={renderWidth} height={overlayH} style={{ zIndex: 5 }}>
                     {pageAnnotations.filter((a) => isBox(a) || isLine(a) || a.type === "ink").map((a) => renderShape(a))}
                     {draft && (isBox(draft) || isLine(draft) || draft.type === "ink") && renderShape(draft, true)}
-                    {renderSelectionChrome()}
                     {marquee && (
                       <rect
                         data-testid="editor-marquee"
@@ -1622,6 +1985,14 @@ export function EditorPage() {
                         strokeWidth={1}
                         style={{ pointerEvents: "none" }}
                       />
+                    )}
+                    {/* Live alignment/snap guides (magenta) */}
+                    {guides.map((g, i) =>
+                      g.x != null ? (
+                        <line key={`g${i}`} data-testid="snap-guide" x1={g.x * renderWidth} y1={0} x2={g.x * renderWidth} y2={overlayH} stroke="#ff00ff" strokeWidth={1} style={{ pointerEvents: "none" }} />
+                      ) : (
+                        <line key={`g${i}`} data-testid="snap-guide" x1={0} y1={(g.y ?? 0) * overlayH} x2={renderWidth} y2={(g.y ?? 0) * overlayH} stroke="#ff00ff" strokeWidth={1} style={{ pointerEvents: "none" }} />
+                      ),
                     )}
                   </svg>
 
@@ -1743,19 +2114,28 @@ export function EditorPage() {
                           key={ann.id}
                           data-annot-id={ann.id}
                           data-annot-index={annIndex}
+                          data-annot-x={ann.x}
+                          data-annot-y={ann.y}
+                          data-annot-w={ann.width}
+                          data-annot-h={ann.height}
                           onMouseDown={(e) => startMove(e, ann)}
                           onClick={selectOnClick}
                           className={`absolute ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-move" : ""}`}
                           style={{ left: `${ann.x * 100}%`, top: `${ann.y * 100}%`, width: `${ann.width * 100}%`, height: `${ann.height * 100}%`, pointerEvents: interactive ? "auto" : "none" }}
                         >
                           <img src={ann.dataUrl} alt="" className="w-full h-full object-fill pointer-events-none select-none" draggable={false} />
-                          {isSingleSel && interactive && (
-                            <span onMouseDown={(e) => startResize(e, ann.id, "br")} className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-white border-2 border-blue-600" style={{ cursor: "nwse-resize", pointerEvents: "auto" }} />
-                          )}
+                          {/* Resize handles for images render in the top chrome SVG layer. */}
                         </div>
                       );
                     })}
                   </div>
+
+                  {/* Top chrome layer: selection outlines + resize handles. Sits
+                      above the interaction overlay so handles receive events;
+                      the SVG itself is click-through (pointer-events: none). */}
+                  <svg className="absolute inset-0" width={renderWidth} height={overlayH} style={{ zIndex: 7, pointerEvents: "none" }}>
+                    {renderSelectionChrome()}
+                  </svg>
                 </div>
               </div>
             ) : (
