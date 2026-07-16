@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Container,
@@ -21,6 +21,7 @@ import {
   Tooltip,
 } from "@mui/joy";
 import AddIcon from "@mui/icons-material/Add";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import DescriptionIcon from "@mui/icons-material/Description";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import GridViewIcon from "@mui/icons-material/GridView";
@@ -34,6 +35,8 @@ import {
   renameDoc,
   setTemplate,
   listDocsSharedWithMe,
+  importDoc,
+  IMPORT_ACCEPT,
 } from "./api";
 import type { Doc } from "./types";
 import { TemplateGallery } from "./TemplateGallery";
@@ -173,6 +176,8 @@ export function DocList({ user }: DocListProps) {
   const [docs, setDocs] = useState<Doc[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const [view, setView] = useState<View>(
     () => (localStorage.getItem("docs:view") as View) || "grid",
@@ -262,6 +267,25 @@ export function DocList({ user }: DocListProps) {
     }
   }
 
+  // Import an uploaded file: convert it to HTML server-side, create a new doc
+  // titled after the filename, then hand the HTML to the editor via the same
+  // sessionStorage seed channel templates/"Make a copy" use.
+  async function onImportFile(file: File) {
+    setImporting(true);
+    setError(null);
+    try {
+      const html = await importDoc(file);
+      const title = file.name.replace(/\.[^.]+$/, "") || "Imported document";
+      const doc = await createDoc(title);
+      sessionStorage.setItem(`docseed:${doc.id}`, html);
+      recordOpen(doc.id);
+      navigate(`/docs/d/${doc.id}`);
+    } catch (e) {
+      setError((e as Error).message);
+      setImporting(false);
+    }
+  }
+
   // Create a new doc seeded from a template's HTML (handed off via sessionStorage,
   // applied by the editor on first load).
   async function onPickTemplate(t: DocTemplate) {
@@ -329,6 +353,30 @@ export function DocList({ user }: DocListProps) {
           <Typography level="h2" sx={{ flex: 1 }}>
             Docs
           </Typography>
+          <Button
+            variant="outlined"
+            startDecorator={<UploadFileIcon />}
+            loading={importing}
+            onClick={() => importInputRef.current?.click()}
+            aria-label="Import document"
+            data-testid="docs-import"
+            sx={{ mr: 1 }}
+          >
+            Import
+          </Button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept={IMPORT_ACCEPT}
+            hidden
+            aria-label="Import document file"
+            data-testid="docs-import-input"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) onImportFile(file);
+            }}
+          />
           <Button
             startDecorator={<AddIcon />}
             loading={creating}

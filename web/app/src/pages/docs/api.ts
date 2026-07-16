@@ -32,6 +32,50 @@ export function getDoc(id: string): Promise<Doc> {
   return jsonFetch<Doc>(`/docs/d/${id}`);
 }
 
+/** Maps a filename's extension to the server's `from` conversion format. */
+const IMPORT_FORMATS: Record<string, string> = {
+  docx: "docx",
+  odt: "odt",
+  rtf: "rtf",
+  epub: "epub",
+  md: "md",
+  markdown: "markdown",
+  txt: "txt",
+  html: "html",
+  htm: "html",
+};
+
+/** Extensions accepted by the import file input (with leading dot). */
+export const IMPORT_ACCEPT = Object.keys(IMPORT_FORMATS)
+  .map((e) => `.${e}`)
+  .join(",");
+
+/** importDoc converts an uploaded file to HTML via the server's importer.
+ *  It detects the source format from the file extension, POSTs the raw bytes,
+ *  and returns the converted document HTML. */
+export async function importDoc(file: File): Promise<string> {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const from = IMPORT_FORMATS[ext];
+  if (!from) throw new Error(`Unsupported file type: .${ext}`);
+  const resp = await fetch(
+    `${API_BASE}/docs/import?from=${encodeURIComponent(from)}`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        Accept: "text/html",
+        "Content-Type": file.type || "application/octet-stream",
+      },
+      body: file,
+    },
+  );
+  if (!resp.ok) {
+    const msg = (await resp.text().catch(() => "")).trim();
+    throw new Error(msg || `HTTP ${resp.status}`);
+  }
+  return resp.text();
+}
+
 /** renameDoc changes a document's title. */
 export function renameDoc(id: string, title: string): Promise<Doc> {
   return jsonFetch<Doc>(`/docs/d/${id}`, {

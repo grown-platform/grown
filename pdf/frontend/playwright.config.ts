@@ -13,6 +13,11 @@ import { defineConfig, devices } from "@playwright/test";
  * Run all tests:
  *   npm run test:e2e
  */
+// Dev-server port. Defaults to 5173 (CI); override with PLAYWRIGHT_PORT when
+// 5173 is already taken locally by another app.
+const PORT = process.env.PLAYWRIGHT_PORT || "5173";
+const BASE_URL = `http://localhost:${PORT}`;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -22,15 +27,15 @@ export default defineConfig({
   reporter: [["html", { open: "never" }]],
 
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: BASE_URL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
 
   /* Run dev server before starting tests (if not already running) */
   webServer: {
-    command: "npm run dev -- --port 5173",
-    url: "http://localhost:5173",
+    command: `npm run dev -- --port ${PORT}`,
+    url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
@@ -52,6 +57,13 @@ export default defineConfig({
     {
       name: "chromium",
       testMatch: /app\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+
+    // Editor E2E tests - require browser
+    {
+      name: "editor",
+      testMatch: /editor.*\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
   ],

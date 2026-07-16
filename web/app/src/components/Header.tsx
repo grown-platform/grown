@@ -149,6 +149,7 @@ export function Header({ user }: HeaderProps) {
       }}
     >
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+        {user && <ServicesMenu currentId={current?.id} />}
         {current ? (
           <RouterLink
             to={`/${current.id}`}
@@ -464,6 +465,96 @@ function ThemeModeItem() {
         </MenuItem>
       ))}
     </>
+  );
+}
+
+/** ServicesMenu renders the hamburger (☰) at the far top-left, before the
+ *  service/brand logo. It opens a vertical list of every service — Workspace
+ *  pinned at the top — so users can switch apps from the left as well as via
+ *  the right-side 9-dot AppsSwitcher. `currentId` marks the active row.
+ *  External apps open in a new tab; coming-soon apps route to their teaser. */
+function ServicesMenu({ currentId }: { currentId?: string }) {
+  const brand = useBrand();
+  return (
+    <Dropdown>
+      <MenuButton
+        slots={{ root: IconButton }}
+        slotProps={{
+          root: {
+            variant: "plain",
+            color: "neutral",
+            "aria-label": "services menu",
+            "data-testid": "services-menu",
+          } as any,
+        }}
+      >
+        <Icons.Menu />
+      </MenuButton>
+      <Menu
+        placement="bottom-start"
+        sx={{ minWidth: 240, maxHeight: "70vh", overflowY: "auto", py: 0.5 }}
+      >
+        <MenuItem
+          component={RouterLink}
+          to="/"
+          selected={!currentId}
+          data-testid="services-menu-workspace"
+        >
+          <Icons.GridView
+            sx={{ mr: 1.5, color: brand.primaryColor, fontSize: 20 }}
+          />
+          Workspace
+        </MenuItem>
+        <Divider />
+        {apps.map((app) => (
+          <ServiceMenuItem
+            key={app.id}
+            app={app}
+            selected={app.id === currentId}
+          />
+        ))}
+      </Menu>
+    </Dropdown>
+  );
+}
+
+/** ServiceMenuItem is one row in the ServicesMenu list: the app's icon (tinted
+ *  with its accent color) + name, linking with the same rules as the apps-grid
+ *  tiles (external → new tab, coming-soon → teaser, else the internal route). */
+function ServiceMenuItem({
+  app,
+  selected,
+}: {
+  app: (typeof apps)[number];
+  selected: boolean;
+}) {
+  const IconComponent = (
+    Icons as Record<string, React.ComponentType<{ sx?: object }>>
+  )[app.iconName];
+  const linkProps = app.externalUrl
+    ? {
+        component: "a" as const,
+        href: app.externalUrl,
+        target: "_blank",
+        rel: "noopener noreferrer",
+      }
+    : {
+        component: RouterLink,
+        to: app.comingSoon ? `/coming-soon/${app.id}` : `/${app.id}`,
+      };
+  return (
+    <MenuItem
+      {...linkProps}
+      selected={selected}
+      data-testid={`services-menu-${app.id}`}
+    >
+      {IconComponent ? (
+        <IconComponent sx={{ mr: 1.5, color: app.accentColor, fontSize: 20 }} />
+      ) : (
+        <Box sx={{ mr: 1.5, width: 20 }} />
+      )}
+      {app.name}
+    </MenuItem>
   );
 }
 
