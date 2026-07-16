@@ -961,6 +961,58 @@ interface DocMeta {
 }
 const DEFAULT_META: DocMeta = { title: "", author: "", subject: "", keywords: "", creator: "" };
 const META_PRODUCER = "Grown PDF Editor";
+
+// ---- Editable sidecar round-trip (Wave 6c) --------------------------------
+// "Save editable copy" embeds the live editable model as a JSON file attachment
+// inside the exported PDF (unflattened). On load we read that attachment back
+// and restore the annotations as EDITABLE objects — a full client-side
+// round-trip. The flattened Download path deliberately does NOT embed this, so a
+// flattened file never double-restores.
+const EDITABLE_SIDECAR_NAME = "grown-editor.json";
+interface EditableSidecar {
+  version: 1;
+  annotations: Annotation[];
+  hf: HeaderFooterConfig;
+  meta: DocMeta;
+  docName: string;
+  // Sanity fields (pages themselves are already baked into the base bytes).
+  pageCount?: number;
+}
+// Read the embedded editable sidecar from a PDF's attachments via pdfjs. Returns
+// the parsed model, or null if there's no sidecar / it's malformed. Fully
+// defensive: any failure just yields null so the file loads normally.
+async function readEditableSidecar(bytes: Uint8Array): Promise<EditableSidecar | null> {
+  try {
+    // pdfjs may detach the buffer it's handed — pass a fresh copy.
+    const task = pdfjs.getDocument({ data: bytes.slice() });
+    const pdf = await task.promise;
+    try {
+      const atts = (await pdf.getAttachments()) as Record<string, { filename: string; content: Uint8Array }> | null;
+      if (!atts) return null;
+      let entry = atts[EDITABLE_SIDECAR_NAME];
+      // Attachments are keyed by name, but be robust to any key mismatch by
+      // also matching on the stored filename.
+      if (!entry) entry = Object.values(atts).find((e) => e?.filename === EDITABLE_SIDECAR_NAME) as typeof entry;
+      if (!entry?.content) return null;
+      const parsed = JSON.parse(new TextDecoder().decode(entry.content)) as EditableSidecar;
+      if (parsed && parsed.version === 1 && Array.isArray(parsed.annotations)) return parsed;
+      return null;
+    } finally {
+      try {
+        await pdf.cleanup();
+      } catch {
+        /* ignore */
+      }
+      try {
+        await task.destroy();
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    return null;
+  }
+}
 // Image-export options (Wave 6b).
 type ImageFormat = "png" | "jpeg";
 type ImageScope = "current" | "all";
@@ -1018,6 +1070,9 @@ export function EditorPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // Wave 6c — brief confirmation that an embedded editable layer was restored on
+  // load. Cleared whenever a fresh doc is opened/created/closed.
+  const [restoreNotice, setRestoreNotice] = useState(false);
 
   // ---- Autosave draft + shortcuts help (Wave 6a) ----------------------------
   // A debounced IndexedDB draft survives an accidental refresh/tab-close. The
@@ -1304,6 +1359,7 @@ export function EditorPage() {
     setCurrentPage(1);
     setSelectedIds([]);
     setEditingId(null);
+    setRestoreNotice(false);
     setRestorePrompt(null);
   }, []);
   // Discard the found draft and continue to the normal empty state.
@@ -1396,9 +1452,23 @@ export function EditorPage() {
       const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
       const count = doc.getPageCount();
       setPdfBytes(bytes);
-      setDocName(name);
+      // Pages (order/rotation/blanks) are baked into these base bytes, so the
+      // page structure is always identity here — whether or not a sidecar exists.
       setPages(Array.from({ length: count }, (_, i) => ({ srcIndex: i, rotation: 0 })));
-      setAnnotations([]);
+      // Wave 6c — restore an embedded editable layer if present (annotations come
+      // back as EDITABLE objects, not flattened). Falls through to a normal load.
+      const sidecar = await readEditableSidecar(bytes);
+      if (sidecar) {
+        setDocName(sidecar.docName || name);
+        setAnnotations(sidecar.annotations);
+        setHf(sidecar.hf ?? DEFAULT_HF);
+        setMeta(sidecar.meta ?? DEFAULT_META);
+        setRestoreNotice(true);
+      } else {
+        setDocName(name);
+        setAnnotations([]);
+        setRestoreNotice(false);
+      }
       undoStack.current = [];
       redoStack.current = [];
       setCurrentPage(1);
@@ -1437,6 +1507,7 @@ export function EditorPage() {
     redoStack.current = [];
     setCurrentPage(1);
     setSelectedIds([]);
+    setRestoreNotice(false);
     // Starting fresh discards any prior draft; autosave writes the new one.
     setRestorePrompt(null);
     void clearDraft();
@@ -3361,6 +3432,38 @@ export function EditorPage() {
     }
   };
 
+  // ---- Save editable copy (Wave 6c) -----------------------------------------
+  // Build from the BASE bytes (pages already baked in) WITHOUT flattening the
+  // annotations, and embed the live editable model as a JSON attachment so
+  // reopening this file restores the annotations as editable objects. This is
+  // the ONLY export that carries the sidecar — the flattened Download above must
+  // never embed it, or a flattened file would double-restore.
+  const handleDownloadEditable = async () => {
+    if (!pdfBytes) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+      const sidecar: EditableSidecar = { version: 1, annotations, hf, meta, docName, pageCount: pages.length };
+      doc.attach(new TextEncoder().encode(JSON.stringify(sidecar)), EDITABLE_SIDECAR_NAME, {
+        mimeType: "application/json",
+        description: "Grown editable annotation layer",
+      });
+      const bytes = await doc.save();
+      const blob = new Blob([bytes.slice()], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${docName || "document"}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save editable failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // ---- Export pages as image (Wave 6b) --------------------------------------
   // Render the FINAL pdf (buildFinalPdf → annotations/redaction/header-footer
   // baked) with pdfjs to a canvas at the chosen scale, then canvas.toBlob →
@@ -4311,6 +4414,9 @@ export function EditorPage() {
             <Button testId="metadata-open" size="sm" variant="outline" onClick={() => setMetaOpen(true)} disabled={busy} className="w-full">
               <FormInput className="w-4 h-4 inline mr-1" /> Document info…
             </Button>
+            <Button testId="download-editable" size="sm" variant="outline" onClick={handleDownloadEditable} disabled={busy} className="w-full" title="Save a PDF that reopens in this editor with all annotations still editable">
+              <Save className="w-4 h-4 inline mr-1" /> Save editable copy
+            </Button>
           </div>
         </Card>
 
@@ -4745,6 +4851,7 @@ export function EditorPage() {
                 setPdfBytes(null);
                 setAnnotations([]);
                 setPages([]);
+                setRestoreNotice(false);
                 setRestorePrompt(null);
                 void clearDraft();
               }} title="Close and open another">
@@ -4816,10 +4923,11 @@ export function EditorPage() {
             </div>
           )}
 
-          {(error || saveMsg) && (
-            <div className="px-4 pt-3">
+          {(error || saveMsg || restoreNotice) && (
+            <div className="px-4 pt-3 space-y-2">
               {error && <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
               {saveMsg && <div className="p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">{saveMsg}</div>}
+              {restoreNotice && <div data-testid="editable-restored" className="p-2 bg-blue-50 border border-blue-200 rounded text-blue-700 text-sm">Editable layer restored ✓</div>}
             </div>
           )}
 
