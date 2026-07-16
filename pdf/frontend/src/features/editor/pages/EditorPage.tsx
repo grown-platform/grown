@@ -69,6 +69,17 @@ import {
   Check,
   Dot,
   PenLine,
+  PaintBucket,
+  Squircle,
+  Pentagon,
+  Spline,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  List,
+  ListOrdered,
+  SquareDashed,
+  Baseline,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -142,6 +153,13 @@ type Tool =
   | "underline"
   | "strikethrough"
   | "whiteout"
+  // Wave 5a — markup. eraser deletes annotations (partial-erase for ink);
+  // rrect = rounded rectangle (BoxAnnotation with rx); polygon/polyline are
+  // click-to-add-vertex poly annotations (closed vs open).
+  | "eraser"
+  | "rrect"
+  | "polygon"
+  | "polyline"
   | "field-text"
   | "field-check"
   | "field-radio"
@@ -158,6 +176,8 @@ type Tool =
 
 type FontFamily = "Helvetica" | "Times" | "Courier";
 
+type TextAlign = "left" | "center" | "right";
+type ListMode = "none" | "bullet" | "number";
 interface TextAnnotation {
   id: string;
   type: "text";
@@ -171,6 +191,10 @@ interface TextAnnotation {
   family: FontFamily;
   bold: boolean;
   italic: boolean;
+  // Wave 5a — rich text. undefined ⇒ back-compat defaults (left / none / 1.2).
+  align?: TextAlign;
+  list?: ListMode;
+  lineSpacing?: number; // line-height multiple (1.0 / 1.15 / 1.5 / 2.0)
 }
 interface ImageAnnotation {
   id: string;
@@ -195,6 +219,10 @@ interface BoxAnnotation {
   strokeWidth: number; // pt
   fillColor: string | null;
   opacity: number;
+  // Wave 5a. rx = corner radius (pt) on a "rect" ⇒ rounded rect; dash = dashed
+  // stroke. Both undefined for pre-Wave-5a snapshots (square / solid).
+  rx?: number;
+  dash?: boolean;
 }
 interface LineAnnotation {
   id: string;
@@ -206,6 +234,7 @@ interface LineAnnotation {
   y2: number;
   strokeColor: string;
   strokeWidth: number; // pt
+  dash?: boolean;
 }
 interface InkAnnotation {
   id: string;
@@ -214,6 +243,20 @@ interface InkAnnotation {
   points: { x: number; y: number }[];
   strokeColor: string;
   strokeWidth: number; // pt
+}
+// Wave 5a — polygon (closed, fillable) / polyline (open). Built by clicking
+// vertices; stored as a normalized point list + `closed` flag.
+interface PolyAnnotation {
+  id: string;
+  type: "poly";
+  page: number;
+  points: { x: number; y: number }[];
+  closed: boolean;
+  strokeColor: string;
+  strokeWidth: number; // pt
+  fillColor: string | null;
+  opacity: number;
+  dash?: boolean;
 }
 // ---- AcroForm fields (Wave 4a) ---------------------------------------------
 // An interactive form field. Shares the x/y/width/height box shape with
@@ -244,12 +287,14 @@ type Annotation =
   | BoxAnnotation
   | LineAnnotation
   | InkAnnotation
+  | PolyAnnotation
   | FieldAnnotation;
 
 const isBox = (a: Annotation): a is BoxAnnotation =>
   a.type === "rect" || a.type === "ellipse" || a.type === "highlight" ||
   a.type === "underline" || a.type === "strikethrough" || a.type === "whiteout";
 const isLine = (a: Annotation): a is LineAnnotation => a.type === "line" || a.type === "arrow";
+const isPoly = (a: Annotation): a is PolyAnnotation => a.type === "poly";
 const isField = (a: Annotation): a is FieldAnnotation => a.type === "field";
 
 // A blank page (srcIndex === -1) can carry its own size + background template;
@@ -401,7 +446,14 @@ function hfAppliesTo(hf: HeaderFooterConfig, pageIndex: number, pageCount: numbe
 }
 
 const DEFAULT_FONT_SIZE = 16;
-const SHAPE_TOOLS: Tool[] = ["rect", "ellipse", "line", "arrow", "draw", "highlight", "underline", "strikethrough", "whiteout"];
+// Drag-to-draw tools (mousedown → drag → mouseup commits). rrect draws like a
+// rect but with a corner radius. polygon/polyline are click-to-add-vertex and
+// are handled separately (POLY_TOOLS).
+const SHAPE_TOOLS: Tool[] = ["rect", "rrect", "ellipse", "line", "arrow", "draw", "highlight", "underline", "strikethrough", "whiteout"];
+const POLY_TOOLS: Tool[] = ["polygon", "polyline"];
+const isPolyTool = (t: Tool): boolean => POLY_TOOLS.includes(t);
+const DEFAULT_RX = 12; // default rounded-rect corner radius (pt)
+const DASH_PT: [number, number] = [6, 4]; // dashed-stroke pattern (pt)
 const FIELD_TOOLS: Tool[] = ["field-text", "field-check", "field-radio", "field-dropdown"];
 const isFieldTool = (t: Tool): boolean => FIELD_TOOLS.includes(t);
 // Wave 4b: click-to-place tools (signature/initials/date + quick stamps). A
@@ -460,11 +512,34 @@ function clamp01(v: number) {
 function cssFamily(f: FontFamily) {
   return f === "Times" ? "Georgia, 'Times New Roman', serif" : f === "Courier" ? "'Courier New', monospace" : "Helvetica, Arial, sans-serif";
 }
+// Wave 5a — the list-item prefix for logical line `i` under a list mode.
+function listPrefix(list: ListMode | undefined, i: number): string {
+  return list === "bullet" ? "• " : list === "number" ? `${i + 1}. ` : "";
+}
+// Greedy word-wrap of one logical line to `maxWidth` (pt) for the export. A word
+// wider than maxWidth is placed on its own line (overflow) rather than dropped.
+function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  if (!text) return [""];
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of words) {
+    const trial = cur ? `${cur} ${word}` : word;
+    if (!cur || font.widthOfTextAtSize(trial, size) <= maxWidth) {
+      cur = trial;
+    } else {
+      lines.push(cur);
+      cur = word;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [""];
+}
 
 // Translate an annotation by a normalized delta (for moving).
 function translate(a: Annotation, dx: number, dy: number): Annotation {
   if (isLine(a)) return { ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy };
-  if (a.type === "ink") return { ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+  if (a.type === "ink" || a.type === "poly") return { ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
   return { ...a, x: clamp01((a as BoxAnnotation).x + dx), y: clamp01((a as BoxAnnotation).y + dy) };
 }
 
@@ -475,7 +550,7 @@ function annotBBox(a: Annotation, pageAspect: number): NBox {
   if (isLine(a)) {
     return { x0: Math.min(a.x1, a.x2), y0: Math.min(a.y1, a.y2), x1: Math.max(a.x1, a.x2), y1: Math.max(a.y1, a.y2) };
   }
-  if (a.type === "ink") {
+  if (a.type === "ink" || a.type === "poly") {
     const xs = a.points.map((p) => p.x);
     const ys = a.points.map((p) => p.y);
     return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
@@ -498,6 +573,18 @@ function segDistPx(px: number, py: number, x1: number, y1: number, x2: number, y
   let t = len2 ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0;
   t = Math.max(0, Math.min(1, t));
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+// Ray-casting point-in-polygon (pts in the same space as px/py).
+function pointInPoly(px: number, py: number, pts: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x;
+    const yi = pts[i].y;
+    const xj = pts[j].x;
+    const yj = pts[j].y;
+    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 // ---- Wave 2b geometry: resize / snapping / grid -----------------------------
@@ -690,6 +777,33 @@ export function EditorPage() {
   const [strokeWidth, setStrokeWidth] = useState(2);
   const [fillColor, setFillColor] = useState<string | null>(null);
   const [textColor] = useState("#111111");
+  // Wave 5a — dashed toggle for newly drawn shapes/lines/polys.
+  const [shapeDash, setShapeDash] = useState(false);
+  // Wave 5a — eraser radius (screen px). A drag erases everything the cursor
+  // passes within this radius. `eraseState` marks an active erase gesture (one
+  // snapshot per drag).
+  const [eraserSize, setEraserSize] = useState(14);
+  const eraserSizeRef = useRef(eraserSize);
+  useEffect(() => {
+    eraserSizeRef.current = eraserSize;
+  }, [eraserSize]);
+  const eraseState = useRef(false);
+  // Wave 5a — in-progress polygon/polyline vertices (click to add; Enter/Esc/
+  // double-click to finish). `polyCursor` is the live rubber-band endpoint.
+  const [polyDraft, setPolyDraft] = useState<{ tool: "polygon" | "polyline"; points: { x: number; y: number }[] } | null>(null);
+  const polyDraftRef = useRef<typeof polyDraft>(null);
+  useEffect(() => {
+    polyDraftRef.current = polyDraft;
+  }, [polyDraft]);
+  const [polyCursor, setPolyCursor] = useState<{ x: number; y: number } | null>(null);
+  // Abandon an in-progress polygon/polyline when leaving the poly tools.
+  useEffect(() => {
+    if (!isPolyTool(tool)) {
+      polyDraftRef.current = null;
+      setPolyDraft(null);
+      setPolyCursor(null);
+    }
+  }, [tool]);
   // Export option (Wave 4a): bake form fields into static content when ON.
   const [flattenForms, setFlattenForms] = useState(false);
   // ---- Signing / Fill & Sign (Wave 4b) --------------------------------------
@@ -737,7 +851,7 @@ export function EditorPage() {
     tool: Tool;
     sx: number;
     sy: number;
-    style: { strokeColor: string; strokeWidth: number; fillColor: string | null };
+    style: { strokeColor: string; strokeWidth: number; fillColor: string | null; dash: boolean };
   } | null>(null);
   const resizeState = useRef<{
     id: string;
@@ -1169,6 +1283,17 @@ export function EditorPage() {
         if (segDistPx(px, py, X(a.points[i - 1].x), Y(a.points[i - 1].y), X(a.points[i].x), Y(a.points[i].y)) <= 8) return true;
       }
     }
+    if (a.type === "poly") {
+      const n = a.points.length;
+      for (let i = 1; i < n; i++) {
+        if (segDistPx(px, py, X(a.points[i - 1].x), Y(a.points[i - 1].y), X(a.points[i].x), Y(a.points[i].y)) <= 8) return true;
+      }
+      if (a.closed && n > 2) {
+        if (segDistPx(px, py, X(a.points[n - 1].x), Y(a.points[n - 1].y), X(a.points[0].x), Y(a.points[0].y)) <= 8) return true;
+        // Point-in-polygon so a filled polygon is selectable by its interior.
+        if (a.fillColor && pointInPoly(px, py, a.points.map((p) => ({ x: X(p.x), y: Y(p.y) })))) return true;
+      }
+    }
     return false;
   };
 
@@ -1201,6 +1326,102 @@ export function EditorPage() {
     setAnnotations((prev) => prev.map((a) => (a.id === id && isField(a) ? { ...a, ...patch } : a)));
   };
 
+  // ---- Eraser (Wave 5a) -----------------------------------------------------
+  // Erase every annotation on the current page the cursor passes within the
+  // eraser radius. Ink is trimmed rather than deleted: points inside the radius
+  // are removed and each surviving contiguous run (≥2 points) becomes its own
+  // ink annotation, so a stroke splits where it's crossed. Reuses annotBBox /
+  // segDistPx for hit-testing. Snapshot is taken once per drag (in mousedown).
+  const eraseAt = useCallback((clientX: number, clientY: number) => {
+    const el = overlayRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const ex = clientX - rect.left;
+    const ey = clientY - rect.top;
+    const r = eraserSizeRef.current;
+    const page = currentPageRef.current;
+    const pa = pageAspectRef.current;
+    const W = rect.width;
+    const H = rect.height;
+    setAnnotations((prev) => {
+      let changed = false;
+      const out: Annotation[] = [];
+      for (const a of prev) {
+        if (a.page !== page) {
+          out.push(a);
+          continue;
+        }
+        if (a.type === "ink") {
+          const keep = a.points.map((p) => Math.hypot(p.x * W - ex, p.y * H - ey) > r);
+          if (keep.every(Boolean)) {
+            out.push(a);
+            continue;
+          }
+          changed = true;
+          // Split into contiguous surviving runs; keep runs with ≥2 points.
+          let run: { x: number; y: number }[] = [];
+          for (let i = 0; i < a.points.length; i++) {
+            if (keep[i]) run.push(a.points[i]);
+            else {
+              if (run.length >= 2) out.push({ ...a, id: uid(), points: run });
+              run = [];
+            }
+          }
+          if (run.length >= 2) out.push({ ...a, id: uid(), points: run });
+          continue;
+        }
+        // Whole-annotation erase: line/poly by segment distance, everything else
+        // (box/text/image/field) by its bounding box, both padded by the radius.
+        let hit = false;
+        if (isLine(a)) {
+          hit = segDistPx(ex, ey, a.x1 * W, a.y1 * H, a.x2 * W, a.y2 * H) <= r;
+        } else if (a.type === "poly") {
+          for (let i = 1; i < a.points.length && !hit; i++) {
+            hit = segDistPx(ex, ey, a.points[i - 1].x * W, a.points[i - 1].y * H, a.points[i].x * W, a.points[i].y * H) <= r;
+          }
+          if (!hit && a.closed && a.points.length > 2) {
+            const n = a.points.length;
+            hit = segDistPx(ex, ey, a.points[n - 1].x * W, a.points[n - 1].y * H, a.points[0].x * W, a.points[0].y * H) <= r;
+          }
+        } else {
+          const bb = annotBBox(a, pa);
+          hit = ex >= bb.x0 * W - r && ex <= bb.x1 * W + r && ey >= bb.y0 * H - r && ey <= bb.y1 * H + r;
+        }
+        if (hit) changed = true;
+        else out.push(a);
+      }
+      return changed ? out : prev;
+    });
+  }, []);
+
+  // ---- Polygon / polyline drafting (Wave 5a) --------------------------------
+  const finishPoly = useCallback(() => {
+    const d = polyDraftRef.current;
+    polyDraftRef.current = null;
+    setPolyDraft(null);
+    setPolyCursor(null);
+    if (!d) return;
+    const closed = d.tool === "polygon";
+    const min = closed ? 3 : 2;
+    if (d.points.length < min) return;
+    const ann: PolyAnnotation = {
+      id: uid(),
+      type: "poly",
+      page: currentPageRef.current,
+      points: d.points,
+      closed,
+      strokeColor,
+      strokeWidth,
+      fillColor: closed ? fillColor : null,
+      opacity: 1,
+      dash: shapeDash || undefined,
+    };
+    snapshot();
+    setAnnotations((p) => [...p, ann]);
+    setSelectedIds([ann.id]);
+    setTool("select");
+  }, [strokeColor, strokeWidth, fillColor, shapeDash, snapshot]);
+
   // ---- Placement (text/image) + draw start ----------------------------------
   const handleOverlayMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     // Fresh gesture — clear any stale click-suppression from the previous one.
@@ -1210,6 +1431,15 @@ export function EditorPage() {
     // shortcuts like Ctrl+C/V aren't swallowed by the "editing a field" guard.
     const active = document.activeElement as HTMLElement | null;
     if (active && (active.tagName === "INPUT" || active.tagName === "SELECT")) active.blur();
+    // Eraser: one snapshot per drag, then erase at the down-point immediately so
+    // a plain click also erases.
+    if (tool === "eraser") {
+      e.preventDefault();
+      snapshot();
+      eraseState.current = true;
+      eraseAt(e.clientX, e.clientY);
+      return;
+    }
     if (SHAPE_TOOLS.includes(tool) || isFieldTool(tool)) {
       e.preventDefault();
       const { x, y } = toNorm(e.clientX, e.clientY);
@@ -1217,7 +1447,7 @@ export function EditorPage() {
         tool,
         sx: clamp01(x),
         sy: clamp01(y),
-        style: { strokeColor, strokeWidth, fillColor },
+        style: { strokeColor, strokeWidth, fillColor, dash: shapeDash },
       };
       if (tool === "draw") {
         setDraft({ id: "draft", type: "ink", page: currentPage, points: [{ x: clamp01(x), y: clamp01(y) }], strokeColor, strokeWidth });
@@ -1226,7 +1456,7 @@ export function EditorPage() {
     }
     if (tool !== "select") return;
     // Topmost-first hit-test of SVG shapes on this page (array order = z-order).
-    const shapes = annotations.filter((a) => a.page === currentPage && (isBox(a) || isLine(a) || a.type === "ink"));
+    const shapes = annotations.filter((a) => a.page === currentPage && (isBox(a) || isLine(a) || a.type === "ink" || a.type === "poly"));
     for (let i = shapes.length - 1; i >= 0; i--) {
       if (hitTestShape(shapes[i], e.clientX, e.clientY)) {
         e.preventDefault();
@@ -1247,6 +1477,17 @@ export function EditorPage() {
   };
 
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Polygon / polyline: each click adds a vertex (finish via dbl-click/Enter/Esc).
+    if (isPolyTool(tool)) {
+      const { x, y } = toNorm(e.clientX, e.clientY);
+      const pt = { x: clamp01(x), y: clamp01(y) };
+      const cur = polyDraftRef.current;
+      const points = cur && cur.tool === tool ? [...cur.points, pt] : [pt];
+      const next = { tool: tool as "polygon" | "polyline", points };
+      polyDraftRef.current = next;
+      setPolyDraft(next);
+      return;
+    }
     if (tool === "text") {
       const { x, y } = toNorm(e.clientX, e.clientY);
       const ann: TextAnnotation = {
@@ -1513,6 +1754,15 @@ export function EditorPage() {
       const nx = clamp01((e.clientX - rect.left) / rect.width);
       const ny = clamp01((e.clientY - rect.top) / rect.height);
 
+      // Eraser drag: erase whatever the cursor passes over (snapshot already
+      // taken on mousedown).
+      if (eraseState.current) {
+        eraseAt(e.clientX, e.clientY);
+        return;
+      }
+      // Rubber-band endpoint for an in-progress polygon/polyline.
+      if (polyDraftRef.current) setPolyCursor({ x: nx, y: ny });
+
       // Drawing a new shape. Mirror the draft into draftRef immediately so the
       // mouseup commit reads it directly (never mutating state inside a state
       // updater — that double-commits under React StrictMode).
@@ -1549,8 +1799,9 @@ export function EditorPage() {
           return;
         }
         let next: Annotation;
+        const dash = dw.style.dash || undefined;
         if (dw.tool === "line" || dw.tool === "arrow") {
-          next = { id: "draft", type: dw.tool, page: currentPage, x1: dw.sx, y1: dw.sy, x2: nx, y2: ny, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth };
+          next = { id: "draft", type: dw.tool, page: currentPage, x1: dw.sx, y1: dw.sy, x2: nx, y2: ny, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth, dash };
         } else if (dw.tool === "highlight") {
           next = { id: "draft", type: "highlight", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffeb3b", opacity: 0.35 };
         } else if (dw.tool === "underline" || dw.tool === "strikethrough") {
@@ -1558,7 +1809,8 @@ export function EditorPage() {
         } else if (dw.tool === "whiteout") {
           next = { id: "draft", type: "whiteout", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffffff", opacity: 1 };
         } else {
-          next = { id: "draft", type: dw.tool as "rect" | "ellipse", page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth, fillColor: dw.style.fillColor, opacity: 1 };
+          // rect / rrect. rrect carries a corner radius (pt) → rounded corners.
+          next = { id: "draft", type: dw.tool === "ellipse" ? "ellipse" : "rect", page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth, fillColor: dw.style.fillColor, opacity: 1, dash, rx: dw.tool === "rrect" ? DEFAULT_RX : undefined };
         }
         draftRef.current = next;
         setDraft(next);
@@ -1659,6 +1911,10 @@ export function EditorPage() {
       }
     };
     const onUp = () => {
+      if (eraseState.current) {
+        eraseState.current = false;
+        return;
+      }
       if (drawState.current) {
         const dtool = drawState.current.tool;
         const d = draftRef.current;
@@ -1729,7 +1985,7 @@ export function EditorPage() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [currentPage, snapshot]);
+  }, [currentPage, snapshot, eraseAt]);
 
   // ---- Selection ops: delete / clipboard / z-order --------------------------
   const deleteSelection = useCallback(() => {
@@ -1871,6 +2127,12 @@ export function EditorPage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
+      // Finish an in-progress polygon/polyline on Enter/Escape.
+      if (polyDraftRef.current && (e.key === "Enter" || e.key === "Escape")) {
+        e.preventDefault();
+        finishPoly();
+        return;
+      }
       // Don't hijack shortcuts while typing in a field / editing text inline.
       const editing = editingId != null || t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable;
       const mod = e.ctrlKey || e.metaKey;
@@ -1923,7 +2185,7 @@ export function EditorPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [snapshot, undo, redo, copySelection, cutSelection, pasteClipboard, deleteSelection, reorderSelection, editingId]);
+  }, [snapshot, undo, redo, copySelection, cutSelection, pasteClipboard, deleteSelection, reorderSelection, editingId, finishPoly]);
 
   const updateSelected = (patch: Record<string, unknown>) => {
     if (!selectedId) return;
@@ -1984,20 +2246,35 @@ export function EditorPage() {
       if (ann.type === "text") {
         const { r, g, b } = hexToRgb(ann.color);
         const font = await getFont(ann);
-        page.drawText(ann.text, {
-          x: PX(ann.x),
-          y: PY(ann.y) - ann.fontSize,
-          size: ann.fontSize,
-          font,
-          color: rgb(r, g, b),
-          maxWidth: ann.width * pw,
-          lineHeight: ann.fontSize * 1.2,
+        const color = rgb(r, g, b);
+        const size = ann.fontSize;
+        const maxWidth = ann.width * pw;
+        const lineHeight = size * (ann.lineSpacing ?? 1.2);
+        const align = ann.align ?? "left";
+        // Prefix each logical line per the list mode, then word-wrap to maxWidth.
+        const visual: string[] = [];
+        ann.text.split("\n").forEach((ln, i) => {
+          const prefixed = listPrefix(ann.list, i) + ln;
+          for (const w of wrapText(prefixed, font, size, maxWidth)) visual.push(w);
         });
+        let ty = PY(ann.y) - size;
+        for (const line of visual) {
+          const lw = font.widthOfTextAtSize(line, size);
+          const lx =
+            align === "right"
+              ? PX(ann.x) + (maxWidth - lw)
+              : align === "center"
+                ? PX(ann.x) + (maxWidth - lw) / 2
+                : PX(ann.x);
+          page.drawText(line, { x: lx, y: ty, size, font, color });
+          ty -= lineHeight;
+        }
       } else if (ann.type === "image") {
         const bytes = Uint8Array.from(atob(ann.dataUrl.split(",")[1]), (c) => c.charCodeAt(0));
         const img = ann.mime === "image/jpeg" ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
         page.drawImage(img, { x: PX(ann.x), y: PY(ann.y) - ann.height * ph, width: ann.width * pw, height: ann.height * ph });
       } else if (isBox(ann)) {
+        const dashArr = ann.dash ? DASH_PT.slice() : undefined;
         if (ann.type === "underline" || ann.type === "strikethrough") {
           const ny = ann.type === "underline" ? ann.y + ann.height : ann.y + ann.height / 2;
           const { r, g, b } = hexToRgb(ann.strokeColor ?? "#111111");
@@ -2007,6 +2284,7 @@ export function EditorPage() {
             thickness: Math.max(1, ann.strokeWidth),
             color: rgb(r, g, b),
             opacity: ann.opacity,
+            dashArray: dashArr,
           });
         } else {
           const opts: Parameters<typeof page.drawRectangle>[0] = {
@@ -2016,6 +2294,7 @@ export function EditorPage() {
             height: ann.height * ph,
             opacity: ann.opacity,
             borderOpacity: ann.opacity,
+            borderDashArray: dashArr,
           };
           if (ann.fillColor) {
             const { r, g, b } = hexToRgb(ann.fillColor);
@@ -2039,7 +2318,32 @@ export function EditorPage() {
               borderWidth: opts.borderWidth,
               opacity: ann.opacity,
               borderOpacity: ann.opacity,
+              borderDashArray: dashArr,
             });
+          } else if (ann.rx && ann.rx > 0) {
+            // Rounded rect: pdf-lib's drawRectangle has no radius, so draw a
+            // rounded-rect SVG path (fill + stroke). Fall back to a plain rect if
+            // the path fails for any reason (never break the whole export).
+            try {
+              const L = ann.x * pw;
+              const T = ann.y * ph;
+              const R = (ann.x + ann.width) * pw;
+              const B = (ann.y + ann.height) * ph;
+              const rr = Math.max(0, Math.min(ann.rx, (R - L) / 2, (B - T) / 2));
+              const d = `M ${L + rr} ${T} L ${R - rr} ${T} A ${rr} ${rr} 0 0 1 ${R} ${T + rr} L ${R} ${B - rr} A ${rr} ${rr} 0 0 1 ${R - rr} ${B} L ${L + rr} ${B} A ${rr} ${rr} 0 0 1 ${L} ${B - rr} L ${L} ${T + rr} A ${rr} ${rr} 0 0 1 ${L + rr} ${T} Z`;
+              page.drawSvgPath(d, {
+                x: 0,
+                y: ph,
+                color: opts.color,
+                borderColor: opts.borderColor,
+                borderWidth: opts.borderWidth,
+                opacity: ann.opacity,
+                borderOpacity: ann.opacity,
+                borderDashArray: dashArr,
+              });
+            } catch {
+              page.drawRectangle(opts);
+            }
           } else {
             page.drawRectangle(opts);
           }
@@ -2048,12 +2352,43 @@ export function EditorPage() {
         const { r, g, b } = hexToRgb(ann.strokeColor);
         const start = { x: PX(ann.x1), y: PY(ann.y1) };
         const end = { x: PX(ann.x2), y: PY(ann.y2) };
-        page.drawLine({ start, end, thickness: ann.strokeWidth, color: rgb(r, g, b) });
+        page.drawLine({ start, end, thickness: ann.strokeWidth, color: rgb(r, g, b), dashArray: ann.dash ? DASH_PT.slice() : undefined });
         if (ann.type === "arrow") {
           const angle = Math.atan2(end.y - start.y, end.x - start.x);
           const head = Math.max(6, ann.strokeWidth * 4);
           for (const a of [angle + Math.PI - Math.PI / 7, angle + Math.PI + Math.PI / 7]) {
             page.drawLine({ start: end, end: { x: end.x + head * Math.cos(a), y: end.y + head * Math.sin(a) }, thickness: ann.strokeWidth, color: rgb(r, g, b) });
+          }
+        }
+      } else if (ann.type === "poly") {
+        const pts = ann.points;
+        if (pts.length >= 2) {
+          const dashArr = ann.dash ? DASH_PT.slice() : undefined;
+          if (ann.closed && ann.fillColor && pts.length > 2) {
+            // Filled polygon (+ optional stroke) via a closed SVG path.
+            const f = hexToRgb(ann.fillColor);
+            const s = ann.strokeColor && ann.strokeWidth > 0 ? hexToRgb(ann.strokeColor) : null;
+            let d = `M ${PX(pts[0].x)} ${pts[0].y * ph}`;
+            for (let i = 1; i < pts.length; i++) d += ` L ${PX(pts[i].x)} ${pts[i].y * ph}`;
+            d += " Z";
+            page.drawSvgPath(d, {
+              x: 0,
+              y: ph,
+              color: rgb(f.r, f.g, f.b),
+              borderColor: s ? rgb(s.r, s.g, s.b) : undefined,
+              borderWidth: s ? ann.strokeWidth : 0,
+              opacity: ann.opacity,
+              borderOpacity: ann.opacity,
+              borderDashArray: dashArr,
+            });
+          } else {
+            // Stroke-only: draw each segment (plus the closing edge if closed).
+            const { r, g, b } = hexToRgb(ann.strokeColor);
+            const col = rgb(r, g, b);
+            const seg = (p0: { x: number; y: number }, p1: { x: number; y: number }) =>
+              page.drawLine({ start: { x: PX(p0.x), y: PY(p0.y) }, end: { x: PX(p1.x), y: PY(p1.y) }, thickness: ann.strokeWidth, color: col, opacity: ann.opacity, dashArray: dashArr });
+            for (let i = 1; i < pts.length; i++) seg(pts[i - 1], pts[i]);
+            if (ann.closed && pts.length > 2) seg(pts[pts.length - 1], pts[0]);
           }
         }
       } else if (ann.type === "ink") {
@@ -2323,19 +2658,20 @@ export function EditorPage() {
     if (isBox(a)) {
       // Test hook: normalized geometry on box nodes (used by align/snap specs).
       const boxData = isDraft ? {} : { "data-annot-x": a.x, "data-annot-y": a.y, "data-annot-w": a.width, "data-annot-h": a.height };
+      const dashArray = a.dash ? `${DASH_PT[0] * pxScale} ${DASH_PT[1] * pxScale}` : undefined;
       if (a.type === "underline" || a.type === "strikethrough") {
         const ly = a.type === "underline" ? Y(a.y + a.height) : Y(a.y + a.height / 2);
         return (
-          <line key={a.id} x1={X(a.x)} y1={ly} x2={X(a.x + a.width)} y2={ly} stroke={a.strokeColor ?? "#111"} strokeWidth={sw(Math.max(1.5, a.strokeWidth))} strokeOpacity={a.opacity} {...boxData} {...common} />
+          <line key={a.id} x1={X(a.x)} y1={ly} x2={X(a.x + a.width)} y2={ly} stroke={a.strokeColor ?? "#111"} strokeWidth={sw(Math.max(1.5, a.strokeWidth))} strokeOpacity={a.opacity} strokeDasharray={dashArray} {...boxData} {...common} />
         );
       }
       const stroke = a.strokeColor ?? "none";
       const fill = a.fillColor ?? "none";
-      const shared = { fill, fillOpacity: a.opacity, stroke, strokeWidth: sw(a.strokeWidth), strokeOpacity: a.opacity, ...boxData, ...common };
+      const shared = { fill, fillOpacity: a.opacity, stroke, strokeWidth: sw(a.strokeWidth), strokeOpacity: a.opacity, strokeDasharray: dashArray, ...boxData, ...common };
       return a.type === "ellipse" ? (
         <ellipse key={a.id} cx={X(a.x + a.width / 2)} cy={Y(a.y + a.height / 2)} rx={X(a.width / 2)} ry={Y(a.height / 2)} {...shared} />
       ) : (
-        <rect key={a.id} x={X(a.x)} y={Y(a.y)} width={X(a.width)} height={Y(a.height)} {...shared} />
+        <rect key={a.id} x={X(a.x)} y={Y(a.y)} width={X(a.width)} height={Y(a.height)} rx={a.rx ? a.rx * pxScale : undefined} {...shared} />
       );
     }
     if (isLine(a)) {
@@ -2343,9 +2679,10 @@ export function EditorPage() {
       const col = `rgb(${r * 255},${g * 255},${b * 255})`;
       const ang = Math.atan2((a.y2 - a.y1) * overlayH, (a.x2 - a.x1) * renderWidth);
       const head = Math.max(6, sw(a.strokeWidth) * 3);
+      const lineDash = a.dash ? `${DASH_PT[0] * pxScale} ${DASH_PT[1] * pxScale}` : undefined;
       return (
         <g key={a.id} {...common}>
-          <line x1={X(a.x1)} y1={Y(a.y1)} x2={X(a.x2)} y2={Y(a.y2)} stroke={col} strokeWidth={sw(a.strokeWidth)} strokeLinecap="round" />
+          <line x1={X(a.x1)} y1={Y(a.y1)} x2={X(a.x2)} y2={Y(a.y2)} stroke={col} strokeWidth={sw(a.strokeWidth)} strokeLinecap="round" strokeDasharray={lineDash} />
           {a.type === "arrow" &&
             [ang + Math.PI - Math.PI / 7, ang + Math.PI + Math.PI / 7].map((t, i) => (
               <line key={i} x1={X(a.x2)} y1={Y(a.y2)} x2={X(a.x2) + head * Math.cos(t)} y2={Y(a.y2) + head * Math.sin(t)} stroke={col} strokeWidth={sw(a.strokeWidth)} strokeLinecap="round" />
@@ -2359,7 +2696,21 @@ export function EditorPage() {
       const { r, g, b } = hexToRgb(a.strokeColor);
       const col = `rgb(${r * 255},${g * 255},${b * 255})`;
       const pts = a.points.map((p) => `${X(p.x)},${Y(p.y)}`).join(" ");
-      return <polyline key={a.id} points={pts} fill="none" stroke={col} strokeWidth={sw(a.strokeWidth)} strokeLinecap="round" strokeLinejoin="round" {...common} />;
+      const inkData = isDraft ? {} : { "data-annot-kind": "ink", "data-ink-points": a.points.length };
+      return <polyline key={a.id} points={pts} fill="none" stroke={col} strokeWidth={sw(a.strokeWidth)} strokeLinecap="round" strokeLinejoin="round" {...inkData} {...common} />;
+    }
+    if (a.type === "poly") {
+      const { r, g, b } = hexToRgb(a.strokeColor);
+      const col = `rgb(${r * 255},${g * 255},${b * 255})`;
+      const pts = a.points.map((p) => `${X(p.x)},${Y(p.y)}`).join(" ");
+      const dashArray = a.dash ? `${DASH_PT[0] * pxScale} ${DASH_PT[1] * pxScale}` : undefined;
+      const polyData = isDraft ? {} : { "data-annot-kind": "poly", "data-poly-points": a.points.length, "data-poly-closed": a.closed };
+      const shared = { stroke: col, strokeWidth: sw(a.strokeWidth), strokeLinecap: "round" as const, strokeLinejoin: "round" as const, strokeOpacity: a.opacity, strokeDasharray: dashArray, ...polyData, ...common };
+      return a.closed ? (
+        <polygon key={a.id} points={pts} fill={a.fillColor ?? "none"} fillOpacity={a.opacity} {...shared} />
+      ) : (
+        <polyline key={a.id} points={pts} fill="none" {...shared} />
+      );
     }
     return null;
   };
@@ -2378,7 +2729,7 @@ export function EditorPage() {
     const outlines =
       selectedIds.length > 1
         ? annotations
-            .filter((a) => isSelected(a.id) && a.page === currentPage && (isBox(a) || isLine(a) || a.type === "ink"))
+            .filter((a) => isSelected(a.id) && a.page === currentPage && (isBox(a) || isLine(a) || a.type === "ink" || a.type === "poly"))
             .map((a) => {
               const b = annotBBox(a, pageAspect);
               return (
@@ -2443,7 +2794,7 @@ export function EditorPage() {
   };
 
   const cursorFor =
-    tool === "text" ? "text" : tool === "image" ? "crosshair" : SHAPE_TOOLS.includes(tool) || isPlaceTool(tool) ? "crosshair" : "default";
+    tool === "text" ? "text" : tool === "image" ? "crosshair" : tool === "eraser" ? "cell" : SHAPE_TOOLS.includes(tool) || isPolyTool(tool) || isPlaceTool(tool) ? "crosshair" : "default";
 
   const toolButtons: { t: Tool; icon: typeof Type; label: string }[] = [
     { t: "select", icon: MousePointer2, label: "Select" },
@@ -2453,10 +2804,14 @@ export function EditorPage() {
     { t: "underline", icon: Underline, label: "Underline" },
     { t: "strikethrough", icon: Strikethrough, label: "Strikethrough" },
     { t: "rect", icon: Square, label: "Rectangle" },
+    { t: "rrect", icon: Squircle, label: "Rounded" },
     { t: "ellipse", icon: Circle, label: "Ellipse" },
     { t: "line", icon: Minus, label: "Line" },
     { t: "arrow", icon: ArrowUpRight, label: "Arrow" },
-    { t: "whiteout", icon: Eraser, label: "Whiteout" },
+    { t: "polygon", icon: Pentagon, label: "Polygon" },
+    { t: "polyline", icon: Spline, label: "Polyline" },
+    { t: "eraser", icon: Eraser, label: "Eraser" },
+    { t: "whiteout", icon: PaintBucket, label: "Whiteout" },
     { t: "image", icon: ImageIcon, label: "Image" },
     { t: "field-text", icon: FormInput, label: "Text field" },
     { t: "field-check", icon: CheckSquare, label: "Checkbox" },
@@ -2472,9 +2827,13 @@ export function EditorPage() {
     underline: "tool-underline",
     strikethrough: "tool-strikethrough",
     rect: "tool-rect",
+    rrect: "tool-rrect",
     ellipse: "tool-ellipse",
     line: "tool-line",
     arrow: "tool-arrow",
+    polygon: "tool-polygon",
+    polyline: "tool-polyline",
+    eraser: "tool-eraser",
     whiteout: "tool-whiteout",
     image: "tool-image",
     "field-text": "tool-field-text",
@@ -2489,7 +2848,7 @@ export function EditorPage() {
     "stamp-dot": "stamp-dot",
   };
 
-  const showStylePanel = SHAPE_TOOLS.includes(tool);
+  const showStylePanel = SHAPE_TOOLS.includes(tool) || isPolyTool(tool);
 
   // Resolve the blank dialog → a sized blank inserted after the current page.
   const confirmBlank = () => {
@@ -2640,15 +2999,19 @@ export function EditorPage() {
                   ? "Click the page, then choose an image."
                   : tool === "draw"
                     ? "Drag on the page to draw freehand."
-                    : isFieldTool(tool)
-                      ? "Click or drag on the page to place a form field."
-                      : tool === "signature" || tool === "initials"
-                        ? `Click the page to place your ${tool}.`
-                        : tool === "date"
-                          ? "Click the page to stamp today's date."
-                          : STAMP_TOOLS.includes(tool)
-                            ? "Click the page to drop the mark."
-                            : "Drag on the page to draw."}
+                    : tool === "eraser"
+                      ? "Click or drag over marks to erase them."
+                      : isPolyTool(tool)
+                        ? "Click to add points; double-click, Enter or Esc to finish."
+                        : isFieldTool(tool)
+                          ? "Click or drag on the page to place a form field."
+                          : tool === "signature" || tool === "initials"
+                            ? `Click the page to place your ${tool}.`
+                            : tool === "date"
+                              ? "Click the page to stamp today's date."
+                              : STAMP_TOOLS.includes(tool)
+                                ? "Click the page to drop the mark."
+                                : "Drag on the page to draw."}
             </p>
           )}
         </Card>
@@ -2763,7 +3126,7 @@ export function EditorPage() {
                 <label className="block text-xs text-gray-600 mb-1">Thickness: {strokeWidth}pt</label>
                 <input type="range" min={1} max={12} value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} className="w-full" />
               </div>
-              {(tool === "rect" || tool === "ellipse") && (
+              {(tool === "rect" || tool === "rrect" || tool === "ellipse" || tool === "polygon") && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-700">Fill</span>
                   <div className="flex items-center gap-2">
@@ -2774,6 +3137,29 @@ export function EditorPage() {
                   </div>
                 </div>
               )}
+              {/* Wave 5a — dashed stroke default for shapes/lines/polys. */}
+              <button
+                data-testid="shape-dash"
+                onClick={() => setShapeDash((v) => !v)}
+                className={`w-full flex items-center justify-center gap-1 text-xs py-1.5 rounded-lg border-2 transition-colors ${shapeDash ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent text-gray-700 hover:bg-gray-100"}`}
+                title="Dashed stroke"
+              >
+                <SquareDashed className="w-4 h-4" /> {shapeDash ? "Dashed" : "Solid"}
+              </button>
+            </div>
+          </Card>
+        )}
+
+        {/* Eraser size (Wave 5a) */}
+        {tool === "eraser" && (
+          <Card>
+            <div className="p-3 border-b">
+              <h2 className="font-semibold text-sm">Eraser</h2>
+            </div>
+            <div className="p-3">
+              <label className="block text-xs text-gray-600 mb-1">Size: {eraserSize}px</label>
+              <input data-testid="eraser-size" type="range" min={4} max={60} value={eraserSize} onChange={(e) => setEraserSize(parseInt(e.target.value))} className="w-full" />
+              <p className="text-xs text-gray-500 mt-2">Click or drag over marks to erase. Ink strokes split where crossed.</p>
             </div>
           </Card>
         )}
@@ -2946,6 +3332,60 @@ export function EditorPage() {
                     <span className="text-sm text-gray-700">Color</span>
                     <input data-testid="text-color" type="color" value={selected.color} onChange={(e) => updateSelected({ color: e.target.value })} className="h-8 w-12 border rounded" />
                   </div>
+                  {/* Wave 5a — alignment / lists / line spacing */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-600 mr-1">Align</span>
+                    {([
+                      ["left", AlignLeft, "text-align-left"],
+                      ["center", AlignCenter, "text-align-center"],
+                      ["right", AlignRight, "text-align-right"],
+                    ] as [TextAlign, typeof AlignLeft, string][]).map(([mode, Icon, tid]) => (
+                      <button
+                        key={mode}
+                        data-testid={tid}
+                        onClick={() => updateSelected({ align: mode })}
+                        className={`p-1.5 rounded border ${(selected.align ?? "left") === mode ? "bg-blue-50 border-blue-400" : ""}`}
+                        title={`Align ${mode}`}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-600 mr-1">List</span>
+                    <button
+                      data-testid="text-list-bullet"
+                      onClick={() => updateSelected({ list: (selected.list ?? "none") === "bullet" ? "none" : "bullet" })}
+                      className={`p-1.5 rounded border ${selected.list === "bullet" ? "bg-blue-50 border-blue-400" : ""}`}
+                      title="Bulleted list"
+                    >
+                      <List className="w-4 h-4" />
+                    </button>
+                    <button
+                      data-testid="text-list-number"
+                      onClick={() => updateSelected({ list: (selected.list ?? "none") === "number" ? "none" : "number" })}
+                      className={`p-1.5 rounded border ${selected.list === "number" ? "bg-blue-50 border-blue-400" : ""}`}
+                      title="Numbered list"
+                    >
+                      <ListOrdered className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Baseline className="w-4 h-4 text-gray-600" />
+                    <span className="text-xs text-gray-600">Line spacing</span>
+                    <select
+                      data-testid="text-line-spacing"
+                      value={String(selected.lineSpacing ?? 1.2)}
+                      onChange={(e) => updateSelected({ lineSpacing: parseFloat(e.target.value) })}
+                      className="text-sm border rounded px-2 py-1 flex-1"
+                    >
+                      <option value="1">1.0</option>
+                      <option value="1.15">1.15</option>
+                      <option value="1.2">1.2</option>
+                      <option value="1.5">1.5</option>
+                      <option value="2">2.0</option>
+                    </select>
+                  </label>
                 </>
               )}
               {(isBox(selected) && selected.type !== "whiteout") && (
@@ -2977,6 +3417,23 @@ export function EditorPage() {
                     <label className="block text-xs text-gray-600 mb-1">Opacity: {Math.round(selected.opacity * 100)}%</label>
                     <input data-testid="shape-opacity" type="range" min={10} max={100} value={Math.round(selected.opacity * 100)} onChange={(e) => updateSelected({ opacity: parseInt(e.target.value) / 100 })} className="w-full" />
                   </div>
+                  {/* Wave 5a — corner radius (rect only) + dashed toggle (rect/ellipse) */}
+                  {selected.type === "rect" && (
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Corner radius: {Math.round(selected.rx ?? 0)}pt</label>
+                      <input data-testid="shape-corner-radius" type="range" min={0} max={60} value={Math.round(selected.rx ?? 0)} onChange={(e) => updateSelected({ rx: parseInt(e.target.value) || undefined })} className="w-full" />
+                    </div>
+                  )}
+                  {(selected.type === "rect" || selected.type === "ellipse") && (
+                    <button
+                      data-testid="shape-dash"
+                      onClick={() => updateSelected({ dash: !selected.dash || undefined })}
+                      className={`w-full flex items-center justify-center gap-1 text-xs py-1.5 rounded-lg border-2 transition-colors ${selected.dash ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent text-gray-700 hover:bg-gray-100"}`}
+                      title="Dashed stroke"
+                    >
+                      <SquareDashed className="w-4 h-4" /> {selected.dash ? "Dashed" : "Solid"}
+                    </button>
+                  )}
                 </>
               )}
               {isLine(selected) && (
@@ -2989,6 +3446,45 @@ export function EditorPage() {
                     <label className="block text-xs text-gray-600 mb-1">Thickness: {selected.strokeWidth}pt</label>
                     <input data-testid="shape-stroke-width" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
                   </div>
+                  <button
+                    data-testid="shape-dash"
+                    onClick={() => updateSelected({ dash: !selected.dash || undefined })}
+                    className={`w-full flex items-center justify-center gap-1 text-xs py-1.5 rounded-lg border-2 transition-colors ${selected.dash ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent text-gray-700 hover:bg-gray-100"}`}
+                    title="Dashed stroke"
+                  >
+                    <SquareDashed className="w-4 h-4" /> {selected.dash ? "Dashed" : "Solid"}
+                  </button>
+                </>
+              )}
+              {isPoly(selected) && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700">Stroke</span>
+                    <input data-testid="shape-stroke-color" type="color" value={selected.strokeColor} onChange={(e) => updateSelected({ strokeColor: e.target.value })} className="h-7 w-10 border rounded" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Thickness: {selected.strokeWidth}pt</label>
+                    <input data-testid="shape-stroke-width" type="range" min={1} max={12} value={selected.strokeWidth} onChange={(e) => updateSelected({ strokeWidth: parseInt(e.target.value) })} className="w-full" />
+                  </div>
+                  {selected.closed && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-700">Fill</span>
+                      <div className="flex items-center gap-2">
+                        {selected.fillColor && <input data-testid="shape-fill-color" type="color" value={selected.fillColor} onChange={(e) => updateSelected({ fillColor: e.target.value })} className="h-7 w-10 border rounded" />}
+                        <button className="text-xs px-2 py-1 rounded border hover:bg-gray-50" onClick={() => updateSelected({ fillColor: selected.fillColor ? null : "#fde68a" })}>
+                          {selected.fillColor ? "Clear" : "Add"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    data-testid="shape-dash"
+                    onClick={() => updateSelected({ dash: !selected.dash || undefined })}
+                    className={`w-full flex items-center justify-center gap-1 text-xs py-1.5 rounded-lg border-2 transition-colors ${selected.dash ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent text-gray-700 hover:bg-gray-100"}`}
+                    title="Dashed stroke"
+                  >
+                    <SquareDashed className="w-4 h-4" /> {selected.dash ? "Dashed" : "Solid"}
+                  </button>
                 </>
               )}
               {isField(selected) && (
@@ -3264,8 +3760,34 @@ export function EditorPage() {
 
                   {/* Vector overlay (shapes/lines/ink) + selection chrome */}
                   <svg className="absolute inset-0" width={renderWidth} height={overlayH} style={{ zIndex: 5 }}>
-                    {pageAnnotations.filter((a) => isBox(a) || isLine(a) || a.type === "ink").map((a) => renderShape(a))}
+                    {pageAnnotations.filter((a) => isBox(a) || isLine(a) || a.type === "ink" || a.type === "poly").map((a) => renderShape(a))}
                     {draft && (isBox(draft) || isLine(draft) || draft.type === "ink") && renderShape(draft, true)}
+                    {/* Live polygon/polyline drafting preview (vertices + rubber-band). */}
+                    {polyDraft && polyDraft.points.length > 0 && (
+                      <g data-testid="poly-draft" style={{ pointerEvents: "none" }}>
+                        <polyline
+                          points={[...polyDraft.points, ...(polyCursor ? [polyCursor] : [])].map((p) => `${p.x * renderWidth},${p.y * overlayH}`).join(" ")}
+                          fill="none"
+                          stroke="#2563eb"
+                          strokeWidth={1.5}
+                          strokeDasharray="4 3"
+                        />
+                        {polyDraft.tool === "polygon" && polyDraft.points.length > 1 && (
+                          <line
+                            x1={(polyCursor ?? polyDraft.points[polyDraft.points.length - 1]).x * renderWidth}
+                            y1={(polyCursor ?? polyDraft.points[polyDraft.points.length - 1]).y * overlayH}
+                            x2={polyDraft.points[0].x * renderWidth}
+                            y2={polyDraft.points[0].y * overlayH}
+                            stroke="#2563eb"
+                            strokeWidth={1}
+                            strokeDasharray="2 3"
+                          />
+                        )}
+                        {polyDraft.points.map((p, i) => (
+                          <circle key={i} cx={p.x * renderWidth} cy={p.y * overlayH} r={3} fill="#fff" stroke="#2563eb" strokeWidth={1.5} />
+                        ))}
+                      </g>
+                    )}
                     {draft && draft.type === "field" && (
                       <rect
                         x={draft.x * renderWidth}
@@ -3311,6 +3833,9 @@ export function EditorPage() {
                     style={{ zIndex: 6, cursor: cursorFor, pointerEvents: "auto" }}
                     onMouseDown={handleOverlayMouseDown}
                     onClick={handleOverlayClick}
+                    onDoubleClick={() => {
+                      if (polyDraftRef.current) finishPoly();
+                    }}
                   >
                     {pageAnnotations.filter((a) => a.type === "text" || a.type === "image" || a.type === "field").map((ann) => {
                       const isSel = isSelected(ann.id);
@@ -3328,12 +3853,18 @@ export function EditorPage() {
                         const isEditing = ann.id === editingId;
                         const textStyle: React.CSSProperties = {
                           fontSize: px,
-                          lineHeight: 1.2,
+                          lineHeight: ann.lineSpacing ?? 1.2,
                           color: ann.color,
                           fontFamily: cssFamily(ann.family),
                           fontWeight: ann.bold ? 700 : 400,
                           fontStyle: ann.italic ? "italic" : "normal",
+                          textAlign: ann.align ?? "left",
                         };
+                        // Wave 5a — list-prefixed text for the on-screen render.
+                        const displayText = ann.text
+                          .split("\n")
+                          .map((ln, i) => listPrefix(ann.list, i) + ln)
+                          .join("\n");
                         if (isEditing) {
                           // True in-page editing: a transparent textarea sits exactly
                           // where the text renders, so you type on the document itself.
@@ -3389,6 +3920,10 @@ export function EditorPage() {
                             key={ann.id}
                             data-annot-id={ann.id}
                             data-annot-index={annIndex}
+                            data-annot-kind="text"
+                            data-text-align={ann.align ?? "left"}
+                            data-text-list={ann.list ?? "none"}
+                            data-text-linespacing={ann.lineSpacing ?? 1.2}
                             onMouseDown={(e) => startMove(e, ann)}
                             onClick={selectOnClick}
                             onDoubleClick={(e) => {
@@ -3409,7 +3944,7 @@ export function EditorPage() {
                               pointerEvents: interactive ? "auto" : "none",
                             }}
                           >
-                            {ann.text || " "}
+                            {displayText || " "}
                             {isSingleSel && interactive && (
                               <span onMouseDown={(e) => startResize(e, ann.id, "br")} className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-white border-2 border-blue-600" style={{ cursor: "ew-resize", pointerEvents: "auto" }} />
                             )}
