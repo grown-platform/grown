@@ -80,6 +80,7 @@ import {
   ListOrdered,
   SquareDashed,
   Baseline,
+  EyeOff,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -153,6 +154,10 @@ type Tool =
   | "underline"
   | "strikethrough"
   | "whiteout"
+  // Wave 5b — true redaction. Drag a rectangle to mark an area for removal;
+  // on export the whole page is rasterized (pdfjs → canvas) with the region
+  // painted solid black, destroying the underlying text/vector layer.
+  | "redact"
   // Wave 5a — markup. eraser deletes annotations (partial-erase for ink);
   // rrect = rounded rectangle (BoxAnnotation with rx); polygon/polyline are
   // click-to-add-vertex poly annotations (closed vs open).
@@ -209,7 +214,7 @@ interface ImageAnnotation {
 }
 interface BoxAnnotation {
   id: string;
-  type: "rect" | "ellipse" | "highlight" | "underline" | "strikethrough" | "whiteout";
+  type: "rect" | "ellipse" | "highlight" | "underline" | "strikethrough" | "whiteout" | "redact";
   page: number;
   x: number;
   y: number;
@@ -292,7 +297,8 @@ type Annotation =
 
 const isBox = (a: Annotation): a is BoxAnnotation =>
   a.type === "rect" || a.type === "ellipse" || a.type === "highlight" ||
-  a.type === "underline" || a.type === "strikethrough" || a.type === "whiteout";
+  a.type === "underline" || a.type === "strikethrough" || a.type === "whiteout" ||
+  a.type === "redact";
 const isLine = (a: Annotation): a is LineAnnotation => a.type === "line" || a.type === "arrow";
 const isPoly = (a: Annotation): a is PolyAnnotation => a.type === "poly";
 const isField = (a: Annotation): a is FieldAnnotation => a.type === "field";
@@ -449,7 +455,7 @@ const DEFAULT_FONT_SIZE = 16;
 // Drag-to-draw tools (mousedown → drag → mouseup commits). rrect draws like a
 // rect but with a corner radius. polygon/polyline are click-to-add-vertex and
 // are handled separately (POLY_TOOLS).
-const SHAPE_TOOLS: Tool[] = ["rect", "rrect", "ellipse", "line", "arrow", "draw", "highlight", "underline", "strikethrough", "whiteout"];
+const SHAPE_TOOLS: Tool[] = ["rect", "rrect", "ellipse", "line", "arrow", "draw", "highlight", "underline", "strikethrough", "whiteout", "redact"];
 const POLY_TOOLS: Tool[] = ["polygon", "polyline"];
 const isPolyTool = (t: Tool): boolean => POLY_TOOLS.includes(t);
 const DEFAULT_RX = 12; // default rounded-rect corner radius (pt)
@@ -696,6 +702,97 @@ function resizeBox(
   };
 }
 
+// ---- True redaction (Wave 5b) ----------------------------------------------
+// Decode a "data:image/png;base64,…" URL to raw bytes for pdf-lib embedding.
+function dataUrlToBytes(dataUrl: string): Uint8Array {
+  return Uint8Array.from(atob(dataUrl.split(",")[1]), (c) => c.charCodeAt(0));
+}
+// Rasterize ONE page (0-based) to a PNG data URL via pdfjs at `scale`, painting
+// each redaction rect solid black. Returns the PNG plus the page's visual size
+// in points (rotation applied) so the replacement PDF page keeps identical
+// dimensions. Normalized rects are top-left / y-down — the same convention as
+// the canvas, so no flip is needed.
+async function rasterizeRedactedPage(
+  pdf: Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]>,
+  pageIndex: number,
+  redacts: BoxAnnotation[],
+  scale = 2,
+): Promise<{ png: string; w: number; h: number }> {
+  const page = await pdf.getPage(pageIndex + 1);
+  const base = page.getViewport({ scale: 1 }); // points, rotation applied
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(viewport.width));
+  canvas.height = Math.max(1, Math.ceil(viewport.height));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("no 2d context");
+  // White backdrop so any transparent regions flatten to a printable page.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+  ctx.fillStyle = "#000000";
+  for (const a of redacts) {
+    ctx.fillRect(a.x * canvas.width, a.y * canvas.height, a.width * canvas.width, a.height * canvas.height);
+  }
+  return { png: canvas.toDataURL("image/png"), w: base.width, h: base.height };
+}
+// Build a new PDFDocument where every page carrying ≥1 redaction mark is
+// replaced by a flattened raster image (original content destroyed + regions
+// blacked out); pages without redactions are copied unchanged (stay vector).
+// The `rasterized` set is filled with the 0-based indices that were successfully
+// flattened so the caller can skip drawing their (already-baked) black boxes and
+// fall back to an opaque pdf-lib box for any page rasterization missed.
+async function rasterizeRedactedPages(
+  srcDoc: PDFDocument,
+  srcBytes: Uint8Array,
+  redacts: BoxAnnotation[],
+  rasterized: Set<number>,
+): Promise<PDFDocument> {
+  const pagesWithRedact = Array.from(new Set(redacts.map((a) => a.page - 1))).sort((p, q) => p - q);
+  const rasterMap = new Map<number, { png: string; w: number; h: number }>();
+  try {
+    // pdfjs may detach the buffer it's given — pass a fresh copy so srcBytes
+    // (also used by react-pdf) is never corrupted.
+    const task = pdfjs.getDocument({ data: srcBytes.slice() });
+    const pdf = await task.promise;
+    for (const pi of pagesWithRedact) {
+      try {
+        rasterMap.set(pi, await rasterizeRedactedPage(pdf, pi, redacts.filter((a) => a.page - 1 === pi)));
+      } catch {
+        // Leave unmapped → the caller draws an opaque black box fallback.
+      }
+    }
+    try {
+      await pdf.cleanup();
+    } catch {
+      /* ignore */
+    }
+    try {
+      await task.destroy();
+    } catch {
+      /* ignore */
+    }
+  } catch {
+    // Whole-document rasterize failed → every redacted page falls back to a box.
+  }
+  if (!rasterMap.size) return srcDoc; // nothing flattened; keep the vector doc
+  const out = await PDFDocument.create();
+  const total = srcDoc.getPageCount();
+  for (let i = 0; i < total; i++) {
+    const r = rasterMap.get(i);
+    if (r) {
+      const png = await out.embedPng(dataUrlToBytes(r.png));
+      const p = out.addPage([r.w, r.h]);
+      p.drawImage(png, { x: 0, y: 0, width: r.w, height: r.h });
+      rasterized.add(i);
+    } else {
+      const [copied] = await out.copyPages(srcDoc, [i]);
+      out.addPage(copied);
+    }
+  }
+  return out;
+}
+
 export function EditorPage() {
   const navigate = useNavigate();
 
@@ -936,6 +1033,8 @@ export function EditorPage() {
   const pxScale = renderWidth / POINTS_WIDE; // pt → screen px
   const pageCount = pages.length;
   const pageAnnotations = annotations.filter((a) => a.page === currentPage);
+  // Any redaction marks present ⇒ their pages flatten to images on export.
+  const hasRedactions = annotations.some((a) => a.type === "redact");
   // Single-selection derived id: null unless exactly one is selected. The
   // properties panel + resize handles key off this so they only appear then.
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
@@ -1808,6 +1907,8 @@ export function EditorPage() {
           next = { id: "draft", type: dw.tool, page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: Math.max(1.5, dw.style.strokeWidth), fillColor: null, opacity: 1 };
         } else if (dw.tool === "whiteout") {
           next = { id: "draft", type: "whiteout", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffffff", opacity: 1 };
+        } else if (dw.tool === "redact") {
+          next = { id: "draft", type: "redact", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#000000", opacity: 1 };
         } else {
           // rect / rrect. rrect carries a corner radius (pt) → rounded corners.
           next = { id: "draft", type: dw.tool === "ellipse" ? "ellipse" : "rect", page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth, fillColor: dw.style.fillColor, opacity: 1, dash, rx: dw.tool === "rrect" ? DEFAULT_RX : undefined };
@@ -2212,7 +2313,21 @@ export function EditorPage() {
   // ---- Export ---------------------------------------------------------------
   const buildFinalPdf = useCallback(async (): Promise<Uint8Array> => {
     if (!pdfBytes) throw new Error("Nothing to export");
-    const doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    let doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+
+    // ---- True redaction (Wave 5b) ------------------------------------------
+    // Any page carrying a redaction mark is flattened to a raster image (its
+    // original text/vector layer destroyed, regions blacked out) BEFORE we draw
+    // annotations — so the surviving annotations composite on top of the raster,
+    // and non-redacted pages stay untouched vector pages. `rasterizedPages`
+    // records which pages were baked so the annotation loop skips their (already
+    // black) redaction boxes; any page that failed to rasterize falls back to an
+    // opaque pdf-lib black box below.
+    const redactAnns = annotations.filter((a): a is BoxAnnotation => isBox(a) && a.type === "redact");
+    const rasterizedPages = new Set<number>();
+    if (redactAnns.length) {
+      doc = await rasterizeRedactedPages(doc, pdfBytes, redactAnns, rasterizedPages);
+    }
     const docPages = doc.getPages();
 
     const fontCache = new Map<string, PDFFont>();
@@ -2273,6 +2388,19 @@ export function EditorPage() {
         const bytes = Uint8Array.from(atob(ann.dataUrl.split(",")[1]), (c) => c.charCodeAt(0));
         const img = ann.mime === "image/jpeg" ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
         page.drawImage(img, { x: PX(ann.x), y: PY(ann.y) - ann.height * ph, width: ann.width * pw, height: ann.height * ph });
+      } else if (ann.type === "redact") {
+        // Redaction: on a page we successfully rasterized the black region is
+        // already baked into the flattened image — skip. Otherwise (rasterize
+        // failed) draw an opaque black box so the region is never left exposed.
+        if (rasterizedPages.has(ann.page - 1)) continue;
+        page.drawRectangle({
+          x: PX(ann.x),
+          y: PY(ann.y) - ann.height * ph,
+          width: ann.width * pw,
+          height: ann.height * ph,
+          color: rgb(0, 0, 0),
+          opacity: 1,
+        });
       } else if (isBox(ann)) {
         const dashArr = ann.dash ? DASH_PT.slice() : undefined;
         if (ann.type === "underline" || ann.type === "strikethrough") {
@@ -2659,6 +2787,39 @@ export function EditorPage() {
       // Test hook: normalized geometry on box nodes (used by align/snap specs).
       const boxData = isDraft ? {} : { "data-annot-x": a.x, "data-annot-y": a.y, "data-annot-w": a.width, "data-annot-h": a.height };
       const dashArray = a.dash ? `${DASH_PT[0] * pxScale} ${DASH_PT[1] * pxScale}` : undefined;
+      if (a.type === "redact") {
+        // Solid opaque black box + a red hatch/label so a redaction mark reads
+        // differently from an ordinary filled-black rectangle. On export the
+        // whole page is rasterized and this region destroyed (true removal).
+        const rx = X(a.x);
+        const ry = Y(a.y);
+        const rw = X(a.width);
+        const rh = Y(a.height);
+        const kindData = isDraft ? {} : { "data-annot-kind": "redact" };
+        const label = Math.min(11, Math.max(6, rh * 0.5));
+        return (
+          <g key={a.id} {...kindData} {...boxData} {...common}>
+            <rect x={rx} y={ry} width={rw} height={rh} fill="#000000" fillOpacity={1} stroke="#dc2626" strokeWidth={1} />
+            <line x1={rx} y1={ry} x2={rx + rw} y2={ry + rh} stroke="#dc2626" strokeWidth={1} strokeOpacity={0.55} />
+            <line x1={rx + rw} y1={ry} x2={rx} y2={ry + rh} stroke="#dc2626" strokeWidth={1} strokeOpacity={0.55} />
+            {rw > 44 && rh > 12 && (
+              <text
+                x={rx + rw / 2}
+                y={ry + rh / 2}
+                fill="#dc2626"
+                fontSize={label}
+                fontWeight="bold"
+                letterSpacing={1}
+                textAnchor="middle"
+                dominantBaseline="central"
+                style={{ pointerEvents: "none", userSelect: "none" }}
+              >
+                REDACT
+              </text>
+            )}
+          </g>
+        );
+      }
       if (a.type === "underline" || a.type === "strikethrough") {
         const ly = a.type === "underline" ? Y(a.y + a.height) : Y(a.y + a.height / 2);
         return (
@@ -2812,6 +2973,7 @@ export function EditorPage() {
     { t: "polyline", icon: Spline, label: "Polyline" },
     { t: "eraser", icon: Eraser, label: "Eraser" },
     { t: "whiteout", icon: PaintBucket, label: "Whiteout" },
+    { t: "redact", icon: EyeOff, label: "Redact" },
     { t: "image", icon: ImageIcon, label: "Image" },
     { t: "field-text", icon: FormInput, label: "Text field" },
     { t: "field-check", icon: CheckSquare, label: "Checkbox" },
@@ -2835,6 +2997,7 @@ export function EditorPage() {
     polyline: "tool-polyline",
     eraser: "tool-eraser",
     whiteout: "tool-whiteout",
+    redact: "tool-redact",
     image: "tool-image",
     "field-text": "tool-field-text",
     "field-check": "tool-field-check",
@@ -3001,6 +3164,8 @@ export function EditorPage() {
                     ? "Drag on the page to draw freehand."
                     : tool === "eraser"
                       ? "Click or drag over marks to erase them."
+                      : tool === "redact"
+                        ? "Drag to mark an area to redact. Affected pages flatten to images on export."
                       : isPolyTool(tool)
                         ? "Click to add points; double-click, Enter or Esc to finish."
                         : isFieldTool(tool)
@@ -3704,6 +3869,15 @@ export function EditorPage() {
                 <input data-testid="flatten-forms" type="checkbox" checked={flattenForms} onChange={(e) => setFlattenForms(e.target.checked)} />
                 Flatten forms
               </label>
+              {hasRedactions && (
+                <span
+                  data-testid="redact-notice"
+                  className="flex items-center gap-1 text-xs text-red-600"
+                  title="Pages with redaction marks are flattened to images on export; underlying text/vectors on those pages are permanently removed."
+                >
+                  <EyeOff className="w-3.5 h-3.5" /> Redaction flattens affected pages to images
+                </span>
+              )}
               <Button testId="editor-download" variant="outline" size="sm" onClick={handleDownload} disabled={busy}>
                 <Download className="w-4 h-4 inline mr-1" /> Download
               </Button>
