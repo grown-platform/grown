@@ -36,11 +36,14 @@ Baseline gaps → become the backlog below.
 
 ## Backlog (ordered; check off as landed)
 
-### Wave 1 — Enablement (prereqs for everything) ✅/⬜
-- [ ] Self-host pdf.js worker (bundle via vite, drop unpkg CDN) — unblocks offline/CI e2e.
-- [ ] Add `data-testid` hooks across the editor (toolbar, canvas/overlay, page nav, properties panel, inputs, status). No stable hooks exist today.
-- [ ] Extract modules from EditorPage: `editor/types.ts` (Annotation model), `editor/pdfExport.ts` (buildFinalPdf), `editor/useHistory.ts`. Keeps future waves isolated + unit-testable.
-- [ ] Playwright `editor` project + first smoke spec (load blank, place text, download).
+### Wave 1 — Enablement (prereqs for everything) ✅
+- [x] Self-host pdf.js worker (bundled `?url` import, drop unpkg CDN) — unblocks offline/CI e2e. `e43dcd9`
+- [x] Add `data-testid` hooks across the editor (tools `tool-*`, `editor-canvas`, `editor-textarea`, page nav, properties `props-*`/`text-*`/`shape-*`, header actions). See commit for full list.
+- [x] Playwright `editor` project + 3 specs: `editor-smoke`, `editor-scratch` (from scratch, re-parses export), `editor-existing` (edit real PDF). All green (tsc/lint/e2e verified).
+- [x] Added the missing eslint flat config (lint had never run).
+- [ ] DEFERRED: extract modules (`editor/types.ts`, `pdfExport.ts`, `useHistory.ts`) — do opportunistically when a wave touches those areas, to avoid a risky big refactor up front.
+
+**Test-hook cheat-sheet for future waves:** tools `tool-{select,text,draw,highlight,underline,strikethrough,rect,ellipse,line,arrow,whiteout,image}`; canvas `editor-canvas` (click/drag target) + `editor-textarea`; header `editor-{undo,redo,zoom-in,zoom-out,zoom-level,prev-page,next-page,page-indicator,download,save,docname,close}`; pages `page-{add,delete,up,down,rotate}`; props `props-{panel,duplicate,delete}`, `text-{font,bold,italic,color,size}`, `shape-{stroke-color,stroke-width,fill-color,opacity}`; empty state `editor-{dropzone,file-input,new-blank}`. e2e auth: `beforeEach` seeds `sessionStorage.lastLoginAttempt` via `addInitScript` to bypass the SSO redirect (editor needs no backend). Local port clash on :5173 → run with `PLAYWRIGHT_PORT=<free>`.
 
 ### Wave 2 — Selection & object model
 - [ ] Multi-select (shift-click + marquee), group move/delete.
@@ -97,4 +100,6 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
-- **2026-07-15** — Scaffolding: branch + PR #32 created; hamburger services menu committed (`9fe7942`); roadmap doc added; competitor + Docs/Sheets research kicked off. Next: Wave 1.
+- **2026-07-15** — Wave 1 (enablement) DONE (`e43dcd9`): self-hosted pdf.js worker, testids everywhere, Playwright `editor` project + 3 specs (smoke/scratch/existing) all green, eslint config added. Verified tsc/lint/e2e myself. Next: Wave 2 (selection & object model).
+- **2026-07-15** — Research deliverables committed: competitor analysis (`7df4e11`) + Docs/Sheets parity (`pdf/docs/feature-research/`). Key: existing-text-edit / true redaction / OCR need backend; everything else client-side-doable. Docs/Sheets already strong — main gaps are import + export fidelity.
+- **2026-07-15** — Scaffolding: branch + PR #32 created; hamburger services menu committed (`9fe7942`); roadmap doc added; competitor + Docs/Sheets research kicked off.
