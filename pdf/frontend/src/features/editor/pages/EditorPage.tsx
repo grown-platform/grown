@@ -81,6 +81,9 @@ import {
   SquareDashed,
   Baseline,
   EyeOff,
+  StickyNote,
+  Stamp,
+  MessageSquare,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -177,7 +180,13 @@ type Tool =
   | "date"
   | "stamp-check"
   | "stamp-x"
-  | "stamp-dot";
+  | "stamp-dot"
+  // Wave 5c — sticky-note comments + stamps. `note` drops a small speech-bubble
+  // marker (its comment text lives in the editor/comment-sidebar). `stamp`
+  // enters place-mode after the stamp picker chooses a preset (or a custom
+  // image, which drops via the image path); the next click drops the stamp.
+  | "note"
+  | "stamp";
 
 type FontFamily = "Helvetica" | "Times" | "Courier";
 
@@ -286,6 +295,40 @@ interface FieldAnnotation {
   required?: boolean;
   fontSize?: number;
 }
+// ---- Sticky-note comment (Wave 5c) -----------------------------------------
+// A comment marker anchored at a normalized point (x,y = the marker's top-left).
+// The marker renders as a fixed-size speech-bubble icon; the comment text lives
+// only in the editor + comment sidebar (pdf-lib can't emit interactive popups),
+// but the icon bakes into the export as a small colored vector bubble.
+interface NoteAnnotation {
+  id: string;
+  type: "note";
+  page: number;
+  x: number;
+  y: number;
+  text: string;
+  color?: string; // marker fill; defaults to amber
+  author?: string;
+}
+// ---- Stamp (Wave 5c) --------------------------------------------------------
+// A preset text stamp (APPROVED/DRAFT/…): a bold uppercase label inside a
+// rounded bordered badge in the stamp's color, optionally with a date line.
+// Shares the x/y/width/height box shape so select/move/resize/undo reuse the
+// existing box infra. Custom IMAGE stamps are placed as image annotations, not
+// this type.
+interface StampAnnotation {
+  id: string;
+  type: "stamp";
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  color: string;
+  withDate: boolean;
+  date?: string; // captured once at placement when withDate
+}
 type Annotation =
   | TextAnnotation
   | ImageAnnotation
@@ -293,7 +336,9 @@ type Annotation =
   | LineAnnotation
   | InkAnnotation
   | PolyAnnotation
-  | FieldAnnotation;
+  | FieldAnnotation
+  | NoteAnnotation
+  | StampAnnotation;
 
 const isBox = (a: Annotation): a is BoxAnnotation =>
   a.type === "rect" || a.type === "ellipse" || a.type === "highlight" ||
@@ -302,6 +347,26 @@ const isBox = (a: Annotation): a is BoxAnnotation =>
 const isLine = (a: Annotation): a is LineAnnotation => a.type === "line" || a.type === "arrow";
 const isPoly = (a: Annotation): a is PolyAnnotation => a.type === "poly";
 const isField = (a: Annotation): a is FieldAnnotation => a.type === "field";
+const isNote = (a: Annotation): a is NoteAnnotation => a.type === "note";
+const isStamp = (a: Annotation): a is StampAnnotation => a.type === "stamp";
+
+// Preset text stamps (Wave 5c). Each renders as a bold uppercase label in a
+// rounded bordered badge in its color.
+interface StampPreset {
+  name: string;
+  label: string;
+  color: string;
+}
+const STAMP_PRESETS: StampPreset[] = [
+  { name: "approved", label: "APPROVED", color: "#16a34a" },
+  { name: "draft", label: "DRAFT", color: "#6b7280" },
+  { name: "confidential", label: "CONFIDENTIAL", color: "#dc2626" },
+  { name: "reviewed", label: "REVIEWED", color: "#2563eb" },
+  { name: "final", label: "FINAL", color: "#16a34a" },
+  { name: "void", label: "VOID", color: "#dc2626" },
+];
+const NOTE_COLOR = "#f59e0b"; // default sticky-note marker color (amber)
+const NOTE_PX = 22; // rendered marker size (screen px)
 
 // A blank page (srcIndex === -1) can carry its own size + background template;
 // undefined ⇒ Letter / no background (back-compat with pre-Wave-3b snapshots).
@@ -565,7 +630,12 @@ function annotBBox(a: Annotation, pageAspect: number): NBox {
     const h = (a.fontSize * 1.2) / (POINTS_WIDE * pageAspect);
     return { x0: a.x, y0: a.y, x1: a.x + a.width, y1: a.y + Math.max(0.02, h) };
   }
-  const b = a as BoxAnnotation | ImageAnnotation;
+  if (a.type === "note") {
+    // Fixed-px marker → approximate normalized footprint (square on screen).
+    const w = NOTE_PX / POINTS_WIDE;
+    return { x0: a.x, y0: a.y, x1: a.x + w, y1: a.y + w / pageAspect };
+  }
+  const b = a as BoxAnnotation | ImageAnnotation | StampAnnotation;
   return { x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height };
 }
 function boxesIntersect(a: NBox, b: NBox): boolean {
@@ -900,6 +970,8 @@ export function EditorPage() {
       setPolyDraft(null);
       setPolyCursor(null);
     }
+    // Close the note edit popover whenever a drawing/placement tool is picked.
+    if (tool !== "select") setNotePopoverId(null);
   }, [tool]);
   // Export option (Wave 4a): bake form fields into static content when ON.
   const [flattenForms, setFlattenForms] = useState(false);
@@ -912,6 +984,23 @@ export function EditorPage() {
   const [initialsAsset, setInitialsAsset] = useState<SigResult | null>(null);
   const [sigDialog, setSigDialog] = useState<null | "signature" | "initials">(null);
   const [fillSign, setFillSign] = useState(false);
+  // ---- Comments + stamps (Wave 5c) ------------------------------------------
+  // Comment sidebar visibility + the note whose edit popover is open. The
+  // pending stamp (chosen in the stamp picker) is what the next canvas click in
+  // "stamp" place-mode drops: a preset badge, or a custom image (image path).
+  const [showComments, setShowComments] = useState(false);
+  const [notePopoverId, setNotePopoverId] = useState<string | null>(null);
+  const [stampDialog, setStampDialog] = useState(false);
+  const [stampPreset, setStampPreset] = useState<string>("approved");
+  const [stampWithDate, setStampWithDate] = useState(false);
+  const pendingStamp = useRef<
+    | { kind: "preset"; label: string; color: string; withDate: boolean }
+    | { kind: "image"; asset: SigResult }
+    | null
+  >(null);
+  const stampUploadRef = useRef<HTMLInputElement>(null);
+  // Snapshot-once guard for the currently-open note popover edit session.
+  const noteEditSnapped = useRef(false);
   // Monotonic counter for default field names (text_1, checkbox_2, …).
   const fieldSeq = useRef(0);
 
@@ -1040,6 +1129,13 @@ export function EditorPage() {
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const selected = selectedId ? (annotations.find((a) => a.id === selectedId) ?? null) : null;
   const isSelected = (id: string) => selectedIds.includes(id);
+  // Wave 5c — the note whose edit popover is open (only while on its page).
+  const notePopover =
+    notePopoverId != null
+      ? (annotations.find((a): a is NoteAnnotation => a.id === notePopoverId && isNote(a) && a.page === currentPage) ?? null)
+      : null;
+  // All note annotations (any page), in document order — drives the sidebar.
+  const noteList = annotations.filter(isNote);
   const currentPageRef = useRef(currentPage);
   useEffect(() => {
     currentPageRef.current = currentPage;
@@ -1656,6 +1752,58 @@ export function EditorPage() {
       setTool("select");
       return;
     }
+    // Wave 5c — drop a sticky-note comment marker, then open its edit popover.
+    if (tool === "note") {
+      const { x, y } = toNorm(e.clientX, e.clientY);
+      const ann: NoteAnnotation = {
+        id: uid(),
+        type: "note",
+        page: currentPage,
+        x: clamp01(x),
+        y: clamp01(y),
+        text: "",
+        color: NOTE_COLOR,
+      };
+      snapshot();
+      setAnnotations((p) => [...p, ann]);
+      setSelectedIds([ann.id]);
+      openNotePopover(ann.id);
+      setTool("select");
+      return;
+    }
+    // Wave 5c — drop the pending stamp (preset badge or custom image).
+    if (tool === "stamp") {
+      const pend = pendingStamp.current;
+      if (!pend) {
+        setStampDialog(true);
+        return;
+      }
+      const { x, y } = toNorm(e.clientX, e.clientY);
+      if (pend.kind === "image") {
+        placeSignatureAt(pend.asset, x, y, 0.28);
+        return;
+      }
+      const width = 0.24;
+      const height = pend.withDate ? 0.1 : 0.07;
+      const ann: StampAnnotation = {
+        id: uid(),
+        type: "stamp",
+        page: currentPage,
+        x: clamp01(Math.min(x, 1 - width)),
+        y: clamp01(y),
+        width,
+        height,
+        label: pend.label,
+        color: pend.color,
+        withDate: pend.withDate,
+        date: pend.withDate ? new Date().toLocaleDateString() : undefined,
+      };
+      snapshot();
+      setAnnotations((p) => [...p, ann]);
+      setSelectedIds([ann.id]);
+      setTool("select");
+      return;
+    }
     if (tool === "select") {
       // A shape click or marquee drag already settled the selection.
       if (suppressCanvasClick.current) {
@@ -1663,6 +1811,7 @@ export function EditorPage() {
         return;
       }
       setSelectedIds([]);
+      setNotePopoverId(null);
     }
   };
 
@@ -1807,6 +1956,59 @@ export function EditorPage() {
     setSelectedIds([]);
   };
 
+  // ---- Comments + stamps (Wave 5c) ------------------------------------------
+  // Open (or reopen) a note's edit popover, resetting the snapshot-once guard so
+  // the first keystroke of a fresh edit session is undoable.
+  const openNotePopover = (id: string) => {
+    noteEditSnapped.current = false;
+    setNotePopoverId(id);
+  };
+  // Patch a note's fields (text/author). Snapshots once per edit session so undo
+  // reverts the whole edit, not each keystroke.
+  const patchNote = (id: string, patch: Partial<NoteAnnotation>) => {
+    if (!noteEditSnapped.current) {
+      snapshot();
+      noteEditSnapped.current = true;
+    }
+    setAnnotations((prev) => prev.map((a) => (a.id === id && isNote(a) ? { ...a, ...patch } : a)));
+  };
+  // Comment-sidebar row click: jump to the note's page + select it (+ popover).
+  const jumpToNote = (n: NoteAnnotation) => {
+    setCurrentPage(n.page);
+    setSelectedIds([n.id]);
+    setTool("select");
+    openNotePopover(n.id);
+  };
+  // Stamp picker: confirm a preset → enter place-mode (next click drops it).
+  const confirmStampPreset = () => {
+    const preset = STAMP_PRESETS.find((p) => p.name === stampPreset) ?? STAMP_PRESETS[0];
+    pendingStamp.current = { kind: "preset", label: preset.label, color: preset.color, withDate: stampWithDate };
+    setStampDialog(false);
+    setSelectedIds([]);
+    setTool("stamp");
+  };
+  // Stamp picker: a chosen custom image → enter place-mode (drops via image path).
+  const handleStampImageChosen = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const mime: "image/png" | "image/jpeg" = file.type === "image/jpeg" || file.type === "image/jpg" ? "image/jpeg" : "image/png";
+    const dataUrl = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    });
+    const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ w: img.width || 300, h: img.height || 120 });
+      img.src = dataUrl;
+    });
+    pendingStamp.current = { kind: "image", asset: { dataUrl, w: dims.w, h: dims.h, mime } };
+    setStampDialog(false);
+    setSelectedIds([]);
+    setTool("stamp");
+  };
+
   // ---- Move / draw / resize via global pointer listeners --------------------
   const startMove = (e: React.MouseEvent, ann: Annotation) => {
     if (tool !== "select") return;
@@ -1841,7 +2043,7 @@ export function EditorPage() {
     setSelectedIds([id]);
     snapshot();
     const a = annotationsRef.current.find((x) => x.id === id);
-    const start = a && (isBox(a) || a.type === "image" || isField(a)) ? { x: a.x, y: a.y, width: a.width, height: a.height } : null;
+    const start = a && (isBox(a) || a.type === "image" || isField(a) || isStamp(a)) ? { x: a.x, y: a.y, width: a.width, height: a.height } : null;
     const others = annotationsRef.current.filter((o) => o.page === currentPageRef.current && o.id !== id);
     resizeState.current = { id, handle, start, targets: snapTargets(others, pageAspectRef.current) };
   };
@@ -2351,6 +2553,10 @@ export function EditorPage() {
       return fontCache.get(key)!;
     };
 
+    // Wave 5c — fonts for baked stamps (bold label + normal date line).
+    const stampBoldFont = annotations.some(isStamp) ? await doc.embedFont(StandardFonts.HelveticaBold) : null;
+    const stampDateFont = annotations.some((a) => isStamp(a) && a.withDate) ? await doc.embedFont(StandardFonts.Helvetica) : null;
+
     for (const ann of annotations) {
       const page = docPages[ann.page - 1];
       if (!page) continue;
@@ -2525,6 +2731,63 @@ export function EditorPage() {
           const p0 = ann.points[i - 1];
           const p1 = ann.points[i];
           page.drawLine({ start: { x: PX(p0.x), y: PY(p0.y) }, end: { x: PX(p1.x), y: PY(p1.y) }, thickness: ann.strokeWidth, color: rgb(r, g, b) });
+        }
+      } else if (ann.type === "stamp") {
+        // Preset stamp → rounded bordered badge in the stamp color + bold label
+        // (and an optional date line), sized to the box. Vector (no raster).
+        const { r, g, b } = hexToRgb(ann.color);
+        const col = rgb(r, g, b);
+        const boxW = ann.width * pw;
+        const boxH = ann.height * ph;
+        const L = ann.x * pw;
+        const T = ann.y * ph;
+        const R = L + boxW;
+        const B = T + boxH;
+        const rr = Math.min(6, boxW / 2, boxH / 2);
+        const bw = Math.max(1.5, boxH * 0.05);
+        try {
+          const d = `M ${L + rr} ${T} L ${R - rr} ${T} A ${rr} ${rr} 0 0 1 ${R} ${T + rr} L ${R} ${B - rr} A ${rr} ${rr} 0 0 1 ${R - rr} ${B} L ${L + rr} ${B} A ${rr} ${rr} 0 0 1 ${L} ${B - rr} L ${L} ${T + rr} A ${rr} ${rr} 0 0 1 ${L + rr} ${T} Z`;
+          page.drawSvgPath(d, { x: 0, y: ph, borderColor: col, borderWidth: bw });
+        } catch {
+          page.drawRectangle({ x: L, y: ph - B, width: boxW, height: boxH, borderColor: col, borderWidth: bw });
+        }
+        if (stampBoldFont) {
+          // Fit the label to the badge width (with padding); cap by height.
+          const maxTextW = boxW * 0.86;
+          let size = boxH * (ann.withDate ? 0.42 : 0.5);
+          const labelW = () => stampBoldFont.widthOfTextAtSize(ann.label, size);
+          if (labelW() > maxTextW) size = (size * maxTextW) / labelW();
+          const tw = labelW();
+          const tx = L + (boxW - tw) / 2;
+          const labelCenterY = ann.withDate ? ann.y + ann.height * 0.4 : ann.y + ann.height * 0.5;
+          const ty = ph - labelCenterY * ph - size * 0.35;
+          page.drawText(ann.label, { x: tx, y: ty, size, font: stampBoldFont, color: col });
+          if (ann.withDate && ann.date && stampDateFont) {
+            const dsize = Math.max(6, boxH * 0.2);
+            const dw = stampDateFont.widthOfTextAtSize(ann.date, dsize);
+            const dCenterY = ann.y + ann.height * 0.74;
+            page.drawText(ann.date, { x: L + (boxW - dw) / 2, y: ph - dCenterY * ph - dsize * 0.35, size: dsize, font: stampDateFont, color: col });
+          }
+        }
+      } else if (ann.type === "note") {
+        // Bake the marker as a small colored speech-bubble (vector). The comment
+        // text itself stays in the editor/sidebar (pdf-lib has no live popups).
+        const { r, g, b } = hexToRgb(ann.color ?? NOTE_COLOR);
+        const fill = rgb(r, g, b);
+        const S = 18 * (pw / POINTS_WIDE); // marker size in points (scales w/ page)
+        const L = ann.x * pw;
+        const T = ann.y * ph;
+        const R = L + S;
+        const Bb = T + S;
+        const rr = Math.min(3, S / 3);
+        const tail = S * 0.35;
+        try {
+          const body = `M ${L + rr} ${T} L ${R - rr} ${T} A ${rr} ${rr} 0 0 1 ${R} ${T + rr} L ${R} ${Bb - rr} A ${rr} ${rr} 0 0 1 ${R - rr} ${Bb} L ${L + rr} ${Bb} A ${rr} ${rr} 0 0 1 ${L} ${Bb - rr} L ${L} ${T + rr} A ${rr} ${rr} 0 0 1 ${L + rr} ${T} Z`;
+          const tailPath = `M ${L + 2} ${Bb - rr} L ${L + 2} ${Bb + tail} L ${L + S * 0.45} ${Bb} Z`;
+          page.drawSvgPath(body, { x: 0, y: ph, color: fill, borderColor: rgb(0, 0, 0), borderWidth: 0.4 });
+          page.drawSvgPath(tailPath, { x: 0, y: ph, color: fill, borderWidth: 0 });
+        } catch {
+          page.drawRectangle({ x: L, y: ph - Bb, width: S, height: S, color: fill });
         }
       }
     }
@@ -2912,7 +3175,7 @@ export function EditorPage() {
 
     let single: React.ReactNode = null;
     if (selected && selected.page === currentPage) {
-      if (isBox(selected) || selected.type === "image" || isField(selected)) {
+      if (isBox(selected) || selected.type === "image" || isField(selected) || isStamp(selected)) {
         const a = selected as BoxAnnotation;
         const lx = X(a.x);
         const cx = X(a.x + a.width / 2);
@@ -2955,7 +3218,7 @@ export function EditorPage() {
   };
 
   const cursorFor =
-    tool === "text" ? "text" : tool === "image" ? "crosshair" : tool === "eraser" ? "cell" : SHAPE_TOOLS.includes(tool) || isPolyTool(tool) || isPlaceTool(tool) ? "crosshair" : "default";
+    tool === "text" ? "text" : tool === "image" ? "crosshair" : tool === "eraser" ? "cell" : SHAPE_TOOLS.includes(tool) || isPolyTool(tool) || isPlaceTool(tool) || tool === "note" || tool === "stamp" ? "crosshair" : "default";
 
   const toolButtons: { t: Tool; icon: typeof Type; label: string }[] = [
     { t: "select", icon: MousePointer2, label: "Select" },
@@ -2975,6 +3238,8 @@ export function EditorPage() {
     { t: "whiteout", icon: PaintBucket, label: "Whiteout" },
     { t: "redact", icon: EyeOff, label: "Redact" },
     { t: "image", icon: ImageIcon, label: "Image" },
+    { t: "note", icon: StickyNote, label: "Note" },
+    { t: "stamp", icon: Stamp, label: "Stamp" },
     { t: "field-text", icon: FormInput, label: "Text field" },
     { t: "field-check", icon: CheckSquare, label: "Checkbox" },
     { t: "field-radio", icon: CircleDot, label: "Radio" },
@@ -3009,6 +3274,8 @@ export function EditorPage() {
     "stamp-check": "stamp-check",
     "stamp-x": "stamp-x",
     "stamp-dot": "stamp-dot",
+    note: "tool-note",
+    stamp: "tool-stamp",
   };
 
   const showStylePanel = SHAPE_TOOLS.includes(tool) || isPolyTool(tool);
@@ -3125,8 +3392,13 @@ export function EditorPage() {
                 key={t}
                 data-testid={toolTestId[t]}
                 onClick={() => {
-                  setTool(t);
                   setSelectedIds([]);
+                  // Stamp opens the picker first; confirming enters place-mode.
+                  if (t === "stamp") {
+                    setStampDialog(true);
+                    return;
+                  }
+                  setTool(t);
                 }}
                 className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border-2 transition-colors ${tool === t ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent hover:bg-gray-100 text-gray-700"}`}
                 title={label}
@@ -3154,6 +3426,22 @@ export function EditorPage() {
               <Grid3x3 className="w-4 h-4" /> Grid
             </button>
           </div>
+          {/* Comment sidebar toggle (Wave 5c) */}
+          <div className="px-2 pb-2">
+            <button
+              data-testid="comment-toggle"
+              onClick={() => setShowComments((v) => !v)}
+              className={`w-full flex items-center justify-center gap-1 text-xs py-1.5 rounded-lg border-2 transition-colors ${showComments ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent text-gray-700 hover:bg-gray-100"}`}
+              title={showComments ? "Hide comments" : "Show comments"}
+            >
+              <MessageSquare className="w-4 h-4" /> Comments
+              {noteList.length > 0 && (
+                <span data-testid="comment-count" className="ml-1 min-w-4 h-4 px-1 rounded-full bg-blue-600 text-white text-[10px] leading-4 text-center">
+                  {noteList.length}
+                </span>
+              )}
+            </button>
+          </div>
           {tool !== "select" && (
             <p className="px-4 pb-3 text-xs text-gray-500">
               {tool === "text"
@@ -3176,7 +3464,11 @@ export function EditorPage() {
                               ? "Click the page to stamp today's date."
                               : STAMP_TOOLS.includes(tool)
                                 ? "Click the page to drop the mark."
-                                : "Drag on the page to draw."}
+                                : tool === "note"
+                                  ? "Click the page to add a comment note."
+                                  : tool === "stamp"
+                                    ? "Click the page to drop the stamp."
+                                    : "Drag on the page to draw."}
             </p>
           )}
         </Card>
@@ -4011,7 +4303,7 @@ export function EditorPage() {
                       if (polyDraftRef.current) finishPoly();
                     }}
                   >
-                    {pageAnnotations.filter((a) => a.type === "text" || a.type === "image" || a.type === "field").map((ann) => {
+                    {pageAnnotations.filter((a) => a.type === "text" || a.type === "image" || a.type === "field" || a.type === "note" || a.type === "stamp").map((ann) => {
                       const isSel = isSelected(ann.id);
                       const isSingleSel = ann.id === selectedId;
                       const interactive = tool === "select";
@@ -4232,6 +4524,76 @@ export function EditorPage() {
                           </div>
                         );
                       }
+                      if (ann.type === "note") {
+                        // Fixed-size speech-bubble marker anchored at (x,y).
+                        const noteClick = (e: React.MouseEvent) => {
+                          e.stopPropagation();
+                          if (e.shiftKey || e.metaKey || e.ctrlKey) return;
+                          setSelectedIds([ann.id]);
+                          if (interactive && !gestureMoved.current) openNotePopover(ann.id);
+                        };
+                        return (
+                          <div
+                            key={ann.id}
+                            data-annot-id={ann.id}
+                            data-annot-index={annIndex}
+                            data-annot-kind="note"
+                            data-annot-x={ann.x}
+                            data-annot-y={ann.y}
+                            onMouseDown={(e) => startMove(e, ann)}
+                            onClick={noteClick}
+                            title={ann.text || "Comment"}
+                            className={`absolute flex items-center justify-center rounded-md rounded-bl-none shadow ${isSel ? "ring-2 ring-blue-500" : ""} ${interactive ? "cursor-move" : ""}`}
+                            style={{
+                              left: `${ann.x * 100}%`,
+                              top: `${ann.y * 100}%`,
+                              width: NOTE_PX,
+                              height: NOTE_PX,
+                              background: ann.color ?? NOTE_COLOR,
+                              color: "#1f2937",
+                              pointerEvents: interactive ? "auto" : "none",
+                            }}
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" strokeWidth={2.5} />
+                          </div>
+                        );
+                      }
+                      if (ann.type === "stamp") {
+                        return (
+                          <div
+                            key={ann.id}
+                            data-annot-id={ann.id}
+                            data-annot-index={annIndex}
+                            data-annot-kind="stamp"
+                            data-annot-x={ann.x}
+                            data-annot-y={ann.y}
+                            data-annot-w={ann.width}
+                            data-annot-h={ann.height}
+                            onMouseDown={(e) => startMove(e, ann)}
+                            onClick={selectOnClick}
+                            className={`absolute flex flex-col items-center justify-center select-none ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-move" : ""}`}
+                            style={{
+                              left: `${ann.x * 100}%`,
+                              top: `${ann.y * 100}%`,
+                              width: `${ann.width * 100}%`,
+                              height: `${ann.height * 100}%`,
+                              border: `2px solid ${ann.color}`,
+                              borderRadius: 6 * pxScale,
+                              color: ann.color,
+                              pointerEvents: interactive ? "auto" : "none",
+                            }}
+                          >
+                            <span className="font-bold uppercase leading-none" style={{ fontSize: Math.max(9, ann.height * overlayH * (ann.withDate ? 0.42 : 0.5)), letterSpacing: 1 }}>
+                              {ann.label}
+                            </span>
+                            {ann.withDate && ann.date && (
+                              <span className="leading-none mt-0.5" style={{ fontSize: Math.max(6, ann.height * overlayH * 0.22) }}>
+                                {ann.date}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
                       return (
                         <div
                           key={ann.id}
@@ -4251,6 +4613,49 @@ export function EditorPage() {
                         </div>
                       );
                     })}
+                    {/* Note edit popover (Wave 5c) */}
+                    {notePopover && (
+                      <div
+                        data-testid="note-popover"
+                        className="absolute z-10 bg-white border border-gray-300 rounded-lg shadow-xl p-2 w-56"
+                        style={{
+                          left: `calc(${notePopover.x * 100}% + ${NOTE_PX + 4}px)`,
+                          top: `${notePopover.y * 100}%`,
+                          pointerEvents: "auto",
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold text-gray-600">Comment</span>
+                          <button data-testid="note-close" onClick={() => setNotePopoverId(null)} className="p-0.5 rounded hover:bg-gray-100" title="Close">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <textarea
+                          data-testid="note-input"
+                          autoFocus
+                          value={notePopover.text}
+                          onChange={(e) => patchNote(notePopover.id, { text: e.target.value })}
+                          onFocus={(e) => e.target.setSelectionRange(e.target.value.length, e.target.value.length)}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === "Escape") (e.target as HTMLTextAreaElement).blur();
+                          }}
+                          rows={3}
+                          placeholder="Add a comment…"
+                          className="w-full text-sm border rounded px-2 py-1 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                        <input
+                          data-testid="note-author"
+                          value={notePopover.author ?? ""}
+                          onChange={(e) => patchNote(notePopover.id, { author: e.target.value })}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          placeholder="Author (optional)"
+                          className="w-full text-xs border rounded px-2 py-1 mt-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Top chrome layer: selection outlines + resize handles. Sits
@@ -4269,6 +4674,109 @@ export function EditorPage() {
           </div>
         </Card>
       </div>
+
+      {/* Comment sidebar (Wave 5c) — every note across all pages */}
+      {showComments && (
+        <div data-testid="comment-sidebar" className="w-full lg:w-64 flex-shrink-0 lg:overflow-y-auto">
+          <Card className="lg:h-full">
+            <div className="p-3 border-b flex items-center justify-between">
+              <h2 className="font-semibold text-sm">Comments</h2>
+              <span data-testid="comment-sidebar-count" className="text-xs bg-blue-100 text-blue-700 rounded-full px-2 py-0.5">{noteList.length}</span>
+            </div>
+            <div className="p-2 space-y-2">
+              {noteList.length === 0 ? (
+                <p className="text-xs text-gray-500 px-1 py-2">No comments yet. Pick the Note tool and click the page to add one.</p>
+              ) : (
+                noteList.map((n) => (
+                  <div
+                    key={n.id}
+                    data-testid={`comment-item-${n.id}`}
+                    onClick={() => jumpToNote(n)}
+                    className={`group rounded border px-2 py-1.5 cursor-pointer transition-colors ${isSelected(n.id) ? "border-blue-400 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}
+                  >
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[10px] font-medium text-gray-500">Page {n.page}{n.author ? ` · ${n.author}` : ""}</span>
+                      <button
+                        data-testid={`comment-delete-${n.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          snapshot();
+                          setAnnotations((prev) => prev.filter((a) => a.id !== n.id));
+                          setSelectedIds((prev) => prev.filter((id) => id !== n.id));
+                          if (notePopoverId === n.id) setNotePopoverId(null);
+                        }}
+                        className="p-0.5 rounded hover:bg-gray-200 text-gray-400 hover:text-red-500"
+                        title="Delete comment"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-800 break-words">{n.text || <span className="text-gray-400 italic">Empty comment</span>}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Stamp picker (Wave 5c) */}
+      {stampDialog && (
+        <div
+          data-testid="stamp-dialog"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={() => setStampDialog(false)}
+        >
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Add a stamp</h3>
+              <button type="button" onClick={() => setStampDialog(false)} className="p-1 rounded hover:bg-gray-100" title="Close">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 mb-2">Preset</p>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {STAMP_PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  data-testid={`stamp-preset-${p.name}`}
+                  onClick={() => setStampPreset(p.name)}
+                  className={`text-xs font-bold uppercase tracking-wide py-2 rounded-md border-2 transition-colors ${stampPreset === p.name ? "ring-2 ring-offset-1" : "hover:bg-gray-50"}`}
+                  style={{ color: p.color, borderColor: p.color, ...(stampPreset === p.name ? ({ "--tw-ring-color": p.color } as React.CSSProperties) : {}) }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700 mb-4">
+              <input data-testid="stamp-with-date" type="checkbox" checked={stampWithDate} onChange={(e) => setStampWithDate(e.target.checked)} />
+              Include today's date
+            </label>
+
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                data-testid="stamp-upload"
+                onClick={() => stampUploadRef.current?.click()}
+                className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg border hover:bg-gray-50 text-gray-700"
+              >
+                <Upload className="w-4 h-4" /> Custom image stamp…
+              </button>
+              <input ref={stampUploadRef} data-testid="stamp-upload-input" type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleStampImageChosen} />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setStampDialog(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                Cancel
+              </button>
+              <button type="button" data-testid="stamp-confirm" onClick={confirmStampPreset} className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Place stamp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create-signature dialog (Wave 4b) */}
       {sigDialog && (
