@@ -63,7 +63,7 @@ import {
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import { PDFDocument, rgb, StandardFonts, degrees, type PDFFont } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts, degrees, type PDFFont, type PDFPage } from "pdf-lib";
 import { Card, LoadingSpinner } from "tibui";
 import { apiClient } from "@/utils/apiClient";
 // Self-host the pdf.js worker so the editor works offline / in CI (no CDN).
@@ -203,9 +203,74 @@ const isBox = (a: Annotation): a is BoxAnnotation =>
   a.type === "underline" || a.type === "strikethrough" || a.type === "whiteout";
 const isLine = (a: Annotation): a is LineAnnotation => a.type === "line" || a.type === "arrow";
 
+// A blank page (srcIndex === -1) can carry its own size + background template;
+// undefined ⇒ Letter / no background (back-compat with pre-Wave-3b snapshots).
+type PageBg = "none" | "lined" | "dotted" | "grid";
 interface PageEntry {
   srcIndex: number;
   rotation: number;
+  // Blank-only (srcIndex === -1): materialized by rebuildPdf/merge into the
+  // exported bytes, after which pages become an identity mapping again.
+  blankW?: number;
+  blankH?: number;
+  blankBg?: PageBg;
+}
+
+// Named page templates (portrait dimensions in pt). Custom uses user width/height.
+type PageSizeName = "Letter" | "Legal" | "A4" | "A3" | "Tabloid" | "Custom";
+const PAGE_SIZES: Record<Exclude<PageSizeName, "Custom">, [number, number]> = {
+  Letter: [612, 792],
+  Legal: [612, 1008],
+  A4: [595, 842],
+  A3: [842, 1191],
+  Tabloid: [792, 1224],
+};
+const BG_GAP = 24; // spacing (pt) between blank-page background lines/dots
+
+// Draw a light-gray lined / dotted / grid background onto a freshly-added blank.
+function drawPageBackground(page: PDFPage, bg: PageBg | undefined) {
+  if (!bg || bg === "none") return;
+  const { width, height } = page.getSize();
+  const color = rgb(0.82, 0.82, 0.82);
+  const hLine = (y: number) => page.drawLine({ start: { x: 0, y }, end: { x: width, y }, thickness: 0.5, color });
+  const vLine = (x: number) => page.drawLine({ start: { x, y: 0 }, end: { x, y: height }, thickness: 0.5, color });
+  if (bg === "lined") {
+    for (let y = BG_GAP; y < height; y += BG_GAP) hLine(y);
+  } else if (bg === "grid") {
+    for (let y = BG_GAP; y < height; y += BG_GAP) hLine(y);
+    for (let x = BG_GAP; x < width; x += BG_GAP) vLine(x);
+  } else if (bg === "dotted") {
+    for (let y = BG_GAP; y < height; y += BG_GAP)
+      for (let x = BG_GAP; x < width; x += BG_GAP) page.drawCircle({ x, y, size: 0.7, color });
+  }
+}
+
+// Parse a page-range string like "1-3,5" into 0-based indices (unique, ordered,
+// clamped to 1..max). Invalid tokens are ignored.
+function parsePageRange(str: string, max: number): number[] {
+  const out: number[] = [];
+  const seen = new Set<number>();
+  const add = (n: number) => {
+    if (n >= 1 && n <= max && !seen.has(n)) {
+      seen.add(n);
+      out.push(n - 1);
+    }
+  };
+  for (const part of str.split(",")) {
+    const t = part.trim();
+    if (!t) continue;
+    const m = t.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (m) {
+      let a = parseInt(m[1], 10);
+      let b = parseInt(m[2], 10);
+      if (a > b) [a, b] = [b, a];
+      for (let n = a; n <= b; n++) add(n);
+    } else {
+      const n = parseInt(t, 10);
+      if (!isNaN(n)) add(n);
+    }
+  }
+  return out;
 }
 
 const DEFAULT_FONT_SIZE = 16;
@@ -428,6 +493,18 @@ export function EditorPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // ---- Assemble dialogs (Wave 3b): blank template / import / extract / delete-range
+  const [dialog, setDialog] = useState<null | "blank" | "extract" | "deleteRange">(null);
+  const [blankSize, setBlankSize] = useState<PageSizeName>("Letter");
+  const [blankOrient, setBlankOrient] = useState<"portrait" | "landscape">("portrait");
+  const [blankBg, setBlankBg] = useState<PageBg>("none");
+  const [blankCustomW, setBlankCustomW] = useState(612);
+  const [blankCustomH, setBlankCustomH] = useState(792);
+  const [extractRange, setExtractRange] = useState("");
+  const [deleteRangeStr, setDeleteRangeStr] = useState("");
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   const [draft, setDraft] = useState<Annotation | null>(null);
   const draftRef = useRef<Annotation | null>(null);
   useEffect(() => {
@@ -682,8 +759,9 @@ export function EditorPage() {
             }
             out.addPage(copied);
           } else {
-            const p = out.addPage([612, 792]);
+            const p = out.addPage([entry.blankW ?? 612, entry.blankH ?? 792]);
             if (entry.rotation) p.setRotation(degrees(entry.rotation % 360));
+            drawPageBackground(p, entry.blankBg);
           }
         }
         const bytes = await out.save();
@@ -702,10 +780,10 @@ export function EditorPage() {
   // undoable together with its annotation remap), remaps annotation `page`
   // numbers, then re-serializes via rebuildPdf.
   const insertBlankAt = useCallback(
-    (idx: number) => {
+    (idx: number, opts?: { blankW?: number; blankH?: number; blankBg?: PageBg }) => {
       snapshot();
       const next = [...pagesRef.current];
-      next.splice(idx, 0, { srcIndex: -1, rotation: 0 });
+      next.splice(idx, 0, { srcIndex: -1, rotation: 0, ...opts });
       setAnnotations((prev) => prev.map((a) => (a.page >= idx + 1 ? { ...a, page: a.page + 1 } : a)));
       rebuildPdf(next).then(() => setCurrentPage(idx + 1));
     },
@@ -772,6 +850,100 @@ export function EditorPage() {
       order.forEach((oldIdx, newIdx) => oldToNew.set(oldIdx + 1, newIdx + 1));
       setAnnotations((prev) => prev.map((a) => ({ ...a, page: oldToNew.get(a.page) ?? a.page })));
       rebuildPdf(next).then(() => setCurrentPage(to + 1));
+    },
+    [snapshot, rebuildPdf],
+  );
+
+  // ---- Assemble: merge another PDF + delete a range -------------------------
+  // Merge an imported PDF into the base bytes. We rebuild a fresh combined base
+  // in the CURRENT page order (materializing edits/rotations/blanks), splice the
+  // imported pages in after the current page, then reset `pages` to an identity
+  // mapping over the combined doc. Undoable; existing annotations are preserved
+  // (imported pages carry none) and shifted for pages after the insert point.
+  const handleImportPdf = useCallback(
+    async (file: File) => {
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) {
+        setError("Please choose a PDF file.");
+        return;
+      }
+      const baseBytes = pdfBytesRef.current;
+      if (!baseBytes) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const impBytes = new Uint8Array(await file.arrayBuffer());
+        const base = await PDFDocument.load(baseBytes, { ignoreEncryption: true });
+        const imp = await PDFDocument.load(impBytes, { ignoreEncryption: true });
+        const curPages = pagesRef.current;
+        const out = await PDFDocument.create();
+        const impIndices = imp.getPageIndices();
+        const impCopied = await out.copyPages(imp, impIndices);
+        // Insert the imported pages AFTER this 1-based page number.
+        const insertPos = Math.min(currentPageRef.current, curPages.length);
+        let inserted = false;
+        for (let i = 0; i < curPages.length; i++) {
+          const entry = curPages[i];
+          if (entry.srcIndex >= 0 && entry.srcIndex < base.getPageCount()) {
+            const [copied] = await out.copyPages(base, [entry.srcIndex]);
+            if (entry.rotation) copied.setRotation(degrees((copied.getRotation().angle + entry.rotation) % 360));
+            out.addPage(copied);
+          } else {
+            const p = out.addPage([entry.blankW ?? 612, entry.blankH ?? 792]);
+            if (entry.rotation) p.setRotation(degrees(entry.rotation % 360));
+            drawPageBackground(p, entry.blankBg);
+          }
+          if (i + 1 === insertPos) {
+            for (const ip of impCopied) out.addPage(ip);
+            inserted = true;
+          }
+        }
+        if (!inserted) for (const ip of impCopied) out.addPage(ip);
+        const combined = await out.save();
+        // Verify the combined page count = original + imported.
+        const check = await PDFDocument.load(combined, { ignoreEncryption: true });
+        const expected = curPages.length + impIndices.length;
+        if (check.getPageCount() !== expected) {
+          throw new Error(`Merge produced ${check.getPageCount()} pages, expected ${expected}`);
+        }
+        snapshot();
+        const impCount = impIndices.length;
+        setAnnotations((prev) => prev.map((a) => (a.page > insertPos ? { ...a, page: a.page + impCount } : a)));
+        setPages(Array.from({ length: expected }, (_, i) => ({ srcIndex: i, rotation: 0 })));
+        setPdfBytes(combined);
+        setCurrentPage(insertPos + 1);
+        setSelectedIds([]);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to import PDF");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [snapshot],
+  );
+
+  // Delete every page in a range string ("1-3,5") at once. Keeps ≥1 page.
+  const handleDeleteRange = useCallback(
+    (rangeStr: string) => {
+      const cur = pagesRef.current;
+      const indices = parsePageRange(rangeStr, cur.length);
+      if (!indices.length) return;
+      const delSet = new Set(indices.map((i) => i + 1)); // 1-based page numbers
+      const next = cur.filter((_, i) => !delSet.has(i + 1));
+      if (!next.length) {
+        setError("Cannot delete all pages.");
+        return;
+      }
+      snapshot();
+      setAnnotations((prev) =>
+        prev
+          .filter((a) => !delSet.has(a.page))
+          .map((a) => {
+            const shift = [...delSet].filter((d) => d < a.page).length;
+            return shift ? { ...a, page: a.page - shift } : a;
+          }),
+      );
+      rebuildPdf(next).then(() => setCurrentPage((c) => Math.min(c, next.length)));
     },
     [snapshot, rebuildPdf],
   );
@@ -1511,6 +1683,40 @@ export function EditorPage() {
     }
   };
 
+  // Extract a range of pages into a downloaded PDF. Built from the CURRENT doc
+  // via buildFinalPdf so flattened annotations are included.
+  const handleExtract = useCallback(
+    async (rangeStr: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const finalBytes = await buildFinalPdf();
+        const src = await PDFDocument.load(finalBytes, { ignoreEncryption: true });
+        const indices = parsePageRange(rangeStr, src.getPageCount());
+        if (!indices.length) {
+          setError("No valid pages in range.");
+          return;
+        }
+        const out = await PDFDocument.create();
+        const copied = await out.copyPages(src, indices);
+        copied.forEach((p) => out.addPage(p));
+        const bytes = await out.save();
+        const blob = new Blob([bytes.slice()], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${docName || "document"}-pages.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Extract failed");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [buildFinalPdf, docName],
+  );
+
   const saveToDocuments = useMutation({
     mutationFn: async () => {
       const bytes = await buildFinalPdf();
@@ -1757,10 +1963,39 @@ export function EditorPage() {
 
   const showStylePanel = SHAPE_TOOLS.includes(tool);
 
+  // Resolve the blank dialog → a sized blank inserted after the current page.
+  const confirmBlank = () => {
+    let w: number;
+    let h: number;
+    if (blankSize === "Custom") {
+      w = blankCustomW;
+      h = blankCustomH;
+    } else {
+      [w, h] = PAGE_SIZES[blankSize];
+    }
+    if (blankOrient === "landscape") [w, h] = [h, w];
+    w = Math.max(72, Math.round(w));
+    h = Math.max(72, Math.round(h));
+    setDialog(null);
+    insertBlankAt(currentPageRef.current, { blankW: w, blankH: h, blankBg });
+  };
+
   // ---- Editor shell ---------------------------------------------------------
   return (
     <div className="flex flex-col lg:flex-row lg:h-[calc(100vh-3rem)] gap-4 p-2">
       <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleImageChosen} />
+      <input
+        ref={importInputRef}
+        data-testid="page-import-input"
+        type="file"
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) handleImportPdf(f);
+        }}
+      />
 
       {/* Left toolbar */}
       <div className="w-full lg:w-64 flex flex-col gap-4 overflow-y-auto">
@@ -1943,6 +2178,40 @@ export function EditorPage() {
             <Button testId="page-rotate" size="sm" variant="outline" onClick={rotatePage} disabled={busy} className="col-span-2">
               <RotateCw className="w-4 h-4 inline mr-1" /> Rotate page
             </Button>
+          </div>
+          <div className="px-3 pb-3 space-y-2 border-t pt-3">
+            <Button testId="page-blank-dialog" size="sm" variant="outline" onClick={() => setDialog("blank")} disabled={busy} className="w-full">
+              <FilePlus className="w-4 h-4 inline mr-1" /> Insert blank…
+            </Button>
+            <Button testId="page-import" size="sm" variant="outline" onClick={() => importInputRef.current?.click()} disabled={busy} className="w-full">
+              <Upload className="w-4 h-4 inline mr-1" /> Import PDF…
+            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                testId="page-extract"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setExtractRange(String(currentPage));
+                  setDialog("extract");
+                }}
+                disabled={busy}
+              >
+                <Download className="w-4 h-4 inline mr-1" /> Extract…
+              </Button>
+              <Button
+                testId="page-delete-range"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setDeleteRangeStr(String(currentPage));
+                  setDialog("deleteRange");
+                }}
+                disabled={busy || pageCount <= 1}
+              >
+                <Trash2 className="w-4 h-4 inline mr-1" /> Del range…
+              </Button>
+            </div>
           </div>
         </Card>
 
@@ -2410,6 +2679,90 @@ export function EditorPage() {
           </div>
         </Card>
       </div>
+
+      {/* Assemble dialogs: blank template / extract / delete-range */}
+      {dialog && (
+        <div
+          data-testid="assemble-dialog"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={() => setDialog(null)}
+        >
+          <div className="bg-white rounded-lg shadow-xl w-80 max-w-[90vw] p-4" onMouseDown={(e) => e.stopPropagation()}>
+            {dialog === "blank" && (
+              <>
+                <h3 className="font-semibold mb-3">Insert blank page</h3>
+                <div className="space-y-3 text-sm">
+                  <label className="block">
+                    <span className="text-gray-600 text-xs">Size</span>
+                    <select data-testid="blank-size" value={blankSize} onChange={(e) => setBlankSize(e.target.value as PageSizeName)} className="w-full border rounded px-2 py-1 mt-1">
+                      <option value="Letter">Letter (8.5 × 11)</option>
+                      <option value="Legal">Legal (8.5 × 14)</option>
+                      <option value="A4">A4</option>
+                      <option value="A3">A3</option>
+                      <option value="Tabloid">Tabloid (11 × 17)</option>
+                      <option value="Custom">Custom…</option>
+                    </select>
+                  </label>
+                  {blankSize === "Custom" && (
+                    <div className="flex gap-2">
+                      <label className="flex-1">
+                        <span className="text-gray-600 text-xs">Width (pt)</span>
+                        <input data-testid="blank-width" type="number" min={72} value={blankCustomW} onChange={(e) => setBlankCustomW(parseInt(e.target.value) || 0)} className="w-full border rounded px-2 py-1 mt-1" />
+                      </label>
+                      <label className="flex-1">
+                        <span className="text-gray-600 text-xs">Height (pt)</span>
+                        <input data-testid="blank-height" type="number" min={72} value={blankCustomH} onChange={(e) => setBlankCustomH(parseInt(e.target.value) || 0)} className="w-full border rounded px-2 py-1 mt-1" />
+                      </label>
+                    </div>
+                  )}
+                  <label className="block">
+                    <span className="text-gray-600 text-xs">Orientation</span>
+                    <select data-testid="blank-orientation" value={blankOrient} onChange={(e) => setBlankOrient(e.target.value as "portrait" | "landscape")} className="w-full border rounded px-2 py-1 mt-1">
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-gray-600 text-xs">Background</span>
+                    <select data-testid="blank-bg" value={blankBg} onChange={(e) => setBlankBg(e.target.value as PageBg)} className="w-full border rounded px-2 py-1 mt-1">
+                      <option value="none">None</option>
+                      <option value="lined">Lined</option>
+                      <option value="dotted">Dotted</option>
+                      <option value="grid">Grid</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button size="sm" variant="ghost" onClick={() => setDialog(null)}>Cancel</Button>
+                  <Button size="sm" testId="blank-confirm" onClick={confirmBlank}>Insert</Button>
+                </div>
+              </>
+            )}
+            {dialog === "extract" && (
+              <>
+                <h3 className="font-semibold mb-1">Extract pages</h3>
+                <p className="text-xs text-gray-500 mb-3">Download a new PDF with the chosen pages, e.g. “1-3,5”.</p>
+                <input data-testid="extract-range" value={extractRange} onChange={(e) => setExtractRange(e.target.value)} placeholder="1-3,5" className="w-full border rounded px-2 py-1 text-sm" />
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button size="sm" variant="ghost" onClick={() => setDialog(null)}>Cancel</Button>
+                  <Button size="sm" testId="extract-confirm" onClick={() => { setDialog(null); handleExtract(extractRange); }}>Extract</Button>
+                </div>
+              </>
+            )}
+            {dialog === "deleteRange" && (
+              <>
+                <h3 className="font-semibold mb-1">Delete pages</h3>
+                <p className="text-xs text-gray-500 mb-3">Remove a range of pages, e.g. “2-4”. This is undoable.</p>
+                <input data-testid="delete-range" value={deleteRangeStr} onChange={(e) => setDeleteRangeStr(e.target.value)} placeholder="2-4" className="w-full border rounded px-2 py-1 text-sm" />
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button size="sm" variant="ghost" onClick={() => setDialog(null)}>Cancel</Button>
+                  <Button size="sm" testId="delete-range-confirm" onClick={() => { setDialog(null); handleDeleteRange(deleteRangeStr); }}>Delete</Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
