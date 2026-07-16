@@ -30,6 +30,10 @@ import {
   Circle,
   Minus,
   ArrowUpRight,
+  ArrowRight,
+  ArrowLeft,
+  ArrowLeftRight,
+  Crop,
   Pencil,
   Highlighter,
   Underline,
@@ -257,6 +261,11 @@ interface LineAnnotation {
   strokeColor: string;
   strokeWidth: number; // pt
   dash?: boolean;
+  // Wave 8 — configurable endpoint arrowheads. undefined ⇒ back-compat default:
+  // the `arrow` tool draws an end arrowhead, `line` draws none (see lineArrowEnd
+  // / lineArrowStart). Set explicitly by the `line-arrows` control.
+  arrowStart?: boolean;
+  arrowEnd?: boolean;
 }
 interface InkAnnotation {
   id: string;
@@ -354,6 +363,16 @@ const isBox = (a: Annotation): a is BoxAnnotation =>
   a.type === "underline" || a.type === "strikethrough" || a.type === "whiteout" ||
   a.type === "redact";
 const isLine = (a: Annotation): a is LineAnnotation => a.type === "line" || a.type === "arrow";
+// Wave 8 — resolve a line/arrow's endpoint arrowheads. Back-compat: no explicit
+// flags ⇒ the `arrow` tool shows an end arrowhead, `line` shows none.
+const lineArrowEnd = (a: LineAnnotation): boolean => a.arrowEnd ?? a.type === "arrow";
+const lineArrowStart = (a: LineAnnotation): boolean => a.arrowStart ?? false;
+type ArrowMode = "none" | "start" | "end" | "both";
+const lineArrowMode = (a: LineAnnotation): ArrowMode => {
+  const s = lineArrowStart(a);
+  const e = lineArrowEnd(a);
+  return s && e ? "both" : s ? "start" : e ? "end" : "none";
+};
 const isPoly = (a: Annotation): a is PolyAnnotation => a.type === "poly";
 const isField = (a: Annotation): a is FieldAnnotation => a.type === "field";
 const isNote = (a: Annotation): a is NoteAnnotation => a.type === "note";
@@ -385,6 +404,18 @@ const STAMP_PRESETS: StampPreset[] = [
 const NOTE_COLOR = "#f59e0b"; // default sticky-note marker color (amber)
 const NOTE_PX = 22; // rendered marker size (screen px)
 
+// Wave 8 — highlight color palette for the highlight tool. The default (yellow)
+// matches the pre-Wave-8 hardcoded #ffeb3b so existing highlight exports are
+// byte-identical unless a different swatch is chosen.
+const DEFAULT_HIGHLIGHT = "#ffeb3b";
+const HIGHLIGHT_COLORS: { name: string; value: string }[] = [
+  { name: "yellow", value: "#ffeb3b" },
+  { name: "green", value: "#69f0ae" },
+  { name: "pink", value: "#ff80ab" },
+  { name: "blue", value: "#40c4ff" },
+  { name: "orange", value: "#ffab40" },
+];
+
 // A blank page (srcIndex === -1) can carry its own size + background template;
 // undefined ⇒ Letter / no background (back-compat with pre-Wave-3b snapshots).
 type PageBg = "none" | "lined" | "dotted" | "grid";
@@ -396,6 +427,10 @@ interface PageEntry {
   blankW?: number;
   blankH?: number;
   blankBg?: PageBg;
+  // Wave 8 — non-destructive page crop. A normalized top-left rect (same 0-1
+  // convention as annotations) applied as a pdf-lib CropBox on export. undefined
+  // ⇒ no crop (full MediaBox, unchanged export).
+  crop?: { x: number; y: number; w: number; h: number };
 }
 
 // Named page templates (portrait dimensions in pt). Custom uses user width/height.
@@ -1210,6 +1245,21 @@ export function EditorPage() {
   const [textColor] = useState("#111111");
   // Wave 5a — dashed toggle for newly drawn shapes/lines/polys.
   const [shapeDash, setShapeDash] = useState(false);
+  // Wave 8 — highlight color for NEW highlights (default yellow = pre-Wave-8
+  // hardcode). A ref mirrors it so the global mousemove draft (whose effect deps
+  // don't include this state) always reads the current value.
+  const [highlightColor, setHighlightColor] = useState(DEFAULT_HIGHLIGHT);
+  const highlightColorRef = useRef(highlightColor);
+  useEffect(() => {
+    highlightColorRef.current = highlightColor;
+  }, [highlightColor]);
+  // Wave 8 — page crop. `cropMode` turns on the draw-a-crop-rectangle overlay;
+  // `cropRect` is the working normalized rect for the current page; `cropAll`
+  // applies Apply/Reset to every page. `cropDrag` tracks an active drag.
+  const [cropMode, setCropMode] = useState(false);
+  const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [cropAll, setCropAll] = useState(false);
+  const cropDrag = useRef<{ sx: number; sy: number } | null>(null);
   // Wave 5a — eraser radius (screen px). A drag erases everything the cursor
   // passes within this radius. `eraseState` marks an active erase gesture (one
   // snapshot per drag).
@@ -1317,7 +1367,7 @@ export function EditorPage() {
     tool: Tool;
     sx: number;
     sy: number;
-    style: { strokeColor: string; strokeWidth: number; fillColor: string | null; dash: boolean };
+    style: { strokeColor: string; strokeWidth: number; fillColor: string | null; dash: boolean; hlColor: string };
   } | null>(null);
   const resizeState = useRef<{
     id: string;
@@ -1621,7 +1671,10 @@ export function EditorPage() {
           }
         }
         const bytes = await out.save();
-        setPages(nextPages.map((_, i) => ({ srcIndex: i, rotation: 0 })));
+        // Reset to an identity mapping over the freshly-serialized pages, but
+        // carry each page's crop forward (crop is applied at export, not baked
+        // into these editing bytes, so it must survive the re-serialize).
+        setPages(nextPages.map((entry, i) => ({ srcIndex: i, rotation: 0, crop: entry.crop })));
         setPdfBytes(bytes);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Page operation failed");
@@ -1811,6 +1864,46 @@ export function EditorPage() {
     reorderPages(currentPage - 1, dir === "up" ? currentPage - 2 : currentPage);
   const rotatePage = () => rotatePageAt(currentPage - 1);
 
+  // ---- Page crop (Wave 8) ---------------------------------------------------
+  // Toggle crop mode; on enter, seed the working rect from the page's stored
+  // crop (if any). Leaving select/other tools is unnecessary — crop draws are
+  // handled first in handleOverlayMouseDown while cropMode is on.
+  const toggleCropMode = () => {
+    setCropMode((on) => {
+      const next = !on;
+      if (next) {
+        setSelectedIds([]);
+        setCropRect(pagesRef.current[currentPageRef.current - 1]?.crop ?? null);
+      } else {
+        cropDrag.current = null;
+        setCropRect(null);
+      }
+      return next;
+    });
+  };
+  // Keep the working rect in sync with the current page's stored crop while
+  // crop mode stays open across page changes.
+  useEffect(() => {
+    if (!cropMode) return;
+    setCropRect(pagesRef.current[currentPage - 1]?.crop ?? null);
+  }, [cropMode, currentPage]);
+  // Apply the working rect as this page's crop (or every page when cropAll).
+  const applyCrop = () => {
+    if (!cropRect || cropRect.w < 0.02 || cropRect.h < 0.02) return;
+    snapshot();
+    const rect = cropRect;
+    setPages((prev) => prev.map((p, i) => (cropAll || i === currentPageRef.current - 1 ? { ...p, crop: rect } : p)));
+    setCropMode(false);
+    cropDrag.current = null;
+    setCropRect(null);
+  };
+  // Clear the stored crop (this page, or every page when cropAll).
+  const resetCrop = () => {
+    snapshot();
+    setPages((prev) => prev.map((p, i) => (cropAll || i === currentPageRef.current - 1 ? { ...p, crop: undefined } : p)));
+    setCropRect(null);
+  };
+
   // ---- Pointer geometry -----------------------------------------------------
   const toNorm = (clientX: number, clientY: number) => {
     const rect = overlayRef.current!.getBoundingClientRect();
@@ -1983,6 +2076,14 @@ export function EditorPage() {
     // shortcuts like Ctrl+C/V aren't swallowed by the "editing a field" guard.
     const active = document.activeElement as HTMLElement | null;
     if (active && (active.tagName === "INPUT" || active.tagName === "SELECT")) active.blur();
+    // Wave 8 — crop mode: drag out the crop rectangle (overrides all tools).
+    if (cropMode) {
+      e.preventDefault();
+      const { x, y } = toNorm(e.clientX, e.clientY);
+      cropDrag.current = { sx: clamp01(x), sy: clamp01(y) };
+      setCropRect({ x: clamp01(x), y: clamp01(y), w: 0, h: 0 });
+      return;
+    }
     // Eraser: one snapshot per drag, then erase at the down-point immediately so
     // a plain click also erases.
     if (tool === "eraser") {
@@ -1999,7 +2100,7 @@ export function EditorPage() {
         tool,
         sx: clamp01(x),
         sy: clamp01(y),
-        style: { strokeColor, strokeWidth, fillColor, dash: shapeDash },
+        style: { strokeColor, strokeWidth, fillColor, dash: shapeDash, hlColor: highlightColorRef.current },
       };
       if (tool === "draw") {
         setDraft({ id: "draft", type: "ink", page: currentPage, points: [{ x: clamp01(x), y: clamp01(y) }], strokeColor, strokeWidth });
@@ -2029,6 +2130,8 @@ export function EditorPage() {
   };
 
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Wave 8 — crop mode swallows canvas clicks (drawing handled in mousedown).
+    if (cropMode) return;
     // Polygon / polyline: each click adds a vertex (finish via dbl-click/Enter/Esc).
     if (isPolyTool(tool)) {
       const { x, y } = toNorm(e.clientX, e.clientY);
@@ -2427,6 +2530,13 @@ export function EditorPage() {
       const nx = clamp01((e.clientX - rect.left) / rect.width);
       const ny = clamp01((e.clientY - rect.top) / rect.height);
 
+      // Wave 8 — dragging out the crop rectangle.
+      const cd = cropDrag.current;
+      if (cd) {
+        setCropRect({ x: Math.min(cd.sx, nx), y: Math.min(cd.sy, ny), w: Math.abs(nx - cd.sx), h: Math.abs(ny - cd.sy) });
+        return;
+      }
+
       // Wave 7 — rotating. Angle = pointer relative to center; the handle points
       // north at 0°, so rotation = atan2(dy,dx) + 90° (CW-positive on screen).
       // Shift snaps to 15° steps. Live setAnnotations feeds the on-screen render
@@ -2490,7 +2600,7 @@ export function EditorPage() {
         if (dw.tool === "line" || dw.tool === "arrow") {
           next = { id: "draft", type: dw.tool, page: currentPage, x1: dw.sx, y1: dw.sy, x2: nx, y2: ny, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth, dash };
         } else if (dw.tool === "highlight") {
-          next = { id: "draft", type: "highlight", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffeb3b", opacity: 0.35 };
+          next = { id: "draft", type: "highlight", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: dw.style.hlColor, opacity: 0.35 };
         } else if (dw.tool === "underline" || dw.tool === "strikethrough") {
           next = { id: "draft", type: dw.tool, page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: Math.max(1.5, dw.style.strokeWidth), fillColor: null, opacity: 1 };
         } else if (dw.tool === "whiteout") {
@@ -2600,6 +2710,11 @@ export function EditorPage() {
       }
     };
     const onUp = () => {
+      // Wave 8 — finish a crop drag (keep the working rect for Apply).
+      if (cropDrag.current) {
+        cropDrag.current = null;
+        return;
+      }
       if (eraseState.current) {
         eraseState.current = false;
         return;
@@ -3366,13 +3481,17 @@ export function EditorPage() {
         const start = { x: PX(ann.x1), y: PY(ann.y1) };
         const end = { x: PX(ann.x2), y: PY(ann.y2) };
         page.drawLine({ start, end, thickness: ann.strokeWidth, color: rgb(r, g, b), dashArray: ann.dash ? DASH_PT.slice() : undefined });
-        if (ann.type === "arrow") {
-          const angle = Math.atan2(end.y - start.y, end.x - start.x);
-          const head = Math.max(6, ann.strokeWidth * 4);
-          for (const a of [angle + Math.PI - Math.PI / 7, angle + Math.PI + Math.PI / 7]) {
-            page.drawLine({ start: end, end: { x: end.x + head * Math.cos(a), y: end.y + head * Math.sin(a) }, thickness: ann.strokeWidth, color: rgb(r, g, b) });
+        // Wave 8 — arrowheads at either/both endpoints (resolved with back-compat
+        // helpers: default `arrow` ⇒ end head only, `line` ⇒ none).
+        const angle = Math.atan2(end.y - start.y, end.x - start.x);
+        const head = Math.max(6, ann.strokeWidth * 4);
+        const drawBarbs = (tip: { x: number; y: number }, base: number) => {
+          for (const a of [base - Math.PI / 7, base + Math.PI / 7]) {
+            page.drawLine({ start: tip, end: { x: tip.x + head * Math.cos(a), y: tip.y + head * Math.sin(a) }, thickness: ann.strokeWidth, color: rgb(r, g, b) });
           }
-        }
+        };
+        if (lineArrowEnd(ann)) drawBarbs(end, angle + Math.PI);
+        if (lineArrowStart(ann)) drawBarbs(start, angle);
       } else if (ann.type === "poly") {
         const pts = ann.points;
         if (pts.length >= 2) {
@@ -3498,6 +3617,23 @@ export function EditorPage() {
         }
       }
     }
+
+    // ---- Page crop (Wave 8) -------------------------------------------------
+    // Apply each cropped page's normalized rect as a pdf-lib CropBox (clean,
+    // non-destructive: content outside is hidden by viewers, not deleted). The
+    // normalized top-left rect maps to PDF points (y-up): bottom = ph-(y+h)*ph.
+    // Pages with no crop keep their full MediaBox (unchanged export).
+    pagesRef.current.forEach((pe, i) => {
+      const crop = pe.crop;
+      const page = docPages[i];
+      if (!crop || !page) return;
+      const { width: pw, height: ph } = page.getSize();
+      const cw = Math.max(1, crop.w * pw);
+      const chh = Math.max(1, crop.h * ph);
+      const cx = crop.x * pw;
+      const cy = ph - (crop.y + crop.h) * ph;
+      page.setCropBox(cx, cy, cw, chh);
+    });
 
     // ---- Header / footer / page numbers / Bates (Wave 3c) -------------------
     // Draw the six resolved slots on every in-range page at its four anchors,
@@ -3901,8 +4037,10 @@ export function EditorPage() {
       // convention used by the DOM annotations + the rotate handle.
       const rot = getRotation(a);
       const rotTransform = rot ? `rotate(${rot} ${X(a.x + a.width / 2)} ${Y(a.y + a.height / 2)})` : undefined;
-      // Test hook: normalized geometry on box nodes (used by align/snap specs).
-      const boxData = isDraft ? {} : { "data-annot-x": a.x, "data-annot-y": a.y, "data-annot-w": a.width, "data-annot-h": a.height, "data-annot-rotation": rot };
+      // Test hook: normalized geometry + kind on box nodes (used by align/snap
+      // specs; Wave 8 uses `data-annot-kind` + `data-annot-fill` to assert a
+      // highlight's chosen color).
+      const boxData = isDraft ? {} : { "data-annot-x": a.x, "data-annot-y": a.y, "data-annot-w": a.width, "data-annot-h": a.height, "data-annot-rotation": rot, "data-annot-kind": a.type, "data-annot-fill": a.fillColor ?? undefined };
       const dashArray = a.dash ? `${DASH_PT[0] * pxScale} ${DASH_PT[1] * pxScale}` : undefined;
       if (a.type === "redact") {
         // Solid opaque black box + a red hatch/label so a redaction mark reads
@@ -3958,13 +4096,19 @@ export function EditorPage() {
       const ang = Math.atan2((a.y2 - a.y1) * overlayH, (a.x2 - a.x1) * renderWidth);
       const head = Math.max(6, sw(a.strokeWidth) * 3);
       const lineDash = a.dash ? `${DASH_PT[0] * pxScale} ${DASH_PT[1] * pxScale}` : undefined;
+      // Wave 8 — endpoint arrowheads. The end head barbs point back along the
+      // line (ang + PI ± spread) from (x2,y2); the start head barbs point the
+      // other way (ang ± spread) from (x1,y1). Back-compat resolved via helpers.
+      const arrows = isDraft ? {} : { "data-line-arrows": lineArrowMode(a) };
+      const barb = (px: number, py: number, base: number, key: string) =>
+        [base - Math.PI / 7, base + Math.PI / 7].map((t, i) => (
+          <line key={`${key}${i}`} x1={px} y1={py} x2={px + head * Math.cos(t)} y2={py + head * Math.sin(t)} stroke={col} strokeWidth={sw(a.strokeWidth)} strokeLinecap="round" />
+        ));
       return (
-        <g key={a.id} {...common}>
+        <g key={a.id} {...arrows} {...common}>
           <line x1={X(a.x1)} y1={Y(a.y1)} x2={X(a.x2)} y2={Y(a.y2)} stroke={col} strokeWidth={sw(a.strokeWidth)} strokeLinecap="round" strokeDasharray={lineDash} />
-          {a.type === "arrow" &&
-            [ang + Math.PI - Math.PI / 7, ang + Math.PI + Math.PI / 7].map((t, i) => (
-              <line key={i} x1={X(a.x2)} y1={Y(a.y2)} x2={X(a.x2) + head * Math.cos(t)} y2={Y(a.y2) + head * Math.sin(t)} stroke={col} strokeWidth={sw(a.strokeWidth)} strokeLinecap="round" />
-            ))}
+          {lineArrowEnd(a) && barb(X(a.x2), Y(a.y2), ang + Math.PI, "e")}
+          {lineArrowStart(a) && barb(X(a.x1), Y(a.y1), ang, "s")}
           {/* invisible fat hit line for easier selection */}
           {interactive && <line x1={X(a.x1)} y1={Y(a.y1)} x2={X(a.x2)} y2={Y(a.y2)} stroke="transparent" strokeWidth={Math.max(10, sw(a.strokeWidth) + 8)} />}
         </g>
@@ -3991,6 +4135,50 @@ export function EditorPage() {
       );
     }
     return null;
+  };
+
+  // Wave 8 — crop overlay. While in crop mode, dim the area OUTSIDE the working
+  // rect (four rects) and outline the crop rect. Outside crop mode, if the page
+  // has a stored crop, show a faint outline so the crop stays visible (full
+  // render-crop of the on-screen page isn't done — the CropBox is applied on
+  // export). Rendered in the top chrome SVG (pointer-events: none).
+  const renderCropOverlay = () => {
+    const stored = pages[currentPage - 1]?.crop;
+    const rect = cropMode ? cropRect : stored;
+    if (!rect) return null;
+    const W = renderWidth;
+    const H = overlayH;
+    const x0 = rect.x * W;
+    const y0 = rect.y * H;
+    const rw = rect.w * W;
+    const rh = rect.h * H;
+    return (
+      <g style={{ pointerEvents: "none" }}>
+        {cropMode && (
+          <>
+            <rect x={0} y={0} width={W} height={y0} fill="rgba(0,0,0,0.4)" />
+            <rect x={0} y={y0 + rh} width={W} height={Math.max(0, H - y0 - rh)} fill="rgba(0,0,0,0.4)" />
+            <rect x={0} y={y0} width={x0} height={rh} fill="rgba(0,0,0,0.4)" />
+            <rect x={x0 + rw} y={y0} width={Math.max(0, W - x0 - rw)} height={rh} fill="rgba(0,0,0,0.4)" />
+          </>
+        )}
+        <rect
+          data-testid="crop-rect"
+          data-crop-x={rect.x}
+          data-crop-y={rect.y}
+          data-crop-w={rect.w}
+          data-crop-h={rect.h}
+          x={x0}
+          y={y0}
+          width={rw}
+          height={rh}
+          fill="none"
+          stroke="#2563eb"
+          strokeWidth={1.5}
+          strokeDasharray={cropMode ? undefined : "5 4"}
+        />
+      </g>
+    );
   };
 
   // Selection outline + handles. Draws a dashed outline on EVERY selected
@@ -4115,8 +4303,9 @@ export function EditorPage() {
     );
   };
 
-  const cursorFor =
-    tool === "text" ? "text" : tool === "image" ? "crosshair" : tool === "eraser" ? "cell" : SHAPE_TOOLS.includes(tool) || isPolyTool(tool) || isPlaceTool(tool) || tool === "note" || tool === "stamp" ? "crosshair" : "default";
+  const cursorFor = cropMode
+    ? "crosshair"
+    : tool === "text" ? "text" : tool === "image" ? "crosshair" : tool === "eraser" ? "cell" : SHAPE_TOOLS.includes(tool) || isPolyTool(tool) || isPlaceTool(tool) || tool === "note" || tool === "stamp" ? "crosshair" : "default";
 
   const toolButtons: { t: Tool; icon: typeof Type; label: string }[] = [
     { t: "select", icon: MousePointer2, label: "Select" },
@@ -4492,6 +4681,27 @@ export function EditorPage() {
           )}
         </Card>
 
+        {/* Highlight color (Wave 8) — palette for NEW highlights */}
+        {tool === "highlight" && (
+          <Card>
+            <div className="p-3 border-b">
+              <h2 className="font-semibold text-sm">Highlight color</h2>
+            </div>
+            <div data-testid="highlight-color" className="p-3 flex gap-2">
+              {HIGHLIGHT_COLORS.map((c) => (
+                <button
+                  key={c.name}
+                  data-testid={`highlight-color-${c.name}`}
+                  onClick={() => setHighlightColor(c.value)}
+                  className={`w-8 h-8 rounded border-2 ${highlightColor === c.value ? "border-blue-600 ring-2 ring-blue-200" : "border-gray-300"}`}
+                  style={{ backgroundColor: c.value }}
+                  title={c.name}
+                />
+              ))}
+            </div>
+          </Card>
+        )}
+
         {/* Shape style defaults */}
         {showStylePanel && tool !== "whiteout" && tool !== "highlight" && (
           <Card>
@@ -4671,6 +4881,30 @@ export function EditorPage() {
             <Button testId="headerfooter-open" size="sm" variant={hf.enabled ? "primary" : "outline"} onClick={() => setDialog("headerfooter")} disabled={busy} className="w-full">
               <Type className="w-4 h-4 inline mr-1" /> Headers &amp; footers…
             </Button>
+            {/* Wave 8 — page crop (CropBox on export) */}
+            <Button testId="page-crop" size="sm" variant={cropMode ? "primary" : "outline"} onClick={toggleCropMode} disabled={busy} className="w-full">
+              <Crop className="w-4 h-4 inline mr-1" /> {cropMode ? "Cropping — draw a box" : "Crop page…"}
+            </Button>
+            {cropMode && (
+              <div data-testid="crop-panel" className="rounded border bg-gray-50 p-2 space-y-2">
+                <p className="text-[11px] text-gray-600">
+                  Drag on the page to set the crop area.
+                  {cropRect ? ` ${Math.round(cropRect.w * 100)}% × ${Math.round(cropRect.h * 100)}%` : " No area yet."}
+                </p>
+                <label className="flex items-center gap-2 text-xs text-gray-700">
+                  <input data-testid="crop-all" type="checkbox" checked={cropAll} onChange={(e) => setCropAll(e.target.checked)} />
+                  Apply to all pages
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button testId="crop-apply" size="sm" variant="primary" onClick={applyCrop} disabled={busy || !cropRect || cropRect.w < 0.02 || cropRect.h < 0.02}>
+                    Apply
+                  </Button>
+                  <Button testId="crop-reset" size="sm" variant="outline" onClick={resetCrop} disabled={busy}>
+                    Reset
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
 
@@ -4853,6 +5087,28 @@ export function EditorPage() {
                   >
                     <SquareDashed className="w-4 h-4" /> {selected.dash ? "Dashed" : "Solid"}
                   </button>
+                  {/* Wave 8 — endpoint arrowheads */}
+                  <div data-testid="line-arrows">
+                    <p className="text-xs text-gray-600 mb-1">Arrowheads</p>
+                    <div className="grid grid-cols-4 gap-1">
+                      {([
+                        ["none", Minus, "line-arrow-none", { arrowStart: false, arrowEnd: false }],
+                        ["start", ArrowLeft, "line-arrow-start", { arrowStart: true, arrowEnd: false }],
+                        ["end", ArrowRight, "line-arrow-end", { arrowStart: false, arrowEnd: true }],
+                        ["both", ArrowLeftRight, "line-arrow-both", { arrowStart: true, arrowEnd: true }],
+                      ] as [ArrowMode, typeof Minus, string, { arrowStart: boolean; arrowEnd: boolean }][]).map(([mode, Icon, tid, patch]) => (
+                        <button
+                          key={mode}
+                          data-testid={tid}
+                          onClick={() => { snapshot(); updateSelected(patch); }}
+                          className={`flex items-center justify-center py-1.5 rounded border ${lineArrowMode(selected) === mode ? "bg-blue-50 border-blue-500 text-blue-600" : "hover:bg-gray-50"}`}
+                          title={`Arrowheads: ${mode}`}
+                        >
+                          <Icon className="w-4 h-4" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </>
               )}
               {isPoly(selected) && (
@@ -5752,6 +6008,7 @@ export function EditorPage() {
                       above the interaction overlay so handles receive events;
                       the SVG itself is click-through (pointer-events: none). */}
                   <svg className="absolute inset-0" width={renderWidth} height={overlayH} style={{ zIndex: 7, pointerEvents: "none" }}>
+                    {renderCropOverlay()}
                     {renderSelectionChrome()}
                   </svg>
                 </div>
