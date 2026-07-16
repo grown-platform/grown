@@ -93,8 +93,8 @@ Baseline gaps → become the backlog below.
 ### Wave 7+ — deferred editor polish (client-side, verifiable)
 - [x] Annotation rotation. `5d60a75`
 - [x] Wave 8: page crop (crop box → export), line/arrowhead endpoint styles, configurable highlight colors. `e15d977`
-- [ ] Wave 9: accessibility pass (roles/aria/focus on toolbar + dialogs).
-- [ ] (deferred, higher risk/needs backend) continuous-scroll render; load-Documents-item-by-id.
+- [x] Wave 9: accessibility pass (roles/aria/focus on toolbar + dialogs). `eec987d`
+- [ ] (deferred, higher risk/needs backend) continuous-scroll render; load-Documents-item-by-id. — EDITOR NOW ESSENTIALLY COMPLETE (9 waves, 59 e2e). Pivoting to Docs/Sheets.
 
 ### Later — Docs/Sheets parity (only if editor exhausted)
 - [ ] See `docs/feature-research/docs-sheets-parity.md`; pick highest-value gaps. NOTE: Docs/Sheets e2e needs the full grown backend stack (Go+DB+auth) running — much harder to verify headless than the client-only PDF editor. Prefer editor work while it still has verifiable value; for Docs/Sheets, lean on tsc/build + targeted unit tests where e2e isn't feasible.
@@ -112,6 +112,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-16** — Wave 9 DONE (`eec987d`): accessibility pass — toolbar role, aria-labels/aria-pressed, dialog role/aria-modal + focus-trap/Escape/restore (`useDialogA11y`), aria-live status, canvas role. Additive only. 59/59 e2e. **PDF EDITOR COMPLETE** (9 waves, 59 e2e, ~15 feature commits). Now PIVOTING to Docs/Sheets per the mandate — targeting the Go backend (formula engine, export) where `go test` gives verifiability, since Docs/Sheets UI e2e needs the full stack. This work still lands on PR #32 (one giant PR).
 - **2026-07-16** — Wave 8 DONE (`e15d977`): page crop (per-page/all, non-destructive setCropBox on export, survives page ops), line/arrowhead endpoint styles (none/start/end/both), configurable highlight colors. Defaults byte-identical. Hooks: `page-crop`, `crop-*`, `line-arrow-*`, `highlight-color-*`. 57/57 e2e. Next: Wave 9 (a11y). After that the editor is deeply complete → consider Docs/Sheets (verify via Go `go test` on the formula/export backend, since Docs/Sheets UI e2e needs the full stack).
 - **2026-07-16** — Wave 7 DONE (`5d60a75`): annotation rotation (box/image/text/stamp) — rotation handle (Shift-snap 15°) + numeric field, CSS/SVG transforms, center-anchor pdf-lib export gated on nonzero angle (unrotated byte-identical). Resize/hit-test stay axis-aligned (approx). Hooks: `rotate-handle`, `rotate-input`, `data-annot-rotation`. 54/54 e2e. Next: Wave 8 (page crop + line/arrowhead styles + highlight colors).
 - **2026-07-16** — FINALIZE PASS: pdf `npm run build` ✓ (pre-existing bundle-size warning only), editor e2e 51/51 ✓, web/app tsc+build ✓. Base `app.spec` (chromium) fails ONLY on ECONNREFUSED /api/user/me — needs backend, pre-existing, NOT a regression (editor specs bypass auth via sessionStorage). PR #32 body updated with full feature list (33 files, +8200/-255, 36 commits). Continuing with deferred editor polish: annotation rotation next, then a11y, then Docs/Sheets parity if time.
