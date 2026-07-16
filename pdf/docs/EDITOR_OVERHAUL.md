@@ -64,10 +64,10 @@ Baseline gaps → become the backlog below.
 - [ ] Continuous-scroll multi-page render — DEFERRED (render rework).
 
 ### Wave 4 — Forms & signing (Acrobat parity, on-brand for a signing product)
-- [ ] AcroForm fields: text, checkbox, radio, dropdown, date. Create + fill.
-- [ ] Signature / initials / date field tool in the editor (typed + drawn signature).
-- [ ] Fill & Sign quick mode.
-- [ ] Flatten-forms option on export.
+- [x] AcroForm fields: text, checkbox, radio, dropdown. Create + fill. `be5e8e4`
+- [x] Flatten-forms option on export. `be5e8e4`
+- [ ] Signature / initials / date field tool in the editor (typed + drawn signature). ← Wave 4b
+- [ ] Fill & Sign quick mode. ← Wave 4b
 
 ### Wave 5 — Content & markup
 - [ ] True annotation eraser (remove ink/marks, partial ink erase).
@@ -102,6 +102,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-15** — Wave 4a DONE (`be5e8e4`): interactive AcroForm fields (text/checkbox/radio/dropdown) as new `field` Annotation variants — reuse all Wave 2 infra (select/move/resize/align/z-order/clipboard/undo). In-editor fill; export creates REAL pdf-lib form fields with correct rect mapping + values; `flatten-forms` toggle. Hooks: `tool-field-*`, `field-*`, `flatten-forms`. 27/27 e2e, assertions introspect exported form. Next: Wave 4b (signature/initials/date tool + Fill & Sign).
 - **2026-07-15** — Wave 3c DONE (`c666883`): headers/footers dialog (6 slots, tokens {page}/{pages}/{date}/{time}/{filename}/{bates}), Bates numbering, range targeting, live preview + baked export. `{date}`/`{time}` captured once on Apply. Config is doc-level (not in undo stack). Hooks: `headerfooter-open`, `hf-*`. 24/24 e2e (verified). **Wave 3 COMPLETE.** Next: Wave 4 (forms & signing) — the big on-brand wave for a signing product.
 - **2026-07-15** — Wave 3b DONE (`253f470`): blank page templates (Letter/Legal/A4/A3/Tabloid/custom, orientation, lined/dotted/grid bg), import/merge pages from another PDF, extract range to download, delete-range. `PageEntry` gained `blankW/blankH/blankBg`; merge rebuilds an identity page map. Hooks: `page-import(-input)`, `page-extract`, `page-delete-range`, `blank-*`, `extract-*`, `delete-range*`. 21/21 e2e (verified). Next: Wave 3c (headers/footers/page-numbers/Bates/date stamps) OR jump to Wave 4 (forms & signing) — pick 3c (small, export-time) first, then Wave 4.
 - **2026-07-15** — Wave 3a DONE (`5a8275e`): collapsible thumbnail sidebar (click-jump, drag-reorder, per-page menu), page-jump input, fit-width/fit-page zoom, and UNIFIED history `{annotations, pages, bytes}` so page ops are undoable with annotations. Hooks: `thumb-*`, `editor-page-jump`, `zoom-fit-width`, `zoom-fit-page`. 17/17 e2e (verified). Sidebar default-collapsed to avoid react-pdf DOM collision with existing specs. Next: Wave 3b (page sizes/templates, insert/merge/extract pages, headers/footers/page-numbers/Bates).
