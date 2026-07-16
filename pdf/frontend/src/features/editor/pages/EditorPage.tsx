@@ -40,6 +40,11 @@ import {
   Bold,
   Italic,
   Copy,
+  ChevronsUp,
+  ChevronsDown,
+  ChevronUp,
+  ChevronDown,
+  ClipboardPaste,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -214,6 +219,38 @@ function translate(a: Annotation, dx: number, dy: number): Annotation {
   return { ...a, x: clamp01((a as BoxAnnotation).x + dx), y: clamp01((a as BoxAnnotation).y + dy) };
 }
 
+// Normalized bounding box {x0,y0,x1,y1} for an annotation (used by marquee +
+// multi-select outlines). Text height is approximated from its font size.
+type NBox = { x0: number; y0: number; x1: number; y1: number };
+function annotBBox(a: Annotation, pageAspect: number): NBox {
+  if (isLine(a)) {
+    return { x0: Math.min(a.x1, a.x2), y0: Math.min(a.y1, a.y2), x1: Math.max(a.x1, a.x2), y1: Math.max(a.y1, a.y2) };
+  }
+  if (a.type === "ink") {
+    const xs = a.points.map((p) => p.x);
+    const ys = a.points.map((p) => p.y);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  }
+  if (a.type === "text") {
+    const h = (a.fontSize * 1.2) / (POINTS_WIDE * pageAspect);
+    return { x0: a.x, y0: a.y, x1: a.x + a.width, y1: a.y + Math.max(0.02, h) };
+  }
+  const b = a as BoxAnnotation | ImageAnnotation;
+  return { x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height };
+}
+function boxesIntersect(a: NBox, b: NBox): boolean {
+  return !(a.x1 < b.x0 || a.x0 > b.x1 || a.y1 < b.y0 || a.y0 > b.y1);
+}
+// Distance (px) from point to a line segment — for click-selecting lines/ink.
+function segDistPx(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
 export function EditorPage() {
   const navigate = useNavigate();
 
@@ -233,14 +270,29 @@ export function EditorPage() {
   const [zoom, setZoom] = useState(1);
   const [pageAspect, setPageAspect] = useState(792 / POINTS_WIDE);
   const [tool, setTool] = useState<Tool>("select");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Multi-select: the selection is a set of ids. `selectedId` (derived below)
+  // is non-null only when exactly one annotation is selected, so the existing
+  // single-selection code paths (properties panel, resize) keep working.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedIdsRef = useRef<string[]>([]);
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
   // Text annotation currently being typed/edited directly on the page.
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Marquee (rubber-band) selection rect while dragging on empty canvas.
+  const [marquee, setMarquee] = useState<NBox | null>(null);
+  // Internal clipboard (deliberately NOT the async system clipboard).
+  const clipboard = useRef<Annotation[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [draft, setDraft] = useState<Annotation | null>(null);
+  const draftRef = useRef<Annotation | null>(null);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   // Default style for newly drawn shapes.
   const [strokeColor, setStrokeColor] = useState("#e11d48");
@@ -252,7 +304,8 @@ export function EditorPage() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pendingImagePoint = useRef<{ x: number; y: number } | null>(null);
 
-  const dragState = useRef<{ id: string; startX: number; startY: number } | null>(null);
+  // A move drags every id in `ids` (group move); startX/startY track the pointer.
+  const dragState = useRef<{ ids: string[]; startX: number; startY: number } | null>(null);
   const drawState = useRef<{
     tool: Tool;
     sx: number;
@@ -260,6 +313,11 @@ export function EditorPage() {
     style: { strokeColor: string; strokeWidth: number; fillColor: string | null };
   } | null>(null);
   const resizeState = useRef<{ id: string; handle: "br" | "p1" | "p2" } | null>(null);
+  // Marquee selection drag on empty canvas.
+  const marqueeState = useRef<{ sx: number; sy: number; additive: boolean; box: NBox; moved: boolean } | null>(null);
+  // A shape click/marquee-drag already resolved selection — stop the trailing
+  // canvas onClick from clearing it.
+  const suppressCanvasClick = useRef(false);
 
   // ---- Undo / redo ----------------------------------------------------------
   const undoStack = useRef<Annotation[][]>([]);
@@ -275,14 +333,14 @@ export function EditorPage() {
     if (!undoStack.current.length) return;
     redoStack.current.push(JSON.parse(JSON.stringify(annotationsRef.current)));
     setAnnotations(undoStack.current.pop()!);
-    setSelectedId(null);
+    setSelectedIds([]);
     setHistTick((t) => t + 1);
   }, []);
   const redo = useCallback(() => {
     if (!redoStack.current.length) return;
     undoStack.current.push(JSON.parse(JSON.stringify(annotationsRef.current)));
     setAnnotations(redoStack.current.pop()!);
-    setSelectedId(null);
+    setSelectedIds([]);
     setHistTick((t) => t + 1);
   }, []);
 
@@ -303,7 +361,19 @@ export function EditorPage() {
   const pxScale = renderWidth / POINTS_WIDE; // pt → screen px
   const pageCount = pages.length;
   const pageAnnotations = annotations.filter((a) => a.page === currentPage);
-  const selected = annotations.find((a) => a.id === selectedId) ?? null;
+  // Single-selection derived id: null unless exactly one is selected. The
+  // properties panel + resize handles key off this so they only appear then.
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const selected = selectedId ? (annotations.find((a) => a.id === selectedId) ?? null) : null;
+  const isSelected = (id: string) => selectedIds.includes(id);
+  const currentPageRef = useRef(currentPage);
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
+  const pageAspectRef = useRef(pageAspect);
+  useEffect(() => {
+    pageAspectRef.current = pageAspect;
+  }, [pageAspect]);
 
   // ---- Loading --------------------------------------------------------------
   const loadFromBytes = useCallback(async (bytes: Uint8Array, name: string) => {
@@ -320,7 +390,7 @@ export function EditorPage() {
       undoStack.current = [];
       redoStack.current = [];
       setCurrentPage(1);
-      setSelectedId(null);
+      setSelectedIds([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to read PDF — is it valid?");
     }
@@ -351,7 +421,7 @@ export function EditorPage() {
     undoStack.current = [];
     redoStack.current = [];
     setCurrentPage(1);
-    setSelectedId(null);
+    setSelectedIds([]);
   }, []);
 
   // ---- Page structure -------------------------------------------------------
@@ -422,20 +492,70 @@ export function EditorPage() {
     return { x: (clientX - rect.left) / rect.width, y: (clientY - rect.top) / rect.height };
   };
 
+  // Hit-test an SVG-rendered annotation (box/line/ink). The interaction overlay
+  // sits on top of the SVG, so shape selection is resolved here rather than by
+  // per-shape DOM events. (text/image are DOM children with their own handlers.)
+  const hitTestShape = (a: Annotation, clientX: number, clientY: number): boolean => {
+    const rect = overlayRef.current!.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const X = (nx: number) => nx * rect.width;
+    const Y = (ny: number) => ny * rect.height;
+    if (isBox(a)) {
+      return px >= X(a.x) - 4 && px <= X(a.x + a.width) + 4 && py >= Y(a.y) - 4 && py <= Y(a.y + a.height) + 4;
+    }
+    if (isLine(a)) return segDistPx(px, py, X(a.x1), Y(a.y1), X(a.x2), Y(a.y2)) <= 8;
+    if (a.type === "ink") {
+      for (let i = 1; i < a.points.length; i++) {
+        if (segDistPx(px, py, X(a.points[i - 1].x), Y(a.points[i - 1].y), X(a.points[i].x), Y(a.points[i].y)) <= 8) return true;
+      }
+    }
+    return false;
+  };
+
   // ---- Placement (text/image) + draw start ----------------------------------
   const handleOverlayMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!SHAPE_TOOLS.includes(tool)) return;
-    e.preventDefault();
+    // Fresh gesture — clear any stale click-suppression from the previous one.
+    suppressCanvasClick.current = false;
+    // Interacting with the canvas should take focus off any sidebar field (we
+    // preventDefault below, which otherwise keeps the field focused) so keyboard
+    // shortcuts like Ctrl+C/V aren't swallowed by the "editing a field" guard.
+    const active = document.activeElement as HTMLElement | null;
+    if (active && (active.tagName === "INPUT" || active.tagName === "SELECT")) active.blur();
+    if (SHAPE_TOOLS.includes(tool)) {
+      e.preventDefault();
+      const { x, y } = toNorm(e.clientX, e.clientY);
+      drawState.current = {
+        tool,
+        sx: clamp01(x),
+        sy: clamp01(y),
+        style: { strokeColor, strokeWidth, fillColor },
+      };
+      if (tool === "draw") {
+        setDraft({ id: "draft", type: "ink", page: currentPage, points: [{ x: clamp01(x), y: clamp01(y) }], strokeColor, strokeWidth });
+      }
+      return;
+    }
+    if (tool !== "select") return;
+    // Topmost-first hit-test of SVG shapes on this page (array order = z-order).
+    const shapes = annotations.filter((a) => a.page === currentPage && (isBox(a) || isLine(a) || a.type === "ink"));
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      if (hitTestShape(shapes[i], e.clientX, e.clientY)) {
+        e.preventDefault();
+        suppressCanvasClick.current = true;
+        startMove(e, shapes[i]);
+        return;
+      }
+    }
+    // Empty canvas → begin a marquee selection.
     const { x, y } = toNorm(e.clientX, e.clientY);
-    drawState.current = {
-      tool,
+    marqueeState.current = {
       sx: clamp01(x),
       sy: clamp01(y),
-      style: { strokeColor, strokeWidth, fillColor },
+      additive: e.shiftKey || e.metaKey || e.ctrlKey,
+      box: { x0: clamp01(x), y0: clamp01(y), x1: clamp01(x), y1: clamp01(y) },
+      moved: false,
     };
-    if (tool === "draw") {
-      setDraft({ id: "draft", type: "ink", page: currentPage, points: [{ x: clamp01(x), y: clamp01(y) }], strokeColor, strokeWidth });
-    }
   };
 
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -457,7 +577,7 @@ export function EditorPage() {
       };
       snapshot();
       setAnnotations((p) => [...p, ann]);
-      setSelectedId(ann.id);
+      setSelectedIds([ann.id]);
       // Drop a caret straight into the new box so you can just start typing.
       setEditingId(ann.id);
       setTool("select");
@@ -468,7 +588,14 @@ export function EditorPage() {
       imageInputRef.current?.click();
       return;
     }
-    if (tool === "select") setSelectedId(null);
+    if (tool === "select") {
+      // A shape click or marquee drag already settled the selection.
+      if (suppressCanvasClick.current) {
+        suppressCanvasClick.current = false;
+        return;
+      }
+      setSelectedIds([]);
+    }
   };
 
   const handleImageChosen = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -503,7 +630,7 @@ export function EditorPage() {
     };
     snapshot();
     setAnnotations((p) => [...p, ann]);
-    setSelectedId(ann.id);
+    setSelectedIds([ann.id]);
     setTool("select");
     pendingImagePoint.current = null;
   };
@@ -514,14 +641,22 @@ export function EditorPage() {
     // Don't drag the box you're currently typing into — let the caret work.
     if (editingId === ann.id) return;
     e.stopPropagation();
-    setSelectedId(ann.id);
+    // Shift/Cmd-click toggles the annotation in/out of the selection (no drag).
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      setSelectedIds((prev) => (prev.includes(ann.id) ? prev.filter((i) => i !== ann.id) : [...prev, ann.id]));
+      return;
+    }
+    // Keep an existing multi-selection so a drag moves the whole group; a plain
+    // click on an unselected item collapses the selection to just that item.
+    const movingIds = selectedIds.includes(ann.id) && selectedIds.length > 1 ? selectedIds : [ann.id];
+    setSelectedIds(movingIds);
     snapshot();
     const { x, y } = toNorm(e.clientX, e.clientY);
-    dragState.current = { id: ann.id, startX: x, startY: y };
+    dragState.current = { ids: movingIds, startX: x, startY: y };
   };
   const startResize = (e: React.MouseEvent, id: string, handle: "br" | "p1" | "p2") => {
     e.stopPropagation();
-    setSelectedId(id);
+    setSelectedIds([id]);
     snapshot();
     resizeState.current = { id, handle };
   };
@@ -533,28 +668,36 @@ export function EditorPage() {
       const nx = clamp01((e.clientX - rect.left) / rect.width);
       const ny = clamp01((e.clientY - rect.top) / rect.height);
 
-      // Drawing a new shape.
+      // Drawing a new shape. Mirror the draft into draftRef immediately so the
+      // mouseup commit reads it directly (never mutating state inside a state
+      // updater — that double-commits under React StrictMode).
       const dw = drawState.current;
       if (dw) {
         if (dw.tool === "draw") {
-          setDraft((d) => (d && d.type === "ink" ? { ...d, points: [...d.points, { x: nx, y: ny }] } : d));
+          const prev = draftRef.current;
+          const next: Annotation | null = prev && prev.type === "ink" ? { ...prev, points: [...prev.points, { x: nx, y: ny }] } : prev;
+          draftRef.current = next;
+          setDraft(next);
           return;
         }
         const x = Math.min(dw.sx, nx),
           y = Math.min(dw.sy, ny),
           w = Math.abs(nx - dw.sx),
           h = Math.abs(ny - dw.sy);
+        let next: Annotation;
         if (dw.tool === "line" || dw.tool === "arrow") {
-          setDraft({ id: "draft", type: dw.tool, page: currentPage, x1: dw.sx, y1: dw.sy, x2: nx, y2: ny, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth });
+          next = { id: "draft", type: dw.tool, page: currentPage, x1: dw.sx, y1: dw.sy, x2: nx, y2: ny, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth };
         } else if (dw.tool === "highlight") {
-          setDraft({ id: "draft", type: "highlight", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffeb3b", opacity: 0.35 });
+          next = { id: "draft", type: "highlight", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffeb3b", opacity: 0.35 };
         } else if (dw.tool === "underline" || dw.tool === "strikethrough") {
-          setDraft({ id: "draft", type: dw.tool, page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: Math.max(1.5, dw.style.strokeWidth), fillColor: null, opacity: 1 });
+          next = { id: "draft", type: dw.tool, page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: Math.max(1.5, dw.style.strokeWidth), fillColor: null, opacity: 1 };
         } else if (dw.tool === "whiteout") {
-          setDraft({ id: "draft", type: "whiteout", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffffff", opacity: 1 });
+          next = { id: "draft", type: "whiteout", page: currentPage, x, y, width: w, height: h, strokeColor: null, strokeWidth: 0, fillColor: "#ffffff", opacity: 1 };
         } else {
-          setDraft({ id: "draft", type: dw.tool as "rect" | "ellipse", page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth, fillColor: dw.style.fillColor, opacity: 1 });
+          next = { id: "draft", type: dw.tool as "rect" | "ellipse", page: currentPage, x, y, width: w, height: h, strokeColor: dw.style.strokeColor, strokeWidth: dw.style.strokeWidth, fillColor: dw.style.fillColor, opacity: 1 };
         }
+        draftRef.current = next;
+        setDraft(next);
         return;
       }
 
@@ -579,38 +722,65 @@ export function EditorPage() {
         return;
       }
 
-      // Moving.
+      // Marquee (rubber-band) selection on empty canvas.
+      const mq = marqueeState.current;
+      if (mq) {
+        mq.moved = true;
+        mq.box = { x0: Math.min(mq.sx, nx), y0: Math.min(mq.sy, ny), x1: Math.max(mq.sx, nx), y1: Math.max(mq.sy, ny) };
+        setMarquee(mq.box);
+        return;
+      }
+
+      // Moving (group move: apply delta to every selected annotation).
       const ds = dragState.current;
       if (ds) {
         const dx = nx - ds.startX;
         const dy = ny - ds.startY;
         ds.startX = nx;
         ds.startY = ny;
-        setAnnotations((prev) => prev.map((a) => (a.id === ds.id ? translate(a, dx, dy) : a)));
+        setAnnotations((prev) => prev.map((a) => (ds.ids.includes(a.id) ? translate(a, dx, dy) : a)));
       }
     };
     const onUp = () => {
-      const dw = drawState.current;
-      if (dw) {
-        setDraft((d) => {
-          if (d) {
-            const big =
-              d.type === "ink"
-                ? d.points.length > 2
-                : isLine(d)
-                  ? Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 0.01
-                  : (d as BoxAnnotation).width > 0.01 && (d as BoxAnnotation).height > 0.01;
-            if (big) {
-              const committed = { ...d, id: uid() } as Annotation;
-              snapshot();
-              setAnnotations((p) => [...p, committed]);
-              setSelectedId(committed.id);
-              setTool("select");
-            }
+      if (drawState.current) {
+        const d = draftRef.current;
+        if (d) {
+          const big =
+            d.type === "ink"
+              ? d.points.length > 2
+              : isLine(d)
+                ? Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 0.01
+                : (d as BoxAnnotation).width > 0.01 && (d as BoxAnnotation).height > 0.01;
+          if (big) {
+            // Build the committed annotation exactly once (fixed id) so the
+            // setAnnotations updater stays pure — no double-commit in StrictMode.
+            const committed = { ...d, id: uid() } as Annotation;
+            snapshot();
+            setAnnotations((p) => [...p, committed]);
+            setSelectedIds([committed.id]);
+            setTool("select");
+            // The drag emits a trailing overlay click; don't let it clear the
+            // freshly-drawn (now-selected) shape.
+            suppressCanvasClick.current = true;
           }
-          return null;
-        });
+        }
+        draftRef.current = null;
+        setDraft(null);
         drawState.current = null;
+      }
+      // Resolve a marquee drag → select every annotation whose bbox intersects.
+      const mq = marqueeState.current;
+      if (mq) {
+        const dragged = mq.moved && (mq.box.x1 - mq.box.x0 > 0.004 || mq.box.y1 - mq.box.y0 > 0.004);
+        if (dragged) {
+          const hits = annotationsRef.current
+            .filter((a) => a.page === currentPageRef.current && boxesIntersect(annotBBox(a, pageAspectRef.current), mq.box))
+            .map((a) => a.id);
+          setSelectedIds((prev) => (mq.additive ? Array.from(new Set([...prev, ...hits])) : hits));
+          suppressCanvasClick.current = true;
+        }
+        marqueeState.current = null;
+        setMarquee(null);
       }
       dragState.current = null;
       resizeState.current = null;
@@ -623,34 +793,133 @@ export function EditorPage() {
     };
   }, [currentPage, snapshot]);
 
-  // Keyboard: delete, escape, undo/redo.
+  // ---- Selection ops: delete / clipboard / z-order --------------------------
+  const deleteSelection = useCallback(() => {
+    const ids = selectedIdsRef.current;
+    if (!ids.length) return;
+    snapshot();
+    setAnnotations((p) => p.filter((a) => !ids.includes(a.id)));
+    setSelectedIds([]);
+  }, [snapshot]);
+
+  const copySelection = useCallback(() => {
+    const ids = selectedIdsRef.current;
+    if (!ids.length) return;
+    clipboard.current = annotationsRef.current.filter((a) => ids.includes(a.id)).map((a) => JSON.parse(JSON.stringify(a)) as Annotation);
+  }, []);
+
+  const cutSelection = useCallback(() => {
+    copySelection();
+    deleteSelection();
+  }, [copySelection, deleteSelection]);
+
+  const pasteClipboard = useCallback(() => {
+    if (!clipboard.current.length) return;
+    snapshot();
+    const clones = clipboard.current.map((a) => {
+      const c = translate(JSON.parse(JSON.stringify(a)) as Annotation, 0.02, 0.02);
+      c.id = uid();
+      c.page = currentPageRef.current;
+      return c;
+    });
+    setAnnotations((p) => [...p, ...clones]);
+    setSelectedIds(clones.map((c) => c.id));
+  }, [snapshot]);
+
+  // Z-order: annotations array order == stacking order (later = on top).
+  const reorderSelection = useCallback(
+    (mode: "front" | "back" | "forward" | "backward") => {
+      const ids = selectedIdsRef.current;
+      if (!ids.length) return;
+      snapshot();
+      setAnnotations((prev) => {
+        if (mode === "front") {
+          const sel = prev.filter((a) => ids.includes(a.id));
+          const rest = prev.filter((a) => !ids.includes(a.id));
+          return [...rest, ...sel];
+        }
+        if (mode === "back") {
+          const sel = prev.filter((a) => ids.includes(a.id));
+          const rest = prev.filter((a) => !ids.includes(a.id));
+          return [...sel, ...rest];
+        }
+        const arr = [...prev];
+        if (mode === "forward") {
+          for (let i = arr.length - 2; i >= 0; i--) {
+            if (ids.includes(arr[i].id) && !ids.includes(arr[i + 1].id)) {
+              [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+            }
+          }
+        } else {
+          for (let i = 1; i < arr.length; i++) {
+            if (ids.includes(arr[i].id) && !ids.includes(arr[i - 1].id)) {
+              [arr[i], arr[i - 1]] = [arr[i - 1], arr[i]];
+            }
+          }
+        }
+        return arr;
+      });
+    },
+    [snapshot],
+  );
+
+  // Keyboard: delete, escape, undo/redo, clipboard, z-order.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      const editing = t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      // Don't hijack shortcuts while typing in a field / editing text inline.
+      const editing = editingId != null || t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+      if (mod && e.key.toLowerCase() === "y") {
         e.preventDefault();
         redo();
         return;
       }
       if (editing) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+      if (mod && e.key.toLowerCase() === "c") {
         e.preventDefault();
-        snapshot();
-        setAnnotations((p) => p.filter((a) => a.id !== selectedId));
-        setSelectedId(null);
+        copySelection();
+        return;
       }
-      if (e.key === "Escape") setSelectedId(null);
+      if (mod && e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        cutSelection();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        pasteClipboard();
+        return;
+      }
+      // e.code is layout/shift-independent (Shift+] reports "}" as e.key).
+      if (mod && e.code === "BracketRight") {
+        e.preventDefault();
+        reorderSelection(e.shiftKey ? "front" : "forward");
+        return;
+      }
+      if (mod && e.code === "BracketLeft") {
+        e.preventDefault();
+        reorderSelection(e.shiftKey ? "back" : "backward");
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedIdsRef.current.length) {
+          e.preventDefault();
+          deleteSelection();
+        }
+        return;
+      }
+      if (e.key === "Escape") setSelectedIds([]);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, snapshot, undo, redo]);
+  }, [snapshot, undo, redo, copySelection, cutSelection, pasteClipboard, deleteSelection, reorderSelection, editingId]);
 
   const updateSelected = (patch: Record<string, unknown>) => {
     if (!selectedId) return;
@@ -665,19 +934,13 @@ export function EditorPage() {
     setEditingId(null);
     setAnnotations((prev) => prev.filter((a) => !(a.id === id && a.type === "text" && a.text.trim() === "")));
   };
-  const deleteSelected = () => {
-    if (!selectedId) return;
-    snapshot();
-    setAnnotations((p) => p.filter((a) => a.id !== selectedId));
-    setSelectedId(null);
-  };
   const duplicateSelected = () => {
     if (!selected) return;
     snapshot();
     const copy = translate(JSON.parse(JSON.stringify(selected)), 0.02, 0.02);
     copy.id = uid();
     setAnnotations((p) => [...p, copy]);
-    setSelectedId(copy.id);
+    setSelectedIds([copy.id]);
   };
 
   // ---- Export ---------------------------------------------------------------
@@ -899,7 +1162,10 @@ export function EditorPage() {
   // ---- SVG vector shape rendering -------------------------------------------
   const renderShape = (a: Annotation, isDraft = false) => {
     const interactive = tool === "select" && !isDraft;
+    // Test hook: expose id + array (z-order) index on each annotation's node.
+    const dataAttrs = isDraft ? {} : { "data-annot-id": a.id, "data-annot-index": annotations.indexOf(a) };
     const common = {
+      ...dataAttrs,
       onMouseDown: interactive ? (e: React.MouseEvent) => startMove(e, a) : undefined,
       style: { pointerEvents: (interactive ? "auto" : "none") as React.CSSProperties["pointerEvents"], cursor: interactive ? "move" : "default" },
     };
@@ -948,32 +1214,65 @@ export function EditorPage() {
     return null;
   };
 
-  // Selection outline + handles for the selected vector/box (SVG).
+  // Selection outline + handles. Draws a dashed outline on EVERY selected
+  // annotation; resize handles only appear for a single selection (`selected`).
   const renderSelectionChrome = () => {
-    if (!selected || selected.page !== currentPage || tool !== "select") return null;
+    if (tool !== "select" || !selectedIds.length) return null;
     const X = (nx: number) => nx * renderWidth;
     const Y = (ny: number) => ny * overlayH;
     const Handle = ({ cx, cy, on }: { cx: number; cy: number; on: (e: React.MouseEvent) => void }) => (
       <rect x={cx - 5} y={cy - 5} width={10} height={10} fill="#fff" stroke="#2563eb" strokeWidth={1.5} style={{ pointerEvents: "auto", cursor: "nwse-resize" }} onMouseDown={on} />
     );
-    if (isBox(selected) || selected.type === "image") {
-      const a = selected as BoxAnnotation;
-      return (
-        <>
-          <rect x={X(a.x)} y={Y(a.y)} width={X(a.width)} height={Y(a.height)} fill="none" stroke="#2563eb" strokeDasharray="4 3" strokeWidth={1} style={{ pointerEvents: "none" }} />
-          <Handle cx={X(a.x + a.width)} cy={Y(a.y + a.height)} on={(e) => startResize(e, a.id, "br")} />
-        </>
-      );
+    // Multi-select: dashed bbox on each selected SVG shape (text/image get a DOM
+    // ring already). Skip when exactly one is selected — handled below.
+    const outlines =
+      selectedIds.length > 1
+        ? annotations
+            .filter((a) => isSelected(a.id) && a.page === currentPage && (isBox(a) || isLine(a) || a.type === "ink"))
+            .map((a) => {
+              const b = annotBBox(a, pageAspect);
+              return (
+                <rect
+                  key={`sel-${a.id}`}
+                  x={X(b.x0)}
+                  y={Y(b.y0)}
+                  width={X(b.x1 - b.x0)}
+                  height={Y(b.y1 - b.y0)}
+                  fill="none"
+                  stroke="#2563eb"
+                  strokeDasharray="4 3"
+                  strokeWidth={1}
+                  style={{ pointerEvents: "none" }}
+                />
+              );
+            })
+        : null;
+
+    let single: React.ReactNode = null;
+    if (selected && selected.page === currentPage) {
+      if (isBox(selected) || selected.type === "image") {
+        const a = selected as BoxAnnotation;
+        single = (
+          <>
+            <rect x={X(a.x)} y={Y(a.y)} width={X(a.width)} height={Y(a.height)} fill="none" stroke="#2563eb" strokeDasharray="4 3" strokeWidth={1} style={{ pointerEvents: "none" }} />
+            <Handle cx={X(a.x + a.width)} cy={Y(a.y + a.height)} on={(e) => startResize(e, a.id, "br")} />
+          </>
+        );
+      } else if (isLine(selected)) {
+        single = (
+          <>
+            <Handle cx={X(selected.x1)} cy={Y(selected.y1)} on={(e) => startResize(e, selected.id, "p1")} />
+            <Handle cx={X(selected.x2)} cy={Y(selected.y2)} on={(e) => startResize(e, selected.id, "p2")} />
+          </>
+        );
+      }
     }
-    if (isLine(selected)) {
-      return (
-        <>
-          <Handle cx={X(selected.x1)} cy={Y(selected.y1)} on={(e) => startResize(e, selected.id, "p1")} />
-          <Handle cx={X(selected.x2)} cy={Y(selected.y2)} on={(e) => startResize(e, selected.id, "p2")} />
-        </>
-      );
-    }
-    return null;
+    return (
+      <>
+        {outlines}
+        {single}
+      </>
+    );
   };
 
   const cursorFor =
@@ -1037,7 +1336,7 @@ export function EditorPage() {
                 data-testid={toolTestId[t]}
                 onClick={() => {
                   setTool(t);
-                  setSelectedId(null);
+                  setSelectedIds([]);
                 }}
                 className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border-2 transition-colors ${tool === t ? "bg-blue-50 border-blue-500 text-blue-600" : "bg-gray-50 border-transparent hover:bg-gray-100 text-gray-700"}`}
                 title={label}
@@ -1090,6 +1389,40 @@ export function EditorPage() {
           </Card>
         )}
 
+        {/* Arrange (z-order / clipboard) — shown whenever something is selected */}
+        {selectedIds.length > 0 && (
+          <Card>
+            <div data-testid="arrange-panel" className="p-3 border-b flex items-center justify-between">
+              <h2 className="font-semibold text-sm">Arrange</h2>
+              <span className="text-xs text-gray-500">{selectedIds.length} selected</span>
+            </div>
+            <div className="p-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button data-testid="z-front" onClick={() => reorderSelection("front")} className="flex items-center justify-center gap-1 text-xs py-1.5 rounded border hover:bg-gray-50" title="Bring to front (Ctrl+Shift+])">
+                  <ChevronsUp className="w-4 h-4" /> To front
+                </button>
+                <button data-testid="z-back" onClick={() => reorderSelection("back")} className="flex items-center justify-center gap-1 text-xs py-1.5 rounded border hover:bg-gray-50" title="Send to back (Ctrl+Shift+[)">
+                  <ChevronsDown className="w-4 h-4" /> To back
+                </button>
+                <button data-testid="z-forward" onClick={() => reorderSelection("forward")} className="flex items-center justify-center gap-1 text-xs py-1.5 rounded border hover:bg-gray-50" title="Bring forward (Ctrl+])">
+                  <ChevronUp className="w-4 h-4" /> Forward
+                </button>
+                <button data-testid="z-backward" onClick={() => reorderSelection("backward")} className="flex items-center justify-center gap-1 text-xs py-1.5 rounded border hover:bg-gray-50" title="Send backward (Ctrl+[)">
+                  <ChevronDown className="w-4 h-4" /> Backward
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button data-testid="clip-copy" onClick={copySelection} className="flex items-center justify-center gap-1 text-xs py-1.5 rounded border hover:bg-gray-50" title="Copy (Ctrl+C)">
+                  <Copy className="w-4 h-4" /> Copy
+                </button>
+                <button data-testid="clip-paste" onClick={pasteClipboard} className="flex items-center justify-center gap-1 text-xs py-1.5 rounded border hover:bg-gray-50" title="Paste (Ctrl+V)">
+                  <ClipboardPaste className="w-4 h-4" /> Paste
+                </button>
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* Pages */}
         <Card>
           <div className="p-3 border-b">
@@ -1123,7 +1456,7 @@ export function EditorPage() {
                 <button data-testid="props-duplicate" onClick={duplicateSelected} className="p-1 hover:bg-gray-100 rounded" title="Duplicate">
                   <Copy className="w-4 h-4 text-gray-600" />
                 </button>
-                <button data-testid="props-delete" onClick={deleteSelected} className="p-1 hover:bg-gray-100 rounded" title="Delete">
+                <button data-testid="props-delete" onClick={deleteSelection} className="p-1 hover:bg-gray-100 rounded" title="Delete">
                   <Trash2 className="w-4 h-4 text-red-500" />
                 </button>
               </div>
@@ -1223,14 +1556,14 @@ export function EditorPage() {
               <div className="flex items-center gap-1">
                 <Button testId="editor-prev-page" size="sm" variant="outline" disabled={currentPage <= 1} onClick={() => {
                   setCurrentPage((p) => p - 1);
-                  setSelectedId(null);
+                  setSelectedIds([]);
                 }}>
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
                 <span data-testid="editor-page-indicator" className="text-sm">{currentPage} / {pageCount}</span>
                 <Button testId="editor-next-page" size="sm" variant="outline" disabled={currentPage >= pageCount} onClick={() => {
                   setCurrentPage((p) => p + 1);
-                  setSelectedId(null);
+                  setSelectedIds([]);
                 }}>
                   <ChevronRight className="w-4 h-4" />
                 </Button>
@@ -1276,6 +1609,20 @@ export function EditorPage() {
                     {pageAnnotations.filter((a) => isBox(a) || isLine(a) || a.type === "ink").map((a) => renderShape(a))}
                     {draft && (isBox(draft) || isLine(draft) || draft.type === "ink") && renderShape(draft, true)}
                     {renderSelectionChrome()}
+                    {marquee && (
+                      <rect
+                        data-testid="editor-marquee"
+                        x={marquee.x0 * renderWidth}
+                        y={marquee.y0 * overlayH}
+                        width={(marquee.x1 - marquee.x0) * renderWidth}
+                        height={(marquee.y1 - marquee.y0) * overlayH}
+                        fill="rgba(37,99,235,0.08)"
+                        stroke="#2563eb"
+                        strokeDasharray="4 3"
+                        strokeWidth={1}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    )}
                   </svg>
 
                   {/* Interaction + text/image layer */}
@@ -1288,8 +1635,16 @@ export function EditorPage() {
                     onClick={handleOverlayClick}
                   >
                     {pageAnnotations.filter((a) => a.type === "text" || a.type === "image").map((ann) => {
-                      const isSel = ann.id === selectedId;
+                      const isSel = isSelected(ann.id);
+                      const isSingleSel = ann.id === selectedId;
                       const interactive = tool === "select";
+                      const annIndex = annotations.indexOf(ann);
+                      const selectOnClick = (e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        // Shift/Cmd-click toggling is resolved in startMove (onMouseDown).
+                        if (e.shiftKey || e.metaKey || e.ctrlKey) return;
+                        setSelectedIds([ann.id]);
+                      };
                       if (ann.type === "text") {
                         const px = (ann.fontSize * renderWidth) / POINTS_WIDE;
                         const isEditing = ann.id === editingId;
@@ -1354,14 +1709,13 @@ export function EditorPage() {
                         return (
                           <div
                             key={ann.id}
+                            data-annot-id={ann.id}
+                            data-annot-index={annIndex}
                             onMouseDown={(e) => startMove(e, ann)}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedId(ann.id);
-                            }}
+                            onClick={selectOnClick}
                             onDoubleClick={(e) => {
                               e.stopPropagation();
-                              setSelectedId(ann.id);
+                              setSelectedIds([ann.id]);
                               setEditingId(ann.id);
                             }}
                             className={`absolute select-none ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-text" : ""}`}
@@ -1378,7 +1732,7 @@ export function EditorPage() {
                             }}
                           >
                             {ann.text || " "}
-                            {isSel && interactive && (
+                            {isSingleSel && interactive && (
                               <span onMouseDown={(e) => startResize(e, ann.id, "br")} className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-white border-2 border-blue-600" style={{ cursor: "ew-resize", pointerEvents: "auto" }} />
                             )}
                           </div>
@@ -1387,16 +1741,15 @@ export function EditorPage() {
                       return (
                         <div
                           key={ann.id}
+                          data-annot-id={ann.id}
+                          data-annot-index={annIndex}
                           onMouseDown={(e) => startMove(e, ann)}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedId(ann.id);
-                          }}
+                          onClick={selectOnClick}
                           className={`absolute ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-move" : ""}`}
                           style={{ left: `${ann.x * 100}%`, top: `${ann.y * 100}%`, width: `${ann.width * 100}%`, height: `${ann.height * 100}%`, pointerEvents: interactive ? "auto" : "none" }}
                         >
                           <img src={ann.dataUrl} alt="" className="w-full h-full object-fill pointer-events-none select-none" draggable={false} />
-                          {isSel && interactive && (
+                          {isSingleSel && interactive && (
                             <span onMouseDown={(e) => startResize(e, ann.id, "br")} className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-white border-2 border-blue-600" style={{ cursor: "nwse-resize", pointerEvents: "auto" }} />
                           )}
                         </div>
