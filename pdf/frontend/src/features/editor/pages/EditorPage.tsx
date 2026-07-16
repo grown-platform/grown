@@ -55,6 +55,10 @@ import {
   AlignVerticalDistributeCenter,
   Magnet,
   Grid3x3,
+  PanelLeft,
+  MoveHorizontal,
+  Maximize,
+  MoreHorizontal,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -68,6 +72,7 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const PAGE_RENDER_WIDTH = 700;
+const THUMB_WIDTH = 104; // rendered width (px) of a sidebar page thumbnail
 const POINTS_WIDE = 612; // reference page width (pt) for points↔px scaling
 
 function Button({
@@ -383,11 +388,27 @@ export function EditorPage() {
   useEffect(() => {
     annotationsRef.current = annotations;
   }, [annotations]);
+  // Mirror pages + pdfBytes into refs so history snapshots (called from event
+  // handlers with possibly-stale closures) always capture the live values.
+  const pagesRef = useRef<PageEntry[]>([]);
+  useEffect(() => {
+    pagesRef.current = pages;
+  }, [pages]);
+  const pdfBytesRef = useRef<Uint8Array | null>(null);
 
   const [numRendered, setNumRendered] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(1);
+  // Fit mode re-applies zoom from the container size on resize until the user
+  // manually zooms (which flips this back to "manual").
+  const [zoomMode, setZoomMode] = useState<"manual" | "fit-width" | "fit-page">("manual");
   const [pageAspect, setPageAspect] = useState(792 / POINTS_WIDE);
+  // Thumbnail sidebar (collapsible) + its open per-page "⋯" menu + drag source.
+  // Collapsed by default: expanding mounts a second react-pdf render per page.
+  const [showThumbs, setShowThumbs] = useState(false);
+  const [thumbMenu, setThumbMenu] = useState<number | null>(null);
+  const dragThumb = useRef<number | null>(null);
+  const canvasScrollRef = useRef<HTMLDivElement>(null);
   const [tool, setTool] = useState<Tool>("select");
   // Multi-select: the selection is a set of ids. `selectedId` (derived below)
   // is non-null only when exactly one annotation is selected, so the existing
@@ -467,32 +488,58 @@ export function EditorPage() {
   const suppressCanvasClick = useRef(false);
 
   // ---- Undo / redo ----------------------------------------------------------
-  const undoStack = useRef<Annotation[][]>([]);
-  const redoStack = useRef<Annotation[][]>([]);
+  // A snapshot captures BOTH annotations AND the page structure (+ the pdf bytes
+  // those pages were serialized from). Page ops re-serialize the PDF, so simply
+  // restoring the captured bytes+pages is the equivalent of re-running
+  // rebuildPdf for the restored structure — and avoids srcIndex drift across
+  // rebuilds. Annotation-only ops reuse the same bytes reference (no reload).
+  interface HistSnap {
+    annotations: Annotation[];
+    pages: PageEntry[];
+    bytes: Uint8Array | null;
+  }
+  const undoStack = useRef<HistSnap[]>([]);
+  const redoStack = useRef<HistSnap[]>([]);
   const [, setHistTick] = useState(0);
+  const captureState = useCallback(
+    (): HistSnap => ({
+      annotations: JSON.parse(JSON.stringify(annotationsRef.current)),
+      pages: JSON.parse(JSON.stringify(pagesRef.current)),
+      bytes: pdfBytesRef.current,
+    }),
+    [],
+  );
+  const restoreState = useCallback((s: HistSnap) => {
+    setAnnotations(s.annotations);
+    setPages(s.pages);
+    // Same reference for annotation-only history entries → no PDF reload.
+    setPdfBytes(s.bytes);
+    setCurrentPage((p) => Math.min(Math.max(1, p), Math.max(1, s.pages.length)));
+    setSelectedIds([]);
+    setEditingId(null);
+  }, []);
   const snapshot = useCallback(() => {
-    undoStack.current.push(JSON.parse(JSON.stringify(annotationsRef.current)));
+    undoStack.current.push(captureState());
     if (undoStack.current.length > 60) undoStack.current.shift();
     redoStack.current = [];
     setHistTick((t) => t + 1);
-  }, []);
+  }, [captureState]);
   const undo = useCallback(() => {
     if (!undoStack.current.length) return;
-    redoStack.current.push(JSON.parse(JSON.stringify(annotationsRef.current)));
-    setAnnotations(undoStack.current.pop()!);
-    setSelectedIds([]);
+    redoStack.current.push(captureState());
+    restoreState(undoStack.current.pop()!);
     setHistTick((t) => t + 1);
-  }, []);
+  }, [captureState, restoreState]);
   const redo = useCallback(() => {
     if (!redoStack.current.length) return;
-    undoStack.current.push(JSON.parse(JSON.stringify(annotationsRef.current)));
-    setAnnotations(redoStack.current.pop()!);
-    setSelectedIds([]);
+    undoStack.current.push(captureState());
+    restoreState(redoStack.current.pop()!);
     setHistTick((t) => t + 1);
-  }, []);
+  }, [captureState, restoreState]);
 
   // ---- Blob URL lifecycle ---------------------------------------------------
   useEffect(() => {
+    pdfBytesRef.current = pdfBytes;
     if (!pdfBytes) {
       setFileUrl(null);
       return;
@@ -520,6 +567,53 @@ export function EditorPage() {
   const pageAspectRef = useRef(pageAspect);
   useEffect(() => {
     pageAspectRef.current = pageAspect;
+  }, [pageAspect]);
+
+  // ---- Fit-to zoom ----------------------------------------------------------
+  // Derive a zoom from the scroll container's available size. `zoomMode` keeps
+  // the chosen fit sticky across window resizes until a manual zoom.
+  const computeFit = useCallback((mode: "fit-width" | "fit-page") => {
+    const el = canvasScrollRef.current;
+    if (!el) return;
+    const pad = 32; // container p-4 (16px each side)
+    const availW = el.clientWidth - pad;
+    const availH = el.clientHeight - pad;
+    const raw =
+      mode === "fit-width"
+        ? availW / PAGE_RENDER_WIDTH
+        : availH / (pageAspectRef.current * PAGE_RENDER_WIDTH);
+    if (!isFinite(raw) || raw <= 0) return;
+    setZoom(+Math.max(0.1, Math.min(4, raw)).toFixed(3));
+  }, []);
+  const applyFit = (mode: "fit-width" | "fit-page") => {
+    setZoomMode(mode);
+    computeFit(mode);
+  };
+  // Close the thumbnail per-page menu on any outside click / Escape.
+  useEffect(() => {
+    if (thumbMenu === null) return;
+    const close = () => setThumbMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setThumbMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [thumbMenu]);
+
+  // Re-apply the active fit on window resize + when the page aspect changes.
+  useEffect(() => {
+    if (zoomMode === "manual") return;
+    const onResize = () => computeFit(zoomMode);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [zoomMode, computeFit]);
+  useEffect(() => {
+    if (zoomMode !== "manual") computeFit(zoomMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageAspect]);
 
   // ---- Loading --------------------------------------------------------------
@@ -604,34 +698,90 @@ export function EditorPage() {
     [pdfBytes],
   );
 
-  const addBlankPage = () => {
-    const next = [...pages];
-    next.splice(currentPage, 0, { srcIndex: -1, rotation: 0 });
-    rebuildPdf(next).then(() => setCurrentPage(currentPage + 1));
-  };
-  const deletePage = () => {
-    if (pageCount <= 1) return;
-    const next = pages.filter((_, i) => i !== currentPage - 1);
-    setAnnotations((prev) =>
-      prev.filter((a) => a.page !== currentPage).map((a) => (a.page > currentPage ? { ...a, page: a.page - 1 } : a)),
-    );
-    rebuildPdf(next).then(() => setCurrentPage(Math.min(currentPage, next.length)));
-  };
-  const movePage = (dir: "up" | "down") => {
-    const idx = currentPage - 1;
-    const swap = dir === "up" ? idx - 1 : idx + 1;
-    if (swap < 0 || swap >= pageCount) return;
-    const next = [...pages];
-    [next[idx], next[swap]] = [next[swap], next[idx]];
-    const a = currentPage;
-    const b = swap + 1;
-    setAnnotations((prev) => prev.map((an) => (an.page === a ? { ...an, page: b } : an.page === b ? { ...an, page: a } : an)));
-    rebuildPdf(next).then(() => setCurrentPage(swap + 1));
-  };
-  const rotatePage = () => {
-    const next = pages.map((p, i) => (i === currentPage - 1 ? { ...p, rotation: (p.rotation + 90) % 360 } : p));
-    rebuildPdf(next);
-  };
+  // Index-based page ops (0-based `idx`). Each snapshots first (so it's
+  // undoable together with its annotation remap), remaps annotation `page`
+  // numbers, then re-serializes via rebuildPdf.
+  const insertBlankAt = useCallback(
+    (idx: number) => {
+      snapshot();
+      const next = [...pagesRef.current];
+      next.splice(idx, 0, { srcIndex: -1, rotation: 0 });
+      setAnnotations((prev) => prev.map((a) => (a.page >= idx + 1 ? { ...a, page: a.page + 1 } : a)));
+      rebuildPdf(next).then(() => setCurrentPage(idx + 1));
+    },
+    [snapshot, rebuildPdf],
+  );
+  const deletePageAt = useCallback(
+    (idx: number) => {
+      if (pagesRef.current.length <= 1) return;
+      snapshot();
+      const pageNum = idx + 1;
+      const next = pagesRef.current.filter((_, i) => i !== idx);
+      setAnnotations((prev) =>
+        prev.filter((a) => a.page !== pageNum).map((a) => (a.page > pageNum ? { ...a, page: a.page - 1 } : a)),
+      );
+      rebuildPdf(next).then(() => setCurrentPage((c) => Math.min(c, next.length)));
+    },
+    [snapshot, rebuildPdf],
+  );
+  // Duplicate page `idx` right after itself, cloning its annotations too.
+  const duplicatePageAt = useCallback(
+    (idx: number) => {
+      snapshot();
+      const pageNum = idx + 1;
+      const next = [...pagesRef.current];
+      next.splice(idx + 1, 0, { ...pagesRef.current[idx] });
+      setAnnotations((prev) => {
+        const shifted = prev.map((a) => (a.page > pageNum ? { ...a, page: a.page + 1 } : a));
+        const clones = prev
+          .filter((a) => a.page === pageNum)
+          .map((a) => {
+            const c = JSON.parse(JSON.stringify(a)) as Annotation;
+            c.id = uid();
+            c.page = pageNum + 1;
+            return c;
+          });
+        return [...shifted, ...clones];
+      });
+      rebuildPdf(next).then(() => setCurrentPage(idx + 2));
+    },
+    [snapshot, rebuildPdf],
+  );
+  const rotatePageAt = useCallback(
+    (idx: number) => {
+      snapshot();
+      const next = pagesRef.current.map((p, i) => (i === idx ? { ...p, rotation: (p.rotation + 90) % 360 } : p));
+      rebuildPdf(next);
+    },
+    [snapshot, rebuildPdf],
+  );
+  // Move page from `from` to `to` (both 0-based). Used by Up/Down + thumb drag.
+  const reorderPages = useCallback(
+    (from: number, to: number) => {
+      if (from === to || from < 0 || to < 0) return;
+      snapshot();
+      const cur = pagesRef.current;
+      const next = [...cur];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      // Old→new page-number map via the same permutation on identity indices.
+      const order = cur.map((_, i) => i);
+      const [m] = order.splice(from, 1);
+      order.splice(to, 0, m);
+      const oldToNew = new Map<number, number>();
+      order.forEach((oldIdx, newIdx) => oldToNew.set(oldIdx + 1, newIdx + 1));
+      setAnnotations((prev) => prev.map((a) => ({ ...a, page: oldToNew.get(a.page) ?? a.page })));
+      rebuildPdf(next).then(() => setCurrentPage(to + 1));
+    },
+    [snapshot, rebuildPdf],
+  );
+
+  // Thin wrappers preserving the existing Pages-panel button semantics.
+  const addBlankPage = () => insertBlankAt(currentPage);
+  const deletePage = () => deletePageAt(currentPage - 1);
+  const movePage = (dir: "up" | "down") =>
+    reorderPages(currentPage - 1, dir === "up" ? currentPage - 2 : currentPage);
+  const rotatePage = () => rotatePageAt(currentPage - 1);
 
   // ---- Pointer geometry -----------------------------------------------------
   const toNorm = (clientX: number, clientY: number) => {
@@ -1887,19 +2037,114 @@ export function EditorPage() {
         )}
       </div>
 
+      {/* Thumbnail sidebar (collapsible) */}
+      {showThumbs && (
+        <div data-testid="thumb-sidebar" className="w-full lg:w-40 flex-shrink-0 lg:overflow-y-auto">
+          <Card className="lg:h-full">
+            <div className="p-2 border-b flex items-center justify-between">
+              <h2 className="font-semibold text-sm">Pages</h2>
+              <span className="text-xs text-gray-500">{pageCount}</span>
+            </div>
+            <div className="p-2 flex lg:flex-col gap-2 flex-wrap">
+              {fileUrl && (
+                <Document file={fileUrl} loading={null}>
+                  {pages.map((_, i) => (
+                    <div
+                      key={i}
+                      data-testid={`thumb-${i}`}
+                      draggable
+                      onDragStart={() => (dragThumb.current = i)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const from = dragThumb.current;
+                        dragThumb.current = null;
+                        if (from != null && from !== i) reorderPages(from, i);
+                      }}
+                      onClick={() => {
+                        setCurrentPage(i + 1);
+                        setSelectedIds([]);
+                      }}
+                      className={`relative cursor-pointer rounded border-2 bg-white ${currentPage === i + 1 ? "border-blue-500" : "border-gray-200 hover:border-blue-300"}`}
+                      title={`Page ${i + 1}`}
+                    >
+                      <div className="pointer-events-none flex justify-center overflow-hidden" style={{ minHeight: 40 }}>
+                        {i + 1 <= numRendered && (
+                          <Page pageNumber={i + 1} width={THUMB_WIDTH} renderTextLayer={false} renderAnnotationLayer={false} loading={null} />
+                        )}
+                      </div>
+                      <span className="absolute bottom-0 left-0 bg-black/60 text-white text-[10px] px-1 rounded-tr">{i + 1}</span>
+                      <button
+                        data-testid={`thumb-menu-${i}`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setThumbMenu((m) => (m === i ? null : i));
+                        }}
+                        className="absolute top-0.5 right-0.5 bg-white/90 hover:bg-white text-gray-700 rounded p-0.5 border border-gray-200"
+                        title="Page actions"
+                      >
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                      </button>
+                      {thumbMenu === i && (
+                        <div
+                          className="absolute z-20 top-6 right-0 bg-white border rounded shadow-lg text-xs w-32 py-1"
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <button data-testid="thumb-duplicate" onClick={() => { setThumbMenu(null); duplicatePageAt(i); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-100">
+                            Duplicate
+                          </button>
+                          <button data-testid="thumb-delete" disabled={pageCount <= 1} onClick={() => { setThumbMenu(null); deletePageAt(i); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed">
+                            Delete
+                          </button>
+                          <button data-testid="thumb-rotate" onClick={() => { setThumbMenu(null); rotatePageAt(i); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-100">
+                            Rotate 90°
+                          </button>
+                          <button data-testid="thumb-insert-above" onClick={() => { setThumbMenu(null); insertBlankAt(i); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-100">
+                            Insert blank above
+                          </button>
+                          <button data-testid="thumb-insert-below" onClick={() => { setThumbMenu(null); insertBlankAt(i + 1); }} className="block w-full text-left px-3 py-1.5 hover:bg-gray-100">
+                            Insert blank below
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </Document>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* Main canvas */}
       <div className="flex-1 min-w-0">
         <Card className="h-full flex flex-col">
           <div className="p-3 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <input data-testid="editor-docname" className="font-semibold border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none px-1 min-w-0" value={docName} onChange={(e) => setDocName(e.target.value)} title="Document name" />
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                data-testid="thumb-toggle"
+                onClick={() => setShowThumbs((v) => !v)}
+                title={showThumbs ? "Hide page thumbnails" : "Show page thumbnails"}
+                className={`p-1.5 rounded border ${showThumbs ? "bg-blue-50 border-blue-400 text-blue-600" : "hover:bg-gray-100 border-gray-300"}`}
+              >
+                <PanelLeft className="w-4 h-4" />
+              </button>
               <div className="flex items-center gap-1">
-                <Button testId="editor-zoom-out" size="sm" variant="outline" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} title="Zoom out">
+                <Button testId="editor-zoom-out" size="sm" variant="outline" onClick={() => { setZoomMode("manual"); setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2))); }} title="Zoom out">
                   <ZoomOut className="w-4 h-4" />
                 </Button>
                 <span data-testid="editor-zoom-level" className="text-sm w-12 text-center">{Math.round(zoom * 100)}%</span>
-                <Button testId="editor-zoom-in" size="sm" variant="outline" onClick={() => setZoom((z) => Math.min(2, +(z + 0.25).toFixed(2)))} title="Zoom in">
+                <Button testId="editor-zoom-in" size="sm" variant="outline" onClick={() => { setZoomMode("manual"); setZoom((z) => Math.min(2, +(z + 0.25).toFixed(2))); }} title="Zoom in">
                   <ZoomIn className="w-4 h-4" />
+                </Button>
+                <Button testId="zoom-fit-width" size="sm" variant={zoomMode === "fit-width" ? "primary" : "outline"} onClick={() => applyFit("fit-width")} title="Fit width">
+                  <MoveHorizontal className="w-4 h-4" />
+                </Button>
+                <Button testId="zoom-fit-page" size="sm" variant={zoomMode === "fit-page" ? "primary" : "outline"} onClick={() => applyFit("fit-page")} title="Fit page">
+                  <Maximize className="w-4 h-4" />
                 </Button>
               </div>
               <div className="flex items-center gap-1">
@@ -1916,6 +2161,25 @@ export function EditorPage() {
                 }}>
                   <ChevronRight className="w-4 h-4" />
                 </Button>
+                <input
+                  data-testid="editor-page-jump"
+                  type="number"
+                  min={1}
+                  max={pageCount}
+                  placeholder="#"
+                  title="Jump to page (Enter)"
+                  className="w-14 text-sm border rounded px-1.5 py-1"
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    const el = e.target as HTMLInputElement;
+                    const n = parseInt(el.value, 10);
+                    if (!isNaN(n) && n >= 1 && n <= pageCount) {
+                      setCurrentPage(n);
+                      setSelectedIds([]);
+                    }
+                    el.blur();
+                  }}
+                />
               </div>
               <Button testId="editor-download" variant="outline" size="sm" onClick={handleDownload} disabled={busy}>
                 <Download className="w-4 h-4 inline mr-1" /> Download
@@ -1941,7 +2205,7 @@ export function EditorPage() {
             </div>
           )}
 
-          <div className="flex-1 overflow-auto bg-gray-100 p-4">
+          <div ref={canvasScrollRef} className="flex-1 overflow-auto bg-gray-100 p-4">
             {fileUrl ? (
               <div className="flex justify-start sm:justify-center">
                 <div className="relative bg-white shadow-lg" style={{ width: renderWidth }}>
