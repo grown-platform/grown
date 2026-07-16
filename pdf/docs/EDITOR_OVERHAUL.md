@@ -49,9 +49,10 @@ Baseline gaps → become the backlog below.
 - [x] Multi-select (shift-click + marquee), group move/delete. `68d7ee1`
 - [x] Z-order: bring to front / send to back / forward / backward. `68d7ee1`
 - [x] Clipboard: Ctrl+C/X/V (incl. cross-page paste), keep Duplicate. `68d7ee1`
-- [ ] Alignment & distribute (left/center/right/top/middle/bottom, distribute h/v). ← Wave 2b
-- [ ] Snapping / alignment guides + optional grid. ← Wave 2b
-- [ ] Rotate annotations; edge/corner resize handles on all sides; aspect-lock (shift). ← Wave 2b
+- [x] Alignment & distribute (left/center/right/top/middle/bottom, distribute h/v). `b4fdb15`
+- [x] Snapping / alignment guides + optional grid. `b4fdb15`
+- [x] Edge/corner resize handles on all sides (8 handles); aspect-lock (shift). `b4fdb15`
+- [ ] Rotate annotations — DEFERRED to its own wave (touches export math; isolate the risk).
 
 ### Wave 3 — Page & document management
 - [ ] Thumbnail sidebar with drag-reorder, page context menu (duplicate/delete/rotate/insert).
@@ -100,6 +101,7 @@ Target file(s): `pdf/frontend/e2e/editor-*.spec.ts` (new `editor` project).
 
 ## Progress Log (newest first)
 
+- **2026-07-15** — Wave 2b DONE (`b4fdb15`): align/distribute for multi-selection, 8-handle perimeter resize + Shift aspect-lock, snapping to edges/centers/page-midlines with magenta guides, snap toggle + grid overlay. New hooks: `align-*`, `distribute-*`, `resize-{nw,n,ne,e,se,s,sw,w}`, `toggle-snap`, `toggle-grid`, `snap-guide`, `editor-grid`, `data-annot-{x,y,w,h}`. 12/12 e2e green (verified). Moves are now absolute (group snaps as one). Next: Wave 3 (page & document management) — start with 3a (thumbnails, page-jump, fit zoom, unify page-op undo).
 - **2026-07-15** — Wave 2a DONE (`68d7ee1`): multi-select (shift-click + marquee), group move/delete, z-order + shortcuts, internal clipboard (C/X/V cross-page). New hooks: `data-annot-id`/`data-annot-index`, `z-*`, `clip-*`, `arrange-panel`. Fixed StrictMode double-draw + focus-swallow bugs. 7/7 e2e green (verified). `selectedIds[]` is now the selection source of truth (`selectedId` derived). Next: Wave 2b (align/distribute, snapping/guides/grid, rotate + full resize handles).
 - **2026-07-15** — Wave 1 (enablement) DONE (`e43dcd9`): self-hosted pdf.js worker, testids everywhere, Playwright `editor` project + 3 specs (smoke/scratch/existing) all green, eslint config added. Verified tsc/lint/e2e myself. Next: Wave 2 (selection & object model).
 - **2026-07-15** — Research deliverables committed: competitor analysis (`7df4e11`) + Docs/Sheets parity (`pdf/docs/feature-research/`). Key: existing-text-edit / true redaction / OCR need backend; everything else client-side-doable. Docs/Sheets already strong — main gaps are import + export fidelity.
