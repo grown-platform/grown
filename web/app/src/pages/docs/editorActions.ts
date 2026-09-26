@@ -57,13 +57,17 @@ export async function paste(editor: Editor, plain: boolean): Promise<void> {
       for (const it of items) {
         if (it.types.includes("text/html")) {
           const html = await (await it.getType("text/html")).text();
-          editor.chain().focus().insertContent(html).run();
+          // Through the paste pipeline, so Word/Excel markup is normalised.
+          editor.commands.focus();
+          editor.view.pasteHTML(html);
           return;
         }
       }
     }
     const text = await navigator.clipboard.readText();
-    editor.chain().focus().insertContent(text).run();
+    // pasteText keeps "<b>" etc. literal (insertContent would parse HTML).
+    editor.commands.focus();
+    editor.view.pasteText(text);
   } catch {
     window.alert(
       `Clipboard access is blocked here — use ${plain ? "Ctrl+Shift+V" : "Ctrl+V"}.`,

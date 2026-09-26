@@ -136,6 +136,8 @@ export interface DocActions {
   docDetails: () => void;
   wordCount: () => void;
   findReplace: () => void;
+  find?: () => void;
+  autoCorrect?: () => void;
   emoji: () => void;
   specialChars: () => void;
   pageSetup: () => void;
@@ -221,6 +223,9 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           >
             Delete
           </MenuItem>
+          {actions.find && (
+            <MenuItem onClick={actions.find}>Find{kbd("Ctrl+F")}</MenuItem>
+          )}
           <MenuItem onClick={actions.findReplace}>
             Find and replace{kbd("Ctrl+H")}
           </MenuItem>
@@ -606,6 +611,9 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem disabled>Voice typing (soon){kbd("Ctrl+Shift+S")}</MenuItem>
           <ListDivider />
           <MenuItem disabled>Preferences</MenuItem>
+          {actions.autoCorrect && (
+            <MenuItem onClick={actions.autoCorrect}>AutoCorrect options…</MenuItem>
+          )}
           <MenuItem disabled>Accessibility</MenuItem>
         </>,
       )}

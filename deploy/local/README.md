@@ -25,3 +25,21 @@ deploy/local/stack.sh nuke               # delete all local state
 Then run the e2e suite (`cd web/e2e && npx playwright test`). For screenshots,
 run the visual tour: `GROWN_TOUR=1 npx playwright test tour.spec.ts`, which
 writes `test-results/tour/*.png`.
+
+## Testing a frontend branch without redeploying
+
+Several people or agents can share one stack. Serve your worktree's frontend
+from vite on its own port; it proxies `/api` (including the collab
+WebSockets) to the backend on :8080:
+
+```sh
+cd web/app && npx vite --port 5181 --strictPort --host workspace.localtest.me
+cd web/e2e && npx playwright test auth.setup.ts            # log in via :8080
+GROWN_HTTP_URL=http://workspace.localtest.me:5181 npx playwright test sheets.spec.ts --no-deps
+```
+
+The OIDC callback always returns to :8080, so log in there first. The
+session cookie is shared across ports. `--no-deps` skips re-running the
+login against the vite port. Known gap: Docs' Yjs collab can misbehave under
+the vite dev build, so check Docs persistence on a real deploy
+(`stack.sh deploy`).

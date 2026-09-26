@@ -24,6 +24,9 @@ import { InsertionMark, DeletionMark, Suggesting } from "./suggesting";
 import { Drawing } from "./drawing";
 import { ParagraphSpacing, ParagraphIndent, ParagraphShading } from "./paragraphFormat";
 import { DocShortcuts, TabCharacter } from "./shortcuts";
+import { ClipboardHandling } from "./clipboard";
+import { Search } from "./search";
+import { AutoCorrect } from "./autocorrect";
 import type * as Y from "yjs";
 import type { WebsocketProvider } from "y-websocket";
 
@@ -567,7 +570,8 @@ export function buildExtensions(opts: BuildOpts) {
     TextAlign.configure({ types: ["heading", "paragraph"] }),
     TaskList,
     TaskItem.configure({ nested: true }),
-    Image,
+    // Data-URL images (pasted, imported) must survive HTML parsing.
+    Image.configure({ allowBase64: true }),
     ImagePaste,
     Subscript,
     Superscript,
@@ -582,6 +586,9 @@ export function buildExtensions(opts: BuildOpts) {
     DeletionMark,
     Drawing,
     Suggesting.configure({ user: { name: userName, color: userColor } }),
+    ClipboardHandling,
+    Search,
+    AutoCorrect,
     DocShortcuts,
     TabCharacter,
     ...collabExts,
