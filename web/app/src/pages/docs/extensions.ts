@@ -1,5 +1,5 @@
 import { Extension, Mark, Node, mergeAttributes } from "@tiptap/core";
-import { Plugin } from "@tiptap/pm/state";
+import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -22,6 +22,8 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import { InsertionMark, DeletionMark, Suggesting } from "./suggesting";
 import { Drawing } from "./drawing";
+import { ParagraphSpacing, ParagraphIndent, ParagraphShading } from "./paragraphFormat";
+import { DocShortcuts, TabCharacter } from "./shortcuts";
 import type * as Y from "yjs";
 import type { WebsocketProvider } from "y-websocket";
 
@@ -100,75 +102,9 @@ export const LineHeight = Extension.create({
   },
 });
 
-// ParagraphSpacing adds space above/below paragraphs and headings (margin-top /
-// margin-bottom), independent of line-height — the "space before/after" control.
-declare module "@tiptap/core" {
-  interface Commands<ReturnType> {
-    paragraphSpacing: {
-      setParagraphSpacing: (
-        before: string | null,
-        after: string | null,
-      ) => ReturnType;
-    };
-  }
-}
-
-export const ParagraphSpacing = Extension.create({
-  name: "paragraphSpacing",
-  addOptions() {
-    return { types: ["paragraph", "heading"] };
-  },
-  addGlobalAttributes() {
-    return [
-      {
-        types: this.options.types,
-        attributes: {
-          // A single attribute "before|after" so it emits ONE merged style —
-          // two separate style-emitting attributes don't combine reliably.
-          paragraphSpacing: {
-            default: null,
-            parseHTML: (el) => {
-              const e = el as HTMLElement;
-              const mt = e.style.marginTop;
-              const mb = e.style.marginBottom;
-              return mt || mb ? `${mt || "0"}|${mb || "0"}` : null;
-            },
-            renderHTML: (attrs) => {
-              if (!attrs.paragraphSpacing) return {};
-              const [before, after] = String(attrs.paragraphSpacing).split("|");
-              return {
-                style: `margin-top: ${before || "0"}; margin-bottom: ${after || "0"}`,
-              };
-            },
-          },
-        },
-      },
-    ];
-  },
-  addCommands() {
-    return {
-      setParagraphSpacing:
-        (before, after) =>
-        ({ tr, state, dispatch }) => {
-          const value =
-            before || after ? `${before || "0"}|${after || "0"}` : null;
-          const { from, to } = state.selection;
-          if (dispatch) {
-            state.doc.nodesBetween(from, to, (node, pos) => {
-              if (this.options.types.includes(node.type.name)) {
-                tr.setNodeMarkup(pos, undefined, {
-                  ...node.attrs,
-                  paragraphSpacing: value,
-                });
-              }
-            });
-            dispatch(tr);
-          }
-          return true;
-        },
-    };
-  },
-});
+// ParagraphSpacing (numeric space before/after), ParagraphIndent and
+// ParagraphShading live in paragraphFormat.ts.
+export { ParagraphSpacing, ParagraphIndent, ParagraphShading } from "./paragraphFormat";
 
 // PageBreak is a block atom that forces the following content onto a new page
 // when printed/exported (CSS break-after: page) and shows a dashed divider on
@@ -177,6 +113,10 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     pageBreak: {
       setPageBreak: () => ReturnType;
+      /** Word-style page break (Ctrl+Enter): splits the paragraph at the
+       *  caret and puts the break between the halves, leaving the caret at
+       *  the start of the text after the break. */
+      insertPageBreak: () => ReturnType;
     };
   }
 }
@@ -205,6 +145,26 @@ export const PageBreak = Node.create({
         () =>
         ({ chain }) =>
           chain().insertContent({ type: "pageBreak" }).run(),
+      insertPageBreak:
+        () =>
+        ({ tr, state, dispatch }) => {
+          const type = state.schema.nodes.pageBreak;
+          if (!(tr.selection instanceof TextSelection)) return false;
+          if (!tr.selection.empty) tr.deleteSelection();
+          const $pos = tr.selection.$from;
+          if (!$pos.parent.isTextblock || $pos.parent.type.spec.code) return false;
+          // The break must be allowed next to this textblock in its parent.
+          const parent = $pos.node($pos.depth - 1);
+          const index = $pos.index($pos.depth - 1);
+          if (!parent.canReplaceWith(index + 1, index + 1, type)) return false;
+          if (dispatch) {
+            tr.split($pos.pos);
+            const after = tr.selection.$from.before();
+            tr.insert(after, type.create());
+            dispatch(tr.scrollIntoView());
+          }
+          return true;
+        },
     };
   },
 });
@@ -561,6 +521,9 @@ export interface LocalBuildOpts {
   userName?: string;
   userColor?: string;
   editable?: boolean;
+  /** Bind to this Yjs document (no provider, no remote cursors); Yjs then
+   *  owns undo. Lets tests sync several editors in-process. */
+  ydoc?: Y.Doc;
 }
 
 export type BuildOpts = CollabBuildOpts | LocalBuildOpts;
@@ -572,9 +535,12 @@ export type BuildOpts = CollabBuildOpts | LocalBuildOpts;
 export function buildExtensions(opts: BuildOpts) {
   const userName = opts.userName ?? "Test user";
   const userColor = opts.userColor ?? "#1a73e8";
+  const localYdoc = opts.collab === false ? opts.ydoc : undefined;
   const collabExts =
     opts.collab === false
-      ? []
+      ? localYdoc
+        ? [Collaboration.configure({ document: localYdoc })]
+        : []
       : [
           Collaboration.configure({ document: opts.ydoc }),
           CollaborationCursor.configure({
@@ -583,7 +549,7 @@ export function buildExtensions(opts: BuildOpts) {
           }),
         ];
   return [
-    opts.collab === false
+    opts.collab === false && !localYdoc
       ? StarterKit
       : StarterKit.configure({ history: false }),
     Underline,
@@ -592,6 +558,8 @@ export function buildExtensions(opts: BuildOpts) {
     FontSize,
     LineHeight,
     ParagraphSpacing,
+    ParagraphIndent,
+    ParagraphShading,
     PageBreak,
     FontFamily,
     Highlight.configure({ multicolor: true }),
@@ -614,6 +582,8 @@ export function buildExtensions(opts: BuildOpts) {
     DeletionMark,
     Drawing,
     Suggesting.configure({ user: { name: userName, color: userColor } }),
+    DocShortcuts,
+    TabCharacter,
     ...collabExts,
   ];
 }

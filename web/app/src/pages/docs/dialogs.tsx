@@ -15,6 +15,7 @@ import {
 import type { Editor } from "@tiptap/react";
 import { DOWNLOAD_FORMATS, downloadDoc, type DownloadFormat } from "./export";
 import { replaceAll } from "./editorActions";
+import { selectedBlocks, spacingOf } from "./paragraphFormat";
 import type { Indents } from "./Ruler";
 import type { VMargins } from "./editorStyles";
 
@@ -325,5 +326,77 @@ export function FindReplaceDialog({ open, onClose, editor }: BaseDialog) {
         </Stack>
       </ModalDialog>
     </Modal>
+  );
+}
+
+/** CustomSpacingDialog sets numeric space before/after (points) on the
+ *  selected paragraphs (Format > Line & paragraph spacing > Custom
+ *  spacing…). It opens with the first selected paragraph's values. */
+export function CustomSpacingDialog({ open, onClose, editor }: BaseDialog) {
+  return (
+    <Modal open={open} onClose={onClose}>
+      <ModalDialog
+        sx={{
+          width: { xs: "calc(100vw - 32px)", sm: 360 },
+          maxWidth: "calc(100vw - 32px)",
+        }}
+      >
+        <ModalClose />
+        <Typography level="h4">Custom spacing</Typography>
+        {open && editor && <CustomSpacingForm editor={editor} onClose={onClose} />}
+      </ModalDialog>
+    </Modal>
+  );
+}
+
+function CustomSpacingForm({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+  const first = selectedBlocks(editor.state)[0];
+  const cur = first ? spacingOf(first.node) : { before: 0, after: 0 };
+  const round = (n: number) => String(Math.round(n * 10) / 10);
+  const [before, setBefore] = useState(round(cur.before));
+  const [after, setAfter] = useState(round(cur.after));
+  const parse = (s: string) => {
+    const n = parseFloat(s);
+    return Number.isFinite(n) && n >= 0 ? Math.min(n, 1584) : null;
+  };
+  const ok = parse(before) != null && parse(after) != null;
+  function apply() {
+    if (!ok) return;
+    editor
+      .chain()
+      .focus()
+      .setSpacingPt({ before: parse(before), after: parse(after) })
+      .run();
+    onClose();
+  }
+  return (
+    <Stack spacing={1} sx={{ mt: 1 }}>
+      <Typography level="body-sm">Paragraph spacing (pt)</Typography>
+      <Stack direction="row" spacing={1}>
+        <Input
+          aria-label="Space before"
+          startDecorator="Before"
+          type="number"
+          value={before}
+          onChange={(e) => setBefore(e.target.value)}
+          autoFocus
+        />
+        <Input
+          aria-label="Space after"
+          startDecorator="After"
+          type="number"
+          value={after}
+          onChange={(e) => setAfter(e.target.value)}
+        />
+      </Stack>
+      <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
+        <Button variant="plain" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={apply} disabled={!ok}>
+          Apply
+        </Button>
+      </Box>
+    </Stack>
   );
 }
