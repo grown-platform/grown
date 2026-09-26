@@ -87,3 +87,30 @@ export function workbookWithCells(
     },
   ];
 }
+
+export async function createDeck(
+  request: APIRequestContext,
+  title = "e2e deck",
+): Promise<string> {
+  const res = await request.post(`${BASE_URL}/api/v1/slides`, {
+    data: { title },
+  });
+  if (!res.ok()) throw new Error(`createDeck failed: ${res.status()}`);
+  return (await res.json()).id as string;
+}
+
+export async function trashDeck(request: APIRequestContext, id: string) {
+  await request.delete(`${BASE_URL}/api/v1/slides/d/${id}`).catch(() => {});
+}
+
+// getDeckData returns the parsed deck model ({ slides: [...] }) or null when
+// the deck has never been saved.
+export async function getDeckData(
+  request: APIRequestContext,
+  id: string,
+): Promise<{ slides: Array<{ id: string; elements: any[] }> } | null> {
+  const res = await request.get(`${BASE_URL}/api/v1/slides/d/${id}`);
+  if (!res.ok()) throw new Error(`getDeck failed: ${res.status()}`);
+  const body = await res.json();
+  return body.data ? JSON.parse(body.data) : null;
+}

@@ -933,3 +933,45 @@ project per `web/e2e/playwright.config.ts`.
   input → output pair for each OnlyOffice `QUnit.test`, at the closest layer
   (pure reducer > component > e2e). Data-table suites (color-mods) count as
   ported when every modifier has a grid test and the combined cases pass.
+
+### 6.4 M0 status (Wave 0)
+
+Tag convention in use (supersedes the `#N` form in 6.2): every ported case's
+test title *is* its tag, `oo:<path>#<QUnit test name>`, with `<path>` relative
+to `sdkjs-tests-v9.3.1/tests/` — e.g.
+`it("oo:slide/shortcuts/shortcuts.js#Check undo/redo", …)`. One tag per
+OnlyOffice `QUnit.test`; a skipped tag means "evaluated, Grown differs".
+
+Pure modules extracted from `DeckEditor.tsx` / `SlideCanvas.tsx` (behaviour
+unchanged; components import them): `deckOps.ts` (slide add/duplicate/delete/
+move, element upsert/remove/arrange/rotate/flip/duplicate/nudge, style
+toggles, collab-op reducer), `history.ts` (undo/redo stack with 400 ms
+coalescing, 50-step cap), `presentOps.ts` (animation steps, revealed elements,
+next/prev reducer, transition CSS), `keymap.ts` (editor + slideshow key
+tables), `geometry.ts` (drag/resize maths, handles, stage fitting),
+`selection.ts`, `presence.ts`. Grown has no snapping, so there is nothing to
+extract for it yet.
+
+Ported and passing: `api-drawing.js` GetFlipH, GetFlipV, Select, Unselect;
+`shortcuts.js` Check undo/redo (at the history-reducer layer).
+Smoke e2e: `web/e2e/slides.spec.ts` (new slide + text box → autosave).
+
+#### Semantic differences found
+
+Each is an `it.skip` with the tag and the reason in a comment:
+
+| OnlyOffice case | Grown today |
+| --- | --- |
+| `slide/shortcuts/shortcuts.js#Check actions with slides` | Only Ctrl+M (add next slide), single-slide Up/Down buttons and Delete slide exist. The thumbnail rail has no keyboard navigation, multi-slide selection or multi-slide move. |
+| `slide/shortcuts/shortcuts.js#Check actions with catch events` | The slideshow handles Right/Down/Space (next), Left/Up (prev), Esc (exit) and S (presenter view). It does not handle PgUp/PgDn/Enter/Backspace, Home/End or number+Enter go-to. Ctrl+P, Shift+F10 and Ctrl+K are not bound. |
+| `slide/shortcuts/shortcuts.js#Check text property change` | Ctrl+B/I/U/5/./, are not bound: bold, italic and underline are element-wide toolbar toggles. There is no super/subscript and no Ctrl+]/[ font-size ladder. |
+| `slide/shortcuts/shortcuts.js#Check paragraph property change` | There is no justify, no Ctrl+E/J/L/R, no indent levels and no Ctrl+Shift+L. |
+| `slide/shortcuts/shortcuts.js#Check main actions with shapes` | Nudge distances differ: OnlyOffice uses 5 per Arrow and 1 per Ctrl+Arrow, Grown uses 2 px per Arrow and 10 per Shift+Arrow. Tab cycling, Enter-to-edit, groups and table cell navigation are missing. |
+| `slide/shortcuts/shortcuts.js#Check remove graphic objects` | Delete removes the selected shape. Grown has no animation-effect selection, charts or groups. |
+| `slide/shortcuts/shortcuts.js#Check duplicate presentation objects` | Ctrl+D is not bound. Edit → Duplicate duplicates only the selected element, and slide duplication is a separate action. |
+| `slide/shortcuts/shortcuts.js#Check save action` | Ctrl+S is not bound. Autosave sends a debounced `PUT …/data` 1.2 s after each edit. |
+| `slide/js-api/api-drawing.js#Test: SetFlipH` / `#Test: SetFlipV` | Flipping is a toggle only. There is no boolean setter that reports success or rejects invalid input. |
+
+Undo/redo note: `#Check undo/redo` passes at the reducer layer, but Ctrl+Z
+and Ctrl+Y are not bound on the canvas. Undo and Redo are only in the Edit
+menu, and inside a text box the browser's native contentEditable undo applies.

@@ -71,8 +71,6 @@ import {
   CANVAS_H,
   parseDeck,
   newElement,
-  newSlide,
-  uid,
   isShape,
   TRANSITIONS,
   ANIMATION_TYPES,
@@ -88,22 +86,51 @@ import { SlideCanvas } from "./SlideCanvas";
 import { SlideMenuBar, type SlideActions } from "./SlideMenuBar";
 import { downloadDeck } from "./export";
 import { ShareDialog } from "./ShareDialog";
-
-const COLORS = [
-  "#3D5A80",
-  "#E0777D",
-  "#5B9279",
-  "#C46B45",
-  "#7A5980",
-  "#2A9D8F",
-  "#D9A441",
-  "#1D8348",
-];
-function colorFor(seed: string): string {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return COLORS[h % COLORS.length];
-}
+import {
+  addNextSlide,
+  applyCollabOp,
+  arrangeElements,
+  deleteSlideAt,
+  duplicateElement,
+  duplicateSlideAt,
+  mapSlide,
+  moveElementBy,
+  moveSlide as moveSlideOp,
+  patchSlide,
+  removeAnimation,
+  removeElement as removeElementOp,
+  rotateElement,
+  setLink as setLinkOp,
+  setList as setListOp,
+  toggleStyle,
+  upsertElement as upsertElementOp,
+  type ArrangeDir,
+  type RotateOp,
+  type SlidesResult,
+  type StyleToggle,
+} from "./deckOps";
+import {
+  emptyHistory,
+  recordHistory,
+  redoHistory,
+  undoHistory,
+  type History,
+} from "./history";
+import {
+  animationSteps,
+  nextSlideIndex,
+  prevSlideIndex,
+  revealedElementIds,
+  transitionAnimation,
+} from "./presentOps";
+import {
+  editorKeyAction,
+  presentKeyAction,
+  presentKeyPreventsDefault,
+} from "./keymap";
+import { fitCanvasWidth, fitPresentWidth } from "./geometry";
+import { selectedElement, selectionAfterRemove } from "./selection";
+import { colorFor, prunePeers } from "./presence";
 
 interface Peer {
   userId: string;
@@ -144,11 +171,7 @@ export function DeckEditor({ user }: { user: User }) {
   const saveTimer = useRef<number | undefined>(undefined);
   const docRef = useRef<DeckDoc | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const hist = useRef<{ past: string[]; future: string[]; t: number }>({
-    past: [],
-    future: [],
-    t: 0,
-  });
+  const hist = useRef<History>(emptyHistory());
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   const me = {
@@ -160,9 +183,7 @@ export function DeckEditor({ user }: { user: User }) {
   docRef.current = doc;
   const slides = doc?.slides ?? [];
   const slide: Slide | undefined = slides[cur];
-  const selected: SlideElement | undefined = slide?.elements.find(
-    (e) => e.id === selId,
-  );
+  const selected: SlideElement | undefined = selectedElement(slide, selId);
 
   // Load deck.
   useEffect(() => {
@@ -184,9 +205,7 @@ export function DeckEditor({ user }: { user: User }) {
     const el = stageRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      const w = el.clientWidth - 48;
-      const h = el.clientHeight - 48;
-      setCanvasW(Math.max(320, Math.min(w, h * (CANVAS_W / CANVAS_H))));
+      setCanvasW(fitCanvasWidth(el.clientWidth, el.clientHeight));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -206,22 +225,13 @@ export function DeckEditor({ user }: { user: User }) {
   }, [id]);
 
   const pushHistory = useCallback(() => {
-    const now = Date.now();
-    const h = hist.current;
-    if (now - h.t > 400) {
-      if (docRef.current) h.past.push(JSON.stringify(docRef.current));
-      if (h.past.length > 50) h.past.shift();
-      h.future = [];
-      h.t = now;
-    }
+    hist.current = recordHistory(hist.current, docRef.current, Date.now());
   }, []);
 
   // ---- local mutations (update state + broadcast op + autosave) ----
   const applyToSlide = useCallback(
     (slideId: string, fn: (s: Slide) => Slide) => {
-      setDoc((d) =>
-        d ? { slides: d.slides.map((s) => (s.id === slideId ? fn(s) : s)) } : d,
-      );
+      setDoc((d) => (d ? mapSlide(d, slideId, fn) : d));
     },
     [],
   );
@@ -230,15 +240,7 @@ export function DeckEditor({ user }: { user: User }) {
     (el: SlideElement, opts?: { history?: boolean }) => {
       if (!slide) return;
       if (opts?.history !== false) pushHistory();
-      applyToSlide(slide.id, (s) => {
-        const exists = s.elements.some((e) => e.id === el.id);
-        return {
-          ...s,
-          elements: exists
-            ? s.elements.map((e) => (e.id === el.id ? el : e))
-            : [...s.elements, el],
-        };
-      });
+      applyToSlide(slide.id, (s) => upsertElementOp(s, el));
       broadcast({ t: "upsert", si: slide.id, el });
       scheduleSave();
     },
@@ -249,13 +251,10 @@ export function DeckEditor({ user }: { user: User }) {
     (elId: string) => {
       if (!slide) return;
       pushHistory();
-      applyToSlide(slide.id, (s) => ({
-        ...s,
-        elements: s.elements.filter((e) => e.id !== elId),
-      }));
+      applyToSlide(slide.id, (s) => removeElementOp(s, elId));
       broadcast({ t: "remove", si: slide.id, elId });
       scheduleSave();
-      setSelId((c) => (c === elId ? null : c));
+      setSelId((c) => selectionAfterRemove(c, elId));
     },
     [slide, applyToSlide, broadcast, scheduleSave, pushHistory],
   );
@@ -291,42 +290,10 @@ export function DeckEditor({ user }: { user: User }) {
       } catch {
         return;
       }
-      if (m.t === "upsert" && m.si && m.el) {
-        setDoc((d) =>
-          d
-            ? {
-                slides: d.slides.map((s) =>
-                  s.id === m.si
-                    ? {
-                        ...s,
-                        elements: s.elements.some((e) => e.id === m.el!.id)
-                          ? s.elements.map((e) =>
-                              e.id === m.el!.id ? m.el! : e,
-                            )
-                          : [...s.elements, m.el!],
-                      }
-                    : s,
-                ),
-              }
-            : d,
-        );
-      } else if (m.t === "remove" && m.si && m.elId) {
-        setDoc((d) =>
-          d
-            ? {
-                slides: d.slides.map((s) =>
-                  s.id === m.si
-                    ? {
-                        ...s,
-                        elements: s.elements.filter((e) => e.id !== m.elId),
-                      }
-                    : s,
-                ),
-              }
-            : d,
-        );
-      } else if (m.t === "slides" && m.slides) {
+      if (m.t === "slides" && m.slides) {
         setDoc({ slides: m.slides });
+      } else if (m.t === "upsert" || m.t === "remove") {
+        setDoc((d) => (d ? applyCollabOp(d, m) : d));
       } else if (m.t === "presence" && m.p) {
         const p = m.p;
         setPeers((cur) => ({ ...cur, [p.userId]: { ...p, ts: Date.now() } }));
@@ -345,13 +312,7 @@ export function DeckEditor({ user }: { user: User }) {
     send();
     const hb = window.setInterval(send, 4000);
     const prune = window.setInterval(() => {
-      setPeers((cur) => {
-        const now = Date.now();
-        const next: Record<string, Peer> = {};
-        for (const [k, p] of Object.entries(cur))
-          if (now - p.ts < 12000) next[k] = p;
-        return next;
-      });
+      setPeers((cur) => prunePeers(cur, Date.now()));
     }, 2000);
     return () => {
       window.clearInterval(hb);
@@ -376,23 +337,19 @@ export function DeckEditor({ user }: { user: User }) {
         (e.target as HTMLElement)?.isContentEditable
       )
         return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selId) {
+      // Delete needs a selected id; nudging needs the id to resolve to an
+      // element on this slide (same guards as before the keymap extraction).
+      const act = editorKeyAction(e, { hasSelection: !!selId });
+      if (!act) return;
+      if (act.type === "deleteSelected" && selId) {
         e.preventDefault();
         removeElement(selId);
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "m") {
+      } else if (act.type === "newSlide") {
         e.preventDefault();
         doNewSlide();
-      }
-      if (
-        selected &&
-        ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)
-      ) {
+      } else if (act.type === "nudge" && selected) {
         e.preventDefault();
-        const d = e.shiftKey ? 10 : 2;
-        const dx = e.key === "ArrowLeft" ? -d : e.key === "ArrowRight" ? d : 0;
-        const dy = e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0;
-        upsertElement({ ...selected, x: selected.x + dx, y: selected.y + dy });
+        upsertElement(moveElementBy(selected, act.dx, act.dy));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -429,43 +386,24 @@ export function DeckEditor({ user }: { user: User }) {
   }); // re-bind each render so upsertElement closes over the current slide
 
   // ---- slide ops ----
+  function applySlidesResult(r: SlidesResult | null, clearSel = true) {
+    if (!r) return;
+    setSlides(r.slides);
+    setCur(r.cur);
+    if (clearSel) setSelId(null);
+  }
   function doNewSlide() {
-    const s = newSlide(slide?.background || "#ffffff");
-    const next = [...slides.slice(0, cur + 1), s, ...slides.slice(cur + 1)];
-    setSlides(next);
-    setCur(cur + 1);
-    setSelId(null);
+    applySlidesResult(addNextSlide(slides, cur));
   }
   function duplicateSlide() {
-    if (!slide) return;
-    const copy: Slide = {
-      id: uid(),
-      background: slide.background,
-      elements: slide.elements.map((e) => ({ ...e, id: uid() })),
-    };
-    const next = [...slides.slice(0, cur + 1), copy, ...slides.slice(cur + 1)];
-    setSlides(next);
-    setCur(cur + 1);
-    setSelId(null);
+    applySlidesResult(duplicateSlideAt(slides, cur));
   }
   function deleteSlide() {
-    if (slides.length <= 1) {
-      setSlides([newSlide()]);
-      setCur(0);
-      return;
-    }
-    const next = slides.filter((_, i) => i !== cur);
-    setSlides(next);
-    setCur(Math.max(0, cur - 1));
-    setSelId(null);
+    // Deleting the last remaining slide keeps the selection (legacy behaviour).
+    applySlidesResult(deleteSlideAt(slides, cur), slides.length > 1);
   }
   function moveSlide(from: number, to: number) {
-    if (to < 0 || to >= slides.length) return;
-    const next = [...slides];
-    const [s] = next.splice(from, 1);
-    next.splice(to, 0, s);
-    setSlides(next);
-    setCur(to);
+    applySlidesResult(moveSlideOp(slides, from, to), false);
   }
 
   // ---- insert / format / arrange ----
@@ -489,12 +427,11 @@ export function DeckEditor({ user }: { user: User }) {
     };
     r.readAsDataURL(f);
   }
-  function toggle(attr: "bold" | "italic" | "underline" | "strike") {
-    if (selected) upsertElement({ ...selected, [attr]: !selected[attr] });
+  function toggle(attr: StyleToggle) {
+    if (selected) upsertElement(toggleStyle(selected, attr));
   }
   function setList(v: "bullet" | "number" | null) {
-    if (selected)
-      upsertElement({ ...selected, list: v === null ? undefined : v });
+    if (selected) upsertElement(setListOp(selected, v));
   }
   function setLineSpacing(v: number) {
     if (selected) upsertElement({ ...selected, lineSpacing: v });
@@ -505,108 +442,77 @@ export function DeckEditor({ user }: { user: User }) {
   function setField<K extends keyof SlideElement>(k: K, v: SlideElement[K]) {
     if (selected) upsertElement({ ...selected, [k]: v });
   }
-  function arrange(dir: "front" | "back" | "forward" | "backward") {
+  function arrange(dir: ArrangeDir) {
     if (!slide || !selected) return;
-    const els = [...slide.elements];
-    const i = els.findIndex((e) => e.id === selected.id);
-    if (i < 0) return;
-    const [e] = els.splice(i, 1);
-    if (dir === "front") els.push(e);
-    else if (dir === "back") els.unshift(e);
-    else if (dir === "forward") els.splice(Math.min(els.length, i + 1), 0, e);
-    else els.splice(Math.max(0, i - 1), 0, e);
+    const els = arrangeElements(slide.elements, selected.id, dir);
+    if (!els) return;
     pushHistory();
     applyToSlide(slide.id, (s) => ({ ...s, elements: els }));
     broadcast({
       t: "slides",
-      slides: slides.map((s) =>
-        s.id === slide.id ? { ...s, elements: els } : s,
-      ),
+      slides: patchSlide(slides, slide.id, { elements: els }),
     });
     scheduleSave();
   }
-  function rotate(op: "cw" | "ccw" | "flipH" | "flipV") {
+  function rotate(op: RotateOp) {
     if (!selected) return;
-    if (op === "flipH") {
-      upsertElement({ ...selected, flipH: !selected.flipH });
-      return;
-    }
-    if (op === "flipV") {
-      upsertElement({ ...selected, flipV: !selected.flipV });
-      return;
-    }
-    const delta = op === "cw" ? 90 : -90;
-    const rot = (((selected.rotation || 0) + delta) % 360 + 360) % 360;
-    upsertElement({ ...selected, rotation: rot });
+    upsertElement(rotateElement(selected, op));
   }
   function setLink() {
     if (!selected) return;
     const url = window.prompt("Link URL (blank to remove)", selected.url || "");
     if (url === null) return;
-    const v = url.trim();
-    upsertElement({ ...selected, url: v || undefined });
+    upsertElement(setLinkOp(selected, url));
   }
   function setBackground() {
     if (!slide) return;
     const c =
       window.prompt("Slide background color (hex)", slide.background) ||
       slide.background;
-    setSlides(
-      slides.map((s) => (s.id === slide.id ? { ...s, background: c } : s)),
-    );
+    setSlides(patchSlide(slides, slide.id, { background: c }));
   }
 
   // Speaker notes for the current slide. Debounced through the normal save path;
   // history is skipped so each keystroke doesn't flood the undo stack.
   function setNotes(text: string) {
     if (!slide) return;
-    setSlides(
-      slides.map((s) => (s.id === slide.id ? { ...s, notes: text } : s)),
-      { history: false },
-    );
+    setSlides(patchSlide(slides, slide.id, { notes: text }), {
+      history: false,
+    });
   }
   function setTransition(t: TransitionType) {
     if (!slide) return;
-    setSlides(
-      slides.map((s) => (s.id === slide.id ? { ...s, transition: t } : s)),
-    );
+    setSlides(patchSlide(slides, slide.id, { transition: t }));
   }
 
   // Element clipboard (in-app) for the right-click menu.
   function duplicateEl(el: SlideElement) {
-    const copy: SlideElement = { ...el, id: uid(), x: el.x + 16, y: el.y + 16 };
+    const copy = duplicateElement(el);
     upsertElement(copy);
     setSelId(copy.id);
   }
   function pasteEl() {
     if (!clip.current) return;
-    const copy: SlideElement = {
-      ...clip.current,
-      id: uid(),
-      x: clip.current.x + 16,
-      y: clip.current.y + 16,
-    };
+    const copy = duplicateElement(clip.current);
     upsertElement(copy);
     setSelId(copy.id);
   }
 
   function undo() {
-    const h = hist.current;
-    if (!h.past.length || !docRef.current) return;
-    h.future.push(JSON.stringify(docRef.current));
-    const prev = h.past.pop()!;
-    const d = JSON.parse(prev) as DeckDoc;
+    const r = undoHistory(hist.current, docRef.current);
+    if (!r) return;
+    hist.current = r.history;
+    const d = r.doc;
     setDoc(d);
     broadcast({ t: "slides", slides: d.slides });
     scheduleSave();
     setCur((c) => Math.min(c, d.slides.length - 1));
   }
   function redo() {
-    const h = hist.current;
-    if (!h.future.length || !docRef.current) return;
-    h.past.push(JSON.stringify(docRef.current));
-    const nx = h.future.pop()!;
-    const d = JSON.parse(nx) as DeckDoc;
+    const r = redoHistory(hist.current, docRef.current);
+    if (!r) return;
+    hist.current = r.history;
+    const d = r.doc;
     setDoc(d);
     broadcast({ t: "slides", slides: d.slides });
     scheduleSave();
@@ -698,8 +604,8 @@ export function DeckEditor({ user }: { user: User }) {
         slides={slides}
         cur={cur}
         presenter={presenter}
-        onAdvance={() => setCur((c) => Math.min(slides.length - 1, c + 1))}
-        onPrev={() => setCur((c) => Math.max(0, c - 1))}
+        onAdvance={() => setCur((c) => nextSlideIndex(c, slides.length))}
+        onPrev={() => setCur((c) => prevSlideIndex(c))}
         onTogglePresenter={() => setPresenter((v) => !v)}
         onExit={() => setPresent(false)}
       />
@@ -1398,10 +1304,7 @@ export function DeckEditor({ user }: { user: User }) {
                     value={anim?.type ?? ""}
                     onChange={(_, v) => {
                       if (!v) {
-                        // remove animation
-                        const { animation: _removed, ...rest } = el;
-                        void _removed;
-                        upsertElement(rest as SlideElement);
+                        upsertElement(removeAnimation(el));
                       } else {
                         upsertElement({
                           ...el,
@@ -1480,21 +1383,6 @@ const TRANSITION_CSS = `
 @keyframes slidesFromBottom { from { transform: translateY(6%); opacity: 0.4; } to { transform: translateY(0); opacity: 1; } }
 `;
 
-function transitionAnimation(t?: TransitionType): string | undefined {
-  switch (t) {
-    case "fade":
-      return "slidesFade 350ms ease";
-    case "slide-left":
-      return "slidesFromRight 350ms ease";
-    case "slide-right":
-      return "slidesFromLeft 350ms ease";
-    case "slide-up":
-      return "slidesFromBottom 350ms ease";
-    default:
-      return undefined;
-  }
-}
-
 interface PresentViewProps {
   slides: Slide[];
   cur: number;
@@ -1522,14 +1410,7 @@ function PresentView({
   // --- Element animation step state ---
   // animatedSteps: sorted unique "order" values for elements that have animations on
   // the current slide. animStep tracks how many steps have been revealed (0 = none).
-  const animatedSteps: number[] = [];
-  if (slide) {
-    const orders = new Set<number>();
-    for (const el of slide.elements) {
-      if (el.animation) orders.add(el.animation.order);
-    }
-    animatedSteps.push(...Array.from(orders).sort((a, b) => a - b));
-  }
+  const animatedSteps = animationSteps(slide);
 
   // Reset step count whenever the slide changes.
   const [animStep, setAnimStep] = useState(0);
@@ -1538,15 +1419,7 @@ function PresentView({
   }, [cur]);
 
   // revealedIds: all element IDs whose animation order <= animatedSteps[animStep-1]
-  const revealedIds = new Set<string>();
-  if (slide) {
-    const maxOrder = animStep > 0 ? animatedSteps[animStep - 1] : -Infinity;
-    for (const el of slide.elements) {
-      if (!el.animation || el.animation.order <= maxOrder) {
-        revealedIds.add(el.id);
-      }
-    }
-  }
+  const revealedIds = revealedElementIds(slide, animatedSteps, animStep);
 
   // handleAdvance: play next animation step if any remain, otherwise advance slide.
   function handleAdvance() {
@@ -1560,16 +1433,12 @@ function PresentView({
   // Keyboard navigation in present mode (arrow keys, space, S, Escape).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight" || e.key === " " || e.key === "ArrowDown") {
-        e.preventDefault();
-        handleAdvance();
-      }
-      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-        e.preventDefault();
-        onPrev();
-      }
-      if (e.key.toLowerCase() === "s") onTogglePresenter();
-      if (e.key === "Escape") onExit();
+      const act = presentKeyAction(e);
+      if (presentKeyPreventsDefault(act)) e.preventDefault();
+      if (act === "next") handleAdvance();
+      else if (act === "prev") onPrev();
+      else if (act === "togglePresenter") onTogglePresenter();
+      else if (act === "exit") onExit();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1732,10 +1601,7 @@ function PresentView({
     );
   }
 
-  const pw = Math.min(
-    window.innerWidth,
-    window.innerHeight * (CANVAS_W / CANVAS_H),
-  );
+  const pw = fitPresentWidth(window.innerWidth, window.innerHeight);
   return (
     <Box
       onClick={handleAdvance}
