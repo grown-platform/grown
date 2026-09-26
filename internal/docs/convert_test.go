@@ -4,11 +4,15 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -423,4 +427,116 @@ func TestConvertDocxToOdt(t *testing.T) {
 			"alignment": "pandoc's AST has no paragraph alignment",
 		})
 	})
+}
+
+// ---- sandboxing (regression) --------------------------------------------------
+
+// secretFile writes a file only the server can see and returns its path and
+// the marker it contains (plain and base64, as pandoc would embed it).
+func secretFile(t *testing.T) (path, marker, marker64 string) {
+	t.Helper()
+	marker = "GROWNSERVERSECRET7f3a" // no chars pandoc would percent-encode
+	path = t.TempDir() + "/secret.txt"
+	if err := os.WriteFile(path, []byte(marker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path, marker, base64.StdEncoding.EncodeToString([]byte(marker))[:16]
+}
+
+// TestImportToHTMLSandboxLocalFile is a regression test: with
+// --embed-resources and no --sandbox, an uploaded html/md file referencing a
+// server path had that file inlined as a data: URI in the returned HTML.
+func TestImportToHTMLSandboxLocalFile(t *testing.T) {
+	requirePandoc(t)
+	path, marker, marker64 := secretFile(t)
+	inputs := map[string]string{
+		"html": `<p>x</p><p><img src="` + path + `"></p><link rel="stylesheet" href="` + path + `">`,
+		"md":   "x\n\n![leak](" + path + ")\n",
+		"txt":  "x\n\n![leak](" + path + ")\n",
+	}
+	for from, in := range inputs {
+		t.Run(from, func(t *testing.T) {
+			out, err := ImportToHTML(context.Background(), []byte(in), from)
+			if err != nil {
+				t.Fatalf("ImportToHTML: %v", err)
+			}
+			if s := string(out); strings.Contains(s, marker) || strings.Contains(s, marker64) {
+				t.Fatalf("server file leaked into imported HTML: %s", s)
+			}
+		})
+	}
+}
+
+// TestConvertHTMLSandboxLocalFile: the export side had the same hole — a
+// posted <img src="/server/path"> was packed into the docx/odt/epub media.
+func TestConvertHTMLSandboxLocalFile(t *testing.T) {
+	requirePandoc(t)
+	path, marker, _ := secretFile(t)
+	html := []byte(`<p>x</p><p><img src="` + path + `"></p>`)
+	for _, to := range []string{"docx", "odt", "epub"} {
+		t.Run(to, func(t *testing.T) {
+			out, _, err := ConvertHTML(context.Background(), html, to)
+			if err != nil {
+				t.Fatalf("ConvertHTML: %v", err)
+			}
+			zr, err := zip.NewReader(bytes.NewReader(out), int64(len(out)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range zr.File {
+				rc, _ := f.Open()
+				b, _ := io.ReadAll(rc)
+				rc.Close()
+				if bytes.Contains(b, []byte(marker)) {
+					t.Fatalf("server file leaked into %s entry %s", to, f.Name)
+				}
+			}
+		})
+	}
+}
+
+// TestConvertSandboxNoFetch: neither direction may make network requests on
+// behalf of user content (SSRF against internal services).
+func TestConvertSandboxNoFetch(t *testing.T) {
+	requirePandoc(t)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("\x89PNG\r\n\x1a\n"))
+	}))
+	defer srv.Close()
+	html := []byte(`<p>x</p><p><img src="` + srv.URL + `/pixel.png"></p>`)
+	ctx := context.Background()
+	if _, err := ImportToHTML(ctx, html, "html"); err != nil {
+		t.Fatalf("ImportToHTML: %v", err)
+	}
+	if _, _, err := ConvertHTML(ctx, html, "docx"); err != nil {
+		t.Fatalf("ConvertHTML: %v", err)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("pandoc fetched a remote resource %d time(s)", n)
+	}
+}
+
+// TestSandboxKeepsEmbeddedMedia guards the other side of --sandbox: images
+// packed inside the uploaded document itself must still come back inline.
+func TestSandboxKeepsEmbeddedMedia(t *testing.T) {
+	requirePandoc(t)
+	ctx := context.Background()
+	for _, format := range []string{"docx", "odt", "epub", "rtf"} {
+		t.Run(format, func(t *testing.T) {
+			enc, _, err := ConvertHTML(ctx, readFixture(t, "fidelity.html"), format)
+			if err != nil {
+				t.Fatal(err)
+			}
+			back, err := ImportToHTML(ctx, enc, format)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(back), `src="data:image/png;base64,`) {
+				t.Fatalf("embedded image not inlined after import: %s", back)
+			}
+		})
+	}
 }

@@ -85,7 +85,11 @@ func ConvertHTML(ctx context.Context, html []byte, to string) ([]byte, ConvertFo
 	out.Close()
 	defer os.Remove(outPath)
 
-	args := []string{"-f", "html", "-t", f.Pandoc, "-o", outPath}
+	// --sandbox: the HTML is user-supplied, so pandoc must not resolve <img
+	// src> / <link href> against the server's filesystem or network (it would
+	// otherwise embed e.g. /etc/passwd into the docx, or fetch internal URLs).
+	// Grown's editor inlines images as data: URIs, which still work.
+	args := []string{"--sandbox", "-f", "html", "-t", f.Pandoc, "-o", outPath}
 	if f.Standalone {
 		args = append(args, "--standalone")
 	}
@@ -147,7 +151,11 @@ func ImportToHTML(ctx context.Context, data []byte, from string) ([]byte, error)
 // runPandocImport runs pandoc to read inPath as `reader` and write HTML to
 // stdout, optionally embedding external resources as data URIs.
 func runPandocImport(ctx context.Context, reader, inPath string, embed bool) ([]byte, error) {
-	args := []string{"-f", reader, "-t", "html"}
+	// --sandbox confines pandoc's IO to inPath: with --embed-resources an
+	// uploaded html/md file could otherwise inline arbitrary server files
+	// (<img src="/etc/passwd">) or fetch internal URLs (SSRF). Media packed
+	// inside docx/odt/epub/rtf still embed, as they come from the input file.
+	args := []string{"--sandbox", "-f", reader, "-t", "html"}
 	if embed {
 		args = append(args, "--embed-resources")
 	}
