@@ -13,17 +13,21 @@ type ConvertFormat struct {
 	Pandoc string // pandoc writer name
 	Ext    string // file extension
 	MIME   string // response Content-Type
+	// Standalone passes --standalone: pandoc otherwise emits a body fragment
+	// for text writers, which for RTF is not an openable document (no {\rtf1
+	// header or font table). Zip writers (docx/odt/epub) are always complete.
+	Standalone bool
 }
 
 // convertFormats are the binary/markup exports we delegate to pandoc. Plain
 // text, HTML, and PDF are handled client-side and are intentionally absent.
 var convertFormats = map[string]ConvertFormat{
-	"docx": {"docx", "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
-	"odt":  {"odt", "odt", "application/vnd.oasis.opendocument.text"},
-	"rtf":  {"rtf", "rtf", "application/rtf"},
-	"epub": {"epub3", "epub", "application/epub+zip"},
-	"md":   {"gfm", "md", "text/markdown"},
-	"pdf":  {"pdf", "pdf", "application/pdf"},
+	"docx": {"docx", "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", false},
+	"odt":  {"odt", "odt", "application/vnd.oasis.opendocument.text", false},
+	"rtf":  {"rtf", "rtf", "application/rtf", true},
+	"epub": {"epub3", "epub", "application/epub+zip", false},
+	"md":   {"gfm", "md", "text/markdown", false},
+	"pdf":  {"pdf", "pdf", "application/pdf", false},
 }
 
 // ConvertSupported reports whether `to` is a pandoc-backed export format.
@@ -59,7 +63,7 @@ func ImportSupported(from string) (ImportFormat, bool) {
 	return f, ok
 }
 
-// maxConvertBytes bounds the HTML accepted for conversion.
+// maxConvertBytes bounds the input accepted for conversion in either direction.
 const maxConvertBytes = 16 << 20
 
 // ConvertHTML converts an HTML document to the target format via pandoc,
@@ -70,6 +74,9 @@ func ConvertHTML(ctx context.Context, html []byte, to string) ([]byte, ConvertFo
 	if !ok {
 		return nil, ConvertFormat{}, fmt.Errorf("unsupported format %q", to)
 	}
+	if len(html) > maxConvertBytes {
+		return nil, f, fmt.Errorf("input too large: %d bytes (max %d)", len(html), maxConvertBytes)
+	}
 	out, err := os.CreateTemp("", "grown-docs-*."+f.Ext)
 	if err != nil {
 		return nil, f, fmt.Errorf("temp file: %w", err)
@@ -79,6 +86,9 @@ func ConvertHTML(ctx context.Context, html []byte, to string) ([]byte, ConvertFo
 	defer os.Remove(outPath)
 
 	args := []string{"-f", "html", "-t", f.Pandoc, "-o", outPath}
+	if f.Standalone {
+		args = append(args, "--standalone")
+	}
 	if f.Pandoc == "pdf" {
 		// pandoc needs an external engine to render PDF; tectonic compiles via LaTeX.
 		args = append(args, "--pdf-engine=tectonic")
