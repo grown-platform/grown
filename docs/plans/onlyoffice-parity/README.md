@@ -116,6 +116,10 @@ This supersedes the per-plan tag variants in docs.md, sheets.md and slides.md.
 - Put it in a vitest `it`/`test` title, a Playwright `test` title, a Go
   `t.Run` name, or as a string value in a JSON/YAML fixture
   (`"id": "oo:…"`).
+- Write the whole tag as a **literal string**. The scoreboard greps source
+  files, so a tag assembled at runtime (`` `${TAG}case` ``) isn't counted.
+  Example tags in comments must use a real path, or they show up as
+  unmapped.
 - For rows outside `tests/` (`sdkjs/…`, `core/…`) use the full
   research-relative path: `oo:core/EpubFile/test/Files#toc`.
 

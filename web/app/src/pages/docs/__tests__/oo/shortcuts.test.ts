@@ -17,7 +17,6 @@ import {
   typeText,
 } from "../harness";
 
-const TAG = "oo:word/shortcuts/shortcuts.js#";
 
 /** Is `mark` active across the whole selection? */
 const active = (e: Editor, mark: string, attrs?: object) => e.isActive(mark, attrs);
@@ -27,7 +26,7 @@ const align = (e: Editor) =>
   (e.state.doc.firstChild?.attrs.textAlign as string | null) ?? "left";
 
 describe("OnlyOffice shortcuts", () => {
-  it(`${TAG}Check line break shortcut`, () => {
+  it("oo:word/shortcuts/shortcuts.js#Check line break shortcut", () => {
     // OnlyOffice counts laid-out lines; with no layout in jsdom the
     // equivalent is 1 + the number of hard breaks in the paragraph.
     const e = makeEditor("<p></p>");
@@ -39,7 +38,7 @@ describe("OnlyOffice shortcuts", () => {
     expect(paragraphTexts(e)).toHaveLength(1);
   });
 
-  it(`${TAG}Check select all shortcut`, () => {
+  it("oo:word/shortcuts/shortcuts.js#Check select all shortcut", () => {
     const e = makeEditor(
       "<p>Hello world</p><table><tbody><tr><td><p>a</p></td><td><p>b</p></td></tr>" +
         "<tr><td><p>c</p></td><td><p>d</p></td></tr></tbody></table>",
@@ -51,7 +50,7 @@ describe("OnlyOffice shortcuts", () => {
     expect(to).toBe(e.state.doc.content.size);
   });
 
-  it(`${TAG}Check toggle bullet list`, () => {
+  it("oo:word/shortcuts/shortcuts.js#Check toggle bullet list", () => {
     // OnlyOffice: Ctrl+Shift+L. Grown: Ctrl+Shift+8 (Google Docs / TipTap).
     const e = makeEditor("<p></p>");
     expect(blockPaths(e)).toEqual(["paragraph"]);
@@ -59,7 +58,7 @@ describe("OnlyOffice shortcuts", () => {
     expect(blockPaths(e)).toEqual(["bulletList>listItem>paragraph"]);
   });
 
-  it(`${TAG}Check undo/redo history`, () => {
+  it("oo:word/shortcuts/shortcuts.js#Check undo/redo history", () => {
     // In the app Yjs owns undo; the headless editor uses ProseMirror
     // history, which exposes the same Mod-z / Mod-Shift-z bindings.
     const e = makeEditor("<p>Hello</p>");
@@ -71,7 +70,7 @@ describe("OnlyOffice shortcuts", () => {
     expect(paragraphText(e, 0)).toBe("Hello World");
   });
 
-  it.skip(`${TAG}Check text property change`, () => {
+  it.skip("oo:word/shortcuts/shortcuts.js#Check text property change", () => {
     // TODO(M1): the mark toggles all pass today (Mod-b/i/u, Mod-Shift-s
     // strike, Mod-. superscript, Mod-, subscript), but Increase/Decrease font
     // size (OnlyOffice steps 10->11->12->14->16 and back) has no key binding
@@ -102,7 +101,7 @@ describe("OnlyOffice shortcuts", () => {
     }
   });
 
-  it.skip(`${TAG}Check paragraph property change`, () => {
+  it.skip("oo:word/shortcuts/shortcuts.js#Check paragraph property change", () => {
     // TODO(M1): headings (Grown: Mod-Alt-1..3) and setting alignment pass,
     // but Grown's align shortcuts don't toggle back to left when pressed
     // again, and Ctrl+M / Ctrl+Shift+M paragraph indent is not bound
@@ -127,7 +126,7 @@ describe("OnlyOffice shortcuts", () => {
     expect(pressKey(e, "Mod-m")).toBe(true);
   });
 
-  it.skip(`${TAG}Check page break shortcut`, () => {
+  it.skip("oo:word/shortcuts/shortcuts.js#Check page break shortcut", () => {
     // TODO(M1): Grown has a pageBreak node (Insert > Page break) but no
     // Ctrl+Enter binding.
     const e = makeEditor("<p>Hello</p>");
@@ -141,7 +140,7 @@ describe("OnlyOffice shortcuts", () => {
     }
   });
 
-  it.skip(`${TAG}Check reset char shortcut`, () => {
+  it.skip("oo:word/shortcuts/shortcuts.js#Check reset char shortcut", () => {
     // TODO(M1): Ctrl+Space (clear character formatting) is not bound;
     // Format > Clear formatting exists without a key.
     const e = makeEditor("<p><strong><em><u>Hello world</u></em></strong></p>");
@@ -150,7 +149,7 @@ describe("OnlyOffice shortcuts", () => {
     expect(active(e, "bold") || active(e, "italic") || active(e, "underline")).toBe(false);
   });
 
-  it.skip(`${TAG}Check adding various characters`, () => {
+  it.skip("oo:word/shortcuts/shortcuts.js#Check adding various characters", () => {
     // TODO(M1): no shortcuts for non-breaking space, ©, €, ®, ™, en/em
     // dash, non-breaking hyphen or ellipsis.
     const e = makeEditor("<p></p>");
@@ -158,7 +157,7 @@ describe("OnlyOffice shortcuts", () => {
     expect(paragraphText(e, 0)).toBe(" ");
   });
 
-  it.skip(`${TAG}Check remove symbols`, () => {
+  it.skip("oo:word/shortcuts/shortcuts.js#Check remove symbols", () => {
     // TODO(M1, Playwright): deleting a character or a word with
     // (Ctrl+)Backspace/Delete inside a text run is native contenteditable
     // behaviour that ProseMirror leaves to the browser; jsdom does not

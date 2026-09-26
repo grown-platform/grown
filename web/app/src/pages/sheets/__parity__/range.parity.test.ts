@@ -11,12 +11,11 @@ import {
 
 // Parity ports of the OnlyOffice range/rounding utility suite
 // (sdkjs tests/cell/spreadsheet-calculation/tests.js). See README.md here.
-const SUITE = "oo:cell/spreadsheet-calculation/tests.js";
 
 const box = (c1: number, r1: number, c2: number, r2: number): CellRect => ({ c1, r1, c2, r2 });
 
 describe("sheets parity: range utilities", () => {
-  it(`${SUITE}#Asc.round`, () => {
+  it("oo:cell/spreadsheet-calculation/tests.js#Asc.round", () => {
     const plain = [0, 45, 45.4, 45.5, 45.6, 46, -45, -45.4, -45.5, -45.6, -46, 0.49, -0.5];
     for (const x of plain) expect(roundCoord(x)).toBe(Math.round(x));
     expect(roundCoord(-0) === 0).toBe(true);
@@ -29,7 +28,7 @@ describe("sheets parity: range utilities", () => {
     expect(roundCoord(-0.1 - 0.2 - 0.9 + 0.2)).toBe(-1);
   });
 
-  it(`${SUITE}#Asc.Range`, () => {
+  it("oo:cell/spreadsheet-calculation/tests.js#Asc.Range", () => {
     expect(rect(1, 2, 3, 4)).toEqual(box(1, 2, 3, 4));
     // Unnormalised corners are kept as given unless asked to normalise.
     expect(rect(8, 3, 2, 5)).toEqual(box(8, 3, 2, 5));
@@ -47,7 +46,7 @@ describe("sheets parity: range utilities", () => {
     for (const [c, rr] of outside) expect(rectContains(r, c, rr)).toBe(false);
   });
 
-  it(`${SUITE}#Asc.Range.intersection`, () => {
+  it("oo:cell/spreadsheet-calculation/tests.js#Asc.Range.intersection", () => {
     const base = rect(2, 4, 10, 12);
     // Disjoint neighbours on every side.
     for (const other of [
@@ -79,7 +78,7 @@ describe("sheets parity: range utilities", () => {
     }
   });
 
-  it(`${SUITE}#Asc.Range.union`, () => {
+  it("oo:cell/spreadsheet-calculation/tests.js#Asc.Range.union", () => {
     const base = rect(2, 4, 10, 12);
     expect(rectUnion(base, box(2, 4, 3, 5))).toEqual(box(2, 4, 10, 12)); // contained
     expect(rectUnion(base, box(9, 3, 13, 5))).toEqual(box(2, 3, 13, 12)); // grows up and right

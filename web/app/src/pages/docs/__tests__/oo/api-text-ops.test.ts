@@ -15,10 +15,9 @@ import {
   typeText,
 } from "../harness";
 
-const TAG = "oo:word/api/api.js#";
 
 describe("OnlyOffice api", () => {
-  it(`${TAG}Change numbering level`, () => {
+  it("oo:word/api/api.js#Change numbering level", () => {
     // Two numbered items; the second is empty.
     const e = makeEditor("<ol><li><p>First</p></li><li><p></p></li></ol>");
     const OL = "orderedList>listItem>paragraph";
@@ -44,7 +43,7 @@ describe("OnlyOffice api", () => {
     expect(blockPaths(e)).toEqual([OL, OL]);
   });
 
-  it.skip(`${TAG}Test AddText/RemoveSelection`, () => {
+  it.skip("oo:word/api/api.js#Test AddText/RemoveSelection", () => {
     // TODO(M1): typing over a selection and select-all text pass today; the
     // missing part is the API's "wrap with spaces" insert option (inserting
     // "123" inside "Text" as "Tex 123 t").
@@ -57,12 +56,12 @@ describe("OnlyOffice api", () => {
     expect("wrapWithSpaces").toBe("implemented");
   });
 
-  it.skip(`${TAG}Test add/remove space before/after paragraph`, () => {
+  it.skip("oo:word/api/api.js#Test add/remove space before/after paragraph", () => {
     // TODO(M1): Grown's paragraph spacing is a single before|after toggle,
     // not numeric before/after values with add/remove + "has space" state.
   });
 
-  it.skip(`${TAG}Get text/selected text`, () => {
+  it.skip("oo:word/api/api.js#Get text/selected text", () => {
     // TODO(M11): the plain-text half passes (below); the other half selects
     // part of an equation, which needs the math node.
     const e = makeEditor("<p>The quick brown fox jumps over the lazy dog</p>");

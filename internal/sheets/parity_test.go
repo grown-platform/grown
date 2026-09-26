@@ -13,7 +13,7 @@ package sheets
 //	{
 //	  "source": "free-text provenance",
 //	  "cases": [{
-//	    "id":      "oo:cell/…/logicalTests.js#AND",  // scoreboard tag + subtest name
+//	    "id":      "oo:cell/spreadsheet-calculation/formula-tests/logicalTests.js#AND",  // scoreboard tag + subtest name
 //	    "at":      "A2",               // default formula cell for every check (default A1)
 //	    "cells":   {"A1": 1, "B1": "=A1*2", "C1": {"error": "#N/A"}, "Sheet2!A1": true},
 //	    "names":   {"MyName": "Sheet1!$A$1"},   // defined names (not evaluated yet — M1)
