@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Container,
@@ -19,6 +19,7 @@ import {
   Option,
 } from "@mui/joy";
 import AddIcon from "@mui/icons-material/Add";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SlideshowIcon from "@mui/icons-material/Slideshow";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { Header } from "../../components/Header";
@@ -33,12 +34,16 @@ import {
 } from "./api";
 import type { Deck } from "./types";
 import { DECK_TEMPLATES, type DeckTemplate } from "./templates";
+import { PPTX_ACCEPT, importPptxAsNewDeck } from "./pptx/importDeck";
 
 export function DeckList({ user }: { user: User }) {
   const navigate = useNavigate();
   const [decks, setDecks] = useState<Deck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const pptxInput = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<"mine" | "shared">("mine");
 
   useEffect(() => {
@@ -61,6 +66,21 @@ export function DeckList({ user }: { user: User }) {
     } catch (e) {
       setError((e as Error).message);
       setCreating(false);
+    }
+  }
+  // Upload .pptx → a new Grown deck (the original file isn't kept).
+  async function onPptxPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const { id } = await importPptxAsNewDeck(f, f.name);
+      navigate(`/slides/d/${id}`);
+    } catch (err) {
+      setImportError(`Couldn’t import ${f.name}: ${(err as Error).message}`);
+      setImporting(false);
     }
   }
   async function onPickTemplate(t: DeckTemplate) {
@@ -102,6 +122,24 @@ export function DeckList({ user }: { user: User }) {
             <Option value="mine">My presentations</Option>
             <Option value="shared">Shared with me</Option>
           </Select>
+          <input
+            ref={pptxInput}
+            type="file"
+            accept={PPTX_ACCEPT}
+            hidden
+            data-testid="pptx-upload-input"
+            onChange={onPptxPicked}
+          />
+          <Button
+            variant="outlined"
+            color="neutral"
+            startDecorator={<UploadFileIcon />}
+            loading={importing}
+            onClick={() => pptxInput.current?.click()}
+            data-testid="upload-pptx"
+          >
+            Upload .pptx
+          </Button>
           <Button
             startDecorator={<AddIcon />}
             loading={creating}
@@ -182,6 +220,15 @@ export function DeckList({ user }: { user: User }) {
           </Box>
         )}
 
+        {importError && (
+          <Sheet
+            color="danger"
+            variant="soft"
+            sx={{ p: 2, mb: 2, borderRadius: "md" }}
+          >
+            <Typography color="danger">{importError}</Typography>
+          </Sheet>
+        )}
         {error && (
           <Sheet
             color="danger"

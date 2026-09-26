@@ -34,6 +34,8 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
   const navigate = useNavigate();
   const [file, setFile] = useState<DriveFile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [converting, setConverting] = useState(false);
+  const [convertError, setConvertError] = useState<string | null>(null);
 
   const app = apps.find((a) => a.id === appId);
 
@@ -80,6 +82,32 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
   }
 
   const url = downloadURL(file.id);
+  // A .pptx opened from Drive can be converted into a Grown Slides deck (a
+  // copy; the Drive file is left as is).
+  const canOpenInSlides =
+    appId === "slides" &&
+    (/\.pptx$/i.test(file.name) ||
+      file.mime_type ===
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+
+  async function openInSlides() {
+    if (!file) return;
+    setConverting(true);
+    setConvertError(null);
+    try {
+      const resp = await fetch(url, { credentials: "same-origin" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const { importPptxAsNewDeck } = await import("./slides/pptx/importDeck");
+      const { id: deckId } = await importPptxAsNewDeck(
+        await resp.blob(),
+        file.name,
+      );
+      navigate(`/slides/d/${deckId}`);
+    } catch (e) {
+      setConvertError((e as Error).message);
+      setConverting(false);
+    }
+  }
 
   return (
     <>
@@ -127,6 +155,18 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
             {file.name}
           </Typography>
         </Box>
+        {canOpenInSlides && (
+          <Button
+            onClick={openInSlides}
+            loading={converting}
+            variant="solid"
+            color="neutral"
+            startDecorator={<Icons.Slideshow />}
+            data-testid="open-in-slides"
+          >
+            Open in Slides
+          </Button>
+        )}
         <Button
           component="a"
           href={url}
@@ -152,22 +192,46 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
       </Sheet>
 
       <Container maxWidth="lg" sx={{ py: 3 }}>
-        <Alert
-          variant="soft"
-          color="warning"
-          startDecorator={<Icons.Construction />}
-          sx={{ mb: 2 }}
-        >
-          <Box>
-            <Typography level="title-sm">
-              {app.name} editor is coming soon
-            </Typography>
-            <Typography level="body-sm" sx={{ opacity: 0.85 }}>
-              For now this is a preview of the file. Full editing in {app.name}{" "}
-              will land in a future release.
-            </Typography>
-          </Box>
-        </Alert>
+        {convertError && (
+          <Alert variant="soft" color="danger" sx={{ mb: 2 }}>
+            Couldn’t open this file in Slides: {convertError}
+          </Alert>
+        )}
+        {canOpenInSlides ? (
+          <Alert
+            variant="soft"
+            color="primary"
+            startDecorator={<Icons.Slideshow />}
+            sx={{ mb: 2 }}
+          >
+            <Box>
+              <Typography level="title-sm">
+                Edit this PowerPoint file in Slides
+              </Typography>
+              <Typography level="body-sm" sx={{ opacity: 0.85 }}>
+                “Open in Slides” makes an editable Slides copy. The original
+                .pptx stays in Drive unchanged.
+              </Typography>
+            </Box>
+          </Alert>
+        ) : (
+          <Alert
+            variant="soft"
+            color="warning"
+            startDecorator={<Icons.Construction />}
+            sx={{ mb: 2 }}
+          >
+            <Box>
+              <Typography level="title-sm">
+                {app.name} editor is coming soon
+              </Typography>
+              <Typography level="body-sm" sx={{ opacity: 0.85 }}>
+                For now this is a preview of the file. Full editing in{" "}
+                {app.name} will land in a future release.
+              </Typography>
+            </Box>
+          </Alert>
+        )}
 
         <FilePreview file={file} />
       </Container>

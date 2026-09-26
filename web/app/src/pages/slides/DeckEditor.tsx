@@ -31,6 +31,7 @@ import {
   Dropdown,
   Menu,
   MenuButton,
+  Snackbar,
 } from "@mui/joy";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SlideshowIcon from "@mui/icons-material/Slideshow";
@@ -87,6 +88,7 @@ import { SlideMenuBar, type SlideActions } from "./SlideMenuBar";
 import { downloadDeck } from "./export";
 import { resolveLinkInput } from "../../lib/urlType";
 import { ShareDialog } from "./ShareDialog";
+import { PPTX_ACCEPT, readPptxSlides } from "./pptx/importDeck";
 import {
   addNextSlide,
   applyCollabOp,
@@ -174,6 +176,8 @@ export function DeckEditor({ user }: { user: User }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const hist = useRef<History>(emptyHistory());
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const pptxInput = useRef<HTMLInputElement | null>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
 
   const me = {
     userId: user.id,
@@ -428,6 +432,28 @@ export function DeckEditor({ user }: { user: User }) {
     };
     r.readAsDataURL(f);
   }
+  // File → Import slides: append every slide of a .pptx after the deck's
+  // last slide and jump to the first imported one.
+  async function onPptxPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setImportMsg(`Importing ${f.name}…`);
+    try {
+      const r = await readPptxSlides(f);
+      const base = docRef.current?.slides ?? slides;
+      setSlides([...base, ...r.slides]);
+      setCur(base.length);
+      setSelId(null);
+      const n = r.slides.length;
+      setImportMsg(
+        `Imported ${n} slide${n === 1 ? "" : "s"} from ${f.name}` +
+          (r.warnings.length ? `. ${r.warnings.join(". ")}.` : ""),
+      );
+    } catch (err) {
+      setImportMsg(`Couldn't import ${f.name}: ${(err as Error).message}`);
+    }
+  }
   function toggle(attr: StyleToggle) {
     if (selected) upsertElement(toggleStyle(selected, attr));
   }
@@ -535,6 +561,7 @@ export function DeckEditor({ user }: { user: User }) {
       navigate(`/slides/d/${d.id}`);
     },
     open: () => navigate("/slides"),
+    importSlides: () => pptxInput.current?.click(),
     makeCopy: async () => {
       const d = await createDeck(`Copy of ${title}`);
       if (docRef.current)
@@ -622,6 +649,14 @@ export function DeckEditor({ user }: { user: User }) {
         accept="image/*"
         hidden
         onChange={onImagePicked}
+      />
+      <input
+        ref={pptxInput}
+        type="file"
+        accept={PPTX_ACCEPT}
+        hidden
+        data-testid="pptx-import-input"
+        onChange={onPptxPicked}
       />
       <JoySheet
         variant="plain"
@@ -1369,6 +1404,15 @@ export function DeckEditor({ user }: { user: User }) {
         onClose={() => setShareOpen(false)}
         deckId={id}
       />
+      <Snackbar
+        open={importMsg !== null}
+        onClose={() => setImportMsg(null)}
+        autoHideDuration={importMsg?.startsWith("Importing") ? null : 8000}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        data-testid="pptx-import-status"
+      >
+        {importMsg}
+      </Snackbar>
     </Box>
   );
 }
