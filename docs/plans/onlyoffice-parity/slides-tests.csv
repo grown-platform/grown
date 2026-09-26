@@ -1,0 +1,25 @@
+onlyoffice_path,test_count,area,portability,target_grown_path,milestone
+sdkjs-tests-v9.3.1/tests/slide/shortcuts/shortcuts.js,23,shortcuts + slide/element/text editing behaviour,High,web/app/src/pages/slides/deckOps.test.ts; web/app/src/pages/slides/presentOps.test.ts; web/app/src/pages/slides/textOps.test.ts; web/e2e/slides.spec.ts; web/e2e/slides-text.spec.ts; web/e2e/slides-arrange.spec.ts; web/e2e/slides-present.spec.ts,M0 M2 M4 M5 M7 M8 M9 M13
+sdkjs-tests-v9.3.1/tests/slide/shortcuts/events.js,0,shortcuts fixture (97 hotkey descriptors: key code + modifiers per action),High (as key-map table),web/app/src/pages/slides/shortcuts.ts; web/app/src/pages/slides/shortcuts.test.ts,M13
+sdkjs-tests-v9.3.1/tests/slide/shortcuts/shortcuts.html,0,QUnit harness page,N/A,-,-
+sdkjs-tests-v9.3.1/tests/slide/js-api/api-drawing.js,10,shapes: gradient fill; outline width/colour; name get/set + duplicate-name rule; select/unselect; flipH/flipV getters/setters with invalid-input rejection,High,web/app/src/pages/slides/elementOps.test.ts; web/app/src/pages/slides/deckOps.test.ts,M2 M3
+sdkjs-tests-v9.3.1/tests/slide/js-api/api-presentation.js,1,query elements by name across a slide,High,web/app/src/pages/slides/deckOps.test.ts,M2
+sdkjs-tests-v9.3.1/tests/slide/js-api/api-shape.js,1,text-box insets (paddings l/t/r/b),Medium,web/app/src/pages/slides/textOps.test.ts,M4
+sdkjs-tests-v9.3.1/tests/slide/js-api/common.js,0,js-api harness,N/A,-,-
+sdkjs-tests-v9.3.1/tests/slide/js-api/js-api.html,0,QUnit harness page,N/A,-,-
+sdkjs-tests-v9.3.1/tests/slide/copypaste/copy-paste-tests.js,3,clipboard paste callback for plain text / HTML / internal format (negative-only upstream),Medium,web/app/src/pages/slides/collabOps.test.ts (clipboard payload); web/e2e/slides-arrange.spec.ts,M2
+sdkjs-tests-v9.3.1/tests/slide/copypaste/copy-paste-tests.html,0,QUnit harness page,N/A,-,-
+sdkjs-tests-v9.3.1/tests/slide/common/common.js,0,harness mock (AscTest bootstrap),N/A,-,-
+sdkjs-tests-v9.3.1/tests/slide/common/demonstrationManager.js,0,harness mock of slideshow manager (documents Start/Next/Prev/GoTo/End surface),N/A (informative for presentOps API),web/app/src/pages/slides/presentOps.ts,M0
+sdkjs-tests-v9.3.1/tests/slide/common/editor.js,0,harness mock of editor API,N/A,-,-
+sdkjs-tests-v9.3.1/tests/slide/common/measurer.js,0,harness mock of text measurer,N/A,-,-
+sdkjs-tests-v9.3.1/tests/slide/common/presentation.js,0,harness mock of presentation object,N/A,-,-
+sdkjs-tests-v9.3.1/tests/slide/common/thumbnails.js,0,harness mock of thumbnail rail,N/A,-,-
+sdkjs-tests-v9.3.1/tests/common/color-mods/color-mods.js,28,ECMA-376 colour transforms (satMod/satOff/lumMod/lumOff/hueMod/hueOff/tint/shade/gamma/invGamma/comp/inv/gray/red/green/blue +Mod/+Off/alpha/alphaMod/alphaOff; ~9937 data rows),High,web/app/src/pages/slides/colorMods.test.ts,M1
+sdkjs-tests-v9.3.1/tests/common/color-mods/color-mods.html,0,QUnit harness page,N/A,-,-
+sdkjs-tests-v9.3.1/tests/common/api/api.js,2,URL classification for hyperlinks (Http / Unsafe / Invalid; browser vs desktop),High,web/app/src/pages/slides/links.test.ts,M1 M4
+sdkjs-tests-v9.3.1/tests/common/api/api.html,0,QUnit harness page,N/A,-,-
+sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize.js,3,chartEx (waterfall/funnel/treemap/sunburst/box) XML serialize/parse round-trip (3 more generators commented out upstream),Low,web/app/src/pages/slides/pptx/chartXml.test.ts (pass-through preservation),M11
+sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize-files.js,0,fixture: one chartEx XML + base64 zip,Low (author own fixtures; never copy),web/app/src/pages/slides/pptx/__fixtures__/,M11
+sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize-files-many.js,0,empty stub,N/A,-,-
+sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize.html,0,QUnit harness page,N/A,-,-

@@ -1,0 +1,37 @@
+onlyoffice_path,test_count,area,portability,target_grown_path,milestone
+sdkjs-tests-v9.3.1/tests/common/api/api.js,2,common-api,high,web/app/src/lib/urlType.test.ts,CC1
+sdkjs-tests-v9.3.1/tests/common/color-mods/color-mods.js,28,common-color,high,web/app/src/lib/colorMods.test.ts,CC1
+sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize.js,6,common-charts,low,web/app/src/pages/sheets/charts/chartXml.test.ts,CC5
+sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize-files.js,0,common-charts,none,,CC5
+sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize-files-many.js,0,common-charts,none,,CC5
+sdkjs-tests-v9.3.1/tests/pdf/common/common.js,0,pdf,none,,CC3
+sdkjs-tests-v9.3.1/tests/pdf/forms/actions.js,1,pdf,high,pdf/frontend/e2e/editor-forms-calc.spec.ts,CC3
+sdkjs/pdf/test/base.js,0,pdf,none,pdf/frontend/e2e/editor-smoke.spec.ts,CC3
+sdkjs/pdf/test/bookmarks.js,0,pdf,low,pdf/frontend/e2e/editor-pages.spec.ts,CC3
+sdkjs-tests-v9.3.1/tests/oform/xml/oformXml.js,2,forms,medium,internal/forms/proto_shaping_test.go,CC4
+sdkjs-tests-v9.3.1/tests/oform/xml/xmlCommon.js,0,forms,none,,CC4
+sdkjs-tests-v9.3.1/tests/word/forms/forms.js,7,forms,medium,web/app/src/pages/forms/validate.test.ts; internal/forms/logic_and_guards_test.go,CC4
+sdkjs-tests-v9.3.1/tests/word/forms/complexForm.js,6,forms,low,web/app/src/pages/forms/helpers.test.ts,CC4
+sdkjs-tests-v9.3.1/tests/word/js-api/api-text-form.js,5,forms,low,web/app/src/pages/forms/validate.test.ts,CC4
+sdkjs-tests-v9.3.1/tests/word/plugins/pluginsApi.js,5,plugins,none,,exception
+sdkjs-tests-v9.3.1/tests/visio/serialize/sax-serialize.js,7,visio,medium,web/app/src/pages/whiteboard/vsdx.test.ts,CC6
+sdkjs-tests-v9.3.1/tests/visio/serialize/sax-serialize-files.js,0,visio,none,,CC6
+sdkjs-tests-v9.3.1/tests/visio/serialize/sax-serialize-files-many.js,0,visio,none,,CC6
+sdkjs-tests-v9.3.1/tests/visio/api/api.js,0,visio,none,,CC6
+sdkjs-tests-v9.3.1/tests/visio/api/api-test.js,0,visio,low,web/app/src/pages/whiteboard/vsdx.test.ts,CC6
+sdkjs-tests-v9.3.1/tests/visio/api/test-files.js,0,visio,low,web/app/src/pages/whiteboard/vsdx.test.ts,CC6
+sdkjs-tests-v9.3.1/tests/visio/draw-main/draw-main.js,0,visio,none,,CC6
+sdkjs-tests-v9.3.1/tests/visio/drawFile/draw-file.js,0,visio,none,,CC6
+sdkjs-tests-v9.3.1/tests/code-style/check.py,4,code-style,medium,.editorconfig,CC1
+sdkjs/common/libfont/test/shaper.js,0,common-fonts,none,,CC7
+sdkjs/common/libfont/test/hyphen.js,0,common-fonts,low,web/app/src/pages/docs/hyphenate.test.ts,CC7
+sdkjs/common/geometry/test/code.js,0,common-geometry,none,,CC6
+core/OOXML/test/xlsx2xlsb/conversion.cpp,3,conversion,low,internal/sheets/corpus_test.go,CC5
+core/OOXML/test/xlsb2xlsx/conversion.cpp,3,conversion,low,internal/sheets/corpus_test.go,CC5
+core/OdfFile/Test/test_odf/ExampleFiles,13,conversion,low,internal/slides/corpus_test.go,CC5
+core/OdfFile/Test/Test/ExampleFiles,5,conversion,low,internal/docs/corpus_test.go,CC2
+core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles,28,conversion,medium,internal/docs/corpus_test.go; internal/sheets/corpus_test.go; internal/slides/corpus_test.go,CC2
+core/EpubFile/test/Files,11,conversion,medium,internal/docs/corpus_test.go,CC2
+core/Fb2File/examples,10,conversion,none,,CC8
+core/X2tConverter/test/TestOOOXml2Odf/test.cpp,1,conversion,medium,internal/docs/convert_test.go,CC2
+core/Test/Applications/StandardTester/main.cpp,1,conversion,medium,internal/docs/corpus_test.go,CC2

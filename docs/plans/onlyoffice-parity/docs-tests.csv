@@ -1,0 +1,68 @@
+onlyoffice_path,test_count,area,portability,target_grown_path,milestone
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/api/api.js,4,text-ops,vitest,web/app/src/pages/docs/__tests__/oo/api-text-ops.test.ts,M1
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/api/cross-ref.js,1,references,vitest,web/app/src/pages/docs/__tests__/oo/cross-ref.test.ts,M8
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/api/textInput.js,5,text-input,mixed (2 vitest / 3 n/a),web/app/src/pages/docs/__tests__/oo/text-input.test.ts,M1
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/change-case/change-case.js,15,change-case,vitest (10 in M1 / 5 math in M11),web/app/src/pages/docs/__tests__/oo/change-case.test.ts,M1
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/common/common.js,0,harness,n/a (harness; write own),web/app/src/pages/docs/__tests__/harness.ts,M0
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/common/document.js,0,harness,n/a (harness; write own),web/app/src/pages/docs/__tests__/harness.ts,M0
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/common/editor.js,0,harness,n/a (harness; write own),web/app/src/pages/docs/__tests__/harness.ts,M0
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/common/measurer.js,0,harness,n/a (harness; write own MockMeasurer),web/app/src/pages/docs/__tests__/measurer.ts,M9
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/content-control/block-level/cursorAndSelection.js,1,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-block-cursor.test.ts,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/content-control/inline-level/checkbox.js,1,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-checkbox.test.ts,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/content-control/inline-level/cursorAndSelection.js,2,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-inline-cursor.test.ts,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/content-control/inline-level/date-time.js,1,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-date.test.ts,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/copypaste/copy-paste-tests.js,32,clipboard,mixed (31 vitest / 1 n/a internal binary format),web/app/src/pages/docs/__tests__/oo/copy-paste.test.ts,M2
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/custom-xml/custom-xml-common.js,0,harness,n/a (harness),,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/custom-xml/custom-xml-ooxml.js,1,custom-xml,n/a (OOXML binary load/save),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/custom-xml/custom-xml.js,26,custom-xml,vitest (low priority),web/app/src/pages/docs/__tests__/oo/custom-xml.test.ts,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/floating-position/drawing.js,2,layout,n/a (layout engine geometry),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/keep-next.js,2,pagination,vitest (mock measurer),web/app/src/pages/docs/__tests__/oo/pagination-keep-next.test.ts,M9
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/paragraph/line-height.js,1,layout,n/a (layout engine geometry),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/paragraph/paragraph-lines.js,6,layout,n/a (browser line breaking),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/paragraph/paragraph-spacing.js,1,layout,n/a (layout engine geometry),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/paragraph/paragraph-wrap.js,2,layout,n/a (layout engine geometry),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/paragraph/tabs.js,1,layout,n/a (layout engine geometry),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/table/correctBadTable.js,1,tables,vitest,web/app/src/pages/docs/__tests__/oo/table-normalize.test.ts,M4
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/table/flowTablePosition.js,4,layout,n/a (layout engine geometry),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/table/pageBreak.js,3,pagination,vitest (mock measurer),web/app/src/pages/docs/__tests__/oo/pagination-table.test.ts,M9
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/table/table-flow.js,1,layout,n/a (layout engine geometry),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/table/table-grid.js,6,tables,vitest,web/app/src/pages/docs/__tests__/oo/table-grid.test.ts,M4
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/table/table-header.js,1,pagination,vitest (mock measurer),web/app/src/pages/docs/__tests__/oo/pagination-table.test.ts,M9
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/text-hyphenator/hyphenation-service.js,0,harness,n/a (harness),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/text-hyphenator/text-hyphenator.js,6,hyphenation,n/a (engine-internal; Grown uses CSS hyphenation),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/textShaper/textShaper.js,1,text-shaping,n/a (engine-internal),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/forms/complexForm.js,6,forms,mixed (2 vitest / 4 playwright),web/app/src/pages/docs/__tests__/oo/forms-complex.test.ts; web/e2e/docs/oo-forms.spec.ts,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/forms/forms.js,7,forms,vitest,web/app/src/pages/docs/__tests__/oo/forms.test.ts,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/image-smartart-placeholder/smartartImagePlaceholders.js,2,smartart,n/a (SmartArt engine-internal),,none
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-color.js,3,scripting-api,n/a (builder API; revisit with plugins),,M13
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-document-content.js,1,text-ops,vitest,web/app/src/pages/docs/__tests__/oo/api-text-ops.test.ts,M1
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-drawing.js,11,images,vitest,web/app/src/pages/docs/__tests__/oo/drawing-attrs.test.ts,M7
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-inline-level-sdt.js,2,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-appearance.test.ts,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-paragraph.js,5,paragraph,mixed (4 vitest / 1 n/a ParaId),web/app/src/pages/docs/__tests__/oo/paragraph-props.test.ts,M3
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-range.js,3,text-ops,vitest,web/app/src/pages/docs/__tests__/oo/api-text-ops.test.ts,M1
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-run.js,3,text-ops,vitest,web/app/src/pages/docs/__tests__/oo/api-text-ops.test.ts,M1
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-section.js,1,sections,vitest,web/app/src/pages/docs/__tests__/oo/sections.test.ts,M9
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-table-cell.js,1,tables,vitest,web/app/src/pages/docs/__tests__/oo/table-cell-props.test.ts,M4
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-text-form.js,5,forms,vitest,web/app/src/pages/docs/__tests__/oo/forms.test.ts,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api/replace-text-smart.js,2,find-replace,vitest (1 in M2 / 1 with revisions in M5),web/app/src/pages/docs/__tests__/oo/replace-smart.test.ts,M2
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/common.js,0,harness,n/a (harness),,M0
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/forms.js,0,harness,n/a (harness),,M10
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/math-autocorrection/common.js,0,harness,n/a (harness),,M11
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/math-autocorrection/math-autocorrection.js,878,equations,vitest (table-driven; 32 explicit + 846 generated by Test() helper),web/app/src/pages/docs/__tests__/oo/math-autocorrect.test.ts,M11
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/math-ml/math-ml.js,53,equations,vitest,web/app/src/pages/docs/__tests__/oo/mathml-import.test.ts,M11
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/merge-documents/binaryTestDocuments.js,0,fixtures,n/a (binary fixtures; write own),,M12
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/merge-documents/mergeDocuments.js,2,compare-merge,vitest (rewritten with own HTML fixtures),web/app/src/pages/docs/__tests__/oo/combine-documents.test.ts,M12
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/numbering/numberingApplicator.js,4,numbering,vitest,web/app/src/pages/docs/__tests__/oo/numbering-apply.test.ts,M3
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/numbering/numberingAutocorrect.js,3,numbering,vitest,web/app/src/pages/docs/__tests__/oo/numbering-autocorrect.test.ts,M3
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/numbering/numberingCalculation.js,2,numbering,vitest,web/app/src/pages/docs/__tests__/oo/numbering-calc.test.ts,M3
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/plugins/pluginsApi.js,5,plugins,mixed (1 vitest current word/sentence in M2 / 4 n/a),web/app/src/pages/docs/__tests__/oo/text-selection-units.test.ts,M13
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/revisions/document-content.js,5,track-changes,vitest (3 in M5 / 2 need sdt from M10),web/app/src/pages/docs/__tests__/oo/revisions-document.test.ts,M5
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/revisions/paragraph.js,2,track-changes,vitest,web/app/src/pages/docs/__tests__/oo/revisions-paragraph.test.ts,M5
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/shortcuts/events.js,0,harness,n/a (key event helpers; write own),web/app/src/pages/docs/__tests__/keys.ts,M0
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/shortcuts/shortcuts.js,40,shortcuts,mixed (28 vitest / 6 playwright / 6 n/a),web/app/src/pages/docs/__tests__/oo/shortcuts.test.ts; web/e2e/docs/oo-shortcuts.spec.ts,M1
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/styles/displayStyle.js,5,styles,vitest,web/app/src/pages/docs/__tests__/oo/style-display.test.ts,M3
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/styles/paraPr.js,1,styles,vitest,web/app/src/pages/docs/__tests__/oo/style-compile.test.ts,M3
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/styles/styleApplicator.js,1,styles,vitest,web/app/src/pages/docs/__tests__/oo/style-apply.test.ts,M3
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/text-autocorrection/as-you-type.js,2,autocorrect,vitest,web/app/src/pages/docs/__tests__/oo/autocorrect-as-you-type.test.ts,M2
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/unit-tests/deleted-text-recovery.js,17,history-internals,mixed (5 vitest as version diff in M12 / 12 n/a),web/app/src/pages/docs/__tests__/oo/version-diff.test.ts,M12
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/unit-tests/paragraphContentPos.js,1,engine-internals,n/a (sdkjs-internal),,none
