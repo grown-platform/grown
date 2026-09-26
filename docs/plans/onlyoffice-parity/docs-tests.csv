@@ -11,7 +11,7 @@ research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/content-control/block-level/cu
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/content-control/inline-level/checkbox.js,1,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-checkbox.test.ts,M10
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/content-control/inline-level/cursorAndSelection.js,2,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-inline-cursor.test.ts,M10
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/content-control/inline-level/date-time.js,1,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-date.test.ts,M10
-research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/copypaste/copy-paste-tests.js,32,clipboard,mixed (31 vitest / 1 n/a internal binary format),web/app/src/pages/docs/__tests__/oo/copy-paste.test.ts,M2
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/copypaste/copy-paste-tests.js,32,clipboard,vitest (32; the Internal-format callback is ported as Grown's ProseMirror slice HTML; 3 cases commented out upstream ported too),web/app/src/pages/docs/__tests__/oo/copy-paste.test.ts,M2
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/custom-xml/custom-xml-common.js,0,harness,n/a (harness),,M10
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/custom-xml/custom-xml-ooxml.js,1,custom-xml,n/a (OOXML binary load/save),,none
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/custom-xml/custom-xml.js,26,custom-xml,vitest (low priority),web/app/src/pages/docs/__tests__/oo/custom-xml.test.ts,M10
