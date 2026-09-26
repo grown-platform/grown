@@ -38,7 +38,7 @@
       "passing": null
     },
     "common/plugins": {
-      "ported": 0,
+      "ported": 1,
       "passing": null
     },
     "common/visio": {
@@ -46,7 +46,7 @@
       "passing": null
     },
     "docs/autocorrect": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     },
     "docs/change-case": {
@@ -54,7 +54,7 @@
       "passing": null
     },
     "docs/clipboard": {
-      "ported": 0,
+      "ported": 32,
       "passing": null
     },
     "docs/compare-merge": {
@@ -78,7 +78,7 @@
       "passing": null
     },
     "docs/find-replace": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     },
     "docs/fixtures": {
@@ -122,7 +122,7 @@
       "passing": null
     },
     "docs/plugins": {
-      "ported": 0,
+      "ported": 1,
       "passing": null
     },
     "docs/references": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 468,
+    "ported": 505,
     "passing": null
   }
 }

@@ -14,6 +14,7 @@ const NOT_EDITOR = new Set([
   "Ctrl+V", // browser paste
   "Ctrl+Shift+V", // browser paste as plain text
   "Ctrl+P", // browser print
+  "Ctrl+F", // DocEditor: find bar
   "Ctrl+H", // DocEditor: find and replace
   "Ctrl+K", // DocEditor: insert link
   "Ctrl+Shift+C", // DocEditor: word count
