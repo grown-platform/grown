@@ -1,4 +1,4 @@
-import type { Editor } from "@tiptap/react";
+import type { Editor } from "@tiptap/core";
 
 /**
  * replaceAll replaces every occurrence of `find` with `replace` in the document.
@@ -69,3 +69,19 @@ export async function paste(editor: Editor, plain: boolean): Promise<void> {
     );
   }
 }
+
+/** transformSelection rewrites the selected text via fn (for capitalization). */
+export function transformSelection(editor: Editor, fn: (s: string) => string) {
+  const { from, to } = editor.state.selection;
+  if (from === to) return;
+  const text = editor.state.doc.textBetween(from, to, "\n");
+  editor.chain().focus().insertContentAt({ from, to }, fn(text)).run();
+}
+
+/** toTitleCase capitalises the first letter of every word (Format > Text >
+ *  Title Case). */
+export const toTitleCase = (s: string) =>
+  s.replace(
+    /\w\S*/g,
+    (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+  );

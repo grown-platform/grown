@@ -543,7 +543,10 @@ function withCellBackground<T extends { extend: (c: object) => unknown }>(base: 
 export const TableCellBg = withCellBackground(TableCell) as typeof TableCell;
 export const TableHeaderBg = withCellBackground(TableHeader) as typeof TableHeader;
 
-export interface BuildOpts {
+/** Options for the collaborative (app) editor: Yjs document + websocket
+ *  provider. `collab` may be omitted; it defaults to true. */
+export interface CollabBuildOpts {
+  collab?: true;
   ydoc: Y.Doc;
   provider: WebsocketProvider;
   userName: string;
@@ -551,16 +554,38 @@ export interface BuildOpts {
   editable: boolean;
 }
 
-/** buildExtensions assembles the full editor extension set. Yjs owns history,
- *  so StarterKit's undo/redo is disabled (Collaboration provides it). */
-export function buildExtensions({
-  ydoc,
-  provider,
-  userName,
-  userColor,
-}: BuildOpts) {
+/** Options for a standalone editor with no Yjs document or websocket (used by
+ *  the headless vitest harness). ProseMirror's own history provides undo. */
+export interface LocalBuildOpts {
+  collab: false;
+  userName?: string;
+  userColor?: string;
+  editable?: boolean;
+}
+
+export type BuildOpts = CollabBuildOpts | LocalBuildOpts;
+
+/** buildExtensions assembles the full editor extension set. With collab (the
+ *  default) Yjs owns history, so StarterKit's undo/redo is disabled
+ *  (Collaboration provides it). With `collab: false` the Yjs extensions are
+ *  left out and StarterKit's history is kept. */
+export function buildExtensions(opts: BuildOpts) {
+  const userName = opts.userName ?? "Test user";
+  const userColor = opts.userColor ?? "#1a73e8";
+  const collabExts =
+    opts.collab === false
+      ? []
+      : [
+          Collaboration.configure({ document: opts.ydoc }),
+          CollaborationCursor.configure({
+            provider: opts.provider,
+            user: { name: userName, color: userColor },
+          }),
+        ];
   return [
-    StarterKit.configure({ history: false }),
+    opts.collab === false
+      ? StarterKit
+      : StarterKit.configure({ history: false }),
     Underline,
     TextStyle,
     Color,
@@ -589,10 +614,6 @@ export function buildExtensions({
     DeletionMark,
     Drawing,
     Suggesting.configure({ user: { name: userName, color: userColor } }),
-    Collaboration.configure({ document: ydoc }),
-    CollaborationCursor.configure({
-      provider,
-      user: { name: userName, color: userColor },
-    }),
+    ...collabExts,
   ];
 }

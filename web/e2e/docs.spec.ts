@@ -1,29 +1,11 @@
-import { test, expect, type Page } from "@playwright/test";
-import { BASE_URL, createDoc, trashDoc } from "./helpers";
+import { test, expect } from "@playwright/test";
+import { createDoc, trashDoc } from "./helpers";
+import { openDoc, runCommand } from "./docs/helpers";
 
 // Docs e2e. Runs authenticated (storageState). These exercise the real collab
 // path: edits sync over the WebSocket and the backend persists the update log,
 // so reload-persistence is genuinely verified (it could not be via an ad-hoc
 // CDP tab, whose collab socket never connected).
-
-// Run a command from the editor's command palette (Alt+/), matching by label.
-async function runCommand(page: Page, label: string) {
-  await page.keyboard.press("Alt+Slash");
-  const search = page.getByPlaceholder("Search the menus");
-  await expect(search).toBeVisible();
-  await search.fill(label);
-  await page
-    .locator(".MuiListItemButton-root", { hasText: label })
-    .first()
-    .click();
-}
-
-async function openDoc(page: Page, id: string) {
-  await page.goto(`${BASE_URL}/docs/d/${id}`);
-  await expect(page.locator(".ProseMirror")).toBeVisible();
-  // Give the collab provider a moment to connect before editing.
-  await page.waitForTimeout(1500);
-}
 
 test.describe.serial("docs", () => {
   test("typed text persists across reload (collab persistence)", async ({
