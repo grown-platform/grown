@@ -333,10 +333,17 @@ export const AutoCorrect = Extension.create<{ settings: AutoCorrectSettings }>({
       } else {
         if (!wordEnd && !(s.dashes && ch !== "-")) return false;
         undoable = wordEnd;
+        // "a." / "i)" alone at the start of a paragraph is a list marker
+        // (numbering autocorrect, docModel.ts), not a sentence to capitalise.
+        const listMarker = (ch === "." || ch === ")") && /^([a-zA-Z]|[ivx]+|[IVX]+)$/u.test(ctx.text);
         edits = wordEndEdits(
           { before: ctx.text, firstInCell: firstInCell(state) },
           wordEnd
-            ? { ...s, dashes: s.dashes && ch !== "-" }
+            ? {
+                ...s,
+                dashes: s.dashes && ch !== "-",
+                ...(listMarker ? { capitalizeSentences: false, capitalizeCells: false } : {}),
+              }
             : { ...s, replaceText: false, capitalizeSentences: false, capitalizeCells: false },
         );
         if (

@@ -15,6 +15,7 @@ import { getShare, type ShareInfo } from "./api";
 import { createCollab, colorFor } from "./collab";
 import { buildExtensions } from "./extensions";
 import { Toolbar, type EditorMode } from "./Toolbar";
+import { ParagraphDialogs } from "./ParagraphDialogs";
 import { Presence } from "./Presence";
 import { editorPageSx, workspaceSx } from "./editorStyles";
 
@@ -107,6 +108,7 @@ function SharedEditor({ token, info }: { token: string; info: ShareInfo }) {
             mode={mode}
             onModeChange={setMode}
           />
+          <ParagraphDialogs editor={editor} />
         </Container>
       )}
       <Box sx={workspaceSx}>

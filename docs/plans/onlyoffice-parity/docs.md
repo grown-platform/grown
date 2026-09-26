@@ -176,14 +176,14 @@ Grown paths are relative to the repo root; `docs/` below means
 |---|---|---|---|
 | Alignment L/C/R/J | Toolbar | Have | TextAlign |
 | Line spacing multiples | Toolbar `tipLineSpace` | Have | `LineHeight` ext |
-| Line spacing exact / at least | ParagraphSettings `textExact/textAtLeast` | Missing | — |
+| Line spacing exact / at least | ParagraphSettings `textExact/textAtLeast` | Have (M3) | `docs/paragraphProps.ts` `lineRule`; Paragraph settings dialog |
 | Space before/after (numeric) | ParagraphSettings, `api.js` add/remove space test | Have (M1) | `docs/paragraphFormat.ts`; add/remove before/after + Custom spacing dialog |
 | "Don't add interval between same-style paragraphs" | ParagraphSettings | Missing | — |
-| Left/right indent, first-line, hanging (per paragraph) | ParagraphSettings `strIndent*`, `styles/paraPr.js` | Partial (M1) | per-paragraph left indent in 36pt steps (Ctrl+M, Tab on whole paragraphs); right/first-line/hanging in M3 |
-| Tab stops (pos, alignment, leader) | ParagraphSettingsAdvanced `strTabs`, `document-calculation/paragraph/tabs.js` | Missing | — |
-| Keep with next / keep lines / widow-orphan / page break before | ParagraphSettingsAdvanced, `keep-next.js` | Missing | — |
-| Paragraph borders & fill | ParagraphSettingsAdvanced `strBorders` | Missing | — |
-| Outline level | ParagraphSettingsAdvanced | Partial | only via heading level |
+| Left/right indent, first-line, hanging (per paragraph) | ParagraphSettings `strIndent*`, `styles/paraPr.js` | Have (M3) | left (M1) + `indentRight` / `indentFirstLine`; ruler drags the selected paragraphs' indents |
+| Tab stops (pos, alignment, leader) | ParagraphSettingsAdvanced `strTabs`, `document-calculation/paragraph/tabs.js` | Partial (M3) | stored, edited (dialog) and shown on the ruler; rendered as one CSS `tab-size` until pagination lays tabs out (M9) |
+| Keep with next / keep lines / widow-orphan / page break before | ParagraphSettingsAdvanced, `keep-next.js` | Partial (M3) | attributes + CSS `break-*` / `widows` (print); on-screen pagination is M9 |
+| Paragraph borders & fill | ParagraphSettingsAdvanced `strBorders` | Have (M3) | `borders` attribute per side; shading (M1) |
+| Outline level | ParagraphSettingsAdvanced | Have (M3) | `outlineLevel` attribute; Outline pane lists such paragraphs |
 | Non-printing characters | Toolbar `mniHiddenChars`, shortcut `ShowAll` | Missing | menu item disabled `docs/MenuBar.tsx:270` |
 | Hyphenation (auto, caps, limit, zone) | HyphenationDialog, `text-hyphenator.js` | Missing | — |
 | Line numbers | LineNumbersDialog | Missing | menu item disabled |
@@ -192,12 +192,12 @@ Grown paths are relative to the repo root; `docs/` below means
 
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
-| Built-in paragraph styles (Normal, H1-H9, Title, Subtitle, Quote, List Paragraph, ...) | Toolbar `tipParagraphStyle`, `Styles/default-styles.js` | Partial | Normal + H1-H6 (`docs/Toolbar.tsx:756`, `MenuBar.tsx:401`) |
-| Style gallery with previews | Toolbar | Missing | — |
-| New style from selection / update from selection / delete / restore | Toolbar `textStyleMenu*`, StyleTitleDialog, `styleApplicator.js` | Missing | — |
-| Style inheritance (basedOn, next style, numbering in style) | `styles/paraPr.js`, `numberingApplicator.js` | Missing | — |
-| Character styles | sdkjs | Missing | — |
-| Displayed style for mixed selection | `styles/displayStyle.js` | Missing | style select shows p/h1-h3 only |
+| Built-in paragraph styles (Normal, H1-H9, Title, Subtitle, Quote, List Paragraph, ...) | Toolbar `tipParagraphStyle`, `Styles/default-styles.js` | Have (M3) | `docs/styles.ts` BUILTIN_STYLES (H1-H6; Title, Subtitle, Quote, Intense Quote, No Spacing, List Paragraph, Caption) |
+| Style gallery with previews | Toolbar | Have (M3) | `docs/StyleGallery.tsx` |
+| New style from selection / update from selection / delete / restore | Toolbar `textStyleMenu*`, StyleTitleDialog, `styleApplicator.js` | Have (M3) | `docModel.ts` create/update/deleteStyle |
+| Style inheritance (basedOn, next style, numbering in style) | `styles/paraPr.js`, `numberingApplicator.js` | Have (M3) | `compileStyle` / `compileParaPr`; Enter applies `next` |
+| Character styles | sdkjs | Have (M3) | `charStyle` mark |
+| Displayed style for mixed selection | `styles/displayStyle.js` | Have (M3) | `displayStyle` in `styles.ts` |
 
 ### 2.4 Lists and numbering
 
@@ -205,11 +205,11 @@ Grown paths are relative to the repo root; `docs/` below means
 |---|---|---|---|
 | Bulleted / numbered / checklist | Toolbar | Have | StarterKit + TaskList |
 | Nesting (indent/outdent) | Toolbar | Have | sink/liftListItem |
-| Bullet library (8 markers), numbering library, multilevel templates (7) | Toolbar `tipMarkers*`, `tipMultiLevel*` | Missing | — |
-| List settings (type, symbol, font, start at, restart, alignment, indent, follow with) | ListSettingsDialog, ListIndentsDialog | Missing | — |
-| Continue numbering / start new list / set numbering value / join / separate | DocumentHolder `textContinueNumbering...`, NumberingValueDialog | Missing | — |
-| Numbering through style; numbered headings | `numberingApplicator.js`, `numberingCalculation.js` | Missing | — |
-| Autocorrect text to list (`* `, `- `, `> `, `1. `, `1.1.`, `1) `, `a. `, `A) `) | `numberingAutocorrect.js`, AutoCorrectDialog | Partial | StarterKit input rules: `-/+/* ` and `1. ` only |
+| Bullet library (8 markers), numbering library, multilevel templates (7) | Toolbar `tipMarkers*`, `tipMultiLevel*` | Have (M3) | `numbering.ts` LIST_LIBRARY, `ListMenu.tsx` |
+| List settings (type, symbol, font, start at, restart, alignment, indent, follow with) | ListSettingsDialog, ListIndentsDialog | Have (M3) | List settings dialog (no per-level font / alignment UI yet) |
+| Continue numbering / start new list / set numbering value / join / separate | DocumentHolder `textContinueNumbering...`, NumberingValueDialog | Have (M3) | restart / continue / set value (`docModel.ts`) |
+| Numbering through style; numbered headings | `numberingApplicator.js`, `numberingCalculation.js` | Have (M3) | style `pPr.numId`, heading-linked multilevel lists |
+| Autocorrect text to list (`* `, `- `, `> `, `1. `, `1.1.`, `1) `, `a. `, `A) `) | `numberingAutocorrect.js`, AutoCorrectDialog | Have (M3) | `1.1.`, `1)`, `1)1)`, `a.`, `A)`, `i.`, continue with `5.` / `e)`; `-/+/* ` and `1. ` stay TipTap lists, `> ` a quote |
 | Change list level (keyboard) | Toolbar `textChangeLevel` | Have | Tab/Shift-Tab in TipTap lists |
 
 ### 2.5 Tables
@@ -902,3 +902,80 @@ Google Docs binding or model and the ported test asserts Grown's behaviour.
 TipTap 2 note: extension `storage` is shared by every editor built from the
 same extension object, so per-editor state (AutoCorrect settings) lives in a
 `WeakMap` keyed by editor instead.
+
+### 6.8 M3 status (paragraph properties, styles, numbering)
+
+* **Paragraph properties**: `paragraphProps.ts` — additive attributes on
+  paragraphs/headings: `indentRight`, `indentFirstLine` (negative =
+  hanging), `lineRule` (auto / exact / at least, with the M1 `lineHeight`
+  value), `tabs` (`"72l,144c.,216r"`), `keepNext`, `keepLines`,
+  `widowControl`, `pageBreakBefore` (stays with the first half of a split),
+  `borders` (JSON per side) and `outlineLevel`. All values are strings or
+  numbers so y-prosemirror compares them without churn; all render as
+  inline CSS / data attributes and parse back from HTML.
+  `setParagraphProps` / `setIndents` commands; `ParagraphDialogs.tsx`
+  (Format > Paragraph settings…: indents & spacing, line & page breaks,
+  borders & shading, tabs). The ruler binds to the selected paragraphs
+  (triangles = paragraph indents, tab stops drawn, page margins drag from
+  the shaded ends).
+* **Styles**: `styles.ts` — a `styles` Yjs map holds custom styles and
+  overrides of built-ins (Normal, No Spacing, Title, Subtitle, Heading
+  1-6, Quote, Intense Quote, List Paragraph, Caption; character styles
+  Emphasis, Strong, Subtle/Intense Emphasis, Book Title); nothing is seeded
+  into existing docs. Paragraphs carry `styleId`; a heading without one is
+  "Heading N", so existing headings are the Heading styles (a style based
+  on Heading N makes a level-N heading node). `compileParaPr` resolves
+  list level, style chain, "numbering off" and direct properties in Word's
+  order; `styleCss` generates per-editor CSS; `displayStyle` implements
+  OnlyOffice's mixed-selection rules. `StyleGallery.tsx` replaces the
+  toolbar's style select (previews, update to match, new from selection,
+  delete / restore); Enter applies a style's `next` style; Ctrl+Alt+0-6 and
+  Format > Paragraph styles go through the style model.
+* **Numbering**: `numbering.ts` — a `numbering` Yjs map with abstract lists
+  (nine levels: format, level text, start, indents, linked style) and
+  instances (start overrides); paragraphs join with `numId`/`numLvl` or via
+  their style (`numId` "0" = off). Libraries: 8 bullets, 7 numberings,
+  7 multilevel lists (3 heading-linked). `docModel.ts` wires it to TipTap:
+  labels are node decorations (`.doc-num[data-num]`), apply / remove /
+  restart / continue / set value / level (Tab, Shift+Tab, Enter on an empty
+  item, Backspace at the start), and list autocorrect. TipTap's
+  bullet/ordered lists are unchanged and still used by the toolbar buttons,
+  `- `, `* ` and `1. `. `ListMenu.tsx` (toolbar list library) and the List
+  settings / Set numbering value dialogs.
+* **Export**: `exportBodyHtml` writes compiled style CSS inline, wraps
+  styled paragraphs in `<div data-custom-style>` (pandoc maps it to a DOCX
+  paragraph style; character styles likewise on spans) and writes list
+  labels as text, so HTML/DOCX/ODT/PDF exports keep the look until M6's
+  direct DOCX writer.
+* **Tests**: 20 tagged cases, all passing: `oo/numbering-apply.test.ts` 4,
+  `oo/numbering-autocorrect.test.ts` 3, `oo/numbering-calc.test.ts` 2,
+  `oo/style-display.test.ts` 5, `oo/style-compile.test.ts` 1,
+  `oo/style-apply.test.ts` 1, `oo/paragraph-props.test.ts` 4
+  (api-paragraph; "ParaId" is n/a). Grown-native: paragraph-property
+  cases in `oo/paragraph-props.test.ts` (render/parse round trip, Yjs
+  sync) and `styles-numbering.test.ts` (heading mapping, next style,
+  new/update/delete, character styles, list keys, restart/continue/set
+  value, Yjs persistence of styles and lists, export). Playwright:
+  `web/e2e/docs-styles.spec.ts` (gallery styles + autocorrect list +
+  library multilevel list persist across reload; Paragraph settings
+  dialog). The Docs M2 AutoCorrect no longer capitalises a lone letter or
+  roman numeral typed as a list marker ("a.", "i)").
+* **Not yet**: per-level list font / number alignment UI, "don't add
+  space between paragraphs of the same style", real tab-stop layout and
+  on-screen keep/page-break pagination (M9), Heading 7-9, undo of style /
+  list-definition edits (the Yjs `UndoManager` tracks the document
+  fragment only), a direct `text-align: left` overriding a centred style
+  (TipTap stores left as the default and renders nothing).
+* **Semantic differences**:
+
+| Case | OnlyOffice | Grown | Status |
+|---|---|---|---|
+| numberingApplicator: Numbering for headings; selecting vs placing cursor | Nine heading levels | Heading 1-6 (TipTap headings); the cases check six levels | grown-variant |
+| numberingApplicator: paragraphs with left indentation | A first line indented further gets a deeper level ("i.", then "b. c. d.") | Lists apply at level 0 and replace direct indents with the list's; stays 1) 2) 3) 4) | grown-variant |
+| numberingAutocorrect: `* `, `- `, `> ` | Bullets "·", "–", "Ø" | `* ` / `- ` start TipTap bulleted lists ("•"); `> ` starts a block quote (Google Docs) | grown-variant |
+| numberingAutocorrect: roman numerals | Commented out upstream (TODO) | `i. ` / `I) ` start roman lists; `v. ` continues one | Done (extra) |
+| paraPr / styleApplicator lengths | Millimetres | Points; the case numbers are kept | Note only |
+| styleApplicator: update from selection | Style takes the paragraph's properties; direct numbering equal to the style's counts as the style's | Same: the style captures direct paragraph props and numbering, which leave the paragraph; a paragraph whose direct list equals its style's follows the style's indents | Done (M3) |
+| api-paragraph: SetShd / SetColor theme colours | Theme colours | No document theme | n/a |
+| api-paragraph: ParaId | `w14:paraId` | No equivalent identity | n/a |
+

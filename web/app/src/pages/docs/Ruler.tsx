@@ -7,9 +7,24 @@ export interface Indents {
   firstLine: number; // inches (relative to left)
 }
 
+/** The selected paragraph's indents in points (M3). */
+export interface ParagraphIndents {
+  left: number;
+  right: number;
+  /** Negative = hanging. */
+  firstLine: number;
+  /** Tab stop positions (points from the left indent). */
+  tabs?: number[];
+}
+
 interface RulerProps {
   indents: Indents;
   onChange: (next: Indents) => void;
+  /** When given, the triangles show and set the selected paragraphs'
+   *  indents; the page margins become the shaded ends of the ruler, whose
+   *  inner edges drag to set the margins. */
+  paragraph?: ParagraphIndents | null;
+  onParagraphChange?: (next: ParagraphIndents) => void;
 }
 
 // US Letter content width at the editor's max width. The ruler maps inches to
@@ -18,11 +33,12 @@ const PAGE_INCHES = 8.5;
 
 /** Ruler renders a Google-Docs-style horizontal ruler with inch ticks and
  *  draggable first-line, left-indent, and right-indent markers. */
-export function Ruler({ indents, onChange }: RulerProps) {
+export function Ruler({ indents, onChange, paragraph, onParagraphChange }: RulerProps) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const para = paragraph && onParagraphChange ? paragraph : null;
 
   const startDrag =
-    (marker: "left" | "right" | "firstLine") => (e: React.PointerEvent) => {
+    (marker: "left" | "right" | "firstLine" | "marginLeft" | "marginRight") => (e: React.PointerEvent) => {
       e.preventDefault();
       const track = trackRef.current;
       if (!track) return;
@@ -32,7 +48,27 @@ export function Ruler({ indents, onChange }: RulerProps) {
       const move = (ev: PointerEvent) => {
         const x = Math.max(0, Math.min(rect.width, ev.clientX - rect.left));
         const inches = Math.round((x / pxPerInch) * 8) / 8; // snap to 1/8"
-        if (marker === "left")
+        if (para && onParagraphChange && marker !== "marginLeft" && marker !== "marginRight") {
+          // Paragraph indents, in points relative to the margins.
+          const textL = indents.left;
+          const textR = PAGE_INCHES - indents.right;
+          if (marker === "left") {
+            const left = Math.max(0, Math.min(inches, textR - 0.5)) - textL;
+            // Word's left marker keeps the first line where it was.
+            const firstAbs = para.left + para.firstLine;
+            onParagraphChange({ ...para, left: left * 72, firstLine: firstAbs - left * 72 });
+          } else if (marker === "firstLine") {
+            onParagraphChange({ ...para, firstLine: (Math.max(0, inches) - textL) * 72 - para.left });
+          } else {
+            onParagraphChange({ ...para, right: Math.max(0, textR - Math.max(inches, textL + 0.5)) * 72 });
+          }
+          return;
+        }
+        if (marker === "marginLeft")
+          onChange({ ...indents, left: Math.max(0, Math.min(inches, PAGE_INCHES - indents.right - 1)) });
+        else if (marker === "marginRight")
+          onChange({ ...indents, right: Math.max(0, Math.min(PAGE_INCHES - inches, PAGE_INCHES - indents.left - 1)) });
+        else if (marker === "left")
           onChange({
             ...indents,
             left: Math.min(inches, PAGE_INCHES - indents.right - 0.5),
@@ -128,10 +164,46 @@ export function Ruler({ indents, onChange }: RulerProps) {
           borderColor: "neutral.outlinedBorder",
         }}
       >
+        {para && (
+          <>
+            {/* page margins: shaded ends with draggable inner edges */}
+            {[
+              { l: 0, w: indents.left, edge: indents.left, which: "marginLeft" as const },
+              { l: PAGE_INCHES - indents.right, w: indents.right, edge: PAGE_INCHES - indents.right, which: "marginRight" as const },
+            ].map((m) => (
+              <Box key={m.which}>
+                <Box
+                  sx={{ position: "absolute", left: pct(m.l), width: pct(m.w), top: 0, bottom: 0, bgcolor: "neutral.softBg", opacity: 0.8 }}
+                />
+                <Box
+                  data-testid={`ruler-${m.which}`}
+                  onPointerDown={startDrag(m.which)}
+                  sx={{ position: "absolute", left: pct(m.edge), top: 0, bottom: 0, width: 6, transform: "translateX(-50%)", cursor: "col-resize", zIndex: 1 }}
+                />
+              </Box>
+            ))}
+            {/* tab stops */}
+            {(para.tabs ?? []).map((t) => (
+              <Box
+                key={t}
+                sx={{
+                  position: "absolute",
+                  left: pct(indents.left + (para.left + t) / 72),
+                  bottom: 1,
+                  width: 6,
+                  height: 6,
+                  borderLeft: "2px solid",
+                  borderBottom: "2px solid",
+                  borderColor: "text.secondary",
+                }}
+              />
+            ))}
+          </>
+        )}
         {ticks}
         {/* first-line indent (downward triangle) */}
         {marker(
-          pct(indents.left + indents.firstLine),
+          pct(para ? indents.left + (para.left + para.firstLine) / 72 : indents.left + indents.firstLine),
           startDrag("firstLine"),
           <Box
             sx={{
@@ -146,7 +218,7 @@ export function Ruler({ indents, onChange }: RulerProps) {
         )}
         {/* left indent (upward triangle) */}
         {marker(
-          pct(indents.left),
+          pct(para ? indents.left + para.left / 72 : indents.left),
           startDrag("left"),
           <Box
             sx={{
@@ -161,7 +233,7 @@ export function Ruler({ indents, onChange }: RulerProps) {
         )}
         {/* right indent (upward triangle) */}
         {marker(
-          pct(PAGE_INCHES - indents.right),
+          pct(PAGE_INCHES - indents.right - (para ? para.right / 72 : 0)),
           startDrag("right"),
           <Box
             sx={{

@@ -17,10 +17,11 @@ interface HeadingItem {
 function extractHeadings(editor: Editor): HeadingItem[] {
   const items: HeadingItem[] = [];
   editor.state.doc.descendants((node, pos) => {
-    if (node.type.name === "heading") {
+    // Headings, plus paragraphs given an outline level (M3).
+    if (node.type.name === "heading" || (node.type.name === "paragraph" && node.attrs.outlineLevel)) {
       const text = node.textContent.trim();
       items.push({
-        level: (node.attrs.level as number) || 1,
+        level: (node.attrs.level as number) || Math.min(6, node.attrs.outlineLevel as number) || 1,
         text: text || "(untitled heading)",
         pos,
       });
