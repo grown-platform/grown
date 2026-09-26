@@ -1,6 +1,6 @@
 # OnlyOffice parity — cross-cutting plan (PDF, Forms, Visio, common, conversion, harness)
 
-Status: research + planning only (2026-09-26). Nothing here changes app code.
+Status: planning (2026-09-26). CC0 (scoreboard) and CC1 (shared unit ports, see §5) have landed.
 Baselined against `origin/main` **c90064e** (includes the merged PDF-editor overhaul PR #32 at 4850ecf and docs import via pandoc, c3e38aa / dac2186).
 Editor-specific plans live in [docs.md](docs.md), [sheets.md](sheets.md), [slides.md](slides.md);
 this file covers everything that is not one editor.
@@ -151,8 +151,8 @@ Legend: **Have** = present and exercised · **Partial** = present but narrower t
 | Spellcheck | Hunspell wasm, per-language | Partial (browser-native only) | no `spellcheck`/`hunspell`/`nspell` in `web/app/src` or `internal` (except a game page); TipTap contenteditable inherits browser spellcheck |
 | Fonts | Bundled FreeType/HarfBuzz, font list API, hyphenation | Partial | docs/slides expose ~7 web-safe families (`web/app/src/pages/docs/Toolbar.tsx`, `slides/model.ts`); PDF editor bundles Noto Sans (PR #32); no hyphenation |
 | Charts | Full chart model + ChartEx | Missing in editors | no chart library in `web/app/package.json`; FortuneSheet has no chart plugin wired; slides have no chart element (see sheets.md / slides.md) |
-| Colour transforms (lumMod etc.) | DrawingML colour mods | Missing (no theme colours) | — (only relevant once pptx/xlsx import carries theme colours) |
-| URL classification (`asc_getUrlType`) | Http/Email/Unsafe/Invalid | Partial | link insertion in docs/sheets/slides; no shared classifier; no `Unsafe` scheme rejection |
+| Colour transforms (lumMod etc.) | DrawingML colour mods | Have (library, CC1) | `web/app/src/lib/colorMods.ts`: all 28 §20.1.2.3 transforms + srgb/hsl/scheme resolution; not yet used by an importer |
+| URL classification (`asc_getUrlType`) | Http/Email/Unsafe/Invalid | Have (CC1) | `web/app/src/lib/urlType.ts`, used by the Docs and Slides link prompts; Sheets has no link dialog yet |
 | Plugins / macros | 55-method plugin API, macro recorder, VBA import | Missing | no plugin/macro/Apps-Script layer; webhooks exist only in `internal/projects/webhook.go`, `internal/live/webhooks.go` |
 | Print | Native print pipeline | Partial | browser print / PDF export |
 | Number formats | `NumFormat.js` | (sheets.md) | `internal/sheets` |
@@ -168,7 +168,7 @@ Legend: **Have** = present and exercised · **Partial** = present but narrower t
 | Slides export pptx/pdf/txt/html/jpg/png/svg | Have (client, pptxgenjs MIT) | `web/app/src/pages/slides/export.ts` (ODP deliberately omitted) |
 | Slides import pptx | Missing | — |
 | PDF export from any editor | Have | client (jsPDF/pdf-lib) + pandoc/tectonic |
-| Conversion tests | Partial (import only) | `internal/docs/convert_import_test.go`: **6 `func Test`** (round-trip via pandoc, HTML passthrough, `ImportSupported`, unsupported format, oversize, garbage); `ConvertHTML` (export side) has no tests; no corpus-driven fidelity tests |
+| Conversion tests | Partial (import only) | `internal/docs/convert_import_test.go`: **6 `func Test`** (round-trip via pandoc, HTML passthrough, `ImportSupported`, unsupported format, oversize, garbage); `ConvertHTML` (export side) has no tests; no corpus-driven fidelity tests | *(superseded by CC2, see §5 status note)*
 | Legacy binary (doc/xls/ppt), xlsb, fb2, djvu, xps, hwp | Missing | — (pandoc reads doc? no — only docx/odt/rtf/epub/html/md) |
 
 ### 2.6 Test harness baseline (what a scoreboard would count today)
@@ -281,5 +281,21 @@ Sizes: S ≤ 1 day · M ≤ 1 week · L 2–3 weeks · XL > 3 weeks. All additiv
 | CC7 | **Version history for sheets/slides/whiteboards**; spellcheck toggle + lang; shared Noto font bundle | M each | Go repo tests per app; vitest for font helper |
 | CC8 | **Optional LibreOffice-headless exec** behind a feature flag (legacy .doc/.xls/.ppt import, ODP export) | L | Go tests skipped unless `soffice` present |
 | — | Flagged exceptions (not planned): in-editor plugin/macro platform; PDF co-editing; PDF→DOCX fidelity conversion; PDF/A; vsdx write/edit | — | Rationale in §3 |
+
+**CC1 status (done, 2026-09-26):**
+- `web/app/src/lib/colorMods.ts` + `colorMods.test.ts`: all 28 ECMA-376 transforms (the "26 mod types" above plus `hue`/`sat`/`lum`), `resolveColor` for srgbClr/hslClr/schemeClr (default clrMap aliases) and `readColorMods` for pptx/xlsx XML. It's the one module Slides/Sheets import should use (slides.md now points here). 28 `oo:` tags, one per QUnit test: the full 137-row combined table plus sampled rows from each per-mod grid, compared within ±1 per channel. Checked locally against all 10,023 reference rows: 98.7% agree within ±1. The rest are all "saturate an achromatic grey" rows, where we keep plain HSL (hue 0°) and the reference has a darker blue channel. That divergence is documented in the test.
+- `web/app/src/lib/urlType.ts` + `urlType.test.ts`: `http | email | internal | unsafe | invalid`. Both `api.js` QUnit tests are ported (browser + desktop via `isLocalFile`). The `//todo` rows use the answers the todo asks for (e.g. `mysite@ourearth.com` → email). Script schemes (`javascript:`, `data:`, `vbscript:`) are always invalid. `resolveLinkInput` is wired into the Docs toolbar, context menu and Insert menu and the Slides link action: bare hosts get `https://`, bare addresses get `mailto:`, invalid input is rejected, and unsafe input asks for confirmation.
+- Code style: root `.editorconfig` (LF, final newline, UTF-8 only), `eol-last` in `pdf/frontend/eslint.config.js` (web/app has no eslint), and `web/app/src/codeStyle.test.ts` covering 2 of `check.py`'s 4 checks. The licence-header and address checks don't apply.
+
+### CC2 status (Wave 1, 2026-09-26): done
+
+- **Tests.** `internal/docs/convert_test.go` covers `ConvertHTML` for every export format (docx/odt/epub container checks, standalone RTF, gfm, and PDF when `tectonic` is on PATH), the 16 MiB cap on both sides, the pandoc-missing path, cancellation, and temp-file cleanup. It also runs HTML → {docx, odt, rtf, epub, md} → HTML fidelity over `internal/docs/testdata/fidelity.html` (headings, bold/italic/underline/strike, links, nested/ordered lists, tables, data-URI images, blockquote, code). Known pandoc losses are asserted as *expected losses*, so a pandoc upgrade that fixes one fails loudly. The losses: paragraph alignment is lost everywhere; odt turns underline into `<em>`; rtf flattens lists into bullet-glyph paragraphs, drops `<th>`, and loses blockquotes.
+- **Corpus runner.** `internal/docs/corpus_test.go` walks `GROWN_CONVERSION_CORPUS`. Each file goes through import, export to docx/odt/md, and a docx re-import, and the test asserts words, headings, tables, list items, and embedded images all survive. Empty source documents are detected without pandoc. The test skips when the variable is unset (CI), and the same pipeline always runs over `testdata/corpus` (self-authored). Tags cover `OdfFile/Test/Test/ExampleFiles` (4 of 5; the pptx belongs to slides), `EpubFile/test/Files` (11), `TestOOOXml2Odf` (docx → odt), and `StandardTester` (the batch round trip). With these, **common/conversion has 17 ported**.
+- **Corpus pass rate** against `research/onlyoffice/core` (fixture dirs only): **54/54 (100 %)**. That breaks down as docx 3, odt 3, epub 11, html 30, htm 3, md 4, and 10 of the 54 are legitimately empty libxml2/ODT edge cases. The first, naive run passed 36/54. Every one of those failures traced to the checker, not to `convert.go`: it counted non-embeddable relative/remote `<img>` as losses, flagged empty sources and empty `<li>`, and hit transient disk-full errors. Run it with `GROWN_CONVERSION_CORPUS=$PWD/research/onlyoffice/core go test ./internal/docs/ -run Corpus -parallel 1 -v`. The xlsx/xls/csv (`AVSOfficeEWSEditorTest`) and pptx/odp fixtures stay with CC5.
+- **Bugs fixed in `convert.go`**, each with regression tests:
+  1. pandoc ran without `--sandbox`. On import, `--embed-resources` inlined arbitrary server files (`<img src="/etc/passwd">`) into the returned HTML, export packed them into docx/odt/epub, and http(s) URLs were fetched server-side (SSRF). Fixed in both directions.
+  2. RTF export was a headerless fragment, not an openable `.rtf`. It is now `--standalone`.
+  3. `ConvertHTML` never enforced `maxConvertBytes`.
+- **Open follow-ups (not fixed here).** Markdown/txt import passes raw HTML such as `<script>` through; this is safe today only because the editor re-parses through its schema. `serveDocsConvert` and `serveDocsImport` silently truncate bodies over 16 MiB rather than returning 413.
 
 Suggested order: CC0 → CC1 → CC2 → CC3 → CC4 → CC6 → CC5 → CC7 → CC8. CC0–CC2 are pure additions with no UI risk and immediately make the scoreboard non-zero for the cross-cutting area.

@@ -158,12 +158,12 @@ Grown paths are relative to the repo root; `docs/` below means
 | Font family | Toolbar `tipFontName` (system + theme fonts) | Partial | 7 hard-coded fonts `docs/Toolbar.tsx:681` |
 | Font size (numeric, inc/dec) | Toolbar | Have | `FontSize` ext `docs/extensions.ts:265` |
 | Font color, highlight | Toolbar | Have | Color + Highlight |
-| Paragraph shading / run background | Toolbar `tipPrColor`, `api-run SetShd` | Missing | — |
-| Change case (sentence/lower/UPPER/Capitalize/tOGGLE) | Toolbar `mni*Case`, `Editor/ChangeCase.js` | Partial | `MenuBar.tsx:385` has UPPER/lower/Title only, and `transformSelection` re-inserts plain text, losing marks across runs |
+| Paragraph shading / run background | Toolbar `tipPrColor`, `api-run SetShd` | Partial (M1) | paragraph `shading` attr + highlight (`docs/paragraphFormat.ts`, `textOps.ts`); no toolbar control yet |
+| Change case (sentence/lower/UPPER/Capitalize/tOGGLE) | Toolbar `mni*Case`, `Editor/ChangeCase.js` | Have (M1) | `docs/textCase.ts`, Format > Text > Change case; keeps run marks |
 | Double strikethrough, small caps, all caps | ParagraphSettingsAdvanced `strDoubleStrike/strSmallCaps/strAllCaps` | Missing | — |
 | Character spacing, position, ligatures/OpenType | ParagraphSettingsAdvanced | Missing | — |
-| Clear formatting / reset char | Toolbar `tipClearStyle`, shortcut `ResetChar` | Have | `clearNodes().unsetAllMarks()` |
-| Copy / paste format (format painter) | Toolbar `tipCopyStyle`, shortcuts `CopyFormat/PasteFormat` | Missing | — |
+| Clear formatting / reset char | Toolbar `tipClearStyle`, shortcut `ResetChar` | Have | Ctrl+\ clears formatting; Ctrl+Space resets character formatting (M1) |
+| Copy / paste format (format painter) | Toolbar `tipCopyStyle`, shortcuts `CopyFormat/PasteFormat` | Partial (M1) | Ctrl+Alt+C / Ctrl+Alt+V; no toolbar painter / sticky mode |
 | Text direction LTR/RTL | Toolbar `textDirLtr/Rtl` | Missing | — |
 | Language of text / document | Statusbar `tipSetLang`, ReviewChanges `txtDocLang` | Missing | — |
 | Drop cap | DropcapSettingsAdvanced | Missing | — |
@@ -177,9 +177,9 @@ Grown paths are relative to the repo root; `docs/` below means
 | Alignment L/C/R/J | Toolbar | Have | TextAlign |
 | Line spacing multiples | Toolbar `tipLineSpace` | Have | `LineHeight` ext |
 | Line spacing exact / at least | ParagraphSettings `textExact/textAtLeast` | Missing | — |
-| Space before/after (numeric) | ParagraphSettings, `api.js` add/remove space test | Partial | fixed 12px toggle `docs/MenuBar.tsx:488` |
+| Space before/after (numeric) | ParagraphSettings, `api.js` add/remove space test | Have (M1) | `docs/paragraphFormat.ts`; add/remove before/after + Custom spacing dialog |
 | "Don't add interval between same-style paragraphs" | ParagraphSettings | Missing | — |
-| Left/right indent, first-line, hanging (per paragraph) | ParagraphSettings `strIndent*`, `styles/paraPr.js` | Missing | Ruler sets page margins; indent buttons only sink/lift list items |
+| Left/right indent, first-line, hanging (per paragraph) | ParagraphSettings `strIndent*`, `styles/paraPr.js` | Partial (M1) | per-paragraph left indent in 36pt steps (Ctrl+M, Tab on whole paragraphs); right/first-line/hanging in M3 |
 | Tab stops (pos, alignment, leader) | ParagraphSettingsAdvanced `strTabs`, `document-calculation/paragraph/tabs.js` | Missing | — |
 | Keep with next / keep lines / widow-orphan / page break before | ParagraphSettingsAdvanced, `keep-next.js` | Missing | — |
 | Paragraph borders & fill | ParagraphSettingsAdvanced `strBorders` | Missing | — |
@@ -388,18 +388,18 @@ OnlyOffice defines 107 shortcut actions (`sdkjs/word/apiDefines.js:223`,
 |---|---|---|---|
 | Undo/redo, cut/copy/paste, paste text only, select all | 53-58, 67 | Have | TipTap defaults + `docs/editorActions.ts` |
 | Bold/italic/underline/strike/sub/sup | 82-87 | Have | TipTap defaults |
-| Heading 1-3 (Alt+1..3), bullets (Ctrl+Shift+L) | 88-91 | Partial | Grown uses Ctrl+Alt+1-6 (Google style), listed in `docs/ShortcutsDialog.tsx` |
-| Increase/decrease font size | 93-94 | Partial | listed in ShortcutsDialog but not bound (only menu items) |
+| Heading 1-3 (Alt+1..3), bullets (Ctrl+Shift+L) | 88-91 | Have (grown-variant) | Ctrl+Alt+1-6 and Ctrl+Shift+8 (Google style); Ctrl+Shift+L stays align left |
+| Increase/decrease font size | 93-94 | Have (M1) | Ctrl+Shift+. / Ctrl+Shift+, stepping 8…72 |
 | Align L/C/R/J | 95-98 | Have | TextAlign defaults |
-| Indent/unindent (Ctrl+M / Ctrl+Shift+M) | 100-101, 104-107 | Partial | list items only |
-| Page break (Ctrl+Enter), line break (Shift+Enter), column break | 42-43, 99 | Partial | line break yes; page/column break no |
-| Non-breaking space/hyphen, em/en dash, ©, ®, ™, ellipsis, € | 51-52, symbol shortcuts | Missing | — |
+| Indent/unindent (Ctrl+M / Ctrl+Shift+M) | 100-101, 104-107 | Have (M1) | lists nest/lift, paragraphs indent; also Ctrl+] / Ctrl+[ |
+| Page break (Ctrl+Enter), line break (Shift+Enter), column break | 42-43, 99 | Partial | page and line break (M1); column break M9 |
+| Non-breaking space/hyphen, em/en dash, ©, ®, ™, ellipsis, € | 51-52, symbol shortcuts | Have (M1) | `docs/shortcuts.ts`; also Alt+X hex to character |
 | Insert hyperlink (Ctrl+K), visit hyperlink | 65-66 | Partial | Ctrl+K opens prompt; visit via click |
-| Insert footnote/endnote now, equation, page number | InsertFootnoteNow etc. | Missing | — |
-| Copy/paste format (Ctrl+Shift+C/V) | 59-60 | Missing | — |
+| Insert footnote/endnote now, equation, page number | InsertFootnoteNow etc. | Partial | Ctrl+Alt+F / Ctrl+Alt+D notes (M1); equation M11, page number M9 |
+| Copy/paste format (Ctrl+Alt+C/V) | 59-60 | Have (M1) | Ctrl+Shift+C stays Google's word count |
 | Show non-printing (Ctrl+Shift+Num8), update fields (F9), save, print | 103, 18, 7-8 | Partial | print only |
 | Navigation/selection by word/line/page/document, header/footer | 19-41, 68-81 | Have (browser) | native contenteditable |
-| Reset char (Ctrl+Space) | 92 | Missing | clear formatting has no key |
+| Reset char (Ctrl+Space) | 92 | Have (M1) | keeps links, comments and suggestions |
 | Search menus (Alt+/), shortcuts (Ctrl+/), comment (Ctrl+Alt+M), history | Google style | Have | `docs/DocEditor.tsx:395` |
 
 ### 2.19 Import / export / print
@@ -774,21 +774,62 @@ objects. Fixtures are written by hand from the described inputs.
 
 ### 6.5 Semantic differences found
 
-Places where Grown's behaviour differs from OnlyOffice's. Each one has a
-skipped test with a `TODO(Mx)`.
+Places where Grown's behaviour differs from OnlyOffice's. Open items have a
+skipped test with a `TODO(Mx)`; items closed in M1 keep their row with the
+resolution. "grown-variant" marks a deliberate difference: Grown keeps its
+Google Docs binding or model and the ported test asserts Grown's behaviour.
 
-| Case | OnlyOffice | Grown today | Plan |
+| Case | OnlyOffice | Grown | Status |
 |---|---|---|---|
-| change-case: Sentence case, Toggle case (4 cases) | Five change-case modes | Only UPPERCASE, lowercase, Title Case | M1 |
-| change-case (Grown regression tests) | Case change keeps each run's formatting and the paragraph boundaries | `transformSelection` re-inserts the selection as one string. All text takes the first run's marks (`<strong>big</strong> blue` becomes all bold), and a multi-paragraph selection collapses into one paragraph with a newline | M1: map text nodes in place |
+| change-case: Sentence case, Toggle case (4 cases) | Five change-case modes | Five modes, `changeCase()` in `textCase.ts` | Done (M1) |
+| change-case (Grown regression tests) | Case change keeps each run's formatting and the paragraph boundaries | Text nodes are rewritten in place with their own marks; words and sentences are judged with the paragraph's text as context | Done (M1) |
 | change-case math (5 cases) | Equation text is left unchanged | No equation node | M11 |
-| shortcuts: Check text property change | The increase/decrease font size shortcuts step through 10, 11, 12, 14, 16 | Bold, italic, underline, strike, superscript and subscript toggles all pass. Font size has no key binding (menu only) and steps by 1pt | M1 |
-| shortcuts: Check paragraph property change | Pressing an alignment shortcut again switches back to left; Ctrl+M / Ctrl+Shift+M indent by 12.5 mm | Headings pass (Grown binds them to Ctrl+Alt+1-3, not Alt+1-3). Alignment shortcuts only set the alignment and never toggle it off. Ctrl+M is not bound (Tab indents list items only) | M1 (M3 for numeric indent) |
-| shortcuts: Check toggle bullet list | Ctrl+Shift+L | Ctrl+Shift+8 (Google Docs / TipTap). The behaviour matches, so this case passes with Grown's key | ShortcutsDialog documents it |
-| shortcuts: page break, reset char, special characters | Ctrl+Enter, Ctrl+Space, and symbol keys (nbsp, ©, €, ®, ™, –, —, ‑, …) | Not bound. A page break is available from the Insert menu only | M1 |
-| shortcuts: Check remove symbols | Backspace/Delete, and with Ctrl a whole word | Handled natively by the browser's contenteditable, so jsdom can't test it | Playwright port (M1) |
+| shortcuts: Check text property change | Increase/decrease font size step through 10, 11, 12, 14, 16 | Ctrl+Shift+. / Ctrl+Shift+, step through 8…28, 36, 48, 72. OnlyOffice's own chords (Ctrl+] / Ctrl+[) stay Google Docs indent | Done (M1), grown-variant chord |
+| shortcuts: Check paragraph property change | Alignment shortcuts toggle back; Ctrl+M / Ctrl+Shift+M indent by 12.5 mm; Alt+1-3 headings | Center/right/justify toggle back to left. Ctrl+M / Ctrl+Shift+M (and Ctrl+] / Ctrl+[) indent by 36pt (0.5in) steps via a paragraph `indent` attribute, or nest list items. Headings stay Ctrl+Alt+1-6. Ctrl+Shift+L is align left and does not toggle to the previous alignment | Done (M1); grown-variant: headings chord, indent step, left-align toggle |
+| shortcuts: Check toggle bullet list | Ctrl+Shift+L | Ctrl+Shift+8 (Google Docs / TipTap); Ctrl+Shift+L stays align left | grown-variant, listed in ShortcutsDialog |
+| shortcuts: page break, reset char, special characters | Ctrl+Enter, Ctrl+Space, symbol keys | All bound. Non-breaking hyphen is stored as U+2011 (OnlyOffice reports it as "-" in plain text). Alt+- / Alt+Shift+- added for en/em dash on keyboards without a numpad | Done (M1) |
+| shortcuts: Check remove symbols, move/select, sending events | Model-level caret movement | Native contenteditable behaviour; ported to Playwright. Word-wise movement/deletion follows the host OS (Option on macOS, which stops at word ends); page-wise movement is left out (Grown's pages are one scrolling surface) | Done (M1, Playwright) |
 | shortcuts: Check undo/redo history | Undo stack of the document | In the app, Yjs `UndoManager` handles undo; the headless harness uses ProseMirror history with the same keys | Note only |
-| api.js: Test AddText/RemoveSelection | `AddTextWithPr` with the wrap-with-spaces option (`Tex 123 t`) | Typing over a selection works; there is no wrap-with-spaces insert | M1 |
-| api.js: Test add/remove space before/after paragraph | Numeric space before/after, a "has space" state, style-aware | A single before-or-after toggle | M1 |
-| api.js: Get text/selected text | Includes a selection that ends inside an equation | Plain-text half passes; no equation node | M11 |
+| shortcuts: Check save | Save callback | Docs save continuously; Ctrl+S is swallowed and reported through `editor.storage.docShortcuts.onSave` | Done (M1) |
+| shortcuts: Check copy/paste format | Format painter data | Ctrl+Alt+C / Ctrl+Alt+V copy and apply character formatting (no sticky painter mode yet) | Done (M1); sticky mode with M7's "reset actions" |
+| api.js: Test AddText/RemoveSelection | `AddTextWithPr` with the wrap-with-spaces option | `addText(editor, text, { wrapWithSpaces })` in `textOps.ts` | Done (M1) |
+| api.js: Test add/remove space before/after paragraph | Numeric space before/after, a "has space" state, style-aware | Numeric points per side; unset sides follow the block type's default (Normal 0/9pt, headings their margins). Headings stand in for OnlyOffice's paragraph style until M3 styles | Done (M1) |
+| api.js: Get text/selected text | Includes a selection that ends inside an equation | Plain-text half passes; equation half skipped | M11 |
 | api.js: Change numbering level | Enter in an empty list item ends the list at level 1 and outdents at deeper levels | Same behaviour (passes) | — |
+| api-run / api-range: SetColor, SetShd | RGB, hex, theme and auto colours; range shading on a whole paragraph shades the paragraph | RGB/hex and auto (= none) pass. Grown has no document theme, so theme colours are n/a. Whole-paragraph ranges set a paragraph `shading` attribute, partial ranges a highlight | Done (M1); theme colours n/a |
+| textInput.js: TextSpeaker, complex script, in-shape | Screen-reader hook, script runs, shape text | No equivalents (browser shapes text; no shapes until M7) | n/a |
+
+### 6.6 M1 status (text operations, change case, spacing, shortcuts)
+
+* **Change case**: `textCase.ts` (`changeCase`, `CASE_MODES`) with Sentence
+  case, lowercase, UPPERCASE, Capitalize Each Word and tOGGLE cASE, keeping
+  per-run marks and paragraph structure; Format > Text > Change case lists
+  all five.
+* **Text operations**: `textOps.ts` — `addText` (wrap with spaces),
+  `getText` / `getSelectedText` with paragraph / line-break / tab / table
+  cell and row separators, `correctEnteredText`, runs, text colour, run and
+  paragraph shading, Alt+X `unicodeToChar`.
+* **Paragraph format**: `paragraphFormat.ts` — numeric space before/after
+  (points, per side, block-type defaults), add/remove space and
+  `hasSpaceBefore/After`, a Custom spacing dialog, paragraph `indent`
+  (36pt steps) and `shading` attributes. Format > Line & paragraph spacing
+  shows Add/Remove space before/after from the current state.
+* **Shortcuts**: `shortcuts.ts` (`DocShortcuts`, `TabCharacter`,
+  `SHORTCUT_GROUPS`). `ShortcutsDialog` renders `SHORTCUT_GROUPS`, and
+  `__tests__/shortcuts-dialog.test.ts` presses every listed editing chord so
+  the dialog can't drift from the keymap. DocEditor binds the listed
+  Ctrl+H, Ctrl+K and Ctrl+Shift+C.
+* **Harness**: `compose` / `composeText` (IME composition),
+  `makeSyncedEditors` (editors on separate Yjs docs, synced on demand;
+  `buildExtensions({ collab: false, ydoc })`), `NumpadSubtract` in `keys.ts`.
+* **Tests**: 66 tagged cases across the M1 suites (api 4, textInput 2,
+  change-case 15, api-document-content 1, api-range 3, api-run 3, shortcuts
+  38). Passing: 43 (39 vitest + 4 Playwright). Skipped with a later
+  milestone: change-case math 5 (M11) and 18 shortcuts cases (M7–M13). Not
+  tagged (n/a): shortcuts "Check disable shortcuts" and "Check reset
+  drag'n'drop"; textInput TextSpeaker, complex-script and in-shape.
+* **Playwright**: `web/e2e/docs/oo-shortcuts.spec.ts` (remove symbols,
+  move/select, UI events, plus a Ctrl+Enter / Ctrl+Shift+. / Ctrl+Space /
+  symbols check with a screenshot). The "Desktop Chrome" device reports a
+  Windows platform, so app chords use Ctrl even on a macOS host while
+  native caret movement follows the host.

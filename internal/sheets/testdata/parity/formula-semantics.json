@@ -62,7 +62,7 @@
         {"formula":"=-10","expect":-10},
         {"formula":"=-10*2","expect":-20},
         {"formula":"=-10+10","expect":0},
-        {"formula":"=12%","expect":0.12,"pending":"M2: the % postfix operator"},
+        {"formula":"=12%","expect":0.12},
         {"formula":"=2<>\"3\"","expect":true},
         {"formula":"=2=\"3\"","expect":false},
         {"formula":"=2>\"3\"","expect":false},

@@ -1,0 +1,2 @@
+CREATE DATABASE zitadel;
+CREATE DATABASE pdf;

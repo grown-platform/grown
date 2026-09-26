@@ -37,6 +37,7 @@ const NAMED: Record<string, [string, string, number]> = {
   End: ["End", "End", 35],
   PageUp: ["PageUp", "PageUp", 33],
   PageDown: ["PageDown", "PageDown", 34],
+  NumpadSubtract: ["-", "NumpadSubtract", 109],
 };
 
 // Punctuation -> [code, keyCode, shifted key] on a US layout.

@@ -1,24 +1,24 @@
 // Ports of OnlyOffice word/change-case/change-case.js (behaviour only; the
 // fixtures below are Grown's own sentences). Grown exposes change case as
-// Format > Text > UPPERCASE / lowercase / Title Case, implemented by
-// transformSelection() in editorActions.ts. Sentence case and tOGGLE cASE
-// are not offered yet (Docs M1); equations don't exist yet (Docs M11).
+// Format > Text > Change case (Sentence case / lowercase / UPPERCASE /
+// Capitalize Each Word / tOGGLE cASE), implemented by changeCase() in
+// textCase.ts. Equations don't exist yet (Docs M11).
 import { describe, expect, it } from "vitest";
 import type { Editor } from "@tiptap/core";
-import { toTitleCase, transformSelection } from "../../editorActions";
+import { changeCase, changeCaseText, type CaseMode } from "../../textCase";
 import {
   htmlSnapshot,
   makeEditor,
   paragraphPos,
   paragraphText,
   paragraphTexts,
+  pressKey,
+  selectedText,
   selectInParagraph,
   selectRange,
 } from "../harness";
 
-const upper = (e: Editor) => transformSelection(e, (s) => s.toUpperCase());
-const lower = (e: Editor) => transformSelection(e, (s) => s.toLowerCase());
-const title = (e: Editor) => transformSelection(e, toTitleCase);
+const apply = (e: Editor, mode: CaseMode) => changeCase(e, mode);
 
 // One paragraph of several sentences in each casing.
 const SENTENCE =
@@ -40,72 +40,72 @@ function paragraphSelected(text: string): Editor {
 }
 
 describe("OnlyOffice change-case: whole paragraph", () => {
-  it.skip("oo:word/change-case/change-case.js#Sentence case paragraph", () => {
-    // TODO(M1): Grown has no Sentence case command.
+  it("oo:word/change-case/change-case.js#Sentence case paragraph", () => {
     const e = paragraphSelected(LOWER);
+    apply(e, "sentence");
     expect(paragraphText(e, 0)).toBe(SENTENCE);
   });
 
   it("oo:word/change-case/change-case.js#Upper case paragraph", () => {
     const e = paragraphSelected(SENTENCE);
-    upper(e);
+    apply(e, "upper");
     expect(paragraphText(e, 0)).toBe(UPPER);
   });
 
   it("oo:word/change-case/change-case.js#Lower case paragraph", () => {
     const e = paragraphSelected(TOGGLED);
-    lower(e);
+    apply(e, "lower");
     expect(paragraphText(e, 0)).toBe(LOWER);
   });
 
-  it.skip("oo:word/change-case/change-case.js#Toggle case paragraph", () => {
-    // TODO(M1): Grown has no tOGGLE cASE command.
+  it("oo:word/change-case/change-case.js#Toggle case paragraph", () => {
     const e = paragraphSelected(SENTENCE);
+    apply(e, "toggle");
     expect(paragraphText(e, 0)).toBe(TOGGLED);
   });
 
   it("oo:word/change-case/change-case.js#CapitalizeWords case paragraph", () => {
     const e = paragraphSelected(SENTENCE);
-    title(e);
+    apply(e, "capitalize");
     expect(paragraphText(e, 0)).toBe(WORDS);
   });
 });
 
 describe("OnlyOffice change-case: partial selection", () => {
-  it.skip("oo:word/change-case/change-case.js#Sentence case", () => {
-    // TODO(M1): Grown has no Sentence case command. Expected: selecting
-    // "red. apple" in "red. apples" gives "Red. Apple" — the first letter
-    // of each sentence in the selection is raised.
+  it("oo:word/change-case/change-case.js#Sentence case", () => {
+    // Selecting "red. apple" in "red. apples" raises the first letter of
+    // each sentence in the selection; the unselected "s" is untouched.
     const e = makeEditor("<p>red. apples</p>");
     selectInParagraph(e, 0, 0, 10);
+    apply(e, "sentence");
     expect(paragraphText(e, 0)).toBe("Red. Apples");
   });
 
   it("oo:word/change-case/change-case.js#Upper case", () => {
     const e = makeEditor("<p>Big blue. ocean</p>");
     selectInParagraph(e, 0, 4, 8); // "blue"
-    upper(e);
+    apply(e, "upper");
     expect(paragraphText(e, 0)).toBe("Big BLUE. ocean");
   });
 
   it("oo:word/change-case/change-case.js#Lower case", () => {
     const e = makeEditor("<p>Big Blue. ocean</p>");
     selectInParagraph(e, 0, 4, 8); // "Blue"
-    lower(e);
+    apply(e, "lower");
     expect(paragraphText(e, 0)).toBe("Big blue. ocean");
   });
 
-  it.skip("oo:word/change-case/change-case.js#Toggle case", () => {
-    // TODO(M1): Grown has no tOGGLE cASE command.
+  it("oo:word/change-case/change-case.js#Toggle case", () => {
     const e = makeEditor("<p>Big Blue. ocean</p>");
     selectInParagraph(e, 0, 4, 8);
+    apply(e, "toggle");
     expect(paragraphText(e, 0)).toBe("Big bLUE. ocean");
   });
 
   it("oo:word/change-case/change-case.js#CapitalizeWords case", () => {
     const e = makeEditor("<p>big blue. ocean</p>");
     selectInParagraph(e, 0, 0, 8); // "big blue"
-    title(e);
+    apply(e, "capitalize");
     expect(paragraphText(e, 0)).toBe("Big Blue. ocean");
   });
 });
@@ -131,24 +131,67 @@ describe("OnlyOffice change-case: equations", () => {
   });
 });
 
-// Grown-native regressions found while porting (not OnlyOffice cases; see
-// "Semantic differences found" in docs/plans/onlyoffice-parity/docs.md).
-// transformSelection re-inserts the selection as one plain string, so it
-// loses per-run formatting and merges the selected paragraphs.
+// Grown-native regressions (not OnlyOffice cases; see "Semantic differences
+// found" in docs/plans/onlyoffice-parity/docs.md). Before M1 the transform
+// re-inserted the selection as one plain string, losing per-run formatting
+// and merging the selected paragraphs.
 describe("change case keeps document structure (Grown)", () => {
-  it.skip("keeps each run's formatting", () => {
-    // TODO(M1): today all text takes the first run's marks.
+  it("keeps each run's formatting", () => {
     const e = makeEditor("<p><strong>big</strong> blue <em>sea</em></p>");
     selectInParagraph(e, 0, 0, 12);
-    upper(e);
+    apply(e, "upper");
     expect(htmlSnapshot(e)).toBe("<p><strong>BIG</strong> BLUE <em>SEA</em></p>");
   });
 
-  it.skip("keeps paragraphs separate", () => {
-    // TODO(M1): today the two paragraphs become one with a newline.
+  it("keeps paragraphs separate", () => {
     const e = makeEditor("<p>one</p><p>two</p>");
     selectRange(e, paragraphPos(e, 0, 0), paragraphPos(e, 1, 3));
-    upper(e);
+    apply(e, "upper");
     expect(paragraphTexts(e)).toEqual(["ONE", "TWO"]);
+  });
+
+  it("judges words across run boundaries", () => {
+    // "wor" bold + "ld" plain is one word: only its first letter is raised.
+    const e = makeEditor("<p>hello <strong>wor</strong>ld</p>");
+    selectInParagraph(e, 0, 0, 11);
+    apply(e, "capitalize");
+    expect(htmlSnapshot(e)).toBe("<p>Hello <strong>Wor</strong>ld</p>");
+  });
+
+  it("uses the text before a partial selection as context", () => {
+    // Selection starts mid-sentence: nothing in it starts a sentence.
+    const e = makeEditor("<p>One two three</p>");
+    selectInParagraph(e, 0, 4, 13);
+    apply(e, "sentence");
+    expect(paragraphText(e, 0)).toBe("One two three");
+    // ... and mid-word for Capitalize Each Word.
+    const f = makeEditor("<p>hello world</p>");
+    selectInParagraph(f, 0, 2, 11);
+    apply(f, "capitalize");
+    expect(paragraphText(f, 0)).toBe("hello World");
+  });
+
+  it("keeps the selection on the changed text and undoes in one step", () => {
+    const e = makeEditor("<p>alpha beta</p>");
+    selectInParagraph(e, 0, 0, 5);
+    apply(e, "upper");
+    expect(selectedText(e)).toBe("ALPHA");
+    pressKey(e, "Mod-z");
+    expect(paragraphText(e, 0)).toBe("alpha beta");
+  });
+
+  it("changes the word at the caret when nothing is selected", () => {
+    const e = makeEditor("<p>alpha beta</p>");
+    selectRange(e, paragraphPos(e, 0, 7), paragraphPos(e, 0, 7));
+    apply(e, "upper");
+    expect(paragraphText(e, 0)).toBe("alpha BETA");
+  });
+
+  it("handles characters whose case changes length", () => {
+    expect(changeCaseText("straße", "upper")).toBe("STRASSE");
+    const e = makeEditor("<p>a <em>straße</em> b</p>");
+    selectInParagraph(e, 0, 0, 10);
+    apply(e, "upper");
+    expect(htmlSnapshot(e)).toBe("<p>A <em>STRASSE</em> B</p>");
   });
 });

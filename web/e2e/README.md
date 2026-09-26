@@ -31,6 +31,9 @@ that's what makes reload-persistence genuinely testable.
    process-compose up        # wait until the `backend` service is healthy
    ```
 
+   No Nix? `deploy/local/stack.sh up` brings up the same stack with Docker
+   (see [deploy/local/README.md](../../deploy/local/README.md)).
+
    The stack serves the app at `http://workspace.localtest.me:8080` and Zitadel
    at `http://localhost:8081`. The seeded login is `admin` / `DevPassword!1`.
 
@@ -45,6 +48,12 @@ that's what makes reload-persistence genuinely testable.
 
    Override the target with `GROWN_HTTP_URL` (e.g. to point at a staging URL
    that also has the seeded user).
+
+## Visual tour
+
+`GROWN_TOUR=1 npx playwright test tour.spec.ts` opens each editor with sample
+content and writes full-page screenshots to `test-results/tour/`. Use it to
+look over a deploy. It is skipped unless `GROWN_TOUR` is set.
 
 ## Notes
 

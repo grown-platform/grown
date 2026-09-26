@@ -11,13 +11,11 @@ import {
 } from "@mui/joy";
 import ArrowRightIcon from "@mui/icons-material/ArrowRight";
 import type { Editor } from "@tiptap/react";
-import {
-  copySelection,
-  cutSelection,
-  paste,
-  toTitleCase,
-  transformSelection,
-} from "./editorActions";
+import { copySelection, cutSelection, paste } from "./editorActions";
+import { CASE_MODES, changeCase } from "./textCase";
+import { hasSpaceAfter, hasSpaceBefore } from "./paragraphFormat";
+import { indent, outdent, stepFontSize } from "./shortcuts";
+import { resolveLinkInput } from "../../lib/urlType";
 import { downloadDoc, DOWNLOAD_FORMATS } from "./export";
 
 const menuButtonSx = {
@@ -37,20 +35,6 @@ function kbd(s: string) {
       {s}
     </Typography>
   );
-}
-
-/** bumpFont changes the selection's font size by delta points. */
-function bumpFont(editor: Editor, delta: number) {
-  const cur =
-    parseInt(
-      (editor.getAttributes("textStyle").fontSize as string) || "11",
-      10,
-    ) || 11;
-  editor
-    .chain()
-    .focus()
-    .setFontSize(`${Math.max(1, Math.min(96, cur + delta))}pt`)
-    .run();
 }
 
 /** FileMenu is a controlled dropdown whose Download row expands an inline list
@@ -168,6 +152,7 @@ export interface DocActions {
   toggleHeaderFooter: () => void;
   toggleSuggesting: () => void;
   insertDrawing: () => void;
+  customSpacing: () => void;
 }
 
 interface MenuBarProps {
@@ -299,7 +284,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem disabled>Smart chips</MenuItem>
           <MenuItem
             onClick={run((e) => {
-              const u = window.prompt("Link URL");
+              const u = resolveLinkInput(window.prompt("Link URL"));
               if (u) e.chain().focus().setLink({ href: u }).run();
             })}
           >
@@ -318,7 +303,11 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Horizontal line
           </MenuItem>
           <MenuItem
-            onClick={run((e) => e.chain().focus().setPageBreak().run())}
+            onClick={run(
+              (e) =>
+                e.chain().focus().insertPageBreak().run() ||
+                e.chain().focus().setPageBreak().run(),
+            )}
           >
             Page break
           </MenuItem>
@@ -368,25 +357,37 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           >
             Subscript
           </MenuItem>
-          <MenuItem onClick={run((e) => bumpFont(e, 1))}>
+          <MenuItem
+            onClick={run((e) => {
+              e.commands.focus();
+              stepFontSize(e, 1);
+            })}
+          >
             Increase font size{kbd("Ctrl+Shift+.")}
           </MenuItem>
-          <MenuItem onClick={run((e) => bumpFont(e, -1))}>
+          <MenuItem
+            onClick={run((e) => {
+              e.commands.focus();
+              stepFontSize(e, -1);
+            })}
+          >
             Decrease font size{kbd("Ctrl+Shift+,")}
           </MenuItem>
-          <MenuItem
-            onClick={run((e) => transformSelection(e, (s) => s.toUpperCase()))}
-          >
-            UPPERCASE
-          </MenuItem>
-          <MenuItem
-            onClick={run((e) => transformSelection(e, (s) => s.toLowerCase()))}
-          >
-            lowercase
-          </MenuItem>
-          <MenuItem onClick={run((e) => transformSelection(e, toTitleCase))}>
-            Title Case
-          </MenuItem>
+          <ListDivider />
+          <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
+            Change case
+          </Typography>
+          {CASE_MODES.map(({ mode, label }) => (
+            <MenuItem
+              key={mode}
+              onClick={run((e) => {
+                e.commands.focus();
+                changeCase(e, mode);
+              })}
+            >
+              {label}
+            </MenuItem>
+          ))}
           <ListDivider />
           <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
             Paragraph styles
@@ -438,18 +439,20 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Justified{kbd("Ctrl+Shift+J")}
           </MenuItem>
           <MenuItem
-            onClick={run((e) =>
-              e.chain().focus().sinkListItem("listItem").run(),
-            )}
+            onClick={run((e) => {
+              e.commands.focus();
+              indent(e);
+            })}
           >
-            Increase indent{kbd("Ctrl+]")}
+            Increase indent{kbd("Ctrl+M")}
           </MenuItem>
           <MenuItem
-            onClick={run((e) =>
-              e.chain().focus().liftListItem("listItem").run(),
-            )}
+            onClick={run((e) => {
+              e.commands.focus();
+              outdent(e);
+            })}
           >
-            Decrease indent{kbd("Ctrl+[")}
+            Decrease indent{kbd("Ctrl+Shift+M")}
           </MenuItem>
           <ListDivider />
           <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
@@ -476,20 +479,33 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Double
           </MenuItem>
           <ListDivider />
-          <MenuItem
-            onClick={run((e) =>
-              e.chain().focus().setParagraphSpacing("12px", "12px").run(),
-            )}
-          >
-            Add space before & after paragraph
-          </MenuItem>
-          <MenuItem
-            onClick={run((e) =>
-              e.chain().focus().setParagraphSpacing(null, null).run(),
-            )}
-          >
-            Remove paragraph spacing
-          </MenuItem>
+          {editor && hasSpaceBefore(editor.state) ? (
+            <MenuItem
+              onClick={run((e) => e.chain().focus().removeSpaceBefore().run())}
+            >
+              Remove space before paragraph
+            </MenuItem>
+          ) : (
+            <MenuItem
+              onClick={run((e) => e.chain().focus().addSpaceBefore().run())}
+            >
+              Add space before paragraph
+            </MenuItem>
+          )}
+          {editor && hasSpaceAfter(editor.state) ? (
+            <MenuItem
+              onClick={run((e) => e.chain().focus().removeSpaceAfter().run())}
+            >
+              Remove space after paragraph
+            </MenuItem>
+          ) : (
+            <MenuItem
+              onClick={run((e) => e.chain().focus().addSpaceAfter().run())}
+            >
+              Add space after paragraph
+            </MenuItem>
+          )}
+          <MenuItem onClick={actions.customSpacing}>Custom spacing…</MenuItem>
           <ListDivider />
           <MenuItem
             onClick={run((e) => e.chain().focus().toggleBulletList().run())}

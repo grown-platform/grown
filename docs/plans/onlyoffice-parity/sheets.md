@@ -600,3 +600,74 @@ The four largest themes cover more than half of the backlog (about 610 of 1,154 
 - The missing empty value (blank criteria cells, `ISBLANK`, `""` outputs).
 
 Each theme is a cross-cutting engine change, not a per-function fix.
+
+---
+
+## 8. M2 + M4 results (Wave 1, 2026-09-26)
+
+M2 (math/text/database breadth) and M4 (engineering and financial) are
+done: every OnlyOffice tag in the four suites passes, with the remaining
+differences marked pending check by check.
+
+### 8.1 What landed
+
+| Piece | Where |
+|---|---|
+| Math: ACOT, ACOTH, COTH, CSCH, SECH, CEILING.PRECISE, ISO.CEILING, FLOOR.PRECISE, ECMA.CEILING | `formula_math2.go` |
+| Text: FINDB, LEFTB, LENB, MIDB, REPLACEB, RIGHTB, SEARCHB, ASC, REGEXTEST (LEN/LEFT/RIGHT/MID now share the byte variants' argument handling) | `formula_text2.go` |
+| Database: DSTDEVP, DVARP | `formula_database2.go` |
+| `%` postfix operator; omitted arguments (`f(1,,3)`) read as 0 / ""; Excel number-to-text (15 digits, `1E+307`) | `formula.go` (tokenizer `'%'`, `parsePercent`, `parseArgList`, `toStr`), `formula_operators.go` |
+| Complex type, COMPLEX + 25 IM* functions | `formula_complex.go` |
+| BESSELI/J/K/Y | `formula_bessel.go` |
+| Day-count basis helper (0–4) and coupon schedule | `formula_daycount.go` |
+| COUPDAYBS/COUPDAYS/COUPDAYSNC/COUPNCD/COUPNUM/COUPPCD, PRICE, YIELD, PRICEDISC, YIELDDISC, PRICEMAT, YIELDMAT, ACCRINTM, ODDFPRICE, ODDFYIELD, ODDLPRICE, ODDLYIELD (ACCRINT and DURATION/MDURATION rewritten on the same helpers) | `formula_bond.go`, `formula_more2.go` |
+| VDB, AMORLINC, AMORDEGRC | `formula_depreciation.go` |
+| Argument guards for the older scalar financial/engineering functions (error pass-through, multi-cell range → `#VALUE!`) | `formula_validate.go` |
+| Fixtures | `testdata/parity/formula-{math,text,engineering,financial}.json`, `formula-database.json` (+DSTDEVP, DVARP) |
+
+No client function list exists (formula autocomplete comes from
+fortune-sheet), so nothing needed registering outside `registerFunc`.
+
+Harness additions: a check may set `"complex": true` (complex text compared
+part by part within `tol`: the suites print full double precision, Grown
+prints 15 digits like Excel), and `PARITY_INCLUDE_PENDING=1` with
+`PARITY_REPORT` reports pending checks that now pass.
+
+### 8.2 Counts
+
+| OnlyOffice file | Tags ported / passing | Checks | Passing | Pending (diff) | Skipped (M1) |
+|---|---|---|---|---|---|
+| `mathematicTests.js` | 92 / 92 | 4,120 | 3,044 | 366 | 710 |
+| `textAndDataTests.js` | 44 / 44 (T(123) has no literal assertion) | 2,139 | 1,397 | 368 | 374 |
+| `engineeringTests.js` | 54 / 54 | 3,121 | 2,396 | 81 | 644 |
+| `financialTests.js` | 55 / 55 | 3,032 | 2,516 | 154 | 362 |
+| `databaseTests.js` | 12 / 12 (+DSTDEVP, DVARP) | 536 | 268 | 161 | 107 |
+
+Scoreboard: `sheets/formulas` ported 87 → 334; total 135 → 382.
+
+### 8.3 Wave 0 backlog items fixed here
+
+Error arguments now propagate through ROUND, ABS, LEFT/RIGHT/MID/LEN and
+the guarded financial/engineering functions (`error-args`); omitted
+arguments no longer give `#VALUE!` (69 Wave 0 `omitted-arg` checks now
+pass; 16 lookup checks where OnlyOffice *rejects* an empty argument are
+now pending as `omitted-arg-rejected`). Also: ROUND family on the 15-digit
+decimal value, `POWER(0,-1)`/`LOG(x,1)`/`COT(0)`/`CSC(0)` → `#DIV/0!`,
+GCD/LCM validation, date text in math functions and VALUE, CEILING with a
+negative number and positive significance, AGGREGATE 14–19 with
+error-ignoring options, IPMT/CUMIPMT beginning-of-period interest, DB month
+truncation, DDB fractional periods, and a panic on `DEC2BIN(1,1E+10)`.
+
+### 8.4 Remaining differences (pending keys, new suites)
+
+| Key | Checks | Note / home |
+|---|---|---|
+| `number-format` | 172 | TEXT/DOLLAR/FIXED format codes and OnlyOffice locale output → M6 |
+| `array-lifting`, `whole-ref-arith` | 118 | scalar functions and range arithmetic over arrays outside ARRAYFORMULA → M5 |
+| `direct-text-args`, `sum-of-text-result` | 103 | `SUM("10")` vs a text cell: single-cell references reach functions as values, so literal and reference cannot be told apart → M1 (reference values) |
+| `semicolon-args` | 74 | `;` as argument separator → M1 (locale) |
+| `validation` | 74 | per-function argument validation (SEQUENCE, AGGREGATE, DECIMAL, XIRR, …) |
+| `date-1900` | 50 | serials ≤ 60 → M6 |
+| `overflow` | 40 | results beyond Excel's range not `#NUM!` |
+| `textsplit-array-delims`, `regex-args`, `roman-forms`, `convert-units` | 132 | TEXTBEFORE/AFTER/SPLIT array delimiters, Excel-365 REGEX* arguments, ROMAN forms 1–4, CONVERT unit table |
+| others | ~200 | error-args in functions not yet guarded, booleans, blank cells, `#NULL!`, OnlyOffice-specific quirks (e.g. `UPPER(TRUE)` stays boolean, IMSUM always answers with `i`) |

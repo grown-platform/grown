@@ -41,6 +41,7 @@ import FormatClearIcon from "@mui/icons-material/FormatClear";
 import RemoveIcon from "@mui/icons-material/Remove";
 import AddIcon from "@mui/icons-material/Add";
 import type { Editor } from "@tiptap/react";
+import { resolveLinkInput } from "../../lib/urlType";
 
 export type EditorMode = "editing" | "viewing";
 
@@ -173,7 +174,7 @@ export function Toolbar({
 
   const promptLink = () => {
     const prev = (editor.getAttributes("link").href as string) || "";
-    const url = window.prompt("Link URL", prev);
+    const url = resolveLinkInput(window.prompt("Link URL", prev));
     if (url === null) return;
     if (url === "") editor.chain().focus().unsetLink().run();
     else editor.chain().focus().setLink({ href: url }).run();

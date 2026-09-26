@@ -20,7 +20,8 @@ test.describe.serial("dashboard", () => {
     await context.clearCookies();
 
     await page.goto(`${BASE_URL}/`);
-    await page.getByTestId("sign-in-button").click();
+    // The SPA sign-in page is an in-app form now; start OIDC at the backend.
+    await page.goto(`${BASE_URL}/api/v1/auth/login`);
 
     // Now we're on the Zitadel login form.
     await page
@@ -45,11 +46,11 @@ test.describe.serial("dashboard", () => {
     await expect(page.getByTestId("tile-docs")).toBeVisible();
     await expect(page.getByTestId("tile-whiteboard")).toBeVisible();
 
-    // Welcome line uses the admin's display name or email.
-    await expect(page.getByText(/Welcome back/i)).toBeVisible();
+    // The shared header mounted (the old "Welcome back" line was removed).
+    await expect(page.getByTestId("services-menu")).toBeVisible();
   });
 
-  test("clicking a non-live tile navigates to its coming-soon page", async ({
+  test("clicking a live tile opens the app in the SPA", async ({
     page,
   }) => {
     // Each test gets its own browser context, so we must be authenticated here too.
@@ -57,7 +58,8 @@ test.describe.serial("dashboard", () => {
     await context.clearCookies();
 
     await page.goto(`${BASE_URL}/`);
-    await page.getByTestId("sign-in-button").click();
+    // The SPA sign-in page is an in-app form now; start OIDC at the backend.
+    await page.goto(`${BASE_URL}/api/v1/auth/login`);
     await page
       .locator('input[name="loginName"], input[id="loginName"]')
       .fill("admin");
@@ -73,11 +75,13 @@ test.describe.serial("dashboard", () => {
       { timeout: 30_000 },
     );
 
-    // Docs is not yet live — clicking it should show the coming-soon page.
+    // Every catalog app is live now (no comingSoon tiles), so a tile click
+    // routes client-side into the app. Docs is the interesting one: a hard
+    // load of /docs serves the public documentation site instead.
     await page.getByTestId("tile-docs").click();
 
-    await expect(page).toHaveURL(`${BASE_URL}/coming-soon/docs`);
-    await expect(page.getByText("Coming soon", { exact: false })).toBeVisible();
-    await expect(page.getByTestId("back-to-dashboard")).toBeVisible();
+    await expect(page).toHaveURL(`${BASE_URL}/docs`);
+    await expect(page.getByTestId("services-menu")).toBeVisible();
+    await expect(page.getByTestId("sign-in-button")).toHaveCount(0);
   });
 });

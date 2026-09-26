@@ -22,7 +22,7 @@ sdkjs-tests-v9.3.1/tests/visio/api/api-test.js,0,visio,low,web/app/src/pages/whi
 sdkjs-tests-v9.3.1/tests/visio/api/test-files.js,0,visio,low,web/app/src/pages/whiteboard/vsdx.test.ts,CC6
 sdkjs-tests-v9.3.1/tests/visio/draw-main/draw-main.js,0,visio,none,,CC6
 sdkjs-tests-v9.3.1/tests/visio/drawFile/draw-file.js,0,visio,none,,CC6
-sdkjs-tests-v9.3.1/tests/code-style/check.py,4,code-style,medium,.editorconfig,CC1
+sdkjs-tests-v9.3.1/tests/code-style/check.py,4,code-style,medium,.editorconfig;web/app/src/codeStyle.test.ts,CC1
 sdkjs/common/libfont/test/shaper.js,0,common-fonts,none,,CC7
 sdkjs/common/libfont/test/hyphen.js,0,common-fonts,low,web/app/src/pages/docs/hyphenate.test.ts,CC7
 sdkjs/common/geometry/test/code.js,0,common-geometry,none,,CC6

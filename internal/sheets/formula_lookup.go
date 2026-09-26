@@ -269,9 +269,6 @@ func fnIndex(c *callCtx) value {
 	if c.nargs() < 2 {
 		return errValue
 	}
-	if c.omitted(1) {
-		return errValue
-	}
 	if v, ok := indexRef(c); ok {
 		return v
 	}

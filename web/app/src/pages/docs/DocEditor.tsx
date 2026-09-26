@@ -48,6 +48,7 @@ import {
   EmojiDialog,
   SpecialCharsDialog,
   FindReplaceDialog,
+  CustomSpacingDialog,
   PageSetupDialog,
 } from "./dialogs";
 import { VersionHistory } from "./VersionHistory";
@@ -97,6 +98,7 @@ export function DocEditor({ user }: DocEditorProps) {
     | "menus"
     | "pagesetup"
     | "shortcuts"
+    | "spacing"
   >(null);
   // Right-hand side panel: version history, comments, or suggestions.
   const [panel, setPanel] = useState<
@@ -278,6 +280,7 @@ export function DocEditor({ user }: DocEditorProps) {
       window.alert(`${words} word${words === 1 ? "" : "s"}`);
     },
     findReplace: () => setDialog("find"),
+    customSpacing: () => setDialog("spacing"),
     emoji: () => setDialog("emoji"),
     specialChars: () => setDialog("specials"),
     pageSetup: () => setDialog("pagesetup"),
@@ -364,8 +367,9 @@ export function DocEditor({ user }: DocEditorProps) {
   }, [editor]);
 
   // Global editor shortcuts not handled by TipTap: command palette (Alt+/),
-  // keyboard-shortcuts overlay (Ctrl+/), comment (Ctrl+Alt+M), and version
-  // history (Ctrl+Alt+Shift+H).
+  // keyboard-shortcuts overlay (Ctrl+/), comment (Ctrl+Alt+M), version
+  // history (Ctrl+Alt+Shift+H), find & replace (Ctrl+H), link (Ctrl+K) and
+  // word count (Ctrl+Shift+C). Editing shortcuts live in shortcuts.ts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === "/") {
@@ -389,6 +393,32 @@ export function DocEditor({ user }: DocEditorProps) {
       ) {
         e.preventDefault();
         setPanel("versions");
+      } else if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === "h" || e.key === "H")
+      ) {
+        e.preventDefault();
+        actions.findReplace();
+      } else if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === "k" || e.key === "K") &&
+        editor?.isFocused
+      ) {
+        e.preventDefault();
+        const u = window.prompt("Link URL");
+        if (u) editor.chain().focus().setLink({ href: u }).run();
+      } else if (
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey &&
+        !e.altKey &&
+        e.code === "KeyC"
+      ) {
+        e.preventDefault();
+        actions.wordCount();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -806,6 +836,11 @@ export function DocEditor({ user }: DocEditorProps) {
       />
       <SpecialCharsDialog
         open={dialog === "specials"}
+        onClose={() => setDialog(null)}
+        editor={editor}
+      />
+      <CustomSpacingDialog
+        open={dialog === "spacing"}
         onClose={() => setDialog(null)}
         editor={editor}
       />

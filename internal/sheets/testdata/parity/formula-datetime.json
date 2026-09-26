@@ -241,7 +241,7 @@
         {"formula":"=DATEVALUE(40777)","expect":{"error":"#VALUE!"},"pending":"oo-diff/text-as-date: non-date input accepted by date function"},
         {"formula":"=DATEVALUE(TRUE)","expect":{"error":"#VALUE!"}},
         {"formula":"=DATEVALUE(FALSE)","expect":{"error":"#VALUE!"}},
-        {"formula":"=DATEVALUE(A103)","expect":{"error":"#VALUE!"},"pending":"oo-diff/text-as-date: non-date input accepted by date function"},
+        {"formula":"=DATEVALUE(A103)","expect":{"error":"#VALUE!"}},
         {"formula":"=DATEVALUE(\"\")","expect":{"error":"#VALUE!"}},
         {"formula":"=DATEVALUE(NA())","expect":{"error":"#N/A"}},
         {"formula":"=DATEVALUE(\"Feb 30, 2011\")","expect":{"error":"#VALUE!"}},
@@ -257,7 +257,7 @@
         {"formula":"=DATEVALUE(\"1/1/1900\")","expect":1,"pending":"oo-diff/date-1900: serials 0-60 off by one (1900 leap-year quirk)"},
         {"formula":"=DATEVALUE(\"12/31/9999\")","expect":2958465},
         {"formula":"=DATEVALUE(100:100)","expect":{"error":"#VALUE!"},"pending":"oo-diff/range-as-scalar: a multi-cell range in a scalar slot uses its first cell"},
-        {"formula":"=DATEVALUE(M:M)","expect":{"error":"#VALUE!"},"pending":"oo-diff/range-as-scalar: a multi-cell range in a scalar slot uses its first cell"}
+        {"formula":"=DATEVALUE(M:M)","expect":{"error":"#VALUE!"}}
       ]
     },
     {

@@ -322,10 +322,10 @@ func (v value) toNum() (float64, bool) {
 func (v value) toStr() string {
 	switch v.kind {
 	case kindNum:
-		if v.num == math.Trunc(v.num) && !math.IsInf(v.num, 0) {
-			return strconv.FormatInt(int64(v.num), 10)
+		if v.str == omittedTag || v.blank {
+			return "" // an omitted argument or empty cell reads as empty text
 		}
-		return strconv.FormatFloat(v.num, 'f', -1, 64)
+		return numToText(v.num)
 	case kindBool:
 		if v.num != 0 {
 			return "TRUE"
@@ -739,7 +739,7 @@ func tokenise(s string) []token {
 		}
 		// Single-character operators / punctuation.
 		switch ch {
-		case '+', '-', '*', '/', '^', '=', '<', '>', '&', '@':
+		case '+', '-', '*', '/', '^', '=', '<', '>', '&', '@', '%':
 			emit(token{kind: tokOp, val: string(ch)})
 		case '(':
 			emit(token{kind: tokLParen, val: "("})
@@ -921,13 +921,28 @@ func (p *parser) parseMultiplicative() value {
 }
 
 func (p *parser) parsePower() value {
-	base := p.parseUnary()
+	base := p.parsePercent()
 	for p.peek().kind == tokOp && p.peek().val == "^" {
 		p.consume()
-		exp := p.parseUnary()
+		exp := p.parsePercent()
 		base = broadcast2(base, exp, func(a, b value) value { return scalarArith("^", a, b) })
 	}
 	return base
+}
+
+// parsePercent applies the postfix '%' operator (x% = x/100), which binds
+// tighter than '^' and looser than unary minus, as in Excel.
+func (p *parser) parsePercent() value {
+	v := p.parseUnary()
+	for p.peek().kind == tokOp && p.peek().val == "%" {
+		p.consume()
+		if p.arrayMode {
+			v = broadcast1(v, scalarPercent)
+		} else {
+			v = scalarPercent(v)
+		}
+	}
+	return v
 }
 
 func (p *parser) parseUnary() value {
@@ -1344,10 +1359,6 @@ func (c *callCtx) scalar(i int) value {
 // rangeArg returns argument i as a rangeVal. A scalar becomes a 1×1 range.
 // ok is false only when the argument index is absent.
 func (c *callCtx) rangeArg(i int) (rangeVal, bool) {
-	if i < len(c.args) && c.omitted(i) {
-		// An empty slot is not an array: it reads as a lone #VALUE!.
-		return rangeVal{rows: 1, cols: 1, cells: [][]value{{errValue}}}, true
-	}
 	switch v := c.raw(i).(type) {
 	case rangeVal:
 		return v, true
@@ -1365,18 +1376,12 @@ func (c *callCtx) rangeArg(i int) (rangeVal, bool) {
 // num returns argument i coerced to a number (ok=false if not numeric).
 func (c *callCtx) num(i int) (float64, bool) { return c.scalar(i).toNum() }
 
-// emptyArgTag is also written into an empty argument's str field, the marker
-// the M2 function work (wave1/sheets-funcs) uses for omitted arguments, so
-// both checks recognise the same value.
-const emptyArgTag = "\x00omitted"
-
-// emptyArg is the value of an empty argument slot.
-var emptyArg = value{kind: kindNum, omitted: true, str: emptyArgTag}
+// emptyArg is the value of an empty argument slot: omittedArg
+// (formula_operators.go) with the omitted flag set as well.
+var emptyArg = value{kind: kindNum, omitted: true, str: omittedTag}
 
 // isEmptyArg reports whether v stands for an empty argument.
-func isEmptyArg(v value) bool {
-	return v.omitted || (v.kind == kindNum && v.str == emptyArgTag)
-}
+func isEmptyArg(v value) bool { return v.omitted || isOmitted(v) }
 
 // omitted reports whether argument i is absent or left empty.
 func (c *callCtx) omitted(i int) bool {
@@ -1581,13 +1586,15 @@ func init() {
 	registerFunc("AND", func(c *callCtx) value { return fnAnd(c.flat()) })
 	registerFunc("OR", func(c *callCtx) value { return fnOr(c.flat()) })
 	registerFunc("NOT", func(c *callCtx) value { return fnNot(c.flat()) })
-	registerFunc("ROUND", func(c *callCtx) value { return fnRound(c.flat()) })
-	registerFunc("ABS", func(c *callCtx) value { return fnAbs(c.flat()) })
+	registerFunc("ROUND", mth2Round) // formula_math2.go
+	registerFunc("ABS", mth2Unary(func(x float64) value { return numVal(math.Abs(x)) }))
 	registerFunc("CONCATENATE", func(c *callCtx) value { return fnConcatenate(c.flat()) })
-	registerFunc("LEN", func(c *callCtx) value { return fnLen(c.flat()) })
-	registerFunc("LEFT", func(c *callCtx) value { return fnLeft(c.flat()) })
-	registerFunc("RIGHT", func(c *callCtx) value { return fnRight(c.flat()) })
-	registerFunc("MID", func(c *callCtx) value { return fnMid(c.flat()) })
+	// LEN/LEFT/RIGHT/MID share the argument handling of the byte variants
+	// (formula_text2.go).
+	registerFunc("LEN", txt2Len)
+	registerFunc("LEFT", func(c *callCtx) value { return txt2LeftRight(c, true) })
+	registerFunc("RIGHT", func(c *callCtx) value { return txt2LeftRight(c, false) })
+	registerFunc("MID", txt2Mid)
 	registerFunc("TODAY", func(c *callCtx) value { return fnToday(c.ev.now) })
 	registerFunc("NOW", func(c *callCtx) value { return fnNow(c.ev.now) })
 }
@@ -1766,37 +1773,6 @@ func fnNot(vals []value) value {
 	return boolVal(!v.isTruthy())
 }
 
-func fnRound(vals []value) value {
-	if len(vals) < 1 {
-		return errNA
-	}
-	n, ok := vals[0].toNum()
-	if !ok {
-		return errValue
-	}
-	digits := 0.0
-	if len(vals) >= 2 {
-		d, dok := vals[1].toNum()
-		if !dok {
-			return errValue
-		}
-		digits = d
-	}
-	factor := math.Pow(10, digits)
-	return numVal(math.Round(n*factor) / factor)
-}
-
-func fnAbs(vals []value) value {
-	if len(vals) == 0 {
-		return errNA
-	}
-	n, ok := vals[0].toNum()
-	if !ok {
-		return errValue
-	}
-	return numVal(math.Abs(n))
-}
-
 func fnConcatenate(vals []value) value {
 	var sb strings.Builder
 	for _, v := range vals {
@@ -1806,87 +1782,6 @@ func fnConcatenate(vals []value) value {
 		sb.WriteString(v.toStr())
 	}
 	return strVal(sb.String())
-}
-
-func fnLen(vals []value) value {
-	if len(vals) == 0 {
-		return errNA
-	}
-	v := vals[0]
-	if v.isErr() {
-		return v
-	}
-	runes := []rune(v.toStr())
-	return numVal(float64(len(runes)))
-}
-
-func fnLeft(vals []value) value {
-	if len(vals) == 0 {
-		return errNA
-	}
-	s := []rune(vals[0].toStr())
-	n := 1
-	if len(vals) >= 2 {
-		nf, ok := vals[1].toNum()
-		if !ok {
-			return errValue
-		}
-		n = int(math.Trunc(nf))
-	}
-	if n < 0 {
-		return errValue
-	}
-	if n > len(s) {
-		n = len(s)
-	}
-	return strVal(string(s[:n]))
-}
-
-func fnRight(vals []value) value {
-	if len(vals) == 0 {
-		return errNA
-	}
-	s := []rune(vals[0].toStr())
-	n := 1
-	if len(vals) >= 2 {
-		nf, ok := vals[1].toNum()
-		if !ok {
-			return errValue
-		}
-		n = int(math.Trunc(nf))
-	}
-	if n < 0 {
-		return errValue
-	}
-	if n > len(s) {
-		n = len(s)
-	}
-	return strVal(string(s[len(s)-n:]))
-}
-
-func fnMid(vals []value) value {
-	if len(vals) < 3 {
-		return errNA
-	}
-	s := []rune(vals[0].toStr())
-	startF, ok1 := vals[1].toNum()
-	lenF, ok2 := vals[2].toNum()
-	if !ok1 || !ok2 {
-		return errValue
-	}
-	start := int(math.Trunc(startF)) - 1 // 1-based to 0-based
-	length := int(math.Trunc(lenF))
-	if start < 0 || length < 0 {
-		return errValue
-	}
-	if start >= len(s) {
-		return strVal("")
-	}
-	end := start + length
-	if end > len(s) {
-		end = len(s)
-	}
-	return strVal(string(s[start:end]))
 }
 
 func fnToday(now time.Time) value {

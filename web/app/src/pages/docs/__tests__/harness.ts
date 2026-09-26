@@ -13,6 +13,7 @@ import { afterEach } from "vitest";
 import { Editor, type JSONContent } from "@tiptap/core";
 import { TextSelection, AllSelection } from "@tiptap/pm/state";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import * as Y from "yjs";
 import { buildExtensions } from "../extensions";
 import { pressKey, pressKeys } from "./keys";
 
@@ -51,6 +52,8 @@ polyfillLayout();
 
 // --- editor lifecycle -------------------------------------------------------
 export interface MakeEditorOpts {
+  /** Bind the editor to a Yjs document (see makeSyncedEditors). */
+  ydoc?: Y.Doc;
   /** Where to put the caret after load. Default "end". */
   cursor?: "start" | "end" | "all" | number;
   /** Start in Suggesting (track changes) mode. */
@@ -76,10 +79,11 @@ export function makeEditor(html = "<p></p>", opts: MakeEditorOpts = {}): Editor 
   document.body.appendChild(element);
   const editor = new Editor({
     element,
-    content: html,
+    content: opts.ydoc ? undefined : html,
     editable: opts.editable ?? true,
     extensions: buildExtensions({
       collab: false,
+      ydoc: opts.ydoc,
       userName: opts.userName,
       editable: opts.editable ?? true,
     }),
@@ -285,4 +289,54 @@ export function htmlSnapshot(editor: Editor): string {
 /** jsonSnapshot returns the ProseMirror JSON document. */
 export function jsonSnapshot(editor: Editor): JSONContent {
   return editor.getJSON();
+}
+
+// --- IME composition -------------------------------------------------------------
+/** compose starts an IME composition at the caret. Each update() replaces
+ *  the text composed so far (as the browser does while the user picks
+ *  candidates); end() commits it and leaves the caret after it. Code-point
+ *  arrays are accepted for scripts that are awkward to write literally. */
+export function compose(editor: Editor) {
+  const start = editor.state.selection.from;
+  if (!editor.state.selection.empty) {
+    editor.view.dispatch(editor.state.tr.deleteSelection());
+  }
+  let len = 0;
+  return {
+    update(text: string | number[]) {
+      const t = typeof text === "string" ? text : String.fromCodePoint(...text);
+      const tr = editor.state.tr;
+      if (t) tr.insertText(t, start, start + len);
+      else tr.delete(start, start + len);
+      tr.setSelection(TextSelection.create(tr.doc, start + t.length));
+      editor.view.dispatch(tr);
+      len = t.length;
+    },
+    end() {},
+  };
+}
+
+/** composeText enters `text` as one completed composition. */
+export function composeText(editor: Editor, text: string): void {
+  const c = compose(editor);
+  c.update(text);
+  c.end();
+}
+
+// --- collaboration ---------------------------------------------------------------
+/** makeSyncedEditors builds `n` editors on separate Yjs documents. Updates
+ *  are exchanged only when the returned sync() is called, so tests can
+ *  interleave local edits and synchronisation like a real network. */
+export function makeSyncedEditors(n = 2): { editors: Editor[]; docs: Y.Doc[]; sync: () => void } {
+  const docs = Array.from({ length: n }, () => new Y.Doc());
+  const editors = docs.map((ydoc) => makeEditor("<p></p>", { ydoc }));
+  const sync = () => {
+    for (let round = 0; round < 2; round++) {
+      for (const a of docs)
+        for (const b of docs)
+          if (a !== b) Y.applyUpdate(b, Y.encodeStateAsUpdate(a, Y.encodeStateVector(b)));
+    }
+  };
+  sync();
+  return { editors, docs, sync };
 }

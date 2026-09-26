@@ -10,7 +10,7 @@
 //   - financial (fractions):     DOLLARDE, DOLLARFR
 //   - financial (loans):         ISPMT
 //   - financial (discount/T-bill): DISC, INTRATE, RECEIVED, TBILLPRICE,
-//     TBILLYIELD, TBILLEQ, ACCRINT
+//     TBILLYIELD, TBILLEQ
 //   - financial (bonds):         DURATION, MDURATION
 //   - engineering (error fn):    ERF, ERFC, ERF.PRECISE, ERFC.PRECISE
 //   - math:                      MUNIT, SERIESSUM
@@ -36,7 +36,7 @@ func init() {
 	registerFunc("TBILLPRICE", finTBillPrice)
 	registerFunc("TBILLYIELD", finTBillYield)
 	registerFunc("TBILLEQ", finTBillEq)
-	registerFunc("ACCRINT", finAccrint)
+	// ACCRINT lives with the other coupon-bond functions in formula_bond.go.
 
 	// Financial: bond duration.
 	registerFunc("DURATION", func(c *callCtx) value { return finDurationFn(c, false) })
@@ -324,134 +324,48 @@ func finTBillEq(c *callCtx) value {
 	return numVal(365 * discount / denom)
 }
 
-// ---- ACCRINT ----------------------------------------------------------------
-
-// finAccrint returns the accrued interest of a periodic-coupon security between
-// its issue date and settlement: par*rate*YEARFRAC(issue, settlement, basis).
-// (Summing per-coupon accruals telescopes to this total; the frequency argument
-// is validated but does not alter the accrued total under this model.)
-func finAccrint(c *callCtx) value {
-	if c.nargs() < 6 {
-		return errValue
-	}
-	issueS, e1, ok1 := dtSerialArg(c, 0)
-	if !ok1 {
-		return e1
-	}
-	// arg 1 = first interest date (validated as a date, not otherwise used).
-	if _, e2, ok2 := dtSerialArg(c, 1); !ok2 {
-		return e2
-	}
-	setS, e3, ok3 := dtSerialArg(c, 2)
-	if !ok3 {
-		return e3
-	}
-	rate, rok := c.num(3)
-	par, pok := c.num(4)
-	freqF, fok := c.num(5)
-	if !rok || !pok || !fok {
-		return errValue
-	}
-	if issueS >= setS {
-		return errNum
-	}
-	if rate <= 0 || par <= 0 {
-		return errNum
-	}
-	freq := int(math.Trunc(freqF))
-	if freq != 1 && freq != 2 && freq != 4 {
-		return errNum
-	}
-	basis, be, bok := finBasisArg(c, 6)
-	if !bok {
-		return be
-	}
-	yf := finYearFrac(issueS, setS, basis)
-	return numVal(par * rate * yf)
-}
-
 // ---- DURATION / MDURATION ---------------------------------------------------
 
-// finCoupNum counts the coupon dates falling after settlement up to and
-// including maturity, stepping back from maturity by whole coupon periods.
-func finCoupNum(setSerial, matSerial float64, freq int) int {
-	set := serialToTime(setSerial)
-	mat := serialToTime(matSerial)
-	months := 12 / freq
-	count := 0
-	for i := 0; ; i++ {
-		ci := dtAddMonths(mat, -i*months)
-		if ci.After(set) {
-			count++
-			continue
-		}
-		break
-	}
-	return count
-}
-
 // finDurationFn implements DURATION (modified=false) and MDURATION
-// (modified=true). It computes the Macaulay duration by discounting each coupon
-// (and the redemption) by the yield, then divides by (1+yield/freq) for the
-// modified variant.
+// (modified=true): the Macaulay duration of the remaining coupons and
+// redemption, timed in coupon periods from settlement (the first one
+// (E−A)/E away, see bondPrice), divided by (1+yield/freq) for the modified
+// variant. Argument handling is shared with the other coupon-bond functions.
 func finDurationFn(c *callCtx, modified bool) value {
-	setS, e1, ok1 := dtSerialArg(c, 0)
-	if !ok1 {
-		return e1
+	a, e, ok := bondRead(c, bDate, bDate, bNum, bNum, bFreq, bBasis)
+	if !ok {
+		return e
 	}
-	matS, e2, ok2 := dtSerialArg(c, 1)
-	if !ok2 {
-		return e2
-	}
-	coupon, cok := c.num(2)
-	yield, yok := c.num(3)
-	freqF, fok := c.num(4)
-	if !cok || !yok || !fok {
-		return errValue
-	}
-	if setS >= matS {
+	setS, matS, coupon, yield := a[0], a[1], a[2], a[3]
+	if setS >= matS || coupon < 0 || yield < 0 || !bondValidFreq(a[4]) || !bondValidBasis(a[5]) {
 		return errNum
 	}
-	if coupon < 0 || yield < 0 {
-		return errNum
-	}
-	freq := int(math.Trunc(freqF))
-	if freq != 1 && freq != 2 && freq != 4 {
-		return errNum
-	}
-	basis, be, bok := finBasisArg(c, 5)
-	if !bok {
-		return be
-	}
-
-	yf := finYearFrac(setS, matS, basis)
-	n := finCoupNum(setS, matS, freq)
-	if n < 1 {
-		return errNum
-	}
-	coup := coupon * 100 / float64(freq)
-	y := yield/float64(freq) + 1
-	nDiff := yf*float64(freq) - float64(n)
-	fN := float64(n)
+	freq, basis := int(a[4]), int(a[5])
+	f := float64(freq)
+	ec := dcCoupDays(setS, matS, freq, basis)
+	t0 := (ec - dcCoupDayBS(setS, matS, freq, basis)) / ec
+	_, _, n := dcCoupons(setS, matS, freq)
+	cf := coupon * 100 / f
+	y := 1 + yield/f
 	var d, p float64
-	for t := 1.0; t < fN; t++ {
-		td := t + nDiff
-		disc := math.Pow(y, td)
-		d += td * coup / disc
-		p += coup / disc
+	for k := 1; k <= n; k++ {
+		t := float64(k-1) + t0
+		amt := cf
+		if k == n {
+			amt += 100
+		}
+		disc := math.Pow(y, t)
+		d += t * amt / disc
+		p += amt / disc
 	}
-	td := fN + nDiff
-	disc := math.Pow(y, td)
-	d += td * (coup + 100) / disc
-	p += (coup + 100) / disc
 	if p == 0 {
 		return errNum
 	}
-	dur := d / p / float64(freq)
+	dur := d / p / f
 	if modified {
-		dur = dur / (1 + yield/float64(freq))
+		dur /= y
 	}
-	return numVal(dur)
+	return mthCheckResult(dur)
 }
 
 // ---- ERF / ERFC -------------------------------------------------------------

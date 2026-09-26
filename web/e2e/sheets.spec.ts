@@ -69,10 +69,17 @@ test.describe.serial("sheets formula engine", () => {
         workbookWithCells([{ r: 0, c: 0, f: "=SUM(40,2)" }]),
       );
       await page.goto(`/sheets/d/${id}`);
-      // The FortuneSheet grid mounts; 42 should appear somewhere in the grid.
-      await expect(page.getByText("42", { exact: false }).first()).toBeVisible({
+      // FortuneSheet paints cells on a canvas, so values aren't in the DOM.
+      // A1 is selected on open, so read the formula bar instead.
+      await expect(page.locator(".fortune-sheet-canvas")).toBeVisible({
         timeout: 20_000,
       });
+      await expect(page.locator(".fortune-fx-input")).toContainText(
+        "=SUM(40,2)",
+      );
+      // The reopened workbook still carries the computed value.
+      const data = await getSheetData(page.request, id);
+      expect(JSON.stringify(data)).toContain("42");
     } finally {
       await trashSheet(page.request, id);
     }
