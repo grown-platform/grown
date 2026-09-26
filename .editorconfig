@@ -1,0 +1,8 @@
+# https://editorconfig.org — line endings and final newlines only; indentation
+# is left to each language's formatter (gofmt, prettier, …).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
