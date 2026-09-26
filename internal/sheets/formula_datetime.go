@@ -61,6 +61,11 @@ func dtSerialArg(c *callCtx, i int) (float64, value, bool) {
 		return 0, v, false
 	}
 	n, ok := v.toNum()
+	if !ok && v.kind == kindStr {
+		// Date/time text ("2021-10-01", "1/2/2006 15:04", "12:30 PM") is
+		// coerced the same way DATEVALUE/TIMEVALUE read it.
+		n, ok = dtTextSerial(v.str)
+	}
 	if !ok {
 		return 0, errValue, false
 	}
@@ -68,6 +73,20 @@ func dtSerialArg(c *callCtx, i int) (float64, value, bool) {
 		return 0, errNum, false
 	}
 	return n, value{}, true
+}
+
+// dtTextSerial converts date and/or time text to a serial number.
+func dtTextSerial(s string) (float64, bool) {
+	if t, ok := dtParseDateTime(s); ok {
+		return timeToSerial(time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC)), true
+	}
+	if t, ok := dtParseDate(s); ok {
+		return timeToSerial(t), true
+	}
+	if d, ok := dtParseTime(s); ok {
+		return d.Seconds() / 86400.0, true
+	}
+	return 0, false
 }
 
 // ---- DATE / TIME ------------------------------------------------------------
@@ -100,7 +119,8 @@ func dtDate(c *callCtx) value {
 	// time.Date normalises month/day overflow. Month is 1-based in Excel.
 	t := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
 	serial := timeToSerial(t)
-	if serial < 0 {
+	// Valid dates end at 9999-12-31 (serial 2958465); overflow is #NUM!.
+	if serial < 0 || serial > 2958465 {
 		return errNum
 	}
 	return numVal(serial)

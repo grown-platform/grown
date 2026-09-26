@@ -759,3 +759,38 @@ func TestSaveRecompute_Integration(t *testing.T) {
 		t.Errorf("IF formula should produce 'big': %s", out)
 	}
 }
+
+// ---- error literals ---------------------------------------------------------
+
+func TestErrorLiterals(t *testing.T) {
+	mustErr(t, eval(t, "#N/A"), "#N/A")
+	mustErr(t, eval(t, "#div/0!"), "#DIV/0!")
+	mustErr(t, eval(t, "IF(0,#N/A,#NUM!)"), "#NUM!")
+	mustNum(t, eval(t, "IFERROR(#REF!,7)"), 7)
+	mustBool(t, eval(t, "ISNA(#N/A)"), true)
+	mustErr(t, eval(t, "AND({TRUE,#N/A})"), "#N/A")
+	mustNum(t, eval(t, "ERROR.TYPE(#VALUE!)"), 3)
+}
+
+// Date functions read date/time text the way DATEVALUE/TIMEVALUE do.
+func TestDateFunctionsAcceptDateText(t *testing.T) {
+	mustNum(t, eval(t, `MONTH("2021-10-01")`), 10)
+	mustNum(t, eval(t, `YEAR("12/31/2011")`), 2011)
+	mustNum(t, eval(t, `DAY("2021-12-29")`), 29)
+	mustNum(t, eval(t, `HOUR("7/18/2011 7:45")`), 7)
+	mustNum(t, eval(t, `MINUTE("12:45 PM")`), 45)
+	mustNum(t, eval(t, `EDATE("2021-01-31",1)`), 44255) // 2021-02-28
+	mustErr(t, eval(t, `MONTH("not a date")`), "#VALUE!")
+}
+
+// Serials past 2192 must not saturate (time.Duration overflow).
+func TestDateSerialFarFuture(t *testing.T) {
+	mustNum(t, eval(t, "DATE(2200,1,1)"), 109575)
+	mustNum(t, eval(t, "DATE(9999,12,31)"), 2958465)
+	mustNum(t, eval(t, "YEAR(2958465)"), 9999)
+}
+
+func TestDatePastYear9999IsNum(t *testing.T) {
+	mustErr(t, eval(t, "DATE(9999,12,32)"), "#NUM!")
+	mustErr(t, eval(t, "DATE(9999,13,1)"), "#NUM!")
+}

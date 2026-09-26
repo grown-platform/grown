@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Sheets
 
-Status: research + plan only (2026-09-26). No app code changed.
+Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7.
 Companion: `sheets-tests.csv` (one row per OnlyOffice test file).
 Inventory baseline: **`origin/main` @ `c90064e`**. (The worktree used for reading was `96ca7c0`,
 55 commits behind; for Sheets the only difference is `internal/sheets/formula_more{,2,3}.go`
@@ -477,3 +477,126 @@ Fixtures live under `internal/sheets/testdata/` (Go convention) and are the sing
 * `scripts/parity-status.sh` (to be added in M0) runs `go test ./internal/sheets/ -run Parity -json`, `npx vitest run __parity__ --reporter=json`, and `npx playwright test parity --reporter=json --list` (or full run when the stack is up), then counts per OnlyOffice file: `total` (from `sheets-tests.csv`), `ported` (cases carrying the `oo:` tag), `passing`, `pending` (skipped with milestone tag), `na`.
 * Output is written to `docs/plans/onlyoffice-parity/sheets-status.md` as a table plus the headline `ported/passing/total = x/y/1117`; the CSV stays the denominator and is updated only when the OnlyOffice snapshot is refreshed.
 * Definition of done per milestone: every OnlyOffice case listed for it is either passing or tagged `oo-diff:`; CI runs the Go + vitest parity suites on every PR, Playwright parity nightly.
+
+---
+
+## 7. M0 results (2026-09-26)
+
+M0 is the Go fixture harness plus the first formula ports. The vitest
+`__parity__/` folder and the `tests.js` range utilities landed with it.
+Playwright parity and the status scripts belong to the cross-cutting scoreboard
+(CC0) and are not part of this milestone.
+
+### 7.1 What landed
+
+| Piece | Where |
+|---|---|
+| Fixture runner (`TestParity`) | `internal/sheets/parity_test.go`. The file header documents the schema. |
+| Formula fixtures | `internal/sheets/testdata/parity/formula-{logical,information,database,datetime,lookup}.json` |
+| vitest parity folder | `web/app/src/pages/sheets/__parity__/` (README plus `range.parity.test.ts`) |
+| Range utilities under test | `web/app/src/pages/sheets/cellRange.ts` (normalize/contains/intersection/union, `roundCoord`) |
+
+**Tag convention.** This overrides §6.3 and follows the combined roadmap. The
+tag is `oo:<path relative to sdkjs-tests-v9.3.1/tests/>#<QUnit title>`, for
+example `oo:cell/spreadsheet-calculation/formula-tests/logicalTests.js#AND`.
+In Go it is the case `id` and also the `t.Run` name. In vitest it is the
+`it()` title. Each OnlyOffice `QUnit.test` gets exactly one tag, and a tag
+groups all of that test's assertions as ordered *checks*.
+
+**Schema, compared with §6.2.** A case holds `cells` (the typed-input sheet
+state), an optional default `at`, `names`, and an ordered `checks` list. Each
+check can carry `set` (cell edits that persist to later checks), `formula`,
+`at`, `array` (evaluated as `ARRAYFORMULA(...)`), `expect`, `elements`
+(`[row, col, value]` of an array result), `tol`, `invalid`, `date1904`, and
+`pending`. A case passes when all of its non-pending checks pass. A case whose
+checks are all skipped is reported as skipped. The runner also skips checks
+whose features belong to a later milestone:
+
+- M1 (808 checks): cross-sheet refs, defined names, structured table refs, and `A:A`/`1:1`.
+- 1904 date system (104 checks).
+
+The fixtures still carry the `Sheet2!…` cells and the `names` those checks need,
+so M1 only has to lift the skip.
+
+**How the facts were collected.** A local extraction harness produced the
+expected values. It is not committed and lives in the session scratchpad
+(`ooextract/`). It runs the AGPL suites against recording mocks and keeps only
+facts: the formula text, the cell inputs set before each assertion, and the
+expected value. The fixture structure, grouping, and pending reasons are
+Grown's own. No OnlyOffice code, comments, or file structure is copied.
+
+This deviates from §6.1, which says fixtures are "hand-written, never
+generated". Please review and either accept the approach or ask for the
+harness to be dropped.
+
+Two quirks of the suites are reproduced faithfully:
+
+- A formula parsed with a plain string position (such as `"A2"`) has no cell
+  context, so `ROW()` is 1. Only `CCellWithFormula` positions become `at`.
+- An element read outside an array result is empty text.
+
+### 7.2 Counts
+
+| OnlyOffice file | Tags ported | Tags passing | Checks | Passing | Pending (diff) | Skipped (M1/1904) |
+|---|---|---|---|---|---|---|
+| `logicalTests.js` | 9 / 9 | 9 | 354 | 268 | 29 | 57 |
+| `informationTests.js` | 14 / 17 (no CELL, ISFORMULA, ISREF) | 13 (SHEET all-pending) | 679 | 444 | 61 | 174 |
+| `databaseTests.js` | 10 / 12 (no DSTDEVP, DVARP) | 10 | 447 | 220 | 138 | 89 |
+| `dateTimeTests.js` | 24 / 24 | 24 | 1,650 | 1,090 | 246 | 314 |
+| `lookupAndReferenceTests.js` | 30 / 34 (no AREAS, FORMULATEXT, HYPERLINK, OFFSET) | 30 | 2,189 | 1,231 | 680 | 278 |
+| `tests.js` (vitest) | 4 / 11 (round, Range, intersection, union) | 4 | — | — | — | — |
+| **Total** | **91** | **90** | **5,319** | **3,253** | **1,154** | **912** |
+
+### 7.3 Engine fixes made in M0
+
+Each fix is small and has its own unit test in `formula_test.go`.
+
+1. **Error literals.** `#N/A`, `#DIV/0!`, `#VALUE!`, `#REF!`, `#NAME?`, `#NUM!`, `#NULL!`, `#SPILL!`, `#CALC!` and `#GETTING_DATA` are now tokenised in formulas and array constants. Before, the tokenizer dropped `#`, so `=IFERROR(#N/A,1)` returned `#NAME?`. This fixed about 100 checks. (`TestErrorLiterals`)
+2. **Date text in date functions.** YEAR, MONTH, DAY, HOUR, EDATE, DATEDIF, DAYS and the other date functions now read date and time text the same way DATEVALUE and TIMEVALUE do, so `=MONTH("2021-10-01")` returns 10. Before, they returned `#VALUE!`. (`TestDateFunctionsAcceptDateText`)
+3. **Serial overflow after 2192.** `timeToSerial` used `time.Sub`, which saturates at about 292 years. As a result, `DATE(9999,12,31)` returned 106752 instead of 2958465, and every date after 2192 was wrong. (`TestDateSerialFarFuture`)
+4. **`DATE` past 9999-12-31 now returns `#NUM!`.** (`TestDatePastYear9999IsNum`)
+
+### 7.4 Semantic differences found (bug backlog)
+
+Every failing check is marked `"pending": "oo-diff/<key>: …"`. The keys below
+are the first bug backlog. Counts are checks. The milestone column is a
+suggestion.
+
+| Key | Checks | Functions (top) | Example: want → Grown | Suggested home |
+|---|---|---|---|---|
+| `lookup-approx` | 214 | XMATCH, LOOKUP, HLOOKUP, VLOOKUP, XLOOKUP, MATCH | Several patterns: approximate/binary search over unsorted or mixed data, an error cell inside the range aborting an exact match (`HLOOKUP("SANDRA",E301:Q302,2,FALSE)`: 9 → `#VALUE!`), wildcard and search modes, and the LOOKUP array form (`LOOKUP("C",{"a","b","c","d";1,2,3,4})`: 3 → "c") | M2-sized follow-up |
+| `omitted-arg` | 206 | XLOOKUP, WEEKDAY, INDEX, H/VLOOKUP, ADDRESS, D* | `DAYS(,)`: 0 → `#VALUE!`. The parser has no "omitted argument" value. | M1 (parser) |
+| `array-lifting` | 99 | SORTBY, CHOOSE, WORKDAY.INTL, VLOOKUP, DATEDIF, YEAR/MONTH | `N({12,24})` and `DATEDIF(C2:C6,25,"D")` return a scalar. OnlyOffice lifts scalar functions over array arguments. | M5 |
+| `dynarray-validation` | 94 | FILTER, SORT, EXPAND, SORTBY, TAKE, CHOOSE, WRAP* | `FILTER({1;2;3;4},{"FALSE";0;1;1})` accepts text booleans. Mismatched shapes are not `#VALUE!`. Sizes over the limit are not `#NUM!`. | M5 |
+| `date-1900` | 86 | MONTH, YEAR, EDATE, DAY, WEEKNUM, EOMONTH | `DAY(1)`: 1 → 31, `DATE(1900,1,1)`: 1 → 2. Serials 0 to 60 are off by one because there is no 1900-01-00 and no fictitious 1900-02-29. | M6 (number/date model) |
+| `db-criteria` | 77 | DGET, DSUM, DPRODUCT, DCOUNT(A), DMAX | `DMIN(A4:E10,"Age",G1:G2)`: 8 → 0. A blank criteria cell reads as 0 instead of "match anything". | M2 |
+| `error-args` | 77 | SORTBY, ADDRESS, DROP, D*, VSTACK | `DROP(1,#N/A)`: `#N/A` → `#VALUE!`. The error argument is ignored or replaced. | M2 |
+| `range-as-scalar` | 55 | NETWORKDAYS, WORKDAY.INTL, V/HLOOKUP, SORT, EDATE | `TAKE(1,A1:B5)`: `#VALUE!` → 1. A multi-cell range in a scalar slot silently uses its first cell. | M5 |
+| `sheet-context` | 32 | SHEET, SHEETS | `SHEET()`: 4 → 1. The evaluator has no workbook context in the fixture and does not validate arguments. | M1 |
+| `bool-as-number` | 22 | EDATE, NETWORKDAYS, EOMONTH, SORT, FILTER | `EDATE(TRUE,1)`: `#VALUE!` → 32 | M2 |
+| `date-text` | 22 | DATEVALUE, TIMEVALUE, DAY, YEAR, DAYS | `DAY("5-JUL")`, `"5/5/11"`, `"Mar-15-2011"`, `"25:00"`, and the ISO/US order in `"03-26-2006"` | M6 |
+| `address-r1c1-sheet` | 22 | ADDRESS | `ADDRESS(2,3,2,FALSE)`: `"R2C[3]"` → `"C$2"`. R1C1 style and `sheet_text` are unsupported. | M1 |
+| `logical-text` | 20 | AND, OR, XOR, NOT | `NOT("")`: `#VALUE!` → TRUE. Text is coerced, where OnlyOffice rejects or ignores it. | M2 |
+| `row-col-ref` | 20 | ROW, COLUMN | `ROW(B6)`: 6 → 1. `rangeVal` carries no origin. | M1 |
+| `holiday-text` | 19 | WORKDAY(.INTL), NETWORKDAYS(.INTL) | Holidays given as `{"5-1-2018","5-3-2018"}` are ignored. | M2 |
+| `db-field` | 16 | D* | Boolean, array or out-of-range field arguments, and criteria chosen through `IF(...)` | M2 |
+| `num-vs-value-error` | 14 | WRAPROWS, WRAPCOLS, *.INTL | `WRAPROWS(1,0)`: `#NUM!` → `#VALUE!` | M2 |
+| `blank-cell` | 14 | ISBLANK, ISNUMBER, IFERROR, IFNA | `ISBLANK("")`: FALSE → TRUE, and `IFERROR(blank,…)`: "" → 0. The engine has no distinct empty value. | M1/M5 |
+| `indirect` | 11 | INDIRECT | R1C1 text, `"Sheet2!A1"`, `"TestName"`, and `TEXT(...)`-built addresses | M1 |
+| `info-arrays` | 9 | TYPE, IS* | `TYPE({1,2,3})`: 64 → 2, and `ISLOGICAL({FALSE,TRUE})` | M2 |
+| `overflow` | 8 | MONTH, SECOND, ISERR, ISEVEN | `MONTH(1E+308)` and `9.99E+307*10` do not produce `#NUM!` | M2 |
+| `switch-types` | 4 | SWITCH | `SWITCH(TRUE,1,100,…)` matches 1 = TRUE | M2 |
+| `semicolon-args` | 4 | CHOOSECOLS, CHOOSEROWS | `CHOOSECOLS(A1:C6;-1;1)` uses `;` as the list separator | M1 (locale) |
+| `ref-returning` | 3 | ROWS, CHOOSE | `ROWS(INDIRECT("A100:A101"))` and `SUM(A102:CHOOSE(2,…))`: functions return values, not references | M1 |
+| `text-as-date` | 3 | DATEVALUE, NETWORKDAYS | `DATEVALUE(40777)`: `#VALUE!` → 40777 | M2 |
+| `single-fn` | 2 | WEEKDAY | `SINGLE()` (the implicit-intersection `@`) is missing | M5 |
+| `yearfrac-precision` | 1 | YEARFRAC | Basis 1 across many years uses a different average year length | M4 |
+
+The four largest themes cover more than half of the backlog (about 610 of 1,154 checks):
+
+- Omitted arguments.
+- Lookup search semantics.
+- Array lifting.
+- The missing empty value (blank criteria cells, `ISBLANK`, `""` outputs).
+
+Each theme is a cross-cutting engine change, not a per-function fix.
