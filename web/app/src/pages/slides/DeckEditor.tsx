@@ -126,6 +126,7 @@ import {
 } from "./presentOps";
 import {
   editorKeyAction,
+  isSaveKey,
   presentKeyAction,
   presentKeyPreventsDefault,
 } from "./keymap";
@@ -167,6 +168,10 @@ export function DeckEditor({ user }: { user: User }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [presenter, setPresenter] = useState(false); // presenter view (notes) during Present mode
   const clip = useRef<SlideElement | null>(null);
+  // Set by Ctrl+C / Ctrl+V keydowns so the copy/paste events that follow
+  // know the keyboard asked for the in-app element clipboard.
+  const copyPending = useRef(false);
+  const pastePending = useRef(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -223,6 +228,13 @@ export function DeckEditor({ user }: { user: User }) {
       if (docRef.current)
         saveDeck(id, JSON.stringify(docRef.current)).catch(() => {});
     }, 1200);
+  }, [id]);
+
+  // saveNow flushes the pending autosave immediately (Ctrl/Cmd+S).
+  const saveNow = useCallback(() => {
+    window.clearTimeout(saveTimer.current);
+    if (docRef.current)
+      saveDeck(id, JSON.stringify(docRef.current)).catch(() => {});
   }, [id]);
 
   const pushHistory = useCallback(() => {
@@ -330,6 +342,13 @@ export function DeckEditor({ user }: { user: User }) {
         if (e.key === "Escape") setPresent(false);
         return;
       }
+      // Ctrl/Cmd+S saves now, even while a text box is being edited, and
+      // never opens the browser's "Save page" dialog.
+      if (isSaveKey(e)) {
+        e.preventDefault();
+        saveNow();
+        return;
+      }
       if (editingText) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (
@@ -351,6 +370,34 @@ export function DeckEditor({ user }: { user: User }) {
       } else if (act.type === "nudge" && selected) {
         e.preventDefault();
         upsertElement(moveElementBy(selected, act.dx, act.dy));
+      } else if (act.type === "undo") {
+        e.preventDefault();
+        undo();
+      } else if (act.type === "redo") {
+        e.preventDefault();
+        redo();
+      } else if (act.type === "duplicateElement" && selected) {
+        e.preventDefault();
+        duplicateEl(selected);
+      } else if (act.type === "duplicateSlide") {
+        e.preventDefault();
+        duplicateSlide();
+      } else if (act.type === "copy" && selected) {
+        // Leave the default alone: the copy event below also puts the
+        // element's text on the OS clipboard, replacing anything stale
+        // (e.g. an old image) that would otherwise win the next paste.
+        clip.current = { ...selected };
+        copyPending.current = true;
+      } else if (act.type === "paste" && clip.current) {
+        // The paste event decides: an image on the OS clipboard is pasted
+        // as a picture, otherwise the in-app element. Browsers that fire no
+        // paste event on a non-editable target fall back to the element.
+        pastePending.current = true;
+        window.setTimeout(() => {
+          if (!pastePending.current) return;
+          pastePending.current = false;
+          pasteEl();
+        }, 0);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -364,11 +411,11 @@ export function DeckEditor({ user }: { user: User }) {
     if (present) return;
     const onPaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const it of items) {
+      for (const it of items ?? []) {
         if (it.type.startsWith("image/")) {
           const file = it.getAsFile();
           if (file) {
+            pastePending.current = false;
             e.preventDefault();
             const r = new FileReader();
             r.onload = () => {
@@ -381,9 +428,25 @@ export function DeckEditor({ user }: { user: User }) {
           return;
         }
       }
+      if (pastePending.current) {
+        pastePending.current = false;
+        e.preventDefault();
+        pasteEl();
+      }
+    };
+    const onCopy = (e: ClipboardEvent) => {
+      if (!copyPending.current) return;
+      copyPending.current = false;
+      if (!e.clipboardData || !clip.current) return;
+      e.clipboardData.setData("text/plain", clip.current.text ?? "");
+      e.preventDefault();
     };
     window.addEventListener("paste", onPaste);
-    return () => window.removeEventListener("paste", onPaste);
+    window.addEventListener("copy", onCopy);
+    return () => {
+      window.removeEventListener("paste", onPaste);
+      window.removeEventListener("copy", onCopy);
+    };
   }); // re-bind each render so upsertElement closes over the current slide
 
   // ---- slide ops ----

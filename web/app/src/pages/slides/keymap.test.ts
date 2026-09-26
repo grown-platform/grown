@@ -3,6 +3,7 @@ import {
   NUDGE_LARGE,
   NUDGE_SMALL,
   editorKeyAction,
+  isSaveKey,
   nudgeDelta,
   presentKeyAction,
   presentKeyPreventsDefault,
@@ -37,8 +38,8 @@ describe("editorKeyAction", () => {
   });
 
   it("ignores unbound keys", () => {
-    for (const key of ["a", "Enter", "Tab", "Escape", "z"])
-      expect(editorKeyAction({ key, ctrlKey: key === "z" }, sel)).toBeNull();
+    for (const key of ["a", "Enter", "Tab", "Escape", "q"])
+      expect(editorKeyAction({ key, ctrlKey: key === "q" }, sel)).toBeNull();
   });
 });
 
@@ -65,6 +66,47 @@ describe("presentKeyAction", () => {
     expect(presentKeyPreventsDefault("prev")).toBe(true);
     expect(presentKeyPreventsDefault("exit")).toBe(false);
     expect(presentKeyPreventsDefault(null)).toBe(false);
+  });
+});
+
+describe("editorKeyAction: Ctrl/Cmd shortcuts", () => {
+  const ctrl = (key: string, extra: object = {}) => ({ key, ctrlKey: true, ...extra });
+  const cmd = (key: string, extra: object = {}) => ({ key, metaKey: true, ...extra });
+
+  it("Ctrl/Cmd+Z undo, Ctrl/Cmd+Y and Ctrl/Cmd+Shift+Z redo", () => {
+    for (const mod of [ctrl, cmd]) {
+      expect(editorKeyAction(mod("z"), none)).toEqual({ type: "undo" });
+      expect(editorKeyAction(mod("y"), sel)).toEqual({ type: "redo" });
+      // Shift upper-cases the key on most layouts.
+      expect(editorKeyAction(mod("Z", { shiftKey: true }), none)).toEqual({ type: "redo" });
+      expect(editorKeyAction(mod("z", { shiftKey: true }), none)).toEqual({ type: "redo" });
+    }
+    expect(editorKeyAction({ key: "z" }, sel)).toBeNull();
+  });
+
+  it("Ctrl/Cmd+D duplicates the selected element, else the slide", () => {
+    expect(editorKeyAction(ctrl("d"), sel)).toEqual({ type: "duplicateElement" });
+    expect(editorKeyAction(cmd("D"), none)).toEqual({ type: "duplicateSlide" });
+  });
+
+  it("Ctrl/Cmd+S saves with or without a selection", () => {
+    expect(editorKeyAction(ctrl("s"), sel)).toEqual({ type: "save" });
+    expect(editorKeyAction(cmd("s"), none)).toEqual({ type: "save" });
+    expect(isSaveKey(cmd("S"))).toBe(true);
+    expect(isSaveKey({ key: "s" })).toBe(false);
+    expect(isSaveKey(ctrl("s", { altKey: true }))).toBe(false);
+  });
+
+  it("Ctrl/Cmd+C copies only with a selection; Ctrl/Cmd+V always asks to paste", () => {
+    expect(editorKeyAction(ctrl("c"), sel)).toEqual({ type: "copy" });
+    expect(editorKeyAction(ctrl("c"), none)).toBeNull();
+    expect(editorKeyAction(cmd("v"), none)).toEqual({ type: "paste" });
+    expect(editorKeyAction({ key: "v" }, sel)).toBeNull();
+  });
+
+  it("leaves Ctrl+A and Alt chords unbound", () => {
+    expect(editorKeyAction(ctrl("a"), sel)).toBeNull();
+    expect(editorKeyAction(ctrl("z", { altKey: true }), sel)).toBeNull();
   });
 });
 
@@ -95,9 +137,10 @@ describe("OnlyOffice parity", () => {
     expect(editorKeyAction({ key: "e", ctrlKey: true }, sel)).not.toBeNull();
   });
 
-  // SKIP: Ctrl+S is not bound. Grown autosaves (debounced PUT …/data 1.2 s
-  // after each edit), so there is no explicit save action to trigger.
-  it.skip("oo:slide/shortcuts/shortcuts.js#Check save action", () => {
-    expect(editorKeyAction({ key: "s", ctrlKey: true }, none)).not.toBeNull();
+  // Ctrl/Cmd+S flushes the debounced autosave immediately; the editor checks
+  // isSaveKey before its text-editing guard so it works inside a text box too.
+  it("oo:slide/shortcuts/shortcuts.js#Check save action", () => {
+    expect(editorKeyAction({ key: "s", ctrlKey: true }, none)).toEqual({ type: "save" });
+    expect(isSaveKey({ key: "s", ctrlKey: true })).toBe(true);
   });
 });

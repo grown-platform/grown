@@ -59,6 +59,7 @@ import {
 } from "./iconSets";
 import { downloadSheet } from "./export";
 import { storableWorkbook } from "./workbookJson";
+import { normalizeWorkbook, seedSelection } from "./normalize";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -76,6 +77,19 @@ const DEFAULT_DATA = [
     celldata: [],
   },
 ];
+
+// Sheets added from the tab bar also start without a saved selection; seed
+// one so the name box doesn't read "A1:NaN" there either (see normalize.ts).
+const WORKBOOK_HOOKS = {
+  beforeAddSheet: (sheet: any) => {
+    try {
+      seedSelection(sheet);
+    } catch {
+      /* a frozen sheet object: FortuneSheet's own default applies */
+    }
+    return true;
+  },
+};
 
 const COLORS = [
   "#3D5A80",
@@ -144,7 +158,12 @@ export function SheetEditor({ user }: SheetEditorProps) {
         if (cancelled) return;
         setTitle(s.title);
         try {
-          const parsed = s.data ? JSON.parse(s.data) : DEFAULT_DATA;
+          // Fill display text the API/imports may have left out, so the
+          // canvas paints every value, and seed a complete A1 selection
+          // (see normalize.ts).
+          const parsed = normalizeWorkbook(
+            s.data ? JSON.parse(s.data) : structuredClone(DEFAULT_DATA),
+          );
           // Charts persist on the first sheet under `grownCharts`.
           const loaded: ChartConfig[] = Array.isArray(parsed?.[0]?.grownCharts)
             ? parsed[0].grownCharts
@@ -608,7 +627,13 @@ export function SheetEditor({ user }: SheetEditorProps) {
         data-testid="sheet-editor"
       >
         <Box sx={{ minWidth: { xs: 600, md: "100%" }, height: "100%" }}>
-          <Workbook ref={ref} data={data} onChange={onChange} onOp={onOp} />
+          <Workbook
+            ref={ref}
+            data={data}
+            onChange={onChange}
+            onOp={onOp}
+            hooks={WORKBOOK_HOOKS}
+          />
         </Box>
       </Box>
       <FindReplaceDialog

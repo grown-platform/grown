@@ -18,7 +18,20 @@ export const NUDGE_LARGE = 10;
 export type EditorKeyAction =
   | { type: "deleteSelected" }
   | { type: "newSlide" }
-  | { type: "nudge"; dx: number; dy: number };
+  | { type: "nudge"; dx: number; dy: number }
+  | { type: "undo" }
+  | { type: "redo" }
+  | { type: "duplicateElement" }
+  | { type: "duplicateSlide" }
+  | { type: "save" }
+  | { type: "copy" }
+  | { type: "paste" };
+
+/** isSaveKey reports Ctrl/Cmd+S. The editor handles it even while a text box
+ *  is being edited, so the browser's "Save page" dialog never opens. */
+export function isSaveKey(e: KeyInput): boolean {
+  return (!!e.ctrlKey || !!e.metaKey) && !e.altKey && e.key.toLowerCase() === "s";
+}
 
 /** nudgeDelta maps an arrow key to a (dx, dy) move, or null for other keys. */
 export function nudgeDelta(
@@ -41,15 +54,37 @@ export function nudgeDelta(
 }
 
 /** editorKeyAction maps a key press on the editing canvas (not inside a text
- *  field) to an editor action. `hasSelection` is whether an element is selected. */
+ *  field) to an editor action. `hasSelection` is whether an element is selected.
+ *  Ctrl and Cmd are interchangeable. */
 export function editorKeyAction(
   e: KeyInput,
   ctx: { hasSelection: boolean },
 ): EditorKeyAction | null {
   if ((e.key === "Delete" || e.key === "Backspace") && ctx.hasSelection)
     return { type: "deleteSelected" };
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "m")
-    return { type: "newSlide" };
+  if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+    switch (e.key.toLowerCase()) {
+      case "m":
+        return { type: "newSlide" };
+      case "z":
+        return { type: e.shiftKey ? "redo" : "undo" };
+      case "y":
+        return { type: "redo" };
+      case "s":
+        return { type: "save" };
+      // OnlyOffice/PowerPoint: duplicate the selected object, or the current
+      // slide when nothing is selected.
+      case "d":
+        return { type: ctx.hasSelection ? "duplicateElement" : "duplicateSlide" };
+      // The element clipboard is in-app; copy needs something to copy, paste
+      // is decided by the editor (it may hold an image from the OS clipboard).
+      case "c":
+        return ctx.hasSelection ? { type: "copy" } : null;
+      case "v":
+        return { type: "paste" };
+    }
+  }
+  // Ctrl+A (select all) is not bound: the editor has a single selection.
   if (ctx.hasSelection) {
     const d = nudgeDelta(e.key, !!e.shiftKey);
     if (d) return { type: "nudge", ...d };
