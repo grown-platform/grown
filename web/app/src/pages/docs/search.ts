@@ -350,9 +350,6 @@ declare module "@tiptap/core" {
       replaceAllMatches: (replacement: string) => ReturnType;
     };
   }
-  interface Storage {
-    search: { lastReplaceCount: number };
-  }
 }
 
 function selectMatch(tr: Transaction, m: SearchMatch, index: number) {
@@ -361,13 +358,9 @@ function selectMatch(tr: Transaction, m: SearchMatch, index: number) {
   tr.scrollIntoView();
 }
 
-export const Search = Extension.create<object, { lastReplaceCount: number }>({
+export const Search = Extension.create({
   name: "search",
-  addStorage() {
-    return { lastReplaceCount: 0 };
-  },
   addCommands() {
-    const storage = () => this.storage;
     return {
       setSearch:
         (query, options = {}) =>
@@ -434,7 +427,6 @@ export const Search = Extension.create<object, { lastReplaceCount: number }>({
             tr.setSelection(TextSelection.create(tr.doc, end));
           }
           tr.setMeta(searchKey, { type: "current", index: ni } satisfies Meta);
-          storage().lastReplaceCount = 1;
           return true;
         },
       replaceAllMatches:
@@ -444,7 +436,6 @@ export const Search = Extension.create<object, { lastReplaceCount: number }>({
           const matches = s.query ? findMatches(state.doc, s.query, s.options, Infinity) : [];
           if (!matches.length) return false;
           if (dispatch) {
-            storage().lastReplaceCount = matches.length;
             for (let k = matches.length - 1; k >= 0; k--) {
               const m = matches[k];
               smartReplace(tr, state.schema, m.from, m.to, expandReplacement(replacement, m.groups));

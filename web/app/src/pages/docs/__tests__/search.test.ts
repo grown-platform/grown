@@ -99,8 +99,8 @@ describe("Search extension", () => {
   it("replaces all matches in one undo step, keeping formatting", () => {
     const e = makeEditor("<p><strong>red</strong> apple, red car</p><p>Red</p>");
     e.commands.setSearch("red");
+    expect(getSearchState(e.state).matches).toHaveLength(3);
     expect(e.commands.replaceAllMatches("blue")).toBe(true);
-    expect(e.storage.search.lastReplaceCount).toBe(3);
     expect(e.getHTML()).toBe("<p><strong>blue</strong> apple, blue car</p><p>blue</p>");
     e.commands.undo();
     expect(docText(e)).toBe("red apple, red car\nRed");

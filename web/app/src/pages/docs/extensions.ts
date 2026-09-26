@@ -26,6 +26,7 @@ import { ParagraphSpacing, ParagraphIndent, ParagraphShading } from "./paragraph
 import { DocShortcuts, TabCharacter } from "./shortcuts";
 import { ClipboardHandling } from "./clipboard";
 import { Search } from "./search";
+import { AutoCorrect } from "./autocorrect";
 import type * as Y from "yjs";
 import type { WebsocketProvider } from "y-websocket";
 
@@ -587,6 +588,7 @@ export function buildExtensions(opts: BuildOpts) {
     Suggesting.configure({ user: { name: userName, color: userColor } }),
     ClipboardHandling,
     Search,
+    AutoCorrect,
     DocShortcuts,
     TabCharacter,
     ...collabExts,
