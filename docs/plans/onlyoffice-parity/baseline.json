@@ -110,7 +110,7 @@
       "passing": null
     },
     "docs/numbering": {
-      "ported": 0,
+      "ported": 9,
       "passing": null
     },
     "docs/pagination": {
@@ -118,7 +118,7 @@
       "passing": null
     },
     "docs/paragraph": {
-      "ported": 0,
+      "ported": 4,
       "passing": null
     },
     "docs/plugins": {
@@ -146,7 +146,7 @@
       "passing": null
     },
     "docs/styles": {
-      "ported": 0,
+      "ported": 7,
       "passing": null
     },
     "docs/tables": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 505,
+    "ported": 525,
     "passing": null
   }
 }
