@@ -1225,7 +1225,7 @@ func (p *parser) parseArgList() []interface{} {
 	}
 	for {
 		if k := p.peek().kind; k == tokComma || k == tokRParen || k == tokEOF {
-			args = append(args, omittedArg)
+			args = append(args, emptyArg)
 		} else {
 			args = append(args, p.parseArg())
 		}
@@ -1365,8 +1365,18 @@ func (c *callCtx) rangeArg(i int) (rangeVal, bool) {
 // num returns argument i coerced to a number (ok=false if not numeric).
 func (c *callCtx) num(i int) (float64, bool) { return c.scalar(i).toNum() }
 
-// omittedArg is the value of an empty argument slot.
-var omittedArg = value{kind: kindNum, omitted: true}
+// emptyArgTag is also written into an empty argument's str field, the marker
+// the M2 function work (wave1/sheets-funcs) uses for omitted arguments, so
+// both checks recognise the same value.
+const emptyArgTag = "\x00omitted"
+
+// emptyArg is the value of an empty argument slot.
+var emptyArg = value{kind: kindNum, omitted: true, str: emptyArgTag}
+
+// isEmptyArg reports whether v stands for an empty argument.
+func isEmptyArg(v value) bool {
+	return v.omitted || (v.kind == kindNum && v.str == emptyArgTag)
+}
 
 // omitted reports whether argument i is absent or left empty.
 func (c *callCtx) omitted(i int) bool {
@@ -1374,7 +1384,7 @@ func (c *callCtx) omitted(i int) bool {
 		return true
 	}
 	v, ok := c.args[i].(value)
-	return ok && v.omitted
+	return ok && isEmptyArg(v)
 }
 
 // numOr returns argument i as a number, or def when the argument is absent

@@ -337,3 +337,9 @@ func TestGetAllFormulasRecalc(t *testing.T) {
 		}
 	})
 }
+
+func TestAPICalculationOption(t *testing.T) {
+	t.Run("oo:cell/spreadsheet-calculation/formula-tests/FormulaTests.js#API Calculation option", func(t *testing.T) {
+		t.Skip("flagged exception 1 (sheets.md): iterative-calculation settings; Grown has no iterative calculation")
+	})
+}
