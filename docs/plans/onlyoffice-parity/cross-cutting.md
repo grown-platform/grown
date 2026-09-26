@@ -296,6 +296,6 @@ Sizes: S ≤ 1 day · M ≤ 1 week · L 2–3 weeks · XL > 3 weeks. All additiv
   1. pandoc ran without `--sandbox`. On import, `--embed-resources` inlined arbitrary server files (`<img src="/etc/passwd">`) into the returned HTML, export packed them into docx/odt/epub, and http(s) URLs were fetched server-side (SSRF). Fixed in both directions.
   2. RTF export was a headerless fragment, not an openable `.rtf`. It is now `--standalone`.
   3. `ConvertHTML` never enforced `maxConvertBytes`.
-- **Open follow-ups (not fixed here).** Markdown/txt import passes raw HTML such as `<script>` through; this is safe today only because the editor re-parses through its schema. `serveDocsConvert` and `serveDocsImport` silently truncate bodies over 16 MiB rather than returning 413.
+- **Open follow-ups (not fixed here).** ~~Markdown/txt import passes raw HTML such as `<script>` through~~ — fixed: every import now runs `internal/docs/import_sanitize.lua`, a pandoc Lua filter that drops raw HTML (bare `<u>`/`<sup>`-style tags excepted), `on*` attributes and `javascript:`/`vbscript:`/non-image `data:` URLs (`TestImportToHTMLSanitizesActiveContent`). `serveDocsConvert` and `serveDocsImport` silently truncate bodies over 16 MiB rather than returning 413.
 
 Suggested order: CC0 → CC1 → CC2 → CC3 → CC4 → CC6 → CC5 → CC7 → CC8. CC0–CC2 are pure additions with no UI risk and immediately make the scoreboard non-zero for the cross-cutting area.

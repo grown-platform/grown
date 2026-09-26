@@ -100,3 +100,59 @@ func TestImportToHTMLGarbage(t *testing.T) {
 		t.Fatal("ImportToHTML with garbage docx: want error, got nil")
 	}
 }
+
+// TestImportToHTMLSanitizesActiveContent is the regression test for the CC2
+// follow-up: markdown/txt import used to pass raw HTML (<script>, <iframe>,
+// on* handlers) and javascript: URLs straight through pandoc.
+func TestImportToHTMLSanitizesActiveContent(t *testing.T) {
+	requirePandoc(t)
+	const src = "# Title\n\nHello **world**\n\n" +
+		"<script>alert('s')</script>\n\n" +
+		"<style>p{color:red}</style>\n\n" +
+		"<img src=\"x\" onerror=\"alert('e')\">\n\n" +
+		"inline <iframe src=\"https://evil.example\"></iframe> text\n\n" +
+		"[click](javascript:alert('j')) [up](JavaScript:alert('J'))\n\n" +
+		"[data](data:text/html,<b>x</b>)\n\n" +
+		"[ok](https://example.com) and <u>under</u>\n"
+	bad := []string{"<script", "alert(", "<style", "<iframe", "onerror", "javascript:", "data:text/html"}
+	cases := map[string]string{"md": src, "markdown": src, "txt": src + "\n[s]{onclick=\"alert('a')\"}\n"}
+	cases["html"] = `<h1>Title</h1><p>Hello <strong>world</strong></p><p onclick="alert('c')"><a href="javascript:alert('j')">x</a><a href="https://example.com">ok</a> <u>under</u></p>`
+	for from, in := range cases {
+		t.Run(from, func(t *testing.T) {
+			out, err := ImportToHTML(context.Background(), []byte(in), from)
+			if err != nil {
+				t.Fatalf("ImportToHTML(%q): %v", from, err)
+			}
+			html := string(out)
+			assertRoundTrip(t, html)
+			low := strings.ToLower(html)
+			for _, b := range bad {
+				if strings.Contains(low, strings.ToLower(b)) {
+					t.Errorf("imported %s HTML still contains %q: %s", from, b, html)
+				}
+			}
+			if !strings.Contains(html, `href="https://example.com"`) {
+				t.Errorf("safe link was dropped: %s", html)
+			}
+			// Bare formatting tags (Grown's gfm export writes underline as
+			// raw <u>) must survive the sanitizer.
+			if !strings.Contains(html, "<u>under</u>") {
+				t.Errorf("bare <u> formatting was dropped: %s", html)
+			}
+		})
+	}
+}
+
+// TestImportToHTMLKeepsDataImages guards the sanitizer against over-reach:
+// embedded images arrive as data:image URIs and must survive.
+func TestImportToHTMLKeepsDataImages(t *testing.T) {
+	requirePandoc(t)
+	const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+	out, err := ImportToHTML(context.Background(), []byte("![pic]("+png+")\n"), "md")
+	if err != nil {
+		t.Fatalf("ImportToHTML: %v", err)
+	}
+	if !strings.Contains(string(out), png) {
+		t.Errorf("data:image was stripped: %s", out)
+	}
+}

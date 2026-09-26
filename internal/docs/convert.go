@@ -3,6 +3,7 @@ package docs
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -137,25 +138,47 @@ func ImportToHTML(ctx context.Context, data []byte, from string) ([]byte, error)
 		return nil, fmt.Errorf("close input: %w", err)
 	}
 
+	filter, err := os.CreateTemp("", "grown-docs-sanitize-*.lua")
+	if err != nil {
+		return nil, fmt.Errorf("temp file: %w", err)
+	}
+	filterPath := filter.Name()
+	defer os.Remove(filterPath)
+	if _, err := filter.Write(importSanitizeFilter); err != nil {
+		filter.Close()
+		return nil, fmt.Errorf("write filter: %w", err)
+	}
+	if err := filter.Close(); err != nil {
+		return nil, fmt.Errorf("close filter: %w", err)
+	}
+
 	// Prefer --embed-resources (inline images as data URIs). Older pandoc builds
 	// lack the flag, so fall back to a plain conversion if the first run fails.
-	html, err := runPandocImport(ctx, f.Pandoc, inPath, true)
+	html, err := runPandocImport(ctx, f.Pandoc, inPath, filterPath, true)
 	if err != nil {
-		if html, err = runPandocImport(ctx, f.Pandoc, inPath, false); err != nil {
+		if html, err = runPandocImport(ctx, f.Pandoc, inPath, filterPath, false); err != nil {
 			return nil, err
 		}
 	}
 	return html, nil
 }
 
+// importSanitizeFilter is a pandoc Lua filter run on every import. It drops
+// raw HTML (e.g. <script> in markdown/txt), on* attributes and script-capable
+// link/image URLs, so an uploaded file cannot smuggle active content into the
+// returned HTML. It runs under --sandbox: pandoc loads filters itself.
+//
+//go:embed import_sanitize.lua
+var importSanitizeFilter []byte
+
 // runPandocImport runs pandoc to read inPath as `reader` and write HTML to
 // stdout, optionally embedding external resources as data URIs.
-func runPandocImport(ctx context.Context, reader, inPath string, embed bool) ([]byte, error) {
+func runPandocImport(ctx context.Context, reader, inPath, filterPath string, embed bool) ([]byte, error) {
 	// --sandbox confines pandoc's IO to inPath: with --embed-resources an
 	// uploaded html/md file could otherwise inline arbitrary server files
 	// (<img src="/etc/passwd">) or fetch internal URLs (SSRF). Media packed
 	// inside docx/odt/epub/rtf still embed, as they come from the input file.
-	args := []string{"--sandbox", "-f", reader, "-t", "html"}
+	args := []string{"--sandbox", "-f", reader, "-t", "html", "--lua-filter", filterPath}
 	if embed {
 		args = append(args, "--embed-resources")
 	}
