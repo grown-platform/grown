@@ -54,7 +54,10 @@ function kid(el: Element | null | undefined, name: string): Element | null {
   return null;
 }
 /** Walk a path of direct-child local names. */
-function path(el: Element | null | undefined, ...names: string[]): Element | null {
+function path(
+  el: Element | null | undefined,
+  ...names: string[]
+): Element | null {
   let cur: Element | null | undefined = el;
   for (const n of names) {
     cur = kid(cur, n);
@@ -62,7 +65,10 @@ function path(el: Element | null | undefined, ...names: string[]): Element | nul
   }
   return cur ?? null;
 }
-function desc(el: Element | Document | null | undefined, name: string): Element[] {
+function desc(
+  el: Element | Document | null | undefined,
+  name: string,
+): Element[] {
   if (!el) return [];
   return Array.from(el.getElementsByTagNameNS("*", name));
 }
@@ -72,7 +78,10 @@ function num(el: Element | null | undefined, attr: string): number | undefined {
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
 }
-function boolAttr(el: Element | null | undefined, attr: string): boolean | undefined {
+function boolAttr(
+  el: Element | null | undefined,
+  attr: string,
+): boolean | undefined {
   const v = el?.getAttribute(attr);
   if (v === null || v === undefined) return undefined;
   return v === "1" || v === "true";
@@ -110,7 +119,9 @@ function dirOf(p: string): string {
 /** Resolve a relationship target against the source part's folder. */
 export function resolvePartPath(from: string, target: string): string {
   if (target.startsWith("/")) return target.slice(1);
-  const parts = (dirOf(from) ? dirOf(from).split("/") : []).concat(target.split("/"));
+  const parts = (dirOf(from) ? dirOf(from).split("/") : []).concat(
+    target.split("/"),
+  );
   const out: string[] = [];
   for (const p of parts) {
     if (p === "..") out.pop();
@@ -177,7 +188,9 @@ function readTheme(doc: Document | null): Theme {
     const c = slot.children[0];
     if (!c) continue;
     const v =
-      c.localName === "sysClr" ? c.getAttribute("lastClr") : c.getAttribute("val");
+      c.localName === "sysClr"
+        ? c.getAttribute("lastClr")
+        : c.getAttribute("val");
     if (v) scheme[slot.localName] = v;
   }
   const fs = desc(doc, "fontScheme")[0];
@@ -200,7 +213,14 @@ const PRESET_COLORS: Record<string, string> = {
   purple: "800080",
 };
 
-const COLOR_NODES = ["srgbClr", "schemeClr", "sysClr", "hslClr", "scrgbClr", "prstClr"];
+const COLOR_NODES = [
+  "srgbClr",
+  "schemeClr",
+  "sysClr",
+  "hslClr",
+  "scrgbClr",
+  "prstClr",
+];
 
 interface ColorCtx {
   theme: Theme;
@@ -214,9 +234,14 @@ function lookupFor(ctx: ColorCtx) {
 }
 
 /** Resolve the first colour child of `el` (a solidFill, gs, bgRef, …) to hex. */
-function readColor(el: Element | null | undefined, ctx: ColorCtx): string | undefined {
+function readColor(
+  el: Element | null | undefined,
+  ctx: ColorCtx,
+): string | undefined {
   if (!el) return undefined;
-  const c = Array.from(el.children).find((k) => COLOR_NODES.includes(k.localName));
+  const c = Array.from(el.children).find((k) =>
+    COLOR_NODES.includes(k.localName),
+  );
   if (!c) return undefined;
   const mods = readColorMods(c);
   let spec: ColorSpec | null = null;
@@ -228,7 +253,10 @@ function readColor(el: Element | null | undefined, ctx: ColorCtx): string | unde
       spec = { srgb: c.getAttribute("lastClr") || "000000", mods };
       break;
     case "prstClr":
-      spec = { srgb: PRESET_COLORS[c.getAttribute("val") || ""] || "000000", mods };
+      spec = {
+        srgb: PRESET_COLORS[c.getAttribute("val") || ""] || "000000",
+        mods,
+      };
       break;
     case "schemeClr": {
       const name = c.getAttribute("val") || "";
@@ -238,7 +266,11 @@ function readColor(el: Element | null | undefined, ctx: ColorCtx): string | unde
     }
     case "hslClr":
       spec = {
-        hsl: { hue: num(c, "hue") ?? 0, sat: num(c, "sat") ?? 0, lum: num(c, "lum") ?? 0 },
+        hsl: {
+          hue: num(c, "hue") ?? 0,
+          sat: num(c, "sat") ?? 0,
+          lum: num(c, "lum") ?? 0,
+        },
         mods,
       };
       break;
@@ -246,8 +278,11 @@ function readColor(el: Element | null | undefined, ctx: ColorCtx): string | unde
       // Linear-light percentages → sRGB bytes.
       const ch = (a: string) => {
         const l = Math.min(1, Math.max(0, (num(c, a) ?? 0) / 100000));
-        const s = l <= 0.0031308 ? 12.92 * l : 1.055 * Math.pow(l, 1 / 2.4) - 0.055;
-        return Math.round(s * 255).toString(16).padStart(2, "0");
+        const s =
+          l <= 0.0031308 ? 12.92 * l : 1.055 * Math.pow(l, 1 / 2.4) - 0.055;
+        return Math.round(s * 255)
+          .toString(16)
+          .padStart(2, "0");
       };
       spec = { srgb: ch("r") + ch("g") + ch("b"), mods };
       break;
@@ -274,7 +309,10 @@ interface Stroke {
   width: number;
 }
 /** Outline: a stroke, "none", or undefined (not specified). */
-function readLine(props: Element | null, ctx: ColorCtx): Stroke | "none" | undefined {
+function readLine(
+  props: Element | null,
+  ctx: ColorCtx,
+): Stroke | "none" | undefined {
   const ln = kid(props, "ln");
   if (!ln) return undefined;
   if (kid(ln, "noFill")) return "none";
@@ -421,7 +459,8 @@ function firstKid(els: (Element | null)[], name: string): Element | null {
 function paraText(p: Element): string {
   let s = "";
   for (const c of Array.from(p.children)) {
-    if (c.localName === "r" || c.localName === "fld") s += kid(c, "t")?.textContent ?? "";
+    if (c.localName === "r" || c.localName === "fld")
+      s += kid(c, "t")?.textContent ?? "";
     else if (c.localName === "br") s += "\n";
   }
   return s;
@@ -436,10 +475,14 @@ function txBodyText(txBody: Element | null): string {
  * mail links are kept: relative targets are files next to the original deck,
  * and `unsafe`/`invalid` targets (lib/urlType) are dropped.
  */
-async function linkFor(rid: string | null | undefined, pc: PartCtx): Promise<string | undefined> {
+async function linkFor(
+  rid: string | null | undefined,
+  pc: PartCtx,
+): Promise<string | undefined> {
   if (!rid) return undefined;
   const rel = (await pc.pkg.relsOf(pc.part)).get(rid);
-  if (!rel || !rel.external || !rel.type.endsWith("/hyperlink")) return undefined;
+  if (!rel || !rel.external || !rel.type.endsWith("/hyperlink"))
+    return undefined;
   if (!/^[a-z][a-z0-9+.-]*:/i.test(rel.target)) return undefined;
   const t = getUrlType(rel.target);
   return t === "http" || t === "email" ? rel.target : undefined;
@@ -475,17 +518,25 @@ async function readText(
   const pPr = kid(p, "pPr");
   const lvl = (num(pPr, "lvl") ?? 0) + 1;
   const shapeList = kid(txBody, "lstStyle");
-  const lvlPPrs = [pPr, ...[shapeList, ...chain.lists].map((l) => lvlPPr(l, lvl))];
+  const lvlPPrs = [
+    pPr,
+    ...[shapeList, ...chain.lists].map((l) => lvlPPr(l, lvl)),
+  ];
   const run = Array.from(p.children).find(
-    (c) => (c.localName === "r" || c.localName === "fld") && (kid(c, "t")?.textContent ?? "") !== "",
+    (c) =>
+      (c.localName === "r" || c.localName === "fld") &&
+      (kid(c, "t")?.textContent ?? "") !== "",
   );
   const rPrs = [kid(run, "rPr"), ...lvlPPrs.map((e) => kid(e, "defRPr"))];
 
   const sz = Number(firstAttr(rPrs, "sz") ?? 1800);
-  const fontScale = (num(path(txBody, "bodyPr", "normAutofit"), "fontScale") ?? 100000) / 100000;
-  const fontSize = r2(((sz / 100) * EMU_PER_PT * scale) * fontScale);
+  const fontScale =
+    (num(path(txBody, "bodyPr", "normAutofit"), "fontScale") ?? 100000) /
+    100000;
+  const fontSize = r2((sz / 100) * EMU_PER_PT * scale * fontScale);
 
-  let fontFamily = firstKid(rPrs, "latin")?.getAttribute("typeface") || undefined;
+  let fontFamily =
+    firstKid(rPrs, "latin")?.getAttribute("typeface") || undefined;
   if (fontFamily === "+mj-lt") fontFamily = pc.color.theme.majorFont;
   else if (fontFamily === "+mn-lt") fontFamily = pc.color.theme.minorFont;
 
@@ -540,9 +591,12 @@ async function readText(
   return out;
 }
 
-const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const R_NS =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 function rid(el: Element | null, name: string): string | null {
-  return el?.getAttributeNS(R_NS, name) ?? el?.getAttribute(`r:${name}`) ?? null;
+  return (
+    el?.getAttributeNS(R_NS, name) ?? el?.getAttribute(`r:${name}`) ?? null
+  );
 }
 
 // ------------------------------------------------------------ placeholders
@@ -554,7 +608,10 @@ interface PhInfo {
 function phOf(nvPr: Element | null): PhInfo | null {
   const ph = kid(nvPr, "ph");
   if (!ph) return null;
-  return { type: ph.getAttribute("type") || "obj", idx: ph.getAttribute("idx") ?? undefined };
+  return {
+    type: ph.getAttribute("type") || "obj",
+    idx: ph.getAttribute("idx") ?? undefined,
+  };
 }
 function spPh(sp: Element): PhInfo | null {
   const nv = Array.from(sp.children).find((c) => c.localName.startsWith("nv"));
@@ -562,10 +619,18 @@ function spPh(sp: Element): PhInfo | null {
 }
 const TITLE_TYPES = new Set(["title", "ctrTitle"]);
 function phFamily(t: string): string {
-  return TITLE_TYPES.has(t) ? "title" : t === "subTitle" || t === "obj" ? "body" : t;
+  return TITLE_TYPES.has(t)
+    ? "title"
+    : t === "subTitle" || t === "obj"
+      ? "body"
+      : t;
 }
 /** Find the placeholder in a layout/master that `ph` inherits from. */
-function findPh(tree: Element | null, ph: PhInfo, byIdx: boolean): Element | null {
+function findPh(
+  tree: Element | null,
+  ph: PhInfo,
+  byIdx: boolean,
+): Element | null {
   if (!tree) return null;
   const sps = desc(tree, "sp");
   if (byIdx && ph.idx !== undefined) {
@@ -604,19 +669,31 @@ interface SlideCtx {
  * as box fractions; null otherwise. PowerPoint and ODF converters write
  * many connectors this way.
  */
-function straightSegment(cust: Element | null): [number, number, number, number] | null {
+function straightSegment(
+  cust: Element | null,
+): [number, number, number, number] | null {
   const paths = kids(kid(cust, "pathLst"), "path");
   if (paths.length !== 1) return null;
   const p = paths[0];
   const cmds = Array.from(p.children);
-  if (cmds.length !== 2 || cmds[0].localName !== "moveTo" || cmds[1].localName !== "lnTo") return null;
+  if (
+    cmds.length !== 2 ||
+    cmds[0].localName !== "moveTo" ||
+    cmds[1].localName !== "lnTo"
+  )
+    return null;
   const pt = (c: Element) => kid(c, "pt");
   const w = num(p, "w") || 1;
   const h = num(p, "h") || 1;
   const a = pt(cmds[0]);
   const b = pt(cmds[1]);
   const n = (v: number | undefined, d: number) => (d ? (v ?? 0) / d : 0);
-  return [n(num(a, "x"), w), n(num(a, "y"), h), n(num(b, "x"), w), n(num(b, "y"), h)];
+  return [
+    n(num(a, "x"), w),
+    n(num(a, "y"), h),
+    n(num(b, "x"), w),
+    n(num(b, "y"), h),
+  ];
 }
 
 function toPx(b: Box, sc: SlideCtx) {
@@ -628,7 +705,7 @@ function toPx(b: Box, sc: SlideCtx) {
   };
 }
 function orient(b: Box) {
-  const rot = ((Math.round(b.rot * 100) / 100) % 360 + 360) % 360;
+  const rot = (((Math.round(b.rot * 100) / 100) % 360) + 360) % 360;
   return {
     ...(rot ? { rotation: rot } : {}),
     ...(b.flipH ? { flipH: true } : {}),
@@ -641,7 +718,11 @@ function orient(b: Box) {
  * of a shape box, given as box fractions (default: the top-left → bottom-right
  * diagonal, which is how preset lines and connectors are drawn).
  */
-function lineFromBox(b: Box, sc: SlideCtx, seg: [number, number, number, number] = [0, 0, 1, 1]) {
+function lineFromBox(
+  b: Box,
+  sc: SlideCtx,
+  seg: [number, number, number, number] = [0, 0, 1, 1],
+) {
   let [u1, v1, u2, v2] = seg;
   if (b.flipH) [u1, u2] = [1 - u1, 1 - u2];
   if (b.flipV) [v1, v2] = [1 - v1, 1 - v2];
@@ -659,7 +740,8 @@ function lineFromBox(b: Box, sc: SlideCtx, seg: [number, number, number, number]
   const [p1x, p1y] = rotp(x1, y1);
   const [p2x, p2y] = rotp(x2, y2);
   const len = Math.hypot(p2x - p1x, p2y - p1y);
-  const deg = (((Math.atan2(p2y - p1y, p2x - p1x) * 180) / Math.PI) % 360 + 360) % 360;
+  const deg =
+    ((((Math.atan2(p2y - p1y, p2x - p1x) * 180) / Math.PI) % 360) + 360) % 360;
   const mx = (p1x + p2x) / 2;
   const my = (p1y + p2y) / 2;
   const rot = Math.round(deg * 100) / 100;
@@ -672,7 +754,13 @@ function lineFromBox(b: Box, sc: SlideCtx, seg: [number, number, number, number]
   };
 }
 
-async function readSp(sp: Element, tf: Tf, sc: SlideCtx, out: SlideElement[], isCxn: boolean) {
+async function readSp(
+  sp: Element,
+  tf: Tf,
+  sc: SlideCtx,
+  out: SlideElement[],
+  isCxn: boolean,
+) {
   const { pc } = sc;
   const ph = spPh(sp);
   const layoutPh = ph ? findPh(sc.layoutTree, ph, true) : null;
@@ -685,15 +773,19 @@ async function readSp(sp: Element, tf: Tf, sc: SlideCtx, out: SlideElement[], is
   if (!rawBox) return;
   const box = tf(rawBox);
   const prstEl = kid(spPr, "prstGeom");
-  const prst = prstEl?.getAttribute("prst") ?? (kid(spPr, "custGeom") ? "custom" : "rect");
+  const prst =
+    prstEl?.getAttribute("prst") ?? (kid(spPr, "custGeom") ? "custom" : "rect");
   const style = kid(sp, "style");
-  const nvSpPr = Array.from(sp.children).find((c) => c.localName.startsWith("nv")) ?? null;
+  const nvSpPr =
+    Array.from(sp.children).find((c) => c.localName.startsWith("nv")) ?? null;
   const cNvPr = kid(nvSpPr, "cNvPr");
   const shapeUrl = await linkFor(rid(kid(cNvPr, "hlinkClick"), "id"), pc);
 
   const fill =
     readFill(spPr, pc.color) ??
-    (num(kid(style, "fillRef"), "idx") ? readColor(kid(style, "fillRef"), pc.color) : undefined);
+    (num(kid(style, "fillRef"), "idx")
+      ? readColor(kid(style, "fillRef"), pc.color)
+      : undefined);
   const lineSpec = readLine(spPr, pc.color);
   const line: Stroke | undefined =
     lineSpec === "none"
@@ -785,7 +877,9 @@ async function readSp(sp: Element, tf: Tf, sc: SlideCtx, out: SlideElement[], is
     valign: t.valign,
     ...(t.list ? { list: t.list } : {}),
     ...(t.lineSpacing !== undefined ? { lineSpacing: t.lineSpacing } : {}),
-    ...((t.url ?? (visible ? undefined : shapeUrl)) ? { url: t.url ?? shapeUrl } : {}),
+    ...((t.url ?? (visible ? undefined : shapeUrl))
+      ? { url: t.url ?? shapeUrl }
+      : {}),
   };
   out.push(el);
 }
@@ -800,7 +894,11 @@ const IMAGE_MIME: Record<string, string> = {
   webp: "image/webp",
 };
 
-async function mediaDataUrl(pc: PartCtx, rId: string | null, sc: SlideCtx): Promise<string | undefined> {
+async function mediaDataUrl(
+  pc: PartCtx,
+  rId: string | null,
+  sc: SlideCtx,
+): Promise<string | undefined> {
   if (!rId) return undefined;
   const rel = (await pc.pkg.relsOf(pc.part)).get(rId);
   if (!rel || rel.external) return rel?.target;
@@ -809,20 +907,34 @@ async function mediaDataUrl(pc: PartCtx, rId: string | null, sc: SlideCtx): Prom
   const f = pc.pkg.zip.file(rel.target);
   if (!f) return undefined;
   if (!mime) {
-    sc.warnings.add(`Image format .${ext} is not supported by browsers and was skipped`);
+    sc.warnings.add(
+      `Image format .${ext} is not supported by browsers and was skipped`,
+    );
     return undefined;
   }
   return `data:${mime};base64,${await f.async("base64")}`;
 }
 
-async function readPic(pic: Element, tf: Tf, sc: SlideCtx, out: SlideElement[]) {
+async function readPic(
+  pic: Element,
+  tf: Tf,
+  sc: SlideCtx,
+  out: SlideElement[],
+) {
   const spPr = kid(pic, "spPr");
   const raw = readXfrm(kid(spPr, "xfrm"));
   if (!raw) return;
   const box = tf(raw);
-  const src = await mediaDataUrl(sc.pc, rid(path(pic, "blipFill", "blip"), "embed"), sc);
+  const src = await mediaDataUrl(
+    sc.pc,
+    rid(path(pic, "blipFill", "blip"), "embed"),
+    sc,
+  );
   if (!src) return;
-  const url = await linkFor(rid(path(pic, "nvPicPr", "cNvPr", "hlinkClick"), "id"), sc.pc);
+  const url = await linkFor(
+    rid(path(pic, "nvPicPr", "cNvPr", "hlinkClick"), "id"),
+    sc.pc,
+  );
   out.push({
     id: uid(),
     type: "image",
@@ -833,7 +945,12 @@ async function readPic(pic: Element, tf: Tf, sc: SlideCtx, out: SlideElement[]) 
   });
 }
 
-async function readGraphicFrame(gf: Element, tf: Tf, sc: SlideCtx, out: SlideElement[]) {
+async function readGraphicFrame(
+  gf: Element,
+  tf: Tf,
+  sc: SlideCtx,
+  out: SlideElement[],
+) {
   const tbl = desc(gf, "tbl")[0];
   const raw = readXfrm(kid(gf, "xfrm"));
   if (!raw) return;
@@ -849,11 +966,15 @@ async function readGraphicFrame(gf: Element, tf: Tf, sc: SlideCtx, out: SlideEle
     return;
   }
   const rows = kids(tbl, "tr");
-  const cols = kids(kid(tbl, "tblGrid"), "gridCol").length || Math.max(0, ...rows.map((r) => kids(r, "tc").length));
+  const cols =
+    kids(kid(tbl, "tblGrid"), "gridCol").length ||
+    Math.max(0, ...rows.map((r) => kids(r, "tc").length));
   if (!rows.length || !cols) return;
   const cells = rows.map((tr) => {
     const tcs = kids(tr, "tc");
-    return Array.from({ length: cols }, (_, i) => txBodyText(kid(tcs[i], "txBody")));
+    return Array.from({ length: cols }, (_, i) =>
+      txBodyText(kid(tcs[i], "txBody")),
+    );
   });
   const rowsH = rows.reduce((s, r) => s + (num(r, "h") ?? 0), 0);
   const box = tf({ ...raw, h: Math.max(raw.h, rowsH) });
@@ -862,7 +983,8 @@ async function readGraphicFrame(gf: Element, tf: Tf, sc: SlideCtx, out: SlideEle
   const tcPr = kid(tc0, "tcPr");
   const fill = readFill(tcPr, sc.pc.color);
   const lnL = kid(tcPr, "lnL") ?? kid(tcPr, "lnT");
-  const bColor = lnL && !kid(lnL, "noFill") ? readFill(lnL, sc.pc.color) : undefined;
+  const bColor =
+    lnL && !kid(lnL, "noFill") ? readFill(lnL, sc.pc.color) : undefined;
   const bw = num(lnL, "w");
   const run = desc(tc0, "r")[0];
   const rPr = kid(run, "rPr");
@@ -874,8 +996,15 @@ async function readGraphicFrame(gf: Element, tf: Tf, sc: SlideCtx, out: SlideEle
     table: { rows: rows.length, cols, cells },
     fill: fill && fill !== "none" ? fill : "none",
     stroke: bColor && bColor !== "none" ? bColor : "none",
-    strokeWidth: bColor && bColor !== "none" ? (bw === undefined ? 1 : r2(bw / EMU_PER_PT)) : 0,
-    fontSize: sz ? r2((sz / 100) * EMU_PER_PT * sc.scale) : r2(18 * EMU_PER_PT * sc.scale),
+    strokeWidth:
+      bColor && bColor !== "none"
+        ? bw === undefined
+          ? 1
+          : r2(bw / EMU_PER_PT)
+        : 0,
+    fontSize: sz
+      ? r2((sz / 100) * EMU_PER_PT * sc.scale)
+      : r2(18 * EMU_PER_PT * sc.scale),
     ...(kid(rPr, "latin")?.getAttribute("typeface")
       ? { fontFamily: kid(rPr, "latin")!.getAttribute("typeface")! }
       : {}),
@@ -883,9 +1012,16 @@ async function readGraphicFrame(gf: Element, tf: Tf, sc: SlideCtx, out: SlideEle
   });
 }
 
-async function readTree(tree: Element, tf: Tf, sc: SlideCtx, out: SlideElement[], skipPh: boolean) {
+async function readTree(
+  tree: Element,
+  tf: Tf,
+  sc: SlideCtx,
+  out: SlideElement[],
+  skipPh: boolean,
+) {
   for (const c of contentKids(tree)) {
-    if (skipPh && (c.localName === "sp" || c.localName === "pic") && spPh(c)) continue;
+    if (skipPh && (c.localName === "sp" || c.localName === "pic") && spPh(c))
+      continue;
     switch (c.localName) {
       case "sp":
         await readSp(c, tf, sc, out, false);
@@ -953,7 +1089,15 @@ async function readBackground(
         if (src)
           return {
             color: "#ffffff",
-            image: { id: uid(), type: "image", x: 0, y: 0, w: CANVAS_W, h: CANVAS_H, src },
+            image: {
+              id: uid(),
+              type: "image",
+              x: 0,
+              y: 0,
+              w: CANVAS_W,
+              h: CANVAS_H,
+              src,
+            },
           };
       }
       const f = readFill(bgPr, sc.pc.color);
@@ -971,14 +1115,17 @@ async function readBackground(
 // ------------------------------------------------------------ entry point
 
 /** Read a .pptx (bytes or Blob) into a Grown deck. */
-export async function readPptx(data: ArrayBuffer | Uint8Array | Blob): Promise<PptxImport> {
+export async function readPptx(
+  data: ArrayBuffer | Uint8Array | Blob,
+): Promise<PptxImport> {
   const zip = await JSZip.loadAsync(data);
   const pkg = new Pkg(zip);
   const warnings = new Set<string>();
   const unsupported = new Set<string>();
 
   const presPath =
-    (await pkg.relOfType("", "officeDocument").catch(() => undefined)) || "ppt/presentation.xml";
+    (await pkg.relOfType("", "officeDocument").catch(() => undefined)) ||
+    "ppt/presentation.xml";
   const pres = await pkg.xml(presPath);
   if (!pres) throw new Error("Not a PowerPoint file (no presentation part)");
   const presEl = pres.documentElement;
@@ -1002,15 +1149,20 @@ export async function readPptx(data: ArrayBuffer | Uint8Array | Blob): Promise<P
     const sld = await pkg.xml(slidePath);
     if (!sld) continue;
     const layoutPath = await pkg.relOfType(slidePath, "slideLayout");
-    const masterPath = layoutPath ? await pkg.relOfType(layoutPath, "slideMaster") : undefined;
-    const themePath = masterPath ? await pkg.relOfType(masterPath, "theme") : undefined;
+    const masterPath = layoutPath
+      ? await pkg.relOfType(layoutPath, "slideMaster")
+      : undefined;
+    const themePath = masterPath
+      ? await pkg.relOfType(masterPath, "theme")
+      : undefined;
     const layout = layoutPath ? await pkg.xml(layoutPath) : null;
     const master = masterPath ? await pkg.xml(masterPath) : null;
     const theme = readTheme(themePath ? await pkg.xml(themePath) : null);
 
     const clrMap: Record<string, string> = {};
     const mapEl = master ? kid(master.documentElement, "clrMap") : null;
-    for (const a of Array.from(mapEl?.attributes ?? [])) clrMap[a.name] = a.value;
+    for (const a of Array.from(mapEl?.attributes ?? []))
+      clrMap[a.name] = a.value;
     const ovr = path(sld.documentElement, "clrMapOvr", "overrideClrMapping");
     for (const a of Array.from(ovr?.attributes ?? [])) clrMap[a.name] = a.value;
     const color: ColorCtx = { theme, clrMap };
@@ -1035,16 +1187,33 @@ export async function readPptx(data: ArrayBuffer | Uint8Array | Blob): Promise<P
     };
 
     const elements: SlideElement[] = [];
-    const bg = await readBackground([slideCSld, layoutCSld, masterCSld], sc, [pcSlide, pcLayout, pcMaster]);
+    const bg = await readBackground([slideCSld, layoutCSld, masterCSld], sc, [
+      pcSlide,
+      pcLayout,
+      pcMaster,
+    ]);
     if (bg.image) elements.push(bg.image);
 
     // Master and layout decorations (non-placeholder shapes) sit under the slide's own.
     const showMaster = sld.documentElement.getAttribute("showMasterSp") !== "0";
-    const layoutShowsMaster = layout?.documentElement.getAttribute("showMasterSp") !== "0";
+    const layoutShowsMaster =
+      layout?.documentElement.getAttribute("showMasterSp") !== "0";
     if (showMaster && layoutShowsMaster && sc.masterTree)
-      await readTree(sc.masterTree, identity, { ...sc, pc: pcMaster }, elements, true);
+      await readTree(
+        sc.masterTree,
+        identity,
+        { ...sc, pc: pcMaster },
+        elements,
+        true,
+      );
     if (showMaster && sc.layoutTree)
-      await readTree(sc.layoutTree, identity, { ...sc, pc: pcLayout }, elements, true);
+      await readTree(
+        sc.layoutTree,
+        identity,
+        { ...sc, pc: pcLayout },
+        elements,
+        true,
+      );
     const tree = kid(slideCSld, "spTree");
     if (tree) await readTree(tree, identity, sc, elements, false);
 

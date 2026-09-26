@@ -27,7 +27,11 @@ export function pxToPt(px: number): number {
 }
 /** `#rrggbb[aa]` → `RRGGBB` for pptxgenjs (alpha is written separately). */
 export function hex6(c?: string): string {
-  return (c || "#000000").replace("#", "").slice(0, 6).padEnd(6, "0").toUpperCase();
+  return (c || "#000000")
+    .replace("#", "")
+    .slice(0, 6)
+    .padEnd(6, "0")
+    .toUpperCase();
 }
 /** Transparency percent (0–100) from an `#rrggbbaa` colour, or undefined. */
 export function transparencyOf(c?: string): number | undefined {
@@ -119,7 +123,12 @@ function textRunOpts(el: SlideElement) {
 
 function addText(s: PSlide, el: SlideElement) {
   const lines = (el.text || "").split("\n");
-  const bullet = el.list === "number" ? { type: "number" as const } : el.list === "bullet" ? true : undefined;
+  const bullet =
+    el.list === "number"
+      ? { type: "number" as const }
+      : el.list === "bullet"
+        ? true
+        : undefined;
   const runs = lines.map((ln, i) => ({
     text: ln,
     options: {
@@ -132,7 +141,12 @@ function addText(s: PSlide, el: SlideElement) {
     ...geomOpts(el),
     ...textRunOpts(el),
     align: el.align || "left",
-    valign: el.valign === "middle" ? "middle" : el.valign === "bottom" ? "bottom" : "top",
+    valign:
+      el.valign === "middle"
+        ? "middle"
+        : el.valign === "bottom"
+          ? "bottom"
+          : "top",
     ...(el.lineSpacing ? { lineSpacingMultiple: el.lineSpacing } : {}),
   });
 }
@@ -147,7 +161,12 @@ function addShape(s: PSlide, el: SlideElement) {
     ...geomOpts(el),
     fill: noFill
       ? { type: "none" }
-      : { color: hex6(el.fill), ...(transparencyOf(el.fill) ? { transparency: transparencyOf(el.fill) } : {}) },
+      : {
+          color: hex6(el.fill),
+          ...(transparencyOf(el.fill)
+            ? { transparency: transparencyOf(el.fill) }
+            : {}),
+        },
     ...(line ? { line } : {}),
     ...(el.type === "roundRect"
       ? { rectRadius: pxToInch(Math.min(el.w, el.h) * ROUND_RECT_RATIO) }
@@ -160,7 +179,8 @@ function addTable(s: PSlide, el: SlideElement) {
   const t = el.table;
   if (!t || !t.rows || !t.cols) return;
   const bcol = el.stroke && el.stroke !== "none" ? hex6(el.stroke) : undefined;
-  const fill = el.fill && el.fill !== "none" ? { color: hex6(el.fill) } : undefined;
+  const fill =
+    el.fill && el.fill !== "none" ? { color: hex6(el.fill) } : undefined;
   const rows = t.cells.map((row) =>
     row.map((c) => ({
       text: c,
@@ -179,7 +199,9 @@ function addTable(s: PSlide, el: SlideElement) {
     fontFace: el.fontFamily || "Arial",
     color: hex6(el.color || "#202124"),
     valign: "top",
-    ...(bcol ? { border: { type: "solid", pt: el.strokeWidth || 1, color: bcol } } : { border: { type: "none" } }),
+    ...(bcol
+      ? { border: { type: "solid", pt: el.strokeWidth || 1, color: bcol } }
+      : { border: { type: "none" } }),
   });
 }
 
@@ -187,11 +209,18 @@ function addTable(s: PSlide, el: SlideElement) {
  * Build the pptx package for a deck. Returns the raw zip bytes (post-processed
  * for transitions). pptxgenjs is loaded lazily so it stays in its own chunk.
  */
-export async function deckToPptx(deck: DeckDoc, title = "Presentation"): Promise<Uint8Array> {
+export async function deckToPptx(
+  deck: DeckDoc,
+  title = "Presentation",
+): Promise<Uint8Array> {
   const mod = await import("pptxgenjs");
   const PptxGenJS = mod.default;
   const pptx = new PptxGenJS();
-  pptx.defineLayout({ name: "GROWN16x9", width: SLIDE_W_IN, height: SLIDE_H_IN });
+  pptx.defineLayout({
+    name: "GROWN16x9",
+    width: SLIDE_W_IN,
+    height: SLIDE_H_IN,
+  });
   pptx.layout = "GROWN16x9";
   pptx.title = title;
   for (const slide of deck.slides) {
@@ -210,7 +239,9 @@ export async function deckToPptx(deck: DeckDoc, title = "Presentation"): Promise
           });
         } else if (el.type === "image") {
           if (!el.src) continue;
-          const src = el.src.startsWith("data:") ? { data: el.src } : { path: el.src };
+          const src = el.src.startsWith("data:")
+            ? { data: el.src }
+            : { path: el.src };
           s.addImage({ ...geomOpts(el), ...src, ...linkOpt(el) });
         } else addShape(s, el);
       } catch {
@@ -224,8 +255,12 @@ export async function deckToPptx(deck: DeckDoc, title = "Presentation"): Promise
 }
 
 /** Apply the XML patches pptxgenjs cannot express (currently: transitions). */
-export async function patchPptx(raw: Uint8Array, deck: DeckDoc): Promise<Uint8Array> {
-  if (!deck.slides.some((s) => s.transition && s.transition !== "none")) return raw;
+export async function patchPptx(
+  raw: Uint8Array,
+  deck: DeckDoc,
+): Promise<Uint8Array> {
+  if (!deck.slides.some((s) => s.transition && s.transition !== "none"))
+    return raw;
   const zip = await JSZip.loadAsync(raw);
   for (let i = 0; i < deck.slides.length; i++) {
     const xml = transitionXml(deck.slides[i].transition);

@@ -14,16 +14,24 @@ import type { DeckDoc, SlideElement } from "../model";
 const PNG_1PX =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
-function deckOf(elements: SlideElement[], extra: Partial<DeckDoc["slides"][0]> = {}): DeckDoc {
+function deckOf(
+  elements: SlideElement[],
+  extra: Partial<DeckDoc["slides"][0]> = {},
+): DeckDoc {
   return { slides: [{ id: "s1", background: "#ffffff", elements, ...extra }] };
 }
 
-async function slideXml(deck: DeckDoc, n = 1): Promise<{ xml: string; rels: string; zip: JSZip }> {
+async function slideXml(
+  deck: DeckDoc,
+  n = 1,
+): Promise<{ xml: string; rels: string; zip: JSZip }> {
   const zip = await JSZip.loadAsync(await deckToPptx(deck));
   return {
     zip,
     xml: await zip.file(`ppt/slides/slide${n}.xml`)!.async("string"),
-    rels: await zip.file(`ppt/slides/_rels/slide${n}.xml.rels`)!.async("string"),
+    rels: await zip
+      .file(`ppt/slides/_rels/slide${n}.xml.rels`)!
+      .async("string"),
   };
 }
 
@@ -69,18 +77,19 @@ describe("transition XML", () => {
     expect(transitionXml("slide-up")).toContain(`<p:push dir="u"/>`);
   });
   it("inserts after clrMapOvr and before timing", () => {
-    const src =
-      `<p:sld><p:cSld/><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr><p:timing/></p:sld>`;
+    const src = `<p:sld><p:cSld/><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr><p:timing/></p:sld>`;
     expect(insertTransition(src, "<p:transition/>")).toBe(
       `<p:sld><p:cSld/><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr><p:transition/><p:timing/></p:sld>`,
     );
   });
   it("falls back to after cSld and replaces an existing transition", () => {
-    expect(insertTransition(`<p:sld><p:cSld></p:cSld></p:sld>`, "<p:transition/>")).toBe(
-      `<p:sld><p:cSld></p:cSld><p:transition/></p:sld>`,
-    );
+    expect(
+      insertTransition(`<p:sld><p:cSld></p:cSld></p:sld>`, "<p:transition/>"),
+    ).toBe(`<p:sld><p:cSld></p:cSld><p:transition/></p:sld>`);
     const had = `<p:sld><p:cSld></p:cSld><p:transition spd="fast"><p:wipe/></p:transition></p:sld>`;
-    expect(insertTransition(had, `<p:transition><p:fade/></p:transition>`)).toBe(
+    expect(
+      insertTransition(had, `<p:transition><p:fade/></p:transition>`),
+    ).toBe(
       `<p:sld><p:cSld></p:cSld><p:transition><p:fade/></p:transition></p:sld>`,
     );
     expect(insertTransition(had, "")).toBe(`<p:sld><p:cSld></p:cSld></p:sld>`);
@@ -95,24 +104,44 @@ describe("deckToPptx emitted XML", () => {
   });
 
   it("writes the slide background colour", async () => {
-    const { xml } = await slideXml({ slides: [{ id: "s", background: "#123abc", elements: [] }] });
-    expect(xml).toMatch(/<p:bg><p:bgPr><a:solidFill><a:srgbClr val="123ABC"\/>/);
+    const { xml } = await slideXml({
+      slides: [{ id: "s", background: "#123abc", elements: [] }],
+    });
+    expect(xml).toMatch(
+      /<p:bg><p:bgPr><a:solidFill><a:srgbClr val="123ABC"\/>/,
+    );
   });
 
   it("writes text geometry, rotation, run formatting and line spacing", async () => {
     const { xml } = await slideXml(
-      deckOf([text({ rotation: 45, bold: true, italic: true, strike: true, lineSpacing: 1.5 })]),
+      deckOf([
+        text({
+          rotation: 45,
+          bold: true,
+          italic: true,
+          strike: true,
+          lineSpacing: 1.5,
+        }),
+      ]),
     );
-    expect(xml).toContain(`<a:xfrm rot="2700000"><a:off x="914400" y="457200"/>`);
-    expect(xml).toMatch(/<a:rPr [^>]*sz="1800"[^>]*b="1"[^>]*i="1"[^>]*strike="sngStrike"/);
+    expect(xml).toContain(
+      `<a:xfrm rot="2700000"><a:off x="914400" y="457200"/>`,
+    );
+    expect(xml).toMatch(
+      /<a:rPr [^>]*sz="1800"[^>]*b="1"[^>]*i="1"[^>]*strike="sngStrike"/,
+    );
     expect(xml).toContain(`<a:spcPct val="150000"/>`);
   });
 
   it("writes one paragraph per line with bullets or numbering", async () => {
-    const bullets = (await slideXml(deckOf([text({ text: "a\nb\nc", list: "bullet" })]))).xml;
+    const bullets = (
+      await slideXml(deckOf([text({ text: "a\nb\nc", list: "bullet" })]))
+    ).xml;
     expect(bullets.match(/<a:p>/g)).toHaveLength(3);
     expect(bullets.match(/<a:buChar /g)).toHaveLength(3);
-    const nums = (await slideXml(deckOf([text({ text: "a\nb", list: "number" })]))).xml;
+    const nums = (
+      await slideXml(deckOf([text({ text: "a\nb", list: "number" })]))
+    ).xml;
     expect(nums.match(/<a:buAutoNum type="arabicPeriod"/g)).toHaveLength(2);
   });
 
@@ -120,41 +149,91 @@ describe("deckToPptx emitted XML", () => {
     const { xml, rels } = await slideXml(
       deckOf([
         text({ url: "https://grown.example/a" }),
-        { id: "r", type: "rect", x: 0, y: 0, w: 10, h: 10, fill: "#ff0000", url: "https://grown.example/b" },
+        {
+          id: "r",
+          type: "rect",
+          x: 0,
+          y: 0,
+          w: 10,
+          h: 10,
+          fill: "#ff0000",
+          url: "https://grown.example/b",
+        },
       ]),
     );
     expect(xml).toMatch(/<a:rPr[^>]*>[\s\S]*<a:hlinkClick r:id="rId\d+"/);
-    expect(xml).toMatch(/<p:cNvPr id="\d+" name="[^"]*"><a:hlinkClick r:id="rId\d+"/);
-    expect(rels).toContain(`Target="https://grown.example/a" TargetMode="External"`);
-    expect(rels).toContain(`Target="https://grown.example/b" TargetMode="External"`);
+    expect(xml).toMatch(
+      /<p:cNvPr id="\d+" name="[^"]*"><a:hlinkClick r:id="rId\d+"/,
+    );
+    expect(rels).toContain(
+      `Target="https://grown.example/a" TargetMode="External"`,
+    );
+    expect(rels).toContain(
+      `Target="https://grown.example/b" TargetMode="External"`,
+    );
   });
 
   it("writes flips and the roundRect corner adjust", async () => {
     const { xml } = await slideXml(
       deckOf([
-        { id: "r", type: "roundRect", x: 0, y: 0, w: 200, h: 100, fill: "#00ff00", flipH: true, flipV: true },
+        {
+          id: "r",
+          type: "roundRect",
+          x: 0,
+          y: 0,
+          w: 200,
+          h: 100,
+          fill: "#00ff00",
+          flipH: true,
+          flipV: true,
+        },
       ]),
     );
     expect(xml).toContain(`<a:xfrm flipH="1" flipV="1">`);
-    expect(xml).toContain(`<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 18000"/>`);
+    expect(xml).toContain(
+      `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 18000"/>`,
+    );
   });
 
   it("writes each preset shape with its ECMA name and no fill for fill:none", async () => {
-    const types = ["rect", "ellipse", "triangle", "diamond", "rightArrow", "roundRect"] as const;
+    const types = [
+      "rect",
+      "ellipse",
+      "triangle",
+      "diamond",
+      "rightArrow",
+      "roundRect",
+    ] as const;
     const { xml } = await slideXml(
-      deckOf(types.map((t, i) => ({ id: t, type: t, x: i * 10, y: 0, w: 10, h: 10, fill: i ? "#abcdef" : "none" }))),
+      deckOf(
+        types.map((t, i) => ({
+          id: t,
+          type: t,
+          x: i * 10,
+          y: 0,
+          w: 10,
+          h: 10,
+          fill: i ? "#abcdef" : "none",
+        })),
+      ),
     );
     for (const t of types) expect(xml).toContain(`<a:prstGeom prst="${t}">`);
     // No fill element and no <p:style>: PowerPoint draws the shape unfilled.
-    expect(xml).toMatch(/prst="rect"><a:avLst><\/a:avLst><\/a:prstGeom><a:ln><\/a:ln><\/p:spPr>/);
+    expect(xml).toMatch(
+      /prst="rect"><a:avLst><\/a:avLst><\/a:prstGeom><a:ln><\/a:ln><\/p:spPr>/,
+    );
     expect(xml).not.toContain("<p:style>");
   });
 
   it("writes semi-transparent fills as alpha", async () => {
     const { xml } = await slideXml(
-      deckOf([{ id: "r", type: "rect", x: 0, y: 0, w: 10, h: 10, fill: "#ff000080" }]),
+      deckOf([
+        { id: "r", type: "rect", x: 0, y: 0, w: 10, h: 10, fill: "#ff000080" },
+      ]),
     );
-    expect(xml).toMatch(/<a:srgbClr val="FF0000"><a:alpha val="50000"\/><\/a:srgbClr>/);
+    expect(xml).toMatch(
+      /<a:srgbClr val="FF0000"><a:alpha val="50000"\/><\/a:srgbClr>/,
+    );
   });
 
   it("writes tables as a:tbl with a column per cell and borders", async () => {
@@ -167,7 +246,14 @@ describe("deckToPptx emitted XML", () => {
           y: 96,
           w: 288,
           h: 96,
-          table: { rows: 2, cols: 3, cells: [["a", "b", "c"], ["d", "e", "f"]] },
+          table: {
+            rows: 2,
+            cols: 3,
+            cells: [
+              ["a", "b", "c"],
+              ["d", "e", "f"],
+            ],
+          },
           fill: "#eeeeee",
           stroke: "#333333",
           strokeWidth: 2,
@@ -188,18 +274,39 @@ describe("deckToPptx emitted XML", () => {
 
   it("writes images from data URLs into ppt/media", async () => {
     const { xml, rels, zip } = await slideXml(
-      deckOf([{ id: "i", type: "image", x: 0, y: 0, w: 96, h: 96, src: PNG_1PX, rotation: 90 }]),
+      deckOf([
+        {
+          id: "i",
+          type: "image",
+          x: 0,
+          y: 0,
+          w: 96,
+          h: 96,
+          src: PNG_1PX,
+          rotation: 90,
+        },
+      ]),
     );
     expect(xml).toContain("<p:pic>");
     expect(xml).toMatch(/<a:xfrm rot="5400000">/);
-    expect(rels).toMatch(/relationships\/image" Target="\.\.\/media\/[^"]+\.png"/);
-    expect(Object.keys(zip.files).some((p) => p.startsWith("ppt/media/") && p.endsWith(".png"))).toBe(true);
+    expect(rels).toMatch(
+      /relationships\/image" Target="\.\.\/media\/[^"]+\.png"/,
+    );
+    expect(
+      Object.keys(zip.files).some(
+        (p) => p.startsWith("ppt/media/") && p.endsWith(".png"),
+      ),
+    ).toBe(true);
   });
 
   it("writes speaker notes to a notes slide", async () => {
-    const { zip, rels } = await slideXml(deckOf([], { notes: "Say hello\nthen wave" }));
+    const { zip, rels } = await slideXml(
+      deckOf([], { notes: "Say hello\nthen wave" }),
+    );
     expect(rels).toContain("notesSlide");
-    const notes = await zip.file("ppt/notesSlides/notesSlide1.xml")!.async("string");
+    const notes = await zip
+      .file("ppt/notesSlides/notesSlide1.xml")!
+      .async("string");
     expect(notes).toContain("Say hello");
   });
 
@@ -208,12 +315,20 @@ describe("deckToPptx emitted XML", () => {
       slides: [
         { id: "a", background: "#ffffff", elements: [], transition: "fade" },
         { id: "b", background: "#ffffff", elements: [] },
-        { id: "c", background: "#ffffff", elements: [], transition: "slide-up" },
+        {
+          id: "c",
+          background: "#ffffff",
+          elements: [],
+          transition: "slide-up",
+        },
       ],
     };
     const zip = await JSZip.loadAsync(await deckToPptx(deck));
-    const s = (n: number) => zip.file(`ppt/slides/slide${n}.xml`)!.async("string");
-    expect(await s(1)).toMatch(/<\/p:clrMapOvr><p:transition spd="med"><p:fade\/><\/p:transition><\/p:sld>/);
+    const s = (n: number) =>
+      zip.file(`ppt/slides/slide${n}.xml`)!.async("string");
+    expect(await s(1)).toMatch(
+      /<\/p:clrMapOvr><p:transition spd="med"><p:fade\/><\/p:transition><\/p:sld>/,
+    );
     expect(await s(2)).not.toContain("<p:transition");
     expect(await s(3)).toContain(`<p:push dir="u"/>`);
   });

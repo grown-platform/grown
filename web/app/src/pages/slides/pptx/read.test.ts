@@ -11,7 +11,8 @@ const NS =
   `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ` +
   `xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ` +
   `xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"`;
-const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const REL =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
@@ -33,7 +34,10 @@ const THEME = `<a:theme ${NS} name="T"><a:themeElements>
 <a:fontScheme name="F"><a:majorFont><a:latin typeface="Georgia"/></a:majorFont><a:minorFont><a:latin typeface="Verdana"/></a:minorFont></a:fontScheme>
 </a:themeElements></a:theme>`;
 
-const MASTER = (extraTree = "", bg = `<p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg>`) =>
+const MASTER = (
+  extraTree = "",
+  bg = `<p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg>`,
+) =>
   `<p:sldMaster ${NS}><p:cSld>${bg}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
 <p:sp><p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>
   <p:spPr><a:xfrm><a:off x="457200" y="228600"/><a:ext cx="8229600" cy="914400"/></a:xfrm></p:spPr>
@@ -70,7 +74,11 @@ const rels = (items: [string, string, string, boolean?][]) =>
     .join("")}</Relationships>`;
 
 interface PkgOpts {
-  slides: { xml: string; rels?: [string, string, string, boolean?][]; notes?: string }[];
+  slides: {
+    xml: string;
+    rels?: [string, string, string, boolean?][];
+    notes?: string;
+  }[];
   size?: [number, number];
   master?: string;
   layout?: string;
@@ -82,7 +90,10 @@ interface PkgOpts {
 async function pkg(o: PkgOpts): Promise<Uint8Array> {
   const z = new JSZip();
   const [cx, cy] = o.size ?? [9144000, 5143500];
-  z.file("_rels/.rels", rels([["rId1", "officeDocument", "ppt/presentation.xml"]]));
+  z.file(
+    "_rels/.rels",
+    rels([["rId1", "officeDocument", "ppt/presentation.xml"]]),
+  );
   z.file(
     "ppt/presentation.xml",
     `<p:presentation ${NS}><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rIdM"/></p:sldMasterIdLst><p:sldIdLst>${o.slides
@@ -94,7 +105,16 @@ async function pkg(o: PkgOpts): Promise<Uint8Array> {
     rels([
       ["rIdM", "slideMaster", "slideMasters/slideMaster1.xml"],
       // Deliberately listed out of order: slide order comes from sldIdLst.
-      ...o.slides.map((_, i) => [`rIdS${i + 1}`, "slide", `slides/slide${i + 1}.xml`] as [string, string, string]).reverse(),
+      ...o.slides
+        .map(
+          (_, i) =>
+            [`rIdS${i + 1}`, "slide", `slides/slide${i + 1}.xml`] as [
+              string,
+              string,
+              string,
+            ],
+        )
+        .reverse(),
     ]),
   );
   z.file("ppt/theme/theme1.xml", THEME);
@@ -104,11 +124,17 @@ async function pkg(o: PkgOpts): Promise<Uint8Array> {
     rels([["rId1", "theme", "../theme/theme1.xml"], ...(o.masterRels ?? [])]),
   );
   z.file("ppt/slideLayouts/slideLayout1.xml", o.layout ?? LAYOUT());
-  z.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels", rels([["rId1", "slideMaster", "../slideMasters/slideMaster1.xml"]]));
+  z.file(
+    "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+    rels([["rId1", "slideMaster", "../slideMasters/slideMaster1.xml"]]),
+  );
   o.slides.forEach((s, i) => {
     const n = i + 1;
     z.file(`ppt/slides/slide${n}.xml`, s.xml);
-    const r: [string, string, string, boolean?][] = [["rIdL", "slideLayout", "../slideLayouts/slideLayout1.xml"], ...(s.rels ?? [])];
+    const r: [string, string, string, boolean?][] = [
+      ["rIdL", "slideLayout", "../slideLayouts/slideLayout1.xml"],
+      ...(s.rels ?? []),
+    ];
     if (s.notes !== undefined) {
       r.push(["rIdN", "notesSlide", `../notesSlides/notesSlide${n}.xml`]);
       z.file(
@@ -123,7 +149,8 @@ async function pkg(o: PkgOpts): Promise<Uint8Array> {
     }
     z.file(`ppt/slides/_rels/slide${n}.xml.rels`, rels(r));
   });
-  for (const [p, b64] of Object.entries(o.media ?? {})) z.file(p, b64, { base64: true });
+  for (const [p, b64] of Object.entries(o.media ?? {}))
+    z.file(p, b64, { base64: true });
   if (o.title)
     z.file(
       "docProps/core.xml",
@@ -134,7 +161,20 @@ async function pkg(o: PkgOpts): Promise<Uint8Array> {
 
 // A shape with explicit geometry. EMU 9525 = 1 px on a 10 in wide slide.
 const px = (v: number) => Math.round(v * 9525);
-function sp(inner: { x: number; y: number; w: number; h: number; xfrmAttrs?: string; prst?: string; fill?: string; ln?: string; tx?: string; nv?: string; style?: string; cNvPr?: string }) {
+function sp(inner: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  xfrmAttrs?: string;
+  prst?: string;
+  fill?: string;
+  ln?: string;
+  tx?: string;
+  nv?: string;
+  style?: string;
+  cNvPr?: string;
+}) {
   return `<p:sp><p:nvSpPr><p:cNvPr id="9" name="s">${inner.cNvPr ?? ""}</p:cNvPr><p:cNvSpPr${inner.nv ?? ""}/><p:nvPr/></p:nvSpPr>
 <p:spPr><a:xfrm${inner.xfrmAttrs ?? ""}><a:off x="${px(inner.x)}" y="${px(inner.y)}"/><a:ext cx="${px(inner.w)}" cy="${px(inner.h)}"/></a:xfrm>
 <a:prstGeom prst="${inner.prst ?? "rect"}"><a:avLst/></a:prstGeom>${inner.fill ?? ""}${inner.ln ?? ""}</p:spPr>${inner.style ?? ""}${inner.tx ?? ""}</p:sp>`;
@@ -143,16 +183,42 @@ const solid = (c: string) => `<a:solidFill>${c}</a:solidFill>`;
 
 describe("package plumbing", () => {
   it("resolves relationship targets against the source part", () => {
-    expect(resolvePartPath("ppt/slides/slide1.xml", "../media/a.png")).toBe("ppt/media/a.png");
-    expect(resolvePartPath("ppt/presentation.xml", "slides/slide2.xml")).toBe("ppt/slides/slide2.xml");
-    expect(resolvePartPath("ppt/slides/slide1.xml", "/ppt/media/b.png")).toBe("ppt/media/b.png");
-    expect(resolvePartPath("", "ppt/presentation.xml")).toBe("ppt/presentation.xml");
+    expect(resolvePartPath("ppt/slides/slide1.xml", "../media/a.png")).toBe(
+      "ppt/media/a.png",
+    );
+    expect(resolvePartPath("ppt/presentation.xml", "slides/slide2.xml")).toBe(
+      "ppt/slides/slide2.xml",
+    );
+    expect(resolvePartPath("ppt/slides/slide1.xml", "/ppt/media/b.png")).toBe(
+      "ppt/media/b.png",
+    );
+    expect(resolvePartPath("", "ppt/presentation.xml")).toBe(
+      "ppt/presentation.xml",
+    );
   });
 
   it("reads slides in sldIdLst order, plus the title", async () => {
-    const mk = (t: string) => SLIDE(sp({ x: 0, y: 0, w: 100, h: 50, tx: `<p:txBody><a:bodyPr/><a:p><a:r><a:t>${t}</a:t></a:r></a:p></p:txBody>` }));
-    const r = await readPptx(await pkg({ slides: [{ xml: mk("one") }, { xml: mk("two") }, { xml: mk("three") }], title: "My deck" }));
-    expect(r.deck.slides.map((s) => s.elements[0].text)).toEqual(["one", "two", "three"]);
+    const mk = (t: string) =>
+      SLIDE(
+        sp({
+          x: 0,
+          y: 0,
+          w: 100,
+          h: 50,
+          tx: `<p:txBody><a:bodyPr/><a:p><a:r><a:t>${t}</a:t></a:r></a:p></p:txBody>`,
+        }),
+      );
+    const r = await readPptx(
+      await pkg({
+        slides: [{ xml: mk("one") }, { xml: mk("two") }, { xml: mk("three") }],
+        title: "My deck",
+      }),
+    );
+    expect(r.deck.slides.map((s) => s.elements[0].text)).toEqual([
+      "one",
+      "two",
+      "three",
+    ]);
     expect(r.title).toBe("My deck");
     expect(r.warnings).toEqual([]);
   });
@@ -160,7 +226,9 @@ describe("package plumbing", () => {
   it("rejects a zip that isn't a presentation", async () => {
     const z = new JSZip();
     z.file("hello.txt", "hi");
-    await expect(readPptx(await z.generateAsync({ type: "uint8array" }))).rejects.toThrow(/presentation/);
+    await expect(
+      readPptx(await z.generateAsync({ type: "uint8array" })),
+    ).rejects.toThrow(/presentation/);
   });
 });
 
@@ -171,7 +239,14 @@ describe("geometry", () => {
         slides: [
           {
             xml: SLIDE(
-              sp({ x: 100, y: 50, w: 200, h: 80, xfrmAttrs: ` rot="5400000" flipH="1"`, fill: solid(`<a:srgbClr val="FF0000"/>`) }),
+              sp({
+                x: 100,
+                y: 50,
+                w: 200,
+                h: 80,
+                xfrmAttrs: ` rot="5400000" flipH="1"`,
+                fill: solid(`<a:srgbClr val="FF0000"/>`),
+              }),
             ),
           },
         ],
@@ -204,7 +279,12 @@ describe("geometry", () => {
         ],
       }),
     );
-    expect(r.deck.slides[0].elements[0]).toMatchObject({ x: 120, y: 0, w: 720, h: 540 });
+    expect(r.deck.slides[0].elements[0]).toMatchObject({
+      x: 120,
+      y: 0,
+      w: 720,
+      h: 540,
+    });
     expect(r.warnings.join()).toMatch(/16:9/);
   });
 
@@ -213,7 +293,13 @@ describe("geometry", () => {
 <p:grpSpPr><a:xfrm><a:off x="${px(100)}" y="${px(100)}"/><a:ext cx="${px(200)}" cy="${px(100)}"/><a:chOff x="0" y="0"/><a:chExt cx="${px(100)}" cy="${px(50)}"/></a:xfrm></p:grpSpPr>
 ${sp({ x: 50, y: 25, w: 50, h: 25, prst: "ellipse", fill: solid(`<a:srgbClr val="0000FF"/>`) })}</p:grpSp>`;
     const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(grp) }] }));
-    expect(r.deck.slides[0].elements[0]).toMatchObject({ type: "ellipse", x: 200, y: 150, w: 100, h: 50 });
+    expect(r.deck.slides[0].elements[0]).toMatchObject({
+      type: "ellipse",
+      x: 200,
+      y: 150,
+      w: 100,
+      h: 50,
+    });
   });
 
   it("turns preset lines, connectors and straight freeforms into rotated Grown lines", async () => {
@@ -222,10 +308,26 @@ ${sp({ x: 50, y: 25, w: 50, h: 25, prst: "ellipse", fill: solid(`<a:srgbClr val=
     const free = `<p:sp><p:nvSpPr><p:cNvPr id="6" name="f"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${px(0)}" y="${px(300)}"/><a:ext cx="${px(200)}" cy="${px(100)}"/></a:xfrm>
 <a:custGeom><a:pathLst><a:path w="2" h="2"><a:moveTo><a:pt x="0" y="1"/></a:moveTo><a:lnTo><a:pt x="2" y="1"/></a:lnTo></a:path></a:pathLst></a:custGeom><a:noFill/>${ln}</p:spPr></p:sp>`;
     const r = await readPptx(
-      await pkg({ slides: [{ xml: SLIDE(sp({ x: 10, y: 20, w: 300, h: 0, prst: "line", ln }) + cxn + free) }] }),
+      await pkg({
+        slides: [
+          {
+            xml: SLIDE(
+              sp({ x: 10, y: 20, w: 300, h: 0, prst: "line", ln }) + cxn + free,
+            ),
+          },
+        ],
+      }),
     );
     const [a, b, c] = r.deck.slides[0].elements;
-    expect(a).toMatchObject({ type: "line", x: 10, y: 20, w: 300, h: 0, stroke: "#112233", strokeWidth: 2 });
+    expect(a).toMatchObject({
+      type: "line",
+      x: 10,
+      y: 20,
+      w: 300,
+      h: 0,
+      stroke: "#112233",
+      strokeWidth: 2,
+    });
     expect(a.rotation).toBeUndefined();
     // 100×100 diagonal: length 141.42 centred on (150,150), rotated 45°.
     expect(b).toMatchObject({ type: "line", y: 150, w: 141.42, rotation: 45 });
@@ -245,7 +347,22 @@ ${sp({ x: 50, y: 25, w: 50, h: 25, prst: "ellipse", fill: solid(`<a:srgbClr val=
 
   it("draws unsupported presets as rectangles and says so", async () => {
     const r = await readPptx(
-      await pkg({ slides: [{ xml: SLIDE(sp({ x: 0, y: 0, w: 10, h: 10, prst: "star5", fill: solid(`<a:srgbClr val="FFFF00"/>`) })) }] }),
+      await pkg({
+        slides: [
+          {
+            xml: SLIDE(
+              sp({
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 10,
+                prst: "star5",
+                fill: solid(`<a:srgbClr val="FFFF00"/>`),
+              }),
+            ),
+          },
+        ],
+      }),
     );
     expect(r.deck.slides[0].elements[0].type).toBe("rect");
     expect(r.warnings.join()).toMatch(/star5/);
@@ -255,8 +372,14 @@ ${sp({ x: 50, y: 25, w: 50, h: 25, prst: "ellipse", fill: solid(`<a:srgbClr val=
 describe("theme colours", () => {
   it("resolves scheme colours with lumMod/lumOff through lib/colorMods", async () => {
     // accent1 4472C4 at 60% lum + 40% offset = PowerPoint's "Lighter 40%".
-    const fill = solid(`<a:schemeClr val="accent1"><a:lumMod val="60000"/><a:lumOff val="40000"/></a:schemeClr>`);
-    const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(sp({ x: 0, y: 0, w: 10, h: 10, fill })) }] }));
+    const fill = solid(
+      `<a:schemeClr val="accent1"><a:lumMod val="60000"/><a:lumOff val="40000"/></a:schemeClr>`,
+    );
+    const r = await readPptx(
+      await pkg({
+        slides: [{ xml: SLIDE(sp({ x: 0, y: 0, w: 10, h: 10, fill })) }],
+      }),
+    );
     expect(r.deck.slides[0].elements[0].fill).toBe("#8faadc");
   });
 
@@ -266,22 +389,53 @@ describe("theme colours", () => {
         slides: [
           {
             xml: SLIDE(
-              sp({ x: 0, y: 0, w: 10, h: 10, fill: solid(`<a:schemeClr val="bg2"/>`), ln: `<a:ln>${solid(`<a:schemeClr val="tx2"><a:alpha val="50000"/></a:schemeClr>`)}</a:ln>` }),
+              sp({
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 10,
+                fill: solid(`<a:schemeClr val="bg2"/>`),
+                ln: `<a:ln>${solid(`<a:schemeClr val="tx2"><a:alpha val="50000"/></a:schemeClr>`)}</a:ln>`,
+              }),
             ),
           },
         ],
       }),
     );
-    expect(r.deck.slides[0].elements[0]).toMatchObject({ fill: "#eeeeee", stroke: "#1f2a4480", strokeWidth: 1 });
+    expect(r.deck.slides[0].elements[0]).toMatchObject({
+      fill: "#eeeeee",
+      stroke: "#1f2a4480",
+      strokeWidth: 1,
+    });
   });
 
   it("uses the shape style's fillRef/lnRef/fontRef when spPr has none", async () => {
     const style = `<p:style><a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="50000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent2"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></p:style>`;
     const tx = `<p:txBody><a:bodyPr anchor="ctr"/><a:p><a:pPr algn="ctr"/><a:r><a:t>Hi</a:t></a:r></a:p></p:txBody>`;
-    const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(sp({ x: 0, y: 0, w: 100, h: 50, prst: "ellipse", style, tx })) }] }));
+    const r = await readPptx(
+      await pkg({
+        slides: [
+          {
+            xml: SLIDE(
+              sp({ x: 0, y: 0, w: 100, h: 50, prst: "ellipse", style, tx }),
+            ),
+          },
+        ],
+      }),
+    );
     const [shape, text] = r.deck.slides[0].elements;
-    expect(shape).toMatchObject({ type: "ellipse", fill: "#ed7d31", stroke: "#2f528f" }); // accent1 shade 50% (linear light), as PowerPoint draws it
-    expect(text).toMatchObject({ type: "text", text: "Hi", color: "#ffffff", align: "center", valign: "middle" });
+    expect(shape).toMatchObject({
+      type: "ellipse",
+      fill: "#ed7d31",
+      stroke: "#2f528f",
+    }); // accent1 shade 50% (linear light), as PowerPoint draws it
+    expect(text).toMatchObject({
+      type: "text",
+      text: "Hi",
+      color: "#ffffff",
+      align: "center",
+      valign: "middle",
+    });
   });
 });
 
@@ -290,7 +444,17 @@ describe("text", () => {
     const tx = `<p:txBody><a:bodyPr anchor="b"/><a:lstStyle/>
 <a:p><a:pPr algn="r"><a:lnSpc><a:spcPct val="120000"/></a:lnSpc></a:pPr><a:r><a:rPr sz="2400" b="1" i="1" u="sng" strike="sngStrike"><a:solidFill><a:srgbClr val="336699"/></a:solidFill><a:latin typeface="Courier New"/></a:rPr><a:t>Line one</a:t></a:r><a:br/><a:r><a:t>still one</a:t></a:r></a:p>
 <a:p><a:r><a:t>Line two</a:t></a:r></a:p></p:txBody>`;
-    const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(sp({ x: 0, y: 0, w: 200, h: 100, nv: ` txBox="1"`, tx })) }] }));
+    const r = await readPptx(
+      await pkg({
+        slides: [
+          {
+            xml: SLIDE(
+              sp({ x: 0, y: 0, w: 200, h: 100, nv: ` txBox="1"`, tx }),
+            ),
+          },
+        ],
+      }),
+    );
     expect(r.deck.slides[0].elements).toHaveLength(1);
     expect(r.deck.slides[0].elements[0]).toMatchObject({
       type: "text",
@@ -310,7 +474,11 @@ describe("text", () => {
 
   it("applies normAutofit font scale", async () => {
     const tx = `<p:txBody><a:bodyPr><a:normAutofit fontScale="50000"/></a:bodyPr><a:p><a:r><a:rPr sz="3600"/><a:t>x</a:t></a:r></a:p></p:txBody>`;
-    const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(sp({ x: 0, y: 0, w: 10, h: 10, tx })) }] }));
+    const r = await readPptx(
+      await pkg({
+        slides: [{ xml: SLIDE(sp({ x: 0, y: 0, w: 10, h: 10, tx })) }],
+      }),
+    );
     expect(r.deck.slides[0].elements[0].fontSize).toBe(24);
   });
 
@@ -321,36 +489,72 @@ describe("text", () => {
       await pkg({
         slides: [
           { xml: SLIDE(body("")) },
-          { xml: SLIDE(body(`<a:pPr><a:buAutoNum type="arabicPeriod"/></a:pPr>`)) },
+          {
+            xml: SLIDE(
+              body(`<a:pPr><a:buAutoNum type="arabicPeriod"/></a:pPr>`),
+            ),
+          },
           { xml: SLIDE(body(`<a:pPr><a:buNone/></a:pPr>`)) },
         ],
       }),
     );
-    expect(r.deck.slides.map((s) => s.elements[0].list)).toEqual(["bullet", "number", undefined]);
+    expect(r.deck.slides.map((s) => s.elements[0].list)).toEqual([
+      "bullet",
+      "number",
+      undefined,
+    ]);
   });
 
   it("inherits placeholder position, size, colour and theme fonts from layout and master", async () => {
     const title = `<p:sp><p:nvSpPr><p:cNvPr id="2" name="t"/><p:cNvSpPr/><p:nvPr><p:ph type="ctrTitle"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>Hello</a:t></a:r></a:p></p:txBody></p:sp>`;
     const sub = `<p:sp><p:nvSpPr><p:cNvPr id="3" name="s"/><p:cNvSpPr/><p:nvPr><p:ph type="subTitle" idx="1"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p><a:pPr><a:buNone/></a:pPr><a:r><a:t>World</a:t></a:r></a:p></p:txBody></p:sp>`;
     const empty = `<p:sp><p:nvSpPr><p:cNvPr id="4" name="e"/><p:cNvSpPr/><p:nvPr><p:ph type="body" idx="2"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p/></p:txBody></p:sp>`;
-    const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(title + sub + empty) }] }));
+    const r = await readPptx(
+      await pkg({ slides: [{ xml: SLIDE(title + sub + empty) }] }),
+    );
     const [t, s] = r.deck.slides[0].elements;
     expect(r.deck.slides[0].elements).toHaveLength(2); // the empty placeholder isn't drawn
     // Title: geometry from the master, 44 pt, tx2 colour, major font, centred.
-    expect(t).toMatchObject({ x: 48, y: 24, w: 864, h: 96, fontSize: 58.67, color: "#1f2a44", fontFamily: "Georgia", align: "center", valign: "middle" });
+    expect(t).toMatchObject({
+      x: 48,
+      y: 24,
+      w: 864,
+      h: 96,
+      fontSize: 58.67,
+      color: "#1f2a44",
+      fontFamily: "Georgia",
+      align: "center",
+      valign: "middle",
+    });
     // Subtitle (idx 1): geometry from the layout, body style from the master.
-    expect(s).toMatchObject({ x: 96, y: 240, w: 768, h: 192, fontSize: 37.33, color: "#000000", fontFamily: "Verdana" });
+    expect(s).toMatchObject({
+      x: 96,
+      y: 240,
+      w: 768,
+      h: 192,
+      fontSize: 37.33,
+      color: "#000000",
+      fontFamily: "Verdana",
+    });
     expect(s.list).toBeUndefined();
   });
 
   it("keeps web/mail links, drops relative, script and slide-jump targets", async () => {
     const run = (id: string) =>
-      sp({ x: 0, y: 0, w: 10, h: 10, tx: `<p:txBody><a:bodyPr/><a:p><a:r><a:rPr><a:hlinkClick r:id="${id}"/></a:rPr><a:t>${id}</a:t></a:r></a:p></p:txBody>` });
+      sp({
+        x: 0,
+        y: 0,
+        w: 10,
+        h: 10,
+        tx: `<p:txBody><a:bodyPr/><a:p><a:r><a:rPr><a:hlinkClick r:id="${id}"/></a:rPr><a:t>${id}</a:t></a:r></a:p></p:txBody>`,
+      });
     const r = await readPptx(
       await pkg({
         slides: [
           {
-            xml: SLIDE(run("rW") + run("rM") + run("rF") + run("rJ") + run("rS")),
+            xml: SLIDE(
+              run("rW") + run("rM") + run("rF") + run("rJ") + run("rS"),
+            ),
             rels: [
               ["rW", "hyperlink", "https://grown.example/x", true],
               ["rM", "hyperlink", "mailto:a@b.example", true],
@@ -380,12 +584,32 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
       `<p:pic><p:nvPicPr><p:cNvPr id="7" name="p"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${id}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm flipV="1"><a:off x="${px(10)}" y="${px(20)}"/><a:ext cx="${px(30)}" cy="${px(40)}"/></a:xfrm><a:prstGeom prst="rect"/></p:spPr></p:pic>`;
     const r = await readPptx(
       await pkg({
-        slides: [{ xml: SLIDE(pic("rP") + pic("rE")), rels: [["rP", "image", "../media/image1.png"], ["rE", "image", "../media/image2.emf"]] }],
-        media: { "ppt/media/image1.png": PNG_B64, "ppt/media/image2.emf": PNG_B64 },
+        slides: [
+          {
+            xml: SLIDE(pic("rP") + pic("rE")),
+            rels: [
+              ["rP", "image", "../media/image1.png"],
+              ["rE", "image", "../media/image2.emf"],
+            ],
+          },
+        ],
+        media: {
+          "ppt/media/image1.png": PNG_B64,
+          "ppt/media/image2.emf": PNG_B64,
+        },
       }),
     );
     expect(r.deck.slides[0].elements).toEqual([
-      { id: expect.any(String), type: "image", x: 10, y: 20, w: 30, h: 40, flipV: true, src: `data:image/png;base64,${PNG_B64}` },
+      {
+        id: expect.any(String),
+        type: "image",
+        x: 10,
+        y: 20,
+        w: 30,
+        h: 40,
+        flipV: true,
+        src: `data:image/png;base64,${PNG_B64}`,
+      },
     ]);
     expect(r.warnings.join()).toMatch(/\.emf/);
   });
@@ -396,7 +620,9 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
     const gf = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="8" name="t"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${px(100)}" y="${px(100)}"/><a:ext cx="${px(300)}" cy="${px(10)}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblGrid><a:gridCol w="${px(150)}"/><a:gridCol w="${px(150)}"/></a:tblGrid>
 <a:tr h="${px(40)}">${tc("a")}${tc("b")}</a:tr><a:tr h="${px(40)}">${tc("c")}<a:tc><a:txBody><a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r><a:br/><a:r><a:t>y</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
     const chart = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="c"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="0" y="0"/><a:ext cx="1" cy="1"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"/></a:graphic></p:graphicFrame>`;
-    const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(gf + chart) }] }));
+    const r = await readPptx(
+      await pkg({ slides: [{ xml: SLIDE(gf + chart) }] }),
+    );
     expect(r.deck.slides[0].elements).toEqual([
       {
         id: expect.any(String),
@@ -405,7 +631,14 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
         y: 100,
         w: 300,
         h: 80, // row heights win over a too-small frame
-        table: { rows: 2, cols: 2, cells: [["a", "b"], ["c", "x\ny"]] },
+        table: {
+          rows: 2,
+          cols: 2,
+          cells: [
+            ["a", "b"],
+            ["c", "x\ny"],
+          ],
+        },
         fill: "#70ad47",
         stroke: "#999999",
         strokeWidth: 1.5,
@@ -418,7 +651,14 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
   });
 
   it("reads speaker notes from the notes slide body placeholder", async () => {
-    const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(""), notes: "First\nSecond" }, { xml: SLIDE("") }] }));
+    const r = await readPptx(
+      await pkg({
+        slides: [
+          { xml: SLIDE(""), notes: "First\nSecond" },
+          { xml: SLIDE("") },
+        ],
+      }),
+    );
     expect(r.deck.slides[0].notes).toBe("First\nSecond");
     expect(r.deck.slides[1].notes).toBeUndefined();
   });
@@ -428,17 +668,38 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
     const r = await readPptx(
       await pkg({
         slides: [{ xml: SLIDE("", "", own) }, { xml: SLIDE("") }],
-        master: MASTER("", `<p:bg><p:bgRef idx="1001"><a:schemeClr val="bg2"/></p:bgRef></p:bg>`),
+        master: MASTER(
+          "",
+          `<p:bg><p:bgRef idx="1001"><a:schemeClr val="bg2"/></p:bgRef></p:bg>`,
+        ),
       }),
     );
-    expect(r.deck.slides.map((s) => s.background)).toEqual(["#abcdef", "#eeeeee"]);
+    expect(r.deck.slides.map((s) => s.background)).toEqual([
+      "#abcdef",
+      "#eeeeee",
+    ]);
   });
 
   it("turns a picture background into a full-slide image under the content", async () => {
     const bg = `<p:bg><p:bgPr><a:blipFill><a:blip r:embed="rB"/><a:stretch><a:fillRect/></a:stretch></a:blipFill></p:bgPr></p:bg>`;
     const r = await readPptx(
       await pkg({
-        slides: [{ xml: SLIDE(sp({ x: 1, y: 1, w: 5, h: 5, fill: solid(`<a:srgbClr val="000000"/>`) }), "", bg), rels: [["rB", "image", "../media/bg.png"]] }],
+        slides: [
+          {
+            xml: SLIDE(
+              sp({
+                x: 1,
+                y: 1,
+                w: 5,
+                h: 5,
+                fill: solid(`<a:srgbClr val="000000"/>`),
+              }),
+              "",
+              bg,
+            ),
+            rels: [["rB", "image", "../media/bg.png"]],
+          },
+        ],
         media: { "ppt/media/bg.png": PNG_B64 },
       }),
     );
@@ -448,18 +709,46 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
   });
 
   it("includes master/layout decorations unless showMasterSp=0", async () => {
-    const deco = sp({ x: 0, y: 500, w: 960, h: 40, fill: solid(`<a:schemeClr val="accent4"/>`) });
-    const layoutDeco = sp({ x: 900, y: 0, w: 60, h: 60, prst: "ellipse", fill: solid(`<a:schemeClr val="accent5"/>`) });
+    const deco = sp({
+      x: 0,
+      y: 500,
+      w: 960,
+      h: 40,
+      fill: solid(`<a:schemeClr val="accent4"/>`),
+    });
+    const layoutDeco = sp({
+      x: 900,
+      y: 0,
+      w: 60,
+      h: 60,
+      prst: "ellipse",
+      fill: solid(`<a:schemeClr val="accent5"/>`),
+    });
     const opts = { master: MASTER(deco), layout: LAYOUT("", layoutDeco) };
-    const shown = await readPptx(await pkg({ ...opts, slides: [{ xml: SLIDE("") }] }));
+    const shown = await readPptx(
+      await pkg({ ...opts, slides: [{ xml: SLIDE("") }] }),
+    );
     expect(shown.deck.slides[0].elements.map((e) => [e.type, e.fill])).toEqual([
       ["rect", "#ffc000"],
       ["ellipse", "#5b9bd5"],
     ]);
-    const hidden = await readPptx(await pkg({ ...opts, slides: [{ xml: SLIDE("", "", "", ` showMasterSp="0"`) }] }));
+    const hidden = await readPptx(
+      await pkg({
+        ...opts,
+        slides: [{ xml: SLIDE("", "", "", ` showMasterSp="0"`) }],
+      }),
+    );
     expect(hidden.deck.slides[0].elements).toEqual([]);
-    const layoutHides = await readPptx(await pkg({ master: MASTER(deco), layout: LAYOUT(` showMasterSp="0"`, layoutDeco), slides: [{ xml: SLIDE("") }] }));
-    expect(layoutHides.deck.slides[0].elements.map((e) => e.type)).toEqual(["ellipse"]);
+    const layoutHides = await readPptx(
+      await pkg({
+        master: MASTER(deco),
+        layout: LAYOUT(` showMasterSp="0"`, layoutDeco),
+        slides: [{ xml: SLIDE("") }],
+      }),
+    );
+    expect(layoutHides.deck.slides[0].elements.map((e) => e.type)).toEqual([
+      "ellipse",
+    ]);
   });
 
   it("maps transitions, reading the mc:Fallback of AlternateContent", async () => {

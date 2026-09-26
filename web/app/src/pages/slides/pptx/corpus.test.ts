@@ -11,18 +11,43 @@ import { deckToPptx } from "./write";
 //   GROWN_CONVERSION_CORPUS=$PWD/../../research/onlyoffice/core npx vitest run src/pages/slides/pptx/corpus.test.ts
 
 const ROOT = resolve(
-  process.env.GROWN_CONVERSION_CORPUS || join(__dirname, "../../../../../../research/onlyoffice/core"),
+  process.env.GROWN_CONVERSION_CORPUS ||
+    join(__dirname, "../../../../../../research/onlyoffice/core"),
 );
 
 const CASES: [string, string][] = [
-  ["oo:core/OdfFile/Test/test_odf/ExampleFiles#audio.pptx", "OdfFile/Test/test_odf/ExampleFiles/audio.pptx"],
-  ["oo:core/OdfFile/Test/test_odf/ExampleFiles#entrance.pptx", "OdfFile/Test/test_odf/ExampleFiles/entrance.pptx"],
-  ["oo:core/OdfFile/Test/test_odf/ExampleFiles#interaction.pptx", "OdfFile/Test/test_odf/ExampleFiles/interaction.pptx"],
-  ["oo:core/OdfFile/Test/test_odf/ExampleFiles#motion.odp-my.pptx", "OdfFile/Test/test_odf/ExampleFiles/motion.odp-my.pptx"],
-  ["oo:core/OdfFile/Test/test_odf/ExampleFiles#openDocument.pptx", "OdfFile/Test/test_odf/ExampleFiles/openDocument.pptx"],
-  ["oo:core/OdfFile/Test/test_odf/ExampleFiles#playAudio.pptx", "OdfFile/Test/test_odf/ExampleFiles/playAudio.pptx"],
-  ["oo:core/OdfFile/Test/test_odf/ExampleFiles#runProgram.pptx", "OdfFile/Test/test_odf/ExampleFiles/runProgram.pptx"],
-  ["oo:core/OdfFile/Test/Test/ExampleFiles#69238.pptx", "OdfFile/Test/Test/ExampleFiles/69238.pptx"],
+  [
+    "oo:core/OdfFile/Test/test_odf/ExampleFiles#audio.pptx",
+    "OdfFile/Test/test_odf/ExampleFiles/audio.pptx",
+  ],
+  [
+    "oo:core/OdfFile/Test/test_odf/ExampleFiles#entrance.pptx",
+    "OdfFile/Test/test_odf/ExampleFiles/entrance.pptx",
+  ],
+  [
+    "oo:core/OdfFile/Test/test_odf/ExampleFiles#interaction.pptx",
+    "OdfFile/Test/test_odf/ExampleFiles/interaction.pptx",
+  ],
+  [
+    "oo:core/OdfFile/Test/test_odf/ExampleFiles#motion.odp-my.pptx",
+    "OdfFile/Test/test_odf/ExampleFiles/motion.odp-my.pptx",
+  ],
+  [
+    "oo:core/OdfFile/Test/test_odf/ExampleFiles#openDocument.pptx",
+    "OdfFile/Test/test_odf/ExampleFiles/openDocument.pptx",
+  ],
+  [
+    "oo:core/OdfFile/Test/test_odf/ExampleFiles#playAudio.pptx",
+    "OdfFile/Test/test_odf/ExampleFiles/playAudio.pptx",
+  ],
+  [
+    "oo:core/OdfFile/Test/test_odf/ExampleFiles#runProgram.pptx",
+    "OdfFile/Test/test_odf/ExampleFiles/runProgram.pptx",
+  ],
+  [
+    "oo:core/OdfFile/Test/Test/ExampleFiles#69238.pptx",
+    "OdfFile/Test/Test/ExampleFiles/69238.pptx",
+  ],
 ];
 
 describe("pptx corpus (local only)", () => {
@@ -35,7 +60,8 @@ describe("pptx corpus (local only)", () => {
       expect(drawn).toBeGreaterThan(0);
       for (const s of src.deck.slides)
         for (const e of s.elements)
-          for (const v of [e.x, e.y, e.w, e.h]) expect(Number.isFinite(v)).toBe(true);
+          for (const v of [e.x, e.y, e.w, e.h])
+            expect(Number.isFinite(v)).toBe(true);
 
       // Import → export → re-import keeps slides, elements and their text.
       const again = await readPptx(await deckToPptx(src.deck));
