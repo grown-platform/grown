@@ -340,3 +340,22 @@ export function makeSyncedEditors(n = 2): { editors: Editor[]; docs: Y.Doc[]; sy
   sync();
   return { editors, docs, sync };
 }
+
+// --- styles and numbering (M3) ------------------------------------------------------
+export { numberingText } from "../docModel";
+
+/** setBlockAttrs merges attributes into textblock `index` (direct paragraph
+ *  properties, styleId, numId/numLvl). */
+export function setBlockAttrs(editor: Editor, index: number, attrs: Record<string, unknown>): void {
+  const b = textblocks(editor)[index];
+  if (!b) throw new Error(`no textblock ${index}`);
+  const pos = b.pos - 1;
+  editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...b.node.attrs, ...attrs }));
+}
+
+/** selectBlocks selects whole textblocks [first, last] (OnlyOffice's
+ *  SelectDocumentRange). */
+export function selectBlocks(editor: Editor, first: number, last: number): void {
+  const blocks = textblocks(editor);
+  selectRange(editor, blocks[first].pos, blocks[last].pos + blocks[last].node.content.size);
+}
