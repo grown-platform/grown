@@ -528,6 +528,9 @@ func (ev *Evaluator) cellValue(addr cellAddr) value {
 func (ev *Evaluator) evalExpr(expr string) value {
 	p := &parser{tokens: tokenise(expr), ev: ev}
 	v := p.parseExpr()
+	if p.syntaxErr {
+		return errName // malformed call: Excel would not accept the formula
+	}
 	if p.pos < len(p.tokens) {
 		return errValue // unconsumed tokens
 	}
@@ -790,6 +793,9 @@ type parser struct {
 	// defined name's definition or the right side of Sheet2!A1:B2 is parsed.
 	defSheet    int
 	hasDefSheet bool
+	// syntaxErr is set when a function call is not closed where expected
+	// (SUM(My Sheet!A1) with an unquoted space); the formula is then #NAME?.
+	syntaxErr bool
 }
 
 // refSheet returns the sheet an unqualified reference points at.
@@ -1176,6 +1182,8 @@ func (p *parser) parseIdentOrFunc() value {
 		args := p.parseArgList()
 		if p.peek().kind == tokRParen {
 			p.consume()
+		} else {
+			p.syntaxErr = true
 		}
 		return p.callFunc(upper, args)
 	}

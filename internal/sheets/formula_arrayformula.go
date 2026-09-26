@@ -26,8 +26,9 @@ func isArrayLike(v value) bool {
 	return v.kind == kindArray && v.arr != nil && v.arr.rows > 0 && v.arr.cols > 0
 }
 
-// bcAt indexes into a grid with broadcasting: a dimension of length 1 repeats,
-// and out-of-range indices clamp to the last element.
+// bcAt indexes into a grid with broadcasting: a dimension of length 1 repeats;
+// a position outside a longer dimension is #N/A (as when Excel pairs arrays of
+// different sizes).
 func bcAt(cells [][]value, rows, cols, r, c int) value {
 	rr, cc := r, c
 	if rows == 1 {
@@ -36,11 +37,8 @@ func bcAt(cells [][]value, rows, cols, r, c int) value {
 	if cols == 1 {
 		cc = 0
 	}
-	if rr >= rows {
-		rr = rows - 1
-	}
-	if cc >= cols {
-		cc = cols - 1
+	if rr >= rows || cc >= cols {
+		return errNA
 	}
 	return cells[rr][cc]
 }
@@ -117,6 +115,17 @@ func scalarArith(op string, left, right value) value {
 		}
 		return numVal(ln / rn)
 	case "^":
+		if ln == 0 && rn < 0 {
+			return errDiv0
+		}
+		if ln < 0 && rn != math.Trunc(rn) {
+			// A negative base has a real root only for odd roots: (-8)^(1/3).
+			inv := 1 / rn
+			if r := math.Round(inv); math.Abs(inv-r) < 1e-9 && math.Mod(r, 2) != 0 {
+				return numVal(-math.Pow(-ln, rn))
+			}
+			return errNum
+		}
 		res := math.Pow(ln, rn)
 		if math.IsNaN(res) || math.IsInf(res, 0) {
 			return errNum
@@ -133,7 +142,15 @@ func scalarConcat(left, right value) value {
 	if right.isErr() {
 		return right
 	}
-	return strVal(left.toStr() + right.toStr())
+	return strVal(concatText(left) + concatText(right))
+}
+
+// concatText is a value's text for '&': an empty cell contributes nothing.
+func concatText(v value) string {
+	if v.blank {
+		return ""
+	}
+	return v.toStr()
 }
 
 func scalarNeg(v value) value {

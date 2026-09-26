@@ -344,10 +344,7 @@ func fnIndex(c *callCtx) value {
 	// Three-argument form.
 	switch {
 	case rowNum == 0 && colNum == 0:
-		if rng.rows == 1 && rng.cols == 1 {
-			return rng.cells[0][0]
-		}
-		return errRef
+		return arrayValue(rng.cells) // the whole array
 	case rowNum == 0:
 		// Whole column colNum → single cell only if one row.
 		if colNum > rng.cols {
@@ -1024,13 +1021,10 @@ func indexRef(c *callCtx) (value, bool) {
 		}
 		out.c1, out.c2 = a.c1+colNum-1, a.c1+colNum-1
 	}
-	if out.rows()*out.cols() > 1 && !(rowNum == 0 && colNum == 0) && (rowNum == 0 && a.rows() > 1 || colNum == 0 && a.cols() > 1) {
-		// A whole row/column slice of a 2-D range: fnIndex treats this as
-		// #REF! in a single-cell context; keep that behaviour.
+	multi := out.rows()*out.cols() > 1
+	if multi && !(rowNum == 0 && colNum == 0) {
+		// A whole row/column slice of a 2-D range is #REF! (as fnIndex).
 		return errRef, true
 	}
-	if out.rows()*out.cols() > 1 {
-		return errRef, true
-	}
-	return c.ev.refValue(r.sheet, false, out), true
+	return c.ev.refValue(r.sheet, multi, out), true
 }
