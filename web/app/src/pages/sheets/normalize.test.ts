@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { fillCellDisplay, normalizeWorkbook } from "./normalize";
+import { fillCellDisplay, normalizeWorkbook, seedSelection } from "./normalize";
+
+const A1 = { row: [0, 0], column: [0, 0], row_focus: 0, column_focus: 0 };
 
 describe("fillCellDisplay", () => {
   it("fills m for a bare numeric value (API save without display text)", () => {
@@ -48,6 +50,53 @@ describe("normalizeWorkbook", () => {
 
   it("tolerates non-workbook input", () => {
     expect(normalizeWorkbook(null)).toBeNull();
-    expect(normalizeWorkbook([null, { name: "x" }])).toEqual([null, { name: "x" }]);
+    expect(normalizeWorkbook([null, { name: "x" }])).toEqual([
+      null,
+      { name: "x", luckysheet_select_save: [A1] },
+    ]);
+  });
+});
+
+describe("seedSelection", () => {
+  // Regression: with no saved selection FortuneSheet selects
+  // {row: [0], column: [0]} and the name box reads "A1:NaN".
+  it("seeds A1 as a complete range when the sheet has no selection", () => {
+    expect(seedSelection({ name: "S" }).luckysheet_select_save).toEqual([A1]);
+    expect(
+      seedSelection({ luckysheet_select_save: [] }).luckysheet_select_save,
+    ).toEqual([A1]);
+  });
+
+  it("completes saved ranges missing their end index", () => {
+    const s = seedSelection({
+      luckysheet_select_save: [
+        { row: [0], column: [0], row_focus: 0, column_focus: 0 },
+        { row: [2, null], column: [1, 3] },
+      ],
+    });
+    expect(s.luckysheet_select_save).toEqual([
+      { row: [0, 0], column: [0, 0], row_focus: 0, column_focus: 0 },
+      { row: [2, 2], column: [1, 3], row_focus: 2, column_focus: 1 },
+    ]);
+  });
+
+  it("keeps complete selections and drops unusable ones", () => {
+    const good = { row: [1, 4], column: [2, 2], row_focus: 3, column_focus: 2 };
+    expect(
+      seedSelection({ luckysheet_select_save: [good, { row: "x" }] })
+        .luckysheet_select_save,
+    ).toEqual([good]);
+    expect(
+      seedSelection({ luckysheet_select_save: [{}] }).luckysheet_select_save,
+    ).toEqual([A1]);
+  });
+
+  it("selects A1's merged block when A1 is merged", () => {
+    const sheet = {
+      celldata: [{ r: 0, c: 0, v: { v: "x", mc: { r: 0, c: 0, rs: 2, cs: 3 } } }],
+    };
+    expect(seedSelection(sheet).luckysheet_select_save).toEqual([
+      { row: [0, 1], column: [0, 2], row_focus: 0, column_focus: 0 },
+    ]);
   });
 });

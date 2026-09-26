@@ -110,4 +110,29 @@ test.describe.serial("sheets formula engine", () => {
       await trashSheet(page.request, id);
     }
   });
+
+  test("the name box reads A1 when a sheet opens", async ({ page }) => {
+    // Regression: a sheet without a saved selection opened with the name box
+    // reading "A1:NaN" (FortuneSheet seeds {row: [0], column: [0]}).
+    const id = await createSheet(page.request, "e2e name box");
+    try {
+      await saveSheet(
+        page.request,
+        id,
+        workbookWithCells([{ r: 1, c: 0, v: 10 }]),
+      );
+      await page.goto(`/sheets/d/${id}`);
+      await expect(page.locator(".fortune-sheet-canvas")).toBeVisible({
+        timeout: 20_000,
+      });
+      const nameBox = page.locator(".fortune-name-box");
+      await expect(nameBox).toHaveText("A1");
+      // A sheet added from the tab bar starts at A1 too.
+      await page.locator(".fortune-sheettab-button").first().click();
+      await expect(page.locator(".fortune-sheettab-container .luckysheet-sheets-item")).toHaveCount(2);
+      await expect(nameBox).toHaveText("A1");
+    } finally {
+      await trashSheet(page.request, id);
+    }
+  });
 });
