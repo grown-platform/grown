@@ -204,7 +204,8 @@ describe("OnlyOffice api", () => {
     );
   });
 
-  it("oo:word/api/api.js#Get text/selected text (plain text)", () => {
+  it("oo:word/api/api.js#Get text/selected text", () => {
+    // Plain-text half; the equation half is skipped below.
     const e = makeEditor("<p>The quick brown fox jumps over the lazy dog</p>");
     setCursor(e, paragraphPos(e, 0, 4));
     expect(getSelectedText(e)).toBe("");
@@ -213,9 +214,9 @@ describe("OnlyOffice api", () => {
     expect(selectedText(e)).toBe("quick");
   });
 
-  it.skip("oo:word/api/api.js#Get text/selected text (equation)", () => {
-    // TODO(M11): the second half selects part of an equation ("abcd" ->
-    // "bc"), which needs the math node.
+  it.skip("Get text/selected text: selection inside an equation", () => {
+    // TODO(M11): the second half of the OnlyOffice case selects part of an
+    // equation ("abcd" -> "bc"), which needs the math node.
   });
 });
 

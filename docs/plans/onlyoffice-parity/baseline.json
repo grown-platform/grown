@@ -138,7 +138,7 @@
       "passing": null
     },
     "docs/shortcuts": {
-      "ported": 10,
+      "ported": 38,
       "passing": null
     },
     "docs/smartart": {
@@ -154,11 +154,11 @@
       "passing": null
     },
     "docs/text-input": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     },
     "docs/text-ops": {
-      "ported": 4,
+      "ported": 11,
       "passing": null
     },
     "docs/text-shaping": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 135,
+    "ported": 172,
     "passing": null
   }
 }
