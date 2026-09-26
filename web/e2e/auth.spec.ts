@@ -33,7 +33,9 @@ test("OIDC login flow yields a working session", async ({ page }) => {
   expect(who.status()).toBe(200);
   const body = await who.json();
   expect(body.user.email).toBe("admin@grown.localtest.me");
-  expect(body.org.slug).toBe("default");
+  // Users land in their personal org (see docs/sharing-and-personal-orgs.md)
+  // unless they belong to the default org.
+  expect(body.org.slug).toMatch(/^(default|personal-)/);
 
   // Logout.
   const logout = await page.request.post(`${BASE_URL}/api/v1/auth/logout`, {

@@ -15,8 +15,11 @@ import { BASE_URL, STORAGE_STATE } from "./helpers";
 setup("authenticate", async ({ page }) => {
   fs.mkdirSync(path.dirname(STORAGE_STATE), { recursive: true });
 
-  await page.goto(`${BASE_URL}/`);
-  await page.getByTestId("sign-in-button").click();
+  // Start the OIDC flow directly: the SPA's sign-in page is now an in-app
+  // email/password form, while the backend login route still redirects to
+  // Zitadel's hosted login (the same path auth.spec.ts exercises).
+  await page.goto(`${BASE_URL}/api/v1/auth/login`);
+  await expect(page).toHaveURL(/localhost:8081/);
 
   // Zitadel hosted login: username then password, each behind a submit.
   await page

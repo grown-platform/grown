@@ -25,7 +25,8 @@ test.describe.serial("drive", () => {
     // Sign in via Zitadel.
     await page.context().clearCookies();
     await page.goto(`${BASE_URL}/`);
-    await page.getByTestId("sign-in-button").click();
+    // The SPA sign-in page is an in-app form now; start OIDC at the backend.
+    await page.goto(`${BASE_URL}/api/v1/auth/login`);
     await page
       .locator('input[name="loginName"], input[id="loginName"]')
       .fill("admin");

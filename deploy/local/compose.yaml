@@ -1,0 +1,80 @@
+# Docker-only local dev stack for machines without Nix/process-compose.
+# Runs the stateful dependencies in containers; the Go backend and the web build
+# run natively via deploy/local/up.sh (fast rebuilds for Playwright checks).
+#
+# Mirrors deploy/process-compose/process-compose.yaml: same ports, users and
+# local-dev credentials (NEVER use these in production).
+name: grown-local
+
+services:
+  postgres:
+    image: postgres:17.2-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: grown
+      POSTGRES_DB: grown
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports: ["127.0.0.1:5533:5432"]
+    volumes:
+      - ${GROWN_LOCAL_DATA:-${HOME}/.grown-local}/postgres:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "grown"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:v2.71.0
+    restart: unless-stopped
+    command: >
+      start-from-init
+      --masterkey MasterkeyNeedsToHave32Characters
+      --tlsMode disabled
+    environment:
+      ZITADEL_EXTERNALDOMAIN: localhost
+      ZITADEL_EXTERNALPORT: "8081"
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_PORT: "8081"
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: grown
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: grown
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_FIRSTINSTANCE_INSTANCENAME: grown-dev
+      ZITADEL_FIRSTINSTANCE_PATPATH: /data/bootstrap-pat.txt
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: grown-dev
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME: Grown
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME: Admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS: admin@grown.localtest.me
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED: "true"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: "DevPassword!1"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: bootstrap
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: Bootstrap SA
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+    ports: ["127.0.0.1:8081:8081"]
+    # The PAT lands where create-oidc-app.sh looks for it (PROJECT_ROOT=<data>/root).
+    volumes:
+      - ${GROWN_LOCAL_DATA:-${HOME}/.grown-local}/root/deploy/zitadel/data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  rustfs:
+    image: rustfs/rustfs:1.0.0-beta.7
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: grown
+      RUSTFS_SECRET_KEY: "DevPassword!1"
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9100"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9101"
+      RUSTFS_OBS_LOG_DIRECTORY: ""
+    ports: ["127.0.0.1:9100:9100", "127.0.0.1:9101:9101"]
+    volumes:
+      - ${GROWN_LOCAL_DATA:-${HOME}/.grown-local}/rustfs:/data
