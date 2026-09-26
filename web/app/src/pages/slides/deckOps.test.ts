@@ -22,6 +22,7 @@ import {
   upsertElement,
 } from "./deckOps";
 import { newElement, newTable, type Slide, type SlideElement } from "./model";
+import { editorKeyAction } from "./keymap";
 
 // Deterministic fixtures: slides/elements with readable ids.
 function slide(id: string, elements: SlideElement[] = [], background = "#ffffff"): Slide {
@@ -319,17 +320,20 @@ describe("OnlyOffice parity: shortcuts", () => {
     expect(r.cur).toEqual([1, 2, 3, 4]);
   });
 
-  // SKIP: Ctrl+D is not bound. Edit → Duplicate duplicates the selected
-  // element only (no-op with nothing selected); duplicating a slide is the
-  // separate Slide → Duplicate slide action. Both halves exist, the dual
-  // "element if selected, else slide" dispatch does not.
-  it.skip("oo:slide/shortcuts/shortcuts.js#Check duplicate presentation objects", () => {
+  // Ctrl/Cmd+D dispatches like OnlyOffice: the selected element is
+  // duplicated, and with nothing selected the current slide is.
+  it("oo:slide/shortcuts/shortcuts.js#Check duplicate presentation objects", () => {
     const s = slide("s", [el("a")]);
+    expect(editorKeyAction({ key: "d", ctrlKey: true }, { hasSelection: true })).toEqual({
+      type: "duplicateElement",
+    });
     const withCopy = upsertElement(s, duplicateElement(s.elements[0]));
     expect(withCopy.elements).toHaveLength(2);
     // With nothing selected OnlyOffice duplicates the slide on the same key.
+    expect(editorKeyAction({ key: "d", ctrlKey: true }, { hasSelection: false })).toEqual({
+      type: "duplicateSlide",
+    });
     expect(duplicateSlideAt([s], 0)!.slides).toHaveLength(2);
-    throw new Error("no Ctrl+D dispatch in Grown");
   });
 
   // SKIP: Delete/Backspace removes a selected shape (see keymap tests), but

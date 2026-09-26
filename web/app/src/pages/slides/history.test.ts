@@ -95,8 +95,8 @@ describe("undo/redo", () => {
 describe("OnlyOffice parity", () => {
   // Typing "8888" into an empty text box, then Undo → "", Redo → "8888".
   // Grown commits the text box edit as one element upsert (history recorded
-  // first); Undo/Redo live in the Edit menu (see slides.md "Semantic
-  // differences found" — Ctrl+Z/Ctrl+Y are not bound outside text editing).
+  // first); Undo/Redo are in the Edit menu and bound to Ctrl/Cmd+Z and
+  // Ctrl/Cmd+Y / Ctrl/Cmd+Shift+Z on the canvas (keymap.ts).
   it("oo:slide/shortcuts/shortcuts.js#Check undo/redo", () => {
     const empty = docWithText("");
     const h = recordHistory(emptyHistory(), empty, 1000);

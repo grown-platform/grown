@@ -970,10 +970,18 @@ Each is an `it.skip` with the tag and the reason in a comment:
 | `slide/shortcuts/shortcuts.js#Check paragraph property change` | There is no justify, no Ctrl+E/J/L/R, no indent levels and no Ctrl+Shift+L. |
 | `slide/shortcuts/shortcuts.js#Check main actions with shapes` | Nudge distances differ: OnlyOffice uses 5 per Arrow and 1 per Ctrl+Arrow, Grown uses 2 px per Arrow and 10 per Shift+Arrow. Tab cycling, Enter-to-edit, groups and table cell navigation are missing. |
 | `slide/shortcuts/shortcuts.js#Check remove graphic objects` | Delete removes the selected shape. Grown has no animation-effect selection, charts or groups. |
-| `slide/shortcuts/shortcuts.js#Check duplicate presentation objects` | Ctrl+D is not bound. Edit → Duplicate duplicates only the selected element, and slide duplication is a separate action. |
-| `slide/shortcuts/shortcuts.js#Check save action` | Ctrl+S is not bound. Autosave sends a debounced `PUT …/data` 1.2 s after each edit. |
 | `slide/js-api/api-drawing.js#Test: SetFlipH` / `#Test: SetFlipV` | Flipping is a toggle only. There is no boolean setter that reports success or rejects invalid input. |
 
-Undo/redo note: `#Check undo/redo` passes at the reducer layer, but Ctrl+Z
-and Ctrl+Y are not bound on the canvas. Undo and Redo are only in the Edit
-menu, and inside a text box the browser's native contentEditable undo applies.
+Undo/redo note: `#Check undo/redo` passes at the reducer layer. Inside a
+text box the browser's native contentEditable undo applies.
+
+Resolved since Wave 0 (canvas shortcuts in `keymap.ts` + `DeckEditor.tsx`,
+none of which fire while a text box or input is being edited):
+Ctrl/Cmd+Z undo; Ctrl/Cmd+Y and Ctrl/Cmd+Shift+Z redo; Ctrl/Cmd+D duplicates
+the selected element, or the current slide when nothing is selected
+(`#Check duplicate presentation objects` now passes); Ctrl/Cmd+S flushes the
+debounced autosave immediately and suppresses the browser's save dialog, also
+while editing text (`#Check save action` now passes); Ctrl/Cmd+C/V copy and
+paste the selected element through the in-app clipboard (an image on the OS
+clipboard still pastes as a picture). Ctrl/Cmd+A is not bound: the editor has
+a single selection.

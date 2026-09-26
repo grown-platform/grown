@@ -54,4 +54,54 @@ test.describe.serial("slides", () => {
       await trashDeck(page.request, id);
     }
   });
+
+  test("canvas keyboard shortcuts: duplicate, undo/redo, copy/paste, save", async ({
+    page,
+  }) => {
+    const id = await createDeck(page.request, "e2e slides shortcuts");
+    const textCount = async () => {
+      const deck = await getDeckData(page.request, id);
+      // A fresh deck has no saved data until the first autosave.
+      const els = deck?.slides[0]?.elements ?? [];
+      return els.filter((e) => e.type === "text").length;
+    };
+    try {
+      await openDeck(page, id);
+      // Insert a text box; it becomes the selection (not in text-edit mode).
+      let saved = waitForSave(page, id);
+      await page.getByRole("button", { name: "Text box" }).click();
+      await saved;
+      const base = (await textCount()) - 1; // the slide's placeholder boxes
+
+      saved = waitForSave(page, id);
+      await page.keyboard.press("Control+d");
+      await saved;
+      expect(await textCount()).toBe(base + 2);
+
+      saved = waitForSave(page, id);
+      await page.keyboard.press("Control+z");
+      await saved;
+      expect(await textCount()).toBe(base + 1);
+
+      saved = waitForSave(page, id);
+      await page.keyboard.press("Control+Shift+z");
+      await saved;
+      expect(await textCount()).toBe(base + 2);
+
+      saved = waitForSave(page, id);
+      await page.keyboard.press("Control+c");
+      await page.keyboard.press("Control+v");
+      await saved;
+      expect(await textCount()).toBe(base + 3);
+
+      // Ctrl+S saves straight away (no 1.2 s debounce, no browser dialog).
+      const start = Date.now();
+      saved = waitForSave(page, id);
+      await page.keyboard.press("Control+s");
+      await saved;
+      expect(Date.now() - start).toBeLessThan(1000);
+    } finally {
+      await trashDeck(page.request, id);
+    }
+  });
 });
