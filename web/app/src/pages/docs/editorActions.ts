@@ -1,4 +1,5 @@
 import type { Editor } from "@tiptap/core";
+import type { Mark } from "@tiptap/pm/model";
 
 /**
  * replaceAll replaces every occurrence of `find` with `replace` in the document.
@@ -70,16 +71,35 @@ export async function paste(editor: Editor, plain: boolean): Promise<void> {
   }
 }
 
-/** transformSelection rewrites the selected text via fn (for capitalization). */
+/** transformSelection rewrites each selected text node through fn, keeping
+ *  the node's marks and the paragraph structure. fn sees one text node's
+ *  slice at a time, so it should be context-free (use changeCase from
+ *  textCase.ts for word/sentence-aware modes). */
 export function transformSelection(editor: Editor, fn: (s: string) => string) {
   const { from, to } = editor.state.selection;
   if (from === to) return;
-  const text = editor.state.doc.textBetween(from, to, "\n");
-  editor.chain().focus().insertContentAt({ from, to }, fn(text)).run();
+  const tr = editor.state.tr;
+  const edits: { from: number; to: number; text: string; marks: readonly Mark[] }[] = [];
+  tr.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) return true;
+    const a = Math.max(from, pos);
+    const b = Math.min(to, pos + node.nodeSize);
+    if (a >= b) return false;
+    const text = node.text!.slice(a - pos, b - pos);
+    const next = fn(text);
+    if (next !== text) edits.push({ from: a, to: b, text: next, marks: node.marks });
+    return false;
+  });
+  for (let i = edits.length - 1; i >= 0; i--) {
+    const e = edits[i];
+    if (e.text) tr.replaceWith(e.from, e.to, editor.schema.text(e.text, e.marks));
+    else tr.delete(e.from, e.to);
+  }
+  if (tr.docChanged) editor.view.dispatch(tr);
 }
 
-/** toTitleCase capitalises the first letter of every word (Format > Text >
- *  Title Case). */
+/** toTitleCase capitalises the first letter of every word. Kept for callers
+ *  that transform plain strings; the editor uses changeCase("capitalize"). */
 export const toTitleCase = (s: string) =>
   s.replace(
     /\w\S*/g,
