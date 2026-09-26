@@ -24,6 +24,8 @@ import { InsertionMark, DeletionMark, Suggesting } from "./suggesting";
 import { Drawing } from "./drawing";
 import { ParagraphSpacing, ParagraphIndent, ParagraphShading } from "./paragraphFormat";
 import { DocShortcuts, TabCharacter } from "./shortcuts";
+import { ParagraphProps } from "./paragraphProps";
+import { DocModel, CharStyle } from "./docModel";
 import type * as Y from "yjs";
 import type { WebsocketProvider } from "y-websocket";
 
@@ -560,6 +562,7 @@ export function buildExtensions(opts: BuildOpts) {
     ParagraphSpacing,
     ParagraphIndent,
     ParagraphShading,
+    ParagraphProps,
     PageBreak,
     FontFamily,
     Highlight.configure({ multicolor: true }),
@@ -584,6 +587,10 @@ export function buildExtensions(opts: BuildOpts) {
     Suggesting.configure({ user: { name: userName, color: userColor } }),
     DocShortcuts,
     TabCharacter,
+    // Styles + numbering (M3): bound to the doc's `styles` / `numbering`
+    // Yjs maps (a private Y.Doc when there is none).
+    DocModel.configure({ ydoc: opts.ydoc }),
+    CharStyle,
     ...collabExts,
   ];
 }
