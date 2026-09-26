@@ -27,6 +27,7 @@ package sheets
 //	      "expect":   15,              // number | string | bool | {"error": "#N/A"}
 //	      "elements": [[0, 1, 2]],     // [row, col, value] of an array result
 //	      "tol":      1e-9,            // absolute tolerance, scaled by max(1,|want|)
+//	      "complex":  true,            // text result is a complex number ("3+4i"): compare parts within tol
 //	      "invalid":  true,            // OnlyOffice rejects the formula; Grown must return an error
 //	      "date1904": true,            // workbook uses the 1904 date system
 //	      "pending":  "reason"         // skip this check (known semantic difference)
@@ -41,6 +42,9 @@ package sheets
 //
 // Set PARITY_REPORT=<file> to write every non-pending failure as JSON lines
 // instead of failing the test (used when triaging a freshly ported suite).
+// With PARITY_REPORT set, PARITY_INCLUDE_PENDING=1 also runs the checks marked
+// "pending" and reports the ones that now pass as {"nowPassing": true}, so a
+// fix can be credited by lifting their markers.
 
 import (
 	"encoding/json"
@@ -79,6 +83,7 @@ type parityCheck struct {
 	Expect   json.RawMessage            `json:"expect"`
 	Elements [][3]json.RawMessage       `json:"elements"`
 	Tol      float64                    `json:"tol"`
+	Complex  bool                       `json:"complex"`
 	Invalid  bool                       `json:"invalid"`
 	Date1904 bool                       `json:"date1904"`
 	Pending  string                     `json:"pending"`
@@ -164,7 +169,15 @@ func runParityCase(t *testing.T, c parityCase, rep *parityReporter) {
 			if err != nil {
 				t.Fatalf("fixture error: %v", err)
 			}
-			if msg := parityCompare(got, chk); msg != "" {
+			msg := parityCompare(got, chk)
+			if chk.Pending != "" {
+				// Only reachable with PARITY_INCLUDE_PENDING.
+				if msg == "" {
+					rep.addPassing(c.ID, i+1, chk)
+				}
+				return
+			}
+			if msg != "" {
 				if rep.enabled() {
 					rep.add(c.ID, i+1, chk, got, msg)
 					return
@@ -178,7 +191,7 @@ func runParityCase(t *testing.T, c parityCase, rep *parityReporter) {
 // parityStaticPending returns a skip reason for checks that need engine
 // features Grown does not have yet (tracked by later milestones).
 func parityStaticPending(c parityCase, chk parityCheck) string {
-	if chk.Pending != "" {
+	if chk.Pending != "" && !parityIncludePending() {
 		return chk.Pending
 	}
 	f := chk.Formula
@@ -316,7 +329,7 @@ func parityCompare(got value, chk parityCheck) string {
 	}
 	var msgs []string
 	if len(chk.Expect) > 0 {
-		if m := parityMatch(got.topLeft(), chk.Expect, chk.Tol); m != "" {
+		if m := parityMatch(got.topLeft(), chk.Expect, chk.Tol, chk.Complex); m != "" {
 			msgs = append(msgs, m)
 		}
 	}
@@ -325,14 +338,14 @@ func parityCompare(got value, chk parityCheck) string {
 		if json.Unmarshal(e[0], &r) != nil || json.Unmarshal(e[1], &c) != nil {
 			return "bad element index"
 		}
-		if m := parityMatch(parityElement(got, r, c), e[2], chk.Tol); m != "" {
+		if m := parityMatch(parityElement(got, r, c), e[2], chk.Tol, chk.Complex); m != "" {
 			msgs = append(msgs, fmt.Sprintf("[%d,%d] %s", r, c, m))
 		}
 	}
 	return strings.Join(msgs, "; ")
 }
 
-func parityMatch(got value, wantRaw json.RawMessage, tol float64) string {
+func parityMatch(got value, wantRaw json.RawMessage, tol float64, complexText bool) string {
 	var want interface{}
 	if err := json.Unmarshal(wantRaw, &want); err != nil {
 		return "bad expectation: " + err.Error()
@@ -357,6 +370,9 @@ func parityMatch(got value, wantRaw json.RawMessage, tol float64) string {
 		}
 		return fmt.Sprintf("want %v, got %s", w, describeValue(got))
 	case string:
+		if complexText && got.kind == kindStr && parityComplexEqual(got.str, w, tol) {
+			return ""
+		}
 		if got.kind != kindStr || got.str != w {
 			return fmt.Sprintf("want %q, got %s", w, describeValue(got))
 		}
@@ -369,6 +385,19 @@ func parityMatch(got value, wantRaw json.RawMessage, tol float64) string {
 		return fmt.Sprintf("unsupported expectation %s", string(wantRaw))
 	}
 	return ""
+}
+
+// parityComplexEqual compares two complex-number texts part by part. The
+// suffix must agree; each part may differ by tol scaled by its magnitude
+// (the suites print full double precision, Grown prints 15 digits).
+func parityComplexEqual(got, want string, tol float64) bool {
+	g, ok1 := cxParse(strings.Replace(got, "E", "e", 1))
+	w, ok2 := cxParse(strings.Replace(want, "E", "e", 1))
+	if !ok1 || !ok2 || (g.suffix != w.suffix && g.suffix != 0 && w.suffix != 0) {
+		return false
+	}
+	close := func(a, b float64) bool { return math.Abs(a-b) <= tol*math.Max(1, math.Abs(b)) }
+	return close(g.re, w.re) && close(g.im, w.im)
 }
 
 func describeValue(v value) string {
@@ -409,6 +438,19 @@ func newParityReporter(t *testing.T) *parityReporter {
 }
 
 func (r *parityReporter) enabled() bool { return r.f != nil }
+
+func parityIncludePending() bool {
+	return os.Getenv("PARITY_REPORT") != "" && os.Getenv("PARITY_INCLUDE_PENDING") != ""
+}
+
+func (r *parityReporter) addPassing(id string, idx int, chk parityCheck) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	b, _ := json.Marshal(map[string]interface{}{
+		"id": id, "check": idx, "formula": chk.Formula, "pending": chk.Pending, "nowPassing": true,
+	})
+	r.f.Write(append(b, '\n'))
+}
 
 func (r *parityReporter) add(id string, idx int, chk parityCheck, got value, msg string) {
 	r.mu.Lock()
