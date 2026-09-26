@@ -11,8 +11,8 @@ to its plan, which holds the full scope and the list of tests it ports.
   is listed under *Flagged exceptions* in its plan and is not scheduled.
 - **Clean room.** Use OnlyOffice (AGPL) only as a reference for *behavior*, via the
   local, gitignored `research/onlyoffice/`. Every test is written fresh in Grown's own
-  harnesses (vitest, Playwright, `go test`) and tagged `oo:<suite>#<case>` so the
-  scoreboard can count it.
+  harnesses (vitest, Playwright, `go test`) and tagged `oo:<path>#<case>` so the
+  scoreboard can count it (convention in [README → Scoreboard](README.md#scoreboard)).
 - Baseline: `origin/main` c90064e (2026-09-26).
 
 ## Where we stand
@@ -84,7 +84,18 @@ error codes, date serials) become the first bug list.
 
 ## Tracking
 
-- `npm run parity` (after CC0) prints ported and passing counts per area against the
-  `*-tests.csv` manifests. `--check` in CI fails if the count regresses.
+- **Tag every ported case** `oo:<path>#<case>`: `<path>` is relative to
+  `sdkjs-tests-v9.3.1/tests/` (`oo:cell/spreadsheet-calculation/formula-tests/FormulaTests.js#SUM`,
+  `oo:word/change-case/change-case.js#Sentence case`, `oo:slide/shortcuts/shortcuts.js#22`);
+  `<case>` ends at a closing quote, backtick, `]` or end of line. The tag goes in a
+  vitest/Playwright title, a Go `t.Run` name, or a JSON/YAML fixture string value.
+  This one convention replaces the per-plan variants.
+- `cd web/app && npm run parity` prints OnlyOffice tests · ported · passing per plan/area
+  against the `*-tests.csv` manifests (ported = distinct tags per OnlyOffice file;
+  `--vitest-json/--go-json/--pw-json` fill in passing). Tags that match no row are
+  listed as unmapped. See [README → Scoreboard](README.md#scoreboard) for all flags.
+- CI runs `--check --md` in the `frontend` job and fails if ported/passing drops below
+  [`baseline.json`](baseline.json). After a milestone lands, run
+  `npm run parity -- --write-baseline` and commit the new baseline.
 - When a milestone lands, update its rows' `target_grown_path` in the CSV if the files moved.
 - Re-baseline this roadmap's numbers by running the scoreboard, not by hand.

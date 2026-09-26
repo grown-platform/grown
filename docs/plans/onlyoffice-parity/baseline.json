@@ -1,0 +1,321 @@
+{
+  "version": 1,
+  "areas": {
+    "common/code-style": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/common-api": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/common-charts": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/common-color": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/common-fonts": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/common-geometry": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/conversion": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/forms": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/pdf": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/plugins": {
+      "ported": 0,
+      "passing": null
+    },
+    "common/visio": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/autocorrect": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/change-case": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/clipboard": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/compare-merge": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/content-controls": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/custom-xml": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/engine-internals": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/equations": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/find-replace": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/fixtures": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/forms": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/harness": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/history-internals": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/hyphenation": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/images": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/layout": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/numbering": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/pagination": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/paragraph": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/plugins": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/references": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/scripting-api": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/sections": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/shortcuts": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/smartart": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/styles": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/tables": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/text-input": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/text-ops": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/text-shaping": {
+      "ported": 0,
+      "passing": null
+    },
+    "docs/track-changes": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/charts": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/conditional formatting": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/data validation": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/drawing": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/editing": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/engine-internal": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/formatting": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/formulas": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/harness": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/import": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/pivot": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/print": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/protection": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/shortcuts": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/sort-filter": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/utils": {
+      "ported": 0,
+      "passing": null
+    },
+    "sheets/view": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/chartex": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/clipboard paste callback for plain text": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/ecma-376 colour transforms": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/empty stub": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/fixture": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/harness mock": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/harness mock of editor api": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/harness mock of presentation object": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/harness mock of slideshow manager": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/harness mock of text measurer": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/harness mock of thumbnail rail": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/js-api harness": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/query elements by name across a slide": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/qunit harness page": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/shapes": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/shortcuts": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/shortcuts fixture": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/text-box insets": {
+      "ported": 0,
+      "passing": null
+    },
+    "slides/url classification for hyperlinks": {
+      "ported": 0,
+      "passing": null
+    }
+  },
+  "total": {
+    "ported": 0,
+    "passing": null
+  }
+}

@@ -79,6 +79,18 @@ jobs:
           npx tsc -b          # type-check (build/bundle covered by the image build)
           npm test            # vitest run
 
+      - name: OnlyOffice parity scoreboard
+        # docs/plans/onlyoffice-parity: counts `oo:` tags against the manifest
+        # CSVs; fails only if ported/passing regresses vs baseline.json or a CSV
+        # row is malformed. research/ is absent here, so OO counts are snapshots.
+        run: |
+          cd src/web/app
+          rc=0
+          node scripts/onlyoffice-parity.mjs --check --md > /tmp/parity.md || rc=$?
+          cat /tmp/parity.md
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then cat /tmp/parity.md >> "$GITHUB_STEP_SUMMARY"; fi
+          exit $rc
+
       - name: e2e specs — validate (no running stack needed)
         run: |
           cd src/web/e2e

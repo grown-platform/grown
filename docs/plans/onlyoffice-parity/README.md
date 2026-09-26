@@ -58,12 +58,17 @@ Every plan ships a `*-tests.csv` with the same columns:
 onlyoffice_path,test_count,area,portability,target_grown_path,milestone
 ```
 
-- `onlyoffice_path` — relative to `research/onlyoffice/`.
+- `onlyoffice_path` — relative to `research/onlyoffice/` (a leading
+  `research/onlyoffice/` or a bare `tests/…` for `sdkjs-tests-v9.3.1/tests/…`
+  is also accepted). May be a directory or a glob; tags under it then match by
+  prefix.
 - `test_count` — snapshot count of `QUnit.test(` in that file (or fixture
   documents for `core/**` directories) at the time the row was written.
 - `area` — scoreboard grouping; free text per plan (e.g. `pdf`, `forms`,
   `visio`, `common-api`, `conversion`, or the editor-specific areas each plan
-  chooses). The scoreboard groups by the exact string.
+  chooses). The scoreboard groups by plan (CSV name) plus a short area key: the
+  text before the first ` (`, `:`, `;` or ` + `, then before the first `/`,
+  lower-cased (`formulas/math-trig` → `formulas`).
 - `portability` — `high` (port cases 1:1), `medium` (same behaviour, different
   model), `low` (only the idea carries over), `none`/`n/a` (harness or fixture
   file with no cases, or not applicable). Case-insensitive; a trailing
@@ -81,22 +86,66 @@ the six columns and the row-per-OnlyOffice-file shape.
 
 ## Scoreboard
 
-Designed in [cross-cutting.md §4](cross-cutting.md#4-parity-tracking-harness-scoreboard--design); to be implemented as milestone CC0:
+Implemented as milestone CC0 (design: [cross-cutting.md §4](cross-cutting.md#4-parity-tracking-harness-scoreboard--design)).
 
-- `web/app/scripts/onlyoffice-parity.mjs` (plain Node ESM, no deps; same
-  pattern as `web/app/scripts/gen-games-pwa.mjs`), exposed as `npm run parity`.
-- Reads all `docs/plans/onlyoffice-parity/*-tests.csv`; for each row counts the
-  OnlyOffice side live from `research/onlyoffice/` when present (otherwise uses
-  the snapshot `test_count` and marks the column `(snapshot)`), and counts Grown
-  tests in `target_grown_path` (`it/test(` in vitest files, `test(` in Playwright
-  specs, `func Test` in Go). Optional `--vitest-json/--go-json/--pw-json` inputs
-  turn "ported" into "passing".
-- Prints a per-area table plus a grand total; `--json` and `--md` for CI
-  artifacts; `--check` compares against tracked `baseline.json` and fails on
-  regression; `--write-baseline` updates it.
-- Degrades gracefully in CI (no `research/`, no result files, missing targets →
-  snapshot counts, `n/a`, and 0 respectively; never an error).
-- Wire-up: one step in `.forgejo/workflows/checks.yaml` `frontend` job.
+```sh
+cd web/app
+npm run parity                       # per-area table + grand total
+npm run parity -- --md               # Markdown (what CI appends to the step summary)
+npm run parity -- --json             # full report incl. per-row counts
+npm run parity -- --check            # exit 1 if ported/passing regressed vs baseline.json
+npm run parity -- --write-baseline   # accept the current numbers
+npm run parity -- --research <dir>   # default <repo>/research/onlyoffice
+npm run parity -- --vitest-json v.json --go-json go.json --pw-json pw.json
+```
+
+Script: `web/app/scripts/onlyoffice-parity.mjs` (plain Node ESM, zero deps);
+pure helpers in `onlyoffice-parity-lib.mjs`, unit-tested by
+`onlyoffice-parity.test.mjs` (runs with the normal `npx vitest run`).
+
+### Tag convention (all plans)
+
+This supersedes the per-plan tag variants in docs.md, sheets.md and slides.md.
+
+- Every ported case carries a tag **`oo:<path>#<case>`**. `<path>` is the
+  OnlyOffice file relative to `sdkjs-tests-v9.3.1/tests/`, e.g.
+  `oo:cell/spreadsheet-calculation/formula-tests/FormulaTests.js#SUM`,
+  `oo:word/change-case/change-case.js#Sentence case`,
+  `oo:slide/shortcuts/shortcuts.js#22`. `<case>` is free text and ends at a
+  closing quote, backtick, `]` or end of line.
+- Put it in a vitest `it`/`test` title, a Playwright `test` title, a Go
+  `t.Run` name, or as a string value in a JSON/YAML fixture
+  (`"id": "oo:…"`).
+- For rows outside `tests/` (`sdkjs/…`, `core/…`) use the full
+  research-relative path: `oo:core/EpubFile/test/Files#toc`.
+
+### Counting rules
+
+- **OnlyOffice** — the denominator is always the manifest `test_count` (many
+  rows count runtime/table cases, more than the static `QUnit.test` sites).
+  With `research/onlyoffice/` present an informational *OO live* column shows
+  the static count (`QUnit.test(`/legacy `test(` in `.js`, `TEST(`/`TEST_F(` in
+  `.cpp`, fixture documents in directories); without it the column reads
+  `snapshot`.
+- **Ported** — distinct `oo:` tags found in `web/app/src`, `web/e2e`,
+  `internal` and `pdf/frontend` (skipping `node_modules`/`dist`), plus tags that
+  only appear at runtime in supplied result files (e.g. `it.each`). Each tag maps
+  to the most specific row per manifest: exact file, else directory/glob
+  prefix, else the same file name in a subfolder of the tag's directory. A file
+  listed by several plans (e.g. `color-mods.js`) counts in each; the grand
+  total counts distinct tags and distinct OnlyOffice files. Tags matching no
+  row are printed as **unmapped** (a warning, not an error).
+- **Passing** — only with `--vitest-json` (vitest `--reporter=json`),
+  `--go-json` (`go test -json`, subtest spaces become `_`) or `--pw-json`
+  (Playwright json reporter): a tag passes if a passing test's name contains
+  it. Otherwise `n/a`.
+- **`--check`** compares per-area and total `ported`/`passing` with the tracked
+  [`baseline.json`](baseline.json) and exits 1 on a drop or on a malformed CSV
+  row; `passing` is only compared when both sides have a number. After
+  landing ports, run `--write-baseline` and commit the file so the gain is locked in.
+- CI: the `frontend` job in `.forgejo/workflows/checks.yaml` runs
+  `--check --md` (with `research/` absent) and appends the table to
+  `$GITHUB_STEP_SUMMARY`.
 
 ## Baseline commit
 
