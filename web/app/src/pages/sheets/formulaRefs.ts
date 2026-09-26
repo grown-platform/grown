@@ -126,6 +126,9 @@ export interface FormulaEdit {
   r: number;
   c: number;
   f: string;
+  /** The cell's current value and display text (kept until the next recalc). */
+  v?: unknown;
+  m?: string;
 }
 
 /** Iterate the cells of a FortuneSheet sheet (live `data` matrix or `celldata`). */
@@ -154,7 +157,7 @@ export function sheetRenameEdits(
     forEachCell(sheet, (r, c, cell) => {
       if (typeof cell.f !== "string" || !cell.f.startsWith("=")) return;
       const f = renameSheetInFormula(cell.f, oldName, newName);
-      if (f !== cell.f) edits.push({ sheetId: sheet.id, r, c, f });
+      if (f !== cell.f) edits.push({ sheetId: sheet.id, r, c, f, v: cell.v, m: cell.m });
     });
   }
   return edits;

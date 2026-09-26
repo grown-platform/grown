@@ -51,8 +51,8 @@ describe("sheet rename edits", () => {
       { id: "s2", name: "Sheet2", celldata: [{ r: 0, c: 0, v: { f: "=Sheet2!B1" } }] },
     ];
     expect(sheetRenameEdits(sheets, "Sheet2", "Inputs")).toEqual([
-      { sheetId: "s1", r: 0, c: 0, f: "=Inputs!A1*2" },
-      { sheetId: "s2", r: 0, c: 0, f: "=Inputs!B1" },
+      { sheetId: "s1", r: 0, c: 0, f: "=Inputs!A1*2", v: 2, m: undefined },
+      { sheetId: "s2", r: 0, c: 0, f: "=Inputs!B1", v: undefined, m: undefined },
     ]);
     expect(
       renameSheetInNamedRanges(

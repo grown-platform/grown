@@ -16,7 +16,9 @@ describe("FormulaTests.js rename", () => {
     sheet.data[99] = [];
     sheet.data[99][18] = { f: "=Sheet1!S95" };
     const toTmp = sheetRenameEdits([sheet], "Sheet1", "SheetTmp");
-    expect(toTmp).toEqual([{ sheetId: "s1", r: 99, c: 18, f: "=SheetTmp!S95" }]);
+    expect(toTmp.map(({ sheetId, r, c, f }) => ({ sheetId, r, c, f }))).toEqual([
+      { sheetId: "s1", r: 99, c: 18, f: "=SheetTmp!S95" },
+    ]);
     (sheet.data[99][18] as { f: string }).f = toTmp[0].f;
     const back = sheetRenameEdits([sheet], "SheetTmp", "Sheet1");
     expect(back[0].f).toBe("=Sheet1!S95");

@@ -58,6 +58,7 @@ import {
   type IconStyle,
 } from "./iconSets";
 import { downloadSheet } from "./export";
+import { storableWorkbook } from "./workbookJson";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -126,6 +127,8 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const ref = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const applyingRemote = useRef(false);
+  // Last known tab name per sheet id (to spot renames in onChange).
+  const sheetNamesRef = useRef(new Map<string, string>());
   const saveTimer = useRef<number | undefined>(undefined);
 
   const me = {
@@ -157,6 +160,11 @@ export function SheetEditor({ user }: SheetEditorProps) {
             ? parsed[0].grownIconSets
             : [];
           dataRef.current = parsed;
+          sheetNamesRef.current = new Map(
+            (Array.isArray(parsed) ? parsed : [])
+              .filter((sh: any) => sh?.id)
+              .map((sh: any) => [sh.id, sh.name]),
+          );
           setData(parsed);
           // Re-apply icon overlays once the grid has mounted.
           if (iconSetsRef.current.length) {
@@ -311,7 +319,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
   // extra field; we read it back on load).
   function withExtras(d: any[]): any[] {
     if (!Array.isArray(d) || d.length === 0) return d;
-    const copy = d.slice();
+    const copy = storableWorkbook(d);
     copy[0] = {
       ...copy[0],
       grownCharts: chartsRef.current,
@@ -321,7 +329,26 @@ export function SheetEditor({ user }: SheetEditorProps) {
     return copy;
   }
   function onChange(d: any[]) {
+    // FortuneSheet re-invokes onChange with the same workbook object whenever
+    // this component re-renders (the prop identity changes, e.g. on every
+    // presence tick). Treat that as no change, otherwise each call would push
+    // the debounced save back and it would never fire.
+    if (d === dataRef.current) return;
     dataRef.current = d;
+    // A tab rename shows up as a changed name for a known sheet id.
+    // (FortuneSheet's afterUpdateSheetName hook reads a revoked draft in
+    // 1.0.4 and never fires, so renames are detected here.)
+    const names = sheetNamesRef.current;
+    for (const sh of Array.isArray(d) ? d : []) {
+      if (!sh?.id) continue;
+      const prev = names.get(sh.id);
+      if (prev !== undefined && prev !== sh.name) {
+        const from = prev;
+        const to = sh.name;
+        setTimeout(() => onSheetRenamed(sh.id, from, to), 0);
+      }
+      names.set(sh.id, sh.name);
+    }
     // Re-apply icon-set overlays after edits. applyIconSets is idempotent, so
     // the write it triggers settles in one pass without looping.
     if (iconSetsRef.current.length) {
@@ -376,24 +403,23 @@ export function SheetEditor({ user }: SheetEditorProps) {
       if (Array.isArray(nr) && nr.length) {
         const next = renameSheetInNamedRanges(nr, oldName, newName);
         if (JSON.stringify(next) !== JSON.stringify(nr)) {
-          wb.updateSheet?.(
-            all.map((s: any, i: number) => (i === 0 ? { ...s, _namedRanges: next } : s)),
-          );
+          // updateSheet mutates what it is given; getAllSheets() is frozen.
+          const copy = JSON.parse(JSON.stringify(all));
+          copy[0]._namedRanges = next;
+          wb.updateSheet?.(copy);
         }
       }
-      for (const e of sheetRenameEdits(wb.getAllSheets?.() ?? [], oldName, newName)) {
-        wb.setCellValue(e.r, e.c, e.f, { id: e.sheetId });
+      const edits = sheetRenameEdits(wb.getAllSheets?.() ?? [], oldName, newName);
+      for (const e of edits) {
+        // Object form: writes into the target sheet (a formula string would go
+        // through the cell editor path, which acts on the active sheet).
+        wb.setCellValue(e.r, e.c, { f: e.f, v: e.v ?? "", m: e.m ?? "" }, { id: e.sheetId });
       }
     } catch {
       /* keep the rename even if the fix-up fails */
     }
   }
-  const onSheetRenamedRef = useRef(onSheetRenamed);
-  onSheetRenamedRef.current = onSheetRenamed;
-  const hooksRef = useRef({
-    afterUpdateSheetName: (id: string, oldName: string, newName: string) =>
-      onSheetRenamedRef.current(id, oldName, newName),
-  });
+
   function addIconSet(style: IconStyle) {
     const range = rangeFromSelection(ref.current);
     if (!range) return;
@@ -445,7 +471,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
       const s = await createSheet(`Copy of ${title}`);
       try {
         const all = ref.current?.getAllSheets?.();
-        if (all) await saveSheet(s.id, JSON.stringify(all));
+        if (all) await saveSheet(s.id, JSON.stringify(storableWorkbook(all)));
       } catch {
         /* ignore */
       }
@@ -582,13 +608,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
         data-testid="sheet-editor"
       >
         <Box sx={{ minWidth: { xs: 600, md: "100%" }, height: "100%" }}>
-          <Workbook
-            ref={ref}
-            data={data}
-            onChange={onChange}
-            onOp={onOp}
-            hooks={hooksRef.current}
-          />
+          <Workbook ref={ref} data={data} onChange={onChange} onOp={onOp} />
         </Box>
       </Box>
       <FindReplaceDialog
