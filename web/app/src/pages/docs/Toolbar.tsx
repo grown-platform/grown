@@ -35,6 +35,8 @@ import FormatAlignJustifyIcon from "@mui/icons-material/FormatAlignJustify";
 import ChecklistIcon from "@mui/icons-material/Checklist";
 import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
 import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
+import { StyleGallery } from "./StyleGallery";
+import { ListMenu } from "./ListMenu";
 import FormatIndentDecreaseIcon from "@mui/icons-material/FormatIndentDecrease";
 import FormatIndentIncreaseIcon from "@mui/icons-material/FormatIndentIncrease";
 import FormatClearIcon from "@mui/icons-material/FormatClear";
@@ -125,21 +127,6 @@ export function Toolbar({
       </IconButton>
     </Tooltip>
   );
-
-  // Current paragraph style for the style <Select>.
-  const styleValue = editor.isActive("heading", { level: 1 })
-    ? "h1"
-    : editor.isActive("heading", { level: 2 })
-      ? "h2"
-      : editor.isActive("heading", { level: 3 })
-        ? "h3"
-        : "p";
-
-  const setStyle = (v: string | null) => {
-    const c = editor.chain().focus();
-    if (v === "p") c.setParagraph().run();
-    else if (v) c.toggleHeading({ level: Number(v[1]) as 1 | 2 | 3 }).run();
-  };
 
   const fontValue =
     (editor.getAttributes("textStyle").fontFamily as string) || "Arial";
@@ -234,19 +221,7 @@ export function Toolbar({
 
       <Divider orientation="vertical" sx={{ mx: 0.5 }} />
 
-      <Select
-        size="sm"
-        value={styleValue}
-        onChange={(_, v) => setStyle(v)}
-        variant="plain"
-        sx={{ minWidth: 120 }}
-        aria-label="Paragraph style"
-      >
-        <Option value="p">Normal text</Option>
-        <Option value="h1">Heading 1</Option>
-        <Option value="h2">Heading 2</Option>
-        <Option value="h3">Heading 3</Option>
-      </Select>
+      <StyleGallery editor={editor} />
 
       <Select
         size="sm"
@@ -472,6 +447,7 @@ export function Toolbar({
         "Numbered list",
         <FormatListNumberedIcon />,
       )}
+      <ListMenu editor={editor} />
       {iconBtn(
         false,
         () => editor.chain().focus().liftListItem("listItem").run(),

@@ -490,6 +490,20 @@ export function currentStyle(editor: Editor): StyleDef | null {
   return displayStyle(getDocModel(editor).sheet, editor.state);
 }
 
+/** selectedParagraphIndents: the first selected paragraph's compiled
+ *  indents and tab stops in points, for the ruler. */
+export function selectedParagraphIndents(editor: Editor): {
+  left: number;
+  right: number;
+  firstLine: number;
+  tabs: number[];
+} | null {
+  const b = blocks(editor.state)[0];
+  if (!b) return null;
+  const c = compiledProps(editor, b.node);
+  return { left: c.indLeft, right: c.indRight, firstLine: c.indFirstLine, tabs: (c.tabs ?? []).map((t) => t.pos) };
+}
+
 /** compiledProps compiles a paragraph's effective properties. */
 export function compiledProps(editor: Editor, node: PMNode): CompiledParaPr {
   const { sheet, numbering } = getDocModel(editor);

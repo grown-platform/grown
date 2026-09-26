@@ -17,6 +17,8 @@ import { hasSpaceAfter, hasSpaceBefore } from "./paragraphFormat";
 import { indent, outdent, stepFontSize } from "./shortcuts";
 import { resolveLinkInput } from "../../lib/urlType";
 import { downloadDoc, DOWNLOAD_FORMATS } from "./export";
+import { applyStyle, continueNumbering, currentStyle, restartNumbering } from "./docModel";
+import { openParagraphDialog } from "./ParagraphDialogs";
 
 const menuButtonSx = {
   fontWeight: 400,
@@ -165,6 +167,11 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
   const run = (fn: (e: Editor) => void) => () => {
     if (editor) fn(editor);
   };
+  const applyStyleRun = (id: string) =>
+    run((e) => {
+      e.commands.focus();
+      applyStyle(e, id);
+    });
 
   // Dropdowns open left-aligned (bottom-start) under their menu title.
   const top = (label: string, children: React.ReactNode) => (
@@ -392,26 +399,29 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
             Paragraph styles
           </Typography>
-          <MenuItem
-            onClick={run((e) => e.chain().focus().setParagraph().run())}
-          >
+          <MenuItem onClick={applyStyleRun("Normal")}>
             Normal text{kbd("Ctrl+Alt+0")}
           </MenuItem>
+          {["Title", "Subtitle"].map((id) => (
+            <MenuItem key={id} onClick={applyStyleRun(id)}>
+              {id}
+            </MenuItem>
+          ))}
           {[1, 2, 3, 4, 5, 6].map((l) => (
             <MenuItem
               key={l}
-              onClick={run((e) =>
-                e
-                  .chain()
-                  .focus()
-                  .toggleHeading({ level: l as 1 })
-                  .run(),
-              )}
+              onClick={run((e) => {
+                e.commands.focus();
+                applyStyle(e, currentStyle(e)?.id === `Heading${l}` ? "Normal" : `Heading${l}`);
+              })}
             >
               Heading {l}
               {kbd(`Ctrl+Alt+${l}`)}
             </MenuItem>
           ))}
+          <MenuItem onClick={applyStyleRun("Quote")}>
+            Quote
+          </MenuItem>
           <ListDivider />
           <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
             Align & indent
@@ -506,6 +516,9 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             </MenuItem>
           )}
           <MenuItem onClick={actions.customSpacing}>Custom spacing…</MenuItem>
+          <MenuItem onClick={() => openParagraphDialog("paragraph")}>
+            Paragraph settings…
+          </MenuItem>
           <ListDivider />
           <MenuItem
             onClick={run((e) => e.chain().focus().toggleBulletList().run())}
@@ -521,6 +534,14 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             onClick={run((e) => e.chain().focus().toggleTaskList().run())}
           >
             Checklist
+          </MenuItem>
+          <MenuItem onClick={run((e) => restartNumbering(e))}>Restart numbering</MenuItem>
+          <MenuItem onClick={run((e) => continueNumbering(e))}>Continue numbering</MenuItem>
+          <MenuItem onClick={() => openParagraphDialog("numberingValue")}>
+            Set numbering value…
+          </MenuItem>
+          <MenuItem onClick={() => openParagraphDialog("listSettings")}>
+            List settings…
           </MenuItem>
           <MenuItem onClick={actions.pageSetup}>Page orientation…</MenuItem>
           <ListDivider />

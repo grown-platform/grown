@@ -41,6 +41,8 @@ import { Toolbar, type EditorMode } from "./Toolbar";
 import { MenuBar, type DocActions } from "./MenuBar";
 import { Presence } from "./Presence";
 import { Ruler, type Indents } from "./Ruler";
+import { ParagraphDialogs } from "./ParagraphDialogs";
+import { selectedParagraphIndents } from "./docModel";
 import { ShareDialog } from "./ShareDialog";
 import { CommandPalette, type Command } from "./CommandPalette";
 import {
@@ -656,7 +658,14 @@ export function DocEditor({ user }: DocEditorProps) {
           onModeChange={setMode}
         />
         <Box sx={{ display: { xs: "none", md: "block" } }}>
-          <Ruler indents={indents} onChange={setIndents} />
+          <Ruler
+            indents={indents}
+            onChange={setIndents}
+            paragraph={editor ? selectedParagraphIndents(editor) : null}
+            onParagraphChange={(p) =>
+              editor?.chain().setIndents({ left: p.left, right: p.right, firstLine: p.firstLine }).run()
+            }
+          />
         </Box>
       </Container>
 
@@ -813,6 +822,7 @@ export function DocEditor({ user }: DocEditorProps) {
         editor={editor}
         onComment={() => actions.commentOnSelection()}
       />
+      <ParagraphDialogs editor={editor} />
       <ShortcutsDialog
         open={dialog === "shortcuts"}
         onClose={() => setDialog(null)}

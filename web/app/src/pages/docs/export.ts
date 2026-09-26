@@ -1,4 +1,5 @@
 import type { Editor } from "@tiptap/react";
+import { exportBodyHtml } from "./docModel";
 
 export type DownloadFormat =
   | "docx"
@@ -30,7 +31,7 @@ function triggerDownload(blob: Blob, filename: string) {
 }
 
 function fullHtml(editor: Editor, title: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${editor.getHTML()}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${exportBodyHtml(editor)}</body></html>`;
 }
 
 /**
