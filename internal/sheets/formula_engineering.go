@@ -54,11 +54,13 @@ func engPlaces(c *callCtx, i int) (places int, present bool, ev value, ok bool) 
 	if !nok {
 		return 0, true, errValue, false
 	}
-	p := int(math.Trunc(n))
-	if p < 0 {
+	// Excel caps [places] at 10 digits; checking the float first also keeps a
+	// huge value from overflowing int (it used to panic in strings.Repeat).
+	n = math.Trunc(n)
+	if n < 0 || n > 10 {
 		return 0, true, errNum, false
 	}
-	return p, true, value{}, true
+	return int(n), true, value{}, true
 }
 
 // engPad left-zero-pads s to the requested number of places. Returns errNum
