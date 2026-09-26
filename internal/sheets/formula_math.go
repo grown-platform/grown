@@ -18,6 +18,11 @@ func mthNum(v value) (float64, value, bool) {
 		return 0, v, false
 	}
 	n, ok := v.toNum()
+	if !ok && v.kind == kindStr {
+		// Date/time text ("1/1/2023", "12:00:00") reads as its serial, as
+		// Excel coerces it in arithmetic.
+		n, ok = dtTextSerial(v.str)
+	}
 	if !ok {
 		return 0, errValue, false
 	}
@@ -37,6 +42,22 @@ func mthGCD(a, b float64) float64 {
 		a, b = b, math.Mod(a, b)
 	}
 	return a
+}
+
+// mthIntArg reads one GCD/LCM operand: errors propagate, booleans are
+// #VALUE!, and negative values or values of 2^53 or more are #NUM!.
+func mthIntArg(v value) (float64, value, bool) {
+	if v.kind == kindBool {
+		return 0, errValue, false
+	}
+	n, e, ok := mthNum(v)
+	if !ok {
+		return 0, e, false
+	}
+	if n < 0 || n >= 1<<53 {
+		return 0, errNum, false
+	}
+	return math.Floor(n), value{}, true
 }
 
 // mthFact returns n! as a float64 (n must be a non-negative integer).
@@ -176,7 +197,10 @@ func mthSumproduct(c *callCtx) value {
 			if v.isErr() {
 				return v
 			}
-			n, _ := v.toNum() // non-numeric treated as 0
+			n := 0.0 // text and booleans count as 0
+			if v.kind == kindNum {
+				n = v.num
+			}
 			prod *= n
 		}
 		sum += prod
@@ -219,6 +243,9 @@ func init() {
 		exp, e2, ok := mthArgNum(c, 1)
 		if !ok {
 			return e2
+		}
+		if base == 0 && exp < 0 {
+			return errDiv0
 		}
 		return mthCheckResult(math.Pow(base, exp))
 	})
@@ -397,8 +424,10 @@ func mthCeilingFloor(c *callCtx, ceil bool, _ bool) value {
 	if sig == 0 {
 		return numVal(0)
 	}
-	// In legacy Excel, num and significance must share sign.
-	if (n < 0) != (sig < 0) && n != 0 {
+	// A positive number with a negative significance is #NUM!; a negative
+	// number with a positive significance rounds toward +∞ (CEILING) or −∞
+	// (FLOOR), as since Excel 2010.
+	if n > 0 && sig < 0 {
 		return errNum
 	}
 	q := n / sig
@@ -473,24 +502,19 @@ func mthRoundDir(c *callCtx, up bool) value {
 		if !ok {
 			return e2
 		}
-		digits = int(df)
+		digits = int(math.Max(-400, math.Min(400, math.Trunc(df))))
 	}
-	factor := math.Pow(10, float64(digits))
-	scaled := n * factor
+	// Scale on the 15-digit decimal form (see mth2RoundDecimal) so that
+	// ROUNDUP(8.175,3) stays 8.175 although 8.175 is stored as 8.17500…01.
 	if up {
-		if scaled >= 0 {
-			scaled = math.Ceil(scaled)
-		} else {
-			scaled = math.Floor(scaled)
-		}
-	} else {
-		if scaled >= 0 {
-			scaled = math.Floor(scaled)
-		} else {
-			scaled = math.Ceil(scaled)
-		}
+		return mthCheckResult(mth2RoundDecimalWith(n, digits, func(x float64) float64 {
+			if x >= 0 {
+				return math.Ceil(x)
+			}
+			return math.Floor(x)
+		}))
 	}
-	return numVal(scaled / factor)
+	return mthCheckResult(mth2RoundDecimalWith(n, digits, math.Trunc))
 }
 
 // ---- GCD / LCM / number theory ----------------------------------------------
@@ -503,16 +527,9 @@ func init() {
 		}
 		g := 0.0
 		for _, v := range vals {
-			if v.isErr() {
-				return v
-			}
-			n, ok := v.toNum()
+			n, e, ok := mthIntArg(v)
 			if !ok {
-				return errValue
-			}
-			n = math.Floor(math.Abs(n))
-			if n < 0 {
-				return errNum
+				return e
 			}
 			g = mthGCD(g, n)
 		}
@@ -526,14 +543,10 @@ func init() {
 		}
 		l := 1.0
 		for _, v := range vals {
-			if v.isErr() {
-				return v
-			}
-			n, ok := v.toNum()
+			n, e, ok := mthIntArg(v)
 			if !ok {
-				return errValue
+				return e
 			}
-			n = math.Floor(math.Abs(n))
 			if n == 0 {
 				return numVal(0)
 			}
@@ -542,6 +555,9 @@ func init() {
 				continue
 			}
 			l = l / g * n
+		}
+		if l >= 1<<53 {
+			return errNum
 		}
 		return numVal(l)
 	})
@@ -649,8 +665,11 @@ func init() {
 			if !ok {
 				return e2
 			}
-			if b <= 0 || b == 1 {
+			if b <= 0 {
 				return errNum
+			}
+			if b == 1 {
+				return errDiv0 // ln(1) = 0 in the denominator
 			}
 			base = b
 		}
@@ -711,10 +730,10 @@ func init() {
 		if !ok {
 			return e
 		}
-		n = math.Trunc(n)
 		if n < 0 {
-			return errNum
+			return errNum // checked before truncating: FACT(-0.5) is #NUM!
 		}
+		n = math.Trunc(n)
 		return mthCheckResult(mthFact(int(n)))
 	})
 
@@ -866,6 +885,9 @@ func init() {
 		if !ok {
 			return e
 		}
+		if math.Abs(n) >= 1<<27 {
+			return errNum // Excel's argument limit for SEC/CSC/COT
+		}
 		return mthCheckResult(1 / math.Cos(n))
 	})
 	registerFunc("CSC", func(c *callCtx) value {
@@ -873,12 +895,24 @@ func init() {
 		if !ok {
 			return e
 		}
+		if n == 0 {
+			return errDiv0
+		}
+		if math.Abs(n) >= 1<<27 {
+			return errNum // Excel's argument limit for SEC/CSC/COT
+		}
 		return mthCheckResult(1 / math.Sin(n))
 	})
 	registerFunc("COT", func(c *callCtx) value {
 		n, e, ok := mthTrigArg(c)
 		if !ok {
 			return e
+		}
+		if n == 0 {
+			return errDiv0
+		}
+		if math.Abs(n) >= 1<<27 {
+			return errNum // Excel's argument limit for SEC/CSC/COT
 		}
 		return mthCheckResult(1 / math.Tan(n))
 	})
@@ -962,8 +996,8 @@ func init() {
 
 // mthTrigArg reads the single numeric argument shared by most trig functions.
 func mthTrigArg(c *callCtx) (float64, value, bool) {
-	if c.nargs() < 1 {
-		return 0, errNA, false
+	if c.nargs() != 1 {
+		return 0, errNA, false // SIN(x, y) is a wrong-argument-count error
 	}
 	return mthArgNum(c, 0)
 }

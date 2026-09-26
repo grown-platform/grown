@@ -42,20 +42,21 @@ var aggregateFuncs = map[int]string{
 	6: "PRODUCT", 7: "STDEV", 8: "STDEVP", 9: "SUM", 10: "VAR",
 	11: "VARP", 12: "MEDIAN", 13: "MODE.SNGL",
 	14: "LARGE", 15: "SMALL", 16: "PERCENTILE.INC", 17: "QUARTILE.INC",
-	18: "PERCENTILE.EXC", 19: "QUARTILE.INC",
+	18: "PERCENTILE.EXC", 19: "QUARTILE.EXC",
 }
 
 // stripErrors flattens args and drops error cells (for AGGREGATE's "ignore
-// errors" options).
-func stripErrors(args []interface{}) []value {
+// errors" options). The result is a one-column range so functions that read
+// their data with rangeArg (LARGE, SMALL, PERCENTILE…) accept it.
+func stripErrors(args []interface{}) rangeVal {
 	flat := flattenArgs(args)
-	out := flat[:0]
+	var cells [][]value
 	for _, v := range flat {
 		if !v.isErr() {
-			out = append(out, v)
+			cells = append(cells, []value{v})
 		}
 	}
-	return out
+	return rangeVal{rows: len(cells), cols: 1, cells: cells}
 }
 
 func fnAggregate(c *callCtx) value {

@@ -2,11 +2,11 @@
   "version": 1,
   "areas": {
     "common/code-style": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     },
     "common/common-api": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     },
     "common/common-charts": {
@@ -14,7 +14,7 @@
       "passing": null
     },
     "common/common-color": {
-      "ported": 0,
+      "ported": 28,
       "passing": null
     },
     "common/common-fonts": {
@@ -26,7 +26,7 @@
       "passing": null
     },
     "common/conversion": {
-      "ported": 0,
+      "ported": 17,
       "passing": null
     },
     "common/forms": {
@@ -198,7 +198,7 @@
       "passing": null
     },
     "sheets/formulas": {
-      "ported": 87,
+      "ported": 334,
       "passing": null
     },
     "sheets/harness": {
@@ -246,7 +246,7 @@
       "passing": null
     },
     "slides/ecma-376 colour transforms": {
-      "ported": 0,
+      "ported": 28,
       "passing": null
     },
     "slides/empty stub": {
@@ -310,12 +310,12 @@
       "passing": null
     },
     "slides/url classification for hyperlinks": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     }
   },
   "total": {
-    "ported": 172,
+    "ported": 468,
     "passing": null
   }
 }

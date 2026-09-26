@@ -794,3 +794,10 @@ func TestDatePastYear9999IsNum(t *testing.T) {
 	mustErr(t, eval(t, "DATE(9999,12,32)"), "#NUM!")
 	mustErr(t, eval(t, "DATE(9999,13,1)"), "#NUM!")
 }
+
+// A huge [places] used to overflow int and panic in strings.Repeat.
+func TestBaseConversionPlacesLimit(t *testing.T) {
+	mustErr(t, eval(t, "DEC2BIN(1,1E+10)"), "#NUM!")
+	mustErr(t, eval(t, "HEX2BIN(1,11)"), "#NUM!")
+	mustStr(t, eval(t, "DEC2BIN(5,10)"), "0000000101")
+}

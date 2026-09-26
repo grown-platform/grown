@@ -538,12 +538,18 @@ func txtValue(c *callCtx) value {
 		return e
 	}
 	v := c.scalar(0)
-	if v.kind == kindNum || v.kind == kindBool {
+	if v.kind == kindNum {
 		return numVal(v.num)
+	}
+	if v.kind == kindBool {
+		return errValue // VALUE(TRUE) is #VALUE! in Excel
 	}
 	s := strings.TrimSpace(v.toStr())
 	if s == "" {
-		return numVal(0)
+		return errValue
+	}
+	if n, ok := dtTextSerial(s); ok {
+		return numVal(n) // date and/or time text
 	}
 	neg := false
 	if strings.HasPrefix(s, "(") && strings.HasSuffix(s, ")") {
