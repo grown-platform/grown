@@ -1,10 +1,10 @@
 package sheets
 
-// Workbook metadata functions. SHEET([value]) returns the 1-based index of the
-// current sheet; SHEETS() returns the number of sheets in the workbook. Cross-
-// sheet references aren't supported by the engine, so SHEET ignores any argument
-// and always reports the sheet being evaluated. (CELL/INFO need per-reference
-// metadata the eager evaluator doesn't retain, so they're not implemented.)
+// Workbook metadata functions.
+//
+//	SHEET([value])  — 1-based index of the sheet a reference (or the current
+//	                  formula) is on; a text argument names a sheet.
+//	SHEETS([ref])   — number of sheets in the workbook, or in a reference (1).
 
 func init() {
 	registerFunc("SHEET", fnSheet)
@@ -12,17 +12,34 @@ func init() {
 }
 
 func fnSheet(c *callCtx) value {
-	idx := c.ev.sheetIndex
-	if idx < 1 {
-		idx = 1
+	wb := c.ev.book()
+	if c.nargs() == 0 {
+		return numVal(float64(c.ev.cur + 1))
 	}
-	return numVal(float64(idx))
+	if r := c.refArg(0); r != nil {
+		return numVal(float64(r.sheet + 1))
+	}
+	v := c.scalar(0)
+	if v.isErr() {
+		return v
+	}
+	if v.kind == kindStr {
+		if i, ok := wb.sheetIndexByName(v.str); ok {
+			return numVal(float64(i + 1))
+		}
+	}
+	return errNA
 }
 
 func fnSheets(c *callCtx) value {
-	n := len(c.ev.sheetNames)
-	if n < 1 {
-		n = 1
+	if c.nargs() == 0 {
+		return numVal(float64(len(c.ev.book().sheets)))
 	}
-	return numVal(float64(n))
+	if c.refArg(0) != nil {
+		return numVal(1)
+	}
+	if v := c.scalar(0); v.isErr() {
+		return v
+	}
+	return errNA
 }

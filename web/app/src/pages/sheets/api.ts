@@ -1,4 +1,5 @@
 import type { Sheet, ListSheetsResponse } from "./types";
+import type { RecalcCell } from "./formulaRefs";
 import type { ObjectGrant } from "../../api/directory";
 
 const API_BASE = "/api/v1";
@@ -46,6 +47,18 @@ export async function saveSheet(id: string, data: string): Promise<void> {
     method: "PUT",
     body: JSON.stringify({ data }),
   });
+}
+
+/**
+ * recalcSheet asks the server formula engine to evaluate a workbook (nothing is
+ * stored) and returns every formula cell and spilled cell it computed.
+ */
+export async function recalcSheet(id: string, data: string): Promise<RecalcCell[]> {
+  const r = await jsonFetch<{ cells?: RecalcCell[] }>(`/sheets/d/${id}/recalc`, {
+    method: "POST",
+    body: JSON.stringify({ data }),
+  });
+  return r.cells ?? [];
 }
 
 /** collabURL returns the WebSocket URL for a sheet's live-ops channel. */

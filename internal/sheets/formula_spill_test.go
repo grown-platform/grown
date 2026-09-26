@@ -1,6 +1,9 @@
 package sheets
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // libFormula builds a formula cell datum.
 func libFormula(r, c int, f string) FsCellData {
@@ -110,4 +113,26 @@ func TestSpillTranspose(t *testing.T) {
 	wantCellNum(t, out, 2, 0, 7)
 	wantCellNum(t, out, 3, 0, 8)
 	wantCellNum(t, out, 4, 0, 9)
+}
+
+func TestSpillSurvivesResave(t *testing.T) {
+	// Spilled values are persisted with a marker, so recomputing the saved
+	// workbook again must not see them as user data (#SPILL!).
+	d := `[{"name":"Sheet1","celldata":[{"r":0,"c":0,"v":{"f":"=SEQUENCE(3)"}}]}]`
+	once := RecomputeWorkbook(d)
+	twice := RecomputeWorkbook(once)
+	if twice != once {
+		t.Fatalf("second recompute changed the workbook:\n%s\n%s", once, twice)
+	}
+	// Shrinking the array clears the cells it no longer covers.
+	shrunk := RecomputeWorkbook(strings.Replace(once, "SEQUENCE(3)", "SEQUENCE(2)", 1))
+	if strings.Contains(shrunk, `"v":3`) {
+		t.Fatalf("stale spill cell kept: %s", shrunk)
+	}
+	// A value typed over a spill cell is user data again: the anchor spills
+	// onto it → #SPILL!.
+	typed := strings.Replace(once, `"m":"3","v":3`, `"m":"x","v":"x"`, 1)
+	if out := RecomputeWorkbook(typed); !strings.Contains(out, "#SPILL!") {
+		t.Fatalf("typed-over spill cell should block the array: %s", out)
+	}
 }

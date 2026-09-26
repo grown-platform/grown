@@ -16,13 +16,15 @@ package sheets
 //	    "id":      "oo:cell/spreadsheet-calculation/formula-tests/logicalTests.js#AND",  // scoreboard tag + subtest name
 //	    "at":      "A2",               // default formula cell for every check (default A1)
 //	    "cells":   {"A1": 1, "B1": "=A1*2", "C1": {"error": "#N/A"}, "Sheet2!A1": true},
-//	    "names":   {"MyName": "Sheet1!$A$1"},   // defined names (not evaluated yet — M1)
+//	    "names":   {"MyName": "Sheet1!$A$1"},   // workbook-level defined names
+//	    "sheets":  ["Sheet5", "Sheet1", "Sheet2"], // sheet order (default: Sheet1, then as keys appear)
 //	    "pending": "reason",           // skip the whole case
 //	    "checks": [{
 //	      "set":      {"A1": 5, "B2": null},    // cell edits applied before this check (persist)
 //	      "formula":  "=SUM(A1:B1)",
 //	      "at":       "C3",            // formula cell (ROW()/COLUMN() context)
 //	      "sheet":    "Sheet2",        // sheet the formula lives on (default Sheet1)
+//	      "sheets":   ["Sheet1"],      // sheet order for this check only
 //	      "array":    true,            // entered as an array formula (Grown: ARRAYFORMULA)
 //	      "expect":   15,              // number | string | bool | {"error": "#N/A"}
 //	      "elements": [[0, 1, 2]],     // [row, col, value] of an array result
@@ -37,8 +39,12 @@ package sheets
 //
 // Cell values follow "typed input" semantics: numbers, booleans, text, a
 // string beginning with "=" is a formula, {"error": code} is an error value.
-// Keys with a sheet prefix ("Sheet2!A1") and "names" are carried for the
-// cross-sheet / defined-name milestone; the runner skips checks that need them.
+// Keys with a sheet prefix ("Sheet2!A1") live on that sheet. Checks that use
+// structured table references (Table1[Column1]) or the 1904 date system are
+// skipped: Grown has neither.
+//
+// Set PARITY_PENDING_REPORT=<file> to also evaluate pending checks and list
+// the ones that now pass (so their pending markers can be lifted).
 //
 // Set PARITY_REPORT=<file> to write every non-pending failure as JSON lines
 // instead of failing the test (used when triaging a freshly ported suite).
@@ -70,6 +76,7 @@ type parityCase struct {
 	At      string                     `json:"at"`
 	Cells   map[string]json.RawMessage `json:"cells"`
 	Names   map[string]string          `json:"names"`
+	Sheets  []string                   `json:"sheets"`
 	Pending string                     `json:"pending"`
 	Checks  []parityCheck              `json:"checks"`
 }
@@ -79,6 +86,7 @@ type parityCheck struct {
 	Formula  string                     `json:"formula"`
 	At       string                     `json:"at"`
 	Sheet    string                     `json:"sheet"`
+	Sheets   []string                   `json:"sheets"`
 	Array    bool                       `json:"array"`
 	Expect   json.RawMessage            `json:"expect"`
 	Elements [][3]json.RawMessage       `json:"elements"`
@@ -93,7 +101,6 @@ type parityCheck struct {
 var parityNow = time.Date(2026, 3, 15, 10, 30, 0, 0, time.UTC)
 
 var (
-	reSheetRef = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_."])('[^']+'|[A-Za-z_][A-Za-z0-9_]*(:[A-Za-z_][A-Za-z0-9_]*)?)![$A-Za-z0-9]`)
 	reTableRef = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*\[`)
 )
 
@@ -155,6 +162,9 @@ func runParityCase(t *testing.T, c parityCase, rep *parityReporter) {
 		chk := chk
 		t.Run(name, func(t *testing.T) {
 			if reason := parityStaticPending(c, chk); reason != "" {
+				if rep.pendingMode() && chk.Pending != "" {
+					rep.tryPending(c, chk, i+1, snapshot)
+				}
 				t.Skip(reason)
 			}
 			at := chk.At
@@ -165,7 +175,7 @@ func runParityCase(t *testing.T, c parityCase, rep *parityReporter) {
 				at = "A1"
 			}
 			ran++
-			got, err := parityEval(snapshot, chk.Formula, at, chk.Array)
+			got, err := parityEval(snapshot, c.Names, chkSheets(c, chk), chk.Formula, chk.Sheet, at, chk.Array)
 			if err != nil {
 				t.Fatalf("fixture error: %v", err)
 			}
@@ -188,37 +198,28 @@ func runParityCase(t *testing.T, c parityCase, rep *parityReporter) {
 	}
 }
 
+// chkSheets returns the workbook's sheet order for a check.
+func chkSheets(c parityCase, chk parityCheck) []string {
+	if len(chk.Sheets) > 0 {
+		return append([]string(nil), chk.Sheets...)
+	}
+	return append([]string(nil), c.Sheets...)
+}
+
 // parityStaticPending returns a skip reason for checks that need engine
 // features Grown does not have yet (tracked by later milestones).
 func parityStaticPending(c parityCase, chk parityCheck) string {
 	if chk.Pending != "" && !parityIncludePending() {
 		return chk.Pending
 	}
-	f := chk.Formula
 	switch {
-	case chk.Sheet != "" && !strings.EqualFold(chk.Sheet, "Sheet1"):
-		return "M1: formula evaluated on another sheet"
 	case chk.Date1904:
 		return "1904 date system not supported"
-	case reSheetRef.MatchString(stripStringLits(f)):
-		return "M1: cross-sheet references"
-	case reTableRef.MatchString(stripStringLits(f)):
-		return "M1: structured table references"
-	case hasWholeLineRef(stripStringLits(f)):
-		return "M1: whole-column/row references (A:A, 1:1)"
-	}
-	for n := range c.Names {
-		re := regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_.])` + regexp.QuoteMeta(n) + `($|[^A-Za-z0-9_.(])`)
-		if re.MatchString(stripStringLits(f)) {
-			return "M1: defined names"
-		}
+	case reTableRef.MatchString(stripStringLits(chk.Formula)):
+		return "structured table references: Grown has no table model"
 	}
 	return ""
 }
-
-var reWholeLine = regexp.MustCompile(`(^|[^A-Za-z0-9_.$])(\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?[0-9]+:\$?[0-9]+)($|[^A-Za-z0-9_(])`)
-
-func hasWholeLineRef(f string) bool { return reWholeLine.MatchString(f) }
 
 func stripStringLits(f string) string {
 	var sb strings.Builder
@@ -238,16 +239,39 @@ func stripStringLits(f string) string {
 	return sb.String()
 }
 
-// parityEval recomputes the sheet described by state and evaluates formula as
-// if it were entered at cell at.
-func parityEval(state map[string]json.RawMessage, formula, at string, array bool) (value, error) {
-	var data []FsCellData
-	seeds := map[cellAddr]value{}
-	for k, raw := range state {
-		if strings.Contains(k, "!") {
-			continue // other sheets: not visible to the single-sheet evaluator yet
+// parityEval builds the workbook described by state (keys "A1" live on
+// Sheet1, "Sheet2!A1" on Sheet2 …; sheets lists the workbook's sheets in order
+// and defaults to Sheet1 plus every sheet a key mentions), recomputes it, and
+// evaluates formula as if it were entered at cell at of sheet.
+func parityEval(state map[string]json.RawMessage, names map[string]string, sheets []string, formula, sheet, at string, array bool) (value, error) {
+	if len(sheets) == 0 {
+		sheets = []string{"Sheet1"}
+	}
+	sheetIdx := func(name string) int {
+		for i, n := range sheets {
+			if strings.EqualFold(n, name) {
+				return i
+			}
 		}
-		addr, ok := parseCellRef(k)
+		sheets = append(sheets, name)
+		return len(sheets) - 1
+	}
+	perSheet := map[int][]FsCellData{}
+	seeds := map[sheetCell]value{}
+	keys := make([]string, 0, len(state))
+	for k := range state {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		raw := state[k]
+		si, ref := 0, k
+		if i := strings.LastIndex(k, "!"); i >= 0 {
+			si, ref = sheetIdx(strings.Trim(k[:i], "'")), k[i+1:]
+		} else {
+			si = sheetIdx("Sheet1")
+		}
+		addr, ok := parseCellRef(ref)
 		if !ok {
 			return value{}, fmt.Errorf("bad cell key %q", k)
 		}
@@ -262,7 +286,7 @@ func parityEval(state map[string]json.RawMessage, formula, at string, array bool
 			if code == "" {
 				return value{}, fmt.Errorf("cell %s: unsupported object", k)
 			}
-			seeds[addr] = errVal(code)
+			seeds[sheetCell{sheet: si, addr: addr}] = errVal(code)
 			cell.V = code
 		case string:
 			if strings.HasPrefix(x, "=") {
@@ -277,31 +301,45 @@ func parityEval(state map[string]json.RawMessage, formula, at string, array bool
 		default:
 			return value{}, fmt.Errorf("cell %s: unsupported value %T", k, v)
 		}
-		data = append(data, FsCellData{R: addr.row, C: addr.col, V: cell})
+		perSheet[si] = append(perSheet[si], FsCellData{R: addr.row, C: addr.col, V: cell})
 	}
-	sort.Slice(data, func(i, j int) bool {
-		if data[i].R != data[j].R {
-			return data[i].R < data[j].R
-		}
-		return data[i].C < data[j].C
-	})
-	ev := &Evaluator{
-		grid:       newGrid(data),
-		results:    seeds,
-		now:        parityNow,
-		sheetIndex: 1,
+	if sheet == "" {
+		sheet = "Sheet1"
 	}
-	ev.recomputeAll(data)
+	formulaSheet := sheetIdx(sheet)
+	wb := make(FsWorkbook, len(sheets))
+	for i, n := range sheets {
+		data := perSheet[i]
+		sort.Slice(data, func(a, b int) bool {
+			if data[a].R != data[b].R {
+				return data[a].R < data[b].R
+			}
+			return data[a].C < data[b].C
+		})
+		wb[i] = FsSheet{Name: n, CellData: data}
+	}
+	ev := newWorkbookEvaluator(wb, parityNow)
+	for n, text := range names {
+		ev.wb.names[strings.ToUpper(n)] = definedName{text: strings.TrimPrefix(text, "="), sheet: sheetIdx("Sheet1")}
+	}
+	for n, v := range seeds {
+		ev.wb.sheets[n.sheet].results[n.addr] = v
+	}
+	ev.recalcAll()
 	a, ok := parseCellRef(strings.ToUpper(at))
 	if !ok {
 		return value{}, fmt.Errorf("bad at %q", at)
 	}
-	ev.curRow, ev.curCol = a.row, a.col
-	expr := strings.TrimPrefix(formula, "=")
-	if array {
-		expr = "ARRAYFORMULA(" + expr + ")"
-	}
-	return ev.evalExpr(expr), nil
+	var got value
+	ev.onSheet(formulaSheet, func() {
+		ev.curRow, ev.curCol = a.row, a.col
+		expr := strings.TrimPrefix(formula, "=")
+		if array {
+			expr = "ARRAYFORMULA(" + expr + ")"
+		}
+		got = ev.evalExpr(expr)
+	})
+	return got, nil
 }
 
 // parityElement reads element (r,c) of a result the way the OnlyOffice
@@ -370,6 +408,9 @@ func parityMatch(got value, wantRaw json.RawMessage, tol float64, complexText bo
 		}
 		return fmt.Sprintf("want %v, got %s", w, describeValue(got))
 	case string:
+		if w == "" && got.blank {
+			return "" // the suites read an empty cell as ""
+		}
 		if complexText && got.kind == kindStr && parityComplexEqual(got.str, w, tol) {
 			return ""
 		}
@@ -423,18 +464,48 @@ func describeValue(v value) string {
 type parityReporter struct {
 	mu sync.Mutex
 	f  *os.File
+	pf *os.File // PARITY_PENDING_REPORT: pending checks that now pass
+}
+
+func (r *parityReporter) pendingMode() bool { return r.pf != nil }
+
+// tryPending evaluates a pending check and records it when it now passes, so
+// stale pending markers can be lifted.
+func (r *parityReporter) tryPending(c parityCase, chk parityCheck, idx int, state map[string]json.RawMessage) {
+	at := chk.At
+	if at == "" {
+		at = c.At
+	}
+	if at == "" {
+		at = "A1"
+	}
+	got, err := parityEval(state, c.Names, chkSheets(c, chk), chk.Formula, chk.Sheet, at, chk.Array)
+	if err != nil || parityCompare(got, chk) != "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	b, _ := json.Marshal(map[string]interface{}{"id": c.ID, "check": idx, "formula": chk.Formula, "pending": chk.Pending})
+	r.pf.Write(append(b, '\n'))
 }
 
 func newParityReporter(t *testing.T) *parityReporter {
-	p := os.Getenv("PARITY_REPORT")
-	if p == "" {
-		return &parityReporter{}
+	r := &parityReporter{}
+	if p := os.Getenv("PARITY_REPORT"); p != "" {
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.f = f
 	}
-	f, err := os.Create(p)
-	if err != nil {
-		t.Fatal(err)
+	if p := os.Getenv("PARITY_PENDING_REPORT"); p != "" {
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.pf = f
 	}
-	return &parityReporter{f: f}
+	return r
 }
 
 func (r *parityReporter) enabled() bool { return r.f != nil }
@@ -464,5 +535,8 @@ func (r *parityReporter) add(id string, idx int, chk parityCheck, got value, msg
 func (r *parityReporter) close() {
 	if r.f != nil {
 		r.f.Close()
+	}
+	if r.pf != nil {
+		r.pf.Close()
 	}
 }

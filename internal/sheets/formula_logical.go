@@ -26,7 +26,7 @@ func init() {
 	registerFunc("FALSE", func(c *callCtx) value { return boolVal(false) })
 
 	// Information.
-	registerFunc("ISNUMBER", func(c *callCtx) value { return boolVal(c.scalar(0).kind == kindNum) })
+	registerFunc("ISNUMBER", func(c *callCtx) value { v := c.scalar(0); return boolVal(v.kind == kindNum && !v.blank) })
 	registerFunc("ISTEXT", func(c *callCtx) value { return boolVal(c.scalar(0).kind == kindStr) })
 	registerFunc("ISNONTEXT", func(c *callCtx) value { return boolVal(c.scalar(0).kind != kindStr) })
 	registerFunc("ISLOGICAL", func(c *callCtx) value { return boolVal(c.scalar(0).kind == kindBool) })
@@ -194,8 +194,7 @@ func lgIsOdd(c *callCtx) value {
 // scalar is an empty string (""), which is the one form of "blank" that
 // survives evaluation. True cell blankness cannot always be detected here.
 func lgIsBlank(c *callCtx) value {
-	v := c.scalar(0)
-	return boolVal(v.kind == kindStr && v.str == "")
+	return boolVal(c.scalar(0).blank)
 }
 
 // lgN implements N(value): a number returns itself (dates are already serial
