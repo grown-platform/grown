@@ -550,7 +550,14 @@ func recomputeCtx(data []FsCellData, sheetIndex int, names []string) []FsCellDat
 	ev := NewEvaluator(data)
 	ev.sheetIndex = sheetIndex
 	ev.sheetNames = names
+	return ev.recomputeAll(data)
+}
 
+// recomputeAll evaluates every formula cell of data on an evaluator already
+// built over that data (see recomputeCtx) and returns the updated celldata.
+// Results stay in ev.results, so callers (e.g. the parity fixture runner) can
+// evaluate further expressions against the recomputed sheet.
+func (ev *Evaluator) recomputeAll(data []FsCellData) []FsCellData {
 	// Build dependency graph.
 	formulaDeps := buildDeps(ev.grid)
 	order, circular := topoSort(formulaDeps)
@@ -739,7 +746,12 @@ const (
 	tokRBrace                 // } (array constant end)
 	tokSemi                   // ; (array constant row separator)
 	tokEOF
+	tokErr // error literal (#N/A, #DIV/0!, …)
 )
+
+// errorLiterals are the error values a formula may spell out directly
+// (e.g. =IFERROR(#N/A,1) or {1,#DIV/0!}); longest spellings first.
+var errorLiterals = []string{"#GETTING_DATA", "#DIV/0!", "#VALUE!", "#SPILL!", "#CALC!", "#NAME?", "#NULL!", "#REF!", "#NUM!", "#N/A"}
 
 type token struct {
 	kind tokKind
@@ -778,6 +790,21 @@ func tokenise(s string) []token {
 			}
 			i = j
 			continue
+		}
+		// Error literal.
+		if ch == '#' {
+			matched := false
+			for _, e := range errorLiterals {
+				if len(s)-i >= len(e) && strings.EqualFold(s[i:i+len(e)], e) {
+					tokens = append(tokens, token{kind: tokErr, val: e})
+					i += len(e)
+					matched = true
+					break
+				}
+			}
+			if matched {
+				continue
+			}
 		}
 		// Numeric literal.
 		if ch >= '0' && ch <= '9' || (ch == '.' && i+1 < len(s) && s[i+1] >= '0' && s[i+1] <= '9') {
@@ -1059,6 +1086,9 @@ func (p *parser) parsePrimaryBase() value {
 	case tokStr:
 		p.consume()
 		return strVal(t.val)
+	case tokErr:
+		p.consume()
+		return errVal(t.val)
 	case tokLParen:
 		p.consume()
 		v := p.parseExpr()
@@ -1413,7 +1443,9 @@ func serialToTime(serial float64) time.Time {
 func timeToSerial(t time.Time) float64 {
 	t = t.UTC()
 	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-	days := math.Round(day.Sub(excelEpoch).Hours() / 24)
+	// Unix seconds, not time.Sub: a Duration saturates after ~292 years, which
+	// would clamp every date past 2192 (Excel allows up to 9999-12-31).
+	days := float64((day.Unix() - excelEpoch.Unix()) / 86400)
 	frac := (float64(t.Hour())*3600 + float64(t.Minute())*60 + float64(t.Second())) / 86400.0
 	return days + frac
 }
