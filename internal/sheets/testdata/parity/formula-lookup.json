@@ -156,8 +156,8 @@
       "cells": {"A1":1,"B1":"q","C1":"r","F1":1,"G1":3,"A2":2,"B2":"w","C2":3,"B3":"e","C3":5,"A4":4,"B4":"test","A5":{"error":"#N/A"},"B5":"hhh","C5":6,"A6":"f","B6":"g","C6":"h","A100":1,"B100":3,"C100":5,"A101":2,"B101":4,"C101":6,"A201":1,"A206":1,"A207":2,"Sheet2!A1":1,"Sheet2!A2":2,"Sheet2!A3":1,"Sheet2!A11":1,"Sheet2!A16":1,"Sheet2!A17":2},
       "names": {"TestName":"Sheet1!$A$201","TestNameArea":"Sheet1!$A$206:$A$207","TestName3D":"Sheet2!$A$11","TestNameArea3D":"Sheet2!$A$16:$A$17"},
       "checks": [
-        {"formula":"=CHOOSECOLS(A1:C6;-1;1)","elements":[[0,0,"r"],[1,0,3],[2,0,5],[3,0,""],[4,0,6],[5,0,"h"],[0,1,1],[1,1,2],[2,1,""],[3,1,4],[4,1,{"error":"#N/A"}],[5,1,"f"]],"pending":"oo-diff/semicolon-args: ';' not accepted as argument separator"},
-        {"formula":"=CHOOSECOLS(A1:C6;-2;3)","elements":[[0,0,"q"],[1,0,"w"],[2,0,"e"],[3,0,"test"],[4,0,"hhh"],[5,0,"g"],[0,1,"r"],[1,1,3],[2,1,5],[3,1,""],[4,1,6],[5,1,"h"]],"pending":"oo-diff/semicolon-args: ';' not accepted as argument separator"},
+        {"formula":"=CHOOSECOLS(A1:C6;-1;1)","elements":[[0,0,"r"],[1,0,3],[2,0,5],[3,0,""],[4,0,6],[5,0,"h"],[0,1,1],[1,1,2],[2,1,""],[3,1,4],[4,1,{"error":"#N/A"}],[5,1,"f"]]},
+        {"formula":"=CHOOSECOLS(A1:C6;-2;3)","elements":[[0,0,"q"],[1,0,"w"],[2,0,"e"],[3,0,"test"],[4,0,"hhh"],[5,0,"g"],[0,1,"r"],[1,1,3],[2,1,5],[3,1,""],[4,1,6],[5,1,"h"]]},
         {"formula":"=CHOOSECOLS(1,1)","elements":[[0,0,1]]},
         {"formula":"=CHOOSECOLS(\"test\",1)","elements":[[0,0,"test"]]},
         {"formula":"=CHOOSECOLS(true,1.5)","elements":[[0,0,true]]},
@@ -198,8 +198,8 @@
       "cells": {"A1":1,"B1":"q","C1":"r","F1":1,"G1":3,"A2":2,"B2":"w","C2":3,"B3":"e","C3":5,"A4":4,"B4":"test","A5":{"error":"#N/A"},"B5":"hhh","C5":6,"A6":"f","B6":"g","C6":"h","A100":1,"B100":3,"C100":5,"A101":2,"B101":4,"C101":6,"A201":1,"A206":1,"A207":2,"Sheet2!A1":1,"Sheet2!A2":2,"Sheet2!A3":1,"Sheet2!A11":1,"Sheet2!A16":1,"Sheet2!A17":2},
       "names": {"TestName":"Sheet1!$A$201","TestNameArea":"Sheet1!$A$206:$A$207","TestName3D":"Sheet2!$A$11","TestNameArea3D":"Sheet2!$A$16:$A$17"},
       "checks": [
-        {"formula":"=CHOOSEROWS(A1:C6;-1;1)","elements":[[0,0,"f"],[1,0,1],[0,1,"g"],[1,1,"q"],[0,2,"h"],[1,2,"r"]],"pending":"oo-diff/semicolon-args: ';' not accepted as argument separator"},
-        {"formula":"=CHOOSEROWS(A1:C6;-2;3)","elements":[[0,0,{"error":"#N/A"}],[1,0,""],[0,1,"hhh"],[1,1,"e"],[0,2,6],[1,2,5]],"pending":"oo-diff/semicolon-args: ';' not accepted as argument separator"},
+        {"formula":"=CHOOSEROWS(A1:C6;-1;1)","elements":[[0,0,"f"],[1,0,1],[0,1,"g"],[1,1,"q"],[0,2,"h"],[1,2,"r"]]},
+        {"formula":"=CHOOSEROWS(A1:C6;-2;3)","elements":[[0,0,{"error":"#N/A"}],[1,0,""],[0,1,"hhh"],[1,1,"e"],[0,2,6],[1,2,5]]},
         {"formula":"=CHOOSEROWS(1,1)","elements":[[0,0,1]]},
         {"formula":"=CHOOSEROWS(\"test\",1)","elements":[[0,0,"test"]]},
         {"formula":"=CHOOSEROWS(true,1.5)","elements":[[0,0,true]]},

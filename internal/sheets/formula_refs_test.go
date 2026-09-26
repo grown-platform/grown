@@ -225,3 +225,9 @@ func TestQuoteSheetName(t *testing.T) {
 		}
 	}
 }
+
+func TestSemicolonArgumentSeparator(t *testing.T) {
+	mustNum(t, eval(t, "SUM(1;2;3)"), 6)
+	mustNum(t, eval(t, "SUM({1;2};3)"), 6) // ';' inside {…} still separates rows
+	mustNum(t, eval(t, "ROWS({1;2;3})"), 3)
+}

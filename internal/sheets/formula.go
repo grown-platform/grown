@@ -1238,16 +1238,20 @@ func (p *parser) parseArgList() []interface{} {
 	if p.peek().kind == tokRParen || p.peek().kind == tokEOF {
 		return args
 	}
+	// ';' separates arguments too (the list separator of comma-decimal
+	// locales, which OnlyOffice also accepts); inside {…} it still separates
+	// array rows, handled by parseArrayConstant.
+	isSep := func(k tokKind) bool { return k == tokComma || k == tokSemi }
 	for {
-		if k := p.peek().kind; k == tokComma || k == tokRParen || k == tokEOF {
+		if k := p.peek().kind; isSep(k) || k == tokRParen || k == tokEOF {
 			args = append(args, emptyArg)
 		} else {
 			args = append(args, p.parseArg())
 		}
-		if p.peek().kind != tokComma {
+		if !isSep(p.peek().kind) {
 			break
 		}
-		p.consume() // ','
+		p.consume() // ',' or ';'
 	}
 	return args
 }
