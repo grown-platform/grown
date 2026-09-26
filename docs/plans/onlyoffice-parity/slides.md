@@ -110,6 +110,7 @@ Companion file: `slides-tests.csv` (one row per OnlyOffice test suite/file).
   lineSpacing, hyperlinks, element animations, transitions, `roundRect` radius
   adjust. (pptxgenjs supports most of these natively — see M1.)
 - No import of any format. No ODP.
+- *Update (Wave 2, M1):* pptx export and import landed. See §6.5.
 
 ### 1.5 Backend — `internal/slides/`
 
@@ -431,12 +432,12 @@ OnlyOffice: conversion is server-side C++ (`core/X2tConverter`, `core/OOXML`,
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| Export pptx | Partial (see §1.4 gaps) | `export.ts` |
+| Export pptx | Have (M1). Animations are not exported | `pptx/write.ts` |
 | Export pdf | Partial (browser print dialog) | `export.ts` |
 | Export txt / html / jpg / png / svg | Have | `export.ts` |
 | Export odp | Missing | comment in `export.ts` |
-| Import pptx / Import slides | Missing | File → "Import slides" disabled |
-| Open from Drive (`/slides/:id`) | Missing | `App.tsx:525` placeholder |
+| Import pptx / Import slides | Have (M1). All slides are appended; there is no slide picker | `pptx/read.ts`, File ▸ Import slides, Slides home ▸ Upload .pptx |
+| Open from Drive (`/slides/:id`) | Partial (M1). "Open in Slides" makes an editable copy of a .pptx | `EditorPlaceholder.tsx` |
 
 ### 2.18 Print
 
@@ -977,3 +978,91 @@ Each is an `it.skip` with the tag and the reason in a comment:
 Undo/redo note: `#Check undo/redo` passes at the reducer layer, but Ctrl+Z
 and Ctrl+Y are not bound on the canvas. Undo and Redo are only in the Edit
 menu, and inside a text box the browser's native contentEditable undo applies.
+
+### 6.5 M1 status (Wave 2): pptx fidelity and import
+
+**Export** (`pptx/write.ts`; `export.ts` delegates to it). pptxgenjs now also
+writes tables (`a:tbl` with a grid, borders, cell fill and font), rotation,
+flipH/flipV, strike, bullet and numbered paragraphs, line spacing, text-run
+and shape/image hyperlinks, the `roundRect` corner adjust (18 %, matching
+the renderer) and fill alpha. Transitions are patched into the zip with
+jszip (`insertTransition`, placed after `p:clrMapOvr`): fade → `p:fade`, and
+slide-left/right/up → `p:push dir="l|r|u"`.
+
+**Import** (`pptx/read.ts`, jszip + DOMParser, written from ECMA-376):
+
+- Slides are read in `sldIdLst` order, then scaled uniformly to the
+  960×540 canvas. 4:3 decks are pillar-boxed, with a warning.
+- Text boxes and placeholders are read. Geometry is inherited from the
+  layout, then the master, matched by idx and then by type. Run and
+  paragraph properties (size, font, bold/italic/underline/strike, colour,
+  alignment, anchor, line spacing, bullets/numbering, `normAutofit`
+  fontScale) resolve through shape `lstStyle` → layout ph → master ph →
+  `p:style/fontRef` → master `txStyles` → `defaultTextStyle`. Theme fonts
+  (`+mj-lt`/`+mn-lt`) are resolved too.
+- Preset shapes map to the closest Grown shape (`mapPreset`); unknown
+  presets are drawn as a rect, with a warning. Lines, connectors
+  (`cxnSp`) and single-segment freeforms become rotated Grown lines. Group
+  shapes are flattened through `chOff`/`chExt`.
+- Pictures become data: URLs. EMF/WMF/TIFF are skipped, with a warning.
+- Tables keep the grid, cell text, first-cell fill, border and font. Charts
+  and SmartArt are skipped, with a warning.
+- Speaker notes, and backgrounds from the slide, then the layout, then the
+  master, are read. A picture background becomes a full-slide image at the
+  bottom of the element list.
+- Master and layout decorations are included, honouring `showMasterSp`.
+- Transitions are read from `mc:Fallback`. push/cover/pull/wipe with a
+  direction map to slide-*, and anything else maps to fade.
+- Colours are `srgb`/`scheme`/`sys`/`hsl`/`scrgb`/`prst` plus transforms. They
+  go through `lib/colorMods` `resolveColor`, with the master `clrMap` and
+  `clrMapOvr` applied. Fill/line fall back to the shape's `fillRef`/`lnRef`.
+- Hyperlinks keep only absolute web and mail targets (`lib/urlType`).
+  Relative file links, script schemes and slide jumps are dropped.
+
+**UI.** File ▸ Import slides (.pptx) appends all slides to the open deck and
+reports warnings in a snackbar. The Slides home page gets "Upload .pptx",
+which creates a new deck. A .pptx opened from Drive (`/slides/:id`) gets
+"Open in Slides", which makes an editable copy.
+
+**Tests.**
+
+- `pptx/write.test.ts` (17) checks the emitted XML for each feature.
+- `pptx/read.test.ts` (24) reads hand-authored XML packages.
+- `pptx/roundtrip.test.ts` (10) runs deck → pptxgenjs → reader with deep
+  equality on the normalised model. The fixture is generated in the test.
+  Cases are a full deck with every element type, the defaults of every
+  insertable type, all 5 templates, a double round trip, and sub-px
+  geometry.
+- `pptx/importDeck.test.ts` (3).
+- `pptx/corpus.test.ts` (8) is local only. It reads OnlyOffice's 8 sample
+  .pptx files through read → write → read, and tags them
+  `oo:core/OdfFile/Test/{test_odf,Test}/ExampleFiles#…`. It is skipped
+  unless `GROWN_CONVERSION_CORPUS` is set or the default probe exists. The
+  M1 CSV rows (`color-mods`, `api.js`) were already ported in CC1.
+- e2e `web/e2e/slides-pptx.spec.ts` downloads a deck as .pptx via the UI,
+  uploads it as a new deck, checks the thumbnails, notes, transition and
+  table, then appends it with File ▸ Import slides.
+
+**Known gaps.** These don't round-trip or import yet:
+
+- Element animations (`p:timing`) are neither written nor read, so
+  M8 is needed.
+- Per-run formatting is lost: Grown styles a whole text box from its first
+  run, so mixed runs collapse (M4).
+- Underline on a hyperlinked run is dropped on import, because it can't be
+  told apart from the hyperlink style.
+- Table merges and per-cell styles are not kept; table styles
+  (`tableStyleId`) are ignored.
+- Gradients import as their first stop, and pattern fills as their
+  foreground colour.
+- Image crop (`srcRect`) is ignored.
+- Group rotation is ignored.
+- Custom geometry other than a straight segment is drawn as a rect or
+  dropped.
+- Hidden slides are imported as visible.
+- Slide size is not stored in `DeckDoc`, so non-16:9 decks are letterboxed.
+- An empty image placeholder (no `src`) is not exported.
+- Imports with large images can exceed the 8 MiB collab WebSocket frame
+  limit on the broadcast after File ▸ Import slides. Autosave still
+  persists the deck.
+
