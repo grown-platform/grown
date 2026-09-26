@@ -9,7 +9,10 @@
 #   deploy/local/stack.sh status | logs | down | nuke
 #
 # TREE defaults to this checkout, so any git worktree can be deployed onto the
-# one shared stack. State lives in $GROWN_LOCAL_DATA (default ~/.grown-local)
+# one shared stack. GROWN_PORT=8090 runs an extra backend (own pid/log/build)
+# beside the main :8080 one against the same databases, e.g. to verify a merge
+# while someone else has a branch deployed. Log in via :8080 first: sessions
+# live in Postgres and the cookie is shared across ports. State lives in $GROWN_LOCAL_DATA (default ~/.grown-local)
 # so it survives across worktrees; `nuke` deletes it.
 set -euo pipefail
 
@@ -17,7 +20,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export GROWN_LOCAL_DATA="${GROWN_LOCAL_DATA:-$HOME/.grown-local}"
 DATA="$GROWN_LOCAL_DATA"
 COMPOSE=(docker compose -f "$HERE/compose.yaml")
-URL="http://workspace.localtest.me:8080"
+PORT="${GROWN_PORT:-8080}"
+GRPC_PORT=$((PORT + 920))                  # 8080 -> 9000, matching process-compose
+SUF=""; [ "$PORT" = 8080 ] || SUF="-$PORT" # per-port pid/log/binary
+URL="http://workspace.localtest.me:8080"   # OIDC callback host (always :8080)
 
 log() { printf '\033[1;32m[stack]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[stack]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -67,17 +73,17 @@ build_web() {
 }
 
 stop_backend() {
-  if [ -s "$DATA/backend.pid" ] && kill -0 "$(cat "$DATA/backend.pid")" 2>/dev/null; then
-    kill "$(cat "$DATA/backend.pid")"
-    for _ in $(seq 1 20); do kill -0 "$(cat "$DATA/backend.pid")" 2>/dev/null || break; sleep 0.5; done
+  if [ -s "$DATA/backend$SUF.pid" ] && kill -0 "$(cat "$DATA/backend$SUF.pid")" 2>/dev/null; then
+    kill "$(cat "$DATA/backend$SUF.pid")"
+    for _ in $(seq 1 20); do kill -0 "$(cat "$DATA/backend$SUF.pid")" 2>/dev/null || break; sleep 0.5; done
   fi
-  rm -f "$DATA/backend.pid"
+  rm -f "$DATA/backend$SUF.pid"
 }
 
 start_backend() {
   local t="$1"
   log "building backend from $t"
-  (cd "$t" && go build -o "$DATA/bin/grown" ./cmd/server) || die "go build failed"
+  (cd "$t" && go build -o "$DATA/bin/grown$SUF" ./cmd/server) || die "go build failed"
   stop_backend
   local creds="$DATA/root/deploy/zitadel/data/oidc-client.env"
   (
@@ -92,14 +98,14 @@ start_backend() {
     export GROWN_RUSTFS_SECRET_KEY='DevPassword!1' GROWN_RUSTFS_BUCKET=grown-default
     export GROWN_ZITADEL_API_URL=http://localhost:8081
     cd "$t"
-    nohup "$DATA/bin/grown" --http-addr=:8080 --grpc-addr=:9000 \
-      --static-dir="$t/web/app/dist" >"$DATA/backend.log" 2>&1 &
-    echo $! >"$DATA/backend.pid"
+    nohup "$DATA/bin/grown$SUF" --http-addr=":$PORT" --grpc-addr=":$GRPC_PORT" \
+      --static-dir="$t/web/app/dist" >"$DATA/backend$SUF.log" 2>&1 &
+    echo $! >"$DATA/backend$SUF.pid"
   )
-  wait_http "http://127.0.0.1:8080/healthz" backend 30 ||
-    { tail -30 "$DATA/backend.log"; exit 1; }
-  echo "$t" >"$DATA/deployed-tree"
-  log "backend up: $URL  (tree: $t @ $(git -C "$t" rev-parse --short HEAD))"
+  wait_http "http://127.0.0.1:$PORT/healthz" backend 30 ||
+    { tail -30 "$DATA/backend$SUF.log"; exit 1; }
+  echo "$t" >"$DATA/deployed-tree$SUF"
+  log "backend up: http://workspace.localtest.me:$PORT  (tree: $t @ $(git -C "$t" rev-parse --short HEAD))"
 }
 
 cmd="${1:-status}"; shift || true
@@ -109,10 +115,10 @@ case "$cmd" in
   backend) t="$(tree_root "${1:-}")"; start_backend "$t" ;;
   status)
     "${COMPOSE[@]}" ps --format '{{.Service}}: {{.State}}'
-    if curl -sf -o /dev/null http://127.0.0.1:8080/healthz; then
-      echo "backend: up ($(cat "$DATA/deployed-tree" 2>/dev/null))"
+    if curl -sf -o /dev/null "http://127.0.0.1:$PORT/healthz"; then
+      echo "backend: up ($(cat "$DATA/deployed-tree$SUF" 2>/dev/null))"
     else echo "backend: down"; fi ;;
-  logs)    tail -n "${1:-100}" -f "$DATA/backend.log" ;;
+  logs)    tail -n "${1:-100}" -f "$DATA/backend$SUF.log" ;;
   down)    stop_backend; "${COMPOSE[@]}" down ;;
   nuke)    stop_backend; "${COMPOSE[@]}" down -v; rm -rf "$DATA" ;;
   *)       die "unknown command: $cmd (up|deploy|backend|status|logs|down|nuke)" ;;
