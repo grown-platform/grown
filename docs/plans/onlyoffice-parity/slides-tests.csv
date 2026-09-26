@@ -15,9 +15,9 @@ sdkjs-tests-v9.3.1/tests/slide/common/editor.js,0,harness mock of editor API,N/A
 sdkjs-tests-v9.3.1/tests/slide/common/measurer.js,0,harness mock of text measurer,N/A,-,-
 sdkjs-tests-v9.3.1/tests/slide/common/presentation.js,0,harness mock of presentation object,N/A,-,-
 sdkjs-tests-v9.3.1/tests/slide/common/thumbnails.js,0,harness mock of thumbnail rail,N/A,-,-
-sdkjs-tests-v9.3.1/tests/common/color-mods/color-mods.js,28,ECMA-376 colour transforms (satMod/satOff/lumMod/lumOff/hueMod/hueOff/tint/shade/gamma/invGamma/comp/inv/gray/red/green/blue +Mod/+Off/alpha/alphaMod/alphaOff; ~9937 data rows),High,web/app/src/pages/slides/colorMods.test.ts,M1
+sdkjs-tests-v9.3.1/tests/common/color-mods/color-mods.js,28,ECMA-376 colour transforms (satMod/satOff/lumMod/lumOff/hueMod/hueOff/tint/shade/gamma/invGamma/comp/inv/gray/red/green/blue +Mod/+Off/alpha/alphaMod/alphaOff; ~9937 data rows),High,web/app/src/lib/colorMods.test.ts,M1
 sdkjs-tests-v9.3.1/tests/common/color-mods/color-mods.html,0,QUnit harness page,N/A,-,-
-sdkjs-tests-v9.3.1/tests/common/api/api.js,2,URL classification for hyperlinks (Http / Unsafe / Invalid; browser vs desktop),High,web/app/src/pages/slides/links.test.ts,M1 M4
+sdkjs-tests-v9.3.1/tests/common/api/api.js,2,URL classification for hyperlinks (Http / Unsafe / Invalid; browser vs desktop),High,web/app/src/lib/urlType.test.ts,M1 M4
 sdkjs-tests-v9.3.1/tests/common/api/api.html,0,QUnit harness page,N/A,-,-
 sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize.js,3,chartEx (waterfall/funnel/treemap/sunburst/box) XML serialize/parse round-trip (3 more generators commented out upstream),Low,web/app/src/pages/slides/pptx/chartXml.test.ts (pass-through preservation),M11
 sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize-files.js,0,fixture: one chartEx XML + base64 zip,Low (author own fixtures; never copy),web/app/src/pages/slides/pptx/__fixtures__/,M11

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Sheet, List, ListItemButton, ListDivider, Typography } from "@mui/joy";
 import type { Editor } from "@tiptap/react";
+import { resolveLinkInput } from "../../lib/urlType";
 import { copySelection, cutSelection, paste } from "./editorActions";
 
 interface MenuPos {
@@ -151,7 +152,7 @@ export function EditorContextMenu({
         <ListItemButton
           onClick={run(() => {
             const prev = (editor.getAttributes("link").href as string) || "";
-            const url = window.prompt("Link URL", prev);
+            const url = resolveLinkInput(window.prompt("Link URL", prev));
             if (url === null) return;
             if (url === "") editor.chain().focus().unsetLink().run();
             else editor.chain().focus().setLink({ href: url }).run();

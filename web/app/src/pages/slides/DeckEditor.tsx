@@ -85,6 +85,7 @@ import { SlideView, ELEMENT_ANIM_CSS } from "./SlideView";
 import { SlideCanvas } from "./SlideCanvas";
 import { SlideMenuBar, type SlideActions } from "./SlideMenuBar";
 import { downloadDeck } from "./export";
+import { resolveLinkInput } from "../../lib/urlType";
 import { ShareDialog } from "./ShareDialog";
 import {
   addNextSlide,
@@ -460,7 +461,7 @@ export function DeckEditor({ user }: { user: User }) {
   }
   function setLink() {
     if (!selected) return;
-    const url = window.prompt("Link URL (blank to remove)", selected.url || "");
+    const url = resolveLinkInput(window.prompt("Link URL (blank to remove)", selected.url || ""));
     if (url === null) return;
     upsertElement(setLinkOp(selected, url));
   }

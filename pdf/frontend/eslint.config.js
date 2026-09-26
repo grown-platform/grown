@@ -23,6 +23,7 @@ export default tseslint.config(
         "warn",
         { allowConstantExport: true },
       ],
+      "eol-last": "error",
     },
   },
   {
@@ -32,5 +33,6 @@ export default tseslint.config(
       ecmaVersion: 2020,
       globals: { ...globals.node },
     },
+    rules: { "eol-last": "error" },
   },
 );
