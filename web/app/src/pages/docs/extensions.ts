@@ -24,6 +24,7 @@ import { InsertionMark, DeletionMark, Suggesting } from "./suggesting";
 import { Drawing } from "./drawing";
 import { ParagraphSpacing, ParagraphIndent, ParagraphShading } from "./paragraphFormat";
 import { DocShortcuts, TabCharacter } from "./shortcuts";
+import { Search } from "./search";
 import type * as Y from "yjs";
 import type { WebsocketProvider } from "y-websocket";
 
@@ -582,6 +583,7 @@ export function buildExtensions(opts: BuildOpts) {
     DeletionMark,
     Drawing,
     Suggesting.configure({ user: { name: userName, color: userColor } }),
+    Search,
     DocShortcuts,
     TabCharacter,
     ...collabExts,
