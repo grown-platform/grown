@@ -60,12 +60,13 @@ func finIpmt(rate, per, nper, pv, fv float64, t int) float64 {
 	// Balance at beginning of the period (period per, 1-based).
 	var ip float64
 	if t != 0 {
-		// beginning-of-period: no interest accrues in the first period.
+		// beginning-of-period: no interest accrues in the first period; later
+		// the interest is on the balance left after the previous period's
+		// (beginning-of-period) payment.
 		if per == 1 {
 			return 0
 		}
-		ip = finFvBalance(rate, per-2, pmt, pv) * rate
-		ip = ip / (1 + rate)
+		ip = (finFv(rate, per-2, pmt, pv, 1) - pmt) * rate
 	} else {
 		ip = finFvBalance(rate, per-1, pmt, pv) * rate
 	}
@@ -531,7 +532,7 @@ func init() {
 		if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
 			return errValue
 		}
-		if rate <= 0 || nper <= 0 || pv <= 0 || start < 1 || end < start || end > nper {
+		if rate <= 0 || nper <= 0 || pv <= 0 || start < 1 || end < start || end > nper || (tf != 0 && tf != 1) {
 			return errNum
 		}
 		t := int(tf)
@@ -552,7 +553,7 @@ func init() {
 		if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
 			return errValue
 		}
-		if rate <= 0 || nper <= 0 || pv <= 0 || start < 1 || end < start || end > nper {
+		if rate <= 0 || nper <= 0 || pv <= 0 || start < 1 || end < start || end > nper || (tf != 0 && tf != 1) {
 			return errNum
 		}
 		t := int(tf)
@@ -607,6 +608,7 @@ func init() {
 			return errValue
 		}
 		month, _ := c.numOr(4, 12)
+		month = math.Trunc(month)
 		if cost < 0 || salvage < 0 || life <= 0 || period < 1 || month < 1 || month > 12 {
 			return errNum
 		}
@@ -652,19 +654,14 @@ func init() {
 		if cost < 0 || salvage < 0 || life <= 0 || period < 1 || period > life || factor <= 0 {
 			return errNum
 		}
-		rate := factor / life
-		total := 0.0
-		var dep float64
-		for p := 1; p <= int(period); p++ {
-			dep = (cost - total) * rate
-			// Never depreciate below salvage.
-			if cost-total-dep < salvage {
-				dep = cost - total - salvage
-			}
-			if dep < 0 {
-				dep = 0
-			}
-			total += dep
+		// Closed form, which also serves fractional periods: the book value
+		// before the period is cost·(1−rate)^(period−1); the period takes rate
+		// of it, but never goes below salvage.
+		rate := math.Min(factor/life, 1)
+		prior := cost * math.Pow(1-rate, period-1)
+		dep := prior * rate
+		if prior-dep < salvage {
+			dep = math.Max(prior-salvage, 0)
 		}
 		return numVal(dep)
 	})

@@ -83,9 +83,8 @@ func engPad(s string, places int, present bool) value {
 // octal and hexadecimal formats. maxDigits is the maximum number of digits Excel
 // accepts (10 for bin/oct/hex). The sign bit lives at value base^maxDigits / 2.
 func engParseSigned(text string, base int, maxDigits int) (int64, bool) {
-	text = strings.TrimSpace(text)
 	if text == "" {
-		return 0, false
+		return 0, true // empty text converts to 0
 	}
 	if len(text) > maxDigits {
 		return 0, false
@@ -266,10 +265,7 @@ func engBitShift(c *callCtx, left bool) value {
 	if !ok {
 		return ev
 	}
-	if shiftF != math.Trunc(shiftF) {
-		return errNum
-	}
-	shift := int(shiftF)
+	shift := int(math.Trunc(shiftF)) // a fractional shift is truncated
 	if !left {
 		shift = -shift
 	}
