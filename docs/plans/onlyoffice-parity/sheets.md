@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Sheets
 
-Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7.
+Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9.
 Companion: `sheets-tests.csv` (one row per OnlyOffice test file).
 Inventory baseline: **`origin/main` @ `c90064e`**. (The worktree used for reading was `96ca7c0`,
 55 commits behind; for Sheets the only difference is `internal/sheets/formula_more{,2,3}.go`
@@ -37,7 +37,7 @@ justification, not planned.
 | Conditional formatting | Dialog over fortune-sheet's `luckysheet_conditionformat_save`: single-colour "default" rules (greaterThan/lessThan/between/equal…), `colorGradation` (colour scale), `dataBar`. Plus Grown icon sets (arrows/traffic/signs) as a display overlay on `m`. | `ConditionalFormatDialog.tsx`, `iconSets.ts` |
 | Data validation | Dialog over fortune-sheet `dataVerification`: dropdown, checkbox, number_decimal, text_length, text_content, date; operators (between, equal, …); prohibit input / hint. | `DataValidationDialog.tsx` |
 | Data menu ops | Sort range / sort sheet (single key, header heuristic), randomize, toggle filter (fortune-sheet `filter_select`), split text to columns (delimiter autodetect), find & replace (case / whole-cell / regex, scope all/sheet/range). | `dataActions.ts`, `sheetOps.ts`, `FindReplaceDialog.tsx` |
-| Named ranges | CRUD dialog storing `_namedRanges` on `sheet[0]`. **Not resolved by either formula engine** — names are bookkeeping only. | `NamedRangesDialog.tsx` |
+| Named ranges | CRUD dialog storing `_namedRanges` on `sheet[0]`. Resolved by the Go engine since M1 (§9); fortune-sheet's client engine still does not know them. | `NamedRangesDialog.tsx` |
 | Templates | Blank, Monthly budget, To-do, Weekly schedule, Expense tracker. | `templates.ts`, `SheetList.tsx` |
 
 ### 1.2 The Go formula engine (`internal/sheets/formula*.go`, ≈16,560 lines incl. tests on origin/main)
@@ -52,7 +52,7 @@ Capabilities verified by reading the source:
 * Added on origin/main since the worktree commit (`formula_more*.go`, 49): NORM family (8), CONFIDENCE(.NORM), FREQUENCY, GAUSS, PHI, KURT, SKEW(.P), MODE.MULT, PERCENTRANK.EXC/INC, QUARTILE.EXC, ERF/ERFC(.PRECISE), MMULT/MINVERSE/MDETERM/MUNIT, SERIESSUM, SUMX2MY2/SUMX2PY2/SUMXMY2, NETWORKDAYS.INTL/WORKDAY.INTL, ACCRINT, DISC, DOLLARDE/FR, DURATION/MDURATION, INTRATE, ISPMT, RECEIVED, TBILLEQ/PRICE/YIELD, GROUPBY, PIVOTBY, VALUETOTEXT.
 * Workbook context: `SHEET()`/`SHEETS()` via `recomputeCtx(sheetIndex, names)`.
 
-Limitations (these drive milestone M1/M5):
+Limitations (these drove milestone M1/M5; M1 has since removed the reference-syntax ones, see §9):
 
 * **Single-sheet scope**: no `Sheet2!A1` cross-sheet references (`tokenise` has no `!` handling; `parseCellRef` regex is `^\$?[A-Z]+\$?\d+$`). Formulas referring to another tab evaluate to `#NAME?`.
 * **No defined names in the evaluator** (`_namedRanges` is UI-only).
@@ -671,3 +671,94 @@ truncation, DDB fractional periods, and a panic on `DEC2BIN(1,1E+10)`.
 | `overflow` | 40 | results beyond Excel's range not `#NUM!` |
 | `textsplit-array-delims`, `regex-args`, `roman-forms`, `convert-units` | 132 | TEXTBEFORE/AFTER/SPLIT array delimiters, Excel-365 REGEX* arguments, ROMAN forms 1–4, CONVERT unit table |
 | others | ~200 | error-args in functions not yet guarded, booleans, blank cells, `#NULL!`, OnlyOffice-specific quirks (e.g. `UPPER(TRUE)` stays boolean, IMSUM always answers with `i`) |
+
+## 9. M1 results (Wave 1, 2026-09-26)
+
+M1 is done. The engine evaluates against the whole workbook, every M1 skip
+in the parity runner is gone (only structured table references and the 1904
+date system are still skipped: Grown has neither), and the editor applies
+server-computed values.
+
+### 9.1 What landed
+
+| Piece | Where |
+|---|---|
+| Workbook view: every sheet's grid, results and spill state, plus defined names. Values read from a reference carry a `refInfo` (sheet + areas). | `formula_refs.go` |
+| Tokenizer: `Sheet2!`, `'Quoted name'!` (with `''` escapes), Unicode sheet names, `_` in names, whitespace kept for intersection, `@` | `formula.go` (`tokenise`) |
+| Parser: whole-column/row refs (`A:A`, `1:3`, `$A:$B`), `:` on any reference (`C2:C3:C2`, `(A1:A3):F1`, `A1:INDEX(...)`), union `(A1:B2,D4)`, intersection (space) with `#NULL!`, implicit intersection `@`, defined names (`_namedRanges`), `#REF!` for missing sheets and refs past XFD1048576, `;` as an argument separator, `#NAME?` for an unclosed call | `formula.go`, `formula_refs.go` |
+| Recalculation: a workbook-wide topological sort over (sheet, cell). Cells reached only at run time (INDIRECT, OFFSET) are computed on demand, with a re-entry guard (`#CIRC!`). | `formula_deps.go`, `formula_refs.go` (`ensureFormula`) |
+| Reference functions: ISREF, ISFORMULA, FORMULATEXT, CELL, OFFSET, AREAS, HYPERLINK, SINGLE. ROW, COLUMN, ROWS, COLUMNS, SHEET and SHEETS read the reference. INDEX, CHOOSE and IF return references. INDIRECT takes ranges, names, sheets and R1C1. ADDRESS gains R1C1 and `sheet_text`. | `formula_reffuncs.go`, `formula_lookup.go`, `formula_sheetmeta.go` |
+| Empty cells are marked (`ISBLANK`, `ISNUMBER`, `""` in text). Operators broadcast over arrays in every formula (Excel 365). Arrays of different sizes pair with `#N/A`. | `formula.go`, `formula_arrayformula.go` |
+| Spilled values persist with a `grownSpill` marker, so re-saving no longer turns the anchor into `#SPILL!` (a pre-existing bug) | `formula_refs.go` |
+| Precedent/dependent tracing (one level per call; removing takes the outermost level) over the dependency graph. This is the engine side of a future trace UI. | `formula_trace.go` |
+| `POST /api/v1/sheets/d/{id}/recalc` returns the computed formula and spill cells without saving (a plain handler, no proto change) | `recalc.go`, `internal/server/sheets_recalc.go` |
+| Editor: after each autosave it applies the `/recalc` values that differ from fortune-sheet's. Renaming a tab rewrites `Sheet!` references in formulas and `_namedRanges`. | `SheetEditor.tsx`, `formulaRefs.ts` |
+| Editor fixes found on the way: the autosave never fired while the editor was open (onChange was re-invoked on every presence tick and reset the debounce), and it saved each sheet's dense `data` matrix instead of `celldata`, so the server engine never saw edited cells | `SheetEditor.tsx`, `workbookJson.ts` |
+
+Fixture schema additions: case-level and check-level `"sheets"` (the sheet
+order). `PARITY_PENDING_REPORT=<file>` lists pending checks that now pass.
+
+### 9.2 Ports
+
+| OnlyOffice file | Tags | Where |
+|---|---|---|
+| `formula-tests/FormulaTests.js` | 26 of 27 portable (Iterative calculation is all pending; API Calculation option is pending) | `testdata/parity/formula-semantics.json`, `formula_trace_test.go` (GetAllFormulas), `__parity__/formulaRefs.parity.test.ts` (rename sheet #1) |
+| `formula-tests/informationTests.js` | +3: CELL, ISFORMULA, ISREF (17 / 17) | `formula-information.json` |
+| `formula-tests/lookupAndReferenceTests.js` | +4: AREAS, FORMULATEXT, HYPERLINK, OFFSET (34 / 34) | `formula-lookup.json` |
+| `FormulaTrace.js` | 6: DefName, Areas, Deletes, Merged cells, Mixed, Recursive formulas | `formula_trace_test.go` |
+| `DependencyGraph.js` | 4: the `_broadcast*` cases | `formula_trace_test.go` |
+
+The FormulaTests literal cases were extracted the same way as in Wave 0. The
+structural ones (Cross, Parse intersection, Range union, Defined names
+cycle, 3d_ref, long strings) were written from the suite's observed
+behaviour. The OFFSET fixture keeps the whole sheet state, because the
+extractor had kept only statically referenced cells. The custom-function and
+async tests stay n/a.
+
+Playwright: `web/e2e/sheets-refs.spec.ts` checks cross-sheet refs, quoted
+names, defined names and `/recalc` through the API, and a tab rename in the
+grid that rewrites formulas and the named range, persisted and recomputed.
+
+### 9.3 Counts
+
+Checks per suite after M1. Pending checks are marked `oo-diff`; skipped
+checks use table references or 1904 dates.
+
+| OnlyOffice file | Checks | Passing | Pending | Skipped |
+|---|---|---|---|---|
+| `FormulaTests.js` | 242 | 224 | 18 | 0 |
+| `informationTests.js` | 969 | 870 | 54 | 45 |
+| `lookupAndReferenceTests.js` | 2,383 | 1,761 | 568 | 54 |
+| `logicalTests.js` | 363 | 321 | 31 | 11 |
+| `dateTimeTests.js` | 1,674 | 1,294 | 237 | 143 |
+| `databaseTests.js` | 548 | 419 | 106 | 23 |
+| `mathematicTests.js` | 4,212 | 3,723 | 376 | 113 |
+| `textAndDataTests.js` | 2,183 | 1,768 | 349 | 66 |
+| `engineeringTests.js` | 3,175 | 2,907 | 152 | 116 |
+| `financialTests.js` | 3,087 | 2,849 | 181 | 57 |
+| **Total** | **18,836** | **16,136** | **2,072** | **628** |
+
+Scoreboard `sheets/formulas`: 334 → 378 ported tags. On the Wave 0 suites
+alone, passing checks went from 3,339 to 4,770 before the merge with M2/M4.
+
+### 9.4 Backlog items closed, and what is left
+
+Closed: `sheet-context`, `row-col-ref`, `indirect` (except TEXT-built
+addresses), `address-r1c1-sheet`, `ref-returning`, `blank-cell` (except
+HOUR and SORT order), `single-fn`, most of `omitted-arg`, and 40 of
+`semicolon-args`.
+
+New pending keys, which the M1 skips had hidden:
+
+| Key | Checks | Note |
+|---|---|---|
+| `range-arg-first-cell`, `range-as-scalar` | 217 | A multi-cell range (often a whole column or row, or a two-cell name) in a scalar slot. OnlyOffice uses its first cell or implicit intersection; Grown's guarded functions answer `#VALUE!` or use the first cell inconsistently. → M5 |
+| `ref-arg-semantics` | 32 | Function-level differences with referenced values (FACTDOUBLE(-1.5), legacy FLOOR signs, XIRR/XNPV validation, …) that show only now that names and cross-sheet refs resolve. → M2/M4 follow-up |
+| `cell-format`, `cell-filename`, `cell-prefix` | 30 | CELL: the fixtures carry no number formats, and Grown workbooks have no file name |
+| `ref-text` | 17 | OFFSET checks compare the reference's address text, not its value |
+| `formulatext-quotes`, `invalid-formula-cell`, `sum-text-arg` | 13 | Suite quirks: `=SQRT("")` read back as `=SQRT(")`, and a one-argument TEXT cell that OnlyOffice cannot parse |
+| `relative-names` | 3 | Names with relative references resolve from the using cell in OnlyOffice; Grown names are absolute |
+
+Now possible but not done here: values carry their reference, so functions
+can tell `SUM("10")` from a text cell (`direct-text-args`, 85 checks).
+FormulaTrace's remaining six tests need the trace UI (M5).

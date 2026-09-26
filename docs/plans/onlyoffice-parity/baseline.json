@@ -198,7 +198,7 @@
       "passing": null
     },
     "sheets/formulas": {
-      "ported": 334,
+      "ported": 378,
       "passing": null
     },
     "sheets/harness": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 468,
+    "ported": 512,
     "passing": null
   }
 }
