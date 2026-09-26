@@ -18,6 +18,7 @@ import {
   toTitleCase,
   transformSelection,
 } from "./editorActions";
+import { resolveLinkInput } from "../../lib/urlType";
 import { downloadDoc, DOWNLOAD_FORMATS } from "./export";
 
 const menuButtonSx = {
@@ -299,7 +300,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem disabled>Smart chips</MenuItem>
           <MenuItem
             onClick={run((e) => {
-              const u = window.prompt("Link URL");
+              const u = resolveLinkInput(window.prompt("Link URL"));
               if (u) e.chain().focus().setLink({ href: u }).run();
             })}
           >
