@@ -119,7 +119,8 @@ case "$cmd" in
       echo "backend: up ($(cat "$DATA/deployed-tree$SUF" 2>/dev/null))"
     else echo "backend: down"; fi ;;
   logs)    tail -n "${1:-100}" -f "$DATA/backend$SUF.log" ;;
-  down)    stop_backend; "${COMPOSE[@]}" down ;;
+  down)    # On an extra port, stop only that backend; the shared deps stay up.
+           stop_backend; [ "$PORT" = 8080 ] && "${COMPOSE[@]}" down ;;
   nuke)    stop_backend; "${COMPOSE[@]}" down -v; rm -rf "$DATA" ;;
   *)       die "unknown command: $cmd (up|deploy|backend|status|logs|down|nuke)" ;;
 esac
