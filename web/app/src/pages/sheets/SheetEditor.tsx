@@ -28,8 +28,15 @@ import {
   createSheet,
   trashSheet,
   saveSheet,
+  recalcSheet,
   collabURL,
 } from "./api";
+import {
+  recalcWrites,
+  renameSheetInNamedRanges,
+  sheetRenameEdits,
+  workbookHasFormulas,
+} from "./formulaRefs";
 import { SheetMenuBar, type SheetActions } from "./SheetMenuBar";
 import { FindReplaceDialog } from "./FindReplaceDialog";
 import { ShareDialog } from "./ShareDialog";
@@ -322,9 +329,71 @@ export function SheetEditor({ user }: SheetEditorProps) {
     }
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      saveSheet(id, JSON.stringify(withExtras(d))).catch(() => {});
+      const json = JSON.stringify(withExtras(d));
+      saveSheet(id, json).catch(() => {});
+      if (workbookHasFormulas(d)) {
+        recalcSheet(id, json)
+          .then(applyServerValues)
+          .catch(() => {});
+      }
     }, 1500);
   }
+  // applyServerValues writes the server engine's results into the grid where
+  // they differ from what fortune-sheet's own engine shows (cross-sheet refs,
+  // named ranges, QUERY, LAMBDA, spills …). The writes are local: peers run
+  // their own recalc after their save, so they are not broadcast.
+  function applyServerValues(cells: Parameters<typeof recalcWrites>[1]) {
+    const wb = ref.current;
+    if (!wb) return;
+    let writes;
+    try {
+      writes = recalcWrites(wb.getAllSheets?.() ?? [], cells);
+    } catch {
+      return;
+    }
+    if (!writes.length) return;
+    applyingRemote.current = true;
+    try {
+      for (const w of writes) {
+        try {
+          wb.setCellValue(w.r, w.c, w.value, { id: w.sheetId });
+        } catch {
+          /* ignore */
+        }
+      }
+    } finally {
+      applyingRemote.current = false;
+    }
+  }
+  // onSheetRenamed keeps formulas and named ranges pointing at a renamed tab
+  // (FortuneSheet renames the tab but leaves Sheet1!A1 text untouched).
+  function onSheetRenamed(_sheetId: string, oldName: string, newName: string) {
+    const wb = ref.current;
+    if (!wb || !oldName || oldName === newName) return;
+    try {
+      const all: any[] = wb.getAllSheets?.() ?? [];
+      const nr = all[0]?._namedRanges;
+      if (Array.isArray(nr) && nr.length) {
+        const next = renameSheetInNamedRanges(nr, oldName, newName);
+        if (JSON.stringify(next) !== JSON.stringify(nr)) {
+          wb.updateSheet?.(
+            all.map((s: any, i: number) => (i === 0 ? { ...s, _namedRanges: next } : s)),
+          );
+        }
+      }
+      for (const e of sheetRenameEdits(wb.getAllSheets?.() ?? [], oldName, newName)) {
+        wb.setCellValue(e.r, e.c, e.f, { id: e.sheetId });
+      }
+    } catch {
+      /* keep the rename even if the fix-up fails */
+    }
+  }
+  const onSheetRenamedRef = useRef(onSheetRenamed);
+  onSheetRenamedRef.current = onSheetRenamed;
+  const hooksRef = useRef({
+    afterUpdateSheetName: (id: string, oldName: string, newName: string) =>
+      onSheetRenamedRef.current(id, oldName, newName),
+  });
   function addIconSet(style: IconStyle) {
     const range = rangeFromSelection(ref.current);
     if (!range) return;
@@ -513,7 +582,13 @@ export function SheetEditor({ user }: SheetEditorProps) {
         data-testid="sheet-editor"
       >
         <Box sx={{ minWidth: { xs: 600, md: "100%" }, height: "100%" }}>
-          <Workbook ref={ref} data={data} onChange={onChange} onOp={onOp} />
+          <Workbook
+            ref={ref}
+            data={data}
+            onChange={onChange}
+            onOp={onOp}
+            hooks={hooksRef.current}
+          />
         </Box>
       </Box>
       <FindReplaceDialog

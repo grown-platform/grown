@@ -27,6 +27,7 @@ Current files:
 | File | OnlyOffice suite | Module |
 |---|---|---|
 | `range.parity.test.ts` | `cell/spreadsheet-calculation/tests.js` (Asc.round, Asc.Range, intersection, union) | `../cellRange.ts` |
+| `formulaRefs.parity.test.ts` | `cell/spreadsheet-calculation/formula-tests/FormulaTests.js` (rename sheet #1) | `../formulaRefs.ts` |
 
 Later milestones add number formats (M6), autofill/sort/CSV (M7),
 filters/CF/validation (M8), pivots (M9) and charts (M10).
