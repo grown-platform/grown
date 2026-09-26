@@ -51,6 +51,7 @@ import {
   type IconStyle,
 } from "./iconSets";
 import { downloadSheet } from "./export";
+import { normalizeWorkbook } from "./normalize";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -134,7 +135,11 @@ export function SheetEditor({ user }: SheetEditorProps) {
         if (cancelled) return;
         setTitle(s.title);
         try {
-          const parsed = s.data ? JSON.parse(s.data) : DEFAULT_DATA;
+          // Fill display text the API/imports may have left out, so the
+          // canvas paints every value (see normalize.ts).
+          const parsed = normalizeWorkbook(
+            s.data ? JSON.parse(s.data) : structuredClone(DEFAULT_DATA),
+          );
           // Charts persist on the first sheet under `grownCharts`.
           const loaded: ChartConfig[] = Array.isArray(parsed?.[0]?.grownCharts)
             ? parsed[0].grownCharts

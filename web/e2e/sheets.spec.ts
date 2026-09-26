@@ -84,4 +84,30 @@ test.describe.serial("sheets formula engine", () => {
       await trashSheet(page.request, id);
     }
   });
+
+  test("a value cell saved without display text renders in the grid", async ({
+    page,
+  }) => {
+    // Regression: the API accepted {v: 10} with no display text `m`, and the
+    // FortuneSheet canvas (which paints `m`) showed an empty cell.
+    const id = await createSheet(page.request, "e2e bare value");
+    try {
+      await saveSheet(
+        page.request,
+        id,
+        workbookWithCells([{ r: 1, c: 0, v: 10 }]),
+      );
+      await page.goto(`/sheets/d/${id}`);
+      const cells = page.locator(".fortune-cell-area");
+      await expect(cells).toBeVisible({ timeout: 20_000 });
+      // Select A2 (default rows are ~20px). FortuneSheet's screen-reader
+      // region announces "<range> <display text>" of the focused cell, the
+      // same `m` the canvas paints.
+      await cells.click({ position: { x: 30, y: 30 } });
+      await expect(page.locator(".fortune-name-box")).toHaveText("A2");
+      await expect(page.locator("#sr-selection")).toHaveText("A. 2 10");
+    } finally {
+      await trashSheet(page.request, id);
+    }
+  });
 });
