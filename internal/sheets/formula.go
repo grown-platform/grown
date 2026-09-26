@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // ---- FortuneSheet workbook model (minimal) ----------------------------------
@@ -216,7 +217,20 @@ type value struct {
 	str  string
 	arr  *spillArray // set only when kind == kindArray
 	lam  *lambdaVal  // set only when kind == kindLambda
+	// ref is set when the value was read from a reference (A1, Sheet2!A1:B2,
+	// a defined name, OFFSET(...)); see formula_refs.go.
+	ref *refInfo
+	// omitted marks an argument left empty (SUM(1,,2), ADDRESS(2,3,,,"S")).
+	// It behaves as 0 (or "" as text); optional-argument helpers treat it as
+	// absent so the function's default applies.
+	omitted bool
+	// blank marks the value of an empty cell. It behaves as 0 / "" but lets
+	// ISBLANK and ISNUMBER tell an empty cell from a typed 0.
+	blank bool
 }
+
+// blankVal is the value read from an empty cell.
+var blankVal = value{kind: kindNum, blank: true}
 
 // spillArray is a rectangular result produced by a dynamic-array function
 // (SEQUENCE, FILTER, SORT, UNIQUE, TRANSPOSE …). When a formula evaluates to
@@ -364,7 +378,7 @@ func rowIndex(s string) int {
 	return n - 1
 }
 
-var cellRefRe = regexp.MustCompile(`(?i)^\$?([A-Z]+)\$?(\d+)$`)
+var cellRefRe = regexp.MustCompile(`(?i)^\$?([A-Z]{1,3})\$?(\d{1,7})$`)
 
 // parseCellRef parses a reference like "A1", "$A$1", "$A1", "A$1".
 // Returns (addr, true) on success.
@@ -373,7 +387,12 @@ func parseCellRef(s string) (cellAddr, bool) {
 	if m == nil {
 		return cellAddr{}, false
 	}
-	return cellAddr{row: rowIndex(m[2]), col: colIndex(m[1])}, true
+	a := cellAddr{row: rowIndex(m[2]), col: colIndex(m[1])}
+	// Beyond Excel's grid (XFD1048576) the text is a name, not a cell.
+	if a.row < 0 || a.row >= maxSheetRows || a.col >= maxSheetCols {
+		return cellAddr{}, false
+	}
+	return a, true
 }
 
 // addrToName converts 0-based (row, col) → "A1" notation.
@@ -414,24 +433,6 @@ func (g *grid) set(a cellAddr, cell *FsCell) { g.cells[a] = cell }
 
 // ---- Dependency graph + topological sort -----------------------------------
 
-// buildDeps returns a map from each formula-cell address to the set of cell
-// addresses its formula references.
-func buildDeps(g *grid) map[cellAddr][]cellAddr {
-	deps := make(map[cellAddr][]cellAddr)
-	for addr, cell := range g.cells {
-		if cell == nil || !strings.HasPrefix(cell.F, "=") {
-			continue
-		}
-		refs := extractRefs(cell.F[1:])
-		if len(refs) > 0 {
-			deps[addr] = refs
-		} else {
-			deps[addr] = nil // no deps, but still a formula cell
-		}
-	}
-	return deps
-}
-
 // extractRefs parses an expression string and returns all cell addresses it
 // contains (possibly with duplicates).
 func extractRefs(expr string) []cellAddr {
@@ -469,47 +470,6 @@ func extractRefs(expr string) []cellAddr {
 	return refs
 }
 
-// topoSort returns formula cells in evaluation order (dependencies first) and
-// the set of cells involved in circular references.
-func topoSort(formulaCells map[cellAddr][]cellAddr) (order []cellAddr, circular map[cellAddr]bool) {
-	const (
-		white = 0
-		grey  = 1
-		black = 2
-	)
-	color := make(map[cellAddr]int, len(formulaCells))
-	circular = make(map[cellAddr]bool)
-
-	var visit func(a cellAddr)
-	visit = func(a cellAddr) {
-		if color[a] == black {
-			return
-		}
-		if color[a] == grey {
-			circular[a] = true
-			return
-		}
-		color[a] = grey
-		for _, dep := range formulaCells[a] {
-			if _, isFormula := formulaCells[dep]; isFormula {
-				visit(dep)
-				if circular[dep] {
-					circular[a] = true
-				}
-			}
-		}
-		color[a] = black
-		if !circular[a] {
-			order = append(order, a)
-		}
-	}
-
-	for a := range formulaCells {
-		visit(a)
-	}
-	return order, circular
-}
-
 // ---- Evaluator --------------------------------------------------------------
 
 // Evaluator holds the grid state for one worksheet evaluation pass.
@@ -521,172 +481,33 @@ type Evaluator struct {
 	// evaluated, so functions like ROW()/COLUMN() with no argument can resolve
 	// "this cell". Set by Recompute before each evalExpr.
 	curRow, curCol int
-	// sheetIndex is the 1-based position of the sheet being evaluated and
-	// sheetNames lists every sheet's name (workbook order); both power SHEET()
-	// and SHEETS(). Defaults: index 1, nil names (single-sheet Recompute).
-	sheetIndex int
-	sheetNames []string
-}
-
-// NewEvaluator constructs an Evaluator for the given FsSheet celldata.
-func NewEvaluator(data []FsCellData) *Evaluator {
-	return &Evaluator{
-		grid:    newGrid(data),
-		results: make(map[cellAddr]value),
-		now:     time.Now(),
-	}
-}
-
-// Recompute evaluates all formula cells in the sheet (in dependency order) and
-// returns the updated celldata slice with computed values written into each
-// cell's V and M fields. Non-formula cells are returned unchanged.
-func Recompute(data []FsCellData) []FsCellData {
-	return recomputeCtx(data, 1, nil)
-}
-
-// recomputeCtx is Recompute with workbook context (1-based sheet index + all
-// sheet names) so SHEET()/SHEETS() resolve. Recompute defaults to a lone sheet.
-func recomputeCtx(data []FsCellData, sheetIndex int, names []string) []FsCellData {
-	ev := NewEvaluator(data)
-	ev.sheetIndex = sheetIndex
-	ev.sheetNames = names
-	return ev.recomputeAll(data)
-}
-
-// recomputeAll evaluates every formula cell of data on an evaluator already
-// built over that data (see recomputeCtx) and returns the updated celldata.
-// Results stay in ev.results, so callers (e.g. the parity fixture runner) can
-// evaluate further expressions against the recomputed sheet.
-func (ev *Evaluator) recomputeAll(data []FsCellData) []FsCellData {
-	// Build dependency graph.
-	formulaDeps := buildDeps(ev.grid)
-	order, circular := topoSort(formulaDeps)
-
-	// Mark circular cells immediately.
-	for addr := range circular {
-		ev.results[addr] = errCirc
-	}
-
-	// Occupancy of the original sheet: cells already holding a value or formula.
-	// A dynamic array may not spill onto an occupied cell (→ #SPILL!).
-	occupied := make(map[cellAddr]bool)
-	isFormula := make(map[cellAddr]bool)
-	for _, cd := range data {
-		if cd.V == nil {
-			continue
-		}
-		a := cellAddr{row: cd.R, col: cd.C}
-		if strings.HasPrefix(cd.V.F, "=") {
-			isFormula[a] = true
-			occupied[a] = true
-		} else if cd.V.V != nil && cd.V.V != "" {
-			occupied[a] = true
-		}
-	}
-
-	// spillCells accumulates values written into non-anchor cells by dynamic
-	// arrays, keyed by address.
-	spillCells := make(map[cellAddr]value)
-
-	// Evaluate in topological order.
-	for _, addr := range order {
-		cell := ev.grid.get(addr)
-		if cell == nil || !strings.HasPrefix(cell.F, "=") {
-			continue
-		}
-		ev.curRow, ev.curCol = addr.row, addr.col
-		v := ev.evalExpr(cell.F[1:])
-		if v.kind == kindArray {
-			v = ev.spill(addr, v.arr, occupied, isFormula, spillCells)
-		}
-		ev.results[addr] = v
-	}
-
-	// Write results back. Update existing cells; append spilled cells that had
-	// no original celldata entry.
-	out := make([]FsCellData, 0, len(data)+len(spillCells))
-	seen := make(map[cellAddr]bool, len(data))
-	for _, cd := range data {
-		addr := cellAddr{row: cd.R, col: cd.C}
-		seen[addr] = true
-		nc := cd
-		if res, ok := ev.results[addr]; ok && cd.V != nil {
-			newCell := *cd.V
-			newCell.V = res.asInterface()
-			newCell.M = res.toStr()
-			nc.V = &newCell
-			ev.grid.set(addr, nc.V)
-		} else if sv, ok := spillCells[addr]; ok {
-			// Originally-empty cell that received a spilled value; keep its
-			// style/Extra fields but drop any (absent) formula.
-			var base FsCell
-			if cd.V != nil {
-				base = *cd.V
-			}
-			base.F = ""
-			base.V = sv.asInterface()
-			base.M = sv.toStr()
-			nc.V = &base
-		}
-		out = append(out, nc)
-	}
-	for addr, sv := range spillCells {
-		if seen[addr] {
-			continue
-		}
-		out = append(out, FsCellData{
-			R: addr.row, C: addr.col,
-			V: &FsCell{V: sv.asInterface(), M: sv.toStr()},
-		})
-	}
-	return out
-}
-
-// spill writes a dynamic array anchored at addr: the top-left lands in the
-// anchor (returned to the caller), the rest go into spillCells and the live
-// grid (so later formulas can read them). Returns #SPILL! when any non-anchor
-// target cell is already occupied by a value or another formula.
-func (ev *Evaluator) spill(addr cellAddr, arr *spillArray, occupied, isFormula map[cellAddr]bool, spillCells map[cellAddr]value) value {
-	if arr == nil || arr.rows == 0 || arr.cols == 0 {
-		return errVal("#CALC!")
-	}
-	for r := 0; r < arr.rows; r++ {
-		for c := 0; c < arr.cols; c++ {
-			if r == 0 && c == 0 {
-				continue
-			}
-			t := cellAddr{row: addr.row + r, col: addr.col + c}
-			if occupied[t] || isFormula[t] {
-				return errSpill
-			}
-		}
-	}
-	for r := 0; r < arr.rows; r++ {
-		for c := 0; c < arr.cols; c++ {
-			if r == 0 && c == 0 {
-				continue
-			}
-			t := cellAddr{row: addr.row + r, col: addr.col + c}
-			cv := arr.cells[r][c]
-			spillCells[t] = cv
-			ev.grid.set(t, &FsCell{V: cv.asInterface(), M: cv.toStr()})
-		}
-	}
-	return arr.cells[0][0]
+	// wb is the whole workbook (every sheet, defined names); cur is the index
+	// of the sheet grid/results belong to. See formula_refs.go.
+	wb  *workbookView
+	cur int
 }
 
 // cellValue returns the evaluated value for a cell (reading from results cache
 // or, for non-formula cells, from the raw grid value).
 func (ev *Evaluator) cellValue(addr cellAddr) value {
 	if v, ok := ev.results[addr]; ok {
+		v.ref = nil
 		return v
 	}
 	cell := ev.grid.get(addr)
 	if cell == nil {
-		return numVal(0) // empty cell = 0 for arithmetic
+		return blankVal // empty cell = 0 for arithmetic
+	}
+	if strings.HasPrefix(cell.F, "=") {
+		// A formula cell not computed yet (reached through a reference the
+		// static graph could not see, e.g. INDIRECT): compute it now.
+		ev.book()
+		v := ev.ensureFormula(ev.cur, addr)
+		v.ref = nil
+		return v
 	}
 	if cell.V == nil {
-		return numVal(0)
+		return blankVal
 	}
 	switch val := cell.V.(type) {
 	case float64:
@@ -746,7 +567,8 @@ const (
 	tokRBrace                 // } (array constant end)
 	tokSemi                   // ; (array constant row separator)
 	tokEOF
-	tokErr // error literal (#N/A, #DIV/0!, …)
+	tokErr   // error literal (#N/A, #DIV/0!, …)
+	tokSheet // sheet prefix: Sheet2! or 'My Sheet'! (val is the bare name)
 )
 
 // errorLiterals are the error values a formula may spell out directly
@@ -756,15 +578,37 @@ var errorLiterals = []string{"#GETTING_DATA", "#DIV/0!", "#VALUE!", "#SPILL!", "
 type token struct {
 	kind tokKind
 	val  string
+	// space is set when whitespace precedes the token; between two references
+	// it is the intersection operator (A1:B5 B2:C3).
+	space bool
+}
+
+// isIdentStart / isIdentPart classify identifier runes. Besides ASCII letters,
+// digits, '$', '_' and '.', any Unicode letter, mark or digit is accepted so
+// sheet names like हरियाणवी can be written unquoted.
+func isIdentStart(r rune) bool {
+	return r == '$' || r == '_' || r == '\\' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' ||
+		r >= 0x80 && (unicode.IsLetter(r) || unicode.IsMark(r))
+}
+
+func isIdentPart(r rune) bool {
+	return isIdentStart(r) || r == '.' || r >= '0' && r <= '9' || r >= 0x80 && unicode.IsDigit(r)
 }
 
 func tokenise(s string) []token {
 	var tokens []token
+	space := false
+	emit := func(t token) {
+		t.space = space
+		space = false
+		tokens = append(tokens, t)
+	}
 	i := 0
 	for i < len(s) {
 		ch := s[i]
 		// Skip whitespace.
 		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+			space = true
 			i++
 			continue
 		}
@@ -784,9 +628,37 @@ func tokenise(s string) []token {
 				sb.WriteByte(s[j])
 				j++
 			}
-			tokens = append(tokens, token{kind: tokStr, val: sb.String()})
+			emit(token{kind: tokStr, val: sb.String()})
 			if j < len(s) {
 				j++ // closing quote
+			}
+			i = j
+			continue
+		}
+		// Quoted sheet name: 'My Sheet'!A1 ('' escapes a quote).
+		if ch == '\'' {
+			j := i + 1
+			var sb strings.Builder
+			for j < len(s) {
+				if s[j] == '\'' {
+					if j+1 < len(s) && s[j+1] == '\'' {
+						sb.WriteByte('\'')
+						j += 2
+						continue
+					}
+					break
+				}
+				sb.WriteByte(s[j])
+				j++
+			}
+			if j < len(s) {
+				j++ // closing quote
+			}
+			if j < len(s) && s[j] == '!' {
+				emit(token{kind: tokSheet, val: sb.String()})
+				j++
+			} else {
+				emit(token{kind: tokIdent, val: "'" + sb.String() + "'"})
 			}
 			i = j
 			continue
@@ -796,7 +668,7 @@ func tokenise(s string) []token {
 			matched := false
 			for _, e := range errorLiterals {
 				if len(s)-i >= len(e) && strings.EqualFold(s[i:i+len(e)], e) {
-					tokens = append(tokens, token{kind: tokErr, val: e})
+					emit(token{kind: tokErr, val: e})
 					i += len(e)
 					matched = true
 					break
@@ -822,24 +694,34 @@ func tokenise(s string) []token {
 					j++
 				}
 			}
-			tokens = append(tokens, token{kind: tokNum, val: s[i:j]})
+			emit(token{kind: tokNum, val: s[i:j]})
 			i = j
 			continue
 		}
-		// Identifier / cell ref / function name. A '.' is allowed mid-identifier
-		// so modern dotted function names (STDEV.S, NORM.DIST, RANK.EQ) tokenise
-		// as one identifier; a trailing '.' is left out (not part of the name).
-		if ch == '$' || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') {
+		// Identifier / cell ref / function name / sheet prefix. A '.' is allowed
+		// mid-identifier so dotted function names (STDEV.S, NORM.DIST) tokenise
+		// as one identifier; a trailing '.' is left out. An identifier directly
+		// followed by '!' is a sheet name (Sheet2!A1).
+		if r, _ := utf8.DecodeRuneInString(s[i:]); isIdentStart(r) {
 			j := i
-			for j < len(s) && (s[j] == '$' || s[j] == '.' || (s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z') || (s[j] >= '0' && s[j] <= '9')) {
-				j++
+			for j < len(s) {
+				r, n := utf8.DecodeRuneInString(s[j:])
+				if !isIdentPart(r) {
+					break
+				}
+				j += n
 			}
 			name := s[i:j]
+			if j < len(s) && s[j] == '!' {
+				emit(token{kind: tokSheet, val: name})
+				i = j + 1
+				continue
+			}
 			for len(name) > 0 && name[len(name)-1] == '.' {
 				name = name[:len(name)-1]
 				j--
 			}
-			tokens = append(tokens, token{kind: tokIdent, val: name})
+			emit(token{kind: tokIdent, val: name})
 			i = j
 			continue
 		}
@@ -847,29 +729,34 @@ func tokenise(s string) []token {
 		if i+1 < len(s) {
 			two := s[i : i+2]
 			if two == "<>" || two == "<=" || two == ">=" {
-				tokens = append(tokens, token{kind: tokOp, val: two})
+				emit(token{kind: tokOp, val: two})
 				i += 2
 				continue
 			}
 		}
 		// Single-character operators / punctuation.
 		switch ch {
-		case '+', '-', '*', '/', '^', '=', '<', '>', '&':
-			tokens = append(tokens, token{kind: tokOp, val: string(ch)})
+		case '+', '-', '*', '/', '^', '=', '<', '>', '&', '@':
+			emit(token{kind: tokOp, val: string(ch)})
 		case '(':
-			tokens = append(tokens, token{kind: tokLParen, val: "("})
+			emit(token{kind: tokLParen, val: "("})
 		case ')':
-			tokens = append(tokens, token{kind: tokRParen, val: ")"})
+			emit(token{kind: tokRParen, val: ")"})
 		case ',':
-			tokens = append(tokens, token{kind: tokComma, val: ","})
+			emit(token{kind: tokComma, val: ","})
 		case ':':
-			tokens = append(tokens, token{kind: tokColon, val: ":"})
+			emit(token{kind: tokColon, val: ":"})
 		case '{':
-			tokens = append(tokens, token{kind: tokLBrace, val: "{"})
+			emit(token{kind: tokLBrace, val: "{"})
 		case '}':
-			tokens = append(tokens, token{kind: tokRBrace, val: "}"})
+			emit(token{kind: tokRBrace, val: "}"})
 		case ';':
-			tokens = append(tokens, token{kind: tokSemi, val: ";"})
+			emit(token{kind: tokSemi, val: ";"})
+		}
+		if ch >= 0x80 {
+			_, n := utf8.DecodeRuneInString(s[i:])
+			i += n
+			continue
 		}
 		i++
 	}
@@ -894,9 +781,24 @@ type parser struct {
 	// env holds names bound by LET / LAMBDA in the current scope (keys uppercased).
 	// nil at the top level; populated for sub-expressions evaluated via evalTokens.
 	env map[string]value
-	// arrayMode is set while evaluating inside ARRAYFORMULA(...): operators and
-	// scalar functions then broadcast element-wise over array/range operands.
+	// arrayMode is set while evaluating inside ARRAYFORMULA(...): scalar
+	// functions then broadcast element-wise over array/range operands.
+	// (Operators broadcast over arrays in every mode, as in Excel 365.)
 	arrayMode bool
+	// defSheet (when hasDefSheet) is the sheet unqualified references resolve
+	// to; otherwise they resolve to the evaluator's current sheet. Set while a
+	// defined name's definition or the right side of Sheet2!A1:B2 is parsed.
+	defSheet    int
+	hasDefSheet bool
+}
+
+// refSheet returns the sheet an unqualified reference points at.
+func (p *parser) refSheet() int {
+	if p.hasDefSheet {
+		return p.defSheet
+	}
+	p.ev.book()
+	return p.ev.cur
 }
 
 func (p *parser) peek() token {
@@ -926,11 +828,7 @@ func (p *parser) parseComparison() value {
 			op := t.val
 			p.consume()
 			right := p.parseConcat()
-			if p.arrayMode {
-				left = broadcast2(left, right, func(a, b value) value { return compareValues(op, a, b) })
-			} else {
-				left = compareValues(op, left, right)
-			}
+			left = broadcast2(left, right, func(a, b value) value { return compareValues(op, a, b) })
 		default:
 			return left
 		}
@@ -991,11 +889,7 @@ func (p *parser) parseConcat() value {
 	for p.peek().kind == tokOp && p.peek().val == "&" {
 		p.consume()
 		right := p.parseAdditive()
-		if p.arrayMode {
-			left = broadcast2(left, right, scalarConcat)
-		} else {
-			left = scalarConcat(left, right)
-		}
+		left = broadcast2(left, right, scalarConcat)
 	}
 	return left
 }
@@ -1005,11 +899,7 @@ func (p *parser) parseAdditive() value {
 	for p.peek().kind == tokOp && (p.peek().val == "+" || p.peek().val == "-") {
 		op := p.consume().val
 		right := p.parseMultiplicative()
-		if p.arrayMode {
-			left = broadcast2(left, right, func(a, b value) value { return scalarArith(op, a, b) })
-		} else {
-			left = scalarArith(op, left, right)
-		}
+		left = broadcast2(left, right, func(a, b value) value { return scalarArith(op, a, b) })
 	}
 	return left
 }
@@ -1019,11 +909,7 @@ func (p *parser) parseMultiplicative() value {
 	for p.peek().kind == tokOp && (p.peek().val == "*" || p.peek().val == "/") {
 		op := p.consume().val
 		right := p.parsePower()
-		if p.arrayMode {
-			left = broadcast2(left, right, func(a, b value) value { return scalarArith(op, a, b) })
-		} else {
-			left = scalarArith(op, left, right)
-		}
+		left = broadcast2(left, right, func(a, b value) value { return scalarArith(op, a, b) })
 	}
 	return left
 }
@@ -1033,11 +919,7 @@ func (p *parser) parsePower() value {
 	for p.peek().kind == tokOp && p.peek().val == "^" {
 		p.consume()
 		exp := p.parseUnary()
-		if p.arrayMode {
-			base = broadcast2(base, exp, func(a, b value) value { return scalarArith("^", a, b) })
-		} else {
-			base = scalarArith("^", base, exp)
-		}
+		base = broadcast2(base, exp, func(a, b value) value { return scalarArith("^", a, b) })
 	}
 	return base
 }
@@ -1046,10 +928,11 @@ func (p *parser) parseUnary() value {
 	if p.peek().kind == tokOp && p.peek().val == "-" {
 		p.consume()
 		v := p.parseUnary()
-		if p.arrayMode {
-			return broadcast1(v, scalarNeg)
-		}
-		return scalarNeg(v)
+		return broadcast1(v, scalarNeg)
+	}
+	if p.peek().kind == tokOp && p.peek().val == "@" {
+		p.consume()
+		return p.ev.implicitIntersect(p.parseUnary())
 	}
 	if p.peek().kind == tokOp && p.peek().val == "+" {
 		p.consume()
@@ -1059,6 +942,18 @@ func (p *parser) parseUnary() value {
 }
 
 func (p *parser) parsePrimary() value {
+	v := p.parseRangeOperand()
+	// Intersection: whitespace between two references (A1:C5 B2:B9).
+	for v.ref != nil && p.peek().space && (p.peek().kind == tokIdent || p.peek().kind == tokSheet) {
+		w := p.parseRangeOperand()
+		v = p.ev.intersectRefs(v, w)
+	}
+	return v
+}
+
+// parseRangeOperand parses a primary followed by any number of ':' range
+// operators (A1:B2, C2:C3:C2, (A1:A3):F1, A1:INDEX(...)).
+func (p *parser) parseRangeOperand() value {
 	v := p.parsePrimaryBase()
 	// Postfix application: a LAMBDA value (or expression yielding one) can be
 	// called immediately, e.g. =LAMBDA(x,x+1)(5).
@@ -1070,6 +965,23 @@ func (p *parser) parsePrimary() value {
 		}
 		v = applyLambda(p.ev, v.lam, lambdaArgValues(args))
 	}
+	for p.peek().kind == tokColon {
+		if v.ref == nil {
+			if v.isErr() {
+				p.consume()
+				p.parsePrimaryBase()
+				continue
+			}
+			return v
+		}
+		p.consume()
+		// The right side of Sheet2!A1:B2 lives on the left side's sheet.
+		prevSheet, prevHas := p.defSheet, p.hasDefSheet
+		p.defSheet, p.hasDefSheet = v.ref.sheet, true
+		w := p.parsePrimaryBase()
+		p.defSheet, p.hasDefSheet = prevSheet, prevHas
+		v = p.ev.rangeRefs(v, w)
+	}
 	return v
 }
 
@@ -1077,6 +989,10 @@ func (p *parser) parsePrimaryBase() value {
 	t := p.peek()
 	switch t.kind {
 	case tokNum:
+		// Whole-row reference: 1:3.
+		if v, ok := p.tryLineRef(p.refSheet()); ok {
+			return v
+		}
 		p.consume()
 		f, err := strconv.ParseFloat(t.val, 64)
 		if err != nil {
@@ -1089,9 +1005,57 @@ func (p *parser) parsePrimaryBase() value {
 	case tokErr:
 		p.consume()
 		return errVal(t.val)
+	case tokSheet:
+		p.consume()
+		si, found := p.ev.book().sheetIndexByName(t.val)
+		nt := p.peek()
+		if nt.kind == tokErr {
+			p.consume()
+			return errVal(nt.val)
+		}
+		if !found {
+			// Skip the reference that follows; a missing sheet is #REF!.
+			if nt.kind == tokIdent || nt.kind == tokNum {
+				if _, next, ok := scanRefAtom(p.tokens, p.pos); ok {
+					p.pos = next
+				} else {
+					p.consume()
+				}
+			}
+			return errRef
+		}
+		prevSheet, prevHas := p.defSheet, p.hasDefSheet
+		p.defSheet, p.hasDefSheet = si, true
+		defer func() { p.defSheet, p.hasDefSheet = prevSheet, prevHas }()
+		if v, ok := p.tryLineRef(si); ok {
+			return v
+		}
+		if nt.kind == tokIdent {
+			if _, ok := parseCellRef(nt.val); ok {
+				p.consume()
+				a, _ := parseCellRef(nt.val)
+				return p.ev.refValue(si, false, area{r1: a.row, c1: a.col, r2: a.row, c2: a.col})
+			}
+			// Sheet-qualified name, or garbage after the '!'.
+			p.consume()
+			if v, ok := p.resolveName(strings.ToUpper(nt.val)); ok {
+				return v
+			}
+			return errName
+		}
+		return errRef
 	case tokLParen:
 		p.consume()
 		v := p.parseExpr()
+		// Union operator inside parentheses: (A1:B2,D4).
+		if p.peek().kind == tokComma {
+			parts := []value{v}
+			for p.peek().kind == tokComma {
+				p.consume()
+				parts = append(parts, p.parseExpr())
+			}
+			v = p.ev.unionRefs(parts)
+		}
 		if p.peek().kind == tokRParen {
 			p.consume()
 		}
@@ -1102,6 +1066,34 @@ func (p *parser) parsePrimaryBase() value {
 		return p.parseIdentOrFunc()
 	}
 	return errValue
+}
+
+// tryLineRef parses a whole-column (A:C, $A:$A) or whole-row (1:3, $2:$2)
+// reference at the current position on sheet si.
+func (p *parser) tryLineRef(si int) (value, bool) {
+	if p.pos+2 >= len(p.tokens) || p.tokens[p.pos+1].kind != tokColon {
+		return value{}, false
+	}
+	t1, t2 := p.tokens[p.pos], p.tokens[p.pos+2]
+	if t1.kind == tokIdent && t2.kind == tokIdent {
+		if _, isCell := parseCellRef(t1.val); !isCell {
+			if c1, ok := parseColRef(t1.val); ok {
+				if c2, ok := parseColRef(t2.val); ok {
+					p.pos += 3
+					return p.ev.refValue(si, true, normArea(area{r1: 0, c1: c1, r2: maxSheetRows - 1, c2: c2})), true
+				}
+			}
+		}
+	}
+	if (t1.kind == tokNum || t1.kind == tokIdent) && (t2.kind == tokNum || t2.kind == tokIdent) {
+		if r1, ok := parseRowRef(t1.val); ok {
+			if r2, ok := parseRowRef(t2.val); ok {
+				p.pos += 3
+				return p.ev.refValue(si, true, normArea(area{r1: r1, c1: 0, r2: r2, c2: maxSheetCols - 1})), true
+			}
+		}
+	}
+	return value{}, false
 }
 
 // parseArrayConstant parses an inline array literal {1,2,3} (single row) or
@@ -1195,31 +1187,21 @@ func (p *parser) parseIdentOrFunc() value {
 		}
 	}
 
-	// Range: IDENT ':' IDENT — return aggregate only if top-level; callers
-	// handle ranges inside function args. When encountered outside a function
-	// call context, return #VALUE! (ranges are only meaningful as func args).
-	if p.peek().kind == tokColon {
-		p.consume()
-		t2 := p.peek()
-		if t2.kind == tokIdent {
-			p.consume()
-			// Inside ARRAYFORMULA a bare range materialises as an array so it can
-			// be broadcast; elsewhere a range is only meaningful as a func arg.
-			if p.arrayMode {
-				if a1, ok1 := parseCellRef(t.val); ok1 {
-					if a2, ok2 := parseCellRef(t2.val); ok2 {
-						return arrayValue(p.ev.makeRange(a1, a2).cells)
-					}
-				}
-			}
-			return errValue
-		}
-		return errValue
+	// Whole-column reference (A:C).
+	p.pos--
+	if v, ok := p.tryLineRef(p.refSheet()); ok {
+		return v
 	}
+	p.pos++
 
 	// Cell reference.
 	if addr, ok := parseCellRef(t.val); ok {
-		return p.ev.cellValue(addr)
+		return p.ev.refValue(p.refSheet(), false, area{r1: addr.row, c1: addr.col, r2: addr.row, c2: addr.col})
+	}
+
+	// Defined name.
+	if v, ok := p.resolveName(upper); ok {
+		return v
 	}
 
 	// Unknown name.
@@ -1234,8 +1216,11 @@ func (p *parser) parseArgList() []interface{} {
 		return args
 	}
 	for {
-		arg := p.parseArg()
-		args = append(args, arg)
+		if k := p.peek().kind; k == tokComma || k == tokRParen || k == tokEOF {
+			args = append(args, omittedArg)
+		} else {
+			args = append(args, p.parseArg())
+		}
 		if p.peek().kind != tokComma {
 			break
 		}
@@ -1244,25 +1229,16 @@ func (p *parser) parseArgList() []interface{} {
 	return args
 }
 
-// parseArg parses one argument, which may be a range yielding []value or a
-// single expression yielding value.
+// parseArg parses one argument. A reference written as a range (A1:B3,
+// Sheet2!A:A, a union, OFFSET(...) spanning several cells) is passed as a
+// rangeVal so lookup/array functions keep its shape; anything else is a value
+// (a single-cell reference still carries its refInfo).
 func (p *parser) parseArg() interface{} {
-	// Peek ahead: is this IDENT ':' IDENT (range)? In ARRAYFORMULA mode we skip
-	// this greedy capture so a range inside a larger expression (e.g. A1:A3>0)
-	// parses as an operand that materialises into a broadcastable array.
-	if !p.arrayMode && p.peek().kind == tokIdent && p.pos+1 < len(p.tokens) && p.tokens[p.pos+1].kind == tokColon {
-		t1 := p.tokens[p.pos]
-		a1, ok1 := parseCellRef(t1.val)
-		if ok1 && p.pos+2 < len(p.tokens) && p.tokens[p.pos+2].kind == tokIdent {
-			t2 := p.tokens[p.pos+2]
-			a2, ok2 := parseCellRef(t2.val)
-			if ok2 {
-				p.pos += 3 // consume IDENT ':' IDENT
-				return p.ev.makeRange(a1, a2)
-			}
-		}
+	v := p.parseExpr()
+	if v.ref != nil && (v.ref.rangeForm || v.kind == kindArray) {
+		return v.toRangeVal()
 	}
-	return p.parseExpr()
+	return v
 }
 
 // flattenArgs flattens function arguments (value, []value, or rangeVal) into a
@@ -1308,27 +1284,7 @@ func flattenArgs(args []interface{}) []value {
 type rangeVal struct {
 	rows, cols int
 	cells      [][]value
-}
-
-// makeRange materialises the cells of an A1:B3 range from the grid.
-func (ev *Evaluator) makeRange(a1, a2 cellAddr) rangeVal {
-	if a2.row < a1.row {
-		a1.row, a2.row = a2.row, a1.row
-	}
-	if a2.col < a1.col {
-		a1.col, a2.col = a2.col, a1.col
-	}
-	rows := a2.row - a1.row + 1
-	cols := a2.col - a1.col + 1
-	cells := make([][]value, rows)
-	for r := 0; r < rows; r++ {
-		rowVals := make([]value, cols)
-		for c := 0; c < cols; c++ {
-			rowVals[c] = ev.cellValue(cellAddr{row: a1.row + r, col: a1.col + c})
-		}
-		cells[r] = rowVals
-	}
-	return rangeVal{rows: rows, cols: cols, cells: cells}
+	ref        *refInfo // where the range was read from (nil for arrays)
 }
 
 // flat returns the range's cells row-major.
@@ -1380,6 +1336,10 @@ func (c *callCtx) scalar(i int) value {
 // rangeArg returns argument i as a rangeVal. A scalar becomes a 1×1 range.
 // ok is false only when the argument index is absent.
 func (c *callCtx) rangeArg(i int) (rangeVal, bool) {
+	if i < len(c.args) && c.omitted(i) {
+		// An empty slot is not an array: it reads as a lone #VALUE!.
+		return rangeVal{rows: 1, cols: 1, cells: [][]value{{errValue}}}, true
+	}
 	switch v := c.raw(i).(type) {
 	case rangeVal:
 		return v, true
@@ -1387,9 +1347,9 @@ func (c *callCtx) rangeArg(i int) (rangeVal, bool) {
 		// An array value (spill result or lambda param) keeps its shape so
 		// lookup/array functions can operate on it like a real range.
 		if v.kind == kindArray && v.arr != nil {
-			return rangeVal{rows: v.arr.rows, cols: v.arr.cols, cells: v.arr.cells}, true
+			return rangeVal{rows: v.arr.rows, cols: v.arr.cols, cells: v.arr.cells, ref: v.ref}, true
 		}
-		return rangeVal{rows: 1, cols: 1, cells: [][]value{{v}}}, true
+		return rangeVal{rows: 1, cols: 1, cells: [][]value{{v}}, ref: v.ref}, true
 	}
 	return rangeVal{}, false
 }
@@ -1397,10 +1357,22 @@ func (c *callCtx) rangeArg(i int) (rangeVal, bool) {
 // num returns argument i coerced to a number (ok=false if not numeric).
 func (c *callCtx) num(i int) (float64, bool) { return c.scalar(i).toNum() }
 
-// numOr returns argument i as a number, or def when the argument is absent.
-// ok is false only when the argument is present but non-numeric.
-func (c *callCtx) numOr(i int, def float64) (float64, bool) {
+// omittedArg is the value of an empty argument slot.
+var omittedArg = value{kind: kindNum, omitted: true}
+
+// omitted reports whether argument i is absent or left empty.
+func (c *callCtx) omitted(i int) bool {
 	if i >= len(c.args) {
+		return true
+	}
+	v, ok := c.args[i].(value)
+	return ok && v.omitted
+}
+
+// numOr returns argument i as a number, or def when the argument is absent
+// or left empty. ok is false only when the argument is present but non-numeric.
+func (c *callCtx) numOr(i int, def float64) (float64, bool) {
+	if c.omitted(i) {
 		return def, true
 	}
 	return c.scalar(i).toNum()
@@ -1408,7 +1380,7 @@ func (c *callCtx) numOr(i int, def float64) (float64, bool) {
 
 // text returns argument i coerced to a string ("" if absent).
 func (c *callCtx) text(i int) string {
-	if i >= len(c.args) {
+	if c.omitted(i) {
 		return ""
 	}
 	return c.scalar(i).toStr()
@@ -1718,19 +1690,19 @@ func fnCountA(vals []value) value {
 // We pass raw args to avoid evaluating branches eagerly (short-circuit).
 func fnIf(p *parser, args []interface{}) value {
 	_ = p // short-circuit is best-effort; all args already evaluated in parseArgList
-	vals := flattenArgs(args)
-	if len(vals) < 2 {
+	if len(args) < 2 || len(args) > 3 {
 		return errNA
 	}
-	cond := vals[0]
+	cond := asValue(args[0]).topLeft()
 	if cond.isErr() {
 		return cond
 	}
+	// The chosen branch is returned whole (a range stays a reference/array).
 	if cond.isTruthy() {
-		return vals[1]
+		return asValue(args[1])
 	}
-	if len(vals) >= 3 {
-		return vals[2]
+	if len(args) == 3 {
+		return asValue(args[2])
 	}
 	return boolVal(false) // Excel returns FALSE when no else branch
 }
@@ -1916,33 +1888,6 @@ func fnNow(now time.Time) value {
 	days := int(date.Sub(epoch).Hours() / 24)
 	fracDay := (float64(now.Hour())*3600 + float64(now.Minute())*60 + float64(now.Second())) / 86400.0
 	return numVal(float64(days) + fracDay)
-}
-
-// ---- RecomputeWorkbook -------------------------------------------------------
-
-// RecomputeWorkbook takes the JSON workbook string, evaluates all formula cells
-// in each sheet, and returns the updated JSON. If parsing fails or the data is
-// empty, the original string is returned unchanged.
-func RecomputeWorkbook(data string) string {
-	if data == "" {
-		return data
-	}
-	var wb FsWorkbook
-	if err := json.Unmarshal([]byte(data), &wb); err != nil {
-		return data // not a workbook array; return as-is
-	}
-	names := make([]string, len(wb))
-	for i := range wb {
-		names[i] = wb[i].Name
-	}
-	for i := range wb {
-		wb[i].CellData = recomputeCtx(wb[i].CellData, i+1, names)
-	}
-	out, err := json.Marshal(wb)
-	if err != nil {
-		return data
-	}
-	return string(out)
 }
 
 // ---- Utility (exported for tests) -------------------------------------------

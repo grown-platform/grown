@@ -15,6 +15,7 @@ package sheets
 
 import (
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -267,6 +268,12 @@ func fnLookup(c *callCtx) value {
 func fnIndex(c *callCtx) value {
 	if c.nargs() < 2 {
 		return errValue
+	}
+	if c.omitted(1) {
+		return errValue
+	}
+	if v, ok := indexRef(c); ok {
+		return v
 	}
 	rng, ok := c.rangeArg(0)
 	if !ok {
@@ -677,44 +684,69 @@ func fnChoose(c *callCtx) value {
 	if idx < 1 || idx > c.nargs()-1 {
 		return errValue
 	}
-	return c.scalar(idx) // arg 0 is the index; choice idx → args[idx]
+	// The chosen argument is returned whole, so CHOOSE(2,A1,B1:B3) is still a
+	// reference (usable in SUM(A1:CHOOSE(...)), ROWS, …).
+	return asValue(c.raw(idx))
 }
 
 // ---- ROW / COLUMN -----------------------------------------------------------
 
-// ROW([ref]) — with no argument returns the current formula cell's 1-based row.
-//
-// LIMITATION: rangeVal does not carry its sheet origin, so when a reference is
-// supplied we cannot recover its absolute top row (e.g. ROW(A5) cannot return
-// 5). We therefore only support the no-argument form precisely; with a range
-// argument we return the current cell's row as a best effort. Use ROWS() for a
-// reliable row count.
-func fnRow(c *callCtx) value {
-	if c.nargs() == 0 {
-		return numVal(float64(c.ev.curRow + 1))
-	}
-	if v, ok := lkpFirstErr(c.scalar(0)); ok {
-		return v
-	}
-	return numVal(float64(c.ev.curRow + 1))
-}
+// ROW([ref]) — the 1-based row of a reference (the formula cell when omitted).
+// A reference spanning several rows yields a column of row numbers.
+func fnRow(c *callCtx) value { return rowColOf(c, true) }
 
-// COLUMN([ref]) — mirrors ROW for columns. Same origin limitation applies; the
-// reference form falls back to the current cell's column.
-func fnColumn(c *callCtx) value {
+// COLUMN([ref]) — mirrors ROW for columns (a row of column numbers).
+func fnColumn(c *callCtx) value { return rowColOf(c, false) }
+
+func rowColOf(c *callCtx, rows bool) value {
 	if c.nargs() == 0 {
+		if rows {
+			return numVal(float64(c.ev.curRow + 1))
+		}
 		return numVal(float64(c.ev.curCol + 1))
 	}
-	if v, ok := lkpFirstErr(c.scalar(0)); ok {
-		return v
+	r := c.refArg(0)
+	if r == nil {
+		if v := c.scalar(0); v.isErr() {
+			return v
+		}
+		return errValue
 	}
-	return numVal(float64(c.ev.curCol + 1))
+	a := r.first()
+	lo, hi := a.c1, a.c2
+	if rows {
+		lo, hi = a.r1, a.r2
+	}
+	n := hi - lo + 1
+	if n == 1 || n > clipThreshold {
+		return numVal(float64(lo + 1))
+	}
+	cells := make([][]value, 0, n)
+	if rows {
+		for i := 0; i < n; i++ {
+			cells = append(cells, []value{numVal(float64(lo + i + 1))})
+		}
+	} else {
+		row := make([]value, n)
+		for i := range row {
+			row[i] = numVal(float64(lo + i + 1))
+		}
+		cells = append(cells, row)
+	}
+	return arrayValue(cells)
 }
 
-// ROWS(rangeVal) — number of rows in the reference/array.
+// ROWS(ref or array) — number of rows (a reference keeps its full size, so
+// ROWS(A:A) is 1048576).
 func fnRows(c *callCtx) value {
 	if c.nargs() < 1 {
 		return errValue
+	}
+	if r := c.refArg(0); r != nil {
+		if len(r.areas) != 1 {
+			return errRef
+		}
+		return numVal(float64(r.first().rows()))
 	}
 	rng, ok := c.rangeArg(0)
 	if !ok {
@@ -723,10 +755,16 @@ func fnRows(c *callCtx) value {
 	return numVal(float64(rng.rows))
 }
 
-// COLUMNS(rangeVal) — number of columns in the reference/array.
+// COLUMNS(ref or array) — number of columns.
 func fnColumns(c *callCtx) value {
 	if c.nargs() < 1 {
 		return errValue
+	}
+	if r := c.refArg(0); r != nil {
+		if len(r.areas) != 1 {
+			return errRef
+		}
+		return numVal(float64(r.first().cols()))
 	}
 	rng, ok := c.rangeArg(0)
 	if !ok {
@@ -737,52 +775,80 @@ func fnColumns(c *callCtx) value {
 
 // ---- ADDRESS ----------------------------------------------------------------
 
-// ADDRESS(row, col, [abs=1], [a1=TRUE]) — builds an A1-style address string.
+// ADDRESS(row, col, [abs=1], [a1=TRUE], [sheet_text]) — builds a cell address.
 //
-//	abs 1 → $A$1   2 → A$1   3 → $A1   4 → A1
+//	abs 1 → $A$1 / R1C1    2 → A$1 / R1C[1]    3 → $A1 / R[1]C1    4 → A1 / R[1]C[1]
 //
-// a1=FALSE (R1C1) is not supported by addrToName; we document that and fall back
-// to A1 notation.
+// In R1C1 style a "relative" part is written in brackets with the number
+// given. sheet_text, when present, prefixes the (quoted if needed) sheet name.
 func fnAddress(c *callCtx) value {
-	if c.nargs() < 2 {
+	if c.nargs() < 2 || c.nargs() > 5 {
 		return errValue
 	}
-	rowF, rok := c.num(0)
-	colF, cok := c.num(1)
-	if !rok || !cok {
-		return errValue
-	}
-	row := int(math.Trunc(rowF))
-	col := int(math.Trunc(colF))
-	if row < 1 || col < 1 {
-		return errValue
-	}
-	absType := 1
-	if c.nargs() >= 3 {
-		af, aok := c.num(2)
-		if !aok {
+	nums := [3]float64{0, 0, 1}
+	for i := 0; i < 3 && i < c.nargs(); i++ {
+		if i == 2 && c.omitted(i) {
+			continue
+		}
+		v := c.scalar(i)
+		if v.isErr() {
+			return v
+		}
+		n, ok := v.toNum()
+		if !ok {
 			return errValue
 		}
-		absType = int(math.Trunc(af))
+		nums[i] = n
 	}
-	if absType < 1 || absType > 4 {
+	row, col, absType := int(math.Trunc(nums[0])), int(math.Trunc(nums[1])), int(math.Trunc(nums[2]))
+	if row < 1 || col < 1 || row > maxSheetRows || col > maxSheetCols || absType < 1 || absType > 4 {
 		return errValue
 	}
-
-	name := addrToName(row-1, col-1) // e.g. "A1"
-	// Split letters/digits to insert the $ markers.
-	letters, digits := lkpSplitA1(name)
-	absCol := absType == 1 || absType == 3
+	a1 := true
+	if c.nargs() >= 4 && !c.omitted(3) {
+		v := c.scalar(3)
+		if v.isErr() {
+			return v
+		}
+		a1 = v.isTruthy()
+	}
 	absRow := absType == 1 || absType == 2
+	absCol := absType == 1 || absType == 3
 	var b strings.Builder
-	if absCol {
-		b.WriteByte('$')
+	if c.nargs() >= 5 {
+		v := c.scalar(4)
+		if v.isErr() {
+			return v
+		}
+		if !v.blank {
+			b.WriteString(quoteSheetName(v.toStr()))
+		}
+		b.WriteByte('!')
 	}
-	b.WriteString(letters)
+	if a1 {
+		letters, digits := lkpSplitA1(addrToName(row-1, col-1))
+		if absCol {
+			b.WriteByte('$')
+		}
+		b.WriteString(letters)
+		if absRow {
+			b.WriteByte('$')
+		}
+		b.WriteString(digits)
+		return strVal(b.String())
+	}
+	b.WriteByte('R')
 	if absRow {
-		b.WriteByte('$')
+		b.WriteString(itoa(row))
+	} else {
+		b.WriteString("[" + itoa(row) + "]")
 	}
-	b.WriteString(digits)
+	b.WriteByte('C')
+	if absCol {
+		b.WriteString(itoa(col))
+	} else {
+		b.WriteString("[" + itoa(col) + "]")
+	}
 	return strVal(b.String())
 }
 
@@ -797,35 +863,174 @@ func lkpSplitA1(name string) (letters, digits string) {
 
 // ---- INDIRECT ---------------------------------------------------------------
 
-// INDIRECT(ref_text, [a1=TRUE]) — resolves ref_text as a single A1 cell
-// reference and returns that cell's value. Ranges and unparseable text yield
-// #REF!. The a1 flag is accepted for compatibility; R1C1 (a1=FALSE) is not
-// supported and yields #REF!.
+// INDIRECT(ref_text, [a1=TRUE]) — the reference spelled by ref_text: a cell,
+// range, whole column/row, sheet-qualified reference or defined name. With
+// a1=FALSE the text is R1C1 style (R2C3, R[1]C[-1], relative to the formula
+// cell). Text that is not a valid reference is #REF!.
 func fnIndirect(c *callCtx) value {
-	if c.nargs() < 1 {
+	if c.nargs() < 1 || c.nargs() > 2 {
 		return errValue
 	}
 	refv := c.scalar(0)
 	if refv.isErr() {
 		return refv
 	}
+	a1 := true
 	if c.nargs() >= 2 {
-		a1 := c.scalar(1)
-		if a1.isErr() {
-			return a1
+		v := c.scalar(1)
+		if v.isErr() {
+			return v
 		}
-		if !a1.isTruthy() {
-			return errRef // R1C1 unsupported
-		}
+		a1 = v.isTruthy()
 	}
-	ref := strings.TrimSpace(refv.toStr())
-	// Reject ranges (contain a colon) — single cell only for a scalar result.
-	if strings.Contains(ref, ":") {
+	text := strings.TrimSpace(refv.toStr())
+	if !a1 {
+		conv, ok := r1c1ToA1(text, c.ev.curRow, c.ev.curCol)
+		if !ok {
+			return errRef
+		}
+		text = conv
+	}
+	sub := &parser{tokens: tokenise(text), ev: c.ev}
+	v := sub.parseExpr()
+	if sub.pos < len(sub.tokens) || v.ref == nil {
 		return errRef
 	}
-	addr, ok := parseCellRef(ref)
-	if !ok {
-		return errRef
+	return v
+}
+
+// r1c1ToA1 converts an R1C1 reference (optionally sheet-qualified, optionally
+// a range) to A1 text. Bracketed parts are relative to (row, col).
+func r1c1ToA1(s string, row, col int) (string, bool) {
+	prefix := ""
+	if i := strings.LastIndex(s, "!"); i >= 0 {
+		prefix, s = s[:i+1], s[i+1:]
 	}
-	return c.ev.cellValue(addr)
+	parts := strings.Split(strings.ToUpper(s), ":")
+	if len(parts) > 2 {
+		return "", false
+	}
+	out := make([]string, 0, 2)
+	for _, p := range parts {
+		a, ok := r1c1Part(p, row, col)
+		if !ok {
+			return "", false
+		}
+		out = append(out, a)
+	}
+	return prefix + strings.Join(out, ":"), true
+}
+
+func r1c1Part(p string, row, col int) (string, bool) {
+	if !strings.HasPrefix(p, "R") {
+		return "", false
+	}
+	p = p[1:]
+	num := func(s string, base int) (int, string, bool) {
+		if strings.HasPrefix(s, "[") {
+			end := strings.Index(s, "]")
+			if end < 0 {
+				return 0, "", false
+			}
+			n, err := strconv.Atoi(s[1:end])
+			if err != nil {
+				return 0, "", false
+			}
+			return base + n, s[end+1:], true
+		}
+		j := 0
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+		if j == 0 {
+			return base, s, true // bare R or C: the formula's own row/column
+		}
+		n, _ := strconv.Atoi(s[:j])
+		return n - 1, s[j:], true
+	}
+	r, rest, ok := num(p, row)
+	if !ok || !strings.HasPrefix(rest, "C") {
+		return "", false
+	}
+	cc, rest, ok := num(rest[1:], col)
+	if !ok || rest != "" || r < 0 || cc < 0 || r >= maxSheetRows || cc >= maxSheetCols {
+		return "", false
+	}
+	return addrToName(r, cc), true
+}
+
+// indexRef is the reference form of INDEX: when the first argument is a
+// reference, the result is a reference too (so ROW(INDEX(A1:B3,2,1)) is 2 and
+// A1:INDEX(...) builds a range). It mirrors fnIndex's selection rules and adds
+// the area_num argument for unions. ok=false leaves the array form to fnIndex.
+func indexRef(c *callCtx) (value, bool) {
+	r := c.refArg(0)
+	if r == nil || c.nargs() > 4 {
+		return value{}, false
+	}
+	idx := make([]int, 0, 3)
+	for i := 1; i < c.nargs(); i++ {
+		v := c.scalar(i)
+		if v.isErr() {
+			return v, true
+		}
+		n, ok := v.toNum()
+		if !ok {
+			return errValue, true
+		}
+		idx = append(idx, int(math.Trunc(n)))
+	}
+	areaNum := 1
+	if len(idx) == 3 {
+		areaNum = idx[2]
+	}
+	if areaNum < 1 || areaNum > len(r.areas) {
+		return errRef, true
+	}
+	a := r.areas[areaNum-1]
+	rowNum, colNum, hasCol := idx[0], 0, len(idx) >= 2
+	if hasCol {
+		colNum = idx[1]
+	}
+	if rowNum < 0 || colNum < 0 {
+		return errValue, true
+	}
+	if !hasCol {
+		switch {
+		case a.rows() == 1:
+			rowNum, colNum = 1, rowNum
+			if colNum == 0 && a.cols() != 1 {
+				return errRef, true
+			}
+		case a.cols() == 1:
+			colNum = 1
+			if rowNum == 0 {
+				return errRef, true
+			}
+		default:
+			return errRef, true
+		}
+	}
+	out := a
+	if rowNum > 0 {
+		if rowNum > a.rows() {
+			return errRef, true
+		}
+		out.r1, out.r2 = a.r1+rowNum-1, a.r1+rowNum-1
+	}
+	if colNum > 0 {
+		if colNum > a.cols() {
+			return errRef, true
+		}
+		out.c1, out.c2 = a.c1+colNum-1, a.c1+colNum-1
+	}
+	if out.rows()*out.cols() > 1 && !(rowNum == 0 && colNum == 0) && (rowNum == 0 && a.rows() > 1 || colNum == 0 && a.cols() > 1) {
+		// A whole row/column slice of a 2-D range: fnIndex treats this as
+		// #REF! in a single-cell context; keep that behaviour.
+		return errRef, true
+	}
+	if out.rows()*out.cols() > 1 {
+		return errRef, true
+	}
+	return c.ev.refValue(r.sheet, false, out), true
 }
