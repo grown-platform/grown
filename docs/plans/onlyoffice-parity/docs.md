@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: research + plan only (2026-09-26). No app code was changed.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -697,15 +697,20 @@ web/e2e/docs/
   oo-<suite>.spec.ts    Playwright ports
 ```
 
-Each ported case is titled with a stable tag so tooling can find it:
+Each ported case is titled with a stable tag so tooling can find it. The
+tag is `oo:<path>#<case>`, where `<path>` is relative to
+`sdkjs-tests-v9.3.1/tests/` and `<case>` is the QUnit test name. Each
+OnlyOffice `QUnit.test` gets exactly one distinct tag. This is the unified
+convention shared with Sheets and Slides; it replaces the bracketed form in
+earlier drafts of this plan.
 
 ```ts
-it("[oo:change-case/change-case.js#Sentence case paragraph] ...", () => {...});
-test("[oo:shortcuts/shortcuts.js#Check save] ...", async ({ page }) => {...});
+it("oo:word/change-case/change-case.js#Sentence case paragraph", () => {...});
+test("oo:word/shortcuts/shortcuts.js#Check save", async ({ page }) => {...});
 ```
 
 Table-driven suites (math autocorrect) use one `it.each` per OnlyOffice input
-string with the tag `[oo:math-autocorrection/math-autocorrection.js#<input>]`
+string with the tag `oo:word/math-autocorrection/math-autocorrection.js#<input>`
 so every generated case is individually countable.
 
 Assertion shape follows the behaviour, not the code: paragraph text via
@@ -745,3 +750,45 @@ objects. Fixtures are written by hand from the described inputs.
   and a `TODO(Mx)`; skipped counts as ported-not-passing.
 * Playwright ports use the existing `createDoc/trashDoc` API helpers and the
   `storageState` project; keep them serial like `docs.spec.ts`.
+
+### 6.4 M0 status (harness landed)
+
+* `buildExtensions({ collab: false })` builds the app's extension set without
+  Yjs or a websocket, keeping ProseMirror history for undo. The app's call
+  (no `collab` key) is unchanged.
+* `web/app/src/pages/docs/__tests__/`: `harness.ts` (`makeEditor`,
+  `typeText` via `handleTextInput`, `selectRange` / `selectText` /
+  `selectInParagraph`, `paragraphText(s)`, `marksAt`, `blockPaths`,
+  `htmlSnapshot` / `jsonSnapshot`), `keys.ts` (`pressKey("Mod-Shift-8")`
+  dispatches a real keydown on the view, so it goes through every plugin
+  keymap), `measurer.ts` (`MockMeasurer`, a monospace grid for M9), and
+  `harness.test.ts` (self-tests).
+* `web/e2e/docs/helpers.ts`: `openDoc`, `runCommand`, `typeInto` (moved out
+  of `docs.spec.ts`).
+* Change case helpers (`transformSelection`, `toTitleCase`) moved from
+  `MenuBar.tsx` to `editorActions.ts` so tests can call them.
+* First ports, 29 tagged cases, 11 passing and 18 skipped:
+  `oo/change-case.test.ts` (15: 6 pass, 4 skipped for M1, 5 math skipped for
+  M11), `oo/shortcuts.test.ts` (10: 4 pass, 6 skipped),
+  `oo/api-text-ops.test.ts` (4 from `word/api/api.js`: 1 pass, 3 skipped).
+
+### 6.5 Semantic differences found
+
+Places where Grown's behaviour differs from OnlyOffice's. Each one has a
+skipped test with a `TODO(Mx)`.
+
+| Case | OnlyOffice | Grown today | Plan |
+|---|---|---|---|
+| change-case: Sentence case, Toggle case (4 cases) | Five change-case modes | Only UPPERCASE, lowercase, Title Case | M1 |
+| change-case (Grown regression tests) | Case change keeps each run's formatting and the paragraph boundaries | `transformSelection` re-inserts the selection as one string. All text takes the first run's marks (`<strong>big</strong> blue` becomes all bold), and a multi-paragraph selection collapses into one paragraph with a newline | M1: map text nodes in place |
+| change-case math (5 cases) | Equation text is left unchanged | No equation node | M11 |
+| shortcuts: Check text property change | The increase/decrease font size shortcuts step through 10, 11, 12, 14, 16 | Bold, italic, underline, strike, superscript and subscript toggles all pass. Font size has no key binding (menu only) and steps by 1pt | M1 |
+| shortcuts: Check paragraph property change | Pressing an alignment shortcut again switches back to left; Ctrl+M / Ctrl+Shift+M indent by 12.5 mm | Headings pass (Grown binds them to Ctrl+Alt+1-3, not Alt+1-3). Alignment shortcuts only set the alignment and never toggle it off. Ctrl+M is not bound (Tab indents list items only) | M1 (M3 for numeric indent) |
+| shortcuts: Check toggle bullet list | Ctrl+Shift+L | Ctrl+Shift+8 (Google Docs / TipTap). The behaviour matches, so this case passes with Grown's key | ShortcutsDialog documents it |
+| shortcuts: page break, reset char, special characters | Ctrl+Enter, Ctrl+Space, and symbol keys (nbsp, ©, €, ®, ™, –, —, ‑, …) | Not bound. A page break is available from the Insert menu only | M1 |
+| shortcuts: Check remove symbols | Backspace/Delete, and with Ctrl a whole word | Handled natively by the browser's contenteditable, so jsdom can't test it | Playwright port (M1) |
+| shortcuts: Check undo/redo history | Undo stack of the document | In the app, Yjs `UndoManager` handles undo; the headless harness uses ProseMirror history with the same keys | Note only |
+| api.js: Test AddText/RemoveSelection | `AddTextWithPr` with the wrap-with-spaces option (`Tex 123 t`) | Typing over a selection works; there is no wrap-with-spaces insert | M1 |
+| api.js: Test add/remove space before/after paragraph | Numeric space before/after, a "has space" state, style-aware | A single before-or-after toggle | M1 |
+| api.js: Get text/selected text | Includes a selection that ends inside an equation | Plain-text half passes; no equation node | M11 |
+| api.js: Change numbering level | Enter in an empty list item ends the list at level 1 and outdents at deeper levels | Same behaviour (passes) | — |

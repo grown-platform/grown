@@ -11,7 +11,13 @@ import {
 } from "@mui/joy";
 import ArrowRightIcon from "@mui/icons-material/ArrowRight";
 import type { Editor } from "@tiptap/react";
-import { copySelection, cutSelection, paste } from "./editorActions";
+import {
+  copySelection,
+  cutSelection,
+  paste,
+  toTitleCase,
+  transformSelection,
+} from "./editorActions";
 import { downloadDoc, DOWNLOAD_FORMATS } from "./export";
 
 const menuButtonSx = {
@@ -32,19 +38,6 @@ function kbd(s: string) {
     </Typography>
   );
 }
-
-/** transformSelection rewrites the selected text via fn (for capitalization). */
-function transformSelection(editor: Editor, fn: (s: string) => string) {
-  const { from, to } = editor.state.selection;
-  if (from === to) return;
-  const text = editor.state.doc.textBetween(from, to, "\n");
-  editor.chain().focus().insertContentAt({ from, to }, fn(text)).run();
-}
-const toTitleCase = (s: string) =>
-  s.replace(
-    /\w\S*/g,
-    (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
-  );
 
 /** bumpFont changes the selection's font size by delta points. */
 function bumpFont(editor: Editor, delta: number) {
