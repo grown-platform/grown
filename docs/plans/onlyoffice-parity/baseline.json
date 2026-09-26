@@ -2,11 +2,11 @@
   "version": 1,
   "areas": {
     "common/code-style": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     },
     "common/common-api": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     },
     "common/common-charts": {
@@ -14,7 +14,7 @@
       "passing": null
     },
     "common/common-color": {
-      "ported": 0,
+      "ported": 28,
       "passing": null
     },
     "common/common-fonts": {
@@ -246,7 +246,7 @@
       "passing": null
     },
     "slides/ecma-376 colour transforms": {
-      "ported": 0,
+      "ported": 28,
       "passing": null
     },
     "slides/empty stub": {
@@ -310,12 +310,12 @@
       "passing": null
     },
     "slides/url classification for hyperlinks": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     }
   },
   "total": {
-    "ported": 135,
+    "ported": 167,
     "passing": null
   }
 }

@@ -602,7 +602,8 @@ Text-warp presets (`text*`) are excluded (F5).
 - **Colour maths**: `<a:schemeClr val="accent1"><a:lumMod val="60000"/>
   <a:lumOff val="40000"/></a:schemeClr>` is everywhere in real pptx files, so
   import needs an ECMA-376 §20.1.2.3 colour-transform implementation
-  (`colorMods.ts`). This is where the OnlyOffice `color-mods` suite is ported
+  (`colorMods.ts`; **landed in CC1 as the shared `web/app/src/lib/colorMods.ts`** —
+  use `resolveColor`/`readColorMods` from there, don't fork it). This is where the OnlyOffice `color-mods` suite is ported
   (as behaviour tables we write ourselves — the transforms are spec-defined
   HSL/RGB maths).
 - **Round-trip tests**: vitest `pptx/roundtrip.test.ts` — build a `DeckDoc`
@@ -670,7 +671,8 @@ the OnlyOffice cases it ports (by the numbering in §3.3, or by file).
   (choose which slides), DeckList "Upload .pptx", Drive open route
   `/slides/:id` → real editor for `.pptx` and Grown decks (removes the
   `EditorPlaceholder` for slides in `App.tsx`).
-- `colorMods.ts` (ECMA-376 colour transforms) used by import for scheme colours.
+- `colorMods.ts` (ECMA-376 colour transforms) used by import for scheme colours
+  (shared `web/app/src/lib/colorMods.ts`, landed in CC1).
 - Tests: `pptx/write.test.ts` (inspect emitted XML strings per feature),
   `pptx/read.test.ts` (fixtures authored by us), `pptx/roundtrip.test.ts`,
   `colorMods.test.ts` — port of `common/color-mods/color-mods.js` as our own
@@ -883,8 +885,8 @@ web/app/src/pages/slides/
   history.ts            history.test.ts       (M0)
   presentOps.ts         presentOps.test.ts    (M0/M9)
   model.test.ts                               (M0)
-  colorMods.ts          colorMods.test.ts     (M1)  ← common/color-mods
-  links.ts              links.test.ts         (M1/M4) ← common/api (asc_getUrlType)
+  (colorMods + URL classifier live in web/app/src/lib/ — landed in CC1)
+  links.ts              links.test.ts         (M1/M4) slide link targets; URL classes via lib/urlType
   shortcuts.ts          shortcuts.test.ts     (M13) ← slide/shortcuts/events.js
   textOps.ts            textOps.test.ts       (M4)
   tableOps.ts           tableOps.test.ts      (M5)
