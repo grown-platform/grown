@@ -49,7 +49,6 @@ import {
   DownloadDialog,
   EmojiDialog,
   SpecialCharsDialog,
-  FindReplaceDialog,
   CustomSpacingDialog,
   PageSetupDialog,
 } from "./dialogs";
@@ -68,6 +67,9 @@ const DrawingDialog = lazy(() =>
 import { Comments, type CommentsHandle } from "./Comments";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { ShortcutsDialog } from "./ShortcutsDialog";
+import { FindBar, type FindMode } from "./FindBar";
+import { AutoCorrectDialog } from "./AutoCorrectDialog";
+import { getAutoCorrect, loadAutoCorrect, saveAutoCorrect } from "./autocorrect";
 
 interface DocEditorProps {
   user: User;
@@ -101,7 +103,15 @@ export function DocEditor({ user }: DocEditorProps) {
     | "pagesetup"
     | "shortcuts"
     | "spacing"
+    | "autocorrect"
   >(null);
+  // Find & replace bar (Ctrl+F / Ctrl+H); findFocus refocuses it.
+  const [findBar, setFindBar] = useState<FindMode | null>(null);
+  const [findFocus, setFindFocus] = useState(0);
+  const openFind = (m: FindMode) => {
+    setFindBar((cur) => (m === "find" && cur === "replace" ? cur : m));
+    setFindFocus((n) => n + 1);
+  };
   // Right-hand side panel: version history, comments, or suggestions.
   const [panel, setPanel] = useState<
     null | "versions" | "comments" | "suggestions"
@@ -165,6 +175,11 @@ export function DocEditor({ user }: DocEditorProps) {
   useEffect(() => {
     editor?.setEditable(mode === "editing" || suggesting);
   }, [editor, mode, suggesting]);
+
+  // The user's AutoCorrect settings (stored per user in this browser).
+  useEffect(() => {
+    editor?.commands.setAutoCorrect(loadAutoCorrect(user.id));
+  }, [editor, user.id]);
 
   // Mirror the Suggesting toggle into the editor's suggestion plugin storage.
   useEffect(() => {
@@ -281,7 +296,9 @@ export function DocEditor({ user }: DocEditorProps) {
       const words = (editor?.getText().trim().match(/\S+/g) || []).length;
       window.alert(`${words} word${words === 1 ? "" : "s"}`);
     },
-    findReplace: () => setDialog("find"),
+    findReplace: () => openFind("replace"),
+    find: () => openFind("find"),
+    autoCorrect: () => setDialog("autocorrect"),
     customSpacing: () => setDialog("spacing"),
     emoji: () => setDialog("emoji"),
     specialChars: () => setDialog("specials"),
@@ -407,6 +424,14 @@ export function DocEditor({ user }: DocEditorProps) {
         (e.ctrlKey || e.metaKey) &&
         !e.altKey &&
         !e.shiftKey &&
+        (e.key === "f" || e.key === "F")
+      ) {
+        e.preventDefault();
+        openFind("find");
+      } else if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
         (e.key === "k" || e.key === "K") &&
         editor?.isFocused
       ) {
@@ -519,7 +544,9 @@ export function DocEditor({ user }: DocEditorProps) {
         section: "Edit",
         run: () => e.chain().focus().redo().run(),
       },
+      { label: "Find", section: "Edit", run: () => openFind("find") },
       { label: "Find and replace", section: "Edit", run: actions.findReplace },
+      { label: "AutoCorrect options", section: "Tools", run: () => setDialog("autocorrect") },
       { label: "Download", section: "File", run: actions.download },
       { label: "Share", section: "File", run: actions.share },
       { label: "Make a copy", section: "File", run: actions.makeCopy },
@@ -854,11 +881,26 @@ export function DocEditor({ user }: DocEditorProps) {
         onClose={() => setDialog(null)}
         editor={editor}
       />
-      <FindReplaceDialog
-        open={dialog === "find"}
-        onClose={() => setDialog(null)}
-        editor={editor}
-      />
+      {findBar && (
+        <FindBar
+          editor={editor}
+          mode={findBar}
+          onModeChange={setFindBar}
+          onClose={() => setFindBar(null)}
+          focusKey={findFocus}
+        />
+      )}
+      {editor && (
+        <AutoCorrectDialog
+          open={dialog === "autocorrect"}
+          onClose={() => setDialog(null)}
+          settings={getAutoCorrect(editor)}
+          onSave={(s) => {
+            editor.commands.setAutoCorrect(s);
+            saveAutoCorrect(user.id, s);
+          }}
+        />
+      )}
       <PageSetupDialog
         open={dialog === "pagesetup"}
         onClose={() => setDialog(null)}

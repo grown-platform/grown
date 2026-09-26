@@ -9,7 +9,9 @@ export default defineConfig({
     proxy: {
       // In dev, proxy /api and /healthz to the Go backend on 8080.
       // Production: backend serves both the API and the built SPA directly.
-      "/api": "http://127.0.0.1:8080",
+      // ws: the collab hubs (/api/v1/{docs,sheets,slides,…}/d/<id>/connect)
+      // are WebSockets; without this the dev editors silently run offline.
+      "/api": { target: "http://127.0.0.1:8080", ws: true },
       "/healthz": "http://127.0.0.1:8080",
     },
   },

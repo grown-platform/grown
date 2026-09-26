@@ -26,6 +26,9 @@ import { ParagraphSpacing, ParagraphIndent, ParagraphShading } from "./paragraph
 import { DocShortcuts, TabCharacter } from "./shortcuts";
 import { ParagraphProps } from "./paragraphProps";
 import { DocModel, CharStyle } from "./docModel";
+import { ClipboardHandling } from "./clipboard";
+import { Search } from "./search";
+import { AutoCorrect } from "./autocorrect";
 import type * as Y from "yjs";
 import type { WebsocketProvider } from "y-websocket";
 
@@ -570,7 +573,8 @@ export function buildExtensions(opts: BuildOpts) {
     TextAlign.configure({ types: ["heading", "paragraph"] }),
     TaskList,
     TaskItem.configure({ nested: true }),
-    Image,
+    // Data-URL images (pasted, imported) must survive HTML parsing.
+    Image.configure({ allowBase64: true }),
     ImagePaste,
     Subscript,
     Superscript,
@@ -585,6 +589,9 @@ export function buildExtensions(opts: BuildOpts) {
     DeletionMark,
     Drawing,
     Suggesting.configure({ user: { name: userName, color: userColor } }),
+    ClipboardHandling,
+    Search,
+    AutoCorrect,
     DocShortcuts,
     TabCharacter,
     // Styles + numbering (M3): bound to the doc's `styles` / `numbering`

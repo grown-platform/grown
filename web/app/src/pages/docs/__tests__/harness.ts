@@ -47,6 +47,13 @@ function polyfillLayout() {
   if (typeof document !== "undefined") {
     document.elementFromPoint ??= () => null;
   }
+  // view.pasteHTML / pasteText construct a ClipboardEvent, which jsdom lacks.
+  const g = globalThis as { ClipboardEvent?: unknown };
+  if (typeof g.ClipboardEvent === "undefined" && typeof Event !== "undefined") {
+    g.ClipboardEvent = class ClipboardEvent extends Event {
+      clipboardData: DataTransfer | null = null;
+    };
+  }
 }
 polyfillLayout();
 
