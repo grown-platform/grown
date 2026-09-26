@@ -308,6 +308,7 @@ export const SHORTCUT_GROUPS: { title: string; items: ShortcutRow[] }[] = [
       { label: "Undo", keys: "Ctrl+Z" },
       { label: "Redo", keys: "Ctrl+Y / Ctrl+Shift+Z" },
       { label: "Select all", keys: "Ctrl+A" },
+      { label: "Find", keys: "Ctrl+F" },
       { label: "Find and replace", keys: "Ctrl+H" },
       { label: "Save (saves automatically)", keys: "Ctrl+S" },
       { label: "Print", keys: "Ctrl+P" },
