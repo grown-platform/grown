@@ -125,6 +125,42 @@ func newSheetState(name string, data []FsCellData) *sheetState {
 	return st
 }
 
+// spillMarkKey marks a persisted cell that a dynamic array filled. Its value
+// is the display text the spill wrote; while the cell still shows that text it
+// is spill output (free for the array to rewrite), once the user types over it
+// it is ordinary data again.
+const spillMarkKey = "grownSpill"
+
+// isSpillOutput reports whether a persisted cell is untouched spill output.
+func isSpillOutput(c *FsCell) bool {
+	if c == nil || c.F != "" || c.Extra == nil {
+		return false
+	}
+	raw, ok := c.Extra[spillMarkKey]
+	if !ok {
+		return false
+	}
+	var mark string
+	if json.Unmarshal(raw, &mark) != nil {
+		return false
+	}
+	return mark == c.M || mark == fmtAny(c.V)
+}
+
+func fmtAny(v interface{}) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case float64:
+		return numVal(x).toStr()
+	case bool:
+		return boolVal(x).toStr()
+	}
+	return ""
+}
+
 // index records occupancy and the used extent from the original celldata.
 func (st *sheetState) index(data []FsCellData) {
 	for _, cd := range data {
@@ -132,6 +168,9 @@ func (st *sheetState) index(data []FsCellData) {
 			continue
 		}
 		a := cellAddr{row: cd.R, col: cd.C}
+		if isSpillOutput(cd.V) {
+			continue // last recalculation's spill: free to rewrite
+		}
 		if strings.HasPrefix(cd.V.F, "=") {
 			st.isFormula[a] = true
 			st.occupied[a] = true
@@ -600,6 +639,17 @@ func (ev *Evaluator) writeBack(si int, data []FsCellData) []FsCellData {
 			base.F = ""
 			base.V = sv.asInterface()
 			base.M = sv.toStr()
+			base.Extra = withSpillMark(base.Extra, base.M)
+			nc.V = &base
+		} else if isSpillOutput(cd.V) {
+			// Spill output the array no longer covers: clear it, keeping any
+			// formatting on the cell.
+			base := *cd.V
+			base.V, base.M = nil, ""
+			base.Extra = withoutKey(base.Extra, spillMarkKey)
+			if len(base.Extra) == 0 && base.CT == nil {
+				continue
+			}
 			nc.V = &base
 		}
 		out = append(out, nc)
@@ -609,7 +659,7 @@ func (ev *Evaluator) writeBack(si int, data []FsCellData) []FsCellData {
 		if seen[addr] {
 			continue
 		}
-		extra = append(extra, FsCellData{R: addr.row, C: addr.col, V: &FsCell{V: sv.asInterface(), M: sv.toStr()}})
+		extra = append(extra, FsCellData{R: addr.row, C: addr.col, V: &FsCell{V: sv.asInterface(), M: sv.toStr(), Extra: withSpillMark(nil, sv.toStr())}})
 	}
 	sort.Slice(extra, func(i, j int) bool {
 		if extra[i].R != extra[j].R {
@@ -769,4 +819,26 @@ func (ev *Evaluator) implicitIntersect(v value) value {
 		return ev.refValue(v.ref.sheet, false, area{r1: a.r1, c1: ev.curCol, r2: a.r1, c2: ev.curCol})
 	}
 	return errValue
+}
+
+// withSpillMark returns a copy of extra with the spill marker set to text.
+func withSpillMark(extra map[string]json.RawMessage, text string) map[string]json.RawMessage {
+	out := make(map[string]json.RawMessage, len(extra)+1)
+	for k, v := range extra {
+		out[k] = v
+	}
+	raw, _ := json.Marshal(text)
+	out[spillMarkKey] = raw
+	return out
+}
+
+// withoutKey returns a copy of extra without key.
+func withoutKey(extra map[string]json.RawMessage, key string) map[string]json.RawMessage {
+	out := make(map[string]json.RawMessage, len(extra))
+	for k, v := range extra {
+		if k != key {
+			out[k] = v
+		}
+	}
+	return out
 }

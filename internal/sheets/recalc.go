@@ -16,14 +16,18 @@ import (
 
 // RecalcCell is one computed cell.
 type RecalcCell struct {
-	SheetID    string      `json:"sheetId"`
-	SheetIndex int         `json:"sheetIndex"`
-	R          int         `json:"r"`
-	C          int         `json:"c"`
-	V          interface{} `json:"v"`
-	M          string      `json:"m"`
+	SheetID    string `json:"sheetId"`
+	SheetIndex int    `json:"sheetIndex"`
+	R          int    `json:"r"`
+	C          int    `json:"c"`
+	// F is the formula the value was computed from (empty for spill cells);
+	// the client skips a cell whose formula changed while the request ran.
+	F string      `json:"f,omitempty"`
+	V interface{} `json:"v"`
+	M string      `json:"m"`
 	// Spill is true for a cell filled by a neighbouring dynamic array (it has
-	// no formula of its own).
+	// no formula of its own). The client stores M under the grownSpill key so
+	// the next save knows the cell is spill output, not user data.
 	Spill bool `json:"spill,omitempty"`
 }
 
@@ -54,7 +58,7 @@ func RecalcWorkbook(data string) ([]RecalcCell, error) {
 			}
 			out = append(out, RecalcCell{
 				SheetID: wb[i].ID, SheetIndex: i, R: cd.R, C: cd.C,
-				V: cd.V.V, M: cd.V.M, Spill: spilled && !isFormula,
+				F: cd.V.F, V: cd.V.V, M: cd.V.M, Spill: spilled && !isFormula,
 			})
 		}
 	}
