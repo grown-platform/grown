@@ -11,7 +11,8 @@ office suites.
 > open source under the [MIT License](LICENSE). Use it, run it, fork it, sell it —
 > no strings.
 
-Live instance: **[grown.haus](https://grown.haus)**
+Live instance: **[grown.haus](https://grown.haus)** · Website & docs:
+**[grown-platform.github.io/grown](https://grown-platform.github.io/grown/)**
 
 ## Contributing & issues — very welcome 🙌
 
@@ -22,12 +23,13 @@ a feature idea, a new game, or a pull request — please jump in.
 > bug — **just [open an issue](https://github.com/grown-platform/grown/issues/new)
 > and we'll get it grown 🌱.** No request is too small.
 
-- **Source code (mirror):** **https://github.com/grown-platform/grown**
+- **Source code (canonical):** **https://code.pick.haus/grown/grown-workspace**
+- **Source code (GitHub mirror):** **https://github.com/grown-platform/grown**
 - **🐛 Found a bug / have an idea?** [Open an issue](https://github.com/grown-platform/grown/issues).
 - **🔧 Want to contribute code?** Fork the GitHub mirror, make your change, and
   open a pull request — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for the flow.
 
-The canonical repository lives on our Forgejo (`code.pick.haus`) and is mirrored
+The canonical repository lives on our Forgejo ([`code.pick.haus`](https://code.pick.haus/grown/grown-workspace)) and is mirrored
 to GitHub so anyone can file issues and propose PRs. A maintainer reviews PRs and
 merges them upstream; merged changes flow back out to the GitHub mirror.
 
