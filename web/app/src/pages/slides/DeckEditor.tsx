@@ -937,6 +937,7 @@ export function DeckEditor({ user }: { user: User }) {
             return (
               <Box
                 key={s.id}
+                data-testid="slide-thumb"
                 onClick={() => {
                   setCur(i);
                   setSelId(null);
