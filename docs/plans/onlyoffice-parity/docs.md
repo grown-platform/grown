@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -362,9 +362,9 @@ Grown paths are relative to the repo root; `docs/` below means
 
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
-| Replace-as-you-type table (custom pairs) | AutoCorrectDialog `textReplaceType` | Missing | — |
-| Capitalize first letter of sentence / of table cells, exceptions | AutoCorrectDialog, `as-you-type.js` | Missing | — |
-| Smart quotes, `--` -> em dash, hyperlink recognition, double-space period | AutoCorrectDialog | Partial | autolink only |
+| Replace-as-you-type table (custom pairs) | AutoCorrectDialog `textReplaceType` | Have (M2) | `docs/autocorrect.ts`, `AutoCorrectDialog.tsx` |
+| Capitalize first letter of sentence / of table cells, exceptions | AutoCorrectDialog, `as-you-type.js` | Have (M2) | `docs/autocorrect.ts` |
+| Smart quotes, `--` -> em dash, hyperlink recognition, double-space period | AutoCorrectDialog | Have (M2) | `docs/autocorrect.ts`; hyperlinks via TipTap autolink |
 | Automatic bulleted / numbered lists | AutoCorrectDialog | Partial | see 2.4 |
 | Math autocorrect, recognized functions | AutoCorrectDialog | Missing | — |
 | Markdown-style input rules (`**bold**`, `# heading`, `> quote`, `---`) | (Google-style) | Have | StarterKit input rules |
@@ -373,10 +373,10 @@ Grown paths are relative to the repo root; `docs/` below means
 
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
-| Find with highlighting, result count, next/previous | Common SearchPanel | Missing | — |
-| Case sensitive, whole words, regex | SearchPanel | Missing | — |
-| Replace one / replace all | SearchPanel | Partial | replace-all only; matches must lie inside a single text node (`docs/editorActions.ts:606`) |
-| Replace preserving run formatting ("smart") | `js-api/api/replace-text-smart.js` | Missing | — |
+| Find with highlighting, result count, next/previous | Common SearchPanel | Have (M2) | `docs/search.ts`, `docs/FindBar.tsx` |
+| Case sensitive, whole words, regex | SearchPanel | Have (M2) | `docs/search.ts` |
+| Replace one / replace all | SearchPanel | Have (M2) | `docs/search.ts`; matches may span runs |
+| Replace preserving run formatting ("smart") | `js-api/api/replace-text-smart.js` | Have (M2) | `smartReplace` / `replaceTextSmart` in `docs/search.ts` |
 | Spell check (as you type, dictionary, language) | ReviewChanges `txtSpelling`, `Editor/SpellChecker` | Missing | menu item disabled |
 
 ### 2.18 Keyboard shortcuts
@@ -833,3 +833,72 @@ Google Docs binding or model and the ported test asserts Grown's behaviour.
   symbols check with a screenshot). The "Desktop Chrome" device reports a
   Windows platform, so app chords use Ctrl even on a macOS host while
   native caret movement follows the host.
+
+### 6.7 M2 status (clipboard, find/replace, as-you-type autocorrect)
+
+* **Clipboard**: `clipboard.ts` — the `ClipboardHandling` extension runs
+  `normalizePastedHTML` on every HTML paste (Word/Excel/Google Docs: drops
+  `<head>`/`<style>`/comments, `v:*`/`o:*` Office markup and `file:`/`cid:`
+  images; turns `mso-list` paragraphs into nested `<ul>`/`<ol>` and drops
+  the typed markers; page-break `<br>`s become page breaks; `mso-highlight`
+  / background spans become highlights; colour/font set on a block moves to
+  a span so it survives; strips `Mso*` classes, `lang`, `mso-*` CSS) and
+  serialises copies as semantic HTML (page breaks go out as Word's
+  page-break `<br>`) plus plain text (`sliceToText`: "\n" between blocks,
+  "\t" between cells, "• " / "1. " / "☐ " list prefixes). Paste as plain
+  text is ProseMirror's shift-paste (Ctrl+Shift+V) or `pastePlainText`;
+  Edit > Paste / Paste without formatting now go through the same pipeline
+  (`view.pasteHTML` / `pasteText`). `Image` accepts data URLs.
+* **Find & replace**: `search.ts` — `findMatches` (per textblock, across
+  runs; match case, whole words, regex), the `Search` extension (highlight
+  decorations `.search-match` / `.search-match-current`, `setSearch`,
+  `findNext` / `findPrevious` wrapping, `replaceCurrent`,
+  `replaceAllMatches` in one undo step, `$1`/`$<name>` in regex mode) and
+  `smartReplace` / `replaceTextSmart`, which keep each surviving
+  character's formatting and give new characters the formatting of what
+  they replace. `FindBar.tsx` is a floating bar (Ctrl+F find, Ctrl+H with
+  replace, Enter / Shift+Enter, Esc) with an "n of m" count; it replaces
+  the replace-all-only dialog.
+* **AutoCorrect**: `autocorrect.ts` — as-you-type engine on
+  `handleTextInput` (+ Enter): capitalise sentence starts (exceptions list,
+  single-letter initials, no Georgian, not inside URLs/mixed-case words),
+  first letter of table cells (own option), smart quotes, `--` → —,
+  double-space period (off by default), replacement list (symbol entries
+  such as `(c)`, `->`, `...` fire on their last character, word entries on
+  a word end). Backspace straight after a correction restores the typed
+  text. Code blocks and inline code are skipped. `AutoCorrectDialog.tsx`
+  (Tools > AutoCorrect options…) toggles every option and edits the
+  replacement list and exceptions; settings persist per user in
+  localStorage (`grown.docs.autocorrect.v1:<user id>`).
+* **Current word / sentence**: `textUnits.ts` — get / replace / select the
+  word or sentence at the caret, whole or the part before / after it.
+* **Tests**: 37 tagged cases, 34 passing, 3 skipped:
+  `oo/copy-paste.test.ts` 32 (30 pass; the upstream-commented "Newton’s
+  binom formula" and "footnote formula" cases are skipped for M11),
+  `oo/replace-smart.test.ts` 2 (1 pass; "with revisions" skipped for M5),
+  `oo/autocorrect-as-you-type.test.ts` 2, `oo/text-selection-units.test.ts`
+  1 (pluginsApi "CurrenWord/CurrentSentence"; its hidden PAGE-field
+  sub-case waits for M8 fields). Grown-native: `search.test.ts`,
+  `autocorrect.test.ts`, Word-list / Google Docs / plain-text cases in
+  `copy-paste.test.ts`, selection cases in `text-selection-units.test.ts`.
+  Playwright: `web/e2e/docs-find.spec.ts` (highlights, next/previous,
+  whole word / match case, replace all; `--`, smart quotes, `(c)`,
+  Backspace undo while typing).
+* **Semantic differences**:
+
+| Case | OnlyOffice | Grown | Status |
+|---|---|---|---|
+| copy-paste tag names | Several QUnit names contain double quotes | The scoreboard's tag syntax ends a case at a quote, so those tags drop the quotes (`#Test: callback tests paste plain text`) | Note only |
+| copy-paste: paste into an empty document | Leaves the document's own empty paragraph after the pasted content | ProseMirror replaces the empty paragraph; no trailing paragraph | grown-variant |
+| copy-paste: inline styles on paste | The test build stubs style processing, so `<span style="color:blue">` loses its colour | Colours, fonts and sizes on spans (and on blocks, moved to a span) are kept | grown-variant |
+| copy-paste: copy back | Word-style HTML with inline `mso-*` CSS and a `docData` payload | Semantic HTML (`<h1>`, `<strong>`, `<ul><li><p>`) plus a `data-pm-slice` attribute, which is Grown's "internal format" | grown-variant |
+| copy-paste: images | Loaded asynchronously, so the test document stays empty | `<img>` becomes an image node at once (data URLs allowed); images pointing at the copier's disk are dropped | grown-variant |
+| replace-text-smart: runs | Adjacent runs with the same formatting stay separate runs | Adjacent text with equal marks is one run in ProseMirror, so `"e"` + `" Test"` read as `"e Test"` | Note only |
+| replace-text-smart: with revisions | Smart replace under tracking | Needs change ids and per-run review types | M5 |
+| as-you-type: which text is judged | `EnterText` doesn't trigger corrections; only the final Space does | Same in the ports (`addText`, then a typed space); in the app every word end triggers | Done (M2) |
+| autocorrect: dashes | Word turns spaced ` - ` / ` -- ` into an en dash and `--` between words into an em dash | `--` always becomes an em dash | grown-variant |
+| pluginsApi: current word/sentence around a hidden field | A PAGE field inside "Test" splits the word | No field node | M8 |
+
+TipTap 2 note: extension `storage` is shared by every editor built from the
+same extension object, so per-editor state (AutoCorrect settings) lives in a
+`WeakMap` keyed by editor instead.
