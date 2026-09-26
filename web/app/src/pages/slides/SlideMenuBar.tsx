@@ -16,6 +16,7 @@ import type { ElementType } from "./model";
 export interface SlideActions {
   newDeck: () => void;
   open: () => void;
+  importSlides: () => void;
   makeCopy: () => void;
   rename: () => void;
   trash: () => void;
@@ -451,7 +452,14 @@ function FileMenu({ actions }: { actions: SlideActions }) {
           </>
         )}
         <MenuItem onClick={actions.open}>Open{kbd("Ctrl+O")}</MenuItem>
-        <MenuItem disabled>Import slides</MenuItem>
+        <MenuItem
+          onClick={() => {
+            close();
+            actions.importSlides();
+          }}
+        >
+          Import slides (.pptx)
+        </MenuItem>
         <MenuItem onClick={actions.makeCopy}>Make a copy</MenuItem>
         <ListDivider />
         <MenuItem onClick={actions.share}>Share</MenuItem>

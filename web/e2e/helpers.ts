@@ -103,6 +103,18 @@ export async function trashDeck(request: APIRequestContext, id: string) {
   await request.delete(`${BASE_URL}/api/v1/slides/d/${id}`).catch(() => {});
 }
 
+// saveDeckData replaces a deck's model ({ slides: [...] }), like the editor's autosave.
+export async function saveDeckData(
+  request: APIRequestContext,
+  id: string,
+  deck: unknown,
+) {
+  const res = await request.put(`${BASE_URL}/api/v1/slides/d/${id}/data`, {
+    data: { data: JSON.stringify(deck) },
+  });
+  if (!res.ok()) throw new Error(`saveDeckData failed: ${res.status()}`);
+}
+
 // getDeckData returns the parsed deck model ({ slides: [...] }) or null when
 // the deck has never been saved.
 export async function getDeckData(

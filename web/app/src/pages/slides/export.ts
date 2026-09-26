@@ -125,15 +125,6 @@ function fullHTML(deck: DeckDoc, title: string): string {
 </head><body>${slides}</body></html>`;
 }
 
-function pxToInch(px: number): number {
-  return (px / CANVAS_W) * 10;
-} // 16:9 → 10in wide
-function pxToPt(px: number): number {
-  return px * 0.75;
-} // 960px logical → 720pt
-function hex(c?: string): string {
-  return (c || "#000000").replace("#", "").slice(0, 6).padEnd(6, "0");
-}
 
 // Fractional (0..1) polygon points for clip-path shapes, kept in sync with
 // shapeClipPath() in model.ts. Used for SVG/pptx polygon rendering.
@@ -282,7 +273,7 @@ function svgToImage(
 }
 
 /**
- * downloadDeck exports the presentation. pptx is built with pptxgenjs; pdf is
+ * downloadDeck exports the presentation. pptx is built by pptx/write.ts; pdf is
  * produced via a faithful print window (Save as PDF); html/txt are written
  * client-side.
  */
@@ -357,75 +348,14 @@ export async function downloadDeck(
     return;
   }
 
-  // pptx — build a real PowerPoint with pptxgenjs.
-  const mod = await import("pptxgenjs");
-  const PptxGenJS = mod.default;
-  const pptx = new PptxGenJS();
-  pptx.defineLayout({ name: "GROWN16x9", width: 10, height: 5.625 });
-  pptx.layout = "GROWN16x9";
-  for (const slide of deck.slides) {
-    const s = pptx.addSlide();
-    s.background = { color: hex(slide.background) };
-    for (const el of slide.elements) {
-      const pos = {
-        x: pxToInch(el.x),
-        y: pxToInch(el.y),
-        w: pxToInch(el.w),
-        h: pxToInch(Math.max(el.h, 1)),
-      };
-      try {
-        if (el.type === "text") {
-          s.addText(el.text || "", {
-            ...pos,
-            fontSize: pxToPt(el.fontSize || 18),
-            bold: !!el.bold,
-            italic: !!el.italic,
-            underline: el.underline ? { style: "sng" } : undefined,
-            color: hex(el.color),
-            align: el.align || "left",
-            valign:
-              el.valign === "middle"
-                ? "middle"
-                : el.valign === "bottom"
-                  ? "bottom"
-                  : "top",
-            fontFace: el.fontFamily || "Arial",
-          });
-        } else if (
-          el.type === "rect" ||
-          el.type === "roundRect" ||
-          el.type === "ellipse" ||
-          el.type === "triangle" ||
-          el.type === "diamond" ||
-          el.type === "rightArrow"
-        ) {
-          // pptxgenjs ShapeType names: rect, roundRect, ellipse, triangle, diamond, rightArrow.
-          const line =
-            el.stroke && el.stroke !== "none"
-              ? { color: hex(el.stroke), width: el.strokeWidth }
-              : undefined;
-          s.addShape(el.type as Parameters<typeof s.addShape>[0], {
-            ...pos,
-            fill: { color: hex(el.fill) },
-            line,
-          });
-        } else if (el.type === "line") {
-          s.addShape("line", {
-            x: pos.x,
-            y: pos.y,
-            w: pos.w,
-            h: 0,
-            line: { color: hex(el.stroke), width: el.strokeWidth || 2 },
-          });
-        } else if (el.type === "image" && el.src) {
-          if (el.src.startsWith("data:")) s.addImage({ ...pos, data: el.src });
-          else s.addImage({ ...pos, path: el.src });
-        }
-      } catch {
-        /* skip element that pptxgenjs rejects */
-      }
-    }
-    if (slide.notes && slide.notes.trim()) s.addNotes(slide.notes);
-  }
-  await pptx.writeFile({ fileName: `${name}.pptx` });
+  // pptx — pptxgenjs package, post-processed for what it can't express
+  // (see pptx/write.ts).
+  const { deckToPptx } = await import("./pptx/write");
+  const bytes = await deckToPptx(deck, title || "Presentation");
+  triggerDownload(
+    new Blob([bytes as BlobPart], {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    }),
+    `${name}.pptx`,
+  );
 }

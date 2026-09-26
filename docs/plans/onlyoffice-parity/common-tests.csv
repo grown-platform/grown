@@ -28,8 +28,8 @@ sdkjs/common/libfont/test/hyphen.js,0,common-fonts,low,web/app/src/pages/docs/hy
 sdkjs/common/geometry/test/code.js,0,common-geometry,none,,CC6
 core/OOXML/test/xlsx2xlsb/conversion.cpp,3,conversion,low,internal/sheets/corpus_test.go,CC5
 core/OOXML/test/xlsb2xlsx/conversion.cpp,3,conversion,low,internal/sheets/corpus_test.go,CC5
-core/OdfFile/Test/test_odf/ExampleFiles,13,conversion,low,internal/slides/corpus_test.go,CC5
-core/OdfFile/Test/Test/ExampleFiles,5,conversion,low,internal/docs/corpus_test.go,CC2
+core/OdfFile/Test/test_odf/ExampleFiles,13,conversion,low,internal/slides/corpus_test.go; web/app/src/pages/slides/pptx/corpus.test.ts,CC5
+core/OdfFile/Test/Test/ExampleFiles,5,conversion,low,internal/docs/corpus_test.go; web/app/src/pages/slides/pptx/corpus.test.ts,CC2
 core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles,28,conversion,medium,internal/docs/corpus_test.go; internal/sheets/corpus_test.go; internal/slides/corpus_test.go,CC2
 core/EpubFile/test/Files,11,conversion,medium,internal/docs/corpus_test.go,CC2
 core/Fb2File/examples,10,conversion,none,,CC8
