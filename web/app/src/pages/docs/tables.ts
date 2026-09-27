@@ -23,6 +23,8 @@ import { CellSelection, TableMap, isInTable, selectedRect, type TableRect } from
 import type { EditorView } from "@tiptap/pm/view";
 import {
   CELL_SIDES,
+  DEFAULT_LOOK,
+  LOOK_KEYS,
   NO_BORDER,
   TABLE_SIDES,
   borderCss,
@@ -233,7 +235,7 @@ function withCellProps<T extends { extend: (c: object) => unknown }>(base: T) {
         ...(this.parent?.() || {}),
         backgroundColor: {
           default: null,
-          parseHTML: (el: HTMLElement) => el.style.backgroundColor || null,
+          parseHTML: (el: HTMLElement) => normaliseColor(el.style.backgroundColor) || null,
           renderHTML: (attrs: { backgroundColor?: string }) =>
             attrs.backgroundColor ? { style: `background-color: ${attrs.backgroundColor}` } : {},
         },
@@ -826,7 +828,9 @@ export function setLookOption(editor: Editor, key: keyof ReturnType<typeof parse
   if (!attrs) return false;
   const look = parseLook(attrs.look);
   look[key] = on;
-  return setTableProps(editor, { look: encodeLook(look) });
+  // Word's default look is stored as null (so a .docx round trip is stable).
+  const isDefault = LOOK_KEYS.every((k) => look[k] === DEFAULT_LOOK[k]);
+  return setTableProps(editor, { look: isDefault ? null : encodeLook(look) });
 }
 
 export { encodeMargins };

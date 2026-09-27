@@ -20,6 +20,8 @@ import { directProps } from "../paragraphProps";
 import type { DocxComment, PageSetup } from "./model";
 import { WORD_STYLE_NAMES } from "./read";
 import { marksRunProps, writePPr, writeRPr } from "./props";
+import { findTemplate } from "../tableModel";
+import { tableStyleXml, tcBordersXml, tcMarXml, vAlignXml, writeTblPr, writeTrPr } from "./tables";
 import { EMU_PER_PX, el, esc, ptToTwips, ROOT_NS, toHex, TWIPS_PER_PX, XML_DECL, NS } from "./xml";
 
 export interface RasterImage {
@@ -204,6 +206,7 @@ class Writer {
     map.set(id, n);
     return n;
   }
+  tableStyles = new Set<string>();
   numReserved = new Set<number>();
   absReserved = new Set<number>([]);
 
@@ -320,6 +323,11 @@ class Writer {
         );
       })
       .join("");
+    const tableStyles = [...this.tableStyles]
+      .map((id) => findTemplate(id))
+      .filter((t): t is NonNullable<typeof t> => !!t)
+      .map(tableStyleXml)
+      .join("");
     const defaults =
       "<w:docDefaults><w:rPrDefault><w:rPr>" +
       el("w:rFonts", { "w:ascii": "Arial", "w:hAnsi": "Arial", "w:cs": "Arial", "w:eastAsia": "Arial" }) +
@@ -327,7 +335,7 @@ class Writer {
       el("w:szCs", { "w:val": 24 }) +
       el("w:lang", { "w:val": "en-US" }) +
       "</w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults>";
-    return `${XML_DECL}<w:styles ${ROOT_NS}>${defaults}${body}</w:styles>`;
+    return `${XML_DECL}<w:styles ${ROOT_NS}>${defaults}${body}${tableStyles}</w:styles>`;
   }
 
   stylePPr(p: ParaPr): string {
@@ -682,15 +690,8 @@ class Writer {
     const rest = Math.max(1, MAX_IMAGE_PX - known.reduce((a, b) => a + b, 0));
     const fill = Math.max(24, Math.round(rest / Math.max(1, cols - known.length)));
     const grid = colW.map((w) => (w || fill) * TWIPS_PER_PX);
-    const border = (side: string) => el(`w:${side}`, { "w:val": "single", "w:sz": 4, "w:space": 0, "w:color": "CCCED1" });
-    const tblPr = el(
-      "w:tblPr",
-      {},
-      el("w:tblW", { "w:w": 0, "w:type": "auto" }) +
-        el("w:tblBorders", {}, ["top", "left", "bottom", "right", "insideH", "insideV"].map(border).join("")) +
-        el("w:tblLayout", { "w:type": "fixed" }) +
-        el("w:tblLook", { "w:val": "04A0", "w:firstRow": 1, "w:lastRow": 0, "w:firstColumn": 1, "w:lastColumn": 0, "w:noHBand": 0, "w:noVBand": 1 }),
-    );
+    const { xml: tblPr, styleId } = writeTblPr(node.attrs);
+    if (styleId) this.tableStyles.add(styleId);
     const tblGrid = el("w:tblGrid", {}, grid.map((w) => el("w:gridCol", { "w:w": w })).join(""));
     let rows = "";
     for (let r = 0; r < map.height; r++) {
@@ -705,20 +706,29 @@ class Writer {
         const w = grid.slice(rect.left, rect.right).reduce((a, b) => a + b, 0);
         const tcW = el("w:tcW", { "w:w": w, "w:type": "dxa" });
         const gridSpan = span > 1 ? el("w:gridSpan", { "w:val": span }) : "";
+        const fillHex = toHex(cell.attrs.backgroundColor as string | null);
+        const shd = fillHex ? el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": fillHex }) : "";
+        const merged = rect.bottom - rect.top > 1;
+        const last = rect.bottom - 1 === r;
+        // A vertically merged cell's parts share its sides; its top border
+        // goes on the first part and its bottom border on the last.
+        const sides = (["top", "left", "bottom", "right"] as const).filter(
+          (s) => (s !== "top" || rect.top === r) && (s !== "bottom" || !merged || last),
+        );
+        const cellPr = (vMerge: string) =>
+          el("w:tcPr", {}, tcW + gridSpan + vMerge + tcBordersXml(cell.attrs, sides) + shd + tcMarXml(cell.attrs) + vAlignXml(cell.attrs));
         if (rect.top < r) {
-          cells += `<w:tc>${el("w:tcPr", {}, tcW + gridSpan + el("w:vMerge"))}<w:p/></w:tc>`;
+          cells += `<w:tc>${cellPr(el("w:vMerge"))}<w:p/></w:tc>`;
         } else {
-          const vMerge = rect.bottom - rect.top > 1 ? el("w:vMerge", { "w:val": "restart" }) : "";
-          const fillHex = toHex(cell.attrs.backgroundColor as string | null);
-          const shd = fillHex ? el("w:shd", { "w:val": "clear", "w:color": "auto", "w:fill": fillHex }) : "";
+          const vMerge = merged ? el("w:vMerge", { "w:val": "restart" }) : "";
           let content = await this.blocks(cell, ctx);
           // A cell must end with a paragraph.
           if (!content || !/<\/w:p>$|<w:p\/>$/.test(content)) content += "<w:p/>";
-          cells += `<w:tc>${el("w:tcPr", {}, tcW + gridSpan + vMerge + shd)}${content}</w:tc>`;
+          cells += `<w:tc>${cellPr(vMerge)}${content}</w:tc>`;
         }
         c = rect.right;
       }
-      rows += `<w:tr>${header ? el("w:trPr", {}, el("w:tblHeader")) : ""}${cells}</w:tr>`;
+      rows += `<w:tr>${writeTrPr(rowNode.attrs, header)}${cells}</w:tr>`;
     }
     return `<w:tbl>${tblPr}${tblGrid}${rows}</w:tbl>`;
   }

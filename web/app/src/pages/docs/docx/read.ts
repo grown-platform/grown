@@ -10,7 +10,9 @@
 // fonts), abstractNum/num (level formats, text, start, indents, linked
 // styles, start overrides, numStyleLink), paragraph properties (M3 attrs),
 // run properties (marks), tables (grid widths, gridSpan, vMerge, header
-// rows, cell shading), images (inline/anchored DrawingML, VML), text boxes
+// rows, cell shading; since M4 borders, table styles + look, widths,
+// fixed layout, alignment, cell margins, vertical alignment, row height,
+// repaired bad merges), images (inline/anchored DrawingML, VML), text boxes
 // (content inlined after the paragraph), headers/footers (default), foot-
 // and endnotes, comments (+ replies and resolved state from
 // commentsExtended), tracked insertions/deletions/moves, hyperlinks
@@ -19,7 +21,8 @@
 // section breaks, equations (flattened to text).
 //
 // Dropped (no Grown model yet, reported in `warnings`): bookmarks (M8),
-// table borders (M4), per-section page setup (M9), floating image
+// conditional formatting of table styles Grown doesn't know (their
+// borders are kept), per-section page setup (M9), floating image
 // positions (M7), direct "not bold/italic" overrides, caps/small caps as
 // direct formatting, formatting-change revisions.
 import JSZip from "jszip";
@@ -38,6 +41,8 @@ import {
   type RunProps,
   type ThemeFonts,
 } from "./props";
+import { correctBadTable, encodeTableBorders, normalizeTable, parseTableBorders, resolveFixedGrid, type RawCell, type RawRow } from "../tableModel";
+import { readTblPr, readTcPr, readTrPr, type TableStyles } from "./tables";
 import { attr, descendants, EMU_PER_PX, kid, kids, nameOf, num, onOff, parseXml, path, TWIPS_PER_PX, twipsToPt } from "./xml";
 
 type Mark = NonNullable<JSONContent["marks"]>[number];
@@ -234,6 +239,7 @@ class Reader {
   fields: FieldState[] = [];
   media = new Map<string, string>();
   warnings = new Set<string>();
+  tableStyles: TableStyles = new Map();
 
   constructor(readonly zip: JSZip) {}
 
@@ -266,6 +272,7 @@ class Reader {
         isDefault: /^(1|true|on)$/i.test(attr(s, "w:default") ?? ""),
       };
       this.raw.set(rawId, rs);
+      if (type === "table") this.tableStyles.set(rawId, { name: rs.name, el: s, basedOn: rs.basedOn });
       if (rs.isDefault && type === "paragraph") this.defaultParaStyle = rawId;
       if (rs.isDefault && type === "character") this.defaultCharStyle = rawId;
     }
@@ -930,63 +937,108 @@ class Reader {
       for (const tc of descendants(tbl, "tc")) out.push(...this.blocks(tc, ctx));
       return out.length ? { type: "__flatten", content: out } : null;
     }
-    const grid = kids(kid(tbl, "tblGrid"), "gridCol").map((g) => {
+    const tblPr = kid(tbl, "tblPr");
+    const props = readTblPr(tblPr, this.tableStyles);
+    if (props.unknownStyle) this.warn(`table style "${props.unknownStyle}" (its borders are kept)`);
+    const gridPx = kids(kid(tbl, "tblGrid"), "gridCol").map((g) => {
       const w = num(attr(g, "w:w"));
       return w ? Math.max(1, Math.round(w / TWIPS_PER_PX)) : 0;
     });
-    if (kid(kid(tbl, "tblPr"), "tblBorders")) this.warn("table borders");
-    const rows: JSONContent[] = [];
-    const vOpen = new Map<number, JSONContent>();
+
+    // Pass 1: the WordprocessingML grid (spans, vMerge), repaired.
+    interface RawTc extends RawCell {
+      tc: Element;
+      tcPr: Element | null;
+      width: number | null;
+    }
+    const raw: (RawRow<RawTc> & { tr: Element })[] = [];
     for (const tr of kids(tbl, "tr", "sdt", "customXml", "ins", "del").flatMap((e) =>
       nameOf(e) === "tr" ? [e] : kids(kid(e, "sdtContent") ?? e, "tr"),
     )) {
       const trPr = kid(tr, "trPr");
-      const header = onOff(kid(trPr, "tblHeader")) === true;
-      let col = num(attr(kid(trPr, "gridBefore"), "w:val")) ?? 0;
-      const cells: JSONContent[] = [];
+      const cells: RawTc[] = [];
       const tcs = kids(tr, "tc", "sdt", "customXml").flatMap((e) => (nameOf(e) === "tc" ? [e] : kids(kid(e, "sdtContent") ?? e, "tc")));
       for (const tc of tcs) {
         const tcPr = kid(tc, "tcPr");
         const span = Math.max(1, num(attr(kid(tcPr, "gridSpan"), "w:val")) ?? 1);
-        const vm = kid(tcPr, "vMerge");
-        const vmVal = vm ? attr(vm, "w:val") ?? "continue" : null;
-        if (vmVal === "continue" && vOpen.has(col)) {
-          const above = vOpen.get(col)!;
-          above.attrs!.rowspan = ((above.attrs!.rowspan as number) ?? 1) + 1;
-          col += span;
-          continue;
-        }
         const hm = attr(kid(tcPr, "hMerge"), "w:val");
         if (kid(tcPr, "hMerge") && hm !== "restart" && cells.length) {
-          const prev = cells[cells.length - 1];
-          prev.attrs!.colspan = (prev.attrs!.colspan as number) + span;
-          if (Array.isArray(prev.attrs!.colwidth)) (prev.attrs!.colwidth as number[]).push(...grid.slice(col, col + span));
+          // Legacy horizontal merge: widen the previous cell.
+          cells[cells.length - 1].span += span;
+          continue;
+        }
+        const vm = kid(tcPr, "vMerge");
+        const tcW = kid(tcPr, "tcW");
+        const w = num(attr(tcW, "w:w"));
+        cells.push({
+          tc,
+          tcPr,
+          span,
+          vMerge: vm ? (attr(vm, "w:val") === "restart" ? "restart" : "continue") : null,
+          width: w && (attr(tcW, "w:type") ?? "dxa") === "dxa" ? Math.round(w / TWIPS_PER_PX) : null,
+        });
+      }
+      raw.push({ tr, cells, before: num(attr(kid(trPr, "gridBefore"), "w:val")) ?? 0 });
+    }
+    const rows0 = raw.length;
+    const fixedRows = correctBadTable(raw);
+    if (fixedRows.length !== rows0) this.warn("invalid vertical merges (repaired)");
+
+    // Column widths: a fixed layout resolves cell widths against the grid.
+    const grid =
+      props.attrs.layout === "fixed"
+        ? resolveFixedGrid(gridPx, fixedRows.map((r) => ({ before: r.before, cells: r.cells.map((c) => ({ span: c.span, width: c.width, vMerge: c.vMerge })) }))).map((w) => Math.max(1, Math.round(w)))
+        : gridPx;
+
+    // Pass 2: editor JSON with rowspans.
+    const rows: JSONContent[] = [];
+    const vOpen = new Map<number, JSONContent>();
+    for (const r of fixedRows) {
+      const trPr = kid(r.tr, "trPr");
+      const rowAttrs = readTrPr(trPr);
+      const header = rowAttrs.repeatHeader === true;
+      let col = r.before ?? 0;
+      const cells: JSONContent[] = [];
+      for (const c of r.cells) {
+        const { tcPr, span } = c;
+        if (c.vMerge === "continue" && vOpen.has(col)) {
+          const above = vOpen.get(col)!;
+          above.attrs!.rowspan = ((above.attrs!.rowspan as number) ?? 1) + 1;
+          // The merged cell's bottom border is the last part's.
+          const bottom = readTcPr(tcPr).borders;
+          if (bottom) {
+            const b = parseTableBorders(bottom);
+            if (b.bottom) {
+              const own = parseTableBorders(above.attrs!.borders);
+              own.bottom = b.bottom;
+              above.attrs!.borders = encodeTableBorders(own);
+            }
+          }
           col += span;
           continue;
         }
         const widths = grid.slice(col, col + span);
         const attrs: Record<string, unknown> = { colspan: span, rowspan: 1 };
         if (widths.length === span && widths.every((w) => w > 0)) attrs.colwidth = widths;
-        else {
-          const w = num(attr(kid(tcPr, "tcW"), "w:w"));
-          if (w && attr(kid(tcPr, "tcW"), "w:type") === "dxa" && span === 1) attrs.colwidth = [Math.round(w / TWIPS_PER_PX)];
-        }
+        else if (c.width && span === 1) attrs.colwidth = [c.width];
         const shd = kid(tcPr, "shd");
         const fill = attr(shd, "w:fill");
         if (fill && /^[0-9a-f]{6}$/i.test(fill) && attr(shd, "w:val") !== "nil") attrs.backgroundColor = `#${fill.toLowerCase()}`;
-        let content = this.blocks(tc, ctx);
+        Object.assign(attrs, readTcPr(tcPr));
+        let content = this.blocks(c.tc, ctx);
         if (!content.length) content = [{ type: "paragraph" }];
         const cell: JSONContent = { type: header ? "tableHeader" : "tableCell", attrs, content };
         cells.push(cell);
-        if (vmVal === "restart") for (let k = 0; k < span; k++) vOpen.set(col + k, cell);
+        if (c.vMerge === "restart") for (let k = 0; k < span; k++) vOpen.set(col + k, cell);
         else for (let k = 0; k < span; k++) vOpen.delete(col + k);
         col += span;
       }
-      rows.push({ type: "tableRow", content: cells });
+      rows.push({ type: "tableRow", ...(Object.keys(rowAttrs).length ? { attrs: rowAttrs } : {}), content: cells });
     }
-    const kept = rows.filter((r) => r.content!.length);
-    if (!kept.length) return null;
-    return { type: "table", content: kept };
+    const table: JSONContent = { type: "table", ...(Object.keys(props.attrs).length ? { attrs: props.attrs } : {}), content: rows };
+    const fixed = normalizeTable(table);
+    if (fixed.fixes.some((f) => f !== "empty row" && f !== "empty table")) this.warn("malformed tables (repaired)");
+    return fixed.table;
   }
 }
 

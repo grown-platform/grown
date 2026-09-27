@@ -260,7 +260,7 @@ describe("docx writer", () => {
     const order: Record<string, string[]> = {
       pPr: ["pStyle", "keepNext", "keepLines", "pageBreakBefore", "widowControl", "numPr", "pBdr", "shd", "tabs", "spacing", "ind", "jc", "outlineLvl", "rPr"],
       rPr: ["rStyle", "rFonts", "b", "i", "caps", "smallCaps", "strike", "color", "sz", "szCs", "highlight", "u", "shd", "vertAlign"],
-      tcPr: ["tcW", "gridSpan", "vMerge", "shd"],
+      tcPr: ["tcW", "gridSpan", "vMerge", "tcBorders", "shd", "tcMar", "vAlign"],
     };
     for (const [parent, want] of Object.entries(order)) {
       for (const e of [...doc.getElementsByTagName(`w:${parent}`)]) {
