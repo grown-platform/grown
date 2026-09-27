@@ -343,8 +343,15 @@ describe("OnlyOffice shortcuts: document", () => {
 });
 
 describe("OnlyOffice shortcuts: later milestones", () => {
-  it.skip("oo:word/shortcuts/shortcuts.js#Check insert equation", () => {
-    // TODO(M11): needs the math node.
+  it("oo:word/shortcuts/shortcuts.js#Check insert equation", () => {
+    // Ctrl+Alt+= (Word: Alt+=) inserts an equation at the caret.
+    const e = makeEditor("<p></p>");
+    pressKey(e, "Mod-Alt-=");
+    let found = false;
+    e.state.doc.descendants((n) => {
+      if (n.type.name === "math") found = true;
+    });
+    expect(found).toBe(true);
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check insert page number", () => {
     // TODO(M9): needs page-number fields.
@@ -375,10 +382,13 @@ describe("OnlyOffice shortcuts: later milestones", () => {
     // TODO(M7): chart node.
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check add new paragraph math", () => {
-    // TODO(M11): needs the math node.
+    // Not planned for M11: Grown edits an equation in its equation panel, so
+    // Enter commits the equation instead of splitting the paragraph at a
+    // caret inside it.
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Test add new line to math", () => {
-    // TODO(M11): needs the math node.
+    // Not planned for M11: Shift+Enter inside an equation argument (turning
+    // it into an equation array) needs in-place caret editing of equations.
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check remove form", () => {
     // TODO(M10): content controls.
@@ -390,7 +400,8 @@ describe("OnlyOffice shortcuts: later milestones", () => {
     // TODO(M8): internal hyperlinks / bookmarks.
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check handle tab in math", () => {
-    // TODO(M11): needs the math node.
+    // Not planned for M11: equation line breaks and alignment points (m:brk,
+    // m:alnAt) are not modelled.
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check end editing form", () => {
     // TODO(M10): content controls.

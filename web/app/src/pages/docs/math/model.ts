@@ -204,3 +204,16 @@ export function mapRuns(c: Content, fn: (r: MRun) => MRun): Content {
 export function clone<T>(x: T): T {
   return JSON.parse(JSON.stringify(x)) as T;
 }
+
+/** serializeContent: the JSON stored in a math node's `data` attribute. */
+export const serializeContent = (c: Content) => JSON.stringify(normalize(c));
+
+/** contentFromAttr reads a math node's `data` attribute (tolerating bad data). */
+export function contentFromAttr(data: unknown): Content {
+  try {
+    const c = JSON.parse(String(data || "[]"));
+    return Array.isArray(c) ? normalize(c) : [run()];
+  } catch {
+    return [run()];
+  }
+}

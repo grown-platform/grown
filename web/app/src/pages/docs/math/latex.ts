@@ -758,7 +758,23 @@ const KATEX_ACCENTS: Record<string, string> = {
   "⃗": "vec", "⃖": "overleftarrow", "⃑": "overrightharpoon", "⃐": "overleftharpoon",
   "⃡": "overleftrightarrow", "̲": "underline", "̳": "underline", "̊": "mathring",
 };
-const KATEX_SYMBOLS: Record<string, string> = { ...Object.fromEntries(Object.entries(SYMBOL_NAMES).map(([k, v]) => [k, "\\" + v + " "])) };
+/** LaTeX names KaTeX knows, for the characters that have one. */
+const KATEX_NAMES = new Set(
+  (
+    "alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta iota kappa lambda mu nu xi pi varpi rho varrho sigma varsigma tau upsilon phi varphi chi psi omega " +
+    "Gamma Delta Theta Lambda Xi Pi Sigma Upsilon Phi Psi Omega pm mp times div cdot le ge ne approx equiv sim simeq cong propto infty partial nabla forall exists neg " +
+    "wedge vee cap cup subset supset subseteq supseteq in notin ni to gets leftarrow rightarrow leftrightarrow Rightarrow Leftarrow Leftrightarrow mapsto uparrow downarrow " +
+    "updownarrow Uparrow Downarrow longrightarrow longleftarrow Longrightarrow Longleftarrow ldots cdots vdots ddots circ ast star bullet oplus ominus otimes odot oslash " +
+    "perp parallel mid angle emptyset aleph beth gimel hbar ell Re Im wp langle rangle lceil rceil lfloor rfloor setminus because therefore models vdash dashv top bot " +
+    "prec succ preceq succeq ll gg asymp doteq sqcap sqcup sqsubseteq sqsupseteq uplus amalg diamond triangle nearrow searrow swarrow nwarrow hookleftarrow hookrightarrow " +
+    "leftharpoonup leftharpoondown rightharpoonup rightharpoondown smile frown clubsuit diamondsuit heartsuit spadesuit imath jmath coprod bigcap bigcup bigodot bigoplus bigotimes bigsqcup biguplus bigvee bigwedge"
+  ).split(" "),
+);
+const KATEX_SYMBOLS: Record<string, string> = Object.fromEntries(
+  Object.entries(SYMBOL_NAMES)
+    .filter(([, v]) => KATEX_NAMES.has(v))
+    .map(([k, v]) => [k, "\\" + v + " "]),
+);
 Object.assign(KATEX_SYMBOLS, {
   "∣": "\\mid ", "¦": "\\,", "▒": "", "⁡": "", "⁢": "", "⁣": "", "⁤": "", "​": "",
   "#": "\\#", "%": "\\%", "&": "\\&", $: "\\$", _: "\\_", "\\": "\\backslash ", "^": "\\hat{}", "~": "\\sim ",
@@ -810,7 +826,7 @@ function kNode(n: MNode): string {
       return `{}_${kArg(n.sub)}^${kArg(n.sup)}${kArg(n.base)}`;
     case "rad": {
       const deg = toKatex(n.deg);
-      return `\\sqrt${deg ? `[${deg}]` : ""}${kArg(n.base)}`;
+      return `\\sqrt${deg ? `[{${deg}}]` : ""}${kArg(n.base)}`;
     }
     case "nary": {
       const name = NARY_NAMES[n.chr] ?? "int";

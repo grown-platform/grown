@@ -622,3 +622,32 @@ function convert(P: Cell[], from: number, to: number, keepAfter = false, dropSpa
   }
   return { content: [...cellsToContent(head), ...built, ...cellsToContent(between), ...cellsToContent(tail)] };
 }
+
+/** correctWords replaces every complete \word in free-typed linear text
+ *  (a word followed by a space, which is dropped, or by a non-letter). */
+export function correctWords(text: string): string {
+  return text.replace(/\\([A-Za-z]+)( ?)/g, (m, word: string, sp: string) => {
+    const rep = MATH_WORDS[word];
+    void sp;
+    return rep !== undefined ? rep : m;
+  });
+}
+
+const CARET = "";
+
+/** linearWithCaret: the linear text of the equation being typed and the
+ *  caret's offset in it (UTF-16), for showing the caret in a text field. */
+export function linearWithCaret(m: MathInput): { text: string; caret: number } {
+  const snap = m.snapshot();
+  const probe = new MathInput(snap.root, { autoConvert: false });
+  probe.path = snap.path;
+  probe.elem = snap.elem;
+  probe.offset = snap.offset;
+  const c = probe.current();
+  const r = c[probe.elem];
+  if (isRun(r)) r.text = r.text.slice(0, probe.offset) + CARET + r.text.slice(probe.offset);
+  const marked = toLinear(probe.root);
+  const caret = marked.indexOf(CARET);
+  const text = toLinear(m.root);
+  return { text, caret: caret < 0 ? text.length : Math.min(caret, text.length) };
+}
