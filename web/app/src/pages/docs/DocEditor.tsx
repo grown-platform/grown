@@ -14,7 +14,7 @@ import DescriptionIcon from "@mui/icons-material/Description";
 import StarBorderIcon from "@mui/icons-material/StarBorder";
 import StarIcon from "@mui/icons-material/Star";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import TocIcon from "@mui/icons-material/Toc";
@@ -64,7 +64,23 @@ import { Outline } from "./Outline";
 import { Footnotes } from "./Footnotes";
 import { Endnotes } from "./Endnotes";
 import { MarginEditor } from "./MarginEditor";
-import { Suggestions } from "./Suggestions";
+import { Suggestions, type ReviewSource, type TrackControls } from "./Suggestions";
+import { ReviewPopover } from "./ReviewPopover";
+import {
+  effectiveTracking,
+  getTrackAll,
+  governingEveryone,
+  loadDisplayMode,
+  loadTrackDefault,
+  loadTrackMine,
+  onTrackAll,
+  saveDisplayMode,
+  saveTrackDefault,
+  saveTrackMine,
+  setTrackAll,
+  type DisplayMode,
+  type TrackChoice,
+} from "./review";
 import type { DrawingData } from "./DrawingDialog";
 
 // Excalidraw is heavy, so the drawing editor loads only when first opened.
@@ -125,8 +141,23 @@ export function DocEditor({ user }: DocEditorProps) {
     null | "versions" | "comments" | "suggestions" | "table"
   >(null);
   useEffect(() => onOpenTableSettings(() => setPanel("table")), []);
-  // Track-changes ("Suggesting") mode.
-  const [suggesting, setSuggesting] = useState(false);
+  // Track changes (M5): my choice for this doc, the doc-wide setting (a Yjs
+  // map, set below once collab exists) and my default; the newest wins.
+  const [trackMine, setTrackMine] = useState<TrackChoice | null>(() => loadTrackMine(user.id, id));
+  const [trackEveryone, setTrackEveryone] = useState<TrackChoice | null>(null);
+  const [trackDefault, setTrackDefaultState] = useState(() => loadTrackDefault(user.id));
+  const suggesting = effectiveTracking(trackMine, trackEveryone, trackDefault);
+  const [display, setDisplayState] = useState<DisplayMode>(() => loadDisplayMode(user.id));
+  const setDisplay = (m: DisplayMode) => {
+    setDisplayState(m);
+    saveDisplayMode(user.id, m);
+  };
+  // Header/footer editors, for the review panel and popover.
+  const [headerEditor, setHeaderEditor] = useState<Editor | null>(null);
+  const [footerEditor, setFooterEditor] = useState<Editor | null>(null);
+  // The command palette's list is memoised, so its actions read these.
+  const liveReview = useRef({ suggesting, margins: [] as (Editor | null)[] });
+  liveReview.current = { suggesting, margins: [headerEditor, footerEditor] };
   // Drawing editor: open + the scene being edited + the node pos (null = new).
   const [drawing, setDrawing] = useState<{
     open: boolean;
@@ -140,6 +171,34 @@ export function DocEditor({ user }: DocEditorProps) {
 
   const collab = useMemo(() => createCollab(id), [id]);
   useEffect(() => () => collab.destroy(), [collab]);
+
+  useEffect(() => {
+    setTrackEveryone(getTrackAll(collab.ydoc));
+    return onTrackAll(collab.ydoc, setTrackEveryone);
+  }, [collab]);
+  const setMine = (on: boolean) => {
+    const c = { on, at: Date.now() };
+    setTrackMine(c);
+    saveTrackMine(user.id, id, c);
+    if (on) {
+      setMode("editing");
+      setPanel("suggestions");
+    }
+  };
+  const track: TrackControls = {
+    tracking: suggesting,
+    everyone: governingEveryone(trackMine, trackEveryone),
+    byDefault: trackDefault,
+    setMine,
+    setEveryone: (on) => {
+      setTrackAll(collab.ydoc, on);
+      if (on) setMode("editing");
+    },
+    setDefault: (on) => {
+      setTrackDefaultState(on);
+      saveTrackDefault(user.id, on);
+    },
+  };
 
   // Reveal the header/footer regions automatically once their Yjs fragments
   // gain content (so a doc that already has them shows them on open).
@@ -169,6 +228,19 @@ export function DocEditor({ user }: DocEditorProps) {
     [collab],
   );
 
+  const reviewUser = useMemo(
+    () => ({ name: user.display_name || user.email, color: colorFor(user.id) }),
+    [user.display_name, user.email, user.id],
+  );
+  const reviewSources = useMemo<ReviewSource[]>(
+    () => [
+      { label: "Header", editor: headerEditor },
+      { label: "Body", editor },
+      { label: "Footer", editor: footerEditor },
+    ],
+    [editor, headerEditor, footerEditor],
+  );
+
   useEffect(() => {
     let cancelled = false;
     getDoc(id)
@@ -180,10 +252,9 @@ export function DocEditor({ user }: DocEditorProps) {
   }, [id]);
 
   // Editing vs Viewing mode: actually toggle ProseMirror editability.
-  // Suggesting implies editable (edits become tracked suggestions).
   useEffect(() => {
-    editor?.setEditable(mode === "editing" || suggesting);
-  }, [editor, mode, suggesting]);
+    editor?.setEditable(mode === "editing");
+  }, [editor, mode]);
 
   // The user's AutoCorrect settings (stored per user in this browser).
   useEffect(() => {
@@ -374,11 +445,22 @@ export function DocEditor({ user }: DocEditorProps) {
     insertEndnote: () => editor?.chain().focus().insertEndnote().run(),
     toggleHeaderFooter: () => setShowHeaderFooter((s) => !s),
     toggleSuggesting: () => {
-      setSuggesting((s) => {
-        const next = !s;
-        setPanel(next ? "suggestions" : null);
-        return next;
-      });
+      const on = liveReview.current.suggesting;
+      setMine(!on);
+      if (on) setPanel(null);
+    },
+    reviewPanel: () => setPanel("suggestions"),
+    trackForEveryone: (on: boolean) => track.setEveryone(on),
+    setDisplayMode: (m: DisplayMode) => setDisplay(m),
+    nextChange: () => editor?.chain().focus().nextChange().run(),
+    previousChange: () => editor?.chain().focus().previousChange().run(),
+    acceptCurrentChange: () => editor?.chain().focus().acceptCurrentChange().run(),
+    rejectCurrentChange: () => editor?.chain().focus().rejectCurrentChange().run(),
+    acceptAllChanges: () => {
+      for (const e of [editor, ...liveReview.current.margins]) e?.commands.acceptAllSuggestions();
+    },
+    rejectAllChanges: () => {
+      for (const e of [editor, ...liveReview.current.margins]) e?.commands.rejectAllSuggestions();
     },
     insertDrawing: () => setDrawing({ open: true, pos: null }),
   };
@@ -619,6 +701,19 @@ export function DocEditor({ user }: DocEditorProps) {
         section: "View",
         run: actions.toggleSuggesting,
       },
+      { label: "Track changes on for everyone", section: "Tools", run: () => actions.trackForEveryone?.(true) },
+      { label: "Track changes off for everyone", section: "Tools", run: () => actions.trackForEveryone?.(false) },
+      { label: "Review changes", section: "Tools", run: () => actions.reviewPanel?.() },
+      { label: "Next change", section: "Tools", run: () => actions.nextChange?.() },
+      { label: "Previous change", section: "Tools", run: () => actions.previousChange?.() },
+      { label: "Accept current change", section: "Tools", run: () => actions.acceptCurrentChange?.() },
+      { label: "Reject current change", section: "Tools", run: () => actions.rejectCurrentChange?.() },
+      { label: "Accept all changes", section: "Tools", run: () => actions.acceptAllChanges?.() },
+      { label: "Reject all changes", section: "Tools", run: () => actions.rejectAllChanges?.() },
+      { label: "Display: Markup", section: "View", run: () => actions.setDisplayMode?.("markup") },
+      { label: "Display: Simple markup", section: "View", run: () => actions.setDisplayMode?.("simple") },
+      { label: "Display: Final", section: "View", run: () => actions.setDisplayMode?.("final") },
+      { label: "Display: Original", section: "View", run: () => actions.setDisplayMode?.("original") },
       {
         label: "Comment on selection",
         section: "Insert",
@@ -722,8 +817,14 @@ export function DocEditor({ user }: DocEditorProps) {
         <Toolbar
           editor={editor}
           onOpenMenus={() => setDialog("menus")}
-          mode={mode}
-          onModeChange={setMode}
+          mode={mode === "editing" && suggesting ? "suggesting" : mode}
+          onModeChange={(m) => {
+            if (m === "suggesting") setMine(true);
+            else {
+              if (suggesting) setMine(false);
+              setMode(m);
+            }
+          }}
         />
         <Box sx={{ display: { xs: "none", md: "block" } }}>
           <Ruler
@@ -749,6 +850,7 @@ export function DocEditor({ user }: DocEditorProps) {
             variant="plain"
             sx={editorPageSx(indents, orientation, vMargins)}
             data-testid="doc-editor"
+            className={`review-${display}`}
           >
             {showHeaderFooter && (
               <Box className="doc-header-region">
@@ -757,6 +859,9 @@ export function DocEditor({ user }: DocEditorProps) {
                   field="header"
                   editable={mode === "editing"}
                   placeholder="Header"
+                  suggesting={suggesting}
+                  user={reviewUser}
+                  onEditor={setHeaderEditor}
                 />
               </Box>
             )}
@@ -770,9 +875,13 @@ export function DocEditor({ user }: DocEditorProps) {
                   field="footer"
                   editable={mode === "editing"}
                   placeholder="Footer"
+                  suggesting={suggesting}
+                  user={reviewUser}
+                  onEditor={setFooterEditor}
                 />
               </Box>
             )}
+            <ReviewPopover sources={reviewSources} container={pageRef} hidden={display !== "markup"} />
             {showPageNumbers &&
               Array.from({ length: pageCount }, (_, i) => (
                 <Box
@@ -909,7 +1018,13 @@ export function DocEditor({ user }: DocEditorProps) {
                 overflowY: { xs: "auto", md: "visible" },
               }}
             >
-              <Suggestions editor={editor} onClose={() => setPanel(null)} />
+              <Suggestions
+                sources={reviewSources}
+                track={track}
+                display={display}
+                onDisplay={setDisplay}
+                onClose={() => setPanel(null)}
+              />
             </Box>
           </>
         )}

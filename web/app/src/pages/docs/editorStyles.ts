@@ -130,14 +130,45 @@ export function editorPageSx(
       borderTop: "1px solid #e0e0e0",
       paddingTop: "2px",
     },
+    // Tracked changes (M5). Markup (default) shows every change; the page
+    // carries review-<mode> for the other display modes.
     "& .ProseMirror .suggestion-insert": {
-      color: "#188038",
+      color: "var(--change-color, #188038)",
       textDecoration: "underline",
+      textDecorationColor: "var(--change-color, #188038)",
     },
     "& .ProseMirror .suggestion-delete": {
       color: "#d93025",
       textDecoration: "line-through",
     },
+    "& .ProseMirror .suggestion-format": {
+      borderBottom: "2px dotted #8e24aa",
+    },
+    "& .ProseMirror [data-para-change-type]::after": {
+      content: '"¶"',
+      marginLeft: "2px",
+      fontWeight: 400,
+    },
+    "& .ProseMirror [data-para-change-type='insert']::after": { color: "#188038" },
+    "& .ProseMirror [data-para-change-type='delete']::after": { color: "#d93025", textDecoration: "line-through" },
+    "& .ProseMirror [data-props-change]": {
+      backgroundColor: "rgba(142, 36, 170, 0.07)",
+    },
+    // Simple markup: the final text, with a bar beside changed paragraphs.
+    "&.review-simple .ProseMirror .suggestion-delete, &.review-final .ProseMirror .suggestion-delete, &.review-original .ProseMirror .suggestion-insert":
+      { display: "none" },
+    "&.review-simple .ProseMirror .suggestion-insert, &.review-final .ProseMirror .suggestion-insert, &.review-original .ProseMirror .suggestion-delete":
+      { color: "inherit", textDecoration: "inherit" },
+    "&.review-simple .ProseMirror .suggestion-format, &.review-final .ProseMirror .suggestion-format, &.review-original .ProseMirror .suggestion-format":
+      { borderBottom: "none" },
+    "&.review-simple .ProseMirror [data-para-change-type]::after, &.review-final .ProseMirror [data-para-change-type]::after, &.review-original .ProseMirror [data-para-change-type]::after":
+      { content: "none" },
+    "&.review-simple .ProseMirror [data-props-change], &.review-final .ProseMirror [data-props-change], &.review-original .ProseMirror [data-props-change]":
+      { backgroundColor: "transparent" },
+    "&.review-simple .ProseMirror :is(p, h1, h2, h3, h4, h5, h6):is(:has(.suggestion-insert, .suggestion-delete, .suggestion-format), [data-para-change], [data-props-change])":
+      { position: "relative" },
+    "&.review-simple .ProseMirror :is(p, h1, h2, h3, h4, h5, h6):is(:has(.suggestion-insert, .suggestion-delete, .suggestion-format), [data-para-change], [data-props-change])::after":
+      { content: '""', position: "absolute", left: "-14px", top: 0, bottom: 0, width: "3px", borderRadius: "2px", background: "#d93025" },
     "& .ProseMirror .footnote-ref": {
       cursor: "pointer",
       color: "#1a73e8",

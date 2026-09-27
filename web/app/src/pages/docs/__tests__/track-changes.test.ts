@@ -19,6 +19,12 @@ import {
   typeText,
 } from "./harness";
 import { collectChanges, describeChange, parsePropsChange, setReviewClock } from "../changes";
+import * as Y from "yjs";
+import { Editor as TiptapEditor } from "@tiptap/core";
+import Collaboration from "@tiptap/extension-collaboration";
+import { marginExtensions } from "../margin";
+import { Suggesting } from "../suggesting";
+import { effectiveTracking, getTrackAll, governingEveryone, onTrackAll, setTrackAll } from "../review";
 
 const DATE = "2026-09-26T10:00:00Z";
 
@@ -269,5 +275,63 @@ describe("track changes: find and replace", () => {
     expect(collectChanges(e.state.doc).map((c) => c.kind)).toEqual(["replace", "replace"]);
     e.commands.acceptAllSuggestions();
     expect(e.getHTML()).toBe("<p>blue fish, <strong>blue</strong> boat</p>");
+  });
+});
+
+describe("track changes: settings and header/footer", () => {
+  it("resolves for-me / for-everyone / default by recency", () => {
+    const ydoc = new Y.Doc();
+    expect(getTrackAll(ydoc)).toBeNull();
+    expect(effectiveTracking(null, null, false)).toBe(false);
+    expect(effectiveTracking(null, null, true)).toBe(true);
+    setTrackAll(ydoc, true, 100);
+    const all = getTrackAll(ydoc);
+    expect(all).toEqual({ on: true, at: 100 });
+    expect(effectiveTracking(null, all, false)).toBe(true);
+    // A later personal choice wins, until "for everyone" is set again.
+    expect(effectiveTracking({ on: false, at: 200 }, all, false)).toBe(false);
+    expect(governingEveryone({ on: false, at: 200 }, all)).toBeNull();
+    setTrackAll(ydoc, true, 300);
+    expect(effectiveTracking({ on: false, at: 200 }, getTrackAll(ydoc), false)).toBe(true);
+    expect(governingEveryone({ on: false, at: 200 }, getTrackAll(ydoc))).toBe(true);
+    // The setting syncs to other peers.
+    const other = new Y.Doc();
+    const seen: unknown[] = [];
+    onTrackAll(other, (v) => seen.push(v));
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(ydoc));
+    expect(getTrackAll(other)).toEqual({ on: true, at: 300 });
+    expect(seen).toEqual([{ on: true, at: 300 }]);
+  });
+
+  it("tracks edits in a header fragment", () => {
+    const ydoc = new Y.Doc();
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const header = new TiptapEditor({
+      element,
+      extensions: [
+        ...marginExtensions(),
+        Suggesting.configure({ user: { name: "Ann", color: "#123456" } }),
+        Collaboration.configure({ document: ydoc, field: "header" }),
+      ],
+    });
+    try {
+      typeText(header, "Draft");
+      header.commands.setSuggesting(true);
+      typeText(header, " v2");
+      selectText(header, "Draft");
+      pressKey(header, "Backspace");
+      expect(reviewText(header)).toEqual([["remove", "Draft"], ["add", " v2"]]);
+      expect(collectChanges(header.state.doc).map((c) => c.author)).toEqual(["Ann", "Ann"]);
+      // The records live in the shared fragment.
+      const copy = new Y.Doc();
+      Y.applyUpdate(copy, Y.encodeStateAsUpdate(ydoc));
+      expect(copy.getXmlFragment("header").toString()).toContain("deletion");
+      header.commands.acceptAllSuggestions();
+      expect(paragraphTexts(header)).toEqual([" v2"]);
+    } finally {
+      header.destroy();
+      element.remove();
+    }
   });
 });

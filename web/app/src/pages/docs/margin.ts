@@ -6,13 +6,20 @@ import type { Schema } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 import TextAlign from "@tiptap/extension-text-align";
 import Underline from "@tiptap/extension-underline";
+import { DeletionMark, FormatChangeMark, InsertionMark, TrackParagraphs } from "./suggesting";
 
-/** The extensions MarginEditor uses (minus Collaboration). */
+/** The extensions MarginEditor uses (minus Collaboration and the
+ *  Suggesting plugin). Tracked-change marks and paragraph attributes are
+ *  part of the schema so changes in headers and footers can be tracked. */
 export function marginExtensions(): Extensions {
   return [
     StarterKit.configure({ history: false }),
     Underline,
     TextAlign.configure({ types: ["heading", "paragraph"] }),
+    InsertionMark,
+    DeletionMark,
+    FormatChangeMark,
+    TrackParagraphs,
   ];
 }
 
