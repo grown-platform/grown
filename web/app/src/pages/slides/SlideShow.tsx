@@ -261,6 +261,7 @@ export function SlideShow({ deckId, slides, start, loop, presenterWindow, onExit
       data-testid="slideshow"
       data-slide={state.cur}
       data-step={state.step}
+      data-tool={tool}
       onClick={() => {
         if (tool === "pen") return;
         if (state.ended || clickAdvances(slide)) dispatch("next");
