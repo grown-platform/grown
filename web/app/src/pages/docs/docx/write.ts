@@ -24,6 +24,8 @@ import { marksRunProps, writePPr, writeRPr } from "./props";
 import { findTemplate } from "../tableModel";
 import { tableStyleXml, tcBordersXml, tcMarXml, vAlignXml, writeTblPr, writeTrPr } from "./tables";
 import { writeOMML } from "../math/omml";
+import { defaultSection, ownFragment, ownsPart, sectionsOf, type DocSettings, type HfKind, type HfWhich, type Section, type SectionProps } from "../sections";
+import { backgroundXml, settingsXml, writeSectPr, type HfRef } from "./sections";
 import { contentFromAttr } from "../math/model";
 import { EMU_PER_PX, el, esc, ptToTwips, ROOT_NS, toHex, TWIPS_PER_PX, XML_DECL, NS } from "./xml";
 
@@ -40,6 +42,11 @@ export interface DocxWriteInput {
   numbering: NumberingStore;
   header?: PMNode | null;
   footer?: PMNode | null;
+  /** Every header/footer fragment by name (M9, sections.ts hfFragment
+   *  names); defaults to { header, footer }. */
+  margins?: Record<string, PMNode>;
+  /** Final section and document settings (M9). */
+  settings?: DocSettings;
   comments?: DocxComment[];
   title?: string;
   page?: PageSetup | null;
@@ -180,6 +187,11 @@ class Writer {
   comments = new Map<string, DocxComment>();
   replies = new Map<string, DocxComment[]>();
   commentNum = new Map<string, number>();
+  /** Sections (M9) and the header/footer parts' relationship ids. */
+  sections: Section[] = [];
+  hfRids = new Map<string, string>();
+  sectionIdx = 0;
+  hfSeq = { header: 0, footer: 0 };
   /** Bookmarks (M8): leaf index of the first / last marked inline node. */
   bookmarkFirst = new Map<string, number>();
   bookmarkLast = new Map<string, number>();
@@ -535,6 +547,15 @@ class Writer {
         return `<w:p>${writePPr({ borders: { bottom: { width: 0.75, style: "solid", color: "#999999" } } })}</w:p>`;
       case "pageBreak":
         return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+      case "columnBreak":
+        return '<w:p><w:r><w:br w:type="column"/></w:r></w:p>';
+      case "sectionBreak": {
+        if (!ctx.body) return "";
+        const i = this.sectionIdx++;
+        const sec = this.sections[i];
+        if (!sec || sec.breakPos == null) return "";
+        return `<w:p><w:pPr>${this.sectPrXml(i)}</w:pPr></w:p>`;
+      }
       case "image":
       case "drawing": {
         const d = await this.imageRun(node, ctx);
@@ -896,12 +917,25 @@ class Writer {
     this.contentTypes.set(`/${part}`, type);
   }
 
+  /** The w:sectPr of section i with its header/footer references. */
+  sectPrXml(i: number): string {
+    const sec = this.sections[i];
+    const refs: HfRef[] = [];
+    for (const which of ["header", "footer"] as HfWhich[])
+      for (const kind of ["default", "first", "even"] as HfKind[]) {
+        if (!ownsPart(this.sections, i, which, kind)) continue;
+        const rid = this.hfRids.get(ownFragment(this.sections, i, which, kind));
+        if (rid) refs.push({ which, kind, rid });
+      }
+    return writeSectPr(sec.props, sec.start, refs);
+  }
+
   async marginPart(kind: "header" | "footer", node: PMNode | null | undefined): Promise<string | null> {
-    if (!node || !node.textContent.trim()) return null;
+    if (!node || (!node.textContent.trim() && !hasField(node))) return null;
     const rels = new Rels();
     const body = await this.blocks(node, { rels, body: false });
     const tag = kind === "header" ? "w:hdr" : "w:ftr";
-    const name = `${kind}1.xml`;
+    const name = `${kind}${++this.hfSeq[kind]}.xml`;
     this.zip.file(`word/${name}`, `${XML_DECL}<${tag} ${ROOT_NS}>${body || "<w:p/>"}</${tag}>`);
     if (rels.size) this.zip.file(`word/_rels/${name}.rels`, rels.xml());
     this.override(`word/${name}`, `${CT_BASE}.${kind}+xml`);
@@ -961,34 +995,21 @@ class Writer {
     this.planNumbering();
     this.planComments();
     this.planBookmarks();
+    // Sections (M9): header/footer parts first, so every w:sectPr can
+    // reference them.
+    const final = input.settings?.section ?? sectionFromPage(input.page);
+    this.sections = sectionsOf(input.doc, final);
+    const margins: Record<string, PMNode | null | undefined> = input.margins ?? { header: input.header, footer: input.footer };
+    for (const [name, node] of Object.entries(margins)) {
+      if (!node) continue;
+      const rid = await this.marginPart(name.endsWith("footer") ? "footer" : "header", node);
+      if (rid) this.hfRids.set(name, rid);
+    }
     const body = await this.blocks(input.doc, { rels: this.rels, body: true });
-    const headerId = await this.marginPart("header", input.header);
-    const footerId = await this.marginPart("footer", input.footer);
-
-    const page = input.page ?? { width: 612, height: 792, orientation: "portrait", margins: { top: 72, right: 72, bottom: 72, left: 72 } };
-    const sectPr = el(
-      "w:sectPr",
-      {},
-      (headerId ? el("w:headerReference", { "w:type": "default", "r:id": headerId }) : "") +
-        (footerId ? el("w:footerReference", { "w:type": "default", "r:id": footerId }) : "") +
-        el("w:pgSz", {
-          "w:w": ptToTwips(page.width),
-          "w:h": ptToTwips(page.height),
-          "w:orient": page.orientation === "landscape" ? "landscape" : undefined,
-        }) +
-        el("w:pgMar", {
-          "w:top": ptToTwips(page.margins.top),
-          "w:right": ptToTwips(page.margins.right),
-          "w:bottom": ptToTwips(page.margins.bottom),
-          "w:left": ptToTwips(page.margins.left),
-          "w:header": ptToTwips(page.margins.header ?? 36),
-          "w:footer": ptToTwips(page.margins.footer ?? 36),
-          "w:gutter": 0,
-        }),
-    );
+    const sectPr = this.sectPrXml(this.sections.length - 1);
     this.zip.file(
       "word/document.xml",
-      `${XML_DECL}<w:document ${ROOT_NS}><w:body>${body}${sectPr}</w:body></w:document>`,
+      `${XML_DECL}<w:document ${ROOT_NS}>${backgroundXml(input.settings?.pageColor)}<w:body>${body}${sectPr}</w:body></w:document>`,
     );
     this.override("word/document.xml", `${CT_BASE}.document.main+xml`);
 
@@ -1026,7 +1047,7 @@ class Writer {
     }
     this.zip.file(
       "word/settings.xml",
-      `${XML_DECL}<w:settings ${ROOT_NS}>${el("w:defaultTabStop", { "w:val": 720 })}${notePr}` +
+      `${XML_DECL}<w:settings ${ROOT_NS}>${settingsXml(input.settings ?? {})[0]}${el("w:defaultTabStop", { "w:val": 720 })}${settingsXml(input.settings ?? {})[1]}${notePr}` +
         `<w:compat>${el("w:compatSetting", { "w:name": "compatibilityMode", "w:uri": "http://schemas.microsoft.com/office/word", "w:val": 15 })}</w:compat></w:settings>`,
     );
     this.override("word/settings.xml", `${CT_BASE}.settings+xml`);
@@ -1066,6 +1087,29 @@ class Writer {
     );
     return this.zip.generateAsync({ type: "uint8array", compression: "DEFLATE", mimeType: `${CT_BASE}.document` });
   }
+}
+
+/** A header/footer holding only fields (a lone page number) still counts. */
+function hasField(node: PMNode): boolean {
+  let found = false;
+  node.descendants((n) => {
+    if (n.type.name === "field") found = true;
+    return !found;
+  });
+  return found;
+}
+
+/** The final section from the pre-M9 page setup (or Letter defaults). */
+function sectionFromPage(page: PageSetup | null | undefined): SectionProps {
+  const d = defaultSection();
+  if (!page) return d;
+  return {
+    ...d,
+    pageW: page.width,
+    pageH: page.height,
+    orient: page.orientation,
+    margins: { ...d.margins, ...page.margins, header: page.margins.header ?? 36, footer: page.margins.footer ?? 36 },
+  };
 }
 
 /** writeDocx serialises a Grown document as a .docx package. */

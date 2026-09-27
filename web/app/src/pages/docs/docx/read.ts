@@ -51,6 +51,9 @@ import { readOMathPara, readOMML } from "../math/omml";
 import { toLinear } from "../math/linear";
 import { serializeContent } from "../math/model";
 import { fieldType, KEPT_FIELDS } from "../fields";
+import { PAGE_FIELDS } from "../margin";
+import { readSectPr, readSettings } from "./sections";
+import { encodeSection } from "../sections";
 import { attr, descendants, EMU_PER_PX, kid, kids, nameOf, num, onOff, parseXml, path, TWIPS_PER_PX, twipsToPt } from "./xml";
 
 type Mark = NonNullable<JSONContent["marks"]>[number];
@@ -260,6 +263,9 @@ class Reader {
   media = new Map<string, string>();
   warnings = new Set<string>();
   tableStyles: TableStyles = new Map();
+  /** Paragraph-level w:sectPr in document order, with the section break
+   *  node each became (M9). */
+  sectPrs: { el: Element; node: JSONContent }[] = [];
 
   constructor(readonly zip: JSZip) {}
 
@@ -908,7 +914,17 @@ class Reader {
     flush(!emitted);
     const last = [...out].reverse().find((b) => b.type === type);
     if (last) for (const [k, v] of Object.entries(markAttrs)) if (v != null) last.attrs = { ...last.attrs, [k]: v };
-    if (pPr.sectionBreak && /Page$/.test(pPr.sectionBreak) && !ctx.margin) out.push({ type: "pageBreak" });
+    const sectEl = kid(pPrEl, "sectPr");
+    if (sectEl && !ctx.margin) {
+      // The paragraph ends a section: a section break after it (an empty
+      // paragraph that only carries the w:sectPr, as Word writes for a
+      // break of its own, becomes just the break).
+      const lastPara = out[out.length - 1];
+      if (out.length === 1 && lastPara?.type === type && !lastPara.content?.length && !lastPara.attrs?.paraChange) out.pop();
+      const node: JSONContent = { type: "sectionBreak", attrs: { id: `docx-s${this.sectPrs.length + 1}`, kind: "nextPage", sectPr: null } };
+      this.sectPrs.push({ el: sectEl, node });
+      out.push(node);
+    }
     return out;
   }
 
@@ -947,7 +963,7 @@ class Reader {
         case "fldSimple": {
           const instr = attr(c, "w:instr") ?? "";
           const href = parseHyperlinkInstr(instr);
-          if (!href && !ctx.margin && this.inResult && !this.capturing() && KEPT_FIELDS.has(fieldType(instr))) {
+          if (!href && (!ctx.margin || PAGE_FIELDS.has(fieldType(instr))) && this.inResult && !this.capturing() && KEPT_FIELDS.has(fieldType(instr))) {
             const f: FieldState = { phase: "result", instr, capture: true, result: "" };
             this.fields.push(f);
             this.inline(c, ctx, out);
@@ -1082,7 +1098,7 @@ class Reader {
       if (n === "fldChar") {
         const t = attr(c, "w:fldCharType");
         const keep = (f: FieldState) =>
-          !ctx.margin && !f.href && !this.fields.some((x) => x !== f && x.capture) && this.fields.every((x) => x === f || x.phase === "result") && KEPT_FIELDS.has(fieldType(f.instr));
+          (!ctx.margin || PAGE_FIELDS.has(fieldType(f.instr))) && !f.href && !this.fields.some((x) => x !== f && x.capture) && this.fields.every((x) => x === f || x.phase === "result") && KEPT_FIELDS.has(fieldType(f.instr));
         if (t === "begin") this.fields.push({ phase: "instr", instr: "", locked: /^(1|true|on)$/.test(attr(c, "w:fldLock") ?? "") });
         else if (t === "separate") {
           const f = this.fields[this.fields.length - 1];
@@ -1136,6 +1152,7 @@ class Reader {
         case "cr": {
           const type = attr(c, "w:type");
           if (type === "page" && !ctx.margin) out.push({ kind: "block", node: { type: "pageBreak" } });
+          else if (type === "column" && !ctx.margin) out.push({ kind: "block", node: { type: "columnBreak" } });
           else out.push({ kind: "node", node: { type: "hardBreak" } });
           break;
         }
@@ -1479,7 +1496,7 @@ function marginContent(blocks: JSONContent[]): JSONContent[] {
       if (b.type === "heading") attrs.level = b.attrs?.level;
       if (b.attrs?.textAlign) attrs.textAlign = b.attrs.textAlign;
       if (b.attrs?.paraChange) attrs.paraChange = b.attrs.paraChange;
-      out.push({ ...b, attrs, content: b.content?.filter((n) => n.type === "text" || n.type === "hardBreak") });
+      out.push({ ...b, attrs, content: b.content?.filter((n) => n.type === "text" || n.type === "hardBreak" || n.type === "field") });
     }
   }
   for (const b of out) if (!b.content?.length) delete b.content;
@@ -1548,13 +1565,14 @@ export async function readDocx(data: ArrayBuffer | Uint8Array | Blob): Promise<D
   let content = r.blocks(body, { part: main, marks: [] }).flatMap((b) => (b.type === "__flatten" ? b.content ?? [] : [b]));
   if (!content.length) content = [{ type: "paragraph" }];
 
-  // Header / footer of the final section (default, else first page).
-  const sect = kid(body, "sectPr");
-  const margin = async (kind: "header" | "footer"): Promise<JSONContent | null> => {
-    const refs = kids(sect, `${kind}Reference`);
-    const ref = refs.find((x) => (attr(x, "w:type") ?? "default") === "default") ?? refs.find((x) => attr(x, "w:type") === "first") ?? refs[0];
-    if (refs.length > 1) r.warn("first-page / even-page headers and footers");
-    const rel = ref ? main.rels.get(attr(ref, "r:id") ?? "") : undefined;
+  // Sections (M9): paragraph-level w:sectPr, then the body's (the last).
+  const bodySect = kid(body, "sectPr");
+  const secs = [...r.sectPrs.map((x) => readSectPr(x.el)), readSectPr(bodySect)];
+  r.sectPrs.forEach((x, i) => {
+    x.node.attrs = { ...x.node.attrs, sectPr: encodeSection(secs[i].props), kind: secs[i + 1].type };
+  });
+  const loadMargin = async (rid: string): Promise<JSONContent | null> => {
+    const rel = main.rels.get(rid);
     if (!rel || rel.external) return null;
     const hp = await loadPart(zip, rel.target);
     if (!hp) return null;
@@ -1565,9 +1583,25 @@ export async function readDocx(data: ArrayBuffer | Uint8Array | Blob): Promise<D
     if (!blocks.some((b) => b.content?.length)) return null;
     return { type: "doc", content: blocks };
   };
-  const header = await margin("header");
-  const footer = await margin("footer");
-  groupRevisions([header, { type: "doc", content }, footer]);
+  // Each section's own parts go to its fragments (sections.ts ownFragment);
+  // a missing reference links to the previous section, as in Word.
+  const margins: Record<string, JSONContent> = {};
+  for (let i = 0; i < secs.length; i++) {
+    const id = i === secs.length - 1 ? "final" : String(r.sectPrs[i].node.attrs?.id);
+    for (const ref of secs[i].refs) {
+      const name = i === 0 ? (ref.kind === "default" ? ref.which : `hf:first-section:${ref.kind}:${ref.which}`) : `hf:${id}:${ref.kind}:${ref.which}`;
+      const json = await loadMargin(ref.rid);
+      if (i > 0) secs[i].props.own = [...new Set([...secs[i].props.own, `${ref.which}:${ref.kind}`])];
+      if (json) margins[name] = json;
+    }
+    if (i > 0 && i < secs.length - 1) r.sectPrs[i].node.attrs = { ...r.sectPrs[i].node.attrs, sectPr: encodeSection(secs[i].props) };
+  }
+  const header = margins.header ?? null;
+  const footer = margins.footer ?? null;
+  groupRevisions([...Object.values(margins), { type: "doc", content }]);
+  const settingsPart = await part("settings");
+  const settings = readSettings(settingsPart?.doc ?? null, main.doc.documentElement);
+  const final = secs[secs.length - 1].props;
 
   const out: DocxImport = {
     doc: { type: "doc", content },
@@ -1575,8 +1609,11 @@ export async function readDocx(data: ArrayBuffer | Uint8Array | Blob): Promise<D
     numbering: {},
     header,
     footer,
+    margins,
+    section: final,
+    settings,
     comments: [...r.comments.values()],
-    page: pageSetup(sect),
+    page: pageSetup(bodySect),
     warnings: [],
   };
   // Styles first: they pull in the lists they number and the level styles
