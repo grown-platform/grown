@@ -3,6 +3,8 @@
 // editor's behaviour can be unit-tested and shared by the collab receiver.
 
 import {
+  CANVAS_H,
+  CANVAS_W,
   newSlide,
   uid,
   type DeckDoc,
@@ -10,6 +12,8 @@ import {
   type SlideElement,
   type TableData,
 } from "./model";
+import { elementBounds, selectionBounds, setElementBox, type Rect } from "./geometry";
+import { reId } from "./groupOps";
 
 /** Result of a slide-list operation: the new slide list and the slide index to show. */
 export interface SlidesResult {
@@ -48,7 +52,7 @@ export function copySlide(slide: Slide, makeId: () => string = uid): Slide {
   return {
     id: makeId(),
     background: slide.background,
-    elements: slide.elements.map((e) => ({ ...e, id: makeId() })),
+    elements: slide.elements.map((e) => reId(e, makeId)),
   };
 }
 
@@ -167,21 +171,16 @@ export function duplicateElement(
   el: SlideElement,
   makeId: () => string = uid,
 ): SlideElement {
-  return {
-    ...el,
-    id: makeId(),
-    x: el.x + DUPLICATE_OFFSET,
-    y: el.y + DUPLICATE_OFFSET,
-  };
+  return moveElementBy(reId(el, makeId), DUPLICATE_OFFSET, DUPLICATE_OFFSET);
 }
 
-/** moveElementBy translates an element by (dx, dy). */
+/** moveElementBy translates an element (and a group's members) by (dx, dy). */
 export function moveElementBy(
   el: SlideElement,
   dx: number,
   dy: number,
 ): SlideElement {
-  return { ...el, x: el.x + dx, y: el.y + dy };
+  return setElementBox(el, { x: el.x + dx, y: el.y + dy, w: el.w, h: el.h });
 }
 
 export type StyleToggle = "bold" | "italic" | "underline" | "strike";
@@ -224,19 +223,228 @@ export function removeAnimation(el: SlideElement): SlideElement {
   return rest as SlideElement;
 }
 
+// ---- multi-element ops (selection, arrange, align) ----
+
+/** upsertElements replaces/appends several elements in one step. */
+export function upsertElements(slide: Slide, els: readonly SlideElement[]): Slide {
+  return els.reduce(upsertElement, slide);
+}
+
+/** removeElements drops every element in `ids` from the slide. */
+export function removeElements(slide: Slide, ids: readonly string[]): Slide {
+  const drop = new Set(ids);
+  return { ...slide, elements: slide.elements.filter((e) => !drop.has(e.id)) };
+}
+
+/** reorderElements puts the slide's elements in the order of `ids` (z-order,
+ *  last = top). Unknown ids are ignored and elements missing from `ids` keep
+ *  their relative order on top, so a stale reorder never loses an element. */
+export function reorderElements(slide: Slide, ids: readonly string[]): Slide {
+  const byId = new Map(slide.elements.map((e) => [e.id, e]));
+  const seen = new Set<string>();
+  const out: SlideElement[] = [];
+  for (const id of ids) {
+    const e = byId.get(id);
+    if (e && !seen.has(id)) {
+      out.push(e);
+      seen.add(id);
+    }
+  }
+  for (const e of slide.elements) if (!seen.has(e.id)) out.push(e);
+  return { ...slide, elements: out };
+}
+
+/** arrangeMany applies a z-order move to every element in `ids` at once,
+ *  keeping the selected elements' relative order (PowerPoint semantics:
+ *  "forward" moves each selected element above the next unselected one). */
+export function arrangeMany(
+  elements: SlideElement[],
+  ids: readonly string[],
+  dir: ArrangeDir,
+): SlideElement[] {
+  const sel = new Set(ids);
+  if (dir === "front")
+    return [...elements.filter((e) => !sel.has(e.id)), ...elements.filter((e) => sel.has(e.id))];
+  if (dir === "back")
+    return [...elements.filter((e) => sel.has(e.id)), ...elements.filter((e) => !sel.has(e.id))];
+  const els = [...elements];
+  if (dir === "forward") {
+    for (let i = els.length - 2; i >= 0; i--)
+      if (sel.has(els[i].id) && !sel.has(els[i + 1].id))
+        [els[i], els[i + 1]] = [els[i + 1], els[i]];
+  } else {
+    for (let i = 1; i < els.length; i++)
+      if (sel.has(els[i].id) && !sel.has(els[i - 1].id))
+        [els[i - 1], els[i]] = [els[i], els[i - 1]];
+  }
+  return els;
+}
+
+/** moveElementsBy translates every element in `ids` by (dx, dy); locked
+ *  elements stay put. Returns the moved elements only. */
+export function moveElementsBy(
+  elements: readonly SlideElement[],
+  ids: readonly string[],
+  dx: number,
+  dy: number,
+): SlideElement[] {
+  const sel = new Set(ids);
+  return elements
+    .filter((e) => sel.has(e.id) && !e.locked)
+    .map((e) => moveElementBy(e, dx, dy));
+}
+
+export type AlignHow = "left" | "center" | "right" | "top" | "middle" | "bottom";
+export type AlignTo = "slide" | "selection";
+
+const SLIDE_BOX: Rect = { x: 0, y: 0, w: CANVAS_W, h: CANVAS_H };
+
+/** alignTarget picks the reference box: the slide, or the selection's union
+ *  (the OnlyOffice/PowerPoint default is the slide for one object and the
+ *  selection for several). */
+export function alignTarget(els: readonly SlideElement[], to: AlignTo): Rect {
+  if (to === "slide" || els.length < 2) return SLIDE_BOX;
+  return selectionBounds([...els]) ?? SLIDE_BOX;
+}
+
+/** alignElements lines up the drawn bounds of `els` against `to` (see
+ *  alignTarget) and returns the moved elements (locked ones are skipped). */
+export function alignElements(
+  els: readonly SlideElement[],
+  how: AlignHow,
+  to: AlignTo,
+): SlideElement[] {
+  const ref = alignTarget(els, to);
+  return els
+    .filter((e) => !e.locked)
+    .map((e) => {
+      const b = elementBounds(e);
+      let dx = 0;
+      let dy = 0;
+      if (how === "left") dx = ref.x - b.x;
+      else if (how === "center") dx = ref.x + ref.w / 2 - (b.x + b.w / 2);
+      else if (how === "right") dx = ref.x + ref.w - (b.x + b.w);
+      else if (how === "top") dy = ref.y - b.y;
+      else if (how === "middle") dy = ref.y + ref.h / 2 - (b.y + b.h / 2);
+      else dy = ref.y + ref.h - (b.y + b.h);
+      return moveElementBy(e, dx, dy);
+    });
+}
+
+/** centerOnPage centres the selection as a block on the slide horizontally
+ *  or vertically (Arrange → Center on page), keeping relative positions. */
+export function centerOnPage(
+  els: readonly SlideElement[],
+  axis: "horizontal" | "vertical",
+): SlideElement[] {
+  const b = selectionBounds([...els]);
+  if (!b) return [];
+  const dx = axis === "horizontal" ? CANVAS_W / 2 - (b.x + b.w / 2) : 0;
+  const dy = axis === "vertical" ? CANVAS_H / 2 - (b.y + b.h / 2) : 0;
+  return els.filter((e) => !e.locked).map((e) => moveElementBy(e, dx, dy));
+}
+
+/**
+ * distributeElements spaces the elements evenly along one axis so the gaps
+ * between neighbours' drawn bounds are equal. With `to: "selection"` the
+ * outermost two stay put (needs 3+ elements); with `to: "slide"` the whole
+ * slide width/height is the span (works for 2+). Returns moved elements.
+ */
+export function distributeElements(
+  els: readonly SlideElement[],
+  axis: "horizontal" | "vertical",
+  to: AlignTo = "selection",
+): SlideElement[] {
+  const min = to === "slide" ? 1 : 3;
+  if (els.length < min) return [];
+  const h = axis === "horizontal";
+  const items = els
+    .map((e) => ({ e, b: elementBounds(e) }))
+    .sort((a, b) => (h ? a.b.x - b.b.x : a.b.y - b.b.y) || 0);
+  const pos = (b: Rect) => (h ? b.x : b.y);
+  const size = (b: Rect) => (h ? b.w : b.h);
+  const start = to === "slide" ? 0 : pos(items[0].b);
+  const end =
+    to === "slide"
+      ? h
+        ? CANVAS_W
+        : CANVAS_H
+      : pos(items[items.length - 1].b) + size(items[items.length - 1].b);
+  const total = items.reduce((n, it) => n + size(it.b), 0);
+  const gap = items.length > 1 ? (end - start - total) / (items.length - 1) : 0;
+  let cursor = items.length === 1 ? start + (end - start - total) / 2 : start;
+  const out: SlideElement[] = [];
+  for (const it of items) {
+    const d = Math.round((cursor - pos(it.b)) * 1e6) / 1e6;
+    if (!it.e.locked) out.push(moveElementBy(it.e, h ? d : 0, h ? 0 : d));
+    cursor += size(it.b) + gap;
+  }
+  return out;
+}
+
+/** cycleSelection is Tab / Shift+Tab: the next (or previous) element in
+ *  z-order after the current selection, wrapping around. With nothing
+ *  selected, Tab picks the bottom element and Shift+Tab the top one. */
+export function cycleSelection(
+  elements: readonly SlideElement[],
+  selected: readonly string[],
+  dir: 1 | -1,
+): string | null {
+  if (!elements.length) return null;
+  const cur = selected.length ? selected[selected.length - 1] : null;
+  const i = cur === null ? -1 : elements.findIndex((e) => e.id === cur);
+  if (i < 0) return elements[dir === 1 ? 0 : elements.length - 1].id;
+  return elements[(i + dir + elements.length) % elements.length].id;
+}
+
+/** setLocked locks or unlocks elements' position (Arrange → Lock). */
+export function setLocked(els: readonly SlideElement[], locked: boolean): SlideElement[] {
+  return els.map((e) => {
+    const out = { ...e };
+    if (locked) out.locked = true;
+    else delete out.locked;
+    return out;
+  });
+}
+
+/** duplicateElements copies several elements (groups deeply) under new ids,
+ *  offset down-right, in their z-order. */
+export function duplicateElements(
+  els: readonly SlideElement[],
+  makeId: () => string = uid,
+): SlideElement[] {
+  return els.map((e) => duplicateElement(e, makeId));
+}
+
 // ---- collab ops ----
 
-/** CollabOp is the wire format of the slides collab hub. */
+/** CollabOp is the wire format of the slides collab hub. The multi-element
+ *  ops keep a selection edit to one message instead of a whole-deck
+ *  `slides` replace, so peers editing other slides are not clobbered. */
 export type CollabOp =
   | { t: "upsert"; si: string; el: SlideElement }
   | { t: "remove"; si: string; elId: string }
+  | { t: "upsertMany"; si: string; els: SlideElement[] }
+  | { t: "removeMany"; si: string; ids: string[] }
+  | { t: "reorder"; si: string; ids: string[] }
+  | { t: "setElements"; si: string; elements: SlideElement[] }
   | { t: "slides"; slides: Slide[] };
 
 /** applyCollabOp applies a remote op to the local doc. Unknown or malformed
- *  ops return the doc unchanged. */
+ *  ops return the doc unchanged. Every op is idempotent: applying it twice
+ *  gives the same doc as applying it once. */
 export function applyCollabOp(
   doc: DeckDoc,
-  m: { t: string; si?: string; el?: SlideElement; elId?: string; slides?: Slide[] },
+  m: {
+    t: string;
+    si?: string;
+    el?: SlideElement;
+    elId?: string;
+    els?: SlideElement[];
+    ids?: string[];
+    elements?: SlideElement[];
+    slides?: Slide[];
+  },
 ): DeckDoc {
   if (m.t === "upsert" && m.si && m.el) {
     const el = m.el;
@@ -245,6 +453,22 @@ export function applyCollabOp(
   if (m.t === "remove" && m.si && m.elId) {
     const elId = m.elId;
     return mapSlide(doc, m.si, (s) => removeElement(s, elId));
+  }
+  if (m.t === "upsertMany" && m.si && Array.isArray(m.els)) {
+    const els = m.els;
+    return mapSlide(doc, m.si, (s) => upsertElements(s, els));
+  }
+  if (m.t === "removeMany" && m.si && Array.isArray(m.ids)) {
+    const ids = m.ids;
+    return mapSlide(doc, m.si, (s) => removeElements(s, ids));
+  }
+  if (m.t === "reorder" && m.si && Array.isArray(m.ids)) {
+    const ids = m.ids;
+    return mapSlide(doc, m.si, (s) => reorderElements(s, ids));
+  }
+  if (m.t === "setElements" && m.si && Array.isArray(m.elements)) {
+    const elements = m.elements;
+    return mapSlide(doc, m.si, (s) => ({ ...s, elements }));
   }
   if (m.t === "slides" && m.slides) return { slides: m.slides };
   return doc;

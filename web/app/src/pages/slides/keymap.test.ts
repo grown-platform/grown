@@ -8,8 +8,6 @@ import {
   presentKeyAction,
   presentKeyPreventsDefault,
 } from "./keymap";
-import { moveElementBy } from "./deckOps";
-import { newElement } from "./model";
 
 const sel = { hasSelection: true };
 const none = { hasSelection: false };
@@ -38,8 +36,25 @@ describe("editorKeyAction", () => {
   });
 
   it("ignores unbound keys", () => {
-    for (const key of ["a", "Enter", "Tab", "Escape", "q"])
+    for (const key of ["a", "Enter", "q"])
       expect(editorKeyAction({ key, ctrlKey: key === "q" }, sel)).toBeNull();
+    // Esc only means something with a selection.
+    expect(editorKeyAction({ key: "Escape" }, none)).toBeNull();
+  });
+
+  it("binds the M2 selection and group keys", () => {
+    expect(editorKeyAction({ key: "a", ctrlKey: true }, none)).toEqual({ type: "selectAll" });
+    expect(editorKeyAction({ key: "a", metaKey: true }, sel)).toEqual({ type: "selectAll" });
+    expect(editorKeyAction({ key: "Tab" }, none)).toEqual({ type: "cycle", dir: 1 });
+    expect(editorKeyAction({ key: "Tab", shiftKey: true }, sel)).toEqual({ type: "cycle", dir: -1 });
+    expect(editorKeyAction({ key: "Escape" }, sel)).toEqual({ type: "deselect" });
+    // OnlyOffice/PowerPoint Ctrl+G and Google Slides Ctrl+Alt+G both group.
+    expect(editorKeyAction({ key: "g", ctrlKey: true }, sel)).toEqual({ type: "group" });
+    expect(editorKeyAction({ key: "g", ctrlKey: true, altKey: true }, sel)).toEqual({ type: "group" });
+    expect(editorKeyAction({ key: "G", metaKey: true, altKey: true, shiftKey: true }, sel)).toEqual({ type: "ungroup" });
+    expect(editorKeyAction({ key: "©", code: "KeyG", metaKey: true, altKey: true }, sel)).toEqual({ type: "group" });
+    expect(editorKeyAction({ key: "x", ctrlKey: true }, sel)).toEqual({ type: "cut" });
+    expect(editorKeyAction({ key: "x", ctrlKey: true }, none)).toBeNull();
   });
 });
 
@@ -104,26 +119,12 @@ describe("editorKeyAction: Ctrl/Cmd shortcuts", () => {
     expect(editorKeyAction({ key: "v" }, sel)).toBeNull();
   });
 
-  it("leaves Ctrl+A and Alt chords unbound", () => {
-    expect(editorKeyAction(ctrl("a"), sel)).toBeNull();
+  it("leaves Alt chords unbound", () => {
     expect(editorKeyAction(ctrl("z", { altKey: true }), sel)).toBeNull();
   });
 });
 
 describe("OnlyOffice parity", () => {
-  // SKIP: nudge distances differ. OnlyOffice moves a shape 5 units per Arrow
-  // and 1 unit per Ctrl+Arrow; Grown moves 2 logical px per Arrow and 10 per
-  // Shift+Arrow (Google Slides-like). Grown also lacks Tab/Shift+Tab object
-  // cycling, Enter-to-edit, group/ungroup and table cell navigation, which the
-  // rest of this case covers.
-  it.skip("oo:slide/shortcuts/shortcuts.js#Check main actions with shapes", () => {
-    const shape = { ...newElement("rect"), x: 0, y: 0 };
-    const a = editorKeyAction({ key: "ArrowLeft" }, sel);
-    expect(a && a.type === "nudge" && moveElementBy(shape, a.dx, a.dy).x).toBe(-5);
-    const b = editorKeyAction({ key: "ArrowLeft", ctrlKey: true }, sel);
-    expect(b && b.type === "nudge" && b.dx).toBe(-1);
-  });
-
   // SKIP: Ctrl+B/I/U/5 and Ctrl+./Ctrl+, are not bound (Bold/Italic/Underline
   // are toolbar/menu toggles on the whole element), there is no super/subscript,
   // and no Ctrl+]/Ctrl+[ font-size ladder (font size is a free number input).
