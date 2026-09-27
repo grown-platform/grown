@@ -634,6 +634,7 @@ const (
 	tokEOF
 	tokErr   // error literal (#N/A, #DIV/0!, …)
 	tokSheet // sheet prefix: Sheet2! or 'My Sheet'! (val is the bare name)
+	tokTable // structured reference: val is the table name ("" inside a table), aux the bracket content
 )
 
 // errorLiterals are the error values a formula may spell out directly
@@ -646,6 +647,8 @@ type token struct {
 	// space is set when whitespace precedes the token; between two references
 	// it is the intersection operator (A1:B5 B2:C3).
 	space bool
+	// aux is the bracket content of a structured reference (tokTable).
+	aux string
 }
 
 // isIdentStart / isIdentPart classify identifier runes. Besides ASCII letters,
@@ -777,6 +780,17 @@ func tokenise(s string) []token {
 				j += n
 			}
 			name := s[i:j]
+			if j < len(s) && s[j] == '[' {
+				// Structured reference: Table1[Column], Table1[[#Headers],[A]].
+				end := scanBracket(s, j)
+				inner := s[j+1 : end]
+				if end > j+1 && s[end-1] == ']' {
+					inner = s[j+1 : end-1]
+				}
+				emit(token{kind: tokTable, val: name, aux: inner})
+				i = end
+				continue
+			}
 			if j < len(s) && s[j] == '!' {
 				emit(token{kind: tokSheet, val: name})
 				i = j + 1
@@ -788,6 +802,18 @@ func tokenise(s string) []token {
 			}
 			emit(token{kind: tokIdent, val: name})
 			i = j
+			continue
+		}
+		// A structured reference without a table name ([@Col], [[A]:[B]]):
+		// the table the formula's cell belongs to.
+		if ch == '[' {
+			end := scanBracket(s, i)
+			inner := s[i+1 : end]
+			if end > i+1 && s[end-1] == ']' {
+				inner = s[i+1 : end-1]
+			}
+			emit(token{kind: tokTable, aux: inner})
+			i = end
 			continue
 		}
 		// Two-character operators.
@@ -1096,6 +1122,11 @@ func (p *parser) parsePrimaryBase() value {
 			p.consume()
 			return errVal(nt.val)
 		}
+		if nt.kind == tokTable {
+			// Sheet1!Table1[Col]: table names are workbook-wide.
+			p.consume()
+			return p.ev.structRef(nt.val, nt.aux)
+		}
 		if !found {
 			// Skip the reference that follows; a missing sheet is #REF!.
 			if nt.kind == tokIdent || nt.kind == tokNum {
@@ -1147,6 +1178,9 @@ func (p *parser) parsePrimaryBase() value {
 		return p.parseArrayConstant()
 	case tokIdent:
 		return p.parseIdentOrFunc()
+	case tokTable:
+		p.consume()
+		return p.ev.structRef(t.val, t.aux)
 	}
 	return errValue
 }
@@ -1287,6 +1321,11 @@ func (p *parser) parseIdentOrFunc() value {
 	// Defined name.
 	if v, ok := p.resolveName(upper); ok {
 		return v
+	}
+
+	// A table name alone is its data rows (Table1 = Table1[#Data]).
+	if p.ev.book().tableByName(t.val) != nil {
+		return p.ev.structRef(t.val, "")
 	}
 
 	// Unknown name.

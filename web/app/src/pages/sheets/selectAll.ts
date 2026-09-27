@@ -52,6 +52,7 @@ export function currentRegion(filled: CellFilled, r: number, c: number, maxR = 1
 export interface TableRange {
   ref: CellRect;
   headerRowCount?: number;
+  totalsRowCount?: number;
 }
 
 /**
@@ -63,7 +64,8 @@ export function selectAllTarget(filled: CellFilled, sel: CellRect, r: number, c:
   const t = tables.find((x) => r >= x.ref.r1 && r <= x.ref.r2 && c >= x.ref.c1 && c <= x.ref.c2);
   if (t) {
     const header = t.headerRowCount ?? 1;
-    const body = { ...t.ref, r1: t.ref.r1 + header };
+    // The data rows (Excel leaves the totals row out).
+    const body = { ...t.ref, r1: t.ref.r1 + header, r2: t.ref.r2 - (t.totalsRowCount ?? 0) };
     if (r >= body.r1 && body.r1 <= body.r2) steps.push(body);
     steps.push(t.ref);
   }

@@ -306,7 +306,7 @@ func (t *traceSession) traceRefs(n sheetCell) []refInfo {
 	if cell == nil || !strings.HasPrefix(cell.F, "=") {
 		return refs
 	}
-	scalar, whole := t.scalarSlotAreas(n.sheet, cell.F[1:])
+	scalar, whole := t.scalarSlotAreas(n.sheet, &n.addr, cell.F[1:])
 	if len(scalar) == 0 || t.spills(n) {
 		return refs
 	}
@@ -368,7 +368,7 @@ func (t *traceSession) spills(n sheetCell) bool {
 
 // scalarSlotAreas counts, per (sheet, area), the reference occurrences that
 // are a whole scalar argument and those used anywhere else.
-func (t *traceSession) scalarSlotAreas(si int, expr string) (scalar, other map[refKey]int) {
+func (t *traceSession) scalarSlotAreas(si int, at *cellAddr, expr string) (scalar, other map[refKey]int) {
 	wb := t.ev.book()
 	toks := tokenise(expr)
 	scalar, other = map[refKey]int{}, map[refKey]int{}
@@ -415,22 +415,36 @@ func (t *traceSession) scalarSlotAreas(si int, expr string) (scalar, other map[r
 			}
 			sheet = idx
 		}
-		if toks[i].kind != tokIdent && toks[i].kind != tokNum {
-			continue
-		}
-		if toks[i].kind == tokIdent && i+1 < len(toks) && toks[i+1].kind == tokLParen {
-			continue
-		}
-		a, next, ok := scanRefAtom(toks, i)
-		if !ok {
+		var a area
+		next := i + 1
+		switch {
+		case toks[i].kind == tokTable || toks[i].kind == tokIdent && wb.tableByName(toks[i].val) != nil && !(i+1 < len(toks) && toks[i+1].kind == tokLParen):
+			name, inner := toks[i].val, toks[i].aux
+			refs := wb.tableRefs(name, inner, si, at)
+			if len(refs) != 1 {
+				continue
+			}
+			sheet, a = refs[0].sheet, refs[0].areas[0]
+		case toks[i].kind == tokIdent || toks[i].kind == tokNum:
+			if toks[i].kind == tokIdent && i+1 < len(toks) && toks[i+1].kind == tokLParen {
+				continue
+			}
+			var ok bool
+			a, next, ok = scanRefAtom(toks, i)
+			if !ok {
+				continue
+			}
+		default:
 			continue
 		}
 		i = next - 1
 		k := refKey{sheet, a}
+		// '@' before a reference reads it by implicit intersection.
+		atOp := start > 0 && toks[start-1].kind == tokOp && toks[start-1].val == "@"
 		wholeArg := len(stack) > 0 && start > 0 &&
 			(toks[start-1].kind == tokLParen || toks[start-1].kind == tokComma || toks[start-1].kind == tokSemi) &&
 			(next >= len(toks) || toks[next].kind == tokRParen || toks[next].kind == tokComma || toks[next].kind == tokSemi)
-		if wholeArg && isScalarSlot(stack[len(stack)-1].fn, stack[len(stack)-1].arg) {
+		if atOp || wholeArg && isScalarSlot(stack[len(stack)-1].fn, stack[len(stack)-1].arg) {
 			scalar[k]++
 		} else {
 			other[k]++

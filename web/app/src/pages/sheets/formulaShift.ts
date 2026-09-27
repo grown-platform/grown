@@ -18,6 +18,8 @@
 
 import type { CellRect } from "./cellRange";
 import { shiftCommentThreads } from "./cellComments";
+import { dropTableColumnsInFormula } from "./structuredRefs";
+import { remapTableColumns, type TableModel } from "./tables";
 
 export type StructureOp =
   | { kind: "insert"; axis: "row" | "col"; sheet: string; index: number; count: number }
@@ -91,7 +93,7 @@ function exec(re: RegExp, s: string, at: number): RegExpExecArray | null {
 function matchRef(s: string, at: number): { ref: Ref; end: number } | null {
   const ok = (end: number) => {
     const ch = s[end];
-    return !(isIdent(ch) || ch === "(" || ch === "!" || ch === "$");
+    return !(isIdent(ch) || ch === "(" || ch === "!" || ch === "$" || ch === "[");
   };
   let m = exec(RE_RANGE, s, at);
   if (m) {
@@ -177,7 +179,8 @@ function rewriteRefs(formula: string, visit: (sheet: string | null, ref: Ref) =>
       let depth = 0;
       let j = i;
       for (; j < n; j++) {
-        if (formula[j] === "[") depth++;
+        if (formula[j] === "'") j++; // escapes the next character of a column name
+        else if (formula[j] === "[") depth++;
         else if (formula[j] === "]" && --depth === 0) break;
       }
       out += formula.slice(i, j + 1);
@@ -575,11 +578,73 @@ function shiftPrintField(ps: any, op: StructureOp): any {
   return out;
 }
 
-/** grownTables after op: each table's range moves with its cells; deleted tables go. */
-function shiftTables(list: any[], op: StructureOp): any[] {
-  return list
-    .map((t) => (t?.ref ? { ...t, ref: shiftRect(t.ref, op) } : t))
-    .filter((t) => t && t.ref);
+/**
+ * grownTables after op. Each table's range moves with its cells; a column
+ * inserted inside it becomes a new column (ColumnN, written into the header
+ * row), a deleted column goes (references to it become #REF!), a moved
+ * column keeps its name at its new place. A table whose header row, or every
+ * data row, is deleted goes. The totals row goes with its row.
+ */
+export function shiftTableList(list: any[], op: StructureOp, host: string): { tables: any[]; removed: Record<string, string[] | "*">; headers: { r: number; c: number; name: string }[] } {
+  const removed: Record<string, string[] | "*"> = {};
+  const headers: { r: number; c: number; name: string }[] = [];
+  const tables: any[] = [];
+  for (const t of Array.isArray(list) ? list : []) {
+    if (!t?.ref) continue;
+    const name = String(t.displayName || t.name || "");
+    let model: TableModel = t;
+    const ref = shiftRect(t.ref, op);
+    const cols = Math.max(1, t.ref.c2 - t.ref.c1 + 1);
+    const headerGone = !!t.headerRowCount && Array.from({ length: cols }, (_, i) => mapCell(t.ref.r1, t.ref.c1 + i, op)).every((p) => !p);
+    if (!ref || headerGone) {
+      removed[name] = "*";
+      continue;
+    }
+    if (!Array.isArray(t.columns)) {
+      tables.push({ ...t, ref }); // a bare range model: only the range moves
+      continue;
+    }
+    if (t.totalsRowCount && Array.from({ length: cols }, (_, i) => mapCell(t.ref.r2, t.ref.c1 + i, op)).every((p) => !p)) {
+      model = { ...model, totalsRowCount: 0 };
+    }
+    const at = new Map<number, number>();
+    for (let i = 0; i < cols; i++) {
+      const p = mapCell(t.ref.r1, t.ref.c1 + i, op);
+      if (p && p[0] === ref.r1) at.set(p[1], i);
+    }
+    const res = remapTableColumns(model, ref, (c) => at.get(c) ?? -1);
+    if (!res) {
+      removed[name] = "*";
+      continue;
+    }
+    if (res.removed.length) removed[name] = res.removed;
+    if (t.headerRowCount) for (const a of res.added) headers.push({ r: ref.r1, c: a.c, name: a.name });
+    const columns = res.table.columns.map((c: any) => {
+      const out = { ...c };
+      if (typeof out.calculatedColumnFormula === "string") out.calculatedColumnFormula = shiftFormula(out.calculatedColumnFormula, host, op);
+      if (typeof out.totalsRowFormula === "string") out.totalsRowFormula = shiftFormula(out.totalsRowFormula, host, op);
+      return out;
+    });
+    tables.push({ ...res.table, columns });
+  }
+  return { tables, removed, headers };
+}
+
+function shiftTables(list: any[], op: StructureOp, host: string): any[] {
+  return shiftTableList(list, op, host).tables;
+}
+
+/** Tables removed (or with removed columns) by op, keyed by table name, across the workbook. */
+function removedTableRefs(sheets: any[], op: StructureOp, target: number): Record<string, string[] | "*"> {
+  const sheet = sheets[target];
+  if (!Array.isArray(sheet?.grownTables)) return {};
+  return shiftTableList(sheet.grownTables, op, String(sheet.name ?? "")).removed;
+}
+
+/** The table (post-op) a cell of sheet i sits in, by name. */
+function hostTableName(tables: any[], r: number, c: number): string | undefined {
+  const t = (Array.isArray(tables) ? tables : []).find((x) => x?.ref && r >= x.ref.r1 && r <= x.ref.r2 && c >= x.ref.c1 && c <= x.ref.c2);
+  return t ? String(t.displayName || t.name) : undefined;
 }
 
 /**
@@ -635,7 +700,7 @@ function modelFields(sheets: any[], i: number, op: StructureOp, target: number):
   if (i === target && "grownFilter" in (sheet ?? {})) out.grownFilter = shiftFilter(sheet.grownFilter, op);
   if (i === target && sheet?.grownProtection) out.grownProtection = shiftProtectionField(sheet.grownProtection, op);
   if (i === target && sheet?.grownPrint) out.grownPrint = shiftPrintField(sheet.grownPrint, op);
-  if (i === target && Array.isArray(sheet?.grownTables)) out.grownTables = shiftTables(sheet.grownTables, op);
+  if (i === target && Array.isArray(sheet?.grownTables)) out.grownTables = shiftTables(sheet.grownTables, op, host);
   if (i === target && Array.isArray(sheet?.grownSparklines)) out.grownSparklines = shiftSparklines(sheet.grownSparklines, op);
   if (i === target && Array.isArray(sheet?.grownComments)) out.grownComments = shiftCommentThreads(sheet.grownComments, (r, c) => mapCell(r, c, op));
   if (i === 0 && "_namedRanges" in (sheet ?? {})) out._namedRanges = shiftNamedRanges(sheet._namedRanges, sheets, op);
@@ -747,7 +812,7 @@ function shiftConfig(config: any, op: StructureOp): any {
 }
 
 /** Moves the target sheet's cells, rewrites their formulas and rebuilds merge markers. */
-function moveCells(sheet: any, op: StructureOp, merge: Record<string, any> | undefined): any {
+function moveCells(sheet: any, op: StructureOp, merge: Record<string, any> | undefined, tables?: TableShift): any {
   const host = String(sheet.name ?? "");
   const cells = new Map<string, { r: number; c: number; v: any }>();
   forEachCell(sheet, (r, c, cell) => {
@@ -756,7 +821,7 @@ function moveCells(sheet: any, op: StructureOp, merge: Record<string, any> | und
     let v = cell;
     if (v && typeof v === "object") {
       if (isFormula(v.f)) {
-        const f = shiftFormula(v.f, host, op);
+        const f = dropTables(shiftFormula(v.f, host, op), tables, p[0], p[1]);
         if (f !== v.f) v = { ...v, f };
       }
       if ("mc" in v) {
@@ -779,6 +844,11 @@ function moveCells(sheet: any, op: StructureOp, merge: Record<string, any> | und
       }
     }
   }
+  for (const h of tables?.headers ?? []) {
+    const cur = cells.get(rcKey(h.r, h.c));
+    const base = cur && cur.v && typeof cur.v === "object" ? cur.v : {};
+    cells.set(rcKey(h.r, h.c), { r: h.r, c: h.c, v: { ...base, v: h.name, m: h.name, ct: { fa: "@", t: "s" } } });
+  }
   const list = [...cells.values()].sort((a, b) => a.r - b.r || a.c - b.c);
   if (Array.isArray(sheet.data)) {
     let rows = sheet.data.length;
@@ -799,16 +869,41 @@ function moveCells(sheet: any, op: StructureOp, merge: Record<string, any> | und
   return { celldata: list };
 }
 
-function rewriteSheetFormulas(sheet: any, op: StructureOp): any {
+/** Table bookkeeping of one op: removed columns/tables, and each sheet's post-op tables. */
+interface TableShift {
+  removed: Record<string, string[] | "*">;
+  headers: { r: number; c: number; name: string }[];
+  tables: any[]; // the sheet's own tables after the op (to find a formula's host table)
+}
+
+function tableShiftFor(sheets: any[], i: number, op: StructureOp, target: number): TableShift | undefined {
+  const removed = removedTableRefs(sheets, op, target);
+  const sheet = sheets[i];
+  const own = Array.isArray(sheet?.grownTables) ? sheet.grownTables : [];
+  if (!Object.keys(removed).length && !own.length) return undefined;
+  if (i === target && own.length) {
+    const res = shiftTableList(own, op, String(sheet.name ?? ""));
+    return { removed, headers: res.headers, tables: res.tables };
+  }
+  return { removed, headers: [], tables: own };
+}
+
+/** A formula after references to removed table columns / tables became #REF!. */
+function dropTables(f: string, t: TableShift | undefined, r: number, c: number): string {
+  if (!t || !Object.keys(t.removed).length || !f.includes("[") && !Object.keys(t.removed).some((n) => f.toUpperCase().includes(n.toUpperCase()))) return f;
+  return dropTableColumnsInFormula(f, t.removed, hostTableName(t.tables, r, c));
+}
+
+function rewriteSheetFormulas(sheet: any, op: StructureOp, tables?: TableShift): any {
   const host = String(sheet.name ?? "");
   if (Array.isArray(sheet.data)) {
     let changed = false;
-    const data = sheet.data.map((rowArr: any[]) => {
+    const data = sheet.data.map((rowArr: any[], r: number) => {
       if (!Array.isArray(rowArr)) return rowArr;
       let rowChanged = false;
-      const out = rowArr.map((cell) => {
+      const out = rowArr.map((cell, c) => {
         if (!cell || !isFormula(cell.f)) return cell;
-        const f = shiftFormula(cell.f, host, op);
+        const f = dropTables(shiftFormula(cell.f, host, op), tables, r, c);
         if (f === cell.f) return cell;
         rowChanged = true;
         return { ...cell, f };
@@ -822,7 +917,7 @@ function rewriteSheetFormulas(sheet: any, op: StructureOp): any {
   let changed = false;
   const celldata = sheet.celldata.map((cd: any) => {
     if (!cd?.v || !isFormula(cd.v.f)) return cd;
-    const f = shiftFormula(cd.v.f, host, op);
+    const f = dropTables(shiftFormula(cd.v.f, host, op), tables, cd.r, cd.c);
     if (f === cd.v.f) return cd;
     changed = true;
     return { ...cd, v: { ...cd.v, f } };
@@ -838,10 +933,11 @@ export function applyStructureOp(sheets: any[], op: StructureOp): any[] {
   return sheets.map((sheet, i) => {
     if (!sheet || typeof sheet !== "object") return sheet;
     const next: any = { ...sheet, ...modelFields(sheets, i, o, target) };
-    if (i !== target) return { ...next, ...rewriteSheetFormulas(sheet, o) };
+    const tables = tableShiftFor(sheets, i, o, target);
+    if (i !== target) return { ...next, ...rewriteSheetFormulas(sheet, o, tables) };
     const config = shiftConfig(sheet.config, o);
     if (config !== undefined) next.config = config;
-    Object.assign(next, moveCells(sheet, o, config?.merge));
+    Object.assign(next, moveCells(sheet, o, config?.merge, tables));
     if (o.kind === "insert" || o.kind === "delete") {
       const key = o.axis === "row" ? "row" : "column";
       if (typeof next[key] === "number" && next[key] > 0) {
@@ -887,16 +983,26 @@ export function structureFormulaEdits(
   const edits: { sheetId: string; r: number; c: number; f: string; cell: any }[] = [];
   before.forEach((sheet, i) => {
     const host = String(sheet?.name ?? "");
+    const tables = tableShiftFor(before, i, o, target);
     forEachCell(sheet, (r, c, cell) => {
       if (!cell || !isFormula(cell.f)) return;
-      const f = shiftFormula(cell.f, host, o);
-      if (f === cell.f && !opts.includeUnchanged) return;
       const p = i === target ? mapCell(r, c, o) : [r, c];
       if (!p) return;
+      const f = dropTables(shiftFormula(cell.f, host, o), tables, p[0], p[1]);
+      if (f === cell.f && !opts.includeUnchanged) return;
       edits.push({ sheetId: sheet.id, r: p[0], c: p[1], f, cell });
     });
   });
   return edits;
+}
+
+/** Header cells of table columns an op inserted (post-op positions), for when the grid moved the cells itself. */
+export function structureTableHeaders(before: any[], op: StructureOp): { sheetId: string; r: number; c: number; name: string }[] {
+  const res = resolveOp(before, op);
+  if (!res) return [];
+  const sheet = before[res.target];
+  if (!Array.isArray(sheet?.grownTables)) return [];
+  return shiftTableList(sheet.grownTables, res.op, String(sheet.name ?? "")).headers.map((h) => ({ sheetId: String(sheet.id), ...h }));
 }
 
 /** Shifted model fields for every sheet (grownCF, grownDV, grownFilter, and _namedRanges on sheet 0), only for sheets whose fields change: {sheetId, fields}. */

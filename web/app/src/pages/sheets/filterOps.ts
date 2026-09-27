@@ -119,6 +119,8 @@ export interface FilterState {
   /** Criteria keyed by column offset within the range (0 = first column). */
   columns: Record<string, ColumnFilter>;
   sort?: FilterSort;
+  /** Set when the filter is an Excel table's header buttons (its range follows the table). */
+  table?: string;
 }
 
 export interface FilterOptions {

@@ -248,6 +248,68 @@ describe("xlsx round trip", () => {
     expect(sheets[0].grownTables).toEqual([{ ...wb[0].grownTables[0], id: 1 }]);
   });
 
+  it("keeps a styled table with totals, a calculated column and structured references", async () => {
+    const sheet: any = {
+      name: "Sales",
+      id: "s1",
+      order: 0,
+      celldata: [
+        { r: 0, c: 0, v: { v: "Region", m: "Region" } },
+        { r: 0, c: 1, v: { v: "Qty", m: "Qty" } },
+        { r: 0, c: 2, v: { v: "Unit price", m: "Unit price" } },
+        { r: 0, c: 3, v: { v: "Total", m: "Total" } },
+        { r: 1, c: 0, v: { v: "East", m: "East" } },
+        { r: 1, c: 1, v: { v: 2, m: "2" } },
+        { r: 1, c: 2, v: { v: 10, m: "10" } },
+        { r: 1, c: 3, v: { f: "=[@Qty]*[@[Unit price]]", v: 20, m: "20" } },
+        { r: 2, c: 0, v: { v: "West", m: "West" } },
+        { r: 2, c: 1, v: { v: 3, m: "3" } },
+        { r: 2, c: 2, v: { v: 20, m: "20" } },
+        { r: 2, c: 3, v: { f: "=[@Qty]*[@[Unit price]]", v: 60, m: "60" } },
+        { r: 3, c: 0, v: { v: "Total", m: "Total" } },
+        { r: 3, c: 3, v: { f: "=SUBTOTAL(109,[Total])", v: 80, m: "80" } },
+        { r: 5, c: 0, v: { f: "=SUM(Sales[Total])/ROWS(Sales)", v: 40, m: "40" } },
+      ],
+      grownTables: [
+        {
+          id: 1,
+          name: "Sales",
+          displayName: "Sales",
+          ref: { r1: 0, c1: 0, r2: 3, c2: 3 },
+          headerRowCount: 1,
+          totalsRowCount: 1,
+          totalsRowShown: true,
+          insertRow: false,
+          autoFilter: true,
+          columns: [
+            { id: 1, name: "Region", totalsRowLabel: "Total" },
+            { id: 2, name: "Qty" },
+            { id: 3, name: "Unit price" },
+            { id: 4, name: "Total", totalsRowFunction: "sum", calculatedColumnFormula: "=[@Qty]*[@[Unit price]]" },
+          ],
+          style: { name: "TableStyleLight9", showFirstColumn: true, showLastColumn: false, showRowStripes: false, showColumnStripes: true },
+        },
+      ],
+    };
+    const zip = await JSZip.loadAsync(await workbookToXlsx([sheet]));
+    const part = await zip.file("xl/tables/table1.xml")!.async("string");
+    expect(part).toContain('totalsRowCount="1"');
+    expect(part).toContain("<calculatedColumnFormula>Sales[[#This Row],[Qty]]*Sales[[#This Row],[Unit price]]</calculatedColumnFormula>");
+    expect(part).toContain('totalsRowFunction="sum"');
+    expect(part).toContain('<autoFilter ref="A1:D3"/>');
+    expect(part).toContain('name="TableStyleLight9" showFirstColumn="1" showLastColumn="0" showRowStripes="0" showColumnStripes="1"');
+    const ws = await zip.file("xl/worksheets/sheet1.xml")!.async("string");
+    expect(ws).toContain("<f>Sales[[#This Row],[Qty]]*Sales[[#This Row],[Unit price]]</f>");
+    expect(ws).toContain("<f>SUBTOTAL(109,Sales[Total])</f>");
+    expect(ws).toContain("<f>SUM(Sales[Total])/ROWS(Sales)</f>");
+    const { sheets } = await roundTrip([sheet]);
+    expect(sheets[0].grownTables).toEqual(sheet.grownTables);
+    // Back in the edit form, the own table's name dropped inside it.
+    expect(cell(sheets[0], 1, 3).f).toBe("=[@Qty]*[@[Unit price]]");
+    expect(cell(sheets[0], 3, 3).f).toBe("=SUBTOTAL(109,[Total])");
+    expect(cell(sheets[0], 5, 0).f).toBe("=SUM(Sales[Total])/ROWS(Sales)");
+  });
+
   it("writes a package Excel can open (content types, relationships, parts)", async () => {
     const zip = await JSZip.loadAsync(await workbookToXlsx(baseWorkbook()));
     const names = Object.keys(zip.files);

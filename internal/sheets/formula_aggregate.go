@@ -1,11 +1,16 @@
 package sheets
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // SUBTOTAL, AGGREGATE and SORTN. SUBTOTAL/AGGREGATE select an underlying
 // aggregate by a numeric code and dispatch to the already-registered function,
-// so they automatically track its behaviour. We don't model hidden rows, so the
-// "ignore hidden" SUBTOTAL codes (101-111) behave like their 1-11 counterparts.
+// so they automatically track its behaviour. SUBTOTAL leaves out other
+// SUBTOTAL/AGGREGATE cells and rows a filter hides (codes 1-11), or every
+// hidden row (101-111), as Excel does; hidden rows come from the sheet's
+// config.rowhidden and the filter from grownFilter (see sheetState).
 
 func init() {
 	registerFunc("SUBTOTAL", fnSubtotal)
@@ -27,14 +32,79 @@ func fnSubtotal(c *callCtx) value {
 		return errValue
 	}
 	code := int(fn)
-	if code > 100 {
-		code -= 100 // 101-111: "ignore hidden rows" — we don't track hidden rows
+	allHidden := code > 100
+	if allHidden {
+		code -= 100 // 101-111: also ignore rows hidden by hand
 	}
 	name := subtotalFuncs[code]
 	if name == "" {
 		return errValue
 	}
-	return c.p.dispatch(name, c.args[1:])
+	args := make([]interface{}, 0, len(c.args)-1)
+	for _, a := range c.args[1:] {
+		args = append(args, c.ev.subtotalVisible(a, allHidden))
+	}
+	return c.p.dispatch(name, args)
+}
+
+// subtotalVisible blanks the cells of a reference argument that SUBTOTAL
+// skips: other SUBTOTAL/AGGREGATE formulas, rows hidden by a filter and,
+// with allHidden, every hidden row.
+func (ev *Evaluator) subtotalVisible(a interface{}, allHidden bool) interface{} {
+	r := refOf(a)
+	if r == nil || len(r.areas) != 1 {
+		return a
+	}
+	wb := ev.book()
+	if r.sheet < 0 || r.sheet >= len(wb.sheets) {
+		return a
+	}
+	st := wb.sheets[r.sheet]
+	ar := r.areas[0]
+	skip := func(row, col int) bool {
+		if h, ok := st.hiddenRows[row]; ok && (allHidden || h) {
+			return true
+		}
+		if cell := st.grid.get(cellAddr{row: row, col: col}); cell != nil && isSubtotalFormula(cell.F) {
+			return true
+		}
+		return false
+	}
+	switch v := a.(type) {
+	case rangeVal:
+		var out [][]value
+		changed := false
+		for i := 0; i < v.rows; i++ {
+			row := make([]value, v.cols)
+			for j := 0; j < v.cols; j++ {
+				row[j] = v.cells[i][j]
+				if skip(ar.r1+i, ar.c1+j) {
+					row[j] = blankVal
+					changed = true
+				}
+			}
+			out = append(out, row)
+		}
+		if !changed {
+			return a
+		}
+		return rangeVal{rows: v.rows, cols: v.cols, cells: out, ref: v.ref}
+	case value:
+		if v.kind != kindArray && skip(ar.r1, ar.c1) {
+			return blankVal.withRef(v.ref)
+		}
+	}
+	return a
+}
+
+// isSubtotalFormula reports whether a formula is itself a SUBTOTAL or
+// AGGREGATE (whose results SUBTOTAL does not count twice).
+func isSubtotalFormula(f string) bool {
+	if !strings.HasPrefix(f, "=") {
+		return false
+	}
+	u := strings.ToUpper(strings.TrimLeft(f[1:], " +@"))
+	return strings.HasPrefix(u, "SUBTOTAL(") || strings.HasPrefix(u, "AGGREGATE(")
 }
 
 var aggregateFuncs = map[int]string{

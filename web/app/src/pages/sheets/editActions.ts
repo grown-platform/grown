@@ -26,6 +26,7 @@ import {
   applyStructureOp,
   structureFormulaEdits,
   structureModelPatches,
+  structureTableHeaders,
   translateFormula,
   type StructureOp,
 } from "./formulaShift";
@@ -268,10 +269,18 @@ export function fixUpAfterStructure(wb: Wb, before: any[], op: StructureOp): voi
   // Queued after FortuneSheet's own update, so the positions are post-op ones.
   // The cached value is kept: the formula text changed, not what it computes
   // (a #REF! result arrives with the next recalc).
-  const calls = edits.map((e) => {
+  const calls: { name: string; args: any[] }[] = edits.map((e) => {
     const { v, m, ct } = e.cell ?? {};
     return { name: "setCellValue", args: [e.r, e.c, { f: e.f, v: v ?? "", m: m ?? "", ct }, null, { id: e.sheetId }] };
   });
+  // Table columns the op inserted get their ColumnN header.
+  try {
+    for (const h of structureTableHeaders(before, op)) {
+      calls.push({ name: "setCellValue", args: [h.r, h.c, { v: h.name, m: h.name, ct: { fa: "@", t: "s" } }, null, { id: h.sheetId }] });
+    }
+  } catch {
+    /* the model still names the column */
+  }
   if (calls.length) wb.batchCallApis?.(calls);
   for (const p of patches) {
     // CF and validation also refresh FortuneSheet's derived per-cell fields.

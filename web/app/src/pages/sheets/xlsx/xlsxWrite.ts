@@ -24,6 +24,7 @@ import { attrs, cellRef, esc, pxToPt, pxToWidth, quoteSheet, rectRef, toArgb } f
 import { StyleBuilder, flattenBorders, type CellBorder } from "./xlsxStyles";
 import { writeAutoFilter, writeConditionalFormatting, writeDataValidations } from "./xlsxRules";
 import { writeTable, type TableModel } from "./xlsxTables";
+import { normalizeStructuredRefs } from "../structuredRefs";
 import { chartSpaceXml, drawingXml, CT_CHART, CT_DRAWING, REL_CHART, REL_DRAWING } from "./xlsxCharts";
 import type { ChartConfig } from "../chartData";
 import { sheetComments, threadNoteText } from "../cellComments";
@@ -147,6 +148,17 @@ function richRun(p: any): string {
   if (fc) pr += `<color rgb="${fc}"/>`;
   if (typeof p?.ff === "string" && p.ff) pr += `<rFont val="${esc(p.ff)}"/>`;
   return `<r>${pr ? `<rPr>${pr}</rPr>` : ""}<t xml:space="preserve">${esc(p?.v ?? "")}</t></r>`;
+}
+
+/**
+ * A cell whose formula has structured references, in Excel's saved form:
+ * [@Qty] inside Table1 → Table1[[#This Row],[Qty]].
+ */
+function fileFormCell(cell: any, tables: TableModel[], r: number, c: number): any {
+  if (typeof cell?.f !== "string" || !cell.f.includes("[")) return cell;
+  const host = tables.find((t) => r >= t.ref.r1 && r <= t.ref.r2 && c >= t.ref.c1 && c <= t.ref.c2);
+  const f = normalizeStructuredRefs(cell.f, "file", host ? host.displayName || host.name : undefined);
+  return f === cell.f ? cell : { ...cell, f };
 }
 
 /** The value part of a <c>: type attribute and inner XML. */
@@ -302,6 +314,7 @@ export async function workbookToXlsx(input: any[], opts: WriteOptions = {}): Pro
           for (let c = Math.min(x.c1, x.c2); c <= Math.max(x.c1, x.c2) && budget > 0; c++, budget--) if (!byKey.has(`${r}_${c}`)) byKey.set(`${r}_${c}`, null);
       }
     }
+    const tablesHere = ((Array.isArray(sheet.grownTables) ? sheet.grownTables : []) as TableModel[]).filter((t) => t?.ref);
     const rows = new Map<number, { c: number; xml: string }[]>();
     const comments: CommentOut[] = [];
     const noted = new Set<string>();
@@ -312,7 +325,7 @@ export async function workbookToXlsx(input: any[], opts: WriteOptions = {}): Pro
       const border: CellBorder | null = borders.get(k) ?? null;
       const unlocked = protection.sheet ? inRects(except, r, c) : false;
       const sIdx = styles.cellStyle(cell, border, unlocked);
-      const val = cell ? cellValueXml(cell, sst) : { inner: "" };
+      const val = cell ? cellValueXml(fileFormCell(cell, tablesHere, r, c), sst) : { inner: "" };
       if (!val.inner && sIdx === 0) continue;
       const xml = `<c r="${cellRef(r, c)}"${sIdx ? ` s="${sIdx}"` : ""}${val.t ? ` t="${val.t}"` : ""}${val.inner ? `>${val.inner}</c>` : "/>"}`;
       let list = rows.get(r);
@@ -511,7 +524,7 @@ export async function workbookToXlsx(input: any[], opts: WriteOptions = {}): Pro
       if (!t?.ref) continue;
       tableSeq++;
       const tPath = `xl/tables/table${tableSeq}.xml`;
-      zip.file(tPath, writeTable({ ...t, id: tableSeq }));
+      zip.file(tPath, writeTable({ ...t, id: tableSeq }, prefixFunctions));
       contentOverrides.push(`<Override PartName="/${tPath}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>`);
       const rid = `rId${rels.length + 1}`;
       rels.push(`<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table${tableSeq}.xml"/>`);

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { pasteSpecial, type Cell, type CopiedBlock } from "../pasteSpecial";
 import { translateFormula } from "../formulaShift";
 import { lettersToCol } from "../cellValue";
+import { pasteTables, type TableModel } from "../tables";
 
 type Sheet = Map<string, Cell>;
 const key = (r: number, c: number) => `${r},${c}`;
@@ -106,8 +107,36 @@ describe("sheets parity: copy and paste", () => {
     expect(sheet.get(key(9, 1))?.ps).toBeUndefined();
   });
 
-  // Grown has no Excel tables (ListObjects) to copy.
-  it.skip('oo:cell/spreadsheet-calculation/copy-paste-tests.js#tables', () => {});
+  it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#tables', () => {
+    // A table on D6:D9; D6:D10 is copied, so the table travels with the block.
+    const table: TableModel = {
+      id: 1,
+      name: "Table1",
+      displayName: "Table1",
+      ref: { c1: 3, r1: 5, c2: 3, r2: 8 },
+      headerRowCount: 1,
+      totalsRowCount: 0,
+      totalsRowShown: false,
+      insertRow: false,
+      autoFilter: true,
+      columns: [{ id: 1, name: "Column1" }],
+      style: { name: "TableStyleMedium2", showFirstColumn: false, showLastColumn: false, showRowStripes: true, showColumnStripes: false },
+    };
+    const src = { c1: 3, r1: 5, c2: 3, r2: 9 };
+    const tables = [table];
+    const names = () => tables.map((t) => t.name);
+    tables.push(...pasteTables([table], src, [{ c1: 4, r1: 10, c2: 4, r2: 10 }], names(), tables));
+    expect(tables[tables.length - 1].ref.r1).toBe(10);
+    expect(tables[tables.length - 1].ref.c1).toBe(4);
+    tables.push(...pasteTables([table], src, [{ c1: 5, r1: 10, c2: 5, r2: 10 }, { c1: 6, r1: 10, c2: 6, r2: 10 }], names(), tables));
+    expect(tables[tables.length - 2].ref.r1).toBe(10);
+    expect(tables[tables.length - 2].ref.c1).toBe(5);
+    expect(tables[tables.length - 1].ref.r1).toBe(10);
+    expect(tables[tables.length - 1].ref.c1).toBe(6);
+    // Each copy gets its own name and id.
+    expect(new Set(tables.map((t) => t.name)).size).toBe(4);
+    expect(new Set(tables.map((t) => t.id)).size).toBe(4);
+  });
 
   it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#formulas with unar operators', () => {
     for (const f of ["=+++1", '=++++"STR"', "=++++FALSE", "=+SUM(+++1)+++1", "=+++-SIN(+-+1-+-+1)+-+1+-+1"]) {

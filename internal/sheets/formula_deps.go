@@ -33,7 +33,8 @@ func (ev *Evaluator) buildDepGraph() *depGraph {
 			}
 			n := sheetCell{sheet: si, addr: a}
 			g.formulas = append(g.formulas, n)
-			g.refs[n] = ev.formulaRefs(si, cell.F[1:], map[string]bool{})
+			at := a
+			g.refs[n] = ev.formulaRefsAt(si, &at, cell.F[1:], map[string]bool{})
 		}
 	}
 	sort.Slice(g.formulas, func(i, j int) bool { return lessCell(g.formulas[i], g.formulas[j]) })
@@ -56,12 +57,22 @@ func lessCell(a, b sheetCell) bool {
 // formulaRefs lists the references mentioned by a formula evaluated on sheet
 // si. Defined names are expanded (seen guards against name cycles).
 func (ev *Evaluator) formulaRefs(si int, expr string, seen map[string]bool) []refInfo {
+	return ev.formulaRefsAt(si, nil, expr, seen)
+}
+
+// formulaRefsAt is formulaRefs for a formula in cell at (nil for a defined
+// name), which structured references like [@Col] and [Col] need.
+func (ev *Evaluator) formulaRefsAt(si int, at *cellAddr, expr string, seen map[string]bool) []refInfo {
 	wb := ev.book()
 	toks := tokenise(expr)
 	var out []refInfo
 	for i := 0; i < len(toks); i++ {
 		t := toks[i]
 		sheet := si
+		if t.kind == tokTable {
+			out = append(out, wb.tableRefs(t.val, t.aux, si, at)...)
+			continue
+		}
 		if t.kind == tokSheet {
 			idx, ok := wb.sheetIndexByName(t.val)
 			i++
@@ -73,6 +84,10 @@ func (ev *Evaluator) formulaRefs(si int, expr string, seen map[string]bool) []re
 			}
 			sheet = idx
 			t = toks[i]
+			if t.kind == tokTable {
+				out = append(out, wb.tableRefs(t.val, t.aux, si, at)...)
+				continue
+			}
 		}
 		if t.kind != tokIdent && t.kind != tokNum {
 			continue
@@ -91,6 +106,8 @@ func (ev *Evaluator) formulaRefs(si int, expr string, seen map[string]bool) []re
 				seen[up] = true
 				out = append(out, ev.formulaRefs(def.sheet, def.text, seen)...)
 				delete(seen, up)
+			} else if !ok && wb.tableByName(t.val) != nil {
+				out = append(out, wb.tableRefs(t.val, "", si, at)...)
 			}
 		}
 	}

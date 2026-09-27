@@ -31,6 +31,8 @@ package sheets
 //	      "tol":      1e-9,            // absolute tolerance, scaled by max(1,|want|)
 //	      "complex":  true,            // text result is a complex number ("3+4i"): compare parts within tol
 //	      "invalid":  true,            // OnlyOffice rejects the formula; Grown must return an error
+//	      "tables":   {"Table1": "A600:C601"}, // Excel tables on Sheet1 (header row, then data;
+//	                                   // columns Column1…, headers filled in when empty)
 //	      "date1904": true,            // workbook uses the 1904 date system
 //	      "pending":  "reason"         // skip this check (known semantic difference)
 //	    }]
@@ -40,8 +42,9 @@ package sheets
 // Cell values follow "typed input" semantics: numbers, booleans, text, a
 // string beginning with "=" is a formula, {"error": code} is an error value.
 // Keys with a sheet prefix ("Sheet2!A1") live on that sheet. Checks that use
-// structured table references (Table1[Column1]) or the 1904 date system are
-// skipped: Grown has neither.
+// the 1904 date system are skipped (Grown has none), and so are checks with
+// structured table references (Table1[Column1]) that do not say which table
+// ("tables") they ran against.
 //
 // Set PARITY_PENDING_REPORT=<file> to also evaluate pending checks and list
 // the ones that now pass (so their pending markers can be lifted).
@@ -94,6 +97,7 @@ type parityCheck struct {
 	Complex  bool                       `json:"complex"`
 	Invalid  bool                       `json:"invalid"`
 	Date1904 bool                       `json:"date1904"`
+	Tables   map[string]string          `json:"tables"`
 	Pending  string                     `json:"pending"`
 }
 
@@ -175,7 +179,7 @@ func runParityCase(t *testing.T, c parityCase, rep *parityReporter) {
 				at = "A1"
 			}
 			ran++
-			got, err := parityEval(snapshot, c.Names, chkSheets(c, chk), chk.Formula, chk.Sheet, at, chk.Array)
+			got, err := parityEval(snapshot, c.Names, chkSheets(c, chk), chk.Tables, chk.Formula, chk.Sheet, at, chk.Array)
 			if err != nil {
 				t.Fatalf("fixture error: %v", err)
 			}
@@ -215,8 +219,8 @@ func parityStaticPending(c parityCase, chk parityCheck) string {
 	switch {
 	case chk.Date1904:
 		return "1904 date system not supported"
-	case reTableRef.MatchString(stripStringLits(chk.Formula)):
-		return "structured table references: Grown has no table model"
+	case len(chk.Tables) == 0 && reTableRef.MatchString(stripStringLits(chk.Formula)):
+		return "structured table reference without a recorded table"
 	}
 	return ""
 }
@@ -243,9 +247,39 @@ func stripStringLits(f string) string {
 // Sheet1, "Sheet2!A1" on Sheet2 …; sheets lists the workbook's sheets in order
 // and defaults to Sheet1 plus every sheet a key mentions), recomputes it, and
 // evaluates formula as if it were entered at cell at of sheet.
-func parityEval(state map[string]json.RawMessage, names map[string]string, sheets []string, formula, sheet, at string, array bool) (value, error) {
+func parityEval(state map[string]json.RawMessage, names map[string]string, sheets []string, tables map[string]string, formula, sheet, at string, array bool) (value, error) {
 	if len(sheets) == 0 {
 		sheets = []string{"Sheet1"}
+	}
+	// Tables: a header row of Column1… (kept where the fixture sets a header).
+	var tableList []interface{}
+	if len(tables) > 0 {
+		withHeaders := make(map[string]json.RawMessage, len(state))
+		for k, v := range state {
+			withHeaders[k] = v
+		}
+		tnames := make([]string, 0, len(tables))
+		for n := range tables {
+			tnames = append(tnames, n)
+		}
+		sort.Strings(tnames)
+		for _, n := range tnames {
+			a, b := splitRange(tables[n])
+			var cols []map[string]interface{}
+			for c := a.col; c <= b.col; c++ {
+				name := fmt.Sprintf("Column%d", c-a.col+1)
+				cols = append(cols, map[string]interface{}{"name": name})
+				key := addrToName(a.row, c)
+				if _, set := withHeaders[key]; !set {
+					withHeaders[key], _ = json.Marshal(name)
+				}
+			}
+			tableList = append(tableList, map[string]interface{}{
+				"name": n, "displayName": n, "headerRowCount": 1, "columns": cols,
+				"ref": map[string]int{"r1": a.row, "c1": a.col, "r2": b.row, "c2": b.col},
+			})
+		}
+		state = withHeaders
 	}
 	sheetIdx := func(name string) int {
 		for i, n := range sheets {
@@ -317,6 +351,10 @@ func parityEval(state map[string]json.RawMessage, names map[string]string, sheet
 			return data[a].C < data[b].C
 		})
 		wb[i] = FsSheet{Name: n, CellData: data}
+	}
+	if len(tableList) > 0 {
+		raw, _ := json.Marshal(tableList)
+		wb[sheetIdx("Sheet1")].Extra = map[string]json.RawMessage{"grownTables": raw}
 	}
 	ev := newWorkbookEvaluator(wb, parityNow)
 	for n, text := range names {
@@ -479,7 +517,7 @@ func (r *parityReporter) tryPending(c parityCase, chk parityCheck, idx int, stat
 	if at == "" {
 		at = "A1"
 	}
-	got, err := parityEval(state, c.Names, chkSheets(c, chk), chk.Formula, chk.Sheet, at, chk.Array)
+	got, err := parityEval(state, c.Names, chkSheets(c, chk), chk.Tables, chk.Formula, chk.Sheet, at, chk.Array)
 	if err != nil || parityCompare(got, chk) != "" {
 		return
 	}

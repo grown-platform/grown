@@ -116,6 +116,12 @@ interface SheetMenuBarProps {
   onTrace?: (kind: "precedents" | "dependents" | "clear") => void;
   /** Help ▸ Keyboard shortcuts (Ctrl+/). */
   onShortcuts?: () => void;
+  /** Insert ▸ Table (Ctrl+L). */
+  onInsertTable?: () => void;
+  /** Format ▸ Format as table (a style for the table at the selection, or a new table). */
+  onFormatAsTable?: (style?: string) => void;
+  /** Data ▸ Table properties (the table at the selection). */
+  onTableProperties?: () => void;
 }
 
 const TEXT_CASES: [TextCase, string][] = [
@@ -207,6 +213,9 @@ export function SheetMenuBar({
   onGoalSeek,
   onTrace,
   onShortcuts,
+  onInsertTable,
+  onFormatAsTable,
+  onTableProperties,
 }: SheetMenuBarProps) {
   const check = (on: boolean | undefined) => (
     <Typography component="span" sx={{ width: 18, display: "inline-block", opacity: on ? 1 : 0 }} aria-hidden>
@@ -489,6 +498,9 @@ export function SheetMenuBar({
           <MenuItem onClick={call((w) => w.addSheet())}>
             Sheet{kbd("Shift+F11")}
           </MenuItem>
+          <MenuItem disabled={!onInsertTable} onClick={onInsertTable}>
+            Table{kbd("Ctrl+L")}
+          </MenuItem>
           <MenuItem disabled>Generate a table</MenuItem>
           <MenuItem disabled>Pre-built tables</MenuItem>
           <MenuItem disabled>Timeline</MenuItem>
@@ -609,7 +621,9 @@ export function SheetMenuBar({
           >
             Unmerge
           </MenuItem>
-          <MenuItem disabled>Convert to table{kbd("Ctrl+Alt+T")}</MenuItem>
+          <MenuItem disabled={!onFormatAsTable} onClick={() => onFormatAsTable?.()}>
+            Format as table…
+          </MenuItem>
           <MenuItem onClick={onConditionalFormat}>
             Conditional formatting
           </MenuItem>
@@ -668,6 +682,9 @@ export function SheetMenuBar({
           {onFilterColumn && (
             <MenuItem onClick={onFilterColumn}>Filter by values or condition…</MenuItem>
           )}
+          <MenuItem disabled={!onTableProperties} onClick={onTableProperties}>
+            Table properties…
+          </MenuItem>
           <MenuItem disabled>Create group by view{arrow}</MenuItem>
           <MenuItem disabled>Create filter view</MenuItem>
           <MenuItem disabled>Add a slicer</MenuItem>
