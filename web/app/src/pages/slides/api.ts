@@ -91,3 +91,53 @@ export async function listDecksSharedWithMe(): Promise<Deck[]> {
   const r = await jsonFetch<{ decks?: Deck[] }>("/slides/shared-with-me");
   return r.decks ?? [];
 }
+
+/** Upload a picture to the deck's asset store; returns its URL
+ *  (`/api/v1/slides/d/<id>/assets/<sha256>`). Throws when the server has
+ *  no asset store or refuses the file. */
+export async function uploadDeckAsset(deckId: string, file: Blob): Promise<string> {
+  const fd = new FormData();
+  fd.append("file", file, (file as File).name || "image");
+  const resp = await fetch(`${API_BASE}/slides/d/${deckId}/assets`, {
+    method: "POST",
+    credentials: "same-origin",
+    body: fd,
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const r = (await resp.json()) as { url?: string };
+  if (!r.url) throw new Error("no url");
+  return r.url;
+}
+
+/** Read a file as a data: URL. */
+export function readDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
+/** The src for a picture added to a deck: an uploaded asset URL, or an
+ *  inline data: URL when uploading isn't possible (no asset store, SVG). */
+export async function deckImageSrc(deckId: string, file: Blob): Promise<string> {
+  if (file.type !== "image/svg+xml") {
+    try {
+      return await uploadDeckAsset(deckId, file);
+    } catch {
+      /* fall back to inline */
+    }
+  }
+  return readDataUrl(file);
+}
+
+/** Natural pixel size of a picture (null if it can't be loaded). */
+export function imageNaturalSize(src: string): Promise<{ w: number; h: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth && img.naturalHeight ? { w: img.naturalWidth, h: img.naturalHeight } : null);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}

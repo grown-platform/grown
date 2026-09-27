@@ -11,7 +11,8 @@ import {
   type SlideElement,
 } from "./model";
 import { relativeTo } from "./groupOps";
-import { connectorHitPath, shapeLayers } from "./shapeRender";
+import { connectorHitPath, dashArray, shapeLayers } from "./shapeRender";
+import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
 import { insetsOf } from "./textOps";
 import { isRich, layoutParagraphs, markerCss, paraCss, runCss } from "./textLayout";
 import { parseSlideLink } from "./links";
@@ -328,21 +329,9 @@ function renderElementBody(
   links?: TextLinkOpts,
 ): React.ReactElement {
   if (el.type === "image") {
-    return el.src ? (
-      <img src={el.src} alt="" style={{ ...merged, objectFit: "contain" }} />
-    ) : (
-      <div
-        style={{
-          ...merged,
-          background: "#f1f3f4",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#9aa0a6",
-          fontSize: 12,
-        }}
-      >
-        Image
+    return (
+      <div style={merged}>
+        <ImageBody el={el} />
       </div>
     );
   }
@@ -365,6 +354,78 @@ function renderElementBody(
       </div>
     );
   return <div style={merged} />;
+}
+
+/** ImageBody draws a picture inside its element box: crop (the whole
+ *  picture positioned so the box shows the cropped part), crop to shape
+ *  (clip-path from the preset), opacity, border and shadow. */
+export function ImageBody({ el }: { el: SlideElement }) {
+  if (!el.src)
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          background: "#f1f3f4",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#9aa0a6",
+          fontSize: 12,
+        }}
+      >
+        Image
+      </div>
+    );
+  const clip = cropShapePath(el);
+  const full = fullImageRect(el);
+  const stroked = !!el.stroke && el.stroke !== "none" && (el.strokeWidth ?? 0) > 0;
+  const dash = dashArray(el.dash, el.strokeWidth || 1);
+  return (
+    <div
+      data-image=""
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        opacity: el.opacity,
+        filter: el.shadow ? "drop-shadow(3px 3px 4px rgba(0,0,0,0.45))" : undefined,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          clipPath: clip ? `path("${clip}")` : undefined,
+        }}
+      >
+        <img
+          src={el.src}
+          alt={el.alt ?? ""}
+          draggable={false}
+          style={
+            imageStretched(el)
+              ? { position: "absolute", left: full.x, top: full.y, width: full.w, height: full.h, maxWidth: "none" }
+              : { width: "100%", height: "100%", objectFit: "contain", display: "block" }
+          }
+        />
+      </div>
+      {stroked && (
+        <svg
+          width={Math.max(el.w, 1)}
+          height={Math.max(el.h, 1)}
+          style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}
+        >
+          {clip ? (
+            <path d={clip} fill="none" stroke={el.stroke} strokeWidth={el.strokeWidth} strokeDasharray={dash} />
+          ) : (
+            <rect x={0} y={0} width={el.w} height={el.h} fill="none" stroke={el.stroke} strokeWidth={el.strokeWidth} strokeDasharray={dash} />
+          )}
+        </svg>
+      )}
+    </div>
+  );
 }
 
 /** GroupChildren renders a group's members inside the group's own box (the

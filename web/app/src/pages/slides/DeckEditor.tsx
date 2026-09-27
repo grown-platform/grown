@@ -63,7 +63,22 @@ import {
   trashDeck,
   saveDeck,
   collabURL,
+  deckImageSrc,
+  imageNaturalSize,
 } from "./api";
+import { AltTextDialog, ImageControls, type ImageCommands } from "./ImageControls";
+import {
+  actualSize as imgActualSize,
+  cropToFill,
+  cropToFit,
+  fitToSlide as imgFitToSlide,
+  insertBox,
+  replaceImage,
+  resetCrop as imgResetCrop,
+  setAlt,
+  setCropShape,
+  setOpacity as imgSetOpacity,
+} from "./imageOps";
 import {
   CANVAS_W,
   CANVAS_H,
@@ -312,6 +327,11 @@ export function DeckEditor({ user }: { user: User }) {
   const [tableSel, setTableSel] = useState<{ id: string; sel: CellSel } | null>(null);
   const [splitOpen, setSplitOpen] = useState(false);
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  // ---- pictures (M6) ----
+  // The picture in crop mode (its handles crop; a drag pans it).
+  const [cropId, setCropId] = useState<string | null>(null);
+  const [altFor, setAltFor] = useState<string[] | null>(null);
+  const replaceInput = useRef<HTMLInputElement | null>(null);
 
   const me = {
     userId: user.id,
@@ -335,6 +355,7 @@ export function DeckEditor({ user }: { user: User }) {
   const activeSel = selTable && tableSel?.id === selTable.id ? tableSel.sel : null;
   useEffect(() => {
     if (tableSel && tableSel.id !== selId) setTableSel(null);
+    if (cropId && cropId !== selId) setCropId(null);
   }, [selId]); // eslint-disable-line react-hooks/exhaustive-deps
   /** The cell range table commands act on (the whole table when none). */
   function tableRange(el: SlideElement): CellRange {
@@ -559,6 +580,11 @@ export function DeckEditor({ user }: { user: User }) {
           return;
         }
       }
+      if (cropId && (e.key === "Escape" || e.key === "Enter") && !editingText) {
+        e.preventDefault();
+        setCropId(null);
+        return;
+      }
       if (editingText) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (
@@ -656,13 +682,7 @@ export function DeckEditor({ user }: { user: User }) {
           if (file) {
             pastePending.current = false;
             e.preventDefault();
-            const r = new FileReader();
-            r.onload = () => {
-              const el = newElement("image", String(r.result));
-              upsertElement(el);
-              setSelId(el.id);
-            };
-            r.readAsDataURL(file);
+            void insertPicture(file);
           }
           return;
         }
@@ -765,15 +785,65 @@ export function DeckEditor({ user }: { user: User }) {
   function onImagePicked(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = "";
-    if (!f) return;
-    const r = new FileReader();
-    r.onload = () => {
-      const el = newElement("image", String(r.result));
-      upsertElement(el);
-      setSelId(el.id);
-    };
-    r.readAsDataURL(f);
+    if (f) void insertPicture(f);
   }
+  /** Insert a picture: uploaded to the deck's asset store (data: URL when
+   *  that isn't available), sized to its own proportions. */
+  async function insertPicture(file: Blob) {
+    const src = await deckImageSrc(id, file);
+    const nat = await imageNaturalSize(src);
+    const el: SlideElement = { ...newElement("image", src), ...insertBox(nat) };
+    upsertElement(el);
+    setSelId(el.id);
+  }
+  async function onReplacePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    const target = selected;
+    if (!f || !target || target.type !== "image") return;
+    const src = await deckImageSrc(id, f);
+    const nat = await imageNaturalSize(src);
+    upsertElement(replaceImage(target, src, nat));
+  }
+  /** Apply an op needing the picture's natural size to the selected picture. */
+  async function withNatural(fn: (el: SlideElement, nat: { w: number; h: number }) => SlideElement) {
+    const el = selected;
+    if (!el || el.type !== "image" || !el.src) return;
+    const nat = await imageNaturalSize(el.src);
+    if (!nat) return;
+    const latest = docRef.current?.slides.find((sl) => sl.id === slide?.id)?.elements.find((x) => x.id === el.id) ?? el;
+    upsertElement(fn(latest, nat));
+  }
+  const imageCmd: ImageCommands | null =
+    selected?.type === "image" && selIds.length === 1
+      ? {
+          cropping: cropId === selected.id,
+          toggleCrop: () => {
+            if (cropId === selected.id) return setCropId(null);
+            // A letterboxed (legacy) picture first takes its own proportions.
+            if (!selected.crop && !selected.cropShape) void withNatural((el, nat) => cropToFit(el, nat));
+            setCropId(selected.id);
+          },
+          cropToShape: (p) => {
+            if (!selected.crop && p) void withNatural((el, nat) => setCropShape(cropToFill(el, nat), p));
+            else upsertElement(setCropShape(selected, p));
+          },
+          cropFill: () => void withNatural(cropToFill),
+          cropFit: () => void withNatural(cropToFit),
+          resetCrop: () => upsertElement(imgResetCrop(selected)),
+          actualSize: () => void withNatural(imgActualSize),
+          fitToSlide: () => void withNatural(imgFitToSlide),
+          replace: () => replaceInput.current?.click(),
+          setOpacity: (v) => upsertElement(imgSetOpacity(selected, v)),
+          toggleShadow: () => {
+            const n = { ...selected };
+            if (n.shadow) delete n.shadow;
+            else n.shadow = true;
+            upsertElement(n);
+          },
+          altText: () => setAltFor([selected.id]),
+        }
+      : null;
   // File → Import slides: append every slide of a .pptx after the deck's
   // last slide and jump to the first imported one.
   async function onPptxPicked(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1439,6 +1509,8 @@ export function DeckEditor({ user }: { user: User }) {
     toggleNotes: () => setShowNotes((v) => !v),
     insertTable: () => setTablePickerOpen(true),
     table: tableCmd,
+    image: imageCmd,
+    altText: () => selIds.length && setAltFor(selIds),
   };
 
   if (doc === null) {
@@ -1475,6 +1547,13 @@ export function DeckEditor({ user }: { user: User }) {
         accept="image/*"
         hidden
         onChange={onImagePicked}
+      />
+      <input
+        ref={replaceInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={onReplacePicked}
       />
       <input
         ref={pptxInput}
@@ -1721,6 +1800,7 @@ export function DeckEditor({ user }: { user: User }) {
               style={{ marginLeft: 4 }}
             />
           )}
+          <ImageControls el={selected} cmd={imageCmd} />
           <TableControls el={selTable} cmd={tableCmd} activeCell={activeSel ? [activeSel.r, activeSel.c] : null} />
           <ShapeFormatControls
             el={selected}
@@ -1947,6 +2027,7 @@ export function DeckEditor({ user }: { user: User }) {
                 onFollowLink={followLink}
                 tableSel={tableSel}
                 onTableSel={setTableSel}
+                cropId={cropId}
                 findHighlight={
                   findOpen && findHit && findHit.where === "text" && findHit.slideIdx === cur && findHit.topId === findHit.elId
                     ? { elId: findHit.elId!, start: findHit.start, end: findHit.end }
@@ -2126,6 +2207,14 @@ export function DeckEditor({ user }: { user: User }) {
                           ? "Unlock position"
                           : "Lock position"}
                       </MenuItem>
+                      <MenuItem onClick={close(() => setAltFor(targetIds))}>Alt text…</MenuItem>
+                      {imageCmd && targets.length === 1 && targets[0].id === selected?.id && (
+                        <>
+                          <MenuItem onClick={close(imageCmd.toggleCrop)}>Crop image</MenuItem>
+                          <MenuItem onClick={close(imageCmd.resetCrop)}>Reset crop</MenuItem>
+                          <MenuItem onClick={close(imageCmd.replace)}>Replace image…</MenuItem>
+                        </>
+                      )}
                       {tableCmd && targets.length === 1 && targets[0].id === selTable?.id && (
                         <>
                           <ListDivider />
@@ -2337,6 +2426,17 @@ export function DeckEditor({ user }: { user: User }) {
         onApply={applyTextOptions}
         onClose={() => setTextOptsOpen(false)}
       />
+      {altFor && (
+        <AltTextDialog
+          initial={slide?.elements.find((e) => e.id === altFor[0])?.alt ?? ""}
+          onClose={() => setAltFor(null)}
+          onSave={(v) => {
+            const ids = altFor;
+            setAltFor(null);
+            if (slide) upsertMany(slide.elements.filter((e) => ids.includes(e.id)).map((e) => setAlt(e, v)));
+          }}
+        />
+      )}
       {splitOpen && selTable && (
         <SplitCellDialog
           open

@@ -1255,7 +1255,43 @@ async function readPic(
     ...orient(box),
     src,
     ...(url ? { url } : {}),
+    ...readPictureProps(pic, sc),
   });
+}
+
+/** Crop (`a:srcRect`), opacity, crop shape, border, shadow and alt text of
+ *  a `p:pic`. */
+function readPictureProps(pic: Element, sc: SlideCtx): Partial<SlideElement> {
+  const out: Partial<SlideElement> = {};
+  const src = path(pic, "blipFill", "srcRect");
+  if (src) {
+    const f = (a: string) => (num(src, a) ?? 0) / 100000;
+    const crop = { l: f("l"), t: f("t"), r: f("r"), b: f("b") };
+    // Negative values (a picture smaller than its frame) aren't kept.
+    if (Object.values(crop).some((v) => v > 0))
+      out.crop = {
+        l: Math.max(0, crop.l),
+        t: Math.max(0, crop.t),
+        r: Math.max(0, crop.r),
+        b: Math.max(0, crop.b),
+      };
+  }
+  const amt = num(path(pic, "blipFill", "blip", "alphaModFix"), "amt");
+  if (amt !== undefined && amt < 100000) out.opacity = r2(amt / 100000);
+  const spPr = kid(pic, "spPr");
+  const prst = kid(spPr, "prstGeom")?.getAttribute("prst");
+  if (prst && prst !== "rect" && hasPreset(prst)) out.cropShape = prst;
+  const line = readLine(spPr, sc.pc.color);
+  if (line && line !== "none") {
+    out.stroke = line.color;
+    out.strokeWidth = line.width;
+    const dash = readLineStyle(spPr).dash;
+    if (dash) out.dash = dash;
+  }
+  if (path(spPr, "effectLst", "outerShdw")) out.shadow = true;
+  const descr = path(pic, "nvPicPr", "cNvPr")?.getAttribute("descr");
+  if (descr) out.alt = descr;
+  return out;
 }
 
 async function readGraphicFrame(

@@ -14,6 +14,8 @@ import { shapeLayersMarkup, shapeSvgGroup } from "./shapeRender";
 import { isRich, textBodyHtml } from "./textLayout";
 import { effective, insetsOf, listMarkers, paragraphs } from "./textOps";
 import { resolveSlideLink } from "./links";
+import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
+import { inlineImages } from "./assets";
 import { CELL_PAD, cellFormat, cellTextEl, colWidths, isCovered, offsets, rowHeights, spanOf } from "./tableOps";
 
 export type DeckFormat =
@@ -101,11 +103,53 @@ function elementHTML(el: SlideElement, slideHref?: (url: string) => string | nul
   if (el.type === "shape" || el.type === "connector")
     return `<svg style="${box}overflow:visible;" width="${Math.max(el.w, 1)}" height="${Math.max(el.h, 1)}">${shapeLayersMarkup(el)}</svg>`;
   if (el.type === "image")
-    return el.src
-      ? `<img src="${el.src}" style="${box}object-fit:contain;"/>`
-      : `<div style="${box}background:#f1f3f4;"></div>`;
+    return el.src ? imageHTML(el, box) : `<div style="${box}background:#f1f3f4;"></div>`;
   if (el.type === "table" && el.table) return tableHTML(el, box, slideHref);
   return "";
+}
+
+/** A picture as HTML: crop, crop to shape, opacity, border and shadow. */
+function imageHTML(el: SlideElement, box: string): string {
+  const clip = cropShapePath(el);
+  const f = fullImageRect(el);
+  const img = imageStretched(el)
+    ? `position:absolute;left:${f.x}px;top:${f.y}px;width:${f.w}px;height:${f.h}px;max-width:none;`
+    : `width:100%;height:100%;object-fit:contain;display:block;`;
+  const outer =
+    box +
+    (el.opacity !== undefined ? `opacity:${el.opacity};` : "") +
+    (el.shadow ? `filter:drop-shadow(3px 3px 4px rgba(0,0,0,0.45));` : "");
+  const stroked = !!el.stroke && el.stroke !== "none" && (el.strokeWidth ?? 0) > 0;
+  const border = stroked
+    ? `<svg width="${el.w}" height="${el.h}" style="position:absolute;left:0;top:0;overflow:visible">${
+        clip
+          ? `<path d="${clip}" fill="none" stroke="${el.stroke}" stroke-width="${el.strokeWidth}"/>`
+          : `<rect x="0" y="0" width="${el.w}" height="${el.h}" fill="none" stroke="${el.stroke}" stroke-width="${el.strokeWidth}"/>`
+      }</svg>`
+    : "";
+  return `<div style="${outer}"><div style="position:absolute;inset:0;overflow:hidden;${clip ? `clip-path:path('${clip}');` : ""}"><img src="${el.src}" alt="${esc(el.alt ?? "")}" style="${img}"/></div>${border}</div>`;
+}
+
+/** A picture as SVG (nested viewport = the box; clip path = crop shape). */
+function imageSVG(el: SlideElement): string {
+  const clip = cropShapePath(el);
+  const f = fullImageRect(el);
+  const id = `clip-${el.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const image = imageStretched(el)
+    ? `<image href="${el.src}" x="${f.x}" y="${f.y}" width="${f.w}" height="${f.h}" preserveAspectRatio="none"/>`
+    : `<image href="${el.src}" x="0" y="0" width="${el.w}" height="${el.h}" preserveAspectRatio="xMidYMid meet"/>`;
+  const stroked = !!el.stroke && el.stroke !== "none" && (el.strokeWidth ?? 0) > 0;
+  const border = stroked
+    ? clip
+      ? `<path d="${clip}" fill="none" stroke="${el.stroke}" stroke-width="${el.strokeWidth}"/>`
+      : `<rect x="0" y="0" width="${el.w}" height="${el.h}" fill="none" stroke="${el.stroke}" stroke-width="${el.strokeWidth}"/>`
+    : "";
+  return (
+    `<svg x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}"${el.opacity !== undefined ? ` opacity="${el.opacity}"` : ""}>` +
+    (clip ? `<defs><clipPath id="${id}"><path d="${clip}"/></clipPath></defs><g clip-path="url(#${id})">${image}</g>` : image) +
+    border +
+    `</svg>`
+  );
 }
 
 /** A table as HTML: widths, heights, merges, fills, borders, rich cells. */
@@ -335,9 +379,7 @@ function slideToSVG(slide: Slide): string {
     } else if (el.type === "shape" || el.type === "connector") {
       parts.push(shapeSvgGroup(el));
     } else if (el.type === "image" && el.src) {
-      parts.push(
-        `<image href="${el.src}" x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" preserveAspectRatio="xMidYMid meet"/>`,
-      );
+      parts.push(imageSVG(el));
     } else if (el.type === "text") {
       parts.push(textSVG(el));
     } else if (el.type === "table" && el.table) {
@@ -393,6 +435,8 @@ export async function downloadDeck(
   slideIndex = 0,
 ): Promise<void> {
   const name = (title || "presentation").replace(/[/\\?%*:|"<>]/g, "-");
+  // Files that leave the browser carry their pictures inline.
+  if (fmt !== "pdf" && fmt !== "txt") deck = await inlineImages(deck);
 
   // Current-slide image exports (Google parity: jpg/png/svg).
   if (fmt === "svg" || fmt === "png" || fmt === "jpg") {

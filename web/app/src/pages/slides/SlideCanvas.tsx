@@ -4,6 +4,7 @@ import { CANVAS_W, CANVAS_H, type Slide, type SlideElement } from "./model";
 import {
   elementStyle,
   GroupChildren,
+  ImageBody,
   ShapeSvg,
   ShrinkFit,
   SlideTable,
@@ -49,6 +50,7 @@ import {
 } from "./geometry";
 import { clickSelect, marqueeMerge } from "./selection";
 import { moveElementBy } from "./deckOps";
+import { cropPan, cropResize, fullImageRect } from "./imageOps";
 import {
   cellTextEl,
   colWidths,
@@ -105,6 +107,8 @@ interface SlideCanvasProps {
   /** Cell selection inside the selected table. */
   tableSel?: { id: string; sel: CellSel } | null;
   onTableSel?: (v: { id: string; sel: CellSel } | null) => void;
+  /** The picture in crop mode: handles crop, a drag pans the picture. */
+  cropId?: string | null;
 }
 
 type Drag =
@@ -163,6 +167,7 @@ export function SlideCanvas({
   findHighlight,
   tableSel,
   onTableSel,
+  cropId,
 }: SlideCanvasProps) {
   const scale = canvasScale(width);
   const height = canvasHeight(width);
@@ -380,7 +385,11 @@ export function SlideCanvas({
     const snapOn = !!snap && (snap.guides || !!snap.grid) && !e.altKey;
     let els: SlideElement[];
     let g: Guide[] = [];
-    if (d.kind === "move") {
+    const cropping = d.starts.length === 1 && d.starts[0].id === cropId && d.starts[0].type === "image";
+    if (cropping) {
+      const s0 = d.starts[0];
+      els = [d.kind === "move" ? cropPan(s0, dx, dy) : cropResize(s0, d.mode as Handle, dx, dy)];
+    } else if (d.kind === "move") {
       if (snapOn) {
         const box = { ...d.box0, x: d.box0.x + dx, y: d.box0.y + dy };
         const s = snapMove(box, d.targets, snap!);
@@ -667,33 +676,27 @@ export function SlideCanvas({
                   <GroupChildren el={el} />
                 </div>
               ) : el.type === "image" ? (
-                el.src ? (
-                  <img
-                    src={el.src}
-                    alt=""
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "contain",
-                      pointerEvents: "none",
-                    }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      background: "#f1f3f4",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#9aa0a6",
-                      fontSize: 12,
-                    }}
-                  >
-                    Image
-                  </div>
-                )
+                <>
+                  {cropId === el.id && el.src && (
+                    <img
+                      data-testid="crop-ghost"
+                      src={el.src}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        position: "absolute",
+                        ...(() => {
+                          const f = fullImageRect({ ...el, crop: el.crop ?? { l: 0, t: 0, r: 0, b: 0 } });
+                          return { left: f.x, top: f.y, width: f.w, height: f.h };
+                        })(),
+                        maxWidth: "none",
+                        opacity: 0.35,
+                        pointerEvents: "none",
+                      }}
+                    />
+                  )}
+                  <ImageBody el={cropId === el.id && !el.crop ? { ...el, crop: { l: 0, t: 0, r: 0, b: 0 } } : el} />
+                </>
               ) : el.type === "text" ? (
                 isEditing ? (
                   <TextEditor
@@ -807,6 +810,9 @@ export function SlideCanvas({
                     style={{
                       ...handleStyle(h),
                       ...(el.type === "line" ? { cursor: "ew-resize" } : {}),
+                      ...(cropId === el.id
+                        ? { background: "#202124", borderColor: "#fff", borderRadius: 1, width: handleSize * 1.2, height: handleSize * 1.2 }
+                        : {}),
                     }}
                   />
                 ))}
