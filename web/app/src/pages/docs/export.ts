@@ -1,5 +1,6 @@
 import type { Editor } from "@tiptap/react";
 import { exportBodyHtml } from "./docModel";
+import { tableCss } from "./tableModel";
 
 export type DownloadFormat =
   | "docx"
@@ -75,7 +76,9 @@ export async function exportDocx(editor: Editor, title: string): Promise<Blob> {
 }
 
 function fullHtml(editor: Editor, title: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${exportBodyHtml(editor)}</body></html>`;
+  // Table borders and style templates (Docs M4) as a stylesheet.
+  const css = `table{border-collapse:collapse}\n${tableCss("")}`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body>${exportBodyHtml(editor)}</body></html>`;
 }
 
 /**

@@ -171,18 +171,13 @@ export function editorPageSx(
     "& .ProseMirror .doc-comment-anchor--active": {
       backgroundColor: "rgba(244,180,0,.5)",
     },
-    "& .ProseMirror table": {
-      borderCollapse: "collapse",
-      width: "100%",
-      margin: "0.5em 0",
-    },
     "& .ProseMirror th, & .ProseMirror td": {
       minWidth: "2em",
       position: "relative",
     },
     "& .ProseMirror table:not([data-table-style]) th": { bgcolor: "#f1f3f4", fontWeight: 600 },
     // Table borders, margins and style templates (Docs M4).
-    ...tableSx(".ProseMirror"),
+    ...tableEditorSx,
     "& .ProseMirror .selectedCell::after": {
       content: '""',
       position: "absolute",
@@ -222,6 +217,17 @@ export function editorPageSx(
     },
   };
 }
+
+const TABLE_SX = tableSx(".ProseMirror");
+const tableEditorSx = {
+  ...TABLE_SX,
+  "& .ProseMirror table": {
+    borderCollapse: "collapse",
+    width: "100%",
+    margin: "0.5em 0",
+    ...TABLE_SX["& .ProseMirror table"],
+  },
+};
 
 /** workspaceSx is the gray canvas the page sits on. */
 export const workspaceSx: SxProps = {

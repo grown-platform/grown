@@ -314,7 +314,7 @@ export function tableCssRules(scope = ".ProseMirror"): CssRules {
     fmtRule(`${t}${s}[data-look~="lastRow"] > tbody > tr:last-child > :is(td, th)`, tpl.lastRow, "border-top");
     fmtRule(`${t}${s}[data-look~="header"] > tbody > tr:first-child > :is(td, th)`, tpl.header, "border-bottom");
     // A styled table's <th> looks like its template, not the legacy grey.
-    r[`${t}${s} > tbody > tr > th`] = { "font-weight": "inherit", "background-color": "transparent" };
+    r[`${t}${s} > tbody > tr > th`] = { "font-weight": "inherit", "background-color": "transparent", "text-align": "start" };
     if (tpl.header) {
       const d: Record<string, string> = {};
       if (tpl.header.bold) d["font-weight"] = "700";
