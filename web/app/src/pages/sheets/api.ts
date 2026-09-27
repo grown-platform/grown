@@ -61,6 +61,80 @@ export async function recalcSheet(id: string, data: string): Promise<RecalcCell[
   return r.cells ?? [];
 }
 
+/** A cell or range in a trace answer. */
+export interface TraceCellRef {
+  sheetId: string;
+  sheetIndex: number;
+  sheet: string;
+  r1: number;
+  c1: number;
+  r2: number;
+  c2: number;
+  ref: string;
+}
+
+/** One trace arrow: `to` reads `from` for dependents, `from` reads `to` for precedents. */
+export interface TraceArrow {
+  level: number;
+  from: TraceCellRef;
+  to: TraceCellRef;
+  external?: boolean;
+}
+
+export interface TraceResult {
+  cell: TraceCellRef;
+  formula?: string;
+  precedents: TraceArrow[];
+  dependents: TraceArrow[];
+}
+
+async function postJSON<T>(path: string, body: unknown): Promise<T> {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const text = (await resp.text().catch(() => "")).trim();
+    throw new Error(text.replace(/^goal seek: /, "") || `HTTP ${resp.status}`);
+  }
+  return (await resp.json()) as T;
+}
+
+/**
+ * traceDeps asks the engine for a cell's precedent and dependent arrows,
+ * `precedents` / `dependents` levels deep, over the posted (live) workbook.
+ */
+export function traceDeps(
+  id: string,
+  data: string,
+  sheet: string,
+  cell: string,
+  precedents: number,
+  dependents: number,
+): Promise<TraceResult> {
+  return postJSON<TraceResult>(`/sheets/d/${id}/deps`, { data, sheet, cell, precedents, dependents });
+}
+
+export interface GoalSeekResult {
+  found: boolean;
+  value: number;
+  result: number | string;
+  iterations: number;
+  sheetId: string;
+  changingCell: string;
+  formulaCell: string;
+}
+
+/** goalSeek runs Data ▸ What-if analysis ▸ Goal seek on the posted workbook. */
+export function goalSeek(
+  id: string,
+  req: { data: string; sheet: string; formulaCell: string; target: number; changingCell: string },
+): Promise<GoalSeekResult> {
+  return postJSON<GoalSeekResult>(`/sheets/d/${id}/goalseek`, req);
+}
+
 /** collabURL returns the WebSocket URL for a sheet's live-ops channel. */
 export function collabURL(id: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
