@@ -17,7 +17,7 @@ import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
-import { InsertionMark, DeletionMark, Suggesting } from "./suggesting";
+import { InsertionMark, DeletionMark, FormatChangeMark, TrackParagraphs, Suggesting } from "./suggesting";
 import { Drawing } from "./drawing";
 import { ParagraphSpacing, ParagraphIndent, ParagraphShading } from "./paragraphFormat";
 import { DocShortcuts, TabCharacter } from "./shortcuts";
@@ -593,6 +593,8 @@ export function buildExtensions(opts: BuildOpts) {
     Endnote,
     InsertionMark,
     DeletionMark,
+    FormatChangeMark,
+    TrackParagraphs,
     Drawing,
     Suggesting.configure({ user: { name: userName, color: userColor } }),
     ClipboardHandling,

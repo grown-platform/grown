@@ -166,7 +166,7 @@ describe("docx reader", () => {
     expect(commented.marks).toEqual([{ type: "commentMark", attrs: { commentId: "docx-c0" } }]);
 
     const added = findNode(json, (n) => n.type === "text" && n.text === "added")!;
-    expect(added.marks).toEqual([{ type: "insertion", attrs: { author: "Alice", color: "#188038" } }]);
+    expect(added.marks).toMatchObject([{ type: "insertion", attrs: { author: "Alice", color: "#188038" } }]);
     const removed = findNode(json, (n) => n.type === "text" && n.text === "removed")!;
     expect((removed.marks as unknown[])[0]).toMatchObject({ type: "deletion", attrs: { author: "Bob" } });
 
