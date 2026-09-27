@@ -19,8 +19,6 @@ import type { ChartType } from "../chartData";
 // tolerance (both numbers rounded to the precision the expected value is
 // written with, then within 0.005).
 
-const T = "oo:cell/spreadsheet-calculation/ChartsDrawTest.js#";
-
 function decimals(n: number): number {
   const s = String(n);
   const e = /e-(\d+)$/.exec(s);
@@ -189,20 +187,20 @@ function checkTwo(type: Exclude<TrendType, "movingAvg" | "poly">, rows: Two[]) {
 }
 
 describe("ChartsDrawTest: trendline equations", () => {
-  it(`${T}Test: Linear trendlines equation`, () => checkTwo("linear", LINEAR));
-  it(`${T}Test: Logarithmic trendlines equation`, () => checkTwo("log", LOG));
-  it(`${T}Test: Power trendlines equation`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Linear trendlines equation", () => checkTwo("linear", LINEAR));
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Logarithmic trendlines equation", () => checkTwo("log", LOG));
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Power trendlines equation", () => {
     checkTwo("power", POWER);
     // A zero or negative y can't be fitted.
     expect(equationCoefficients(X6, [5, 50, 500, 0, 50000, 500000], "power")).toBeUndefined();
     expect(equationCoefficients(X6, [5, 50, 500, -1, 50000, 500000], "power")).toBeUndefined();
   });
-  it(`${T}Test: Exponential trendlines equation`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Exponential trendlines equation", () => {
     checkTwo("exp", EXP);
     expect(equationCoefficients(X6, [5, 50, 500, 0, 50000, 500000], "exp")).toBeUndefined();
     expect(equationCoefficients(X6, [5, 50, 500, -1, 50000, 500000], "exp")).toBeUndefined();
   });
-  it(`${T}Test: Polynomial trendlines equation`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Polynomial trendlines equation", () => {
     POLY.forEach(([x, y, n, want], i) => {
       const c = equationCoefficients(x, y, "poly", n - 1);
       expect(c, `poly case ${i}`).toBeDefined();
@@ -240,7 +238,7 @@ const MA: [number[], number[], number, number, number[], number[]][] = [
 ];
 
 describe("ChartsDrawTest: moving average and R²", () => {
-  it(`${T}Test: MovingAverage trendlines results`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: MovingAverage trendlines results", () => {
     MA.forEach(([x, y, n, p, wx, wy], i) => {
       const r = movingAverage(x, y, n, p);
       expectAllClose(r.x, wx, `MA case ${i} x`);
@@ -248,7 +246,7 @@ describe("ChartsDrawTest: moving average and R²", () => {
     });
   });
 
-  it(`${T}Test: Check R squared`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Check R squared", () => {
     // R² of the fitted model over the raw data. (The suite passes ln-transformed
     // x or y for the log/power/exponential rows; the raw data is given here.)
     const e = (xs: number[]) => xs.map(Math.exp);
@@ -298,7 +296,7 @@ describe("ChartsDrawTest: moving average and R²", () => {
     ]);
   });
 
-  it(`${T}Test: Interception equation + rSquared`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Interception equation + rSquared", () => {
     // [x, y, type, coefficient count, intercept, expected coefficients]
     const rows: [number[], number[], Exclude<TrendType, "movingAvg">, number, number, number[]][] = [
       [X6, [4, 6, 3, 7, 8, 9], "linear", 2, 0, [1.6154, 0]],
@@ -374,7 +372,7 @@ const CURVES: Curve[] = [
 ];
 
 describe("ChartsDrawTest: trendline curves", () => {
-  it(`${T}Test: Line Builder approximated bezier function`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Line Builder approximated bezier function", () => {
     // Where the drawn line starts and ends. (OnlyOffice also returns its Bézier
     // control points; Grown samples the curve, so only the ends are compared.)
     CURVES.forEach(([coefs, type, a, b, valMin, logBase, first, last], i) => {
@@ -387,7 +385,7 @@ describe("ChartsDrawTest: trendline curves", () => {
     });
   });
 
-  it(`${T}Test: Line Builder boundaries calculation`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Line Builder boundaries calculation", () => {
     CURVES.forEach(([coefs, type, a, b, valMin, logBase, first, last], i) => {
       const ext = trendlineExtent({ type, coefs }, a, b, { valMin, logBase });
       expect(ext, `extent ${i}`).not.toBeNull();
@@ -409,7 +407,7 @@ const D3 = [7, 9, 31];
 const L13 = ["c", "#", "f", "c", "c", "c", "c", "f", "f", "d", "f", "d", "d"];
 
 describe("ChartsDrawTest: histograms", () => {
-  it(`${T}Test: Histogram aggregation calculations`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Histogram aggregation calculations", () => {
     const got = (v: number[], l: string[]) => aggregateByCategory(v, l).map((r) => [r.label, r.value]);
     expect(got([7, 9], ["c", "#"])).toEqual([["c", 7], ["#", 9]]);
     expect(got(D13, L13)).toEqual([["c", 247], ["#", 9], ["f", 381], ["d", 451]]);
@@ -420,7 +418,7 @@ describe("ChartsDrawTest: histograms", () => {
     expect(got([0, 9, 31, 0], ["c", "#", "f", "c"])).toEqual([["c", 0], ["#", 9], ["f", 31]]);
   });
 
-  it(`${T}Test: Histogram aggregation min and max calculations`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Histogram aggregation min and max calculations", () => {
     const range = (v: number[], l: string[]) => {
       const r = aggregateRange(v, l);
       return [r.min, r.max];
@@ -512,7 +510,7 @@ describe("ChartsDrawTest: histograms", () => {
 
   const sameEdge = (got: number | null, want: number | null) => (want === null ? got === null : got !== null && close(got, want));
 
-  it(`${T}Test: Histogram binning calculations`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Histogram binning calculations", () => {
     BINS.forEach(([data, opts, want], i) => {
       const got = binValues(data, opts).bins;
       expect(got.length, `binning case ${i}: ${JSON.stringify(got)}`).toBe(want.length);
@@ -523,7 +521,7 @@ describe("ChartsDrawTest: histograms", () => {
     });
   });
 
-  it(`${T}Test: Histogram binning min and max and scale`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Histogram binning min and max and scale", () => {
     BINS.forEach(([data, opts, , max, scale], i) => {
       const got = binValues(data, opts);
       expect(got.valMax, `scale case ${i} max`).toBe(max);
@@ -534,7 +532,7 @@ describe("ChartsDrawTest: histograms", () => {
 });
 
 describe("ChartsDrawTest: drawing", () => {
-  it(`${T}Test: RoundValues function`, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: RoundValues function", () => {
     const rows: [number, boolean | undefined, number | undefined, number][] = [
       [105.965, undefined, undefined, 105.965],
       [105.965000000002, undefined, undefined, 105.965],
@@ -553,7 +551,7 @@ describe("ChartsDrawTest: drawing", () => {
     for (const [v, sig, d, want] of rows) expectClose(roundValue(v, sig, d), want, `roundValue(${v}, ${sig}, ${d})`);
   });
 
-  it(`${T}Test: Base Charts Draw `, () => {
+  it("oo:cell/spreadsheet-calculation/ChartsDrawTest.js#Test: Base Charts Draw ", () => {
     // Two series over three years, one cell left empty. Every 2-D chart type
     // Grown draws lays the data out; stacked kinds add up, 100 % kinds reach 1.
     const rows = [

@@ -36,6 +36,7 @@ Current files:
 | `structure.parity.test.ts` | `SheetStructureTests.js` (move/shift) | `../formulaShift.ts` |
 | `paste.parity.test.ts`, `csv.parity.test.ts` | `copy-paste-tests.js` | `../pasteSpecial.ts`, `../csvText.ts` |
 | `textCase.parity.test.ts` | `CellSettingsTests.js` | `../textCase.ts` |
+| `charts.parity.test.ts` | `ChartsDrawTest.js` | `../trendlines.ts`, `../histogram.ts`, `../chartAxis.ts`, `../chartData.ts` |
 | `numberFormat.parity.test.ts` | `NumFormatParse.js`, `testsForFWB.html.js`, `CellFormatTests.js` (fixtures in `internal/sheets/testdata/numfmt/`, shared with the Go port) | `../numberFormat.ts` |
 
-Later milestones add pivots (M9) and charts (M10).
+Pivots (M9) are added separately.

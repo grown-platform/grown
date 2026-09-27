@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Sheets
 
-Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done. Wave 4: M7 (autofill, series, sort, paste special, sheet structure; §13) is done.
+Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done. Wave 4: M7 (autofill, series, sort, paste special, sheet structure; §13) is done. Wave 5: M11 (§14). Wave 6: M10 (charts; §15) is done.
 Companion: `sheets-tests.csv` (one row per OnlyOffice test file).
 Inventory baseline: **`origin/main` @ `c90064e`**. (The worktree used for reading was `96ca7c0`,
 55 commits behind; for Sheets the only difference is `internal/sheets/formula_more{,2,3}.go`
@@ -32,7 +32,7 @@ justification, not planned.
 | Collaboration | WebSocket hub relays fortune-sheet **ops** verbatim between peers + presence (cursor colour/selection). No OT/CRDT; persistence is a 1.5 s debounced full-workbook `PUT …/data` from each client (last writer wins). | `internal/sheets/collab.go`, `internal/server/server.go:2623`, `SheetEditor.tsx:168-301` |
 | Sharing | Per-user object grants (viewer/editor), cross-org; list "mine" / "shared with me". | `ShareDialog.tsx`, `SheetList.tsx`, `internal/sheets/service.go:211-316` |
 | Export | xlsx/ods via SheetJS (`xlsx` 0.18.5, **values only** — formulas/formats dropped), csv/tsv/html in-browser, pdf via `/api/v1/docs/convert` (HTML table → pandoc/tectonic). Import: **disabled menu item**. | `web/app/src/pages/sheets/export.ts` |
-| Charts | Dependency-free SVG renderer: column, bar, line, area, pie; series from a range, header row / label column options. Stored in `grownCharts`, shown in a side panel (not anchored on the grid). | `ChartDialog.tsx`, `ChartRenderer.tsx`, `chartData.ts`, `ChartsPanel.tsx` |
+| Charts | Dependency-free SVG renderer: column, bar, line, area (plain/stacked/100 %), combo with a secondary axis, scatter, pie, doughnut, histogram, waterfall; trendlines, data labels, axis options, legend placement. Stored in `grownCharts` on sheet 0, anchored on the grid (and listed in a panel); exported to and imported from xlsx (M10, §15). | `ChartDialog.tsx`, `ChartRenderer.tsx`, `ChartOverlay.tsx`, `chartData.ts`, `trendlines.ts`, `histogram.ts`, `chartAxis.ts`, `xlsx/xlsxCharts.ts` |
 | Pivot | Pure TS pivot: one row field, optional column field, one value field, aggs sum/count/average/min/max, row+col totals. Rendered as an HTML table in a panel. | `PivotDialog.tsx`, `pivotData.ts`, `PivotTableView.tsx`, `PivotPanel.tsx` |
 | Conditional formatting | Dialog over fortune-sheet's `luckysheet_conditionformat_save`: single-colour "default" rules (greaterThan/lessThan/between/equal…), `colorGradation` (colour scale), `dataBar`. Plus Grown icon sets (arrows/traffic/signs) as a display overlay on `m`. | `ConditionalFormatDialog.tsx`, `iconSets.ts` |
 | Data validation | Dialog over fortune-sheet `dataVerification`: dropdown, checkbox, number_decimal, text_length, text_content, date; operators (between, equal, …); prohibit input / hint. | `DataValidationDialog.tsx` |
@@ -195,14 +195,16 @@ Legend: **Have** = works end-to-end in Grown · **Partial** = exists but materia
 | Feature | Grown |
 |---|---|
 | Column, bar, line, area, pie | Have — `ChartRenderer.tsx` |
-| Scatter, bubble, doughnut, radar, stock, combo, stacked/100 % variants, 3-D | Missing |
-| chartEx: histogram (binning), waterfall, treemap, sunburst, funnel, box & whisker | Missing |
-| Trendlines (linear/log/power/exp/polynomial/moving-average) with equation and R² | Missing |
-| Titles, legends, data labels, axis min/max/units, gridlines, series colours | Partial (title + palette) |
-| Chart anchored on the grid, resize/move | Missing (charts live in a panel) |
-| Edit data range after creation | Missing (delete + recreate) |
-| Sparklines (line/column/win-loss) in cells | Partial — `SPARKLINE()` formula only, no sparkline group UI |
-| xlsx chart serialisation (c:chart / cx:chart XML) | Missing (export drops charts) |
+| Scatter (with lines), doughnut, combo (secondary axis), stacked/100 % variants | Have (M10) |
+| Bubble, radar, stock, 3-D | Missing |
+| chartEx: histogram (binning), waterfall | Have (M10) |
+| chartEx: treemap, sunburst, funnel, box & whisker | Missing |
+| Trendlines (linear/log/power/exp/polynomial/moving-average) with equation and R² | Have (M10) — `trendlines.ts` |
+| Titles, legends, data labels, axis min/max/units/titles/number formats/log scale, series colours | Have (M10; theme accent colours) |
+| Chart anchored on the grid, resize/move | Have (M10) — `ChartOverlay.tsx`, moves with row/column inserts |
+| Edit data range after creation | Have (M10) — chart editor |
+| Sparklines (line/column/win-loss) in cells | Partial — `SPARKLINE()` (text glyphs) plus Insert ▸ Sparklines groups (M10); no pixel sparklines |
+| xlsx chart serialisation (c:chart / cx:chart XML) | Partial (M10) — c:chart parts written and read; histogram/waterfall exported as columns (no cx:chart) |
 
 ### 2.8 Named ranges, protection, sheets, view (OO `NameManagerDlg`, `WorkbookProtection.js`, `protectRange.js`, `ProtectDialog`, `ProtectedRangesManagerDlg`, `NamedSheetViews.js`, `ViewTab.js`)
 
@@ -410,7 +412,7 @@ Cumulative portable target: **≈ 1,020 of 1,117** OnlyOffice cases (the rest ar
 2. **External references / IMPORTRANGE to other workbooks** (`ExternalReference.js`, 8) — needs a cross-document data-fetch + cache layer and permission model. Optional later as `IMPORTRANGE(sheetId, range)` over Grown sheets only.
 3. **OnlyOffice plugin/custom-function and async-formula tests** (FormulaTests 19, api-drawing 10, api-worksheet 3) — test an API Grown does not expose. N/A.
 4. **Collaborative editing fidelity** — `collab.go` is a relay; OnlyOffice's lock/OT tests and "undo/redo under co-editing" cases cannot be ported without a CRDT (e.g. Yjs, already used by Docs). Out of scope here; note that Docs' Yjs stack exists if it is ever wanted.
-5. **xlsx fidelity ceiling with SheetJS Community Edition** — charts, CF, DV and pivot definitions are not written by SheetJS CE; M11 covers what CE can, and `chartEx-serialize` stays n/a unless Grown writes OOXML directly. *Resolved differently in M11 (§14): Grown reads and writes the xlsx parts itself with JSZip, so CF, DV, styles, panes, print setup and protection round-trip; charts and pivots are still not written.*
+5. **xlsx fidelity ceiling with SheetJS Community Edition** — charts, CF, DV and pivot definitions are not written by SheetJS CE; M11 covers what CE can, and `chartEx-serialize` stays n/a unless Grown writes OOXML directly. *Resolved differently in M11 (§14): Grown reads and writes the xlsx parts itself with JSZip, so CF, DV, styles, panes, print setup and protection round-trip; pivots are still not written (charts are since M10, §15).*
 6. **Solver** (simplex, 6 tests) — sizable optimisation library; goal seek is planned, solver is not.
 7. **Two formula engines** (client fortune-sheet vs server Go) — divergence is mitigated, not removed, by the M1 recalc round-trip. Replacing fortune-sheet's evaluator would be a rewrite of its core; not planned.
 
@@ -1009,7 +1011,8 @@ range; a third calls the structure API.
   not the system clipboard; pasting leaves the selection where it was
   (FortuneSheet's `setSelection` mutates its argument, which breaks when React
   replays the update on frozen state).
-- Chart and pivot source ranges are not shifted by structure changes; partly
+- Pivot source ranges are not shifted by structure changes (chart ranges and
+  anchors are since M10, §15); partly
   overlapping CF/DV ranges and merges are left alone by cell shifts.
 - The structure endpoint does not notify open editors (they see the change on
   reload); the editor itself applies structure changes locally and relays
@@ -1125,8 +1128,8 @@ preview), Insert ▸ Page break and a protected range.
 
 ### 14.5 Not done / follow-ups
 
-- Charts, pivots, images and sparklines are not written to or read from xlsx
-  (`chartEx-serialize` stays n/a); theme fonts, gradient fills and patterns
+- Pivots, images and sparklines are not written to or read from xlsx (charts
+  are since M10, §15; `chartEx-serialize` stays n/a); theme fonts, gradient fills and patterns
   are approximated by a colour; data-bar and icon-set `x14` extensions
   (negative colours, custom icons) are not read.
 - Named sheet views (OnlyOffice `NamedSheetViews`) are not modelled; the
@@ -1143,3 +1146,81 @@ preview), Insert ▸ Page break and a protected range.
 - Print uses the browser's print dialog; PDF export still goes through the
   HTML-table convert endpoint rather than the print renderer.
 
+
+
+## 15. M10 results (Wave 6, 2026-09-26)
+
+M10 is done: new chart types, trendlines, histograms, axis scaling, a chart
+editor, charts anchored on the grid that move with row/column inserts, a
+sparkline group dialog, and charts in xlsx. All 16 `ChartsDrawTest` tags are
+ported and pass (with the differences noted below).
+
+### 15.1 What landed
+
+| Piece | Where |
+|---|---|
+| Trendlines: linear, logarithmic, power, exponential, polynomial (order 2–6, Householder QR so exact fits of degree 6 stay accurate), moving average over category slots (gaps allowed) or scatter points; fixed intercept (linear, exponential, polynomial); R² in the fit's linear space; equation and R² labels; forward/backward forecast; the drawn curve clipped to the value axis (on a log axis a line that dips to ≤ 0 stops at max(top/10³, 0.01) or the axis minimum) | `trendlines.ts` |
+| Histogram: category aggregation (sum per label), Scott's-rule automatic bin width (two significant digits), bin width or count, overflow/underflow bins with the spreadsheet rules for when they apply, right- or left-closed bins, bin labels | `histogram.ts` |
+| Axis scaling: 0-based unless the data sits above 5/6 of its max, 1/2/5 × 10ⁿ major units for about one tick per 44 px, 5 % headroom, fixed min/max/unit, log axes, `roundValue` | `chartAxis.ts` |
+| Chart model: types column, bar, line, area, combo, scatter, pie, doughnut, histogram, waterfall; stacking none/stacked/100 %; series in rows; legend position; data labels (chart or series); axis title/min/max/unit/number format/log base (x, y, secondary y); per-series colour, combo kind, secondary axis, trendline; histogram options; waterfall totals; doughnut hole; `sheetId`; grid `anchor` (cell + offset + size). Series colours are the Office theme accents 1–6, then shaded (lumMod via `lib/colorMods.ts`). Every field is optional, so older charts load. | `chartData.ts` |
+| Renderer: all types above in SVG; bars with a rounded data end, 2 px lines, gaps for blank cells, waterfall connectors and increase/decrease/total legend, histogram bins as categories, category labels thinned to fit, value labels through the M6 number formats, per-mark tooltips | `ChartRenderer.tsx` |
+| Chart editor (insert and edit): type, stacking, data range (typed or "Use selection"), headers/labels/series in rows, histogram and waterfall options; title, legend, data labels, axes; per series colour, combo kind, secondary axis, labels, trendline (type, order, period, equation, R², intercept, forecast) with a live preview | `ChartDialog.tsx` |
+| Charts on the grid: each anchored chart of the active sheet is drawn inside FortuneSheet's cell area (so it scrolls with the cells) at the pixel position of its anchor cell, computed like FortuneSheet's own layout (size + 1 px per row/column, zoom, hidden rows/columns); drag to move, corner to resize, double-click or pencil to edit, Delete to remove. The charts panel lists every chart and can place a chart on or take it off the grid. | `ChartOverlay.tsx`, `chartAnchor.ts`, `ChartsPanel.tsx` |
+| Structure ops: row/column inserts, deletes and moves shift chart source ranges and anchors on the chart's sheet (a deleted anchor row/column parks the chart at the deletion); cell shifts move ranges only. Charts ride on sheet 0 in the live grid as well as in the saved JSON, so the editor's structure fix-up (and collaborators, through the relayed op) see them. Go twin for the structure endpoint. | `formulaShift.ts` (`shiftCharts`), `internal/sheets/structure.go` (`shiftChartList`), `SheetEditor.tsx` |
+| Sparkline groups: Insert ▸ Sparklines writes one `SPARKLINE()` per data row (or column) into a location range, in a colour, and keeps the group on the sheet (`grownSparklines`, shifted by structure ops) to list or remove it | `SparklineDialog.tsx`, `sparklines.ts` |
+| xlsx: a drawing part per sheet with a `oneCellAnchor` per chart and a `c:chartSpace` part per chart (bar/line/area/scatter/pie/doughnut groups; combo as two groups with a second value axis crossing at max; title, legend, data labels, axis scaling/title/number format, colours, trendlines). The full Grown definition rides in a `c:extLst` entry, so Grown round-trips exactly; other workbooks' charts are rebuilt from the chart XML (series references → range, header/label flags, orientation) and their one- or two-cell anchors. Checked by opening an export in LibreOffice. | `xlsx/xlsxCharts.ts`, `xlsxWrite.ts`, `xlsxRead.ts` |
+
+### 15.2 Ports
+
+| OnlyOffice file | Tags ported / passing | Where |
+|---|---|---|
+| `ChartsDrawTest.js` | 16 / 16 | `__parity__/charts.parity.test.ts` |
+| `common/charts/chartEx-serialize.js` | 0 (n/a: Grown writes c:chart, not cx:chart) | — |
+
+Notes (`oo-diff` in the file):
+
+- "Base Charts Draw" compares OnlyOffice's path commands for 24 chart types;
+  the port lays out the same 2 × 3 data (one blank cell) for every 2-D type
+  Grown draws and checks categories, series, stacked totals and 100 %
+  stacks. 3-D types are n/a.
+- "Line Builder approximated bezier": OnlyOffice returns Bézier control
+  points; the port checks where the drawn curve starts and ends for all 32
+  cases (log-axis clipping included). "Line Builder boundaries" checks the
+  curve's extent for the same cases.
+- R² for exponential and power fits: Grown reports R² of ln y (the
+  spreadsheet convention, equal to the squared correlation in the fit's
+  space); OnlyOffice's expected values differ for four rows. With a fixed
+  intercept Grown reports 1 − SSres/SStot of the line drawn; OnlyOffice
+  reports the free fit's value. Coefficients match in every case.
+- Two polynomial coefficients are written truncated in the suite (231822,
+  275562); the least-squares values are 231822.5 and 275562.5.
+- Histogram aggregation min: the value-axis minimum is the smallest single
+  value, the maximum the largest sum (as the suite expects).
+
+Other tests: `chartsM10.test.ts` (axis scaling, equation labels, layout,
+waterfall, theme colours, structure shifts, anchor geometry),
+`chartRender.test.tsx` (every type draws its marks; combo with a secondary
+axis and trendline; legend and labels; sparkline formulas),
+`xlsx/xlsxCharts.test.ts` (parts written, Grown round trip, charts rebuilt
+without the Grown entry, series in rows); Go `structure_charts_test.go`.
+
+E2e: `web/e2e/sheets-charts.spec.ts` inserts a combo chart (secondary-axis
+line, linear trendline with equation and R²) from the dialog, checks it on
+the grid, inserts a row above it (anchor row 0 → 1, range A1:C7 → A2:C8, the
+box moves down one row), reloads, then deletes it with the Delete key; a
+second test lays out four chart types for a screenshot.
+
+### 15.3 Not done / follow-ups
+
+- Bubble, radar, stock, 3-D, treemap, sunburst, funnel and box & whisker
+  charts; error bars; per-point colours outside pie/doughnut; smoothed lines.
+- Histogram and waterfall are exported as clustered columns (Excel writes
+  them as `cx:chart` chartEx parts); Grown reads its own back exactly through
+  the extension entry, and `chartEx-serialize` stays n/a.
+- Charts on the grid are not drawn in frozen panes' fixed area, are not
+  printed or exported to PDF, and don't resize with their cells (they are
+  one-cell anchored; two-cell anchors are read as a size).
+- Sparklines are still `SPARKLINE()`'s text glyphs; the group dialog does not
+  draw pixel sparklines (that needs a cell-render hook).
+- Moving or resizing a chart is saved like other chart edits (not a
+  FortuneSheet undo step).
