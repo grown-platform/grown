@@ -150,7 +150,7 @@
       "passing": null
     },
     "docs/tables": {
-      "ported": 0,
+      "ported": 8,
       "passing": null
     },
     "docs/text-input": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 738,
+    "ported": 746,
     "passing": null
   }
 }
