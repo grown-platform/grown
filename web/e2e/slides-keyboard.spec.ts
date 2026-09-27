@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
-import { BASE_URL, createDeck, getDeckData, saveDeckData, trashDeck } from "./helpers";
+import { BASE_URL, createDeck, createDoc, getDeckData, saveDeckData, trashDeck, trashDoc } from "./helpers";
+import { openDoc } from "./docs/helpers";
 
 // Slides M13: the editor used with the keyboard only (slide rail as a
 // multi-select listbox, F6 between panes, Tab through objects, Enter to
@@ -145,5 +146,61 @@ test("slides: keyboard-only editing and accessibility roles", async ({ page }) =
     await expect(options.nth(2)).toHaveAttribute("aria-current", "true");
   } finally {
     await trashDeck(page.request, id);
+  }
+});
+
+// Copy/paste through the system clipboard: elements between two decks (the
+// internal payload), then the same copy pasted into a Grown doc as rich
+// HTML, and HTML from the doc pasted back as a formatted text box.
+test("slides: copy between decks and to/from Docs", async ({ page }) => {
+  const a = await createDeck(page.request, "e2e clip source");
+  const b = await createDeck(page.request, "e2e clip target");
+  const doc = await createDoc(page.request, "e2e clip doc");
+  const rich = {
+    ...text("rich", "Bold and plain", 300),
+    runs: [{ text: "Bold", bold: true }, { text: " and plain" }],
+  };
+  try {
+    await saveDeckData(page.request, a, { slides: [{ id: "a", background: "#ffffff", elements: [rich] }] });
+    await saveDeckData(page.request, b, { slides: [{ id: "b", background: "#ffffff", elements: [] }] });
+    await page.goto(`${BASE_URL}/slides/d/${a}`);
+    await page.locator('[data-el-id="rich"]').click();
+    await page.keyboard.press("ControlOrMeta+c");
+
+    // Another deck: the element arrives with its runs.
+    await page.goto(`${BASE_URL}/slides/d/${b}`);
+    await page.getByTestId("slide-canvas").click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("ControlOrMeta+v");
+    await expect
+      .poll(async () => (await getDeckData(page.request, b))?.slides[0].elements.map((e) => ({ text: e.text, runs: e.runs })), { timeout: 15_000 })
+      .toEqual([{ text: "Bold and plain", runs: [{ text: "Bold", bold: true }, { text: " and plain" }] }]);
+
+    // A doc: the HTML flavour keeps the bold.
+    await openDoc(page, doc);
+    await page.locator(".ProseMirror").click();
+    await page.keyboard.press("ControlOrMeta+v");
+    await expect(page.locator(".ProseMirror strong")).toHaveText("Bold");
+    await expect(page.locator(".ProseMirror")).toContainText("Bold and plain");
+
+    // Back from the doc: its first paragraph pasted into a deck keeps the bold.
+    await page.keyboard.press("ControlOrMeta+ArrowUp");
+    for (let i = 0; i < "Bold and plain".length; i++) await page.keyboard.press("Shift+ArrowRight");
+    await page.keyboard.press("ControlOrMeta+c");
+    await page.goto(`${BASE_URL}/slides/d/${b}`);
+    await page.getByTestId("slide-canvas").click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("ControlOrMeta+v");
+    await expect
+      .poll(async () => {
+        const els = (await getDeckData(page.request, b))?.slides[0].elements ?? [];
+        return els.map((e) => [e.text, e.runs?.[0]?.text, !!e.runs?.[0]?.bold]);
+      }, { timeout: 15_000 })
+      .toEqual([
+        ["Bold and plain", "Bold", true],
+        ["Bold and plain", "Bold", true],
+      ]);
+  } finally {
+    await trashDeck(page.request, a);
+    await trashDeck(page.request, b);
+    await trashDoc(page.request, doc);
   }
 });
