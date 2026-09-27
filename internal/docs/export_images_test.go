@@ -76,7 +76,7 @@ func assertExportHasPNG(t *testing.T, to string, out []byte) {
 			t.Fatalf("rtf: no \\pict/\\pngblip picture: %s", firstN(s, 600))
 		}
 	case "md":
-		if !strings.Contains(string(out), "data:image/png;base64,"+tinyPNG64) {
+		if !strings.Contains(string(out), "](data:image/png;base64,"+tinyPNG64+")") {
 			t.Fatalf("md: picture not inline: %s", out)
 		}
 	default:
@@ -88,7 +88,9 @@ var exportImageFormats = []string{"docx", "odt", "epub", "rtf", "md"}
 
 func TestExportImagesDataURL(t *testing.T) {
 	requirePandoc(t)
-	html := []byte(`<h1>Pic</h1><p>before <img src="data:image/png;base64,` + tinyPNG64 + `" alt="dot"> after</p>`)
+	// Sized and wrapped like the editor's pictures: Markdown must still get
+	// ![](data:...) syntax, not a raw <img> tag its import would drop.
+	html := []byte(`<h1>Pic</h1><p>before <span class="doc-obj" data-kind="picture"><img src="data:image/png;base64,` + tinyPNG64 + `" alt="dot" width="200" style="width:200px"></span> after</p>`)
 	for _, to := range exportImageFormats {
 		t.Run(to, func(t *testing.T) {
 			out, _, err := ConvertHTML(context.Background(), html, to)
@@ -218,12 +220,13 @@ func TestExportImagesSandboxEscape(t *testing.T) {
 	}
 }
 
-// TestExportImagesRoundTripODT: an exported .odt re-imports with its picture.
+// TestExportImagesRoundTripODT: an exported .odt (and the other formats)
+// re-imports with its pictures.
 func TestExportImagesRoundTripODT(t *testing.T) {
 	requirePandoc(t)
 	var calls atomic.Int32
-	html := []byte(`<p>a <img src="data:image/png;base64,` + tinyPNG64 + `"></p><p>b <img src="` + AssetURL("doc-ok", testAssetSHA) + `"></p>`)
-	for _, to := range []string{"odt", "epub", "rtf", "docx"} {
+	html := []byte(`<p>a <img src="data:image/png;base64,` + tinyPNG64 + `"></p><p>b <span class="doc-obj"><img width="20" src="` + AssetURL("doc-ok", testAssetSHA) + `"></span></p>`)
+	for _, to := range []string{"odt", "epub", "rtf", "docx", "md"} {
 		t.Run(to, func(t *testing.T) {
 			out, _, err := ConvertHTMLWith(context.Background(), html, to, ExportOptions{Assets: stubAssets(&calls)})
 			if err != nil {

@@ -2476,7 +2476,10 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   mediabag and turns every other Image (including `<embed>`/`<video>`) into
   its alt text. pandoc itself keeps `--sandbox` and reads only stdin.
 * **Markdown**: a single `.md` has nowhere to put a media folder, so the md
-  export keeps pictures inline as base64 `data:` URLs (asset pictures too).
+  export keeps pictures inline as base64 `data:` URLs (asset pictures too),
+  written as `![alt](data:...)`: the filter clears the picture's size and
+  classes, since with them pandoc's gfm writer falls back to a raw `<img>`
+  tag that the import sanitizer (and many viewers) drop.
   The download stays one `.md` file, most Markdown viewers show the
   pictures, and it re-imports into Grown with them. A zip (md + media/)
   was rejected: it changes the file type users asked for.

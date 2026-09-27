@@ -22,7 +22,11 @@ function Image(el)
   local data = fh:read("a")
   fh:close()
   if GROWN_INLINE then
+    -- Markdown: with a size or class pandoc's gfm writer falls back to a
+    -- raw <img> tag, which Grown's import (and many viewers) drop. Plain
+    -- ![alt](data:...) survives; Markdown has no picture size anyway.
     el.src = data
+    el.attr = pandoc.Attr()
   else
     pandoc.mediabag.insert(el.src, m.mime, data)
   end
