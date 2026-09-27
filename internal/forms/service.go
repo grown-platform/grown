@@ -324,7 +324,15 @@ func (s *Service) SubmitFormResponse(ctx context.Context, req *grownv1.SubmitFor
 	}
 
 	resp, err := s.repo.SubmitResponse(ctx, o.ID, form.ID, u.ID, email, answers, score)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrAlreadyResponded):
+		// Maps to HTTP 409 at the gateway.
+		return nil, status.Error(codes.AlreadyExists, "You've already responded to this form")
+	case errors.Is(err, ErrSignInRequired):
+		return nil, status.Error(codes.Unauthenticated, "Sign in to respond to this form")
+	case errors.Is(err, ErrNotFound):
+		return nil, status.Error(codes.NotFound, "form not found")
+	case err != nil:
 		return nil, status.Errorf(codes.Internal, "submit response: %v", err)
 	}
 	// Attach max_score so the caller can display it even when score is 0.

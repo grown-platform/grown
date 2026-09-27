@@ -114,6 +114,13 @@ export interface UpdateFormInput {
   accepting: boolean;
 }
 
+/** GET /forms/{id}/my-response: has the signed-in user responded? */
+export interface MyResponseStatus {
+  responded: boolean;
+  response_id?: string;
+  created_at?: string;
+}
+
 export interface FormResponse {
   id: string;
   form_id: string;

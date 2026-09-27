@@ -30,7 +30,12 @@ import ThumbUpIcon from "@mui/icons-material/ThumbUp";
 import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
-import { getForm, submitResponse } from "./api";
+import { getForm, getMyResponse, submitResponse } from "./api";
+import {
+  fillGate,
+  isAlreadyRespondedError,
+  limitsOneResponse,
+} from "./oneResponse";
 import type {
   Form,
   FormQuestion,
@@ -38,6 +43,7 @@ import type {
   AnswerMap,
   AnswerValue,
   GridAnswer,
+  MyResponseStatus,
 } from "./types";
 import { FORMS_ACCENT } from "./helpers";
 import {
@@ -71,6 +77,9 @@ export default function FormFill({ user }: Props) {
   const [showErrors, setShowErrors] = useState(false);
   const [submittedResponse, setSubmittedResponse] =
     useState<FormResponse | null>(null);
+  // The signed-in user's own response status, looked up for "Limit to 1
+  // response" forms (null until known, or when the lookup failed).
+  const [mine, setMine] = useState<MyResponseStatus | null>(null);
   // Section paging: the pages visited so far (Back pops, so it retraces the
   // branches the respondent actually took).
   const [history, setHistory] = useState<number[]>([0]);
@@ -83,7 +92,17 @@ export default function FormFill({ user }: Props) {
   useEffect(() => {
     let alive = true;
     getForm(id)
-      .then((f) => alive && setForm(f))
+      .then(async (f) => {
+        if (!alive) return;
+        if (limitsOneResponse(f)) {
+          // Resolve the status before showing the form so a respondent who
+          // already answered never sees the questions flash up.
+          const st = await getMyResponse(f.id).catch(() => null);
+          if (!alive) return;
+          setMine(st);
+        }
+        setForm(f);
+      })
       .catch((e) => {
         if (!alive) return;
         if (
@@ -201,7 +220,13 @@ export default function FormFill({ user }: Props) {
       setSubmitted(true);
       setSubmittedResponse(res);
     } catch (e) {
-      setError((e as Error).message);
+      if (isAlreadyRespondedError(e)) {
+        // Another tab (or an earlier visit) already submitted: show the
+        // "already responded" page rather than an error under the form.
+        setMine({ responded: true });
+      } else {
+        setError((e as Error).message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -303,16 +328,18 @@ export default function FormFill({ user }: Props) {
                 </Sheet>
               )}
               <Box sx={{ display: "flex", gap: 1.5 }}>
-                <Button
-                  variant="plain"
-                  onClick={() => {
-                    resetAll();
-                    setSubmitted(false);
-                    setSubmittedResponse(null);
-                  }}
-                >
-                  Submit another response
-                </Button>
+                {!limitsOneResponse(form) && (
+                  <Button
+                    variant="plain"
+                    onClick={() => {
+                      resetAll();
+                      setSubmitted(false);
+                      setSubmittedResponse(null);
+                    }}
+                  >
+                    Submit another response
+                  </Button>
+                )}
                 <Button
                   variant="plain"
                   color="neutral"
@@ -321,6 +348,53 @@ export default function FormFill({ user }: Props) {
                   Edit this form
                 </Button>
               </Box>
+            </Sheet>
+          </Container>
+        </Box>
+      </>
+    );
+  }
+
+  if (fillGate(form, mine) === "already_responded") {
+    return (
+      <>
+        <Header user={user} />
+        <Box
+          sx={{
+            bgcolor: "background.level1",
+            minHeight: "calc(100vh - 64px)",
+            py: 5,
+          }}
+        >
+          <Container maxWidth="sm">
+            <Sheet
+              variant="outlined"
+              data-testid="form-already-responded"
+              sx={{
+                borderRadius: "md",
+                borderTop: `10px solid ${FORMS_ACCENT}`,
+                p: 4,
+              }}
+            >
+              <Typography level="h4" sx={{ mb: 1 }}>
+                {form.title || "Untitled form"}
+              </Typography>
+              <Typography level="title-md" sx={{ mb: 1 }}>
+                You've already responded
+              </Typography>
+              <Typography sx={{ mb: 2 }}>
+                You can fill out this form only once. Try contacting the owner
+                of the form if you think this is a mistake.
+              </Typography>
+              {form.owner_id === user.id && (
+                <Button
+                  variant="plain"
+                  color="neutral"
+                  onClick={() => navigate(`/forms/d/${form.id}`)}
+                >
+                  Edit this form
+                </Button>
+              )}
             </Sheet>
           </Container>
         </Box>
