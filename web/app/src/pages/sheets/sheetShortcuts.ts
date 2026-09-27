@@ -208,6 +208,24 @@ export function toggleReference(text: string, caret: number, selEnd = caret): { 
   return { text: out, caret: newCaret, selEnd: newCaret };
 }
 
+// ---- Ctrl/⌘+click while pointing at cells in a formula ----------------------
+
+const TRAILING_REF_RE =
+  /(?:^|[^A-Za-z0-9_.$"])(?:(?:'[^']+'|[A-Za-z_][\w.]*)!)?(?:\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?|\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?\d+:\$?\d+)$/;
+
+/**
+ * Whether a Ctrl/⌘+click on the grid should add a reference: the cell being
+ * edited holds a formula and the text before the caret ends with a reference
+ * (the one a plain click would replace). The editor then gets a "," first, so
+ * the click adds `,B1` instead of replacing the last reference, as in Excel.
+ */
+export function addsReferenceOnCtrlClick(textBeforeCaret: string): boolean {
+  if (!textBeforeCaret.startsWith("=")) return false;
+  const quotes = (textBeforeCaret.match(/"/g) ?? []).length;
+  if (quotes % 2) return false; // inside a string literal
+  return TRAILING_REF_RE.test(textBeforeCaret.slice(1));
+}
+
 // ---- Alt+=: see autoSum.ts ---------------------------------------------------
 
 function colLetters(c: number): string {

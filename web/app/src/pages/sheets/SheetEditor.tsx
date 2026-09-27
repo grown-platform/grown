@@ -118,7 +118,7 @@ import type { CellRect } from "./cellRange";
 import { FillSeriesDialog } from "./FillSeriesDialog";
 import { SortDialog } from "./SortDialog";
 import { PasteSpecialDialog } from "./PasteSpecialDialog";
-import { findShortcut, arrayFormulaText, a1, serialOf, stepFontSize, toggleReference, SHORTCUT_NUMBER_FORMATS, DATE_SHORTCUT_FORMAT, TIME_SHORTCUT_FORMAT } from "./sheetShortcuts";
+import { findShortcut, addsReferenceOnCtrlClick, arrayFormulaText, a1, serialOf, stepFontSize, toggleReference, SHORTCUT_NUMBER_FORMATS, DATE_SHORTCUT_FORMAT, TIME_SHORTCUT_FORMAT } from "./sheetShortcuts";
 import { SheetShortcutsDialog } from "./SheetShortcutsDialog";
 import { FunctionWizard } from "./FunctionWizard";
 import { GoalSeekDialog } from "./GoalSeekDialog";
@@ -622,11 +622,26 @@ export function SheetEditor({ user }: SheetEditorProps) {
           console.warn("autofill failed", err);
         }
       }, 0);
+    // Ctrl/⌘+click on a cell while a formula points at cells adds another
+    // reference (=SUM(A1,B1)); FortuneSheet would replace the last one. Typing
+    // "," first makes its click insert, so the same "," goes in here.
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0 || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (!(e.target as HTMLElement | null)?.closest?.(".fortune-cell-area")) return;
+      const input = document.querySelector<HTMLElement>(".luckysheet-cell-input");
+      if (!input || document.activeElement !== input || !isEditingCell()) return;
+      const [start, end] = textOffsets(input);
+      if (start !== end || !addsReferenceOnCtrlClick(input.innerText.replace(/\n$/, "").slice(0, start))) return;
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: ",", code: "Comma", keyCode: 188, which: 188, bubbles: true, cancelable: true } as KeyboardEventInit));
+      document.execCommand("insertText", false, ",");
+    };
     document.addEventListener("keydown", onKey, true);
     document.addEventListener("mouseup", onMouseUp, true);
+    document.addEventListener("mousedown", onMouseDown, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
       document.removeEventListener("mouseup", onMouseUp, true);
+      document.removeEventListener("mousedown", onMouseDown, true);
     };
   }, []);
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SHEET_SHORTCUTS,
+  addsReferenceOnCtrlClick,
   arrayFormulaText,
   findShortcut,
   matchCombo,
@@ -70,6 +71,15 @@ describe("F4 reference cycling", () => {
     expect(toggleReference("=LOG10(2)", 6).text).toBe("=LOG10(2)");
     expect(toggleReference('="A1"&Sheet1!B2', 3).text).toBe('="A1"&Sheet1!B2');
     expect(toggleReference('="A1"&Sheet1!B2', 15).text).toBe('="A1"&Sheet1!$B$2');
+  });
+});
+
+describe("Ctrl+click adds a reference", () => {
+  it("only right after a reference in a formula", () => {
+    for (const t of ["=A1", "=SUM(A1", "=SUM(A1:B2", "=SUM($A$1", "=Sheet2!B3", "=SUM('My sheet'!C4:D5", "=SUM(A:A", "=SUM(2:3", '=A1&"x"&B2'])
+      expect(addsReferenceOnCtrlClick(t), t).toBe(true);
+    for (const t of ["=SUM(", "=SUM(A1,", "=A1+", "A1", '="A1', "=SUM(A1)", "=1.5E3", "=SUMA1"])
+      expect(addsReferenceOnCtrlClick(t), t).toBe(false);
   });
 });
 
