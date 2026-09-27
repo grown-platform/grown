@@ -307,19 +307,19 @@ arrange ×4, nudge 1/5 units, Tab cycling, smart guides/snap, rulers/gridlines).
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| Bring to front/forward/backward/back | Have | `arrange()` |
-| Multi-select (Shift+click, marquee) | Missing | `selectedId: string \| null` |
-| Group / ungroup | Missing | menu disabled |
-| Align L/C/R/T/M/B | Missing | menu disabled |
-| Distribute H/V | Missing | menu disabled |
-| Center on page H/V | Missing | menu disabled |
+| Bring to front/forward/backward/back | Have (also for a multi-selection, M2) | `arrangeMany()` |
+| Multi-select (Shift+click, marquee) | Have (M2) | `selection.ts`, `geometry.marqueeSelect` |
+| Group / ungroup | Have (M2), round-trips as `p:grpSp` | `groupOps.ts` |
+| Align L/C/R/T/M/B | Have (M2), to selection or slide | `alignElements()` |
+| Distribute H/V | Have (M2) | `distributeElements()` |
+| Center on page H/V | Have (M2) | `centerOnPage()` |
 | Arrow-key nudge (2 px / Shift 10 px) | Have | keyboard handler in `DeckEditor.tsx` |
-| Tab / Shift+Tab select next/prev object | Missing | — |
-| Guides / snap to grid / smart guides | Missing | View menu stubs |
+| Tab / Shift+Tab select next/prev object | Have (M2) | `cycleSelection()` |
+| Guides / snap to grid / smart guides | Have (M2): smart guides + grid; no user-placed guides | `geometry.snapMove/snapResize` |
 | Rulers / gridlines / zoom levels | Missing | View → Zoom disabled; stage auto-fits |
 | Duplicate element (Ctrl+D) | Have | `duplicateEl` |
-| Cut/copy/paste element (in-app clipboard) | Have (single element, in-memory) | `clip` ref |
-| System clipboard interop (paste text/HTML/image) | Partial (image only) | paste handler |
+| Cut/copy/paste element (in-app clipboard) | Have (multi-element; internal JSON on the OS clipboard, M2) | `clipboard.ts` |
+| System clipboard interop (paste text/HTML/image) | Have (M2): image → picture, text/HTML → text box | paste handler |
 
 ### 2.9 Transitions
 
@@ -1073,4 +1073,98 @@ which creates a new deck. A .pptx opened from Drive (`/slides/:id`) gets
 - Imports with large images can exceed the 8 MiB collab WebSocket frame
   limit on the broadcast after File ▸ Import slides. Autosave still
   persists the deck.
+
+### 6.6 M2 status (Wave 3): selection, arrange, group
+
+**Model.** `SlideElement` gains `type: "group"` with `children`, plus
+optional `name` and `locked`. Group members use absolute slide coordinates
+as if the group were upright and unflipped. The group's own
+rotation/flip turns the whole set about its centre, which is the pptx
+`p:grpSp` model with `chOff = off` and `chExt = ext`. Moving a group moves
+its members, and resizing it scales them (fonts and stroke widths are not
+scaled, as in PowerPoint).
+
+**Pure modules.**
+
+- `geometry.ts`: rotated bounds, union, marquee (fully enclosed, like
+  OnlyOffice), point hit-test with a band for 0-height lines,
+  `setElementBox`/`mapElementInto` (group scaling), `resizeSelection`, and
+  snapping. `snapMove` locks the left/centre/right and top/middle/bottom
+  lines to the slide or to other elements within 6 px. Without a guide hit
+  it snaps to the grid, if one is set. `snapResize` snaps only the edges
+  that the handle drags. `guidesFor` returns the lines to draw.
+- `groupOps.ts`: group (at the topmost member's z-position),
+  ungroup/`bakeChild` (the group's rotation and flips are folded into each
+  member: rotation θ + det(F)·φ, flips XOR-ed), `removeDeep` (a member
+  inside a group; a group left with one member dissolves), `flattenGroups`
+  for the HTML/SVG/PDF exports, and `reId` for duplicate and paste.
+- `deckOps.ts`: align ×6 to the selection or the slide, distribute H/V,
+  center on page, `arrangeMany` (z-order for a selection), selection-wide
+  move, `cycleSelection` (Tab), `setLocked`, and `duplicateElements`. It
+  also adds collab ops `upsertMany`, `removeMany`, `reorder` and
+  `setElements`. Each is idempotent in `applyCollabOp`, which the receiver
+  now routes every non-presence op through. The broadcast hub needed no
+  change, because it relays any op.
+- `selection.ts` (click/toggle/marquee merge/select all/prune),
+  `elementOps.ts` (names: default, set with the duplicate-name rule,
+  find by name), `clipboard.ts` (internal JSON payload under
+  `application/x-grown-slides+json`, text/HTML → text box).
+
+**Editor.** The selection is now a list of ids.
+
+- Shift/Ctrl/Cmd+click toggles an element, and a drag on the empty
+  canvas draws a marquee.
+- A multi-selection shows a dashed box with shared resize handles. Moves
+  and resizes snap, with magenta guides; Alt disables snapping.
+- A drag, nudge, align or group records one history entry and sends one
+  collab op.
+- Keys: Ctrl/Cmd+A selects all. Tab/Shift+Tab cycle the selection (only
+  when focus is on the page). Esc deselects. Ctrl+G or Ctrl+Alt+G groups,
+  and adding Shift ungroups. Ctrl+X cuts.
+- The Arrange menu wires Align (with an "Align to slide" toggle),
+  Distribute, Center on page, Group/Ungroup and Lock/Unlock position.
+  View ▸ Snap to toggles Guides (on by default) and Grid (20 px, drawn
+  while on). Edit ▸ Select all is wired, and the context menu gains
+  Group/Ungroup/Lock.
+- Formatting applies to every selected element.
+- A locked element can be selected but is not moved, resized, aligned or
+  distributed. It shows a dashed outline.
+
+**pptx.** The writer gives group members a path-marker object name and
+nests them into `p:grpSp` after pptxgenjs runs (`wrapGroups`: DOM-based,
+fresh `cNvPr` ids, `rot`/`flipH`/`flipV` kept, markers removed). The reader
+turns `p:grpSp` into Grown groups instead of flattening them, so group
+rotation is no longer lost. The round-trip test covers a rotated, flipped
+group holding a nested group, text and an image, exported twice.
+
+**Tests.** `geometry.snap.test.ts`, `groupOps.test.ts`, `arrange.test.ts`,
+`selection.multi.test.ts`, `elementOps.test.ts`, `clipboard.test.ts`, plus
+additions to `keymap`, `pptx/read`, `pptx/write` and `pptx/roundtrip`. The
+e2e test `web/e2e/slides-arrange.spec.ts` marquee-selects two shapes, aligns
+them, groups them, drags the group onto the slide centre (guides visible),
+reloads, and ungroups.
+
+**Ported (now passing):**
+
+- `shortcuts.js#Check main actions with shapes`: Grown variant; the nudge
+  step stays 2/10 px, and Enter-to-edit and table navigation are M4/M5.
+- `shortcuts.js#Check remove graphic objects`: the chart step waits for M11.
+- `api-drawing.js#Test: GetName` and `#Test: SetName`.
+- `api-presentation.js#Test: GetDrawingsByName`.
+- All three `copy-paste-tests.js` cases, as positive tests.
+- `api-drawing.js#Test: Select` and `#Test: Unselect`, rewritten for
+  multi-selection.
+
+**Not done / gaps.**
+
+- There is no in-group selection: you can't click into a group to select
+  a member, and there is no Esc step-out. `removeDeep` supports deleting a
+  member, but the UI deletes whole groups.
+- There is no rotation handle; rotation is still Arrange ▸ Rotate, which
+  works on groups.
+- There are no user-placed ruler guides and no rulers.
+- Non-uniform scaling of a rotated member inside a group only scales that
+  member's box.
+- Names are not yet read from, or written to, pptx `cNvPr@name`, and there
+  is no Selection pane.
 

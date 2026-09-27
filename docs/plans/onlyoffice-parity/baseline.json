@@ -242,7 +242,7 @@
       "passing": null
     },
     "slides/clipboard paste callback for plain text": {
-      "ported": 0,
+      "ported": 3,
       "passing": null
     },
     "slides/ecma-376 colour transforms": {
@@ -286,7 +286,7 @@
       "passing": null
     },
     "slides/query elements by name across a slide": {
-      "ported": 0,
+      "ported": 1,
       "passing": null
     },
     "slides/qunit harness page": {
@@ -294,7 +294,7 @@
       "passing": null
     },
     "slides/shapes": {
-      "ported": 6,
+      "ported": 8,
       "passing": null
     },
     "slides/shortcuts": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 577,
+    "ported": 583,
     "passing": null
   }
 }
