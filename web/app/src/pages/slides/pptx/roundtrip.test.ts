@@ -42,7 +42,9 @@ function normalize(deck: DeckDoc) {
     return v;
   };
   const withDefaults = (el: SlideElement): SlideElement =>
-    el.type === "text"
+    el.type === "group"
+      ? { ...el, children: (el.children || []).map(withDefaults) }
+      : el.type === "text"
       ? {
           fontFamily: "Arial",
           fontSize: 18,
@@ -353,6 +355,52 @@ describe("pptx round trip (export → import)", () => {
     const once = (await roundTrip(FULL)).deck;
     const twice = (await roundTrip(once)).deck;
     expect(normalize(twice)).toEqual(normalize(once));
+  });
+
+  it("preserves groups: nested, rotated and flipped, with members of every kind", async () => {
+    const deck: DeckDoc = {
+      slides: [
+        {
+          id: "s",
+          background: "#ffffff",
+          elements: [
+            { ...newElement("rect"), x: 0, y: 0 },
+            {
+              id: "g",
+              type: "group",
+              x: 100,
+              y: 80,
+              w: 400,
+              h: 300,
+              rotation: 30,
+              flipH: true,
+              children: [
+                { ...newElement("text"), x: 100, y: 80, w: 200, h: 60, text: "In a group" },
+                {
+                  id: "inner",
+                  type: "group",
+                  x: 300,
+                  y: 200,
+                  w: 200,
+                  h: 180,
+                  children: [
+                    { ...newElement("ellipse"), x: 300, y: 200, w: 100, h: 80 },
+                    { ...newElement("roundRect"), x: 400, y: 300, w: 100, h: 80, rotation: 45 },
+                  ],
+                },
+                { ...newElement("image", PNG_1PX), x: 120, y: 280, w: 80, h: 80 },
+              ],
+            },
+            { ...newElement("ellipse"), x: 700, y: 400 },
+          ],
+        },
+      ],
+    };
+    const r = await roundTrip(deck);
+    expect(r.warnings).toEqual([]);
+    expect(normalize(r.deck)).toEqual(normalize(deck));
+    // And again (stable).
+    expect(normalize((await roundTrip(r.deck)).deck)).toEqual(normalize(deck));
   });
 
   it("keeps non-integer px geometry and font sizes to 0.01 px", async () => {

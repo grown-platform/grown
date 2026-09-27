@@ -16,7 +16,8 @@ export type ElementType =
   | "diamond"
   | "rightArrow"
   | "roundRect"
-  | "table";
+  | "table"
+  | "group";
 
 /** Table element data: a grid of cell text (cells[row][col]). */
 export interface TableData {
@@ -141,6 +142,17 @@ export interface SlideElement {
   flipV?: boolean;
   /** Entrance animation for this element (optional; absent = no animation). */
   animation?: ElementAnimation;
+  /** Object name (Selection pane / pptx `cNvPr@name`); optional. */
+  name?: string;
+  /** Position lock: a locked element can be selected but not moved/resized. */
+  locked?: boolean;
+  /**
+   * Group members (type "group" only), bottom to top. Children use absolute
+   * slide coordinates as if the group were unrotated and unflipped; the
+   * group's own rotation/flip turns the whole set about the group's centre
+   * (the pptx `p:grpSp` model with chOff = off and chExt = ext).
+   */
+  children?: SlideElement[];
 }
 
 // elementTransform builds the CSS transform for an element's rotation/flip.
@@ -279,6 +291,8 @@ export function newElement(type: ElementType, src?: string): SlideElement {
         fontSize: 16,
         color: "#202124",
       };
+    case "group":
+      return { ...base, type, children: [] };
   }
 }
 

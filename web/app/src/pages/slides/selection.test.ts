@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { isSelected, selectedElement, selectionAfterRemove } from "./selection";
+import {
+  clickSelect,
+  primaryId,
+  selectedElement,
+  selectedElements,
+  selectionAfterRemove,
+} from "./selection";
 import { newElement, type Slide } from "./model";
 
 const a = { ...newElement("rect"), id: "a" };
@@ -26,25 +32,27 @@ describe("selectionAfterRemove", () => {
 });
 
 describe("OnlyOffice parity", () => {
-  // Selecting a drawing puts it in the selection. Grown has a single
-  // selection (clicking an element sets selId; the canvas outlines it).
+  // Selecting a drawing puts it in the selection; Select(true) (replace)
+  // makes it the only selected drawing, while an additive select
+  // (Shift/Ctrl+click in Grown) keeps the others.
   it("oo:slide/js-api/api-drawing.js#Test: Select", () => {
-    const selId: string | null = "a";
-    expect(isSelected(selId, "a")).toBe(true);
-    expect(selectedElement(slide, selId)).toBe(a);
-    // Selecting another replaces the selection.
-    const next: string | null = "b";
-    expect(isSelected(next, "a")).toBe(false);
-    expect(selectedElement(slide, next)).toBe(b);
+    let sel = clickSelect([], "a", false);
+    expect(selectedElements(slide, sel)).toEqual([a]);
+    expect(selectedElement(slide, primaryId(sel))).toBe(a);
+    sel = clickSelect(sel, "b", true);
+    expect(selectedElements(slide, sel)).toEqual([a, b]);
+    // Replace: only the new drawing stays selected.
+    sel = clickSelect(sel, "b", false);
+    expect(sel.includes("b")).toBe(true);
+    expect(clickSelect(["a"], "b", false)).toEqual(["b"]);
   });
 
-  // Unselecting removes the drawing from the selection (Grown: click on the
-  // empty canvas sets selId to null; deleting the element also clears it).
+  // Unselecting removes the drawing from the selection (Grown: Ctrl+click it
+  // again, press Esc or click the empty canvas; deleting it also clears it).
   it("oo:slide/js-api/api-drawing.js#Test: Unselect", () => {
-    expect(isSelected("a", "a")).toBe(true);
-    const cleared: string | null = null;
-    expect(isSelected(cleared, "a")).toBe(false);
-    expect(selectedElement(slide, cleared)).toBeUndefined();
+    const sel = clickSelect(["a", "b"], "a", true);
+    expect(sel).toEqual(["b"]);
+    expect(selectedElements(slide, sel)).toEqual([b]);
     expect(selectionAfterRemove("a", "a")).toBeNull();
   });
 });

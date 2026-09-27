@@ -7,6 +7,7 @@ import {
   type Slide,
   type SlideElement,
 } from "./model";
+import { flattenGroups } from "./groupOps";
 
 export type DeckFormat =
   | "pptx"
@@ -114,7 +115,7 @@ function elementHTML(el: SlideElement): string {
 }
 
 function slideHTML(slide: Slide): string {
-  const inner = slide.elements.map(elementHTML).join("");
+  const inner = flattenGroups(slide.elements).map(elementHTML).join("");
   return `<div class="slide" style="position:relative;width:${CANVAS_W}px;height:${CANVAS_H}px;background:${slide.background};overflow:hidden;">${inner}</div>`;
 }
 
@@ -163,7 +164,7 @@ function slideToSVG(slide: Slide): string {
   const parts: string[] = [
     `<rect x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" fill="${slide.background || "#ffffff"}"/>`,
   ];
-  for (const el of slide.elements) {
+  for (const el of flattenGroups(slide.elements)) {
     const strokeAttr =
       el.stroke && el.stroke !== "none"
         ? ` stroke="${el.stroke}" stroke-width="${el.strokeWidth || 1}"`
@@ -309,7 +310,7 @@ export async function downloadDeck(
   if (fmt === "txt") {
     const text = deck.slides
       .map((s, i) => {
-        const body = s.elements
+        const body = flattenGroups(s.elements)
           .filter((e) => e.type === "text" && e.text)
           .map((e) => e.text)
           .join("\n");

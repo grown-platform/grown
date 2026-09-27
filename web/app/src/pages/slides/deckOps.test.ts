@@ -336,12 +336,4 @@ describe("OnlyOffice parity: shortcuts", () => {
     expect(duplicateSlideAt([s], 0)!.slides).toHaveLength(2);
   });
 
-  // SKIP: Delete/Backspace removes a selected shape (see keymap tests), but
-  // Grown has no selectable animation effects, no chart elements and no
-  // groups, so the rest of the case does not apply.
-  it.skip("oo:slide/shortcuts/shortcuts.js#Check remove graphic objects", () => {
-    const s = slide("s", [el("shape")]);
-    expect(removeElement(s, "shape").elements).toEqual([]);
-    throw new Error("animation-effect / chart / group deletion not supported");
-  });
 });

@@ -91,21 +91,28 @@ import { ShareDialog } from "./ShareDialog";
 import { PPTX_ACCEPT, readPptxSlides } from "./pptx/importDeck";
 import {
   addNextSlide,
+  alignElements,
   applyCollabOp,
-  arrangeElements,
+  arrangeMany,
+  centerOnPage,
+  cycleSelection,
+  distributeElements,
+  duplicateElements,
+  moveElementsBy,
+  removeElements as removeElementsOp,
+  setLocked,
+  upsertElements as upsertElementsOp,
+  type AlignHow,
+  type AlignTo,
   deleteSlideAt,
-  duplicateElement,
   duplicateSlideAt,
   mapSlide,
-  moveElementBy,
   moveSlide as moveSlideOp,
   patchSlide,
   removeAnimation,
-  removeElement as removeElementOp,
   rotateElement,
   setLink as setLinkOp,
   setList as setListOp,
-  toggleStyle,
   upsertElement as upsertElementOp,
   type ArrangeDir,
   type RotateOp,
@@ -132,8 +139,21 @@ import {
   presentKeyAction,
   presentKeyPreventsDefault,
 } from "./keymap";
-import { fitCanvasWidth, fitPresentWidth } from "./geometry";
-import { selectedElement, selectionAfterRemove } from "./selection";
+import { GRID_SIZE, fitCanvasWidth, fitPresentWidth } from "./geometry";
+import {
+  primaryId,
+  selectAll,
+  selectedElement,
+  selectedElements,
+} from "./selection";
+import { groupElements, ungroupMany } from "./groupOps";
+import {
+  CLIP_MIME,
+  clipboardText,
+  decodeClipboard,
+  encodeClipboard,
+  pasteElements,
+} from "./clipboard";
 import { colorFor, prunePeers } from "./presence";
 
 interface Peer {
@@ -150,7 +170,14 @@ export function DeckEditor({ user }: { user: User }) {
   const [title, setTitle] = useState("Untitled presentation");
   const [doc, setDoc] = useState<DeckDoc | null>(null);
   const [cur, setCur] = useState(0);
-  const [selId, setSelId] = useState<string | null>(null);
+  // Selected top-level element ids on the current slide (last = primary).
+  const [sel, setSel] = useState<string[]>([]);
+  const setSelId = (id: string | null) => setSel(id ? [id] : []);
+  // Arrange → Align relative to the slide (else to the selection).
+  const [alignTo, setAlignTo] = useState<AlignTo>("selection");
+  // View → Snap to: smart guides (default on) and the grid.
+  const [snapGuides, setSnapGuides] = useState(true);
+  const [snapGrid, setSnapGrid] = useState(false);
   const [present, setPresent] = useState(false);
   const [status, setStatus] = useState<"connecting" | "live" | "offline">(
     "connecting",
@@ -169,7 +196,7 @@ export function DeckEditor({ user }: { user: User }) {
   const [animationsOpen, setAnimationsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [presenter, setPresenter] = useState(false); // presenter view (notes) during Present mode
-  const clip = useRef<SlideElement | null>(null);
+  const clip = useRef<SlideElement[] | null>(null);
   // Set by Ctrl+C / Ctrl+V keydowns so the copy/paste events that follow
   // know the keyboard asked for the in-app element clipboard.
   const copyPending = useRef(false);
@@ -193,6 +220,12 @@ export function DeckEditor({ user }: { user: User }) {
   docRef.current = doc;
   const slides = doc?.slides ?? [];
   const slide: Slide | undefined = slides[cur];
+  // Stale ids (an element removed by undo or a peer) are kept in `sel` so the
+  // selection comes back on redo, but every operation uses the live ones.
+  const selectedEls: SlideElement[] = selectedElements(slide, sel);
+  const live = new Set(selectedEls.map((e) => e.id));
+  const selIds = sel.filter((i) => live.has(i)); // click order, last = primary
+  const selId = primaryId(selIds);
   const selected: SlideElement | undefined = selectedElement(slide, selId);
 
   // Load deck.
@@ -264,14 +297,38 @@ export function DeckEditor({ user }: { user: User }) {
     [slide, applyToSlide, broadcast, scheduleSave, pushHistory],
   );
 
-  const removeElement = useCallback(
-    (elId: string) => {
+  // Selection-wide edits: one history entry and one collab op per operation.
+  const upsertMany = useCallback(
+    (els: SlideElement[], opts?: { history?: boolean }) => {
+      if (!slide || !els.length) return;
+      if (opts?.history !== false) pushHistory();
+      applyToSlide(slide.id, (s) => upsertElementsOp(s, els));
+      broadcast({ t: "upsertMany", si: slide.id, els });
+      scheduleSave();
+    },
+    [slide, applyToSlide, broadcast, scheduleSave, pushHistory],
+  );
+
+  const removeMany = useCallback(
+    (ids: string[]) => {
+      if (!slide || !ids.length) return;
+      pushHistory();
+      applyToSlide(slide.id, (s) => removeElementsOp(s, ids));
+      broadcast({ t: "removeMany", si: slide.id, ids });
+      scheduleSave();
+      setSel((c) => c.filter((x) => !ids.includes(x)));
+    },
+    [slide, applyToSlide, broadcast, scheduleSave, pushHistory],
+  );
+
+  // Replace the current slide's element list (group/ungroup).
+  const setElements = useCallback(
+    (elements: SlideElement[]) => {
       if (!slide) return;
       pushHistory();
-      applyToSlide(slide.id, (s) => removeElementOp(s, elId));
-      broadcast({ t: "remove", si: slide.id, elId });
+      applyToSlide(slide.id, (s) => ({ ...s, elements }));
+      broadcast({ t: "setElements", si: slide.id, elements });
       scheduleSave();
-      setSelId((c) => selectionAfterRemove(c, elId));
     },
     [slide, applyToSlide, broadcast, scheduleSave, pushHistory],
   );
@@ -299,6 +356,9 @@ export function DeckEditor({ user }: { user: User }) {
         si?: string;
         el?: SlideElement;
         elId?: string;
+        els?: SlideElement[];
+        ids?: string[];
+        elements?: SlideElement[];
         slides?: Slide[];
         p?: Peer;
       };
@@ -309,7 +369,7 @@ export function DeckEditor({ user }: { user: User }) {
       }
       if (m.t === "slides" && m.slides) {
         setDoc({ slides: m.slides });
-      } else if (m.t === "upsert" || m.t === "remove") {
+      } else if (m.t !== "presence" && m.t !== "slides") {
         setDoc((d) => (d ? applyCollabOp(d, m) : d));
       } else if (m.t === "presence" && m.p) {
         const p = m.p;
@@ -361,47 +421,65 @@ export function DeckEditor({ user }: { user: User }) {
         (e.target as HTMLElement)?.isContentEditable
       )
         return;
-      // Delete needs a selected id; nudging needs the id to resolve to an
-      // element on this slide (same guards as before the keymap extraction).
-      const act = editorKeyAction(e, { hasSelection: !!selId });
+      const act = editorKeyAction(e, { hasSelection: selIds.length > 0 });
       if (!act) return;
-      if (act.type === "deleteSelected" && selId) {
+      if (act.type === "deleteSelected" && selIds.length) {
         e.preventDefault();
-        removeElement(selId);
+        removeMany(selIds);
       } else if (act.type === "newSlide") {
         e.preventDefault();
         doNewSlide();
-      } else if (act.type === "nudge" && selected) {
+      } else if (act.type === "nudge" && slide && selIds.length) {
         e.preventDefault();
-        upsertElement(moveElementBy(selected, act.dx, act.dy));
+        upsertMany(moveElementsBy(slide.elements, selIds, act.dx, act.dy));
       } else if (act.type === "undo") {
         e.preventDefault();
         undo();
       } else if (act.type === "redo") {
         e.preventDefault();
         redo();
-      } else if (act.type === "duplicateElement" && selected) {
+      } else if (act.type === "duplicateElement" && selectedEls.length) {
         e.preventDefault();
-        duplicateEl(selected);
+        duplicateEls(selectedEls);
       } else if (act.type === "duplicateSlide") {
         e.preventDefault();
         duplicateSlide();
-      } else if (act.type === "copy" && selected) {
-        // Leave the default alone: the copy event below also puts the
-        // element's text on the OS clipboard, replacing anything stale
-        // (e.g. an old image) that would otherwise win the next paste.
-        clip.current = { ...selected };
+      } else if ((act.type === "copy" || act.type === "cut") && selectedEls.length) {
+        // Leave the default alone: the copy event below puts the elements
+        // on the OS clipboard (text + internal JSON), replacing anything
+        // stale (e.g. an old image) that would otherwise win the next paste.
+        clip.current = selectedEls.map((x) => ({ ...x }));
         copyPending.current = true;
+        // Cut: the cut event that follows writes the clipboard from clip.
+        if (act.type === "cut") removeMany(selIds);
       } else if (act.type === "paste" && clip.current) {
         // The paste event decides: an image on the OS clipboard is pasted
-        // as a picture, otherwise the in-app element. Browsers that fire no
-        // paste event on a non-editable target fall back to the element.
+        // as a picture, otherwise the in-app elements. Browsers that fire no
+        // paste event on a non-editable target fall back to the elements.
         pastePending.current = true;
         window.setTimeout(() => {
           if (!pastePending.current) return;
           pastePending.current = false;
           pasteEl();
         }, 0);
+      } else if (act.type === "selectAll") {
+        e.preventDefault();
+        setSel(selectAll(slide));
+      } else if (act.type === "cycle") {
+        // Only when nothing focusable has focus, so Tab still moves between
+        // toolbar controls.
+        if (e.target !== document.body || !slide?.elements.length) return;
+        e.preventDefault();
+        const next = cycleSelection(slide.elements, selIds, act.dir);
+        if (next) setSel([next]);
+      } else if (act.type === "deselect") {
+        setSel([]);
+      } else if (act.type === "group") {
+        e.preventDefault();
+        doGroup();
+      } else if (act.type === "ungroup") {
+        e.preventDefault();
+        doUngroup();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -432,24 +510,57 @@ export function DeckEditor({ user }: { user: User }) {
           return;
         }
       }
-      if (pastePending.current) {
+      const t = e.target as HTMLElement | null;
+      const inField =
+        editingText ||
+        t?.tagName === "INPUT" ||
+        t?.tagName === "TEXTAREA" ||
+        !!t?.isContentEditable;
+      if (inField) return;
+      const data = e.clipboardData;
+      const internal = data?.getData(CLIP_MIME);
+      const text = data?.getData("text/plain") ?? "";
+      // Elements copied in Grown (this tab or another).
+      if (decodeClipboard(internal)) {
+        pastePending.current = false;
+        e.preventDefault();
+        insertEls(pasteElements({ internal }));
+        return;
+      }
+      // The in-app clipboard, if the OS clipboard still holds what we copied.
+      if (
+        pastePending.current &&
+        clip.current &&
+        (!text || text === clipboardText(clip.current))
+      ) {
         pastePending.current = false;
         e.preventDefault();
         pasteEl();
+        return;
+      }
+      // Text or HTML from elsewhere becomes a new text box.
+      const els = pasteElements({ html: data?.getData("text/html"), text });
+      if (els.length) {
+        pastePending.current = false;
+        e.preventDefault();
+        insertEls(els);
       }
     };
     const onCopy = (e: ClipboardEvent) => {
       if (!copyPending.current) return;
       copyPending.current = false;
       if (!e.clipboardData || !clip.current) return;
-      e.clipboardData.setData("text/plain", clip.current.text ?? "");
+      e.clipboardData.setData("text/plain", clipboardText(clip.current));
+      e.clipboardData.setData(CLIP_MIME, encodeClipboard(clip.current));
       e.preventDefault();
     };
     window.addEventListener("paste", onPaste);
     window.addEventListener("copy", onCopy);
+    window.addEventListener("cut", onCopy);
     return () => {
       window.removeEventListener("paste", onPaste);
       window.removeEventListener("copy", onCopy);
+      window.removeEventListener("cut", onCopy);
     };
   }); // re-bind each render so upsertElement closes over the current slide
 
@@ -517,36 +628,65 @@ export function DeckEditor({ user }: { user: User }) {
       setImportMsg(`Couldn't import ${f.name}: ${(err as Error).message}`);
     }
   }
+  // Formatting applies to every selected element; toggles take their new
+  // value from the primary selection so a mixed selection ends up uniform.
+  function updateSelected(fn: (el: SlideElement) => SlideElement) {
+    if (selectedEls.length) upsertMany(selectedEls.map(fn));
+  }
   function toggle(attr: StyleToggle) {
-    if (selected) upsertElement(toggleStyle(selected, attr));
+    if (!selected) return;
+    const v = !selected[attr];
+    updateSelected((e) => ({ ...e, [attr]: v }));
   }
   function setList(v: "bullet" | "number" | null) {
-    if (selected) upsertElement(setListOp(selected, v));
+    updateSelected((e) => setListOp(e, v));
   }
   function setLineSpacing(v: number) {
-    if (selected) upsertElement({ ...selected, lineSpacing: v });
+    updateSelected((e) => ({ ...e, lineSpacing: v }));
   }
   function setAlign(a: "left" | "center" | "right") {
-    if (selected) upsertElement({ ...selected, align: a });
+    updateSelected((e) => ({ ...e, align: a }));
   }
   function setField<K extends keyof SlideElement>(k: K, v: SlideElement[K]) {
-    if (selected) upsertElement({ ...selected, [k]: v });
+    updateSelected((e) => ({ ...e, [k]: v }));
   }
   function arrange(dir: ArrangeDir) {
-    if (!slide || !selected) return;
-    const els = arrangeElements(slide.elements, selected.id, dir);
-    if (!els) return;
+    if (!slide || !selIds.length) return;
+    const els = arrangeMany(slide.elements, selIds, dir);
     pushHistory();
     applyToSlide(slide.id, (s) => ({ ...s, elements: els }));
-    broadcast({
-      t: "slides",
-      slides: patchSlide(slides, slide.id, { elements: els }),
-    });
+    broadcast({ t: "reorder", si: slide.id, ids: els.map((e) => e.id) });
     scheduleSave();
   }
   function rotate(op: RotateOp) {
-    if (!selected) return;
-    upsertElement(rotateElement(selected, op));
+    updateSelected((e) => rotateElement(e, op));
+  }
+  function align(how: AlignHow) {
+    upsertMany(alignElements(selectedEls, how, alignTo));
+  }
+  function distribute(axis: "horizontal" | "vertical") {
+    upsertMany(distributeElements(selectedEls, axis, alignTo));
+  }
+  function centerPage(axis: "horizontal" | "vertical") {
+    upsertMany(centerOnPage(selectedEls, axis));
+  }
+  function doGroup() {
+    if (!slide) return;
+    const r = groupElements(slide.elements, selIds);
+    if (!r) return;
+    setElements(r.elements);
+    setSel([r.groupId]);
+  }
+  function doUngroup() {
+    if (!slide) return;
+    const r = ungroupMany(slide.elements, selIds);
+    if (!r) return;
+    setElements(r.elements);
+    setSel(r.ids);
+  }
+  function toggleLock() {
+    const lock = !selectedEls.every((e) => e.locked);
+    upsertMany(setLocked(selectedEls, lock));
   }
   function setLink() {
     if (!selected) return;
@@ -575,17 +715,19 @@ export function DeckEditor({ user }: { user: User }) {
     setSlides(patchSlide(slides, slide.id, { transition: t }));
   }
 
+  // Insert new elements on top and select them (paste, duplicate).
+  function insertEls(els: SlideElement[]) {
+    if (!els.length) return;
+    upsertMany(els);
+    setSel(els.map((e) => e.id));
+  }
   // Element clipboard (in-app) for the right-click menu.
-  function duplicateEl(el: SlideElement) {
-    const copy = duplicateElement(el);
-    upsertElement(copy);
-    setSelId(copy.id);
+  function duplicateEls(els: SlideElement[]) {
+    insertEls(duplicateElements(els));
   }
   function pasteEl() {
     if (!clip.current) return;
-    const copy = duplicateElement(clip.current);
-    upsertElement(copy);
-    setSelId(copy.id);
+    insertEls(duplicateElements(clip.current));
   }
 
   function undo() {
@@ -668,11 +810,30 @@ export function DeckEditor({ user }: { user: User }) {
     arrange,
     rotate,
     setLink,
-    deleteSelected: () => selId && removeElement(selId),
+    deleteSelected: () => removeMany(selIds),
+    selectAll: () => setSel(selectAll(slide)),
+    align,
+    distribute,
+    centerOnPage: centerPage,
+    group: doGroup,
+    ungroup: doUngroup,
+    toggleLock,
+    alignTo,
+    setAlignTo,
+    snapGuides,
+    toggleSnapGuides: () => setSnapGuides((v) => !v),
+    snapGrid,
+    toggleSnapGrid: () => setSnapGrid((v) => !v),
+    selection: {
+      count: selectedEls.length,
+      canGroup: selectedEls.length > 1,
+      canUngroup: selectedEls.some((e) => e.type === "group"),
+      locked: selectedEls.length > 0 && selectedEls.every((e) => e.locked),
+    },
     setBackground,
     paste: pasteEl,
     duplicateSelected: () => {
-      if (selected) duplicateEl(selected);
+      duplicateEls(selectedEls);
     },
     openTransition: () => setTransitionOpen(true),
     openAnimations: () => setAnimationsOpen(true),
@@ -1135,9 +1296,12 @@ export function DeckEditor({ user }: { user: User }) {
               <SlideCanvas
                 slide={slide}
                 width={canvasW}
-                selectedId={selId}
-                onSelect={setSelId}
+                selectedIds={selIds}
+                onSelect={setSel}
                 onChange={(el) => upsertElement(el)}
+                onChangeMany={(els, o) => upsertMany(els, o)}
+                snap={{ guides: snapGuides, grid: snapGrid ? GRID_SIZE : 0 }}
+                showGrid={snapGrid}
                 onEditingText={setEditingText}
                 onContext={(x, y, elId) => setCtxMenu({ x, y, elId })}
               />
@@ -1251,21 +1415,25 @@ export function DeckEditor({ user }: { user: User }) {
                 };
                 if (ctxMenu.elId) {
                   const el = slide?.elements.find((e) => e.id === ctxMenu.elId);
+                  const targets = selectedEls.length
+                    ? selectedEls
+                    : el
+                      ? [el]
+                      : [];
+                  const targetIds = targets.map((e) => e.id);
                   return (
                     <>
                       <MenuItem
                         onClick={close(() => {
-                          if (el) {
-                            clip.current = { ...el };
-                            removeElement(el.id);
-                          }
+                          clip.current = targets.map((e) => ({ ...e }));
+                          removeMany(targetIds);
                         })}
                       >
                         Cut
                       </MenuItem>
                       <MenuItem
                         onClick={close(() => {
-                          if (el) clip.current = { ...el };
+                          clip.current = targets.map((e) => ({ ...e }));
                         })}
                       >
                         Copy
@@ -1276,11 +1444,7 @@ export function DeckEditor({ user }: { user: User }) {
                       >
                         Paste
                       </MenuItem>
-                      <MenuItem
-                        onClick={close(() => {
-                          if (el) duplicateEl(el);
-                        })}
-                      >
+                      <MenuItem onClick={close(() => duplicateEls(targets))}>
                         Duplicate
                       </MenuItem>
                       <ListDivider />
@@ -1298,10 +1462,26 @@ export function DeckEditor({ user }: { user: User }) {
                       </MenuItem>
                       <ListDivider />
                       <MenuItem
+                        disabled={targets.length < 2}
+                        onClick={close(doGroup)}
+                      >
+                        Group
+                      </MenuItem>
+                      <MenuItem
+                        disabled={!targets.some((e) => e.type === "group")}
+                        onClick={close(doUngroup)}
+                      >
+                        Ungroup
+                      </MenuItem>
+                      <MenuItem onClick={close(toggleLock)}>
+                        {targets.every((e) => e.locked)
+                          ? "Unlock position"
+                          : "Lock position"}
+                      </MenuItem>
+                      <ListDivider />
+                      <MenuItem
                         color="danger"
-                        onClick={close(() => {
-                          if (el) removeElement(el.id);
-                        })}
+                        onClick={close(() => removeMany(targetIds))}
                       >
                         Delete
                       </MenuItem>

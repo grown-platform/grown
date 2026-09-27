@@ -5,6 +5,8 @@
 /** The subset of KeyboardEvent the key maps look at. */
 export interface KeyInput {
   key: string;
+  /** Physical key (e.g. "KeyG"); Option+G on macOS reports key "©". */
+  code?: string;
   ctrlKey?: boolean;
   metaKey?: boolean;
   shiftKey?: boolean;
@@ -25,7 +27,13 @@ export type EditorKeyAction =
   | { type: "duplicateSlide" }
   | { type: "save" }
   | { type: "copy" }
-  | { type: "paste" };
+  | { type: "paste" }
+  | { type: "cut" }
+  | { type: "selectAll" }
+  | { type: "cycle"; dir: 1 | -1 }
+  | { type: "deselect" }
+  | { type: "group" }
+  | { type: "ungroup" };
 
 /** isSaveKey reports Ctrl/Cmd+S. The editor handles it even while a text box
  *  is being edited, so the browser's "Save page" dialog never opens. */
@@ -62,8 +70,20 @@ export function editorKeyAction(
 ): EditorKeyAction | null {
   if ((e.key === "Delete" || e.key === "Backspace") && ctx.hasSelection)
     return { type: "deleteSelected" };
-  if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+  const mod = !!e.ctrlKey || !!e.metaKey;
+  // Group: Ctrl+G (OnlyOffice/PowerPoint) or Ctrl+Alt+G (Google Slides);
+  // ungroup adds Shift. Checked before the Alt guard below.
+  if (mod && (e.key.toLowerCase() === "g" || e.code === "KeyG"))
+    return { type: e.shiftKey ? "ungroup" : "group" };
+  if (e.key === "Escape") return ctx.hasSelection ? { type: "deselect" } : null;
+  if (e.key === "Tab" && !mod && !e.altKey)
+    return { type: "cycle", dir: e.shiftKey ? -1 : 1 };
+  if (mod && !e.altKey) {
     switch (e.key.toLowerCase()) {
+      case "a":
+        return { type: "selectAll" };
+      case "x":
+        return ctx.hasSelection ? { type: "cut" } : null;
       case "m":
         return { type: "newSlide" };
       case "z":
@@ -84,7 +104,6 @@ export function editorKeyAction(
         return { type: "paste" };
     }
   }
-  // Ctrl+A (select all) is not bound: the editor has a single selection.
   if (ctx.hasSelection) {
     const d = nudgeDelta(e.key, !!e.shiftKey);
     if (d) return { type: "nudge", ...d };
