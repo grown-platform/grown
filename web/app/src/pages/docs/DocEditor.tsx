@@ -366,8 +366,10 @@ export function DocEditor({ user }: DocEditorProps) {
   // header/footer, comments), not just HTML.
   useEffect(() => {
     if (!editor) return;
-    const docx = takeDocxSeed(id);
-    if (docx && editor.getText().trim() === "") {
+    // Only an empty editor takes the seed: after an in-app navigation this
+    // effect first runs with the previous document's editor (M12 results).
+    const docx = editor.getText().trim() === "" ? takeDocxSeed(id) : null;
+    if (docx) {
       void import("./docx/apply").then(async ({ applyDocxImport, importComments }) => {
         if (editor.isDestroyed) return;
         applyDocxImport(editor, docx);
