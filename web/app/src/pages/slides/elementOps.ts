@@ -16,6 +16,8 @@ const TYPE_LABEL: Record<ElementType, string> = {
   roundRect: "Rounded Rectangle",
   table: "Table",
   group: "Group",
+  shape: "Shape",
+  connector: "Connector",
 };
 
 /** allElements lists every element on the slide, group members included. */
