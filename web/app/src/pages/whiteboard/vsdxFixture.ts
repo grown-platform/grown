@@ -30,6 +30,8 @@ export interface FixtureOptions {
   masters?: FixtureMaster[];
   /** Inner XML of <StyleSheets>. */
   styleSheets?: string;
+  /** A DrawingML theme part (visio/theme/theme1.xml). */
+  theme?: string;
   /** Extra package files: path → content. */
   files?: Record<string, string | Uint8Array>;
 }
@@ -143,6 +145,14 @@ export async function buildVsdx(opts: FixtureOptions): Promise<Uint8Array> {
   ];
   if (opts.masters?.length)
     docRels.push(["rId2", `${REL}/masters`, "masters/masters.xml"]);
+  if (opts.theme) {
+    docRels.push([
+      "rId3",
+      "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme",
+      "theme/theme1.xml",
+    ]);
+    zip.file("visio/theme/theme1.xml", opts.theme);
+  }
   zip.file("visio/_rels/document.xml.rels", rels(docRels));
 
   zip.file(

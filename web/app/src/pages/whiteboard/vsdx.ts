@@ -441,6 +441,62 @@ export function visioColor(v: string | undefined): string | undefined {
   return undefined;
 }
 
+// ----------------------------------------------------------------- theme
+
+interface Theme {
+  scheme: Map<string, string>;
+  /** First variation colour scheme (varColor1..7). */
+  variation: string[];
+}
+const EMPTY_THEME: Theme = { scheme: new Map(), variation: [] };
+
+function colorOf(el: Element | undefined): string | undefined {
+  if (!el) return undefined;
+  for (const c of kids(el)) {
+    if (c.localName === "srgbClr")
+      return `#${(attr(c, "val") ?? "").toLowerCase()}`;
+    if (c.localName === "sysClr") {
+      const v = attr(c, "lastClr");
+      if (v) return `#${v.toLowerCase()}`;
+    }
+  }
+  return undefined;
+}
+
+function readTheme(doc: Document): Theme {
+  const scheme = new Map<string, string>();
+  const all = Array.from(doc.getElementsByTagName("*"));
+  const cs = all.find((e) => e.localName === "clrScheme");
+  if (cs)
+    for (const c of kids(cs)) {
+      const col = colorOf(c);
+      if (col) scheme.set(c.localName, col);
+    }
+  const vs = all.find((e) => e.localName === "variationClrScheme");
+  const variation = vs
+    ? kids(vs)
+        .map((c) => colorOf(c))
+        .filter((c): c is string => !!c)
+    : [];
+  return { scheme, variation };
+}
+
+/** quickColor maps a QuickStyle*Color index to a theme colour:
+ *  0 dk1, 1 lt1, 2–7 accent1–6, 100–106 variation colours 1–7. */
+function quickColor(theme: Theme, v: string | undefined): string | undefined {
+  if (v === undefined || !theme.scheme.size) return undefined;
+  const n = parseInt(v, 10);
+  if (n === 0) return theme.scheme.get("dk1");
+  if (n === 1) return theme.scheme.get("lt1");
+  if (n >= 2 && n <= 7) return theme.scheme.get(`accent${n - 1}`);
+  if (n >= 100 && n <= 106)
+    return (
+      theme.variation[n - 100] ??
+      theme.scheme.get(`accent${Math.min(6, n - 99)}`)
+    );
+  return undefined;
+}
+
 // -------------------------------------------------------------- geometry
 
 /** Affine matrix [a, b, c, d, e, f]: x' = a·x + c·y + e, y' = b·x + d·y + f. */
@@ -734,6 +790,7 @@ interface EmitCtx {
   files: Record<string, VsdxFile>;
   media: Map<string, VsdxFile>;
   styles: Map<string, StyleSheet>;
+  theme: Theme;
   /** Visio shape id → emitted bindable element id (rect/ellipse/diamond). */
   bindable: Map<string, string>;
   /** Visio shape id → the Excalidraw arrow skeleton for 1-D shapes. */
@@ -886,10 +943,19 @@ function emitShape(
 
   // Styling.
   const linePattern = v.num("LinePattern", 1);
-  const lineColor = visioColor(v.raw("LineColor")) ?? "#000000";
+  // Colour precedence: own/master cell → theme quick style → style sheet.
+  const lineColor =
+    visioColor(v.s.cells.get("LineColor")) ??
+    quickColor(ctx.theme, v.s.cells.get("QuickStyleLineColor")) ??
+    visioColor(v.raw("LineColor")) ??
+    "#000000";
   const weightPx = v.num("LineWeight", 0.01) * PX_PER_INCH;
   const fillPattern = v.num("FillPattern", 1);
-  const fillColor = visioColor(v.raw("FillForegnd")) ?? "#ffffff";
+  const fillColor =
+    visioColor(v.s.cells.get("FillForegnd")) ??
+    quickColor(ctx.theme, v.s.cells.get("QuickStyleFillColor")) ??
+    visioColor(v.raw("FillForegnd")) ??
+    "#ffffff";
   const stroke = {
     strokeColor: linePattern === 0 ? "transparent" : lineColor,
     strokeWidth: Math.max(0.5, Math.round(weightPx * 2) / 2),
@@ -1053,7 +1119,31 @@ function freeText(
     verticalAlign: "middle",
     roughness: 0,
     groupIds,
+    // The estimate is corrected once Excalidraw has measured the text.
+    customData: { vsdxHalfSize: [estW / 2, estH / 2] },
   };
+}
+
+/** recenterText re-centres free text on its anchor using measured sizes
+ *  (call after convertToExcalidrawElements; mutates fresh elements). */
+export function recenterText(
+  elements: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    customData?: Record<string, unknown>;
+  }[],
+): void {
+  for (const e of elements) {
+    const half = e.customData?.vsdxHalfSize as [number, number] | undefined;
+    if (!half) continue;
+    e.x = e.x + half[0] - e.width / 2;
+    e.y = e.y + half[1] - e.height / 2;
+    const rest = { ...e.customData };
+    delete rest.vsdxHalfSize;
+    e.customData = Object.keys(rest).length ? rest : undefined;
+  }
 }
 
 /** Excalidraw angle (clockwise, radians, [0, 2π)) from a Y-up matrix. */
@@ -1170,6 +1260,13 @@ export async function parseVsdx(
       : [];
   };
 
+  // Theme colours (for "Themed" cells resolved through QuickStyle*Color).
+  const themePart = docRels.find((r) => /\/theme$/.test(r.type))?.target;
+  const tf = themePart ? zip.file(themePart) : null;
+  const theme = tf
+    ? readTheme(parseXml(await tf.async("string")))
+    : EMPTY_THEME;
+
   // Masters.
   const masters = new Map<string, MasterDef>();
   const mf = zip.file(mastersPart);
@@ -1261,6 +1358,7 @@ export async function parseVsdx(
       files,
       media,
       styles,
+      theme,
       bindable: new Map(),
       connectors: new Map(),
       parent: new Map(),

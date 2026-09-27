@@ -5,6 +5,7 @@ import {
   parseVsdx,
   layoutVsdxPages,
   visioColor,
+  recenterText,
   PX_PER_INCH,
   type VsdxSkeleton,
 } from "./vsdx";
@@ -465,6 +466,36 @@ describe("vsdx reader", () => {
     expect(els[0].strokeColor).toBe("#000000");
   });
 
+  it("resolves themed colours through QuickStyle indices", async () => {
+    const A = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    const theme =
+      `<a:theme xmlns:a="${A}"><a:themeElements><a:clrScheme name="t">` +
+      `<a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1>` +
+      `<a:accent1><a:srgbClr val="1BA1E2"/></a:accent1><a:accent2><a:srgbClr val="339933"/></a:accent2>` +
+      `<a:extLst><a:ext><vt:variationClrSchemeLst xmlns:vt="v"><vt:variationClrScheme>` +
+      `<vt:varColor1><a:srgbClr val="AA0000"/></vt:varColor1><vt:varColor2><a:srgbClr val="00AA00"/></vt:varColor2>` +
+      `</vt:variationClrScheme></vt:variationClrSchemeLst></a:ext></a:extLst></a:clrScheme></a:themeElements></a:theme>`;
+    const els = await onePage(
+      shape(
+        1,
+        xform(2, 2, 1, 1) +
+          `<Cell N="FillForegnd" V="Themed" F="THEMEVAL()"/>` +
+          cell("QuickStyleFillColor", 101) +
+          cell("QuickStyleLineColor", 0) +
+          rectGeom(1, 1),
+      ) +
+        shape(
+          2,
+          xform(4, 2, 1, 1) + cell("QuickStyleFillColor", 3) + rectGeom(1, 1),
+        ),
+      undefined,
+      { theme },
+    );
+    expect(els[0].backgroundColor).toBe("#00aa00");
+    expect(els[0].strokeColor).toBe("#000000");
+    expect(els[1].backgroundColor).toBe("#339933");
+  });
+
   it("reads bitmap foreign shapes as images", async () => {
     const png = Uint8Array.from(
       atob(
@@ -573,3 +604,23 @@ describe.skipIf(CORPUS.length === 0)(
     });
   },
 );
+
+describe("recenterText", () => {
+  it("centres measured free text on the estimated anchor", () => {
+    const e = {
+      x: 0,
+      y: 0,
+      width: 20,
+      height: 10,
+      customData: { vsdxHalfSize: [30, 10] },
+    };
+    recenterText([e]);
+    expect(e).toEqual({
+      x: 20,
+      y: 5,
+      width: 20,
+      height: 10,
+      customData: undefined,
+    });
+  });
+});
