@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -130,5 +131,44 @@ func TestGetPivotDataParity(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A pivot's report written by an editor who may edit its range survives
+// protection enforcement, together with its stored output; the same write
+// by someone the range does not list is put back, like any other edit.
+func TestPivotOutputUnderProtection(t *testing.T) {
+	prev := `[{"name":"Sheet1","id":"s1","celldata":[{"r":0,"c":0,"v":{"v":"Region","m":"Region"}}],
+  "grownPivots":[{"id":"p1","anchor":{"sheetId":"s1","r":0,"c":5}}],
+  "grownProtection":{"sheet":null,"ranges":[{"id":"r1","name":"Pivot","ranges":[{"r1":0,"c1":5,"r2":9,"c2":9}],"users":["alice"],"by":"carol"}]}}]`
+	next := `[{"name":"Sheet1","id":"s1","celldata":[{"r":0,"c":0,"v":{"v":"Region","m":"Region"}},
+   {"r":0,"c":5,"v":{"v":"Row Labels","m":"Row Labels"}},{"r":1,"c":5,"v":{"v":"East","m":"East"}},{"r":1,"c":6,"v":{"v":150,"m":"150"}}],
+  "grownPivots":[{"id":"p1","anchor":{"sheetId":"s1","r":0,"c":5},"output":{"sheetId":"s1","r0":0,"c0":5,"rows":2,"cols":2,
+    "dataFields":[{"name":"Sum of Amount","field":"Amount"}],"entries":[{"r":1,"c":1,"d":0,"f":[["Region","East"]],"v":150}]}}],
+  "grownProtection":{"sheet":null,"ranges":[{"id":"r1","name":"Pivot","ranges":[{"r1":0,"c1":5,"r2":9,"c2":9}],"users":["alice"],"by":"carol"}]}}]`
+	for _, who := range []string{"carol", "alice", "owner"} {
+		got, reverted := EnforceProtection(prev, next, Editor{User: who, Owner: "owner"})
+		if reverted != 0 || got != next {
+			t.Fatalf("%s: %d edits reverted", who, reverted)
+		}
+	}
+	got, reverted := EnforceProtection(prev, next, Editor{User: "bob", Owner: "owner"})
+	if reverted != 3 {
+		t.Fatalf("bob: reverted %d, want the 3 pivot cells", reverted)
+	}
+	if !strings.Contains(got, `"grownPivots"`) || !strings.Contains(got, `"entries"`) {
+		t.Fatalf("the stored pivot output was dropped: %s", got)
+	}
+	// GETPIVOTDATA reads the stored output.
+	wb := FsWorkbook{}
+	if err := json.Unmarshal([]byte(next), &wb); err != nil {
+		t.Fatal(err)
+	}
+	wb[0].CellData = append(wb[0].CellData, FsCellData{R: 5, C: 0, V: &FsCell{F: `=GETPIVOTDATA("Amount",F1,"Region","East")`}})
+	recomputeFsWorkbook(wb, time.Now())
+	for _, cd := range wb[0].CellData {
+		if cd.R == 5 && cd.C == 0 && cd.V.V != 150.0 {
+			t.Fatalf("GETPIVOTDATA = %v, want 150", cd.V.V)
+		}
 	}
 }
