@@ -126,13 +126,15 @@ test.describe("docs compare and mail merge", () => {
       await expect(editor(page).locator("p").first()).toHaveText("Dear Grace, greetings from Arlington.");
       if (shots) await page.screenshot({ path: `${shots}mailmerge.png` });
 
-      // Merge to a new document: one letter per record, a page break between.
+      // Merge to a new document: one letter per record, each in its own
+      // section (a next-page section break between, M9).
       await panel.getByTestId("mm-merge-doc").click();
       await expect(page).not.toHaveURL(new RegExp(`/docs/d/${doc}$`), { timeout: 15_000 });
       made.push(page.url().split("/").pop()!);
       await expect(editor(page).locator("p", { hasText: "Dear Ada, greetings from London." })).toHaveCount(1, { timeout: 15_000 });
       await expect(editor(page).locator("p", { hasText: "Dear Grace, greetings from Arlington." })).toHaveCount(1);
-      await expect(editor(page).locator("[data-page-break]")).toHaveCount(1);
+      await expect(editor(page).locator('[data-section-break][data-kind="nextPage"]')).toHaveCount(1);
+      await expect(editor(page).locator("[data-page-break]")).toHaveCount(0);
       await expect(editor(page).locator(".doc-field")).toHaveCount(0);
     } finally {
       for (const id of [doc, ...made]) await trashDoc(page.request, id);

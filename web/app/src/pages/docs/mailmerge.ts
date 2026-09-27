@@ -6,14 +6,27 @@
 // instruction (`MERGEFIELD "First name"`); their cached result is the
 // «First name» placeholder, or a record's value while previewing. Merging
 // replaces every merge field with the record's value (keeping the field's
-// formatting) and stacks one copy of the document per record, a page break
-// between records.
+// formatting) and stacks one copy of the document per record, each record
+// in its own section (a next-page section break between records).
 //
 // Pure apart from the editor helpers at the bottom.
 import type { Editor } from "@tiptap/core";
 import { Fragment, type Node as PMNode, type Schema } from "@tiptap/pm/model";
 import { parseDelimited } from "../sheets/csvText";
 import { applyCaseFormats, parseInstr } from "./fields";
+import { newSectionId } from "./pageLayout";
+import {
+  defaultSection,
+  encodeSection,
+  hfFragment,
+  hfKey,
+  ownFragment,
+  ownsPart,
+  sectionsOf,
+  type HfKind,
+  type HfWhich,
+  type SectionProps,
+} from "./sections";
 
 export interface MergeData {
   fields: string[];
@@ -208,16 +221,85 @@ function joinText(schema: Schema, nodes: PMNode[]): Fragment {
   return Fragment.fromArray(out);
 }
 
-/** mergeAll stacks one merged copy per record, a page break between. */
-export function mergeAll(doc: PMNode, records: Record<string, string>[]): PMNode {
+/** Every header/footer part a section can own ("header:default", …). */
+const ALL_PARTS: string[] = (["header", "footer"] as HfWhich[]).flatMap((w) => (["default", "first", "even"] as HfKind[]).map((k) => hfKey(w, k)));
+
+export interface MergedDocument {
+  doc: PMNode;
+  /** The merged document's final section (its `docSettings` section). */
+  section: SectionProps;
+  /** Header/footer fragments of the merged document: new fragment name ->
+   *  the template fragment whose content it takes. */
+  fragments: Record<string, string>;
+}
+
+/**
+ * mergeAll stacks one merged copy of the document per record, each record
+ * in its own section(s): a next-page section break (Docs M9) ends every
+ * record but the last, so each record starts a new page, restarts page
+ * numbering (the first section's start, else 1) and shows the template's
+ * first-section headers and footers (its first section owns copies of
+ * them, instead of linking to the previous record's last section). The
+ * template's own section breaks are kept per record under fresh ids, with
+ * their own header/footer parts copied. `final` is the template's final
+ * section (docSettings); without a sectionBreak node records are separated
+ * by page breaks.
+ */
+export function mergeAll(
+  doc: PMNode,
+  records: Record<string, string>[],
+  final: SectionProps = defaultSection(),
+  newId: () => string = newSectionId,
+): MergedDocument {
   const schema = doc.type.schema;
-  const blocks: PMNode[] = [];
-  records.forEach((rec, i) => {
-    if (i > 0 && schema.nodes.pageBreak) blocks.push(schema.nodes.pageBreak.create());
-    mergeRecord(doc, rec).forEach((b) => blocks.push(b));
+  const breakType = schema.nodes.sectionBreak;
+  if (!records.length) return { doc, section: final, fragments: {} };
+  if (!breakType) {
+    const blocks: PMNode[] = [];
+    records.forEach((rec, i) => {
+      if (i > 0 && schema.nodes.pageBreak) blocks.push(schema.nodes.pageBreak.create());
+      mergeRecord(doc, rec).forEach((b) => blocks.push(b));
+    });
+    return { doc: schema.nodes.doc.create(doc.attrs, blocks), section: final, fragments: {} };
+  }
+  const tpl = sectionsOf(doc, final);
+  const S = tpl.length;
+  // A record's first section restarts numbering and owns the first
+  // section's parts; the other sections keep the template's props.
+  const firstProps = (p: SectionProps): SectionProps => ({
+    ...p,
+    own: [...ALL_PARTS],
+    pgNum: { ...p.pgNum, start: p.pgNum.start ?? 1 },
   });
-  if (!blocks.length) return doc;
-  return schema.nodes.doc.create(doc.attrs, blocks);
+  const propsOf = (j: number) => (j === 0 ? firstProps(tpl[j].props) : tpl[j].props);
+  const blocks: PMNode[] = [];
+  let section = final;
+  records.forEach((rec, r) => {
+    const merged = mergeRecord(doc, rec);
+    let j = 0;
+    merged.forEach((b) => {
+      if (b.type === breakType) {
+        blocks.push(b.type.create({ ...b.attrs, id: r === 0 && b.attrs.id ? b.attrs.id : newId(), sectPr: encodeSection(propsOf(j)) }));
+        j++;
+      } else blocks.push(b);
+    });
+    if (r < records.length - 1) blocks.push(breakType.create({ id: newId(), kind: "nextPage", sectPr: encodeSection(propsOf(S - 1)) }));
+    else section = propsOf(S - 1);
+  });
+  const out = schema.nodes.doc.create(doc.attrs, blocks);
+  // Header/footer fragments: section r*S+j takes template section j's parts.
+  const secs = sectionsOf(out, section);
+  const fragments: Record<string, string> = {};
+  secs.forEach((_, i) => {
+    const j = i % S;
+    for (const key of ALL_PARTS) {
+      const [which, kind] = key.split(":") as [HfWhich, HfKind];
+      if (!ownsPart(secs, i, which, kind)) continue;
+      // The template part this section shows (its own, or linked).
+      fragments[ownFragment(secs, i, which, kind)] = hfFragment(tpl, j, which, kind);
+    }
+  });
+  return { doc: out, section, fragments };
 }
 
 /** mergeText is a record's merged document as plain text (e-mail bodies):

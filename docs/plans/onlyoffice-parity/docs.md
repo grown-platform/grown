@@ -1799,8 +1799,14 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
      fields' results (not undoable, like F9) and the placeholders back when
      the panel closes.
   4. Finish: All / Current / From–to; merge to a new Grown doc (one copy per
-     record, a page break between — the section break arrives with M9), to
-     .docx (direct writer, this doc's styles, header and footer) or to PDF
+     record, each record its own section: a next-page section break ends
+     every record but the last; each record's first section restarts page
+     numbering (at the template's start, else 1) and owns copies of the
+     template's first-section headers/footers, the template's own section
+     breaks are repeated per record under fresh ids with their parts; the
+     new doc gets the page setup and all header/footer fragments), to
+     .docx (direct writer, this doc's styles, the same sections, headers
+     and footers) or to PDF
      (the pandoc convert endpoint), or to e-mail: a To field (guessed from an
      "email" column or all-address values), a subject with «Field»
      placeholders, a plain-text body (the merged document's paragraphs), a
@@ -1853,8 +1859,8 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   (a removed row comes back as a row of deleted text), moves (a move is a
   deletion plus an insertion), a merge-field "rules" set (IF / NEXT /
   SKIP), HTML e-mail bodies and attachments (the mail API sends plain
-  text; a .docx/.pdf attachment per record would need uploads first), and
-  one section per record (page breaks until M9's sections).
+  text; a .docx/.pdf attachment per record would need uploads first).
+  (One section per record landed after M9: see Finish above.)
 * **Semantic differences**:
 
 | Case | OnlyOffice / Word | Grown | Status |
