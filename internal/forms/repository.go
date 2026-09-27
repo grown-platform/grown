@@ -213,6 +213,9 @@ func (r *Repository) Create(ctx context.Context, orgID, ownerID string, fl Field
 
 // Get returns a form within orgID, or ErrNotFound.
 func (r *Repository) Get(ctx context.Context, orgID, id string) (Form, error) {
+	if !isUUID(id) {
+		return Form{}, ErrNotFound
+	}
 	q := `SELECT ` + formColumns + ` FROM grown.forms f WHERE f.id=$1 AND f.org_id=$2 AND f.trashed_at IS NULL`
 	f, err := scanForm(r.pool.QueryRow(ctx, q, id, orgID))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -228,6 +231,9 @@ func (r *Repository) Get(ctx context.Context, orgID, id string) (Form, error) {
 // view), as long as it is not trashed and is accepting responses is checked by
 // the caller. Only non-trashed forms are returned.
 func (r *Repository) GetForFill(ctx context.Context, id string) (Form, error) {
+	if !isUUID(id) {
+		return Form{}, ErrNotFound
+	}
 	q := `SELECT ` + formColumns + ` FROM grown.forms f WHERE f.id=$1 AND f.trashed_at IS NULL`
 	f, err := scanForm(r.pool.QueryRow(ctx, q, id))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -260,8 +266,33 @@ func (r *Repository) List(ctx context.Context, orgID string) ([]Form, error) {
 	return out, rows.Err()
 }
 
+// isUUID reports whether id is a canonical UUID. Ids from request paths are
+// checked before they reach a uuid column, so a malformed id is "not found"
+// rather than a database error surfaced as a 500.
+func isUUID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for i, c := range id {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // Update replaces the editable fields of a form within orgID.
 func (r *Repository) Update(ctx context.Context, orgID, id string, fl Fields) (Form, error) {
+	if !isUUID(id) {
+		return Form{}, ErrNotFound
+	}
 	q := `WITH f AS (
 		UPDATE grown.forms SET
 			title=$3, description=$4, questions=$5, settings=$6, accepting=$7, updated_at=now()
@@ -281,6 +312,9 @@ func (r *Repository) Update(ctx context.Context, orgID, id string, fl Fields) (F
 
 // Trash soft-deletes a form within orgID.
 func (r *Repository) Trash(ctx context.Context, orgID, id string) error {
+	if !isUUID(id) {
+		return ErrNotFound
+	}
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE grown.forms SET trashed_at=now(), updated_at=now()
 		 WHERE id=$1 AND org_id=$2 AND trashed_at IS NULL`, id, orgID)
