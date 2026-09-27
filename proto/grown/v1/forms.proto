@@ -61,7 +61,8 @@ service FormsService {
 
 // FormQuestion is a single question within a form. The valid fields depend on
 // `type`. Types: "short_answer", "paragraph", "multiple_choice", "checkboxes",
-// "dropdown", "linear_scale", "date", "time", "file_upload".
+// "dropdown", "linear_scale", "date", "time", "file_upload",
+// "multiple_choice_grid", "checkbox_grid", "rating".
 message FormQuestion {
   string id = 1;
   string type = 2;
@@ -85,6 +86,42 @@ message FormQuestion {
   // section_id / is_section: when is_section=true this "question" is a section
   // divider (has an id + title; no answer is collected).
   bool is_section = 14;
+  // Response validation (short_answer / paragraph / checkboxes). Unset = none.
+  FormValidation validation = 15;
+  // text_format restricts short-answer input like an OnlyOffice text-form
+  // format: "" (none), "digits", "letters", "phone", "zip", "credit_card" or
+  // "mask" (uses `mask`). Presets are masks too (see internal/forms/validate.go).
+  string text_format = 16;
+  // mask: 9 = digit, a/A = letter, O = digit or letter, X = any character,
+  // \c = literal c; anything else is a literal, e.g. "(999) 999-9999".
+  string mask = 17;
+  // Grid rows (multiple_choice_grid / checkbox_grid); columns are `options`.
+  repeated string rows = 18;
+  // Grid: at most one response per column (Google's "Limit to one response
+  // per column").
+  bool limit_one_per_column = 19;
+  // Rating icon: "star" (default), "heart" or "thumb". Levels = scale_max (3-10).
+  string rating_icon = 20;
+  // On a section divider: where to go after this section. "" = next section,
+  // a section id, or "__submit__".
+  string after_section = 21;
+}
+
+// FormValidation is a Google-Forms-style response validation rule.
+// kind/op pairs:
+//   number:   gt gte lt lte eq neq between not_between is_number whole_number
+//   text:     contains not_contains email url
+//   length:   max_chars min_chars
+//   regex:    contains not_contains matches not_matches
+//   checkbox: at_least at_most exactly
+message FormValidation {
+  string kind = 1;
+  string op = 2;
+  string value = 3;
+  // value2 is the upper bound for between / not_between.
+  string value2 = 4;
+  // error_text replaces the default error message when set.
+  string error_text = 5;
 }
 
 message Form {
@@ -110,6 +147,10 @@ message FormSettings {
   string confirmation_message = 5;
   // Quiz mode: when true auto-grading is enabled and scores are computed on submit.
   bool is_quiz = 6;
+  // Where to go after the first (implicit) section: "" = next section, a
+  // section id, or "__submit__". Later sections keep this on their divider
+  // (FormQuestion.after_section).
+  string after_first_section = 7;
 }
 
 // FormResponse is one respondent's submission. answers_json is a JSON object
@@ -188,6 +229,17 @@ message FormQuestionSummary {
   map<string, int32> counts = 4;
   // text_answers lists free-text answers (short_answer/paragraph) in order.
   repeated string text_answers = 5;
+  // grid_rows holds per-row column counts for grid questions (row order).
+  repeated FormGridRowSummary grid_rows = 6;
+  // answered_count = responses that answered this question; skipped_count =
+  // responses whose section branching never reached it.
+  int32 answered_count = 7;
+  int32 skipped_count = 8;
+}
+
+message FormGridRowSummary {
+  string row = 1;
+  map<string, int32> counts = 2;
 }
 
 message FormResponseSummary {

@@ -28,11 +28,20 @@ import type { User } from "../../api/types";
 import { getForm, getSummary, listResponses, deleteResponses } from "./api";
 import type {
   Form,
+  FormQuestionSummary,
   FormResponseSummary,
   FormResponse,
   AnswerMap,
 } from "./types";
 import { FORMS_ACCENT } from "./helpers";
+import {
+  formatAnswer,
+  gridKey,
+  gridScoreFraction,
+  isAnswered,
+  isGridType,
+  visitedQuestionIds,
+} from "./validate";
 
 interface Props {
   user: User;
@@ -112,8 +121,7 @@ export default function FormResponses({ user }: Props) {
       const cells = [fmtDate(r.created_at)];
       if (form.settings?.collect_email) cells.push(r.respondent_email || "");
       visibleQs.forEach((q) => {
-        const v = answers[q.id];
-        cells.push(Array.isArray(v) ? v.join("; ") : (v ?? "").toString());
+        cells.push(formatAnswer(q, answers[q.id]));
       });
       if (isQuiz) {
         cells.push(r.score !== undefined ? String(r.score) : "");
@@ -300,7 +308,7 @@ export default function FormResponses({ user }: Props) {
                     <ScoreAggregate form={form!} responses={responses!} />
                   )}
                   {sub === 0 ? (
-                    <SummaryView summary={summary!} />
+                    <SummaryView summary={summary!} form={form!} />
                   ) : (
                     <IndividualView form={form!} responses={responses!} />
                   )}
@@ -314,7 +322,13 @@ export default function FormResponses({ user }: Props) {
   );
 }
 
-function SummaryView({ summary }: { summary: FormResponseSummary }) {
+function SummaryView({
+  summary,
+  form,
+}: {
+  summary: FormResponseSummary;
+  form: Form;
+}) {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       {summary.questions.map((q) => {
@@ -343,10 +357,23 @@ function SummaryView({ summary }: { summary: FormResponseSummary }) {
             <Typography level="body-xs" sx={{ opacity: 0.6, mb: 2 }}>
               {isText
                 ? `${q.text_answers.length} response${q.text_answers.length === 1 ? "" : "s"}`
-                : `${totalForQ} answer${totalForQ === 1 ? "" : "s"}`}
+                : q.answered_count !== undefined && isGridType(q.type)
+                  ? `${q.answered_count} response${q.answered_count === 1 ? "" : "s"}`
+                  : `${totalForQ} answer${totalForQ === 1 ? "" : "s"}`}
+              {q.skipped_count
+                ? ` · ${q.skipped_count} skipped (section not reached)`
+                : ""}
             </Typography>
 
-            {isText ? (
+            {isGridType(q.type) ? (
+              <GridSummary
+                q={q}
+                columns={
+                  form.questions.find((fq) => fq.id === q.question_id)
+                    ?.options ?? []
+                }
+              />
+            ) : isText ? (
               q.text_answers.length === 0 ? (
                 <Typography level="body-sm" sx={{ opacity: 0.6 }}>
                   No responses.
@@ -427,6 +454,11 @@ function IndividualView({
     }
   }, [current]);
 
+  const visited = useMemo(
+    () => visitedQuestionIds(form, answers),
+    [form, answers],
+  );
+
   if (!current) return null;
 
   return (
@@ -476,11 +508,14 @@ function IndividualView({
           .filter((q) => !q.is_section)
           .map((q) => {
             const v = answers[q.id];
-            const display = Array.isArray(v) ? v.join(", ") : (v ?? "");
+            const display = formatAnswer(q, v);
+            const skipped = !visited.has(q.id) && !isAnswered(q, v);
             const isCorrect =
               isQuiz &&
               q.correct_answers?.length &&
-              (q.type === "checkboxes"
+              (isGridType(q.type)
+                ? gridScoreFraction(q, v) === 1
+                : q.type === "checkboxes"
                 ? Array.isArray(v) &&
                   v.length === q.correct_answers.length &&
                   v.every((a) => q.correct_answers?.includes(a))
@@ -509,15 +544,25 @@ function IndividualView({
                     </Typography>
                   ) : null}
                 </Box>
-                <Typography level="body-sm" sx={{ opacity: display ? 1 : 0.5 }}>
-                  {display || "(no answer)"}
+                <Typography
+                  level="body-sm"
+                  sx={{ opacity: display ? 1 : 0.5 }}
+                  data-testid={`response-answer-${q.id}`}
+                >
+                  {display ||
+                    (skipped ? "(skipped: section not reached)" : "(no answer)")}
                 </Typography>
                 {isQuiz && !isCorrect && q.correct_answers?.length ? (
                   <Typography
                     level="body-xs"
                     sx={{ color: "success.600", mt: 0.25 }}
                   >
-                    Correct: {q.correct_answers.join(", ")}
+                    Correct:{" "}
+                    {isGridType(q.type)
+                      ? Object.entries(gridKey(q))
+                          .map(([r, cs]) => `${r}: ${cs.join(", ")}`)
+                          .join("; ")
+                      : q.correct_answers.join(", ")}
                   </Typography>
                 ) : null}
               </Box>
@@ -579,5 +624,90 @@ function ScoreAggregate({
         </Box>
       </Box>
     </Sheet>
+  );
+}
+
+/** Grid summary: a rows × columns table of counts, each cell shaded by its
+ *  share of the row. */
+function GridSummary({
+  q,
+  columns,
+}: {
+  q: FormQuestionSummary;
+  columns: string[];
+}) {
+  const rows = q.grid_rows ?? [];
+  const cols = Array.from(
+    new Set([...columns, ...rows.flatMap((r) => Object.keys(r.counts ?? {}))]),
+  );
+  if (!rows.length || !cols.length) {
+    return (
+      <Typography level="body-sm" sx={{ opacity: 0.6 }}>
+        No answers.
+      </Typography>
+    );
+  }
+  return (
+    <Box sx={{ overflowX: "auto" }}>
+      <Box
+        component="table"
+        data-testid={`grid-summary-${q.question_id}`}
+        sx={{
+          borderCollapse: "collapse",
+          "& th, & td": {
+            px: 1.5,
+            py: 0.75,
+            textAlign: "center",
+            borderBottom: "1px solid",
+            borderColor: "divider",
+          },
+          "& th[scope=row]": { textAlign: "left", fontWeight: 400 },
+        }}
+      >
+        <thead>
+          <tr>
+            <th />
+            {cols.map((c) => (
+              <Typography key={c} component="th" level="body-sm">
+                {c}
+              </Typography>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const total = Object.values(r.counts ?? {}).reduce(
+              (a, b) => a + b,
+              0,
+            );
+            return (
+              <tr key={r.row}>
+                <Typography component="th" scope="row" level="body-sm">
+                  {r.row}
+                </Typography>
+                {cols.map((c) => {
+                  const n = r.counts?.[c] ?? 0;
+                  const share = total ? n / total : 0;
+                  return (
+                    <Typography
+                      key={c}
+                      component="td"
+                      level="body-sm"
+                      sx={{
+                        bgcolor: n
+                          ? `color-mix(in srgb, ${FORMS_ACCENT} ${Math.round(15 + share * 50)}%, transparent)`
+                          : undefined,
+                      }}
+                    >
+                      {n}
+                    </Typography>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </Box>
+    </Box>
   );
 }

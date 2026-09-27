@@ -39,39 +39,67 @@ func callerOrg(ctx context.Context) (string, error) {
 
 func questionToProto(q Question) *grownv1.FormQuestion {
 	return &grownv1.FormQuestion{
-		Id:             q.ID,
-		Type:           q.Type,
-		Title:          q.Title,
-		Description:    q.Description,
-		Required:       q.Required,
-		Options:        q.Options,
-		ScaleMin:       q.ScaleMin,
-		ScaleMax:       q.ScaleMax,
-		ScaleMinLabel:  q.ScaleMinLabel,
-		ScaleMaxLabel:  q.ScaleMaxLabel,
-		Points:         q.Points,
-		CorrectAnswers: q.CorrectAnswers,
-		GoToSection:    q.GoToSection,
-		IsSection:      q.IsSection,
+		Id:                q.ID,
+		Type:              q.Type,
+		Title:             q.Title,
+		Description:       q.Description,
+		Required:          q.Required,
+		Options:           q.Options,
+		ScaleMin:          q.ScaleMin,
+		ScaleMax:          q.ScaleMax,
+		ScaleMinLabel:     q.ScaleMinLabel,
+		ScaleMaxLabel:     q.ScaleMaxLabel,
+		Points:            q.Points,
+		CorrectAnswers:    q.CorrectAnswers,
+		GoToSection:       q.GoToSection,
+		IsSection:         q.IsSection,
+		Validation:        validationToProto(q.Validation),
+		TextFormat:        q.TextFormat,
+		Mask:              q.Mask,
+		Rows:              q.Rows,
+		LimitOnePerColumn: q.LimitOnePerColumn,
+		RatingIcon:        q.RatingIcon,
+		AfterSection:      q.AfterSection,
 	}
+}
+
+func validationToProto(v *Validation) *grownv1.FormValidation {
+	if v == nil {
+		return nil
+	}
+	return &grownv1.FormValidation{Kind: v.Kind, Op: v.Op, Value: v.Value, Value2: v.Value2, ErrorText: v.ErrorText}
+}
+
+func validationFromProto(v *grownv1.FormValidation) *Validation {
+	if v == nil || v.GetKind() == "" {
+		return nil
+	}
+	return &Validation{Kind: v.GetKind(), Op: v.GetOp(), Value: v.GetValue(), Value2: v.GetValue2(), ErrorText: v.GetErrorText()}
 }
 
 func questionFromProto(q *grownv1.FormQuestion) Question {
 	return Question{
-		ID:             q.GetId(),
-		Type:           q.GetType(),
-		Title:          q.GetTitle(),
-		Description:    q.GetDescription(),
-		Required:       q.GetRequired(),
-		Options:        q.GetOptions(),
-		ScaleMin:       q.GetScaleMin(),
-		ScaleMax:       q.GetScaleMax(),
-		ScaleMinLabel:  q.GetScaleMinLabel(),
-		ScaleMaxLabel:  q.GetScaleMaxLabel(),
-		Points:         q.GetPoints(),
-		CorrectAnswers: q.GetCorrectAnswers(),
-		GoToSection:    q.GetGoToSection(),
-		IsSection:      q.GetIsSection(),
+		ID:                q.GetId(),
+		Type:              q.GetType(),
+		Title:             q.GetTitle(),
+		Description:       q.GetDescription(),
+		Required:          q.GetRequired(),
+		Options:           q.GetOptions(),
+		ScaleMin:          q.GetScaleMin(),
+		ScaleMax:          q.GetScaleMax(),
+		ScaleMinLabel:     q.GetScaleMinLabel(),
+		ScaleMaxLabel:     q.GetScaleMaxLabel(),
+		Points:            q.GetPoints(),
+		CorrectAnswers:    q.GetCorrectAnswers(),
+		GoToSection:       q.GetGoToSection(),
+		IsSection:         q.GetIsSection(),
+		Validation:        validationFromProto(q.GetValidation()),
+		TextFormat:        q.GetTextFormat(),
+		Mask:              q.GetMask(),
+		Rows:              q.GetRows(),
+		LimitOnePerColumn: q.GetLimitOnePerColumn(),
+		RatingIcon:        q.GetRatingIcon(),
+		AfterSection:      q.GetAfterSection(),
 	}
 }
 
@@ -91,6 +119,7 @@ func settingsToProto(s Settings) *grownv1.FormSettings {
 		ShuffleQuestions:    s.ShuffleQuestions,
 		ConfirmationMessage: s.ConfirmationMessage,
 		IsQuiz:              s.IsQuiz,
+		AfterFirstSection:   s.AfterFirstSection,
 	}
 }
 
@@ -105,6 +134,7 @@ func settingsFromProto(s *grownv1.FormSettings) Settings {
 		ShuffleQuestions:    s.GetShuffleQuestions(),
 		ConfirmationMessage: s.GetConfirmationMessage(),
 		IsQuiz:              s.GetIsQuiz(),
+		AfterFirstSection:   s.GetAfterFirstSection(),
 	}
 }
 
@@ -276,14 +306,9 @@ func (s *Service) SubmitFormResponse(ctx context.Context, req *grownv1.SubmitFor
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// Validate required questions are answered.
-	for _, q := range form.Questions {
-		if q.IsSection || !q.Required {
-			continue
-		}
-		if !answered(answers[q.ID]) {
-			return nil, status.Errorf(codes.InvalidArgument, "question %q is required", q.Title)
-		}
+	answers, err = checkSubmission(form, answers)
+	if err != nil {
+		return nil, err
 	}
 	email := req.GetRespondentEmail()
 	if email == "" && form.Settings.CollectEmail {
@@ -307,6 +332,42 @@ func (s *Service) SubmitFormResponse(ctx context.Context, req *grownv1.SubmitFor
 		resp.MaxScore = &maxScore
 	}
 	return responseToProto(resp), nil
+}
+
+// checkSubmission follows the section branches the answers imply, drops
+// answers to questions the respondent never reached (as Google Forms does when
+// a respondent goes back and changes a branching answer), and enforces
+// required questions and response validation on the questions they did reach.
+func checkSubmission(form Form, answers map[string]any) (map[string]any, error) {
+	visited := VisitedQuestions(form, answers)
+	kept := make(map[string]any, len(answers))
+	for _, q := range form.Questions {
+		if q.IsSection || !visited[q.ID] {
+			continue
+		}
+		v, ok := answers[q.ID]
+		if q.Required && !answeredFor(q, v) {
+			return nil, status.Errorf(codes.InvalidArgument, "question %q is required", q.Title)
+		}
+		if msg := ValidateAnswer(q, v); msg != "" {
+			return nil, status.Errorf(codes.InvalidArgument, "question %q: %s", q.Title, msg)
+		}
+		if ok {
+			kept[q.ID] = v
+		}
+	}
+	// Keys that aren't question ids (older clients, extra metadata) pass
+	// through untouched.
+	ids := make(map[string]bool, len(form.Questions))
+	for _, q := range form.Questions {
+		ids[q.ID] = true
+	}
+	for k, v := range answers {
+		if !ids[k] {
+			kept[k] = v
+		}
+	}
+	return kept, nil
 }
 
 func answered(v any) bool {
@@ -372,6 +433,10 @@ func buildSummary(form Form, responses []Response) *grownv1.FormResponseSummary 
 		ResponseCount: int32(len(responses)),
 		Questions:     make([]*grownv1.FormQuestionSummary, 0, len(form.Questions)),
 	}
+	visited := make([]map[string]bool, len(responses))
+	for i, r := range responses {
+		visited[i] = VisitedQuestions(form, r.Answers)
+	}
 	for _, q := range form.Questions {
 		if q.IsSection {
 			continue // section dividers are not answered
@@ -385,12 +450,40 @@ func buildSummary(form Form, responses []Response) *grownv1.FormResponseSummary 
 		if !isText {
 			qs.Counts = map[string]int32{}
 		}
-		for _, r := range responses {
+		isGrid := q.Type == TypeMultipleChoiceGrid || q.Type == TypeCheckboxGrid
+		var gridRows map[string]*grownv1.FormGridRowSummary
+		if isGrid {
+			gridRows = make(map[string]*grownv1.FormGridRowSummary, len(q.Rows))
+			for _, row := range q.Rows {
+				gr := &grownv1.FormGridRowSummary{Row: row, Counts: map[string]int32{}}
+				gridRows[row] = gr
+				qs.GridRows = append(qs.GridRows, gr)
+			}
+		}
+		for i, r := range responses {
 			v, ok := r.Answers[q.ID]
+			if !visited[i][q.ID] && !(ok && answeredFor(q, v)) {
+				qs.SkippedCount++
+				continue
+			}
 			if !ok {
 				continue
 			}
+			if answeredFor(q, v) {
+				qs.AnsweredCount++
+			}
 			switch q.Type {
+			case TypeMultipleChoiceGrid, TypeCheckboxGrid:
+				for row, cols := range gridAnswer(v) {
+					gr := gridRows[row]
+					if gr == nil {
+						continue // row since removed from the question
+					}
+					for _, c := range cols {
+						gr.Counts[c]++
+						qs.Counts[c]++
+					}
+				}
 			case TypeShortAnswer, TypeParagraph, TypeDate, TypeTime, TypeFileUpload:
 				if str := asString(v); str != "" {
 					qs.TextAnswers = append(qs.TextAnswers, str)
@@ -431,7 +524,8 @@ func computeMaxScore(questions []Question) float64 {
 // isGradable returns true for question types that support an answer key.
 func isGradable(qtype string) bool {
 	switch qtype {
-	case TypeMultipleChoice, TypeCheckboxes, TypeDropdown, TypeShortAnswer:
+	case TypeMultipleChoice, TypeCheckboxes, TypeDropdown, TypeShortAnswer,
+		TypeMultipleChoiceGrid, TypeCheckboxGrid:
 		return true
 	}
 	return false
@@ -460,6 +554,8 @@ func computeScore(questions []Question, answers map[string]any) float64 {
 // exact match of the correct set). For other types full-or-nothing.
 func gradeQuestion(q Question, answer any) float64 {
 	switch q.Type {
+	case TypeMultipleChoiceGrid, TypeCheckboxGrid:
+		return gradeGrid(q, answer)
 	case TypeCheckboxes:
 		// Full points only if the respondent selected exactly the correct set.
 		selected := asStringSlice(answer)
@@ -494,6 +590,46 @@ func gradeQuestion(q Question, answer any) float64 {
 		}
 		return 0
 	}
+}
+
+// gradeGrid awards points in proportion to the keyed rows answered
+// correctly. A row is correct when the respondent's columns for it are exactly
+// the keyed columns (one for a multiple-choice grid, a set for a checkbox
+// grid). Rows without a key don't count.
+func gradeGrid(q Question, answer any) float64 {
+	key := map[string]map[string]bool{}
+	for _, entry := range q.CorrectAnswers {
+		row, col, ok := strings.Cut(entry, GridKeySep)
+		if !ok {
+			continue
+		}
+		if key[row] == nil {
+			key[row] = map[string]bool{}
+		}
+		key[row][col] = true
+	}
+	if len(key) == 0 {
+		return 0
+	}
+	got := gridAnswer(answer)
+	correct := 0
+	for row, want := range key {
+		sel := got[row]
+		if len(sel) != len(want) {
+			continue
+		}
+		ok := true
+		for _, c := range sel {
+			if !want[c] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			correct++
+		}
+	}
+	return float64(q.Points) * float64(correct) / float64(len(key))
 }
 
 // --- Section branching ---
