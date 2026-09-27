@@ -210,6 +210,9 @@ type Config struct {
 	// SlidesBlobs stores deck image assets (shared with Drive). Nil keeps
 	// Slides on inline data: URLs.
 	SlidesBlobs *drive.Blobs
+	// DocsBlobs stores document image assets (Docs M7, shared with Drive).
+	// Nil keeps Docs on inline data: URLs.
+	DocsBlobs *drive.Blobs
 	// AvatarRepo / AvatarBlobs back per-user avatar upload + serving.
 	AvatarRepo  *useravatar.Repository
 	AvatarBlobs *drive.Blobs
@@ -418,6 +421,7 @@ func New(cfg Config) *Server {
 
 	var docsSvc *docs.Service
 	var docsHub *docs.Hub
+	var docsAssets *docs.Assets
 	if cfg.DocsRepo != nil {
 		docsSvc = docs.NewService(cfg.DocsRepo)
 		if cfg.SharingRepo != nil {
@@ -426,6 +430,12 @@ func New(cfg Config) *Server {
 		}
 		docsHub = docs.NewHub(cfg.DocsRepo)
 		grownv1.RegisterDocsServiceServer(grpcSrv, docsSvc)
+		if cfg.DocsBlobs != nil {
+			repo, grants := cfg.DocsRepo, cfg.SharingRepo
+			docsAssets = docs.NewAssets(cfg.DocsBlobs, func(r *http.Request, id string) (bool, bool) {
+				return docsAccess(r, id, repo, grants)
+			})
+		}
 	}
 
 	// Version history for Sheets/Slides/Whiteboards (nil without a pool).
@@ -896,6 +906,10 @@ func New(cfg Config) *Server {
 			if docsHub != nil {
 				if id, ok := docsConnectID(r.URL.Path); ok {
 					serveDocsWS(w, r, id, cfg.DocsRepo, cfg.SharingRepo, docsHub)
+					return
+				}
+				if _, _, ok := docs.AssetPath(r.URL.Path); ok && docsAssets != nil {
+					docsAssets.ServeHTTP(w, r)
 					return
 				}
 				if id, ok := docsProtectionID(r.URL.Path); ok && cfg.DocsRepo != nil {
@@ -2661,6 +2675,34 @@ func serveDocsWS(w http.ResponseWriter, r *http.Request, id string, repo *docs.R
 	// Read-only document protection (Docs M10): only the owner writes.
 	gate := &docs.ProtectionGate{Load: func() (string, error) { return repo.GetProtection(context.Background(), id) }}
 	hub.ServeFunc(w, r, id, docsWriteGate(canWrite, isOwner, gate))
+}
+
+// docsAccess reports read/write access to a document for its image assets
+// (Docs M7): the collab WebSocket's checks — an org member whose org owns it,
+// a per-user grantee (write with an editor grant), or a share-link token in
+// ?token= (write with an editor link).
+func docsAccess(r *http.Request, id string, repo *docs.Repository, grants *sharing.Repository) (read, write bool) {
+	ctx := r.Context()
+	if u, ok := auth.UserFromContext(ctx); ok {
+		if org, ok := auth.OrgFromContext(ctx); ok {
+			if _, err := repo.Get(ctx, org.ID, id); err == nil {
+				return true, true
+			}
+		}
+		if grants != nil {
+			if role, ok, err := grants.RoleFor(ctx, u.ID, sharing.TypeDocsDoc, id); err == nil && ok {
+				if _, derr := repo.GetByID(ctx, id); derr == nil {
+					return true, sharing.CanWrite(role)
+				}
+			}
+		}
+	}
+	if token := r.URL.Query().Get("token"); token != "" {
+		if grant, err := repo.GetShareByToken(ctx, token); err == nil && grant.DocID == id {
+			return true, grant.Role == "editor"
+		}
+	}
+	return false, false
 }
 
 // sheetsConnectID returns the sheet id from /api/v1/sheets/d/{id}/connect.

@@ -328,6 +328,7 @@ func main() {
 		AvatarRepo:          useravatar.NewRepository(pool),
 		AvatarBlobs:         blobs,
 		SlidesBlobs:         blobs,
+		DocsBlobs:           blobs,
 		BrowserAccountStore: multiaccounts.NewStore(pool),
 		ZitadelAPIURL:       os.Getenv("GROWN_ZITADEL_API_URL"),
 		ZitadelServiceToken: os.Getenv("GROWN_ZITADEL_SERVICE_TOKEN"),
