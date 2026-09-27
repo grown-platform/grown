@@ -5,7 +5,9 @@
 
 Bundled components:
   - Postgres (StatefulSet)        {{ if .Values.postgres.externalDsn }}EXTERNAL (postgres.externalDsn set){{ else }}{{ .Release.Name }}-postgres{{ end }}
-  - Object storage (S3)           {{ if .Values.minio.enabled }}MinIO: {{ .Release.Name }}-minio (bucket {{ .Values.minio.bucket }}){{ else }}EXTERNAL: {{ .Values.minio.external.endpoint }}{{ end }}
+  - Object storage (S3)           {{ if .Values.rustfs.enabled }}rustfs: {{ include "grown.rustfsName" . }} (bucket {{ include "grown.bucket" . }}){{ else }}EXTERNAL: {{ include "grown.s3Endpoint" . }}{{ end }}{{ if .Values.minio.enabled }}
+  - Legacy MinIO (migration only) {{ include "grown.minioName" . }}{{ end }}{{ if .Values.migrateFromMinio.enabled }}
+  - MinIO -> rustfs migration     kubectl -n {{ .Release.Namespace }} logs -f job/{{ .Release.Name }}-migrate-from-minio{{ end }}
   - Auth (OIDC)                   {{ if eq .Values.auth.mode "bundled" }}bundled Zitadel: {{ .Release.Name }}-zitadel{{ else }}external issuer: {{ .Values.auth.external.issuer }}{{ end }}
   - grown app                     {{ .Release.Name }}-grown  (image {{ include "grown.image" . }})
   {{- if .Values.bolo.enabled }}

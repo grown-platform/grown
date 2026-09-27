@@ -41,13 +41,71 @@ postgres://{{ .Values.postgres.auth.username }}:{{ .Values.postgres.auth.passwor
 postgres://{{ .Values.postgres.auth.username }}:{{ .Values.postgres.auth.password }}@{{ include "grown.pgHost" . }}:5432/{{ .Values.pdf.database }}?sslmode=disable
 {{- end -}}
 
-{{/* S3 endpoint grown uses (bundled MinIO service, or external) */}}
-{{- define "grown.s3Endpoint" -}}
-{{- if .Values.minio.enabled -}}
-http://{{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.minio.apiPort }}
-{{- else -}}
-{{ .Values.minio.external.endpoint }}
+{{/* ---------------------------------------------------------------------
+     Object storage (S3). 0.2.0 replaced the bundled MinIO with rustfs.
+     --------------------------------------------------------------------- */}}
+
+{{/* Bundled rustfs Service name. */}}
+{{- define "grown.rustfsName" -}}
+{{ .Release.Name }}-rustfs
 {{- end -}}
+
+{{/* Bundled (legacy) MinIO Service name. */}}
+{{- define "grown.minioName" -}}
+{{ .Release.Name }}-minio
+{{- end -}}
+
+{{/* grown's app bucket. rustfs.bucket wins; else the 0.1.x minio.bucket so an
+     upgraded install keeps its bucket name; else grown-default. */}}
+{{- define "grown.bucket" -}}
+{{- .Values.rustfs.bucket | default .Values.minio.bucket | default "grown-default" -}}
+{{- end -}}
+
+{{/* rustfs PVC size: rustfs.persistence.size, else the 0.1.x
+     minio.persistence.size, else 20Gi. */}}
+{{- define "grown.rustfsSize" -}}
+{{- .Values.rustfs.persistence.size | default .Values.minio.persistence.size | default "20Gi" -}}
+{{- end -}}
+
+{{/* rustfs PVC storageClass: rustfs.persistence.storageClass, else global. */}}
+{{- define "grown.rustfsStorageClass" -}}
+{{- .Values.rustfs.persistence.storageClass | default .Values.storageClass -}}
+{{- end -}}
+
+{{/* S3 endpoint grown uses: bundled rustfs Service, or an external endpoint
+     (rustfs.external.endpoint, falling back to the 0.1.x
+     minio.external.endpoint). */}}
+{{- define "grown.s3Endpoint" -}}
+{{- if .Values.rustfs.enabled -}}
+http://{{ include "grown.rustfsName" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.rustfs.port }}
+{{- else -}}
+{{ .Values.rustfs.external.endpoint | default .Values.minio.external.endpoint }}
+{{- end -}}
+{{- end -}}
+
+{{/* Secret holding the S3 credentials (keys access_key / secret_key) that
+     grown, the pdf app, rustfs itself and the storage Jobs read.
+       - rustfs.existingSecret, when set
+       - bundled rustfs: {release}-rustfs (generated once, lookup-preserved)
+       - external S3:   {release}-s3 (from rustfs.external / minio keys) */}}
+{{- define "grown.s3CredsSecret" -}}
+{{- if .Values.rustfs.existingSecret -}}
+{{ .Values.rustfs.existingSecret }}
+{{- else if .Values.rustfs.enabled -}}
+{{ include "grown.rustfsName" . }}
+{{- else -}}
+{{ .Release.Name }}-s3
+{{- end -}}
+{{- end -}}
+
+{{/* Buckets the chart manages, as "src:dst" pairs for the MinIO -> rustfs
+     migration (the app bucket keeps its MinIO name as the source). */}}
+{{- define "grown.bucketPairs" -}}
+{{- $pairs := list (printf "%s:%s" (.Values.minio.bucket | default (include "grown.bucket" .)) (include "grown.bucket" .)) -}}
+{{- if .Values.pdf.enabled -}}
+{{- $pairs = append $pairs (printf "%s:%s" .Values.pdf.bucket .Values.pdf.bucket) -}}
+{{- end -}}
+{{- join " " $pairs -}}
 {{- end -}}
 
 {{/* In-cluster Zitadel issuer used by grown (server-to-server). */}}

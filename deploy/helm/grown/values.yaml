@@ -2,7 +2,7 @@
 # Grown Workspace — all-in-one chart values
 #
 # Out of the box (just `--set domain=...`) this brings up a fully self-contained
-# Grown instance: bundled Postgres + MinIO (S3) + Zitadel (OIDC), the grown app,
+# Grown instance: bundled Postgres + rustfs (S3) + Zitadel (OIDC), the grown app,
 # and the optional bolo-mp multiplayer sidecar. The defaults below are tuned to
 # work on a vanilla kind cluster and on arm64 (Raspberry Pi 5).
 #
@@ -246,21 +246,83 @@ postgres:
       memory: 1Gi
 
 # -----------------------------------------------------------------------------
-# Bundled object storage — MinIO (S3-compatible, the most portable choice;
-# grown's GROWN_RUSTFS_* point at it). A bucket-init Job creates the bucket.
-# Production note: rustfs (the homelab default) is also S3-compatible and can be
-# swapped in by pointing s3.endpoint/keys at it and disabling minio.enabled.
+# Bundled object storage — rustfs (S3-compatible). NEW in chart 0.2.0: it
+# replaces the bundled MinIO, whose images are no longer publicly pullable.
+# grown's GROWN_RUSTFS_* and the pdf app's PDF_STORAGE_* point at it, and a
+# bucket-init hook Job creates the app bucket (+ pdf.bucket) on every
+# install/upgrade. Upgrading a 0.1.x (MinIO) install? See README
+# "Upgrading from 0.1.x": keep minio.enabled=true and turn on migrateFromMinio.
+# -----------------------------------------------------------------------------
+rustfs:
+  # false => use an external S3 endpoint (rustfs.external below) instead.
+  enabled: true
+  image:
+    repository: rustfs/rustfs
+    tag: "1.0.0-beta.7"
+    pullPolicy: IfNotPresent
+  # Bucket-init hook image (AWS CLI; multi-arch, public).
+  initImage: public.ecr.aws/aws-cli/aws-cli:2.22.35
+  # Service port for the S3 API (the container always listens on :9100).
+  port: 9100
+  # grown's app bucket. "" => minio.bucket (so a 0.1.x install keeps its bucket
+  # name) => "grown-default".
+  bucket: ""
+  # Root credentials (also what grown uses). Leave both "" to have the chart
+  # generate them ONCE into the {release}-rustfs Secret and reuse them on every
+  # upgrade (looked up from the cluster). Or reference an existing Secret with
+  # keys `access_key` / `secret_key` via existingSecret (e.g. a SOPS secret).
+  accessKey: ""
+  secretKey: ""
+  existingSecret: ""
+  persistence:
+    # "" => minio.persistence.size (0.1.x value, honoured) => 20Gi.
+    size: ""
+    # "" => the global storageClass.
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  # The image runs as the non-root `rustfs` user (uid/gid 10001). fsGroup makes
+  # the PVC writable for it; OnRootMismatch skips a recursive chown on restart.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  extraEnv: []
+  # When rustfs.enabled=false, point grown at an external S3 endpoint.
+  # endpoint "" falls back to the 0.1.x minio.external.endpoint, and the keys
+  # fall back to minio.accessKey / minio.secretKey.
+  external:
+    endpoint: ""              # e.g. http://rustfs.grown.svc.cluster.local:9100
+    accessKey: ""
+    secretKey: ""
+
+# -----------------------------------------------------------------------------
+# LEGACY bundled MinIO (chart <= 0.1.x). Disabled by default since 0.2.0.
+# Set enabled=true ONLY on an upgraded install, to keep the old MinIO running
+# while migrateFromMinio copies its data into rustfs; grown itself no longer
+# talks to it. Disabling it removes the StatefulSet/Service/Secret but NEVER its
+# PVC (data-<release>-minio-0): delete that by hand once migration is verified.
+# bucket / persistence.size / external.endpoint / accessKey / secretKey are
+# still honoured as fallbacks for the rustfs settings above.
 # -----------------------------------------------------------------------------
 minio:
-  enabled: true
+  enabled: false
   image:
     repository: minio/minio
     tag: "RELEASE.2025-04-08T15-41-24Z"
     pullPolicy: IfNotPresent
-  # Bucket-init Job image. MinIO no longer publishes public images (minio/mc
-  # and minio/minio stopped pulling in 2025), so buckets are created with the
-  # AWS CLI's S3 API instead of `mc`.
-  mcImage: public.ecr.aws/aws-cli/aws-cli:2.22.35
   accessKey: grown
   secretKey: DevPassword!1
   bucket: grown-default
@@ -274,9 +336,43 @@ minio:
       memory: 256Mi
     limits:
       memory: 1Gi
-  # When minio.enabled=false, point grown at an external S3 endpoint:
+  # 0.1.x external-S3 setting; prefer rustfs.external.endpoint.
   external:
-    endpoint: ""              # e.g. http://rustfs.grown.svc.cluster.local:9100
+    endpoint: ""
+  # Safety catch: on UPGRADE, if a {release}-minio StatefulSet is still live and
+  # minio.enabled=false, rendering fails (so a blind chart bump can't tear down
+  # the only copy of your objects' server). Set true once migration is verified.
+  allowRemoval: false
+
+# -----------------------------------------------------------------------------
+# One-shot MinIO -> rustfs data migration (a plain Job, not a hook: it runs
+# once; delete the Job to re-run it — it is idempotent/incremental). Streams
+# every object with rclone (no scratch volume), logs object counts + bytes
+# before/after per bucket, and FAILS on any mismatch. See README.
+# -----------------------------------------------------------------------------
+migrateFromMinio:
+  enabled: false
+  image: rclone/rclone:1.75.1
+  # Source. Default: the bundled legacy MinIO (needs minio.enabled=true) with
+  # its {release}-minio root credentials. For an external MinIO set endpoint
+  # and an existingSecret holding the keys named below.
+  source:
+    endpoint: ""
+    existingSecret: ""
+    accessKeyKey: access_key
+    secretKeyKey: secret_key
+  # "src:dst" bucket pairs. [] => "<minio.bucket>:<app bucket>" plus
+  # "<pdf.bucket>:<pdf.bucket>" when pdf.enabled.
+  buckets: []
+  transfers: 4
+  waitTimeoutSeconds: 900
+  backoffLimit: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 512Mi
 
 # -----------------------------------------------------------------------------
 # PDF signing app (built into grown via GROWN_PDF_BUILTIN). Shares Postgres
