@@ -7,7 +7,7 @@
 // required-field checks. Editing rules and the fill-in view are in sdt.ts.
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { formatMask, maskCorrect, maskLength, TextFormFormat } from "../forms/validate";
+import { formatMask, maskCorrect, maskLength, parseMask, TextFormFormat } from "../forms/validate";
 import { innerText, isSdt, listValue, parseDisplayedDate, prOf, type SdtPr, type TextFormat } from "./sdtModel";
 import { selectListItem, setCheckbox, setSdtDate, setSdtPicture, setSdtText } from "./sdt";
 
@@ -104,11 +104,41 @@ export function checkOnType(pr: SdtPr, current: string, a: number, b: number, te
   if (!f.checkOnFly(next)) return { ok: false, full: false };
   const fmt = pr.textForm?.format;
   if (fmt?.type === "mask" && fmt.value && b === current.length) {
-    const corrected = maskCorrect(fmt.value, next);
-    if (Array.from(corrected).length > max && max > 0) return { ok: false, full: true };
+    let corrected = next;
+    if (Array.from(text).length > 1) corrected = maskCorrect(fmt.value, next);
+    else {
+      // One character at the end: typed as is when it fits its slot (or
+      // nothing fits); literals in front of the slot it fits are filled in.
+      const items = parseMask(fmt.value);
+      const at = Array.from(current.slice(0, a)).length;
+      if (items[at] && !fits(items[at], text)) {
+        let j = at;
+        while (j < items.length && items[j].kind === "literal") j++;
+        if (j > at && j < items.length && fits(items[j], text))
+          corrected = current.slice(0, a) + items.slice(at, j).map((i) => (i.kind === "literal" ? i.ch : "")).join("") + text;
+      }
+    }
+    if (max > 0 && Array.from(corrected).length > max) return { ok: false, full: true };
     return { ok: true, text: corrected, caret: a + text.length + (corrected.length - next.length) };
   }
   return { ok: true, text: next, caret: a + text.length };
+}
+
+type MaskItem = ReturnType<typeof parseMask>[number];
+
+function fits(it: MaskItem, c: string): boolean {
+  switch (it.kind) {
+    case "digit":
+      return c >= "0" && c <= "9";
+    case "letter":
+      return /^\p{L}$/u.test(c);
+    case "digitOrLetter":
+      return (c >= "0" && c <= "9") || /^\p{L}$/u.test(c);
+    case "any":
+      return true;
+    default:
+      return it.ch === c;
+  }
 }
 
 // --- filled / required -------------------------------------------------------------------

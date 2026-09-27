@@ -303,8 +303,10 @@ export function setSdtContentTr(tr: Transaction, pos: number, text: string, plc 
   const inline = node.type.name === SDT_INLINE;
   const frag = inline ? textContent(schema, text, marks) : blockContent(schema, text, marks);
   tr.replaceWith(pos + 1, pos + node.nodeSize - 1, frag);
-  const attrs = { ...node.attrs, plc, ...(pr ? { pr: encodePr(pr) } : {}) };
-  tr.setNodeMarkup(pos, undefined, attrs, node.marks);
+  // Attribute steps (not a markup replace), so the fill-in view, which
+  // only lets edits inside fields through, accepts them.
+  if (!!node.attrs.plc !== plc) tr.setNodeAttribute(pos, "plc", plc);
+  if (pr) tr.setNodeAttribute(pos, "pr", encodePr(pr));
   return tr;
 }
 
@@ -606,6 +608,24 @@ export function moveIntoControl(editor: Editor, pos: number, atEnd = false): boo
   }
   editor.view.dispatch(tr);
   return true;
+}
+
+/** mainForm: the outermost form around `pos` (a complex form for its
+ *  sub-fields; OnlyOffice GetMainForm). */
+export function mainForm(doc: PMNode, pos: number): SdtHit | null {
+  const node = doc.nodeAt(pos);
+  const hits = sdtAncestors(doc.resolve(pos));
+  if (isSdt(node)) hits.unshift({ node, pos });
+  const forms = hits.filter((h) => !!prOf(h.node).form);
+  return forms[forms.length - 1] ?? null;
+}
+
+/** setFormFixed converts a form between fixed size and inline
+ *  (OnlyOffice ConvertFormFixedType). */
+export function setFormFixed(editor: Editor, pos: number, fixed: boolean): boolean {
+  const node = editor.state.doc.nodeAt(pos);
+  if (!isSdt(node) || !prOf(node).form) return false;
+  return updateContentControl(editor, pos, { form: { ...prOf(node).form!, fixed } });
 }
 
 /** setFillMode switches the fill-in-form view (and the role filled as). */
@@ -983,6 +1003,30 @@ function touchedSdts(trs: readonly Transaction[], doc: PMNode): SdtHit[] {
   return [...seen.values()].sort((x, y) => y.pos - x.pos);
 }
 
+/** dropPlaceholderText removes the placeholder text from a control that
+ *  gained other content, keeping that content. */
+function dropPlaceholderText(tr: Transaction, pos: number): void {
+  const node = tr.doc.nodeAt(pos)!;
+  const plc = prOf(node).placeholder ?? "";
+  // Direct text children as one string, with their positions.
+  let text = "";
+  const at: number[] = [];
+  const base = node.type.name === SDT_BLOCK ? -1 : pos + 1;
+  if (base >= 0)
+    node.forEach((c, off) => {
+      if (!c.isText) {
+        text += "\ufffc";
+        at.push(base + off);
+        return;
+      }
+      for (let i = 0; i < c.text!.length; i++) at.push(base + off + i);
+      text += c.text;
+    });
+  const i = plc ? text.indexOf(plc) : -1;
+  if (i >= 0) tr.delete(at[i], at[i + plc.length - 1] + 1);
+  tr.setNodeAttribute(pos, "plc", false);
+}
+
 /** isEmptyContent: an inline control without content, or a block one with
  *  a single empty paragraph. */
 function isEmptyContent(node: PMNode): boolean {
@@ -1093,9 +1137,7 @@ export const ContentControls = Extension.create({
               // Typing that went around the placeholder (IME, native
               // input): drop the placeholder text, keep what was typed.
               if (node.attrs.plc && pr.placeholder && innerText(node) !== pr.placeholder && !isEmptyContent(node)) {
-                const text = innerText(node);
-                const rest = text.includes(pr.placeholder) ? text.replace(pr.placeholder, "") : text;
-                setSdtContentTr(tr, h.pos, rest, false);
+                dropPlaceholderText(tr, h.pos);
                 continue;
               }
               if (!node.attrs.plc && isEmptyContent(node) && !keepEmpty && !isChoiceOnly(pr) && pr.type !== "complex" && (pr.placeholder || displayText(pr) != null)) {
