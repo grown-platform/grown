@@ -298,7 +298,7 @@
       "passing": null
     },
     "slides/shortcuts": {
-      "ported": 24,
+      "ported": 26,
       "passing": null
     },
     "slides/shortcuts fixture": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2042,
+    "ported": 2044,
     "passing": null
   }
 }
