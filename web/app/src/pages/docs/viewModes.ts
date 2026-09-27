@@ -89,6 +89,8 @@ function installStyles() {
     ".ProseMirror .np-tab::after,.ProseMirror .np-tabnode::after{content:'→'}",
     ".ProseMirror .np-tabnode{position:relative}",
     ".ProseMirror .np-tabnode::after{position:absolute;left:0;color:#1a73e8;opacity:.7}",
+    // Non-printing marks are never printed (nor drawn in the PDF export).
+    "@media print{.ProseMirror .np-mark{display:none}.ProseMirror .np-space::after,.ProseMirror .np-nbsp::after,.ProseMirror .np-tab::after,.ProseMirror .np-tabnode::after{content:none}}",
     // Dark document (View ▸ Dark document): invert the page, keep pictures.
     ".doc-dark{filter:invert(.92) hue-rotate(180deg)}",
     ".doc-dark img,.doc-dark .doc-drawing,.doc-dark video,.doc-dark .doc-watermark img{filter:invert(1) hue-rotate(180deg)}",
