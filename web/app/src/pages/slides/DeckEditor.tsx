@@ -62,7 +62,7 @@ import {
   imageNaturalSize,
   uploadDeckAsset,
 } from "./api";
-import { externalizeImages } from "./assets";
+import { externalizeImages, rehomeAssets } from "./assets";
 import { AltTextDialog, ImageControls, type ImageCommands } from "./ImageControls";
 import { useObjects } from "./useObjects";
 import { refitDiagram } from "./diagrams";
@@ -174,7 +174,9 @@ import {
 import { groupElements, ungroupMany } from "./groupOps";
 import {
   CLIP_MIME,
+  clipboardHtml,
   clipboardText,
+  internalFromHtml,
   decodeClipboard,
   encodeClipboard,
   pasteElements,
@@ -790,13 +792,23 @@ export function DeckEditor({ user }: { user: User }) {
         !!t?.isContentEditable;
       if (inField) return;
       const data = e.clipboardData;
-      const internal = data?.getData(CLIP_MIME);
+      const html = data?.getData("text/html") ?? "";
+      const internal = data?.getData(CLIP_MIME) || internalFromHtml(html);
       const text = data?.getData("text/plain") ?? "";
-      // Elements copied in Grown (this tab or another).
+      // Elements copied in Grown (this tab, another tab or another deck).
       if (decodeClipboard(internal)) {
         pastePending.current = false;
         e.preventDefault();
-        insertEls(pasteElements({ internal }));
+        const els = pasteElements({ internal });
+        insertEls(els);
+        // Pictures from another deck's asset store are copied into this one.
+        void rehomeAssets(els, id, async (u) => {
+          const r = await fetch(u, { credentials: "same-origin" });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return uploadDeckAsset(id, await r.blob());
+        }).then((moved) => {
+          if (moved !== els) upsertMany(moved);
+        });
         return;
       }
       // The in-app clipboard, if the OS clipboard still holds what we copied.
@@ -811,7 +823,7 @@ export function DeckEditor({ user }: { user: User }) {
         return;
       }
       // Text or HTML from elsewhere becomes a new text box.
-      const els = pasteElements({ html: data?.getData("text/html"), text });
+      const els = pasteElements({ html, text });
       if (els.length) {
         pastePending.current = false;
         e.preventDefault();
@@ -823,6 +835,8 @@ export function DeckEditor({ user }: { user: User }) {
       copyPending.current = false;
       if (!e.clipboardData || !clip.current) return;
       e.clipboardData.setData("text/plain", clipboardText(clip.current));
+      // Rich HTML for Docs and other editors (it also carries the payload).
+      e.clipboardData.setData("text/html", clipboardHtml(clip.current));
       e.clipboardData.setData(CLIP_MIME, encodeClipboard(clip.current));
       e.preventDefault();
     };
