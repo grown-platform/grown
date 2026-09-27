@@ -70,6 +70,8 @@ import { DataValidationDialog } from "./DataValidationDialog";
 import { ChartDialog } from "./ChartDialog";
 import { ChartsPanel } from "./ChartsPanel";
 import type { ChartConfig } from "./chartData";
+import { ChartOverlay, chartsChanged } from "./ChartOverlay";
+import { SparklineDialog } from "./SparklineDialog";
 import { PivotDialog } from "./PivotDialog";
 import { PivotPanel } from "./PivotPanel";
 import type { PivotConfig } from "./pivotData";
@@ -208,6 +210,9 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [chartsOpen, setChartsOpen] = useState(false);
   const [charts, setCharts] = useState<ChartConfig[]>([]);
   const chartsRef = useRef<ChartConfig[]>([]);
+  const [chartEdit, setChartEdit] = useState<ChartConfig | null>(null);
+  const [sparkOpen, setSparkOpen] = useState(false);
+  const [editorEl, setEditorEl] = useState<HTMLElement | null>(null);
   const [pivotOpen, setPivotOpen] = useState(false);
   const [pivotsOpen, setPivotsOpen] = useState(false);
   const [pivots, setPivots] = useState<PivotConfig[]>([]);
@@ -685,6 +690,14 @@ export function SheetEditor({ user }: SheetEditorProps) {
     // debounced save back and it would never fire.
     if (d === dataRef.current) return;
     dataRef.current = d;
+    // Charts ride on sheet 0 in the grid too (structure ops and collaborators
+    // update them there); adopt a changed list, and redraw charts on the grid.
+    const gridCharts = Array.isArray(d) ? d[0]?.grownCharts : undefined;
+    if (Array.isArray(gridCharts) && JSON.stringify(gridCharts) !== JSON.stringify(chartsRef.current)) {
+      chartsRef.current = gridCharts;
+      setCharts(gridCharts);
+    }
+    chartsChanged();
     // A tab rename shows up as a changed name for a known sheet id.
     // (FortuneSheet's afterUpdateSheetName hook reads a revoked draft in
     // 1.0.4 and never fires, so renames are detected here.)
@@ -819,7 +832,19 @@ export function SheetEditor({ user }: SheetEditorProps) {
   function persistCharts(next: ChartConfig[]) {
     chartsRef.current = next;
     setCharts(next);
+    // Kept on sheet 0 in the grid as well, so structure ops shift them and
+    // collaborators receive them (patchSheet relays the op).
+    try {
+      const first = ref.current?.getAllSheets?.()?.[0];
+      if (first?.id) patchSheet(ref.current, first.id, { grownCharts: next });
+    } catch {
+      /* the save below still carries them */
+    }
     persistExtras();
+  }
+  function upsertChart(cfg: ChartConfig) {
+    const cur = chartsRef.current;
+    persistCharts(cur.some((c) => c.id === cfg.id) ? cur.map((c) => (c.id === cfg.id ? cfg : c)) : [...cur, cfg]);
   }
   function persistPivots(next: PivotConfig[]) {
     pivotsRef.current = next;
@@ -925,7 +950,11 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onConditionalFormat={() => setCfOpen(true)}
               onNamedRanges={() => setNrOpen(true)}
               onDataValidation={() => setDvOpen(true)}
-              onInsertChart={() => setChartOpen(true)}
+              onInsertChart={() => {
+                setChartEdit(null);
+                setChartOpen(true);
+              }}
+              onInsertSparklines={() => setSparkOpen(true)}
               onInsertPivot={() => setPivotOpen(true)}
               onIconSet={addIconSet}
               onClearIconSets={clearAllIconSets}
@@ -1003,6 +1032,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
       <Box
         sx={{ flex: 1, minHeight: 0, overflow: "auto" }}
         data-testid="sheet-editor"
+        ref={setEditorEl}
       >
         <Box sx={{ minWidth: { xs: 600, md: "100%" }, height: "100%" }}>
           <Workbook
@@ -1095,15 +1125,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
         range={sortRangeSel}
       />
       <PasteSpecialDialog open={pasteOpen} onClose={() => setPasteOpen(false)} getWb={getWbRef.current} />
-      <ChartDialog
-        open={chartOpen}
-        onClose={() => setChartOpen(false)}
-        getWb={() => ref.current}
-        onAdd={(cfg) => {
-          persistCharts([...chartsRef.current, cfg]);
-          setChartsOpen(true);
-        }}
-      />
+      <ChartDialog open={chartOpen} onClose={() => setChartOpen(false)} getWb={getWbRef.current} initial={chartEdit} onSave={upsertChart} />
       <ChartsPanel
         open={chartsOpen}
         onClose={() => setChartsOpen(false)}
@@ -1112,9 +1134,28 @@ export function SheetEditor({ user }: SheetEditorProps) {
         onDelete={(cid) => persistCharts(chartsRef.current.filter((c) => c.id !== cid))}
         onNew={() => {
           setChartsOpen(false);
+          setChartEdit(null);
           setChartOpen(true);
         }}
+        onEdit={(cfg) => {
+          setChartsOpen(false);
+          setChartEdit(cfg);
+          setChartOpen(true);
+        }}
+        onChange={upsertChart}
       />
+      <ChartOverlay
+        getWb={getWbRef.current}
+        charts={charts}
+        container={editorEl}
+        onChange={upsertChart}
+        onEdit={(cfg) => {
+          setChartEdit(cfg);
+          setChartOpen(true);
+        }}
+        onDelete={(cid) => persistCharts(chartsRef.current.filter((c) => c.id !== cid))}
+      />
+      <SparklineDialog open={sparkOpen} onClose={() => setSparkOpen(false)} getWb={getWbRef.current} />
       <PivotDialog
         open={pivotOpen}
         onClose={() => setPivotOpen(false)}

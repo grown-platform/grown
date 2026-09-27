@@ -612,6 +612,17 @@ export function shiftCharts(list: any[], sheets: any[], op: StructureOp, target:
   });
 }
 
+/** grownSparklines after op: data and location ranges move; a group whose cells are all deleted goes. */
+function shiftSparklines(list: any[], op: StructureOp): any[] {
+  const move = (rg: any) => {
+    const m = rg && typeof rg.r0 === "number" ? shiftRect({ r1: rg.r0, c1: rg.c0, r2: rg.r1, c2: rg.c1 }, op) : null;
+    return m ? { r0: m.r1, r1: m.r2, c0: m.c1, c1: m.c2 } : null;
+  };
+  return list
+    .map((g) => (g && typeof g === "object" ? { ...g, data: move(g.data) ?? g.data, location: move(g.location) } : g))
+    .filter((g) => g && g.location);
+}
+
 /** The grown* model fields (and _namedRanges on sheet 0) a sheet has after op. */
 function modelFields(sheets: any[], i: number, op: StructureOp, target: number): Record<string, unknown> {
   const sheet = sheets[i];
@@ -623,6 +634,7 @@ function modelFields(sheets: any[], i: number, op: StructureOp, target: number):
   if (i === target && sheet?.grownProtection) out.grownProtection = shiftProtectionField(sheet.grownProtection, op);
   if (i === target && sheet?.grownPrint) out.grownPrint = shiftPrintField(sheet.grownPrint, op);
   if (i === target && Array.isArray(sheet?.grownTables)) out.grownTables = shiftTables(sheet.grownTables, op);
+  if (i === target && Array.isArray(sheet?.grownSparklines)) out.grownSparklines = shiftSparklines(sheet.grownSparklines, op);
   if (i === 0 && "_namedRanges" in (sheet ?? {})) out._namedRanges = shiftNamedRanges(sheet._namedRanges, sheets, op);
   if (i === 0 && Array.isArray(sheet?.grownCharts)) out.grownCharts = shiftCharts(sheet.grownCharts, sheets, op, target);
   return out;

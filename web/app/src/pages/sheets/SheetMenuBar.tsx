@@ -74,6 +74,8 @@ interface SheetMenuBarProps {
   onDataValidation: () => void;
   /** Opens the Insert chart dialog. */
   onInsertChart: () => void;
+  /** Opens the sparkline group dialog. */
+  onInsertSparklines?: () => void;
   /** Opens the Insert pivot table dialog. */
   onInsertPivot: () => void;
   /** Applies an icon-set rule to the current selection. */
@@ -170,6 +172,7 @@ export function SheetMenuBar({
   onNamedRanges,
   onDataValidation,
   onInsertChart,
+  onInsertSparklines,
   onInsertPivot,
   onIconSet,
   onClearIconSets,
@@ -467,6 +470,7 @@ export function SheetMenuBar({
           <MenuItem disabled>Pre-built tables</MenuItem>
           <MenuItem disabled>Timeline</MenuItem>
           <MenuItem onClick={onInsertChart}>Chart</MenuItem>
+          {onInsertSparklines && <MenuItem onClick={onInsertSparklines}>Sparklines…</MenuItem>}
           <MenuItem onClick={onInsertPivot}>Pivot table</MenuItem>
           {section("Page break")}
           <MenuItem sx={sub} onClick={() => onPageBreak?.("insert")}>
