@@ -240,3 +240,25 @@ func TestResponseToProto_NilAnswers(t *testing.T) {
 		t.Error("answers_json should not be empty")
 	}
 }
+
+func TestQuestionProtoRoundTripCC4Fields(t *testing.T) {
+	q := Question{
+		ID: "q1", Type: TypeCheckboxGrid, Title: "Grid",
+		Options: []string{"A", "B"}, Rows: []string{"r1", "r2"}, LimitOnePerColumn: true,
+		Validation: &Validation{Kind: "number", Op: "between", Value: "1", Value2: "9", ErrorText: "nope"},
+		TextFormat: FormatMask, Mask: "(999) 999-9999", RatingIcon: "heart", AfterSection: SubmitTarget,
+		CorrectAnswers: []string{"r1" + GridKeySep + "A"},
+	}
+	got := questionFromProto(questionToProto(q))
+	if !reflect.DeepEqual(got, q) {
+		t.Fatalf("round trip:\n got %#v\nwant %#v", got, q)
+	}
+	// An empty validation message on the wire means "no rule".
+	if questionFromProto(questionToProto(Question{ID: "x"})).Validation != nil {
+		t.Fatal("nil validation should stay nil")
+	}
+	s := Settings{AfterFirstSection: "sec-2"}
+	if settingsFromProto(settingsToProto(s)).AfterFirstSection != "sec-2" {
+		t.Fatal("after_first_section lost")
+	}
+}
