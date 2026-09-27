@@ -92,6 +92,8 @@ import { EditorContextMenu } from "./EditorContextMenu";
 import { EquationEditor } from "./math/EquationEditor";
 import { setMathEditHandler } from "./math/MathNode";
 import { ReferenceDialogs, openReferenceDialog } from "./ReferenceDialogs";
+import { CompareDialog, openCompareDialog } from "./CompareDialog";
+import { MailMerge, openMailMerge } from "./MailMergePanel";
 import { insertTableOfContents, setPageResolver, toggleFieldCodes, updateFields } from "./references";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { FindBar, type FindMode } from "./FindBar";
@@ -753,6 +755,9 @@ export function DocEditor({ user }: DocEditorProps) {
       { label: "Track changes on for everyone", section: "Tools", run: () => actions.trackForEveryone?.(true) },
       { label: "Track changes off for everyone", section: "Tools", run: () => actions.trackForEveryone?.(false) },
       { label: "Review changes", section: "Tools", run: () => actions.reviewPanel?.() },
+      { label: "Compare documents", section: "Tools", run: () => openCompareDialog("compare") },
+      { label: "Combine documents", section: "Tools", run: () => openCompareDialog("combine") },
+      { label: "Mail merge", section: "Tools", run: () => openMailMerge() },
       { label: "Next change", section: "Tools", run: () => actions.nextChange?.() },
       { label: "Previous change", section: "Tools", run: () => actions.previousChange?.() },
       { label: "Accept current change", section: "Tools", run: () => actions.acceptCurrentChange?.() },
@@ -978,6 +983,7 @@ export function DocEditor({ user }: DocEditorProps) {
                 docId={id}
                 editor={editor}
                 onClose={() => setPanel(null)}
+                userName={user.display_name || user.email}
               />
             </Box>
           </>
@@ -1088,6 +1094,8 @@ export function DocEditor({ user }: DocEditorProps) {
       <ParagraphDialogs editor={editor} />
       <TableDialogs editor={editor} />
       <ReferenceDialogs editor={editor} />
+      <CompareDialog editor={editor} docId={id} title={title} userName={user.display_name || user.email} />
+      <MailMerge editor={editor} title={title} />
       <ShortcutsDialog
         open={dialog === "shortcuts"}
         onClose={() => setDialog(null)}

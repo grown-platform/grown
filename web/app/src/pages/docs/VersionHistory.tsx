@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Sheet,
   Box,
@@ -12,7 +13,11 @@ import {
   Divider,
   Chip,
   Tooltip,
+  Switch,
+  Select,
+  Option,
 } from "@mui/joy";
+import { DOMSerializer } from "@tiptap/pm/model";
 import CloseIcon from "@mui/icons-material/Close";
 import HistoryIcon from "@mui/icons-material/History";
 import RestoreIcon from "@mui/icons-material/Restore";
@@ -23,12 +28,31 @@ import {
   restoreVersion,
   type DocVersion,
 } from "./api";
+import { diffSummary, diffVersions, htmlToDoc } from "./diff";
+import { createDocFrom } from "./diff/sources";
 
 interface VersionHistoryProps {
   docId: string;
   editor: Editor | null;
   onClose: () => void;
+  /** Author for changes in the current document (Compare with current). */
+  userName?: string;
 }
+
+/** What a highlighted version is compared with (Docs M12). */
+type DiffBase = "previous" | "current";
+type DiffShow = "changes" | "deleted";
+
+// The preview pane's review colours (the editor's are scoped to .ProseMirror).
+const diffSx = {
+  "& .suggestion-insert": { color: "#188038", textDecoration: "underline" },
+  "& .suggestion-delete": { color: "#d93025", textDecoration: "line-through" },
+  "& .suggestion-format": { borderBottom: "2px dotted #8e24aa" },
+  "& [data-para-change-type]::after": { content: '"¶"', marginLeft: "2px" },
+  "& [data-para-change-type='insert']::after": { color: "#188038" },
+  "& [data-para-change-type='delete']::after": { color: "#d93025" },
+  "& [data-props-change]": { backgroundColor: "rgba(142, 36, 170, 0.07)" },
+};
 
 function fmtTime(iso: string): string {
   const d = new Date(iso);
@@ -49,7 +73,13 @@ export function VersionHistory({
   docId,
   editor,
   onClose,
+  userName = "",
 }: VersionHistoryProps) {
+  const navigate = useNavigate();
+  const [highlight, setHighlight] = useState(false);
+  const [base, setBase] = useState<DiffBase>("previous");
+  const [show, setShow] = useState<DiffShow>("changes");
+  const [older, setOlder] = useState<string | null>(null);
   const [versions, setVersions] = useState<DocVersion[] | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<DocVersion | null>(null);
@@ -71,6 +101,7 @@ export function VersionHistory({
   async function selectVersion(v: DocVersion) {
     setSelected(v);
     setPreview(null);
+    setOlder(null);
     try {
       const full = await getVersion(docId, v.id);
       setPreview(full.content_html);
@@ -93,6 +124,70 @@ export function VersionHistory({
       load();
     } catch {
       setError("Restore failed. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // The version before the selected one (the list is newest first).
+  const prevVersion = useMemo(() => {
+    if (!selected || !versions) return null;
+    const i = versions.findIndex((v) => v.id === selected.id);
+    return i >= 0 ? (versions[i + 1] ?? null) : null;
+  }, [selected, versions]);
+
+  useEffect(() => {
+    if (!highlight || base !== "previous" || !prevVersion) return;
+    let live = true;
+    getVersion(docId, prevVersion.id)
+      .then((v) => live && setOlder(v.content_html ?? ""))
+      .catch(() => live && setOlder(""));
+    return () => {
+      live = false;
+    };
+  }, [highlight, base, prevVersion, docId]);
+
+  // Highlighted changes: the selected version against the one before it,
+  // or the current document against the selected version.
+  const diff = useMemo(() => {
+    if (!highlight || !editor || !selected || preview === null) return null;
+    try {
+      const schema = editor.schema;
+      let a;
+      let b;
+      let author;
+      let date;
+      if (base === "current") {
+        a = htmlToDoc(schema, preview);
+        b = editor.state.doc;
+        author = userName || "Current document";
+        date = undefined;
+      } else {
+        if (!prevVersion) a = htmlToDoc(schema, "<p></p>");
+        else if (older === null) return null;
+        else a = htmlToDoc(schema, older);
+        b = htmlToDoc(schema, preview);
+        author = selected.author_name || "Unknown";
+        date = selected.created_at?.replace(/\.\d+Z$/, "Z");
+      }
+      const doc = diffVersions(a, b, { author, date, show });
+      const holder = document.createElement("div");
+      holder.appendChild(DOMSerializer.fromSchema(schema).serializeFragment(doc.content));
+      return { doc, html: holder.innerHTML, summary: diffSummary(doc) };
+    } catch {
+      return null;
+    }
+  }, [highlight, editor, selected, preview, base, prevVersion, older, show, userName]);
+
+  async function openDiffAsDoc() {
+    if (!diff || !editor || !selected) return;
+    setBusy(true);
+    try {
+      const label = selected.label || fmtTime(selected.created_at);
+      const id = await createDocFrom(editor, `Changes in ${label}`, diff.doc);
+      navigate(`/docs/d/${id}`);
+    } catch {
+      setError("Could not create the document.");
     } finally {
       setBusy(false);
     }
@@ -154,6 +249,39 @@ export function VersionHistory({
             <Typography level="body-xs" sx={{ opacity: 0.7 }}>
               {selected.author_name} · {fmtTime(selected.created_at)}
             </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
+              <Switch
+                size="sm"
+                checked={highlight}
+                onChange={(e) => setHighlight(e.target.checked)}
+                slotProps={{ input: { "data-testid": "version-highlight" } as Record<string, unknown> }}
+              />
+              <Typography level="body-sm">Highlight changes</Typography>
+            </Box>
+            {highlight && (
+              <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
+                <Select size="sm" value={base} onChange={(_, v) => v && setBase(v as DiffBase)} sx={{ flex: 1 }} data-testid="version-diff-base">
+                  <Option value="previous">Since previous version</Option>
+                  <Option value="current">Up to the current document</Option>
+                </Select>
+                <Select size="sm" value={show} onChange={(_, v) => v && setShow(v as DiffShow)} sx={{ flex: 1 }} data-testid="version-diff-show">
+                  <Option value="changes">All changes</Option>
+                  <Option value="deleted">Deleted text only</Option>
+                </Select>
+              </Box>
+            )}
+            {highlight && diff && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
+                <Typography level="body-xs" sx={{ flex: 1 }} data-testid="version-diff-summary">
+                  {diff.summary.insertions} insertion{diff.summary.insertions === 1 ? "" : "s"}, {diff.summary.deletions} deletion
+                  {diff.summary.deletions === 1 ? "" : "s"}
+                  {diff.summary.formatting ? `, ${diff.summary.formatting} formatting` : ""}
+                </Typography>
+                <Button size="sm" variant="plain" onClick={openDiffAsDoc} disabled={busy}>
+                  Open as document
+                </Button>
+              </Box>
+            )}
           </Box>
           <Divider />
           <Box
@@ -175,8 +303,9 @@ export function VersionHistory({
               </Typography>
             ) : (
               <Box
-                sx={{ fontSize: 14, "& *": { maxWidth: "100%" } }}
-                dangerouslySetInnerHTML={{ __html: preview }}
+                data-testid="version-preview"
+                sx={{ fontSize: 14, "& *": { maxWidth: "100%" }, ...diffSx }}
+                dangerouslySetInnerHTML={{ __html: diff ? diff.html : preview }}
               />
             )}
           </Box>

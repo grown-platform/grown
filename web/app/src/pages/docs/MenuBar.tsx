@@ -21,6 +21,8 @@ import { openParagraphDialog } from "./ParagraphDialogs";
 import { promptLink } from "./links";
 import { TableSizePicker, insertPickedTable, openConvertTextDialog, openTableSettings } from "./TableUI";
 import { openReferenceDialog } from "./ReferenceDialogs";
+import { openCompareDialog } from "./CompareDialog";
+import { openMailMerge } from "./MailMergePanel";
 import { insertTableOfContents, toggleFieldCodes, updateFields } from "./references";
 import { setTocLevel, tocLevelAtSelection } from "./toc";
 import { getDocModel } from "./docModel";
@@ -794,6 +796,10 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           {actions.rejectCurrentChange && <MenuItem onClick={actions.rejectCurrentChange}>Reject current change</MenuItem>}
           {actions.acceptAllChanges && <MenuItem onClick={actions.acceptAllChanges}>Accept all changes</MenuItem>}
           {actions.rejectAllChanges && <MenuItem onClick={actions.rejectAllChanges}>Reject all changes</MenuItem>}
+          <MenuItem onClick={() => openCompareDialog("compare")} data-testid="tools-compare">Compare documents…</MenuItem>
+          <MenuItem onClick={() => openCompareDialog("combine")} data-testid="tools-combine">Combine documents…</MenuItem>
+          <ListDivider />
+          <MenuItem onClick={() => openMailMerge()} data-testid="tools-mail-merge">Mail merge…</MenuItem>
           <ListDivider />
           <MenuItem disabled>Translate document</MenuItem>
           <MenuItem disabled>Voice typing (soon){kbd("Ctrl+Shift+S")}</MenuItem>
