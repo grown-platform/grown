@@ -1,14 +1,14 @@
 onlyoffice_path,test_count,area,portability,target_grown_path,milestone
 sdkjs-tests-v9.3.1/tests/common/api/api.js,2,common-api,high,web/app/src/lib/urlType.test.ts,CC1
 sdkjs-tests-v9.3.1/tests/common/color-mods/color-mods.js,28,common-color,high,web/app/src/lib/colorMods.test.ts,CC1
-sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize.js,6,common-charts,low,web/app/src/pages/sheets/charts/chartXml.test.ts,CC5
+sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize.js,6,common-charts,low (as lib/chartEx.ts parse/serialize round trip + pptx chartEx import),web/app/src/lib/chartEx.test.ts,CC5
 sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize-files.js,0,common-charts,none,,CC5
 sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize-files-many.js,0,common-charts,none,,CC5
 sdkjs-tests-v9.3.1/tests/pdf/common/common.js,0,pdf,none,,CC3
 sdkjs-tests-v9.3.1/tests/pdf/forms/actions.js,1,pdf,high,pdf/frontend/e2e/editor-forms-calc.spec.ts,CC3
 sdkjs/pdf/test/base.js,0,pdf,none,pdf/frontend/e2e/editor-smoke.spec.ts,CC3
 sdkjs/pdf/test/bookmarks.js,0,pdf,low,pdf/frontend/e2e/editor-pages.spec.ts,CC3
-sdkjs-tests-v9.3.1/tests/oform/xml/oformXml.js,2,forms,medium,internal/forms/proto_shaping_test.go,CC4
+sdkjs-tests-v9.3.1/tests/oform/xml/oformXml.js,2,forms,medium (UserMaster as the docx form role name + colour round trip / 1 n/a FieldGroup: oform field-group weight and fill order have no Grown model; PDF signer order covers the idea),internal/forms/proto_shaping_test.go; web/app/src/pages/docs/__tests__/oo/oform-roles.test.ts,CC4
 sdkjs-tests-v9.3.1/tests/oform/xml/xmlCommon.js,0,forms,none,,CC4
 sdkjs-tests-v9.3.1/tests/word/forms/forms.js,7,forms,medium,web/app/src/pages/forms/validate.test.ts; internal/forms/logic_and_guards_test.go,CC4
 sdkjs-tests-v9.3.1/tests/word/forms/complexForm.js,6,forms,low,web/app/src/pages/forms/helpers.test.ts,CC4
@@ -28,7 +28,7 @@ sdkjs/common/libfont/test/hyphen.js,0,common-fonts,low,web/app/src/pages/docs/hy
 sdkjs/common/geometry/test/code.js,0,common-geometry,none,,CC6
 core/OOXML/test/xlsx2xlsb/conversion.cpp,3,conversion,low,internal/sheets/corpus_test.go,CC5
 core/OOXML/test/xlsb2xlsx/conversion.cpp,3,conversion,low,internal/sheets/corpus_test.go,CC5
-core/OdfFile/Test/test_odf/ExampleFiles,13,conversion,low,internal/slides/corpus_test.go; web/app/src/pages/slides/pptx/corpus.test.ts,CC5
+core/OdfFile/Test/test_odf/ExampleFiles,13,conversion,low,internal/slides/corpus_test.go; web/app/src/pages/slides/pptx/corpus.test.ts; web/app/src/pages/slides/odp/corpus.test.ts,CC5
 core/OdfFile/Test/Test/ExampleFiles,5,conversion,low,internal/docs/corpus_test.go; web/app/src/pages/slides/pptx/corpus.test.ts,CC2
 core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles,28,conversion,medium,internal/docs/corpus_test.go; internal/sheets/corpus_test.go; internal/slides/corpus_test.go,CC2
 core/EpubFile/test/Files,11,conversion,medium,internal/docs/corpus_test.go,CC2

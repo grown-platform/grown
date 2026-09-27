@@ -468,7 +468,7 @@ Grown equivalent and would not be built additively.
 |---|---:|---:|---|---|---|---|
 | api/api.js | 4 | 32 | AddText with/without wrapping spaces, RemoveSelection, GetSelectedText with paragraph separators; change numbering level; add/remove space before/after paragraph and the "have space" state; get text/selected text | vitest | `docs/__tests__/oo/api-text-ops.test.ts` | M1 |
 | api/cross-ref.js | 1 | 5 | insert cross-reference to a block-level content control, field result text | vitest | `oo/cross-ref.test.ts` | M8 |
-| api/textInput.js | 5 | 33 | EnterText / CorrectEnterText / composite (IME) input results; same in collaboration; with TextSpeaker; complex-script flag; inside a shape | mixed: 2 vitest (enter text + composition result), 3 n/a | `oo/text-input.test.ts` | M1 |
+| api/textInput.js | 5 | 33 | EnterText / CorrectEnterText / composite (IME) input results; same in collaboration; with TextSpeaker; complex-script flag; inside a shape | mixed: 2 vitest (enter text + composition result), 2 n/a (TextSpeaker, complex-script flag), 1 pending M7 (in shape) | `oo/text-input.test.ts` | M1 |
 | change-case/change-case.js | 15 | 15 | Sentence/Upper/Lower/Toggle/Capitalize-words for whole paragraph and for a selection (10); same inside math (5) | vitest (10 in M1, 5 in M11) | `oo/change-case.test.ts` | M1 |
 | common/common.js, document.js, editor.js, measurer.js | 0 | 8 | test harness (fake editor, measurer) | n/a (write own harness) | `docs/__tests__/harness.ts`, `measurer.ts` | M0 |
 | content-control/block-level/cursorAndSelection.js | 1 | 33 | Backspace/Delete before/after a block-level content control, cursor placement | vitest | `oo/sdt-block-cursor.test.ts` | M10 |
@@ -522,12 +522,12 @@ Grown equivalent and would not be built additively.
 | revisions/document-content.js | 5 | 16 | new paragraph under tracking; replace text in block sdt; accept-all when sdt content deleted; accept/reject when whole document deleted/added | vitest (3 in M5, 2 after M10) | `oo/revisions-document.test.ts` | M5 |
 | revisions/paragraph.js | 2 | 11 | select+type / delete+type / backspace+type in one run and across runs -> review runs | vitest | `oo/revisions-paragraph.test.ts` | M5 |
 | shortcuts/events.js | 0 | 0 | key event helpers | n/a (write own) | `docs/__tests__/keys.ts` | M0 |
-| shortcuts/shortcuts.js | 40 | 165 | page/line/column break; reset char; special chars; text props; select all; paragraph props; notes; UI events; equation; page number; bullets; copy/paste format; undo/redo; non-printing; save; update fields; delete word; move/select; shapes; header/footer; disable shortcuts; forms; tables; chart title; math; tab; hyperlink visit; unicode->char; drag-and-drop reset | mixed: 28 vitest (jsdom keydown through TipTap keymap), 6 playwright, 6 n/a | `oo/shortcuts.test.ts`, `web/e2e/docs/oo-shortcuts.spec.ts` | M1 |
+| shortcuts/shortcuts.js | 40 | 165 | page/line/column break; reset char; special chars; text props; select all; paragraph props; notes; UI events; equation; page number; bullets; copy/paste format; undo/redo; non-printing; save; update fields; delete word; move/select; shapes; header/footer; disable shortcuts; forms; tables; chart title; math; tab; hyperlink visit; unicode->char; drag-and-drop reset | mixed: 34 vitest (jsdom keydown through TipTap keymap), 4 playwright, 2 n/a (disable shortcuts, drag-and-drop reset) | `oo/shortcuts.test.ts`, `web/e2e/docs/oo-shortcuts.spec.ts` | M1 |
 | styles/displayStyle.js | 5 | 1 | which style the UI displays for cursor / multi-paragraph / multi-run / spaces selections | vitest | `oo/style-display.test.ts` | M3 |
 | styles/paraPr.js | 1 | 12 | style indents compiled; numbering overrides indent | vitest | `oo/style-compile.test.ts` | M3 |
 | styles/styleApplicator.js | 1 | 8 | direct props + numPr + "update style from selection" propagate | vitest | `oo/style-apply.test.ts` | M3 |
 | text-autocorrection/as-you-type.js | 2 | 2 | capitalize first letter of sentence (multi-script, after `! `), of table cells, with both flags in all combinations | vitest | `oo/autocorrect-as-you-type.test.ts` | M2 |
-| unit-tests/deleted-text-recovery.js | 17 | 116 | reconstruct deleted text from history as review runs | mixed: 5 vitest re-expressed as version-diff, 12 n/a | `oo/version-diff.test.ts` | M12 |
+| unit-tests/deleted-text-recovery.js | 17 | 116 | reconstruct deleted text from history as review runs | mixed: 10 vitest re-expressed as version diffs, 7 vitest as Yjs undo history points (Prev = Undo, Next = Redo) | `oo/version-diff.test.ts` | M12 |
 | unit-tests/paragraphContentPos.js | 1 | 18 | CParagraphContentPos internals | n/a | — | none |
 
 Totals by portability (runtime tests): **vitest 1,131** (of which 936 are
@@ -801,7 +801,7 @@ Google Docs binding or model and the ported test asserts Grown's behaviour.
 | api.js: Get text/selected text | Includes a selection that ends inside an equation | Plain-text half passes; equation half n/a (equations are atoms; partial selection happens in the equation panel) | n/a (M11) |
 | api.js: Change numbering level | Enter in an empty list item ends the list at level 1 and outdents at deeper levels | Same behaviour (passes) | — |
 | api-run / api-range: SetColor, SetShd | RGB, hex, theme and auto colours; range shading on a whole paragraph shades the paragraph | RGB/hex and auto (= none) pass. Grown has no document theme, so theme colours are n/a. Whole-paragraph ranges set a paragraph `shading` attribute, partial ranges a highlight | Done (M1); theme colours n/a |
-| textInput.js: TextSpeaker, complex script, in-shape | Screen-reader hook, script runs, shape text | No equivalents (browser shapes text; no shapes until M7) | n/a |
+| textInput.js: TextSpeaker, complex script, in-shape | Screen-reader hook, script runs, shape text | No equivalents (browser shapes text); in-shape waits for M7 text boxes | n/a (in-shape pending M7) |
 
 ### 6.6 M1 status (text operations, change case, spacing, shortcuts)
 
@@ -1799,8 +1799,14 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
      fields' results (not undoable, like F9) and the placeholders back when
      the panel closes.
   4. Finish: All / Current / From–to; merge to a new Grown doc (one copy per
-     record, a page break between — the section break arrives with M9), to
-     .docx (direct writer, this doc's styles, header and footer) or to PDF
+     record, each record its own section: a next-page section break ends
+     every record but the last; each record's first section restarts page
+     numbering (at the template's start, else 1) and owns copies of the
+     template's first-section headers/footers, the template's own section
+     breaks are repeated per record under fresh ids with their parts; the
+     new doc gets the page setup and all header/footer fragments), to
+     .docx (direct writer, this doc's styles, the same sections, headers
+     and footers) or to PDF
      (the pandoc convert endpoint), or to e-mail: a To field (guessed from an
      "email" column or all-address values), a subject with «Field»
      placeholders, a plain-text body (the merged document's paragraphs), a
@@ -1824,8 +1830,13 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   paragraph, Complex 1 and 2 (with "undo recovered text" as accepting the
   recovered deletions), Split run (the bold run split around the recovered
   text) and "not shown within one revision". The five "Going back and
-  forth through history" cases and Complex 3 / 4 step through
-  per-keystroke history points, which snapshot versions don't have: n/a.
+  forth through history" cases and Complex 3 / 4 (stepping back and forth
+  through history points) run against the editor's Yjs undo manager, the
+  history every live doc has: one history point is one capture group
+  (edits without a pause over its 500 ms timeout), "Prev" is Undo and
+  "Next" is Redo, and the tests end a capture group
+  (`undoManager.stopCapturing()`) wherever the upstream case starts a new
+  point.
   Grown-native: `diff.test.ts` (19: Myers and clean-ups, word replace with
   author/date and change grouping, paragraph add / remove / split / merge
   with accept and reject round trips, formatting and paragraph-property
@@ -1853,8 +1864,8 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   (a removed row comes back as a row of deleted text), moves (a move is a
   deletion plus an insertion), a merge-field "rules" set (IF / NEXT /
   SKIP), HTML e-mail bodies and attachments (the mail API sends plain
-  text; a .docx/.pdf attachment per record would need uploads first), and
-  one section per record (page breaks until M9's sections).
+  text; a .docx/.pdf attachment per record would need uploads first).
+  (One section per record landed after M9: see Finish above.)
 * **Semantic differences**:
 
 | Case | OnlyOffice / Word | Grown | Status |
@@ -1864,7 +1875,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | mergeDocuments: symbol-level "hello" → "hellok k" | Word-shaped: "hellok k" added, "hello" removed | "k k" added (character diff after the shared word) | grown-variant |
 | mergeDocuments: bookmarks and comments | Merged into the result | Not carried (comment threads live on the server) | Not yet |
 | deleted-text recovery: Split run | " how" (what was selected) | "how " — a snapshot diff can't tell the two apart; like diff-match-patch the later one | grown-variant |
-| deleted-text recovery: history navigation | Per-keystroke history points | Saved versions only | n/a |
+| deleted-text recovery: history navigation | History points of the document model | Yjs undo capture groups (500 ms) | grown-variant |
 | Compare with tracked changes in the inputs | Word warns and treats them as accepted | Accepted first (combine keeps them) | Note only |
 
 ### 6.16 M13 status (spell check, language, plugins, misc)
@@ -2083,8 +2094,10 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   changes only forces tracking and blocks accept / reject (resolving
   transactions carry `reviewResolve`); filling forms only is the fill-in
   view. **Server**: `docs_documents.protection` (migration 0096),
-  `GET/PUT /api/v1/docs/d/{id}/protection` (the owner sets it; the
-  Protect dialog calls it), and the collab hub's new `ServeFunc` checks
+  `GET/PUT /api/v1/docs/d/{id}/protection` (reading needs read access
+  to the document, decided by `docsAccessFor` exactly as for the collab
+  WebSocket: org member, per-user grantee or share link; only the owner
+  sets it; the Protect dialog calls it), and the collab hub's new `ServeFunc` checks
   write access per message, so non-owners' updates are dropped while a
   document is read-only (a `ProtectionGate` caches the mode for 2 s).
   The other modes are enforced by every editor, not the server (the hub
@@ -2173,7 +2186,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   protection option, and server-side enforcement of the comments / tracked
   / forms modes.
 
-### Known flaky e2e (as of 2026-09-26)
+### Known flaky e2e (as of 2026-09-27)
 
 - ~~`web/e2e/docs/oo-shortcuts.spec.ts` "Check sending event to interface"
   fails about 1 run in 3~~ — **fixed (M4 branch)**. Root cause was a real
@@ -2236,3 +2249,22 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
     which is only cancelled when the handler returns, so a lone peer's
     handler and room leaked until someone else joined. The writer now stops
     on a context cancelled when the reader exits.
+- ~~`web/e2e/slides-export.spec.ts` "print dialog …" failed under
+  full-suite load with `expect(img.slides).toBe(3)` → 2~~ — **fixed
+  (wave 10)**; listed here because this is the suite-wide flaky list (see
+  slides.md §6.16). The Slides print preview rebuilds after a 150 ms
+  debounce plus an async render, and the spec's only wait was the page
+  count, which reads "Page 1 of 1" both before and after "Include hidden
+  slides" (2 or 3 slides on one 3-up handout page), so a slow runner read
+  the stale 2-slide preview. `PrintDialog` now marks the preview region
+  `aria-busy` until it shows the current options (tracked synchronously,
+  not in an effect), and the spec waits for `aria-busy="false"` after each
+  change. With the page-count wait removed to force the race: before 2/6
+  failures ("Received: 2"), after 6/6; full spec `--repeat-each 10
+  --workers 8`: 20/20.
+- Other intermittent failures seen in local logs from 2026-09-26/27
+  (sheets-shortcuts "Test catch events", sheets-dynarray clipboard
+  collision, sheets-analysis comment card strict-mode) were single runs
+  during in-progress Sheets work on unfinished branches, not reproduced on
+  merged main; auth/dashboard/drive `waitForURL` timeouts in one report
+  were the :8080 stack being redeployed mid-run. None is tracked as flaky.

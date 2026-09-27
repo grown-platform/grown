@@ -23,6 +23,7 @@ import {
 import { readDocx } from "../docx/read";
 import { writeDocx } from "../docx/write";
 import { applyDocxImport, collectDocxInput } from "../docx/apply";
+import { defaultSection, hfFragment, parseSection, sectionsOf, type SectionProps } from "../sections";
 
 const WORKBOOK = JSON.stringify([
   {
@@ -116,11 +117,16 @@ describe("merge fields", () => {
     one.descendants((n) => void (n.type.name === "field" && fields++));
     expect(fields).toBe(0);
 
-    const all = mergeAll(e.state.doc, recs);
+    const { doc: all, section } = mergeAll(e.state.doc, recs);
     all.check();
     expect(all.childCount).toBe(5);
-    expect(all.child(2).type.name).toBe("pageBreak");
+    // Records are separated by a next-page section break (M9), not a page break.
+    expect(all.child(2).type.name).toBe("sectionBreak");
+    expect(all.child(2).attrs.kind).toBe("nextPage");
     expect(all.child(3).textContent).toBe("Dear Grace, you owe .");
+    // Each record's section restarts page numbering.
+    expect(parseSection(all.child(2).attrs.sectPr).pgNum.start).toBe(1);
+    expect(section.pgNum.start).toBe(1);
     expect(mergeText(e.state.doc, recs[1])).toBe("Dear Grace, you owe .\n\nThanks");
   });
 
@@ -143,5 +149,84 @@ describe("merge fields", () => {
     applyDocxImport(e2, imp);
     expect(usedFields(e2.state.doc)).toEqual(["First name"]);
     expect(paragraphTexts(e2)[0]).toBe("Hello«First name»");
+  });
+});
+
+describe("mail merge to a new document: one section per record (M9)", () => {
+  const ids = () => {
+    let n = 0;
+    return () => `rec${++n}`;
+  };
+
+  it("single-section template: a next-page break ends every record but the last; headers repeat per record", () => {
+    const e = makeEditor("<p>To:</p>");
+    insertMergeField(e, "Name");
+    const final: SectionProps = { ...defaultSection(), titlePg: true, pgNum: { start: null, fmt: "lowerRoman" } };
+    const recs = [{ Name: "Ada" }, { Name: "Grace" }, { Name: "Linus" }];
+    const m = mergeAll(e.state.doc, recs, final, ids());
+    m.doc.check();
+    expect(m.doc.childCount).toBe(5);
+    const secs = sectionsOf(m.doc, m.section);
+    expect(secs.map((s) => s.start)).toEqual(["nextPage", "nextPage", "nextPage"]);
+    expect(secs.map((s) => m.doc.child(s.fromBlock).textContent)).toEqual(["To:Ada", "To:Grace", "To:Linus"]);
+    for (const s of secs) {
+      // The template's setup is kept, page numbers restart at 1 in the
+      // template's format, and "different first page" holds per record.
+      expect(s.props.pgNum).toEqual({ start: 1, fmt: "lowerRoman" });
+      expect(s.props.titlePg).toBe(true);
+      expect(s.props.pageW).toBe(final.pageW);
+    }
+    // Every record shows the template's own header/footer parts, not a link
+    // to the previous record: sections 2 and 3 (named after the break that
+    // ends them) own copies of the first section's parts.
+    expect(secs.map((s) => s.id)).toEqual(["rec1", "rec2", "final"]);
+    expect(hfFragment(secs, 1, "header", "default")).toBe("hf:rec2:default:header");
+    expect(hfFragment(secs, 2, "footer", "first")).toBe("hf:final:first:footer");
+    expect(m.fragments["hf:rec2:default:header"]).toBe("header");
+    expect(m.fragments["hf:final:first:footer"]).toBe("hf:first-section:first:footer");
+    expect(m.fragments["hf:final:default:footer"]).toBe("footer");
+    expect(m.fragments.header).toBe("header");
+  });
+
+  it("keeps an explicit restart value and the template's own section breaks per record", () => {
+    const e = makeEditor("<p>Cover for x</p><p>Body</p>");
+    setCursor(e, 2);
+    insertMergeField(e, "Name");
+    const first: SectionProps = { ...defaultSection(), pgNum: { start: 5 } };
+    const landscape: SectionProps = { ...defaultSection(), orient: "landscape", pageW: 792, pageH: 612, own: ["header:default"] };
+    // Template: [Cover] | oddPage break | [Body] (final, landscape, own header).
+    const { tr, schema } = e.state;
+    tr.insert(e.state.doc.child(0).nodeSize, schema.nodes.sectionBreak.create({ id: "t1", kind: "oddPage", sectPr: JSON.stringify(first) }));
+    e.view.dispatch(tr);
+    const m = mergeAll(e.state.doc, [{ Name: "A" }, { Name: "B" }], landscape, ids());
+    m.doc.check();
+    const secs = sectionsOf(m.doc, m.section);
+    expect(secs).toHaveLength(4);
+    expect(secs.map((s) => s.start)).toEqual(["nextPage", "oddPage", "nextPage", "oddPage"]);
+    expect(secs.map((s) => s.props.orient)).toEqual(["portrait", "landscape", "portrait", "landscape"]);
+    expect(secs.map((s) => s.props.pgNum.start ?? null)).toEqual([5, null, 5, null]);
+    // Record 1 keeps the template's break id; record 2's copy gets a fresh one.
+    expect(secs.map((s) => s.id)).toEqual(["t1", "rec1", "rec2", "final"]);
+    // The landscape section's own header follows each copy.
+    expect(m.fragments["hf:rec1:default:header"]).toBe("hf:final:default:header");
+    expect(m.fragments["hf:final:default:header"]).toBe("hf:final:default:header");
+    // Record 2's cover owns the first section's parts again.
+    expect(m.fragments["hf:rec2:default:footer"]).toBe("footer");
+  });
+
+  it("the merged document writes one w:sectPr per record to .docx", async () => {
+    const e = makeEditor("<p>Hi:</p>");
+    insertMergeField(e, "Name");
+    const input = collectDocxInput(e, { title: "M" });
+    const m = mergeAll(e.state.doc, [{ Name: "A" }, { Name: "B" }, { Name: "C" }], input.settings?.section);
+    input.doc = m.doc;
+    const bytes = await writeDocx(input);
+    const imp = await readDocx(bytes);
+    const e2 = makeEditor("<p></p>");
+    applyDocxImport(e2, imp);
+    const types: string[] = [];
+    e2.state.doc.forEach((n) => types.push(n.type.name));
+    expect(types).toEqual(["paragraph", "sectionBreak", "paragraph", "sectionBreak", "paragraph"]);
+    expect(paragraphTexts(e2)).toEqual(["Hi:A", "Hi:B", "Hi:C"]);
   });
 });

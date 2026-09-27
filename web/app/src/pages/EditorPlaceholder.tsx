@@ -82,13 +82,14 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
   }
 
   const url = downloadURL(file.id);
-  // A .pptx opened from Drive can be converted into a Grown Slides deck (a
+  // A .pptx or .odp opened from Drive can be converted into a Grown Slides deck (a
   // copy; the Drive file is left as is).
   const canOpenInSlides =
     appId === "slides" &&
-    (/\.pptx$/i.test(file.name) ||
+    (/\.(pptx|odp)$/i.test(file.name) ||
       file.mime_type ===
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+      file.mime_type === "application/vnd.oasis.opendocument.presentation");
 
   // A spreadsheet opened from Drive can be imported into a Grown Sheets
   // workbook (a copy; the Drive file is left as is).
@@ -243,11 +244,11 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
           >
             <Box>
               <Typography level="title-sm">
-                Edit this PowerPoint file in Slides
+                Edit this {/\.odp$/i.test(file.name) ? "presentation" : "PowerPoint file"} in Slides
               </Typography>
               <Typography level="body-sm" sx={{ opacity: 0.85 }}>
                 “Open in Slides” makes an editable Slides copy. The original
-                .pptx stays in Drive unchanged.
+                file stays in Drive unchanged.
               </Typography>
             </Box>
           </Alert>

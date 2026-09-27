@@ -8,13 +8,20 @@
 // the current version again, i.e. accepting the recovered deletions.
 //
 // The history-navigation cases (Going back and forth ×5, Complex 3,
-// Complex 4) step through per-keystroke history points, which Grown's
-// snapshot versions don't have; they stay n/a.
+// Complex 4) step backwards and forwards through the collaborative change
+// history one point at a time. In Grown that history is the Yjs undo
+// manager the editor gets from the Collaboration extension (every live doc
+// is Yjs-bound): one history point is one capture group, i.e. the edits
+// made without a pause longer than its 500 ms capture timeout. "Prev" is
+// Undo and "Next" is Redo; the tests pause (end the capture group, as the
+// timeout would) wherever the upstream case starts a new history point.
 import { describe, expect, it } from "vitest";
+import * as Y from "yjs";
+import { yUndoPluginKey } from "y-prosemirror";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { EditorState } from "@tiptap/pm/state";
-import { makeEditor, paragraphPos, pressKey, selectInParagraph, setCursor, typeText } from "../harness";
+import { docText, makeEditor, paragraphPos, pressKey, selectInParagraph, setCursor, typeText } from "../harness";
 import { diffVersions } from "../../diff";
 import { collectParts, resolveParts, reviewRuns, type ReviewType } from "../../changes";
 
@@ -203,5 +210,126 @@ describe("OnlyOffice deleted text recovery (as a version diff)", () => {
     const [p] = recover(e, before);
     expect(p.textContent).toBe("World");
     expect(runs(p)).toEqual([["common", "World"]]);
+  });
+});
+
+/** yEditor is an editor bound to a fresh Yjs document, as in the app, so
+ *  history is Yjs's (capture groups), with `html` as the first point. */
+function yEditor(html: string): Editor {
+  const e = makeEditor("<p></p>", { ydoc: new Y.Doc() });
+  if (html) {
+    e.commands.setContent(html);
+    pause(e);
+    e.commands.focus("end");
+  }
+  return e;
+}
+
+/** pause waits longer than the undo manager's capture timeout, so the next
+ *  edit starts a new history point. */
+function pause(e: Editor) {
+  yUndoPluginKey.getState(e.state)!.undoManager.stopCapturing();
+}
+
+const prev = (e: Editor, n = 1) => {
+  for (let i = 0; i < n; i++) expect(e.commands.undo()).toBe(true);
+};
+const next = (e: Editor, n = 1) => {
+  for (let i = 0; i < n; i++) expect(e.commands.redo()).toBe(true);
+};
+
+describe("OnlyOffice deleted text recovery: going through history points", () => {
+  it("oo:word/unit-tests/deleted-text-recovery.js#Going back and forth through history - one letter", () => {
+    const e = yEditor("<p>abc</p>");
+    backspace(e, 1);
+    expect(docText(e)).toBe("ab");
+    prev(e);
+    expect(docText(e)).toBe("abc");
+    next(e);
+    expect(docText(e)).toBe("ab");
+  });
+
+  it("oo:word/unit-tests/deleted-text-recovery.js#Going back and forth through history - letter block", () => {
+    const e = yEditor("<p>Hello World</p>");
+    backspace(e, 6);
+    expect(docText(e)).toBe("Hello");
+    prev(e);
+    expect(docText(e)).toBe("Hello World");
+    next(e);
+    expect(docText(e)).toBe("Hello");
+  });
+
+  it("oo:word/unit-tests/deleted-text-recovery.js#Going back and forth through history - letter blocks (deleted from left to right)", () => {
+    const e = yEditor("<p>Hello World</p>");
+    setCursor(e, paragraphPos(e, 0, 3));
+    backspace(e, 2);
+    expect(docText(e)).toBe("Hlo World");
+    setCursor(e, paragraphPos(e, 0, 7));
+    backspace(e, 2);
+    expect(docText(e)).toBe("Hlo Wld");
+    // Both deletions were made without a pause: one history point.
+    prev(e);
+    expect(docText(e)).toBe("Hello World");
+    next(e);
+    expect(docText(e)).toBe("Hlo Wld");
+  });
+
+  it("oo:word/unit-tests/deleted-text-recovery.js#Going back and forth through history - letter blocks (from right to left)", () => {
+    const e = yEditor("<p>Hello World</p>");
+    selectInParagraph(e, 0, 7, 9);
+    backspace(e, 1);
+    expect(docText(e)).toBe("Hello Wld");
+    selectInParagraph(e, 0, 1, 3);
+    backspace(e, 1);
+    expect(docText(e)).toBe("Hlo Wld");
+    prev(e);
+    expect(docText(e)).toBe("Hello World");
+    next(e);
+    expect(docText(e)).toBe("Hlo Wld");
+  });
+
+  it("oo:word/unit-tests/deleted-text-recovery.js#Going back and forth through history - paragraph", () => {
+    const e = yEditor("<p>One</p>");
+    backspace(e, 5);
+    expect(docText(e)).toBe("");
+    prev(e);
+    expect(docText(e)).toBe("One");
+    next(e);
+    expect(docText(e)).toBe("");
+  });
+
+  it("oo:word/unit-tests/deleted-text-recovery.js#Complex 3", () => {
+    const e = yEditor("");
+    typeText(e, "Hello");
+    pause(e);
+    typeText(e, " hello");
+    expect(docText(e)).toBe("Hello hello");
+    prev(e);
+    expect(docText(e)).toBe("Hello");
+  });
+
+  it("oo:word/unit-tests/deleted-text-recovery.js#Complex 4", () => {
+    const e = yEditor("");
+    // Points: "Hello3" | delete "3" | " word" | delete "word"+space | " world".
+    typeText(e, "Hello3");
+    pause(e);
+    backspace(e, 1);
+    pause(e);
+    typeText(e, " word");
+    pause(e);
+    backspace(e, 5);
+    pause(e);
+    typeText(e, " world");
+    expect(docText(e)).toBe("Hello world");
+    prev(e);
+    expect(docText(e)).toBe("Hello");
+    prev(e);
+    expect(docText(e)).toBe("Hello word");
+    prev(e, 2);
+    expect(docText(e)).toBe("Hello3");
+    next(e, 3);
+    expect(docText(e)).toBe("Hello");
+    prev(e);
+    expect(docText(e)).toBe("Hello word");
   });
 });

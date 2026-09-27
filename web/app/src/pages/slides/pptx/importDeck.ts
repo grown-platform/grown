@@ -1,6 +1,6 @@
-// UI-facing pptx import helpers shared by the deck editor, the deck list and
-// Drive's open flow. The reader is loaded lazily so jszip only ships when a
-// file is actually imported.
+// UI-facing pptx (and ODP) import helpers shared by the deck editor, the deck
+// list and Drive's open flow. The readers are loaded lazily so jszip only
+// ships when a file is actually imported.
 
 import { createDeck, saveDeck, uploadDeckAsset } from "../api";
 import { externalizeImages } from "../assets";
@@ -9,21 +9,39 @@ import { deckSize, resizeDeck } from "../slideProps";
 import { layoutsOf } from "../layouts";
 
 export const PPTX_ACCEPT =
-  ".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  ".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation," +
+  ".odp,application/vnd.oasis.opendocument.presentation";
 
 /** Title for an imported deck: the file's own title, else the file name without extension. */
 export function importTitle(fileName: string, docTitle?: string): string {
   const t = (docTitle || "").trim();
   if (t && !/^PowerPoint Presentation$/i.test(t)) return t;
-  return fileName.replace(/\.pptx$/i, "").trim() || "Imported presentation";
+  return fileName.replace(/\.(pptx|odp)$/i, "").trim() || "Imported presentation";
 }
 
-/** Read slides (and the whole deck: theme, layouts, size) from a .pptx blob. */
+function blobBytes(b: Blob): Promise<Uint8Array> {
+  if (typeof b.arrayBuffer === "function") return b.arrayBuffer().then((a) => new Uint8Array(a));
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(new Uint8Array(r.result as ArrayBuffer));
+    r.onerror = () => reject(r.error);
+    r.readAsArrayBuffer(b);
+  });
+}
+
+/** Read slides (and the whole deck: theme, layouts, size) from a .pptx or
+ *  .odp blob (told apart by the ODF package's mimetype entry). */
 export async function readPptxSlides(
   data: Blob | ArrayBuffer,
 ): Promise<{ slides: Slide[]; deck: DeckDoc; title?: string; warnings: string[] }> {
+  const bytes = data instanceof Blob ? await blobBytes(data) : new Uint8Array(data);
+  const odp = await import("../odp/read");
+  if (odp.isOdp(bytes)) {
+    const r = await odp.readOdp(bytes);
+    return { slides: r.deck.slides, deck: r.deck, title: r.title, warnings: r.warnings };
+  }
   const { readPptx } = await import("./read");
-  const r = await readPptx(data);
+  const r = await readPptx(bytes);
   return { slides: r.deck.slides, deck: r.deck, title: r.title, warnings: r.warnings };
 }
 

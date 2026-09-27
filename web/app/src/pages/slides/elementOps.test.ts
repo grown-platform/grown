@@ -4,9 +4,14 @@ import {
   elementName,
   findElementsByName,
   setElementName,
+  setGradientFill,
   setOutline,
+  setSolidFill,
 } from "./elementOps";
-import { newElement, type Slide, type SlideElement } from "./model";
+import { shapeLayers, shapeLayersMarkup } from "./shapeRender";
+import { deckToPptx } from "./pptx/write";
+import { readPptx } from "./pptx/read";
+import { newElement, newShape, type Slide, type SlideElement } from "./model";
 
 const mk = (id: string, over: Partial<SlideElement> = {}): SlideElement => ({ ...newElement("rect"), id, ...over });
 
@@ -83,5 +88,64 @@ describe("OnlyOffice parity: outline", () => {
       expect(b.el).toBe(r.el);
     }
     expect(setOutline(r.el, { width: 0, color: "#000000" }).el.stroke).toBe("none");
+  });
+});
+
+describe("OnlyOffice parity: gradient fill", () => {
+  // A "cube" shape (150 × 80 mm) filled solid #333333 is re-filled with a
+  // radial gradient of two stops, RGB(255,213,191) at 0 and RGB(255,111,61)
+  // at 100%: the shape now holds a gradient fill of exactly those two
+  // colours, in order.
+  it("oo:slide/js-api/api-drawing.js#Test: Create shape with gradient fill", () => {
+    const mm = 96 / 25.4;
+    const cube: SlideElement = { ...newShape("cube"), id: "cube", w: 150 * mm, h: 80 * mm, fill: "#333333", stroke: "none", strokeWidth: 0 };
+    const r = setGradientFill(cube, {
+      kind: "gradient",
+      radial: true,
+      stops: [
+        { pos: 1, color: "#ff6f3d" },
+        { pos: 0, color: "#ffd5bf" },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    const g = r.el.gradFill!;
+    expect(g.radial).toBe(true);
+    expect(g.stops).toHaveLength(2);
+    expect(g.stops.map((s) => s.color)).toEqual(["#ffd5bf", "#ff6f3d"]);
+    const rgb = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+    expect(rgb(g.stops[0].color)).toEqual([255, 213, 191]);
+    expect(rgb(g.stops[1].color)).toEqual([255, 111, 61]);
+    // The fallback colour is the first stop; malformed gradients are refused.
+    expect(r.el.fill).toBe("#ffd5bf");
+    for (const bad of [null, {}, { kind: "gradient", stops: [{ pos: 0, color: "#fff" }] }, { kind: "gradient", stops: [{ pos: 0, color: "#ffffff" }, { pos: 2, color: "#000000" }] }]) {
+      const b = setGradientFill(r.el, bad);
+      expect(b.ok).toBe(false);
+      expect(b.el).toBe(r.el);
+    }
+    // Drawn with an SVG gradient; a solid colour replaces it again.
+    expect(shapeLayers(r.el).some((l) => l.gradient)).toBe(true);
+    expect(shapeLayersMarkup(r.el)).toMatch(/<radialGradient id="g-grad-cube"[^>]*><stop offset="0%" stop-color="#ffd5bf"\/><stop offset="100%" stop-color="#ff6f3d"\/>/);
+    expect(shapeLayersMarkup(r.el)).toContain('fill="url(#g-grad-cube)"');
+    const solid = setSolidFill(r.el, "#00ff00");
+    expect(solid.gradFill).toBeUndefined();
+    expect(shapeLayersMarkup(solid)).not.toContain("Gradient");
+  });
+
+  it("round-trips a shape gradient through pptx", async () => {
+    const cube = setGradientFill(
+      { ...newShape("cube"), id: "c", fill: "#333333" },
+      { kind: "gradient", radial: true, stops: [{ pos: 0, color: "#ffd5bf" }, { pos: 1, color: "#ff6f3d" }] },
+    ).el;
+    const lin = setGradientFill(
+      { ...newShape("roundRect"), id: "l", x: 400 },
+      { kind: "gradient", angle: 45, stops: [{ pos: 0, color: "#112233" }, { pos: 0.5, color: "#445566" }, { pos: 1, color: "#778899" }] },
+    ).el;
+    const bytes = await deckToPptx({ slides: [{ id: "s", background: "#ffffff", elements: [cube, lin] }] });
+    const { deck } = await readPptx(bytes);
+    const els = deck.slides[0].elements.filter((e) => e.gradFill);
+    expect(els).toHaveLength(2);
+    expect(els[0].gradFill).toEqual({ kind: "gradient", radial: true, stops: [{ pos: 0, color: "#ffd5bf" }, { pos: 1, color: "#ff6f3d" }] });
+    expect(els[1].gradFill).toEqual({ kind: "gradient", angle: 45, stops: [{ pos: 0, color: "#112233" }, { pos: 0.5, color: "#445566" }, { pos: 1, color: "#778899" }] });
+    expect(els[1].fill).toBe("#112233");
   });
 });

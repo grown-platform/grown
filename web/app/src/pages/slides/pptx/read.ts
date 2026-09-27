@@ -17,6 +17,8 @@
 // date/footer/slide-number placeholders become header & footer settings.
 
 import { resolveImportedFont } from "../../../lib/fonts";
+import { chartExToGrown, parseChartEx } from "../../../lib/chartEx";
+import { normalizeGrid } from "../chartElement";
 import { findTransitionEl, readTiming, readTransitionEl } from "./motionXml";
 import JSZip from "jszip";
 import { anchorImported, readCommentParts } from "./commentsXml";
@@ -30,6 +32,7 @@ import {
   type CellProps,
   type CellSide,
   type DashStyle,
+  type SlideChart,
   type TableData,
   type TableLook,
   type DeckDoc,
@@ -139,11 +142,28 @@ function contentKids(el: Element): Element[] {
   const out: Element[] = [];
   for (const c of Array.from(el.children)) {
     if (c.localName === "AlternateContent") {
-      const alt = kid(c, "Fallback") ?? kid(c, "Choice");
+      // A chartEx chart (Office 2016+: waterfall, histogram…) is read from
+      // its mc:Choice; its fallback picture stays at hand in case it can't be.
+      const choice = kid(c, "Choice");
+      const fallback = kid(c, "Fallback");
+      const cx = choice ? Array.from(choice.children).find(isChartExFrame) : undefined;
+      if (cx) {
+        if (fallback) CHARTEX_FALLBACK.set(cx, fallback);
+        out.push(cx);
+        continue;
+      }
+      const alt = fallback ?? choice;
       if (alt) out.push(...Array.from(alt.children));
     } else out.push(c);
   }
   return out;
+}
+
+/** Fallback content of chartEx frames taken from an mc:Choice. */
+const CHARTEX_FALLBACK = new WeakMap<Element, Element>();
+
+function isChartExFrame(el: Element): boolean {
+  return el.localName === "graphicFrame" && (desc(el, "graphicData")[0]?.getAttribute("uri") ?? "").endsWith("/chartex");
 }
 
 // ------------------------------------------------------------ package parts
@@ -1189,6 +1209,8 @@ async function readSp(
     (num(kid(style, "fillRef"), "idx")
       ? readColor(kid(style, "fillRef"), pc.color)
       : undefined);
+  const gradEl = kid(spPr, "gradFill");
+  const gradFill = gradEl ? readGradient(gradEl, pc.color) : null;
   const lineSpec = readLine(spPr, pc.color);
   const line: Stroke | undefined =
     lineSpec === "none"
@@ -1278,7 +1300,8 @@ async function readSp(
   }
   const visible = hasFill || !!line;
   if (visible) {
-    const legacy = lineStyle.dash ? null : legacyShape(prst, adj);
+    // A gradient needs the preset renderer, so such shapes stay presets.
+    const legacy = lineStyle.dash || (gradFill && hasPreset(prst)) ? null : legacyShape(prst, adj);
     const preset = !legacy && hasPreset(prst);
     let type: ElementType = legacy ?? (preset ? "shape" : (kind ?? "rect"));
     if (!legacy && !preset && !kind) sc.unsupported.add(prst === "custom" ? "freeform" : prst);
@@ -1291,6 +1314,7 @@ async function readSp(
       ...orient(box),
       ...(preset && adj ? { adj } : {}),
       fill: hasFill ? fill : "none",
+      ...(preset && gradFill ? { gradFill } : {}),
       stroke: line ? line.color : "none",
       strokeWidth: line ? line.width : 0,
       ...(preset && lineStyle.dash ? { dash: lineStyle.dash } : {}),
@@ -1548,6 +1572,13 @@ async function readGraphicFrame(
     const uri = desc(gf, "graphicData")[0]?.getAttribute("uri") || "";
     if (uri.endsWith("/chart")) {
       if (await readChartFrame(gf, tf(raw), sc, out)) return;
+    } else if (uri.endsWith("/chartex")) {
+      if (await readChartExFrame(gf, tf(raw), sc, out)) return;
+      const fb = CHARTEX_FALLBACK.get(gf);
+      if (fb) {
+        await readTree(fb, tf, sc, out, false);
+        return;
+      }
     } else if (uri.endsWith("/diagram")) {
       if (await readDiagramFrame(gf, raw, tf, sc, out)) return;
     }
@@ -1578,6 +1609,37 @@ async function readChartFrame(gf: Element, box: Box, sc: SlideCtx, out: SlideEle
   if (!doc) return false;
   const chart = readSlideChart(doc);
   if (!chart) return false;
+  const descr = path(gf, "nvGraphicFramePr", "cNvPr")?.getAttribute("descr");
+  out.push({ id: uid(), type: "chart", ...toPx(box, sc), ...orient(box), chart, ...(descr ? { alt: descr } : {}) });
+  return true;
+}
+
+/** A chartEx graphic frame: the chart part → the closest Grown chart
+ *  (waterfall and histogram natively; funnel, treemap and sunburst drawn as
+ *  bar / pie charts, with a warning). */
+async function readChartExFrame(gf: Element, box: Box, sc: SlideCtx, out: SlideElement[]): Promise<boolean> {
+  const pc = sc.pc;
+  const r = rid(desc(gf, "chart")[0] ?? null, "id");
+  const rel = r ? (await pc.pkg.relsOf(pc.part)).get(r) : undefined;
+  if (!rel || rel.external) return false;
+  const doc = await pc.pkg.xml(rel.target);
+  const model = doc ? parseChartEx(doc) : null;
+  const g = model ? chartExToGrown(model) : null;
+  if (!g) return false;
+  const histogram = g.type === "histogram";
+  const data: string[][] = [
+    ["", ...g.series.map((s) => s.name)],
+    ...g.categories.map((c, i) => [histogram ? String(i + 1) : c, ...g.series.map((s) => (Number.isFinite(s.values[i]) ? String(s.values[i]) : ""))]),
+  ];
+  const chart: SlideChart = {
+    type: g.type,
+    title: g.title,
+    data: normalizeGrid(data),
+    ...(g.totals ? { totals: g.totals } : {}),
+    ...(g.legend ? { legend: g.legend } : {}),
+    ...(g.dataLabels ? { dataLabels: true } : {}),
+  };
+  if (g.approximated) sc.warnings.add(`A ${g.approximated} chart was imported as a ${g.type} chart`);
   const descr = path(gf, "nvGraphicFramePr", "cNvPr")?.getAttribute("descr");
   out.push({ id: uid(), type: "chart", ...toPx(box, sc), ...orient(box), chart, ...(descr ? { alt: descr } : {}) });
   return true;

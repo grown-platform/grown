@@ -59,7 +59,7 @@ import {
   type MergeData,
 } from "./mailmerge";
 import { createDocFrom } from "./diff/sources";
-import { modelDoc } from "./docx/apply";
+import { collectDocxInput, modelDoc } from "./docx/apply";
 
 /** Most e-mails one run sends. */
 export const MAIL_MERGE_LIMIT = 50;
@@ -237,12 +237,29 @@ export function MailMerge({ editor, title }: { editor: Editor | null; title: str
   // Merging reads each field's instruction, not its (preview) result.
   const templateDoc = () => editor.state.doc;
 
+  // The merged document plus the template's page setup and headers/footers
+  // re-keyed for its sections (each record is its own section).
+  const mergeWithLayout = () => {
+    const input = collectDocxInput(editor, { title });
+    const m = mergeAll(templateDoc(), chosen(), input.settings?.section);
+    const margins: Record<string, PMNode> = {};
+    for (const [name, src] of Object.entries(m.fragments)) {
+      const n = input.margins?.[src];
+      if (n) margins[name] = n;
+    }
+    return { input, merged: m.doc, section: m.section, margins };
+  };
+
   const toNewDoc = async () => {
     setBusy("Merging…");
     setError("");
     try {
-      const merged = mergeAll(templateDoc(), chosen());
-      const id = await createDocFrom(editor, `${title || "Untitled document"} (merged)`, merged);
+      const { input, merged, section, margins } = mergeWithLayout();
+      const id = await createDocFrom(editor, `${title || "Untitled document"} (merged)`, merged, {
+        margins: Object.fromEntries(Object.entries(margins).map(([k, n]) => [k, n.toJSON()])),
+        section,
+        settings: input.settings,
+      });
       close();
       navigate(`/docs/d/${id}`);
     } catch (e) {
@@ -256,10 +273,13 @@ export function MailMerge({ editor, title }: { editor: Editor | null; title: str
     setBusy("Building .docx…");
     setError("");
     try {
-      const merged = mergeAll(templateDoc(), chosen());
-      const [{ collectDocxInput }, { writeDocx }] = await Promise.all([import("./docx/apply"), import("./docx/write")]);
-      const input = collectDocxInput(editor, { title });
+      const { input, merged, section, margins } = mergeWithLayout();
+      const { writeDocx } = await import("./docx/write");
       input.doc = merged;
+      input.margins = margins;
+      input.header = margins.header ?? null;
+      input.footer = margins.footer ?? null;
+      if (input.settings) input.settings = { ...input.settings, section };
       input.comments = [];
       const bytes = await writeDocx(input);
       download(new Blob([bytes as BlobPart], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), `${title || "merged"}.docx`);
@@ -274,7 +294,7 @@ export function MailMerge({ editor, title }: { editor: Editor | null; title: str
     setBusy("Building PDF…");
     setError("");
     try {
-      const merged = mergeAll(templateDoc(), chosen());
+      const merged = mergeAll(templateDoc(), chosen()).doc;
       const name = `${title || "merged"}`;
       const resp = await fetch(`/api/v1/docs/convert?to=pdf&name=${encodeURIComponent(name)}`, {
         method: "POST",

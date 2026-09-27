@@ -59,6 +59,10 @@ export function PrintDialog({
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // The inputs the preview currently shows. While they differ from the live
+  // inputs a rebuild is pending (debounce + async render), and the preview
+  // region reports aria-busy so assistive tech and tests don't read a stale page.
+  const [shown, setShown] = useState<{ deck: DeckDoc; title: string; opts: PrintOptions; cur: number } | null>(null);
   const set = (p: Partial<PrintOptions>) => setOpts((o) => ({ ...o, ...p }));
   const count = deck?.slides.length ?? 0;
   const badRange = opts.range === "custom" && !parseRange(opts.custom, count);
@@ -75,8 +79,11 @@ export function PrintDialog({
         setPages(job.rendered.map((r) => svgUrl(r.svg)));
         setPage((p) => Math.min(p, Math.max(0, job.rendered.length - 1)));
         setError("");
+        setShown({ deck, title, opts, cur });
       } catch (e) {
-        if (live) setError((e as Error).message);
+        if (!live) return;
+        setError((e as Error).message);
+        setShown({ deck, title, opts, cur });
       }
     }, 150);
     return () => {
@@ -85,6 +92,7 @@ export function PrintDialog({
     };
   }, [open, deck, title, opts, cur]);
 
+  const previewBusy = open && !!deck && (!shown || shown.deck !== deck || shown.title !== title || shown.opts !== opts || shown.cur !== cur);
   const summary = useMemo(() => (pages.length === 1 ? "1 page" : `${pages.length} pages`), [pages.length]);
 
   const doPrint = async () => {
@@ -215,6 +223,8 @@ export function PrintDialog({
             sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", bgcolor: "background.level2", borderRadius: "sm", p: 1.5, minHeight: 360 }}
             role="region"
             aria-label="Print preview"
+            aria-busy={previewBusy}
+            data-testid="print-preview"
           >
             {pages.length ? (
               <Box

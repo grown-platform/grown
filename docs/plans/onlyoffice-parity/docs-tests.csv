@@ -1,7 +1,7 @@
 onlyoffice_path,test_count,area,portability,target_grown_path,milestone
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/api/api.js,4,text-ops,vitest,web/app/src/pages/docs/__tests__/oo/api-text-ops.test.ts,M1
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/api/cross-ref.js,1,references,vitest,web/app/src/pages/docs/__tests__/oo/cross-ref.test.ts,M8
-research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/api/textInput.js,5,text-input,mixed (2 vitest / 3 n/a),web/app/src/pages/docs/__tests__/oo/text-input.test.ts,M1
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/api/textInput.js,5,text-input,mixed (2 vitest / 2 n/a: TextSpeaker screen-reader hook and the per-run complex-script flag have no Grown equivalent / 1 in-shape pending M7 text boxes),web/app/src/pages/docs/__tests__/oo/text-input.test.ts,M1
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/change-case/change-case.js,15,change-case,vitest (10 in M1 / 5 math in M11),web/app/src/pages/docs/__tests__/oo/change-case.test.ts,M1
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/common/common.js,0,harness,n/a (harness; write own),web/app/src/pages/docs/__tests__/harness.ts,M0
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/common/document.js,0,harness,n/a (harness; write own),web/app/src/pages/docs/__tests__/harness.ts,M0
@@ -38,7 +38,7 @@ research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-color.js,3,scriptin
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-document-content.js,1,text-ops,vitest,web/app/src/pages/docs/__tests__/oo/api-text-ops.test.ts,M1
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-drawing.js,11,images,vitest,web/app/src/pages/docs/__tests__/oo/drawing-attrs.test.ts,M7
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-inline-level-sdt.js,2,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-appearance.test.ts,M10
-research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-paragraph.js,5,paragraph,mixed (4 vitest / 1 n/a ParaId),web/app/src/pages/docs/__tests__/oo/paragraph-props.test.ts,M3
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-paragraph.js,5,paragraph,mixed (4 vitest / 1 n/a ParaId: Grown paragraphs have no persistent identity),web/app/src/pages/docs/__tests__/oo/paragraph-props.test.ts,M3
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-range.js,3,text-ops,vitest,web/app/src/pages/docs/__tests__/oo/api-text-ops.test.ts,M1
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-run.js,3,text-ops,vitest,web/app/src/pages/docs/__tests__/oo/api-text-ops.test.ts,M1
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-section.js,1,sections,vitest,web/app/src/pages/docs/__tests__/oo/sections.test.ts,M9
@@ -59,10 +59,10 @@ research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/plugins/pluginsApi.js,5,plugin
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/revisions/document-content.js,5,track-changes,vitest (3 in M5 / 2 need sdt from M10),web/app/src/pages/docs/__tests__/oo/revisions-document.test.ts,M5
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/revisions/paragraph.js,2,track-changes,vitest,web/app/src/pages/docs/__tests__/oo/revisions-paragraph.test.ts,M5
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/shortcuts/events.js,0,harness,n/a (key event helpers; write own),web/app/src/pages/docs/__tests__/keys.ts,M0
-research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/shortcuts/shortcuts.js,40,shortcuts,mixed (vitest + playwright; the cases once marked n/a were ported later),web/app/src/pages/docs/__tests__/oo/shortcuts.test.ts; web/e2e/docs/oo-shortcuts.spec.ts,M1
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/shortcuts/shortcuts.js,40,shortcuts,mixed (34 vitest / 4 playwright / 2 n/a: disabled NumLock/ScrollLock/browser-zoom keys of the canvas editor and its drag-tracking reset; Grown is contenteditable with native drag and drop),web/app/src/pages/docs/__tests__/oo/shortcuts.test.ts; web/e2e/docs/oo-shortcuts.spec.ts,M1
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/styles/displayStyle.js,5,styles,vitest,web/app/src/pages/docs/__tests__/oo/style-display.test.ts,M3
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/styles/paraPr.js,1,styles,vitest,web/app/src/pages/docs/__tests__/oo/style-compile.test.ts,M3
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/styles/styleApplicator.js,1,styles,vitest,web/app/src/pages/docs/__tests__/oo/style-apply.test.ts,M3
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/text-autocorrection/as-you-type.js,2,autocorrect,vitest,web/app/src/pages/docs/__tests__/oo/autocorrect-as-you-type.test.ts,M2
-research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/unit-tests/deleted-text-recovery.js,17,history-internals,mixed (10 vitest as version diff in M12 / 7 n/a history navigation),web/app/src/pages/docs/__tests__/oo/version-diff.test.ts,M12
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/unit-tests/deleted-text-recovery.js,17,history-internals,mixed (10 vitest as version diff in M12 / 7 vitest as Yjs undo history points),web/app/src/pages/docs/__tests__/oo/version-diff.test.ts,M12
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/unit-tests/paragraphContentPos.js,1,engine-internals,n/a (sdkjs-internal),,none

@@ -353,3 +353,6 @@ export function compareBaseline(current, baseline) {
   cmp("TOTAL", current.total, baseline?.total);
   return msgs;
 }
+
+/** Alias kept for callers written against the cross-sweep name. */
+export const naCount = notApplicableCount;

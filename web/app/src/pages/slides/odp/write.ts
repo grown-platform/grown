@@ -462,6 +462,8 @@ const ODF_TYPE: Record<string, string> = {
   ellipse: "ellipse",
   triangle: "isosceles-triangle",
   diamond: "diamond",
+  roundRect: "round-rectangle",
+  rightArrow: "right-arrow",
 };
 
 function titleDesc(el: SlideElement): string {
@@ -496,7 +498,9 @@ function shapeXml(el: SlideElement, bank: StyleBank): string {
   const path = g.paths
     .map((p) => enhancedPath(p.segs, el.w, el.h, el.flipH, el.flipV) + (p.fill === "none" ? " F" : "") + (p.stroke ? "" : " S") + " N")
     .join(" ");
-  const type = el.type === "shape" ? ODF_TYPE[el.preset ?? ""] : ODF_TYPE[el.type];
+  // Other presets keep their name the way LibreOffice keeps OOXML presets
+  // (ooxml-<preset>), so a reader can restore the shape.
+  const type = el.type === "shape" ? (ODF_TYPE[el.preset ?? ""] ?? (el.preset ? `ooxml-${el.preset}` : undefined)) : ODF_TYPE[el.type];
   return (
     `<draw:custom-shape${nameAttr(el)} draw:style-name="${style}"${placement(el.x, el.y, w, h, el.rotation)}>` +
     titleDesc(el) +

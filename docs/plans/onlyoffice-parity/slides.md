@@ -2156,6 +2156,12 @@ pptx has its round-trip suite (M1–M11) and ODP its writer tests.
     notes-pages PDF (2 Letter pages holding each slide's notes).
   - `GROWN_SLIDES_M12_SHOT=<prefix>` saves the handouts preview, the
     PDF, its first page picture and the ODP.
+  - Flake fixed (wave 10): the handouts check read the preview before the
+    debounced rebuild for "Include hidden slides" landed (2 slides instead
+    of 3; the page count is "Page 1 of 1" either way). The preview region
+    now carries `aria-busy` while it lags the options, and the spec waits
+    for it to clear after every change. Details in docs.md "Known flaky
+    e2e".
 
 **Gaps.**
 

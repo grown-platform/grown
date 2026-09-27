@@ -899,7 +899,7 @@ func New(cfg Config) *Server {
 					return
 				}
 				if id, ok := docsProtectionID(r.URL.Path); ok && cfg.DocsRepo != nil {
-					serveDocsProtection(w, r, id, cfg.DocsRepo)
+					serveDocsProtection(w, r, id, cfg.DocsRepo, docsGrantLookup(cfg.SharingRepo))
 					return
 				}
 				if r.URL.Path == "/api/v1/docs/convert" && r.Method == http.MethodPost {
@@ -2621,43 +2621,12 @@ func docsConnectID(path string) (string, bool) {
 // whose role determines read/write (cross-org), or (3) a valid share-link token
 // for the document. Viewers/commenters connect read-only.
 func serveDocsWS(w http.ResponseWriter, r *http.Request, id string, repo *docs.Repository, grants *sharing.Repository, hub *docs.Hub) {
-	ctx := r.Context()
-	authorized, canWrite := false, false
-	isOwner := false
-
-	if u, hasUser := auth.UserFromContext(ctx); hasUser {
-		if org, ok := auth.OrgFromContext(ctx); ok {
-			if d, err := repo.Get(ctx, org.ID, id); err == nil {
-				authorized, canWrite = true, true
-				isOwner = d.OwnerID == u.ID
-			}
-		}
-		// Per-user grant path: a non-org-member with a grant may connect; only an
-		// editor grant gets write.
-		if !authorized && grants != nil {
-			if role, ok, err := grants.RoleFor(ctx, u.ID, sharing.TypeDocsDoc, id); err == nil && ok {
-				// Confirm the document still exists (not trashed) before connecting.
-				if _, derr := repo.GetByID(ctx, id); derr == nil {
-					authorized = true
-					canWrite = sharing.CanWrite(role)
-				}
-			}
-		}
-	}
-
-	if !authorized {
-		if token := r.URL.Query().Get("token"); token != "" {
-			if grant, err := repo.GetShareByToken(ctx, token); err == nil && grant.DocID == id {
-				authorized = true
-				canWrite = grant.Role == "editor"
-			}
-		}
-	}
-
-	if !authorized {
+	acc := docsAccessFor(r, id, repo, docsGrantLookup(grants))
+	if !acc.Read {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	canWrite, isOwner := acc.Write, acc.Owner
 	// Read-only document protection (Docs M10): only the owner writes.
 	gate := &docs.ProtectionGate{Load: func() (string, error) { return repo.GetProtection(context.Background(), id) }}
 	hub.ServeFunc(w, r, id, docsWriteGate(canWrite, isOwner, gate))

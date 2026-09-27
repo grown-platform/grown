@@ -317,7 +317,9 @@ export function withColorRef(
 ): SlideElement {
   const v = resolveRef(ref, theme);
   if (!v) return el;
-  return { ...el, [prop]: v, themeRefs: { ...el.themeRefs, [prop]: ref } };
+  const next: SlideElement = { ...el, [prop]: v, themeRefs: { ...el.themeRefs, [prop]: ref } };
+  if (prop === "fill") delete next.gradFill;
+  return next;
 }
 
 /** withFontRef sets the font to a theme role. */

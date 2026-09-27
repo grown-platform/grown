@@ -101,9 +101,15 @@ function currentModel(editor: Editor): Pick<DocxImport, "styles" | "numbering"> 
 }
 
 /** createDocFrom creates a Grown doc holding `doc` (styles and lists from
- *  the current document, plus `extra`) and returns its id; the editor
- *  seeds it when it opens. */
-export async function createDocFrom(editor: Editor, title: string, doc: PMNode, extra?: Pick<DocxImport, "styles" | "numbering">): Promise<string> {
+ *  the current document, plus `extra`, which may also carry header/footer
+ *  fragments and the final section / document settings) and returns its
+ *  id; the editor seeds it when it opens. */
+export async function createDocFrom(
+  editor: Editor,
+  title: string,
+  doc: PMNode,
+  extra?: Partial<Pick<DocxImport, "styles" | "numbering" | "margins" | "section" | "settings">>,
+): Promise<string> {
   const d = await createDoc(title);
   const base = currentModel(editor);
   stashDocxSeed(d.id, {
@@ -112,6 +118,9 @@ export async function createDocFrom(editor: Editor, title: string, doc: PMNode, 
     numbering: { ...(extra?.numbering ?? {}), ...base.numbering },
     header: null,
     footer: null,
+    ...(extra?.margins ? { margins: extra.margins } : {}),
+    ...(extra?.section ? { section: extra.section } : {}),
+    ...(extra?.settings ? { settings: extra.settings } : {}),
     comments: [],
     page: null,
     warnings: [],

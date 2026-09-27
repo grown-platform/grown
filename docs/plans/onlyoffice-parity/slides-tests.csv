@@ -19,7 +19,7 @@ sdkjs-tests-v9.3.1/tests/common/color-mods/color-mods.js,28,ECMA-376 colour tran
 sdkjs-tests-v9.3.1/tests/common/color-mods/color-mods.html,0,QUnit harness page,N/A,-,-
 sdkjs-tests-v9.3.1/tests/common/api/api.js,2,URL classification for hyperlinks (Http / Unsafe / Invalid; browser vs desktop),High,web/app/src/lib/urlType.test.ts,M1 M4
 sdkjs-tests-v9.3.1/tests/common/api/api.html,0,QUnit harness page,N/A,-,-
-sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize.js,3,chartEx (waterfall/funnel/treemap/sunburst/box) XML serialize/parse round-trip (3 more generators commented out upstream),Low,web/app/src/pages/slides/pptx/chartXml.test.ts (pass-through preservation),M11
+sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize.js,6,chartEx (waterfall/funnel/treemap/sunburst/box) XML serialize/parse round-trip (6 QUnit.test sites as in common-tests.csv; 3 commented out upstream),Low (lib/chartEx.ts; pptx imports cx charts as Grown charts),web/app/src/lib/chartEx.test.ts,M11
 sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize-files.js,0,fixture: one chartEx XML + base64 zip,Low (author own fixtures; never copy),web/app/src/pages/slides/pptx/__fixtures__/,M11
 sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize-files-many.js,0,empty stub,N/A,-,-
 sdkjs-tests-v9.3.1/tests/common/charts/chartEx-serialize.html,0,QUnit harness page,N/A,-,-

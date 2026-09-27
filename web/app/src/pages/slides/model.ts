@@ -469,6 +469,9 @@ export interface SlideElement {
   valign?: "top" | "middle" | "bottom";
   // shape
   fill?: string;
+  /** Gradient fill of a preset shape (pptx `a:gradFill`); drawn instead of
+   *  `fill`, which keeps the first stop for older clients. */
+  gradFill?: GradientFill;
   stroke?: string;
   strokeWidth?: number;
   // image
@@ -585,6 +588,9 @@ export type SlideFill =
       radial?: boolean;
     }
   | { kind: "image"; src: string };
+
+/** A gradient fill (slide backgrounds and shapes). */
+export type GradientFill = Extract<SlideFill, { kind: "gradient" }>;
 
 /** Per-slide header/footer switches; absent = the deck setting. */
 export interface SlideHF {

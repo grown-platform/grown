@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import { Box } from "@mui/joy";
 import {
   CANVAS_W,
@@ -10,7 +10,7 @@ import {
   type SlideElement,
 } from "./model";
 import { relativeTo } from "./groupOps";
-import { connectorHitPath, dashArray, shapeLayers } from "./shapeRender";
+import { connectorHitPath, dashArray, gradientGeometry, shapeLayers } from "./shapeRender";
 import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
 import { insetsOf } from "./textOps";
 import { isRich, layoutParagraphs, markerCss, paraCss, runCss } from "./textLayout";
@@ -190,6 +190,19 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
 export function ShapeSvg({ el, hit }: { el: SlideElement; hit?: boolean }) {
   const layers = shapeLayers(el);
   const hitD = hit && el.type === "connector" ? connectorHitPath(el) : undefined;
+  // The same element is drawn in the canvas, the rail and thumbnails, so its
+  // gradient id must be unique per drawing.
+  const gid = `grad${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
+  const grad = layers.find((l) => l.gradient)?.gradient;
+  const geo = grad ? gradientGeometry(grad) : null;
+  const stops = grad?.stops.map((st, i) => (
+    <stop
+      key={i}
+      offset={`${Math.round(st.pos * 10000) / 100}%`}
+      stopColor={st.color.slice(0, 7)}
+      {...(st.color.length === 9 ? { stopOpacity: parseInt(st.color.slice(7), 16) / 255 } : {})}
+    />
+  ));
   return (
     <svg
       width={Math.max(el.w, 1)}
@@ -203,9 +216,22 @@ export function ShapeSvg({ el, hit }: { el: SlideElement; hit?: boolean }) {
       }}
       data-preset={el.preset}
     >
+      {geo && (
+        <defs>
+          {geo.radial ? (
+            <radialGradient id={gid} cx="50%" cy="50%" r="50%">
+              {stops}
+            </radialGradient>
+          ) : (
+            <linearGradient id={gid} x1={geo.x1} y1={geo.y1} x2={geo.x2} y2={geo.y2}>
+              {stops}
+            </linearGradient>
+          )}
+        </defs>
+      )}
       {layers.map((l, i) => (
         <g key={i}>
-          {l.fill && <path d={l.d} fill={l.fill} fillRule="evenodd" />}
+          {l.fill && <path d={l.d} fill={l.gradient ? `url(#${gid})` : l.fill} fillRule="evenodd" />}
           {l.shade && <path d={l.d} fill={l.shade} fillRule="evenodd" />}
           {l.stroke && (
             <path

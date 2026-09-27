@@ -3,7 +3,7 @@
 // geometry engine. Pure: SlideView/SlideCanvas turn the layers into JSX and
 // export.ts into SVG markup, so the editor, thumbnails and exports agree.
 
-import type { ArrowHead, DashStyle, SlideElement } from "./model";
+import type { ArrowHead, DashStyle, GradientFill, SlideElement } from "./model";
 import {
   evaluatePreset,
   pathEnds,
@@ -135,6 +135,9 @@ function trimEnds(segs: Seg[], start: number, end: number): Seg[] {
 export interface ShapeLayer {
   d: string;
   fill?: string;
+  /** The fill is this gradient (painted via an SVG gradient; `fill` is its
+   *  first stop, the fallback colour). */
+  gradient?: GradientFill;
   /** Semi-transparent shading drawn over the fill (darken/lighten paths). */
   shade?: string;
   stroke?: string;
@@ -165,11 +168,17 @@ export function shapeLayers(el: SlideElement): ShapeLayer[] {
   const dash = dashArray(el.dash, sw);
   const out: ShapeLayer[] = [];
   const isLine = el.type === "connector";
+  const grad = el.gradFill && el.gradFill.stops.length >= 2 ? el.gradFill : undefined;
   // Fills first (all paths), then outlines, as PowerPoint paints them.
   if (!isLine && has(el.fill))
     for (const p of g.paths) {
       if (p.fill === "none") continue;
-      out.push({ d: p.d, fill: el.fill, ...(SHADE[p.fill] ? { shade: SHADE[p.fill] } : {}) });
+      out.push({
+        d: p.d,
+        fill: el.fill,
+        ...(grad ? { gradient: grad } : {}),
+        ...(SHADE[p.fill] ? { shade: SHADE[p.fill] } : {}),
+      });
     }
   if (!stroked) return out;
   const head = el.headEnd && el.headEnd !== "none" ? el.headEnd : null;
@@ -217,12 +226,41 @@ export function connectorHitPath(el: SlideElement): string | undefined {
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-/** SVG markup (no <svg> wrapper) for an element's layers. */
-export function shapeLayersMarkup(el: SlideElement): string {
+/** SVG gradient geometry in the shape's bounding box: a radial gradient
+ *  from the centre, or a linear one along `angle` (DrawingML: 0° = left →
+ *  right, clockwise). */
+export function gradientGeometry(g: GradientFill): { radial: true } | { radial: false; x1: number; y1: number; x2: number; y2: number } {
+  if (g.radial) return { radial: true };
+  const a = ((g.angle ?? 90) * Math.PI) / 180;
+  const dx = Math.cos(a) / 2;
+  const dy = Math.sin(a) / 2;
+  return { radial: false, x1: r2(0.5 - dx), y1: r2(0.5 - dy), x2: r2(0.5 + dx), y2: r2(0.5 + dy) };
+}
+
+/** An SVG `<linearGradient>`/`<radialGradient>` element with id `id`. */
+export function gradientDefMarkup(g: GradientFill, id: string): string {
+  const stops = g.stops
+    .map((st) => `<stop offset="${r2(st.pos * 100)}%" stop-color="${esc(st.color.slice(0, 7))}"${st.color.length === 9 ? ` stop-opacity="${r2(parseInt(st.color.slice(7), 16) / 255)}"` : ""}/>`)
+    .join("");
+  const geo = gradientGeometry(g);
+  return geo.radial
+    ? `<radialGradient id="${id}" cx="50%" cy="50%" r="50%">${stops}</radialGradient>`
+    : `<linearGradient id="${id}" x1="${geo.x1}" y1="${geo.y1}" x2="${geo.x2}" y2="${geo.y2}">${stops}</linearGradient>`;
+}
+
+/** SVG markup (no <svg> wrapper) for an element's layers. `idPrefix` keeps
+ *  gradient ids unique when the same element is drawn more than once. */
+export function shapeLayersMarkup(el: SlideElement, idPrefix = "g"): string {
+  const gid = `${idPrefix}-grad-${el.id}`.replace(/[^A-Za-z0-9_-]/g, "_");
+  let defs = "";
   return shapeLayers(el)
     .map((l) => {
       const parts: string[] = [];
-      if (l.fill) parts.push(`<path d="${l.d}" fill="${esc(l.fill)}" fill-rule="evenodd"/>`);
+      if (l.gradient && !defs) {
+        defs = `<defs>${gradientDefMarkup(l.gradient, gid)}</defs>`;
+        parts.push(defs);
+      }
+      if (l.fill) parts.push(`<path d="${l.d}" fill="${l.gradient ? `url(#${gid})` : esc(l.fill)}" fill-rule="evenodd"/>`);
       if (l.shade) parts.push(`<path d="${l.d}" fill="${l.shade}" fill-rule="evenodd"/>`);
       if (l.stroke)
         parts.push(
