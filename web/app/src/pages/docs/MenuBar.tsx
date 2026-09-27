@@ -15,10 +15,10 @@ import { copySelection, cutSelection, paste } from "./editorActions";
 import { CASE_MODES, changeCase } from "./textCase";
 import { hasSpaceAfter, hasSpaceBefore } from "./paragraphFormat";
 import { indent, outdent, stepFontSize } from "./shortcuts";
-import { resolveLinkInput } from "../../lib/urlType";
 import { downloadDoc, DOWNLOAD_FORMATS } from "./export";
 import { applyStyle, continueNumbering, currentStyle, restartNumbering } from "./docModel";
 import { openParagraphDialog } from "./ParagraphDialogs";
+import { promptLink } from "./links";
 
 const menuButtonSx = {
   fontWeight: 400,
@@ -296,8 +296,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem disabled>Smart chips</MenuItem>
           <MenuItem
             onClick={run((e) => {
-              const u = resolveLinkInput(window.prompt("Link URL"));
-              if (u) e.chain().focus().setLink({ href: u }).run();
+              promptLink(e);
             })}
           >
             Link…{kbd("Ctrl+K")}

@@ -75,6 +75,7 @@ import { ShortcutsDialog } from "./ShortcutsDialog";
 import { FindBar, type FindMode } from "./FindBar";
 import { AutoCorrectDialog } from "./AutoCorrectDialog";
 import { getAutoCorrect, loadAutoCorrect, saveAutoCorrect } from "./autocorrect";
+import { promptLink } from "./links";
 
 interface DocEditorProps {
   user: User;
@@ -467,8 +468,7 @@ export function DocEditor({ user }: DocEditorProps) {
         editor?.isFocused
       ) {
         e.preventDefault();
-        const u = window.prompt("Link URL");
-        if (u) editor.chain().focus().setLink({ href: u }).run();
+        promptLink(editor);
       } else if (
         (e.ctrlKey || e.metaKey) &&
         e.shiftKey &&
