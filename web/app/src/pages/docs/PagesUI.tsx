@@ -8,6 +8,7 @@ import { getLayout, onLayout, paginationState, setForcePaged, afterNextLayout, t
 import { pageIndexAt, pageSnippets, type DocLayout } from "./paginationModel";
 import { setDocSettings } from "./pageLayout";
 import { LanguageStatus } from "./SpellMenu";
+import { statusWordCount, throttleTrailing } from "./docStats";
 
 // --- live pagination state -----------------------------------------------------------------
 
@@ -35,9 +36,11 @@ const paginationKeyName = "pagination$";
 export const ZOOMS = [50, 75, 90, 100, 125, 150, 200];
 
 function countWords(editor: Editor): number {
-  const text = editor.state.doc.textBetween(0, editor.state.doc.content.size, " ", " ");
-  return (text.match(/\S+/g) || []).length;
+  return statusWordCount(editor.state.doc.textBetween(0, editor.state.doc.content.size, " ", " "));
 }
+
+/** How often the word count refreshes while the document changes. */
+const WORD_COUNT_MS = 250;
 
 /** visiblePage: the 1-based number of the page sheet covering most of the
  *  viewport, or 0 when there are no page sheets (pageless). */
@@ -76,14 +79,17 @@ export function StatusBar({
   const [page, setPage] = useState(1);
   useEffect(() => {
     if (!editor) return;
-    let t: number | undefined;
-    const upd = () => {
-      window.clearTimeout(t);
-      t = window.setTimeout(() => {
-        if (editor.isDestroyed) return;
-        setWords(countWords(editor));
-      }, 250);
-    };
+    // Throttled, not debounced: a debounce restarted by every keystroke kept
+    // the count at "0 words" for as long as someone kept typing. Recounting
+    // at most every WORD_COUNT_MS (and once after the last change) keeps it
+    // live and cheap on long documents; an unchanged doc isn't recounted.
+    let counted: unknown = null;
+    const recount = throttleTrailing(() => {
+      if (editor.isDestroyed || editor.state.doc === counted) return;
+      counted = editor.state.doc;
+      setWords(countWords(editor));
+    }, WORD_COUNT_MS);
+    const upd = () => recount.schedule();
     // The page shown is the page in view (M13): the page sheet taking up
     // most of the viewport, as Word's status bar does while scrolling.
     // Pageless (no sheets) falls back to the caret's page.
@@ -113,7 +119,7 @@ export function StatusBar({
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onScroll);
     return () => {
-      window.clearTimeout(t);
+      recount.cancel();
       cancelAnimationFrame(raf);
       editor.off("update", upd);
       editor.off("selectionUpdate", onScroll);
