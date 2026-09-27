@@ -37,6 +37,7 @@ import {
 import { bordersToInfo, isDateFormat, readStyles, type CellBorder, type ReadStyles } from "./xlsxStyles";
 import { readAutoFilter, readConditionalFormatting, readDataValidations } from "./xlsxRules";
 import { readTable, type TableModel } from "./xlsxTables";
+import { normalizeStructuredRefs, unqualifyHost } from "../structuredRefs";
 import { GROWN_EXT_URI } from "./xlsxWrite";
 import { readChartSpace, readDrawingAnchors } from "./xlsxCharts";
 import type { ChartConfig } from "../chartData";
@@ -477,10 +478,22 @@ export async function readXlsx(data: ArrayBuffer | Uint8Array | Blob, opts: Read
       const tr = rels.find((x) => x.id === attr(tp, "id"));
       if (!tr) continue;
       const td = await readPart(zip, resolvePath(dirOf(path), tr.target));
-      const t = td ? readTable(td) : null;
+      const t = td ? readTable(td, unprefixFormula) : null;
       if (t) tables.push(t);
     }
-    if (tables.length) sheet.grownTables = tables;
+    if (tables.length) {
+      sheet.grownTables = tables;
+      // Formulas read in Excel's saved form ([#This Row]) show in the edit
+      // form ([@Col]); inside a table its own name is dropped, as Excel shows it.
+      for (const [k, cell] of cells) {
+        if (typeof cell?.f !== "string" || !cell.f.includes("[")) continue;
+        const [r, c] = k.split("_").map(Number);
+        const host = tables.find((t) => r >= t.ref.r1 && r <= t.ref.r2 && c >= t.ref.c1 && c <= t.ref.c2);
+        let f = normalizeStructuredRefs(cell.f, "edit");
+        if (host) f = unqualifyHost(f, host.displayName || host.name);
+        cell.f = f;
+      }
+    }
 
     // Protection.
     const prot: ProtectionModel = { sheet: null, ranges: [] };

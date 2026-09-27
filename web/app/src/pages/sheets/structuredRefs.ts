@@ -244,6 +244,18 @@ export function normalizeStructuredRefs(formula: string, mode: "edit" | "file", 
   });
 }
 
+/**
+ * Drops the table name from references to `host` itself (the table the
+ * formula's cell is in), as Excel shows them: Table1[@Qty] → [@Qty].
+ */
+export function unqualifyHost(formula: string, host: string): string {
+  return rewriteStructured(formula, (t) => {
+    if (!t.table || !same(t.table, host)) return undefined;
+    const sp = parseStructSpec(t.inner);
+    return sp ? formatStructRef("", sp, "edit") : undefined;
+  });
+}
+
 /** True when every structured reference in the formula parses. */
 export function structuredRefsValid(formula: string): boolean {
   return structuredTokens(formula).every((t) => parseStructSpec(t.inner) !== null);
