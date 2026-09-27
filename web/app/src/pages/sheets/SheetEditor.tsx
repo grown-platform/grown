@@ -38,6 +38,8 @@ import {
   workbookHasFormulas,
 } from "./formulaRefs";
 import { SheetMenuBar, type SheetActions } from "./SheetMenuBar";
+import { SheetVersionHistory } from "../../components/versions/SheetVersionPreview";
+import { VERSION_RESTORED_MSG, isVersionRestoredMsg } from "../../components/versions/api";
 import { FindReplaceDialog } from "./FindReplaceDialog";
 import { ShareDialog } from "./ShareDialog";
 import { ConditionalFormatDialog } from "./ConditionalFormatDialog";
@@ -153,6 +155,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [peers, setPeers] = useState<Record<string, Peer>>({});
   const [findOpen, setFindOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [cfOpen, setCfOpen] = useState(false);
   const [nrOpen, setNrOpen] = useState(false);
   const [numFmtOpen, setNumFmtOpen] = useState(false);
@@ -281,6 +284,13 @@ export function SheetEditor({ user }: SheetEditorProps) {
       try {
         msg = JSON.parse(ev.data);
       } catch {
+        return;
+      }
+      if (isVersionRestoredMsg(msg)) {
+        // A collaborator restored a version: reload so this tab's stale
+        // workbook can't autosave over it.
+        window.clearTimeout(saveTimer.current);
+        window.location.reload();
         return;
       }
       if (Array.isArray(msg)) {
@@ -602,6 +612,19 @@ export function SheetEditor({ user }: SheetEditorProps) {
     const d = dataRef.current;
     if (d) saveSheet(id, JSON.stringify(withExtras(d))).catch(() => {});
   }
+  // Version history: flush the pending autosave before naming/restoring, and
+  // reload after a restore (telling collaborators to do the same).
+  async function flushSave() {
+    window.clearTimeout(saveTimer.current);
+    const d = dataRef.current;
+    if (d) await saveSheet(id, JSON.stringify(withExtras(d)));
+  }
+  function afterVersionRestore() {
+    window.clearTimeout(saveTimer.current);
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(VERSION_RESTORED_MSG));
+    window.location.reload();
+  }
   function persistCharts(next: ChartConfig[]) {
     chartsRef.current = next;
     setCharts(next);
@@ -649,6 +672,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
       navigate("/sheets");
     },
     share: () => setShareOpen(true),
+    versionHistory: () => setHistoryOpen(true),
     download: async (fmt) => {
       try {
         await downloadSheet(ref.current, title, fmt);
@@ -799,6 +823,13 @@ export function SheetEditor({ user }: SheetEditorProps) {
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         sheetId={id}
+      />
+      <SheetVersionHistory
+        open={historyOpen}
+        docId={id}
+        onClose={() => setHistoryOpen(false)}
+        prepare={flushSave}
+        onRestored={afterVersionRestore}
       />
       <ConditionalFormatDialog
         open={cfOpen}

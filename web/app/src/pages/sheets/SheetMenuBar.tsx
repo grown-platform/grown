@@ -44,6 +44,8 @@ export interface SheetActions {
   trash: () => void;
   share: () => void;
   download: (fmt: SheetFormat) => void | Promise<void>;
+  /** File ▸ Version history (opens the version history panel). */
+  versionHistory?: () => void;
 }
 
 interface SheetMenuBarProps {
@@ -763,7 +765,15 @@ function FileMenu({ actions }: { actions: SheetActions }) {
         <MenuItem color="danger" onClick={actions.trash}>
           Move to trash
         </MenuItem>
-        <MenuItem disabled>Version history{arrow}</MenuItem>
+        <MenuItem
+          disabled={!actions.versionHistory}
+          onClick={() => {
+            close();
+            actions.versionHistory?.();
+          }}
+        >
+          Version history
+        </MenuItem>
         <MenuItem disabled>Make available offline</MenuItem>
         <ListDivider />
         <MenuItem disabled>Details</MenuItem>
