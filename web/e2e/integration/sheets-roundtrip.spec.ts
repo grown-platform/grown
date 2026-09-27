@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import { createSheet, trashSheet, saveSheet, getSheetData } from "../helpers";
 import { num, txt, fx, openSheet, select, menu, typeAt } from "../sheetsGrid";
+import { readPdf, renderPdfPage } from "./pdf-helpers";
 import {
   CSV_MIME,
   ODS_MIME,
@@ -292,29 +293,18 @@ test("sheets: rich workbook round-trips through xlsx/ods/csv/pdf download, File 
     // ---- .pdf (export only) ---------------------------------------------
     await openSheet(page, src);
     await test.step("download .pdf", async () => {
-      // PDF goes through /api/v1/docs/convert (pandoc + tectonic, sheets.md
-      // §14.5 "PDF export still goes through the HTML-table convert
-      // endpoint"). Stacks without tectonic answer with an error, which the
-      // editor reports in an alert.
-      let alertText = "";
-      page.once("dialog", (d) => {
-        alertText = d.message();
-        void d.accept();
-      });
-      await page.getByRole("button", { name: "File", exact: true }).click();
-      await page.getByRole("button", { name: "Download" }).click();
-      const dl = page.waitForEvent("download", { timeout: 60_000 }).catch(() => null);
-      await page.getByRole("menuitem", { name: "PDF Document (.pdf)" }).click();
-      const got = await Promise.race([dl, expect.poll(() => alertText, { timeout: 60_000 }).not.toBe("").then(() => null)]);
-      if (got) {
-        const bytes = await (await import("node:fs/promises")).readFile((await got.path())!);
-        expect(bytes.subarray(0, 4).toString()).toBe("%PDF");
-        console.log(`[sheets-roundtrip] pdf export: ${bytes.length} bytes`);
-      } else {
-        expect(alertText).toMatch(/Download failed: Export failed: HTTP 5\d\d/);
-        console.log(`[sheets-roundtrip] pdf export unavailable: ${alertText.slice(0, 160)}`);
-        test.info().annotations.push({ type: "pdf-export", description: `converter unavailable on this stack: ${alertText.slice(0, 160)}` });
-      }
+      // Built in the browser from each sheet's print layout (lib/pdf,
+      // sheets/pdfExport.ts): every sheet's pages with a text layer.
+      const { bytes, name } = await downloadAs(page, "PDF Document (.pdf)");
+      expect(name).toBe("e2e rt source.pdf");
+      const info = readPdf(bytes);
+      expect(info.producer).toBe("Grown Sheets");
+      expect(info.pages.length).toBeGreaterThanOrEqual(2); // Data + Summary
+      // Default page setup: Letter portrait.
+      expect(info.pages[0].w).toBeCloseTo(612, 0);
+      expect(info.pages[0].h).toBeCloseTo(792, 0);
+      for (const s of ["Region", "East", "West", "Merged note"]) expect(info.text).toContain(s);
+      expect(await renderPdfPage(page, bytes, 1)).toBeGreaterThan(0.002);
     });
 
     // The source itself is unchanged by all of this.

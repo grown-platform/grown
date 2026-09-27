@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { BASE_URL, createDoc, trashDoc } from "../helpers";
 import { openDoc } from "../docs/helpers";
+import { readPdf, renderPdfPage } from "./pdf-helpers";
 import {
   downloadAs,
   editor,
@@ -234,7 +235,7 @@ test.describe.serial("docs integration: export → import round trips", () => {
     }
   });
 
-  test("rich doc → .odt / .rtf / .md / .html / .txt / .pdf (pandoc path)", async ({ page }) => {
+  test("rich doc → .odt / .rtf / .md / .html / .txt (pandoc path) / .pdf (browser)", async ({ page }) => {
     test.setTimeout(240_000);
     const docs: string[] = [];
     const files: string[] = [];
@@ -297,29 +298,18 @@ test.describe.serial("docs integration: export → import round trips", () => {
       const plain = txt.bytes.toString("utf8");
       for (const s of ["Overview", "bold words", "Alpha item", "Region", "North"]) expect(plain).toContain(s);
 
-      // .pdf needs a LaTeX engine on the server (tectonic; flake.nix and the
-      // Dockerfile ship it). Without one the server answers 500 and the UI
-      // alerts; with one, the download is a PDF.
+      // .pdf is built in the browser from the paginated layout (lib/pdf):
+      // one page per laid-out page, the text layer and a drawn page.
       await page.goto(src);
       await expect(page.getByTestId("collab-status")).toHaveText("connected", { timeout: 15_000 });
-      const probe = await page.request.post(`${BASE_URL}/api/v1/docs/convert?to=pdf`, {
-        headers: { "Content-Type": "text/html" },
-        data: "<p>probe</p>",
-      });
-      if (probe.ok()) {
-        const pdf = await downloadAs(page, "PDF Document (.pdf)");
-        expect(pdf.bytes.subarray(0, 5).toString()).toBe("%PDF-");
-      } else {
-        expect(await probe.text()).toMatch(/tectonic/);
-        test.info().annotations.push({ type: "pdf", description: "server has no PDF engine (tectonic); PDF export not exercised" });
-        const alert = page.waitForEvent("dialog");
-        await page.getByRole("button", { name: "File", exact: true }).click();
-        await page.getByText("Download", { exact: true }).click();
-        await page.getByRole("menuitem", { name: "PDF Document (.pdf)" }).click();
-        const d = await alert;
-        expect(d.message()).toMatch(/Download failed/);
-        await d.dismiss();
-      }
+      await expect(page.getByTestId("doc-editor")).toHaveAttribute("data-paged", "true");
+      const laidOut = await page.locator(".doc-pages .doc-page").count();
+      const pdf = await downloadAs(page, "PDF Document (.pdf)");
+      const info = readPdf(pdf.bytes);
+      expect(info.pages).toHaveLength(laidOut);
+      expect(info.pages[0]).toMatchObject({ w: 612, h: 792 });
+      for (const s of ["Overview", "bold words", "Alpha item", "Region", "North"]) expect(info.text).toContain(s);
+      expect(await renderPdfPage(page, pdf.bytes, 1)).toBeGreaterThan(0.005);
     } finally {
       for (const f of files) await purgeDriveFile(page, f);
       for (const d of docs) await trashDoc(page.request, d);
