@@ -348,7 +348,7 @@ func sttAverageif(c *callCtx) value {
 		if av.isErr() {
 			return av
 		}
-		if av.kind == kindNum {
+		if av.kind == kindNum && !av.blank {
 			sum += av.num
 			count++
 		}
@@ -400,7 +400,7 @@ func sttAverageifs(c *callCtx) value {
 		if av.isErr() {
 			return av
 		}
-		if av.kind == kindNum {
+		if av.kind == kindNum && !av.blank {
 			sum += av.num
 			count++
 		}
@@ -454,7 +454,7 @@ func sttMinMaxifs(c *callCtx, wantMax bool) value {
 		if v.isErr() {
 			return v
 		}
-		if v.kind != kindNum {
+		if v.kind != kindNum || v.blank {
 			continue
 		}
 		if !found {

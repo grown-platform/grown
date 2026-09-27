@@ -1511,9 +1511,20 @@ func wildcardToRegexp(pat string) *regexp.Regexp {
 
 // match reports whether a cell value satisfies the criterion.
 func (c criteria) match(v value) bool {
+	if v.blank {
+		// An empty cell matches only an empty criterion ("" or "=") and
+		// any "<>x" with a non-empty x.
+		switch c.op {
+		case "=":
+			return c.str == "" && c.re == nil
+		case "<>":
+			return c.str != ""
+		}
+		return false
+	}
 	// Numeric comparison when both sides are numeric.
 	if c.isNum {
-		if n, ok := v.toNum(); ok {
+		if n, ok := v.toNum(); ok && v.kind != kindBool {
 			switch c.op {
 			case "=":
 				return n == c.num
