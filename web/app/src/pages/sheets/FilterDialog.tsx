@@ -157,7 +157,8 @@ export function FilterDialog({ open, onClose, getWb }: FilterDialogProps) {
     }
     const col = sel && sel.c1 >= st.range.c1 && sel.c1 <= st.range.c2 ? sel.c1 - st.range.c1 : 0;
     loadColumn(st, g, col);
-  }, [open, getWb, loadColumn]);
+  // Load once per opening: getWb is a new function on every editor render.
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const headers = useMemo(() => {
     if (!state) return [];

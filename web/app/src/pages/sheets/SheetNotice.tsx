@@ -12,15 +12,19 @@ interface Notice {
 
 export function SheetNotice() {
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => {
-    const on = (e: Event) => setNotice((e as CustomEvent<Notice>).detail);
+    const on = (e: Event) => {
+      setNotice((e as CustomEvent<Notice>).detail);
+      setOpen(true);
+    };
     window.addEventListener("grown-sheet-notice", on);
     return () => window.removeEventListener("grown-sheet-notice", on);
   }, []);
   return (
     <Snackbar
-      open={!!notice}
-      onClose={() => setNotice(null)}
+      open={open}
+      onClose={(_, reason) => reason !== "clickaway" && setOpen(false)}
       autoHideDuration={5000}
       color={notice?.kind === "error" ? "danger" : "primary"}
       variant="soft"

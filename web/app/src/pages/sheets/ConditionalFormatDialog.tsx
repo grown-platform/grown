@@ -278,7 +278,8 @@ export function ConditionalFormatDialog({ open, onClose, getWb }: ConditionalFor
 
   useEffect(() => {
     if (open) load();
-  }, [open, load]);
+  // Load once per opening: getWb is a new function on every editor render.
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function save(next: CfRule[]) {
     const wb = getWb();

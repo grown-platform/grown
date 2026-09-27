@@ -26,7 +26,7 @@ import {
   type DvType,
 } from "./validationOps";
 import { currentSheet, setCircleInvalid, setSheetDV, sheetDV } from "./sheetDataTools";
-import { rectToA1, serialToParts } from "./cellValue";
+import { parseA1Range, rectToA1, serialToParts } from "./cellValue";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet ref API is loosely typed. */
 
@@ -108,6 +108,7 @@ interface DataValidationDialogProps {
 
 export function DataValidationDialog({ open, onClose, getWb }: DataValidationDialogProps) {
   const [sel, setSel] = useState<SelRange | null>(null);
+  const [rangeText, setRangeText] = useState("");
   const [type, setType] = useState<DvType>("list");
   const [op, setOp] = useState<DvOperator>("between");
   const [value1, setValue1] = useState("");
@@ -131,6 +132,7 @@ export function DataValidationDialog({ open, onClose, getWb }: DataValidationDia
     if (!wb) return;
     const s = getSelection(wb);
     setSel(s);
+    setRangeText(s ? rectToA1(s) : "");
     setErr(null);
     const sheet = currentSheet(wb);
     setCircle(!!sheet?.grownCircleInvalid);
@@ -154,13 +156,15 @@ export function DataValidationDialog({ open, onClose, getWb }: DataValidationDia
 
   useEffect(() => {
     if (open) load();
-  }, [open, load]);
+  // Load once per opening: getWb is a new function on every editor render.
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function apply() {
     const wb = getWb();
     const sheet = currentSheet(wb);
-    if (!sel || !sheet?.id) {
-      setErr("Select a range of cells first.");
+    const target = parseA1Range(rangeText);
+    if (!target || !sheet?.id) {
+      setErr("Enter the cells to validate, e.g. B2:B20.");
       return;
     }
     const needs1 = type === "list" || type === "custom" || HAS_OPERATOR.has(type);
@@ -173,7 +177,7 @@ export function DataValidationDialog({ open, onClose, getWb }: DataValidationDia
       return;
     }
     const f1 = type === "custom" && !value1.trim().startsWith("=") ? "=" + value1.trim() : value1.trim();
-    const { rules } = setValidation(sheetDV(sheet), sel, {
+    const { rules } = setValidation(sheetDV(sheet), target, {
       type,
       operator: HAS_OPERATOR.has(type) ? op : "between",
       formula1: f1,
@@ -197,7 +201,8 @@ export function DataValidationDialog({ open, onClose, getWb }: DataValidationDia
   function remove() {
     const wb = getWb();
     const sheet = currentSheet(wb);
-    if (sel && sheet?.id) setSheetDV(wb, sheet.id, deleteValidation(sheetDV(sheet), sel));
+    const target = parseA1Range(rangeText) ?? sel;
+    if (target && sheet?.id) setSheetDV(wb, sheet.id, deleteValidation(sheetDV(sheet), target));
     onClose();
   }
 
@@ -242,9 +247,15 @@ export function DataValidationDialog({ open, onClose, getWb }: DataValidationDia
           Data validation
         </Typography>
         <Stack spacing={1.25} sx={{ mt: 1 }}>
-          <Typography level="body-sm" sx={{ opacity: 0.75 }}>
-            Applies to: <strong>{sel ? rectToA1(sel) : "no selection"}</strong>
-          </Typography>
+          <FormControl>
+            <FormLabel>Apply to range</FormLabel>
+            <Input
+              value={rangeText}
+              onChange={(e) => setRangeText(e.target.value)}
+              placeholder="B2:B20"
+              slotProps={{ input: { "aria-label": "Apply to range" } }}
+            />
+          </FormControl>
           <FormControl>
             <FormLabel>Criteria</FormLabel>
             <Select
