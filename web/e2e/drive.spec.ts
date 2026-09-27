@@ -1,10 +1,15 @@
 import { test, expect } from "@playwright/test";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import * as os from "node:os";
 
 const BASE_URL =
   process.env.GROWN_HTTP_URL ?? "http://workspace.localtest.me:8080";
-const FIXTURE = path.join("/tmp", "drive-fixture.txt");
+// A unique name per run: the dev DB is shared across runs (and worktrees), so a
+// fixed name matched leftovers from earlier failed runs and `.first()` row
+// actions could hit someone else's file.
+const NAME = `drive-fixture-${Date.now()}-${Math.floor(Math.random() * 1e6)}.txt`;
+const FIXTURE = path.join(os.tmpdir(), NAME);
 
 test.beforeAll(() => {
   fs.writeFileSync(FIXTURE, "hello from drive e2e test\n");
@@ -56,12 +61,12 @@ test.describe.serial("drive", () => {
     await fileInput.setInputFiles(FIXTURE);
 
     // Wait for the row to appear.
-    await expect(page.getByText("drive-fixture.txt")).toBeVisible({
+    await expect(page.getByText(NAME)).toBeVisible({
       timeout: 10_000,
     });
 
     // Click the file row — opens the right-side details panel (not the viewer).
-    await page.getByText("drive-fixture.txt").click();
+    await page.getByText(NAME).click();
     await expect(page.getByTestId("file-details-panel")).toBeVisible({
       timeout: 5_000,
     });
@@ -76,11 +81,14 @@ test.describe.serial("drive", () => {
 
     // Open the row's triple-dot menu, then click Move to trash.
     page.once("dialog", (d) => d.accept()); // confirm() prompt
-    await page.locator('[data-testid^="row-menu-"]').first().click();
-    await page.locator('[data-testid^="trash-"]').first().click();
+    const row = page.locator('[data-testid^="file-row-"]', { hasText: NAME });
+    const id = ((await row.getAttribute("data-testid")) ?? "").replace("file-row-", "");
+    expect(id).not.toBe("");
+    await page.getByTestId(`row-menu-${id}`).click();
+    await page.getByTestId(`trash-${id}`).click();
 
     // Row should disappear from the list.
-    await expect(page.getByText("drive-fixture.txt")).toHaveCount(0, {
+    await expect(page.getByText(NAME)).toHaveCount(0, {
       timeout: 5_000,
     });
   });

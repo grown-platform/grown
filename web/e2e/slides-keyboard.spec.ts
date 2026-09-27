@@ -183,8 +183,13 @@ test("slides: copy between decks and to/from Docs", async ({ page }) => {
     await expect(page.locator(".ProseMirror")).toContainText("Bold and plain");
 
     // Back from the doc: its first paragraph pasted into a deck keeps the bold.
+    // Select the first paragraph. The browser reports caret moves to the
+    // editor asynchronously (see docs.md "async-selection race"), so let each
+    // move land before the next key instead of firing 14 Shift+Arrows at once.
     await page.keyboard.press("ControlOrMeta+ArrowUp");
-    for (let i = 0; i < "Bold and plain".length; i++) await page.keyboard.press("Shift+ArrowRight");
+    await page.waitForTimeout(100);
+    await page.keyboard.press("Shift+End");
+    await page.waitForTimeout(100);
     await page.keyboard.press("ControlOrMeta+c");
     await page.goto(`${BASE_URL}/slides/d/${b}`);
     await page.getByTestId("slide-canvas").click({ position: { x: 5, y: 5 } });
