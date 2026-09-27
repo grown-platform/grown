@@ -5,7 +5,6 @@ import {
   CANVAS_H,
   shapeClipPath,
   elementTransform,
-  type AnimationType,
   type CellBorder,
   type Slide,
   type SlideElement,
@@ -28,37 +27,19 @@ import {
   type CellRange,
 } from "./tableOps";
 
-// CSS keyframes for element entrance animations (injected globally once).
-export const ELEMENT_ANIM_CSS = `
-@keyframes elAppear    { from { opacity: 0; } to { opacity: 1; } }
-@keyframes elFadeIn    { from { opacity: 0; } to { opacity: 1; } }
-@keyframes elFlyInBot  { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-@keyframes elFlyInLeft { from { transform: translateX(-40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-`;
-
-function elementAnimation(type: AnimationType): string {
-  switch (type) {
-    case "appear":
-      return "elAppear 60ms step-end";
-    case "fade-in":
-      return "elFadeIn 500ms ease";
-    case "fly-in-bottom":
-      return "elFlyInBot 450ms ease";
-    case "fly-in-left":
-      return "elFlyInLeft 450ms ease";
-  }
+/** Per-element (key: element id) or per-paragraph (key: `id:p<i>`)
+ *  slideshow styling: animation frames, morph tweens, hiding. `key`
+ *  changes remount the element so a repeated animation replays. */
+export interface SlideFx {
+  style: React.CSSProperties;
+  key?: string;
 }
 
 interface SlideViewProps {
   slide: Slide;
   width: number;
-  /**
-   * Optional set of element IDs that have been "revealed" in present mode.
-   * Elements with an animation but NOT in this set are hidden (opacity 0).
-   * When added to the set they play their entrance animation.
-   * If undefined, all elements are shown normally (editor / thumbnail mode).
-   */
-  revealedIds?: ReadonlySet<string>;
+  /** Slideshow styling per element / paragraph (animations, morph). */
+  fx?: ReadonlyMap<string, SlideFx>;
   /** When true, elements with a `url` become clickable links (present mode). */
   linkable?: boolean;
   /** Follow a slide link (`#slide:…`) clicked in present mode. */
@@ -68,7 +49,7 @@ interface SlideViewProps {
 /** SlideView renders a slide read-only, scaled to fit `width` px (at the
  *  open deck's aspect ratio, CANVAS_W × CANVAS_H).
  *  Used for the thumbnail rail and present mode. */
-export function SlideView({ slide, width, revealedIds, linkable, onSlideLink }: SlideViewProps) {
+export function SlideView({ slide, width, fx, linkable, onSlideLink }: SlideViewProps) {
   const scale = width / CANVAS_W;
   const height = width * (CANVAS_H / CANVAS_W);
   return (
@@ -94,9 +75,9 @@ export function SlideView({ slide, width, revealedIds, linkable, onSlideLink }: 
       >
         {slide.elements.map((el) => (
           <ElementView
-            key={el.id}
+            key={el.id + (fx?.get(el.id)?.key ?? "")}
             el={el}
-            revealedIds={revealedIds}
+            fx={fx}
             linkable={linkable}
             onSlideLink={onSlideLink}
           />
@@ -251,29 +232,17 @@ export function ShapeSvg({ el, hit }: { el: SlideElement; hit?: boolean }) {
 
 function ElementView({
   el,
-  revealedIds,
+  fx,
   linkable,
   onSlideLink,
 }: {
   el: SlideElement;
-  revealedIds?: ReadonlySet<string>;
+  fx?: ReadonlyMap<string, SlideFx>;
   linkable?: boolean;
   onSlideLink?: (url: string) => void;
 }) {
   const style = elementStyle(el);
-
-  // Determine visibility / entrance animation when revealedIds is provided (present mode).
-  let animStyle: React.CSSProperties = {};
-  if (revealedIds !== undefined && el.animation) {
-    const revealed = revealedIds.has(el.id);
-    if (!revealed) {
-      animStyle = { opacity: 0, pointerEvents: "none" };
-    } else {
-      // Re-key via a data attribute so the animation replays on reveal.
-      animStyle = { animation: elementAnimation(el.animation.type) };
-    }
-  }
-
+  const animStyle: React.CSSProperties = fx?.get(el.id)?.style ?? {};
   const merged: React.CSSProperties = { ...style, ...animStyle };
 
   // In present mode, an element with a url becomes a clickable overlay link.
@@ -309,11 +278,11 @@ function ElementView({
 
   const inner =
     el.type === "group" ? (
-      <div style={merged}>
+      <div style={merged} data-view-el={el.id}>
         <GroupChildren el={el} />
       </div>
     ) : (
-      renderElementBody(el, merged, linkable ? { onSlideLink } : undefined)
+      renderElementBody(el, merged, linkable ? { onSlideLink } : undefined, fx)
     );
   return linkOverlay ? (
     <>
@@ -329,33 +298,34 @@ function renderElementBody(
   el: SlideElement,
   merged: React.CSSProperties,
   links?: TextLinkOpts,
+  fx?: ReadonlyMap<string, SlideFx>,
 ): React.ReactElement {
   if (el.type === "image") {
     return (
-      <div style={merged}>
+      <div style={merged} data-view-el={el.id}>
         <ImageBody el={el} />
       </div>
     );
   }
   if (el.type === "text")
     return (
-      <div style={merged}>
-        <ShrinkFit on={el.autofit === "shrink"}>{renderSlideText(el, links)}</ShrinkFit>
+      <div style={merged} data-view-el={el.id}>
+        <ShrinkFit on={el.autofit === "shrink"}>{renderSlideText(el, links, fx)}</ShrinkFit>
       </div>
     );
   if (el.type === "table")
     return (
-      <div style={merged}>
+      <div style={merged} data-view-el={el.id}>
         <SlideTable el={el} />
       </div>
     );
   if (el.type === "shape" || el.type === "connector")
     return (
-      <div style={merged}>
+      <div style={merged} data-view-el={el.id}>
         <ShapeSvg el={el} />
       </div>
     );
-  return <div style={merged} />;
+  return <div style={merged} data-view-el={el.id} />;
 }
 
 /** ImageBody draws a picture inside its element box: crop (the whole
@@ -451,13 +421,31 @@ export interface TextLinkOpts {
  *  text (pre-wrap); a rich one (runs, paragraph levels, lists, line breaks)
  *  is one block per paragraph with styled runs and list markers. With
  *  `links`, run links are clickable (present mode). */
-export function renderSlideText(el: SlideElement, links?: TextLinkOpts): React.ReactNode {
-  if (!isRich(el)) return el.text;
+export function renderSlideText(
+  el: SlideElement,
+  links?: TextLinkOpts,
+  fx?: ReadonlyMap<string, SlideFx>,
+): React.ReactNode {
+  const paraFx = (i: number) => fx?.get(`${el.id}:p${i}`);
+  const byPara = !!fx && (el.text ?? "").split("\n").some((_, i) => paraFx(i));
+  if (!isRich(el)) {
+    if (!byPara) return el.text;
+    // By-paragraph animation of plain text: one block per paragraph.
+    return (el.text ?? "").split("\n").map((t, i) => (
+      <div key={i + (paraFx(i)?.key ?? "")} data-para="" style={paraFx(i)?.style}>
+        {t || "\u200b"}
+      </div>
+    ));
+  }
   const laid = layoutParagraphs(el);
   const body = laid.map((p, i) => {
     const last = p.runs[p.runs.length - 1];
     return (
-      <div key={i} data-para="" style={paraCss(el, p.props, !!p.marker) as React.CSSProperties}>
+      <div
+        key={i + (paraFx(i)?.key ?? "")}
+        data-para=""
+        style={{ ...(paraCss(el, p.props, !!p.marker) as React.CSSProperties), ...paraFx(i)?.style }}
+      >
         {p.marker && (
           <span data-marker="" style={markerCss(el, p) as React.CSSProperties}>
             {p.marker}

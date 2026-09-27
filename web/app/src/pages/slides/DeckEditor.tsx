@@ -24,10 +24,6 @@ import {
   MenuItem,
   ListDivider,
   Textarea,
-  Modal,
-  ModalDialog,
-  Select,
-  Option,
   Dropdown,
   Menu,
   MenuButton,
@@ -44,7 +40,6 @@ import InterestsIcon from "@mui/icons-material/Interests";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import SpeakerNotesIcon from "@mui/icons-material/SpeakerNotes";
 import SpeakerNotesOffIcon from "@mui/icons-material/SpeakerNotesOff";
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import FormatItalicIcon from "@mui/icons-material/FormatItalic";
 import FormatUnderlinedIcon from "@mui/icons-material/FormatUnderlined";
@@ -82,25 +77,22 @@ import {
   setOpacity as imgSetOpacity,
 } from "./imageOps";
 import {
-  CANVAS_W,
-  CANVAS_H,
   setCanvasSize,
   parseDeck,
   newElement,
   isShape,
-  TRANSITIONS,
-  ANIMATION_TYPES,
   type DeckDoc,
   type DeckHF,
   type Slide,
   type SlideElement,
   type ElementType,
-  type TransitionType,
-  type AnimationType,
   type RunStyle,
   type TextAlign,
 } from "./model";
-import { SlideView, ELEMENT_ANIM_CSS } from "./SlideView";
+import { SlideView } from "./SlideView";
+import { SlideShow } from "./SlideShow";
+import { MotionPanel } from "./MotionPanel";
+import { effectsOf, removeEffects } from "./animOps";
 import { applyTheme, reconcileRefs, setActiveTheme, themeOf, withColorRef } from "./theme";
 import {
   applyLayout as applyLayoutOp,
@@ -145,7 +137,6 @@ import {
   mapSlide,
   moveSlide as moveSlideOp,
   patchSlide,
-  removeAnimation,
   rotateElement,
   setLink as setLinkOp,
   setList as setListOp,
@@ -163,22 +154,13 @@ import {
   type History,
 } from "./history";
 import {
-  animationSteps,
-  nextSlideIndex,
-  prevSlideIndex,
-  revealedElementIds,
-  transitionAnimation,
-} from "./presentOps";
-import {
   editorKeyAction,
   isSaveKey,
-  presentKeyAction,
-  presentKeyPreventsDefault,
   textKeyAction,
   type TextKeyAction,
   type TextToggle,
 } from "./keymap";
-import { GRID_SIZE, fitCanvasWidth, fitPresentWidth } from "./geometry";
+import { GRID_SIZE, fitCanvasWidth } from "./geometry";
 import {
   primaryId,
   selectAll,
@@ -302,11 +284,11 @@ export function DeckEditor({ user }: { user: User }) {
   } | null>(null);
   const [showNotes, setShowNotes] = useState(true);
   const [mobileSlidesOpen, setMobileSlidesOpen] = useState(false);
-  const [transitionOpen, setTransitionOpen] = useState(false);
-  const [animationsOpen, setAnimationsOpen] = useState(false);
+  const [motionOpen, setMotionOpen] = useState(false);
+  const [selEffect, setSelEffect] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [presenter, setPresenter] = useState(false); // presenter view (notes) during Present mode
+  const [presenterWin, setPresenterWin] = useState(false); // open the presenter window with the show
   const clip = useRef<SlideElement[] | null>(null);
   // Set by Ctrl+C / Ctrl+V keydowns so the copy/paste events that follow
   // know the keyboard asked for the in-app element clipboard.
@@ -617,10 +599,14 @@ export function DeckEditor({ user }: { user: User }) {
   // ---- keyboard ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (present) {
-        // Present-mode navigation is handled inside PresentView itself (to respect
-        // the animation step state). Only Escape is handled here so we can exit.
-        if (e.key === "Escape") setPresent(false);
+      // The slideshow handles its own keys (SlideShow).
+      if (present) return;
+      // F5 / Ctrl+Shift+F5: slideshow from the beginning; Shift+F5 /
+      // Ctrl+F5: from the current slide (PowerPoint / Google Slides).
+      if (e.key === "F5" && !e.altKey) {
+        e.preventDefault();
+        const mod = e.ctrlKey || e.metaKey;
+        startPresent(mod ? (e.shiftKey ? "start" : "current") : e.shiftKey ? "current" : "start");
         return;
       }
       // Ctrl/Cmd+S saves now, even while a text box is being edited, and
@@ -684,7 +670,13 @@ export function DeckEditor({ user }: { user: User }) {
       }
       const act = editorKeyAction(e, { hasSelection: selIds.length > 0 });
       if (!act) return;
-      if (act.type === "deleteSelected" && selIds.length) {
+      if (act.type === "deleteSelected" && motionOpen && selEffect && slide && effectsOf(slide).some((x) => x.id === selEffect)) {
+        // With an effect selected in the animation pane, Delete removes the
+        // effect, not the shape (OnlyOffice shortcut #10).
+        e.preventDefault();
+        setSlides(slides.map((x) => (x.id === slide.id ? removeEffects(x, [selEffect]) : x)));
+        setSelEffect(null);
+      } else if (act.type === "deleteSelected" && selIds.length) {
         e.preventDefault();
         removeMany(selIds);
       } else if (act.type === "newSlide") {
@@ -869,10 +861,13 @@ export function DeckEditor({ user }: { user: User }) {
     if (!l) return;
     setSlides(slides.map((x) => (x.id === slide.id ? resetSlideOp(x, l) : x)));
   }
-  function startPresent() {
-    if (doc) setShowIdx(showSlides(doc, cur).start);
-    setPresenter(false);
+  function startPresent(from: "start" | "current" = "current", presenterWindow = false) {
+    if (doc) setShowIdx(from === "start" ? 0 : showSlides(doc, cur).start);
+    setPresenterWin(presenterWindow);
     setPresent(true);
+  }
+  function toggleLoop() {
+    if (doc) setDeck({ ...doc, show: { ...doc.show, loop: !doc.show?.loop } });
   }
   function toggleSkip() {
     if (!slide) return;
@@ -1553,10 +1548,6 @@ export function DeckEditor({ user }: { user: User }) {
       history: false,
     });
   }
-  function setTransition(t: TransitionType) {
-    if (!slide) return;
-    setSlides(patchSlide(slides, slide.id, { transition: t }));
-  }
 
   // Insert new elements on top and select them (paste, duplicate).
   function insertEls(els: SlideElement[]) {
@@ -1645,7 +1636,12 @@ export function DeckEditor({ user }: { user: User }) {
     drawShape: pickShape,
     duplicateSlide,
     deleteSlide,
-    present: startPresent,
+    present: () => startPresent("current"),
+    presentFromStart: () => startPresent("start"),
+    presenterView: () => startPresent("current", true),
+    showLoop: !!doc?.show?.loop,
+    toggleLoop,
+    openMotion: () => setMotionOpen(true),
     toggle,
     setList,
     setLineSpacing,
@@ -1690,8 +1686,8 @@ export function DeckEditor({ user }: { user: User }) {
     duplicateSelected: () => {
       duplicateEls(selectedEls);
     },
-    openTransition: () => setTransitionOpen(true),
-    openAnimations: () => setAnimationsOpen(true),
+    openTransition: () => setMotionOpen(true),
+    openAnimations: () => setMotionOpen(true),
     toggleNotes: () => setShowNotes((v) => !v),
     insertTable: () => setTablePickerOpen(true),
     table: tableCmd,
@@ -1713,20 +1709,17 @@ export function DeckEditor({ user }: { user: User }) {
     // Skipped (hidden) slides are left out; header/footer boxes drawn in.
     const show = showSlides(doc);
     if (show.slides.length) {
-      const at = Math.min(showIdx, show.slides.length - 1);
       return (
-        <PresentView
+        <SlideShow
+          deckId={id}
           slides={show.slides}
-          cur={at}
-          presenter={presenter}
-          onAdvance={() => setShowIdx((c) => nextSlideIndex(c, show.slides.length))}
-          onPrev={() => setShowIdx((c) => prevSlideIndex(c))}
-          onTogglePresenter={() => setPresenter((v) => !v)}
-          onExit={() => {
+          start={Math.min(showIdx, show.slides.length - 1)}
+          loop={!!doc.show?.loop}
+          presenterWindow={presenterWin}
+          onExit={(at) => {
             setCur(show.indexOf[at] ?? cur);
             setPresent(false);
           }}
-          onJump={setShowIdx}
         />
       );
     }
@@ -1834,10 +1827,24 @@ export function DeckEditor({ user }: { user: User }) {
           <Button
             size="sm"
             startDecorator={<SlideshowIcon />}
-            onClick={startPresent}
+            onClick={() => startPresent("current")}
+            aria-label="Present"
           >
             Present
           </Button>
+          <Dropdown>
+            <MenuButton size="sm" variant="solid" color="primary" aria-label="Slideshow options" sx={{ px: 0.5, minWidth: 0 }}>
+              ▾
+            </MenuButton>
+            <Menu size="sm" placement="bottom-end" sx={{ zIndex: 1300 }}>
+              <MenuItem onClick={() => startPresent("start")}>Present from beginning</MenuItem>
+              <MenuItem onClick={() => startPresent("current")}>Present from current slide</MenuItem>
+              <MenuItem onClick={() => startPresent("current", true)}>Presenter view</MenuItem>
+              <MenuItem onClick={toggleLoop}>
+                {doc.show?.loop ? "✓ " : ""}Loop until Esc
+              </MenuItem>
+            </Menu>
+          </Dropdown>
         </Box>
         {/* toolbar: buttons keep the text editor's focus (and selection);
             inputs and selects take focus, and then apply to the saved
@@ -2389,6 +2396,30 @@ export function DeckEditor({ user }: { user: User }) {
             </Box>
           )}
         </Box>
+        {motionOpen && slide && (
+          <MotionPanel
+            slide={slide}
+            prevSlide={cur > 0 ? slides[cur - 1] : undefined}
+            selIds={selIds}
+            selEffect={selEffect}
+            onSelEffect={setSelEffect}
+            onSlide={(s) => setSlides(slides.map((x) => (x.id === s.id ? s : x)))}
+            onApplyToAll={(patch) =>
+              setSlides(
+                slides.map((x) => {
+                  const n: Slide = { ...x, ...patch };
+                  for (const k of Object.keys(patch) as (keyof typeof patch)[]) if (n[k] === undefined) delete n[k];
+                  return n;
+                }),
+              )
+            }
+            onSelectElement={(elId) => setSel([elId])}
+            onClose={() => {
+              setMotionOpen(false);
+              setSelEffect(null);
+            }}
+          />
+        )}
       </Box>
 
       {/* Right-click context menu (Google Slides parity). */}
@@ -2543,137 +2574,6 @@ export function DeckEditor({ user }: { user: User }) {
         </>
       )}
 
-      {/* Slide transition picker */}
-      <Modal open={transitionOpen} onClose={() => setTransitionOpen(false)}>
-        <ModalDialog sx={{ minWidth: 320 }}>
-          <Typography level="title-md">Transition</Typography>
-          <Typography level="body-sm" sx={{ mb: 1, opacity: 0.7 }}>
-            Played when this slide appears during a slideshow.
-          </Typography>
-          <Select
-            value={slide?.transition || "none"}
-            onChange={(_, v) => v && setTransition(v as TransitionType)}
-            slotProps={{ button: { "aria-label": "Slide transition" } }}
-          >
-            {TRANSITIONS.map((t) => (
-              <Option key={t.type} value={t.type}>
-                {t.label}
-              </Option>
-            ))}
-          </Select>
-          <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 2 }}>
-            <Button size="sm" onClick={() => setTransitionOpen(false)}>
-              Done
-            </Button>
-          </Box>
-        </ModalDialog>
-      </Modal>
-      {/* Animations pane */}
-      <Modal open={animationsOpen} onClose={() => setAnimationsOpen(false)}>
-        <ModalDialog
-          sx={{ minWidth: 360, maxHeight: "80vh", overflow: "auto" }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
-            <AutoAwesomeIcon sx={{ fontSize: 20, opacity: 0.7 }} />
-            <Typography level="title-md">Animations</Typography>
-          </Box>
-          <Typography level="body-sm" sx={{ mb: 1.5, opacity: 0.7 }}>
-            Assign entrance animations to elements on slide {cur + 1}. In
-            present mode, click to play each animation step before advancing to
-            the next slide.
-          </Typography>
-          {slide && slide.elements.length === 0 && (
-            <Typography level="body-sm" sx={{ opacity: 0.5 }}>
-              No elements on this slide yet.
-            </Typography>
-          )}
-          {slide &&
-            slide.elements.map((el, idx) => {
-              const anim = el.animation;
-              const label =
-                el.type === "text" ? el.text?.slice(0, 24) || "Text" : el.type;
-              return (
-                <Box
-                  key={el.id}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1,
-                    mb: 0.75,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <Typography
-                    level="body-sm"
-                    sx={{ minWidth: 90, fontFamily: "monospace" }}
-                  >
-                    {String(idx + 1).padStart(2, "0")} {label}
-                  </Typography>
-                  <Select
-                    size="sm"
-                    placeholder="No animation"
-                    value={anim?.type ?? ""}
-                    onChange={(_, v) => {
-                      if (!v) {
-                        upsertElement(removeAnimation(el));
-                      } else {
-                        upsertElement({
-                          ...el,
-                          animation: {
-                            type: v as AnimationType,
-                            order: anim?.order ?? idx + 1,
-                          },
-                        });
-                      }
-                    }}
-                    sx={{ minWidth: 160 }}
-                    slotProps={{
-                      button: {
-                        "aria-label": `Animation for element ${idx + 1}`,
-                      },
-                    }}
-                  >
-                    <Option value="">No animation</Option>
-                    {ANIMATION_TYPES.map((a) => (
-                      <Option key={a.type} value={a.type}>
-                        {a.label}
-                      </Option>
-                    ))}
-                  </Select>
-                  {anim && (
-                    <>
-                      <Typography level="body-xs" sx={{ opacity: 0.6 }}>
-                        Order
-                      </Typography>
-                      <input
-                        type="number"
-                        min={1}
-                        max={slide.elements.length}
-                        value={anim.order}
-                        onChange={(e) =>
-                          upsertElement({
-                            ...el,
-                            animation: {
-                              ...anim,
-                              order: Number(e.target.value),
-                            },
-                          })
-                        }
-                        style={{ width: 48 }}
-                        aria-label={`Animation order for element ${idx + 1}`}
-                      />
-                    </>
-                  )}
-                </Box>
-              );
-            })}
-          <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 2 }}>
-            <Button size="sm" onClick={() => setAnimationsOpen(false)}>
-              Done
-            </Button>
-          </Box>
-        </ModalDialog>
-      </Modal>
       <ThemeDialog
         open={!!themeDlg}
         tab={themeDlg ?? "gallery"}
@@ -2798,308 +2698,6 @@ export function DeckEditor({ user }: { user: User }) {
       >
         {importMsg}
       </Snackbar>
-    </Box>
-  );
-}
-
-// ---- Present mode ----
-
-// Keyframes for slide transitions, injected once. Each plays as the incoming
-// slide mounts (we re-key the slide wrapper on slide change so it remounts).
-const TRANSITION_CSS = `
-@keyframes slidesFade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slidesFromRight { from { transform: translateX(6%); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
-@keyframes slidesFromLeft { from { transform: translateX(-6%); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
-@keyframes slidesFromBottom { from { transform: translateY(6%); opacity: 0.4; } to { transform: translateY(0); opacity: 1; } }
-`;
-
-interface PresentViewProps {
-  slides: Slide[];
-  cur: number;
-  presenter: boolean;
-  onAdvance: () => void;
-  onPrev: () => void;
-  onTogglePresenter: () => void;
-  onExit: () => void;
-  /** Go to slide i (a slide link was clicked). */
-  onJump: (i: number) => void;
-}
-
-function PresentView({
-  slides,
-  cur,
-  presenter,
-  onAdvance,
-  onPrev,
-  onTogglePresenter,
-  onExit,
-  onJump,
-}: PresentViewProps) {
-  const slide = slides[cur];
-  const next = slides[cur + 1];
-  const [now, setNow] = useState(Date.now());
-  const startRef = useRef(Date.now());
-
-  // --- Element animation step state ---
-  // animatedSteps: sorted unique "order" values for elements that have animations on
-  // the current slide. animStep tracks how many steps have been revealed (0 = none).
-  const animatedSteps = animationSteps(slide);
-
-  // Reset step count whenever the slide changes.
-  const [animStep, setAnimStep] = useState(0);
-  useEffect(() => {
-    setAnimStep(0);
-  }, [cur]);
-
-  // revealedIds: all element IDs whose animation order <= animatedSteps[animStep-1]
-  const revealedIds = revealedElementIds(slide, animatedSteps, animStep);
-
-  // handleAdvance: play next animation step if any remain, otherwise advance slide.
-  function handleAdvance() {
-    if (animStep < animatedSteps.length) {
-      setAnimStep((s) => s + 1);
-    } else {
-      onAdvance();
-    }
-  }
-
-  // Keyboard navigation in present mode (arrow keys, space, S, Escape).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const act = presentKeyAction(e);
-      if (presentKeyPreventsDefault(act)) e.preventDefault();
-      if (act === "next") handleAdvance();
-      else if (act === "prev") onPrev();
-      else if (act === "togglePresenter") onTogglePresenter();
-      else if (act === "exit") onExit();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }); // re-bind each render to capture latest closures (same pattern as DeckEditor)
-
-  // Elapsed timer for the presenter view.
-  useEffect(() => {
-    if (!presenter) return;
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, [presenter]);
-
-  const elapsed = Math.floor((now - startRef.current) / 1000);
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-  const ss = String(elapsed % 60).padStart(2, "0");
-
-  // The transition belongs to the incoming slide; keying on cur remounts it.
-  const anim = transitionAnimation(slide?.transition);
-
-  // A slide link clicked in the show (#slide:next, a specific slide, …).
-  const onSlideLink = (url: string) => {
-    const i = resolveSlideLink(url, slides, cur);
-    if (i !== null) onJump(i);
-  };
-
-  // Whether there are more animation steps to play before advancing.
-  const hasMoreSteps = animStep < animatedSteps.length;
-
-  if (!slide) return null;
-
-  if (presenter) {
-    const mainW = Math.min(
-      window.innerWidth * 0.6,
-      window.innerHeight * 0.7 * (CANVAS_W / CANVAS_H),
-    );
-    const nextW = Math.min(window.innerWidth * 0.3, 360);
-    return (
-      <Box
-        sx={{
-          position: "fixed",
-          inset: 0,
-          bgcolor: "#202124",
-          color: "#fff",
-          zIndex: 1300,
-          display: "flex",
-          flexDirection: "column",
-          p: 3,
-          gap: 2,
-        }}
-      >
-        <style>{TRANSITION_CSS + ELEMENT_ANIM_CSS}</style>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-          <Typography level="title-lg" sx={{ color: "#fff" }}>
-            Presenter view
-          </Typography>
-          <Box sx={{ flex: 1 }} />
-          <Chip variant="soft" color="neutral">
-            {mm}:{ss}
-          </Chip>
-          <Chip variant="soft" color="neutral">
-            Slide {cur + 1} / {slides.length}
-          </Chip>
-          {hasMoreSteps && (
-            <Chip variant="soft" color="warning">
-              Step {animStep + 1} / {animatedSteps.length}
-            </Chip>
-          )}
-          <Button
-            size="sm"
-            variant="outlined"
-            color="neutral"
-            onClick={onTogglePresenter}
-          >
-            Hide notes (S)
-          </Button>
-          <Button size="sm" variant="outlined" color="danger" onClick={onExit}>
-            End (Esc)
-          </Button>
-        </Box>
-        <Box sx={{ flex: 1, minHeight: 0, display: "flex", gap: 3 }}>
-          {/* Current slide */}
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 1,
-              alignItems: "center",
-            }}
-          >
-            <Box sx={{ boxShadow: "lg" }}>
-              <Box key={slide.id} sx={{ animation: anim, lineHeight: 0 }}>
-                <SlideView
-                  slide={slide}
-                  width={mainW}
-                  linkable
-                  onSlideLink={onSlideLink}
-                  revealedIds={
-                    animatedSteps.length > 0 ? revealedIds : undefined
-                  }
-                />
-              </Box>
-            </Box>
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <Button
-                size="sm"
-                variant="soft"
-                color="neutral"
-                onClick={onPrev}
-                disabled={cur === 0}
-              >
-                Previous
-              </Button>
-              <Button
-                size="sm"
-                variant="solid"
-                onClick={handleAdvance}
-                disabled={!hasMoreSteps && cur >= slides.length - 1}
-              >
-                {hasMoreSteps ? "Next step" : "Next"}
-              </Button>
-            </Box>
-          </Box>
-          {/* Notes + next-slide preview */}
-          <Box
-            sx={{
-              flex: 1,
-              minWidth: 0,
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
-          >
-            <Box>
-              <Typography level="body-xs" sx={{ color: "#9aa0a6", mb: 0.5 }}>
-                Up next
-              </Typography>
-              {next ? (
-                <Box
-                  sx={{
-                    boxShadow: "md",
-                    display: "inline-block",
-                    lineHeight: 0,
-                  }}
-                >
-                  <SlideView slide={next} width={nextW} />
-                </Box>
-              ) : (
-                <Typography level="body-sm" sx={{ color: "#9aa0a6" }}>
-                  End of presentation
-                </Typography>
-              )}
-            </Box>
-            <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-              <Typography level="body-xs" sx={{ color: "#9aa0a6", mb: 0.5 }}>
-                Speaker notes
-              </Typography>
-              <Typography
-                level="body-lg"
-                sx={{ color: "#e8eaed", whiteSpace: "pre-wrap" }}
-              >
-                {slide.notes?.trim() || "No notes for this slide."}
-              </Typography>
-            </Box>
-          </Box>
-        </Box>
-      </Box>
-    );
-  }
-
-  const pw = fitPresentWidth(window.innerWidth, window.innerHeight);
-  return (
-    <Box
-      onClick={handleAdvance}
-      sx={{
-        position: "fixed",
-        inset: 0,
-        bgcolor: "#000",
-        zIndex: 1300,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-        overflow: "hidden",
-      }}
-    >
-      <style>{TRANSITION_CSS + ELEMENT_ANIM_CSS}</style>
-      <Box key={slide.id} sx={{ animation: anim, lineHeight: 0 }}>
-        <SlideView
-          slide={slide}
-          width={pw}
-          linkable
-          onSlideLink={onSlideLink}
-          revealedIds={animatedSteps.length > 0 ? revealedIds : undefined}
-        />
-      </Box>
-      {hasMoreSteps && (
-        <Chip
-          size="sm"
-          variant="soft"
-          color="warning"
-          sx={{
-            position: "fixed",
-            bottom: 48,
-            right: 16,
-            pointerEvents: "none",
-          }}
-        >
-          Animation {animStep + 1} / {animatedSteps.length}
-        </Chip>
-      )}
-      <Chip
-        size="sm"
-        variant="soft"
-        onClick={(e) => {
-          e.stopPropagation();
-          onTogglePresenter();
-        }}
-        sx={{ position: "fixed", bottom: 16, left: 16, cursor: "pointer" }}
-      >
-        Presenter view (S)
-      </Chip>
-      <Chip
-        size="sm"
-        variant="soft"
-        sx={{ position: "fixed", bottom: 16, right: 16 }}
-      >
-        {cur + 1} / {slides.length} · Esc to exit
-      </Chip>
     </Box>
   );
 }
