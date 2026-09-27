@@ -18,6 +18,7 @@ import {
   compareItemKeys,
   dataFieldNames,
   fieldName,
+  fieldSourceName,
   groupCell,
   isCalculatedField,
   normalizeConfig,
@@ -64,6 +65,10 @@ export interface PivotReport {
   headerRows: number;
   rowLabelCols: number;
   dataNames: string[];
+  /** Data fields as GETPIVOTDATA names them: caption and source field. */
+  dataFields: { name: string; field: string }[];
+  /** Page fields and the caption of their one selected item ("" otherwise). */
+  pages: { field: string; item: string }[];
   entries: PivotEntry[];
   /** Source record indexes behind a value cell (null for other cells). */
   details(r: number, c: number): number[] | null;
@@ -958,10 +963,10 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
         const f: [string, string, number?][] = [];
         for (const [pf, pk] of [...(rl.kind === "grand" ? [] : rl.path), ...(cl.kind === "grand" ? [] : cl.path)]) {
           const lab = labelOf(pf, pk);
-          const cellNum = pk[0] === "n" ? Number(pk.slice(1)) : undefined;
+          const cellNum = pk[0] === "n" ? Number(pk.slice(1)) : pk[0] === "g" ? groupNumber(pf, Number(pk.slice(1))) : undefined;
           f.push(cellNum !== undefined ? [fieldName(cfg, src, pf), lab, cellNum] : [fieldName(cfg, src, pf), lab]);
         }
-        if (!func) entries.push({ r: r - T, c, d: di, f, v: v === undefined ? null : isError(v) ? v.error : (v as number | string | boolean) });
+        if (!func) entries.push({ r, c, d: di, f, v: v === undefined ? null : isError(v) ? { error: v.error } : (v as number | string | boolean) });
       });
     });
     height = Math.max(height, dataRow0 + rowLines.length);
@@ -993,12 +998,35 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
     headerRows,
     rowLabelCols,
     dataNames,
+    dataFields: values.map((d, i) => ({ name: dataNames[i], field: fieldSourceName(cfg, src, d.field) })),
+    pages: pages.map((p) => ({ field: fieldName(cfg, src, p.field), item: p.selected?.length === 1 ? labelOf(p.field, p.selected[0]) : "" })),
     entries,
     details: (r, c) => detailMap.get(`${r - dataRowStart},${c - rowLabelCols}`) ?? null,
     source: src,
     records,
     empty,
   };
+
+  // GETPIVOTDATA addresses group items by number: the year, quarter (1-4),
+  // month (1-12), day of the year, or a number bucket's start.
+  function groupNumber(f: number, gk: number): number | undefined {
+    const g = groups[f - nSrc];
+    if (!g || g.type === "items" || !Number.isFinite(gk)) return undefined;
+    if (g.type === "number") return gk;
+    switch (g.by) {
+      case "quarters":
+      case "months":
+        return gk + 1;
+      case "days": {
+        const m = Math.floor(gk / 100);
+        const d = gk % 100;
+        const cum = [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
+        return (cum[m - 1] ?? 0) + d;
+      }
+      default:
+        return gk;
+    }
+  }
 
   function layoutPages(): { rows: number; cols: number; cells: [number, number, GridCell][] } {
     const out: [number, number, GridCell][] = [];

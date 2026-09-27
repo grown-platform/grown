@@ -264,7 +264,7 @@ export interface PivotEntry {
   d: number;
   /** [field caption, item caption, item value (number) when numeric] */
   f: [string, string, number?][];
-  v: number | string | boolean | null;
+  v: number | string | boolean | { error: string } | null;
 }
 
 // ---------------------------------------------------------------------------
