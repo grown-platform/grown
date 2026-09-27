@@ -309,9 +309,35 @@ function splitSections(code: string): string[] {
 
 const COND_RE = /^(<=|>=|<>|<|>|=)\s*(-?\d*\.?\d+(?:[eE][+-]?\d+)?)$/;
 
+// "General" as spelled by other spreadsheet locales.
+const GENERAL_NAMES = new Set([
+  "general",
+  "standard",
+  "standaard",
+  "estándar",
+  "основной",
+  "yleinen",
+  "genel",
+  "standardowy",
+  "normál",
+  "γενικός τύπος",
+  "g/通用格式",
+  "g/標準",
+  "g/표준",
+  "geral",
+  "allmänt",
+  "obecný",
+  "všeobecný",
+  "vęeobecný",
+]);
+
 function parseSection(src: string): Section {
   const toks: Tok[] = [];
   const sec: Section = { toks, kind: "num" };
+  if (GENERAL_NAMES.has(src.trim().toLowerCase())) {
+    toks.push({ t: "gen" });
+    return sec;
+  }
   const lit = (s: string) => {
     const last = toks[toks.length - 1];
     if (last && last.t === "lit") last.s += s;
@@ -738,40 +764,28 @@ function renderFixed(toks: Tok[], v: number, neg: boolean): Run[] {
   toks.forEach((t, i) => {
     if (t.t === "dig") (i < intEnd ? intSlots : fracSlots).push(t.c);
   });
-  // Commas: between integer digits → grouping; after the last digit (or just
-  // before the decimal point) → divide by 1000 each.
+  // Commas, taken as runs: right between two integer digits → thousands
+  // grouping; right after the digits (or the point) with no digit
+  // placeholder later → divide by 1000 each; right after a digit with more
+  // digits later → nothing; anywhere else → one literal ",".
   let group = false;
   let scale = 0;
-  const commaRole = new Map<number, "group" | "scale" | "drop" | "lit">();
-  const lastDig = toks.reduce((m, t, i) => (t.t === "dig" ? i : m), -1);
-  const firstDig = toks.findIndex((t) => t.t === "dig");
-  toks.forEach((t, i) => {
-    if (t.t !== "comma") return;
-    if (firstDig < 0 || i < firstDig) {
-      commaRole.set(i, "lit");
-      return;
-    }
-    if (i > lastDig) {
-      commaRole.set(i, "scale");
-      scale++;
-      return;
-    }
-    if (i < intEnd) {
-      // integer part: is there an integer digit after it?
-      let digAfter = false;
-      for (let j = i + 1; j < intEnd; j++) if (toks[j].t === "dig") digAfter = true;
-      if (digAfter) {
-        commaRole.set(i, "group");
-        group = true;
-      } else {
-        // run of commas right before the decimal point
-        commaRole.set(i, "scale");
-        scale++;
-      }
-      return;
-    }
-    commaRole.set(i, "drop");
-  });
+  const commaLit = new Set<number>();
+  for (let a = 0; a < toks.length; a++) {
+    if (toks[a].t !== "comma") continue;
+    let b = a;
+    while (toks[b + 1]?.t === "comma") b++;
+    const prev = toks[a - 1];
+    const next = toks[b + 1];
+    const afterDigit = prev?.t === "dig" || prev?.t === "dot";
+    let digitsLater = false;
+    for (let j = b + 1; j < toks.length; j++) if (toks[j].t === "dig") digitsLater = true;
+    if (afterDigit && next?.t === "dig") {
+      if (b < intEnd && prev?.t === "dig") group = true;
+    } else if (afterDigit && !digitsLater) scale += b - a + 1;
+    else if (!afterDigit) commaLit.add(a);
+    a = b;
+  }
   let x = v;
   for (let i = 0; i < scale; i++) x /= 1000;
   if (scale) x = clean15(x);
@@ -790,7 +804,7 @@ function renderFixed(toks: Tok[], v: number, neg: boolean): Run[] {
       out.push({ text: "." });
     }
     else if (t.t === "comma") {
-      if (commaRole.get(i) === "lit") out.push({ text: "," });
+      if (commaLit.has(i)) out.push({ text: "," });
     } else if (t.t === "exp" || t.t === "slash") out.push({ text: t.t === "slash" ? "/" : t.s });
     else pushLiteral(out, t);
   });
