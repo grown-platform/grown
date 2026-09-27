@@ -2,6 +2,7 @@
 // takes plain model values and returns new values (no React, no I/O), so the
 // editor's behaviour can be unit-tested and shared by the collab receiver.
 
+import { remapEffects } from "./animOps";
 import {
   CANVAS_H,
   CANVAS_W,
@@ -49,10 +50,18 @@ export function addNextSlide(
 /** copySlide clones a slide's background and elements under fresh ids.
  *  (Notes and transition are intentionally not copied, matching the editor.) */
 export function copySlide(slide: Slide, makeId: () => string = uid): Slide {
+  const id = makeId();
+  const elements = slide.elements.map((e) => reId(e, makeId));
+  const anims = remapEffects(
+    slide.anims,
+    new Map(slide.elements.map((e, i) => [e.id, elements[i].id])),
+    makeId,
+  );
   return {
-    id: makeId(),
+    id,
     background: slide.background,
-    elements: slide.elements.map((e) => reId(e, makeId)),
+    elements,
+    ...(anims ? { anims } : {}),
   };
 }
 

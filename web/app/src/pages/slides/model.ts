@@ -184,13 +184,27 @@ export function shapeClipPath(type: ElementType): string | undefined {
 }
 
 // Slide transition played when advancing TO a slide during a slideshow.
+// "slide-left/right/up" are the pre-M8 names (push from right/left/bottom);
+// they stay valid so older decks keep playing.
 export type TransitionType =
   | "none"
   | "fade"
+  | "push"
+  | "wipe"
+  | "split"
+  | "reveal"
+  | "cover"
+  | "uncover"
+  | "zoom"
+  | "cut"
+  | "dissolve"
+  | "morph"
   | "slide-left"
   | "slide-right"
   | "slide-up";
 
+/** The legacy picker list (kept for older callers; the M8 catalogue with
+ *  directions lives in transitions.ts). */
 export const TRANSITIONS: { type: TransitionType; label: string }[] = [
   { type: "none", label: "None" },
   { type: "fade", label: "Fade" },
@@ -199,7 +213,7 @@ export const TRANSITIONS: { type: TransitionType; label: string }[] = [
   { type: "slide-up", label: "Slide from bottom" },
 ];
 
-// Entrance animation type for an element (Google Slides "Animations" pane).
+// Entrance animation type for an element (pre-M8 Google Slides pane).
 export type AnimationType =
   | "appear"
   | "fade-in"
@@ -213,12 +227,62 @@ export const ANIMATION_TYPES: { type: AnimationType; label: string }[] = [
   { type: "fly-in-left", label: "Fly in from left" },
 ];
 
-/** Per-element entrance animation assigned in the Animations pane. */
+/** Pre-M8 per-element entrance animation. Still read (`animOps.effectsOf`
+ *  turns it into slide effects); the animation pane migrates a slide to
+ *  `Slide.anims` on its first edit. */
 export interface ElementAnimation {
   /** Animation type */
   type: AnimationType;
   /** 1-based click order within the slide (lower = plays earlier). */
   order: number;
+}
+
+/** Animation effect class: entrance, emphasis or exit (pptx presetClass). */
+export type AnimClass = "entr" | "emph" | "exit";
+
+/** Effect kinds. Entrance/exit: appear, fade, fly, float, wipe, zoom.
+ *  Emphasis: pulse, colorPulse, spin, grow (grow/shrink), teeter. */
+export type AnimKind =
+  | "appear"
+  | "fade"
+  | "fly"
+  | "float"
+  | "wipe"
+  | "zoom"
+  | "pulse"
+  | "colorPulse"
+  | "spin"
+  | "grow"
+  | "teeter";
+
+/** When an effect starts: on a click, with the previous effect, or after
+ *  the previous effect ends (PowerPoint's Start). */
+export type AnimStart = "click" | "with" | "after";
+
+/** One effect in a slide's animation sequence (M8). List order is play
+ *  order, as in the animation pane. */
+export interface AnimEffect {
+  id: string;
+  /** Target element id (top-level element on the slide). */
+  el: string;
+  cls: AnimClass;
+  kind: AnimKind;
+  start: AnimStart;
+  /** Delay after the start point, ms (default 0). */
+  delay?: number;
+  /** Duration, ms (default: the kind's). */
+  dur?: number;
+  /** Fly/wipe/float direction: where it comes from (entrance) or goes to
+   *  (exit): t, b, l, r. */
+  dir?: "t" | "b" | "l" | "r";
+  /** Text: one step per paragraph. */
+  byPara?: boolean;
+  /** Grow/shrink factor (1.5 = 150 %, 0.5 shrinks). */
+  scale?: number;
+  /** Colour pulse colour. */
+  color?: string;
+  /** Spin angle in degrees (default 360; negative = counter-clockwise). */
+  angle?: number;
 }
 
 /** Character formatting that a text run can override (absent = inherit the
@@ -449,6 +513,16 @@ export interface Slide {
   notes?: string;
   /** Transition played when this slide is shown during a slideshow. */
   transition?: TransitionType;
+  /** Transition option (direction/variant, see transitions.ts). */
+  transitionDir?: string;
+  /** Transition duration, ms (default: the type's). */
+  transitionDur?: number;
+  /** false: a click does not advance (keys still do). Absent = true. */
+  advanceOnClick?: boolean;
+  /** Advance automatically after this many ms. */
+  advanceAfter?: number;
+  /** Animation sequence (M8); absent = derived from element `animation`. */
+  anims?: AnimEffect[];
   /** Layout the slide was made from (`DeckDoc.layouts[].id`). */
   layout?: string;
   /** Gradient/picture background over `background`. */
@@ -529,6 +603,8 @@ export interface DeckDoc {
   size?: { w: number; h: number };
   /** Header & footer settings. */
   hf?: DeckHF;
+  /** Slide show settings (M9). */
+  show?: { loop?: boolean };
 }
 
 export const FONT_FAMILIES = [

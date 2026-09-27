@@ -70,17 +70,30 @@ describe("nudgeDelta", () => {
 
 describe("presentKeyAction", () => {
   it("maps navigation keys", () => {
-    for (const key of ["ArrowRight", "ArrowDown", " "]) expect(presentKeyAction({ key })).toBe("next");
-    for (const key of ["ArrowLeft", "ArrowUp"]) expect(presentKeyAction({ key })).toBe("prev");
+    for (const key of ["ArrowRight", "ArrowDown", " ", "PageDown", "n", "N"]) expect(presentKeyAction({ key })).toBe("next");
+    for (const key of ["ArrowLeft", "ArrowUp", "PageUp", "Backspace", "p"]) expect(presentKeyAction({ key })).toBe("prev");
     expect(presentKeyAction({ key: "s" })).toBe("togglePresenter");
     expect(presentKeyAction({ key: "S" })).toBe("togglePresenter");
     expect(presentKeyAction({ key: "Escape" })).toBe("exit");
-    expect(presentKeyAction({ key: "Home" })).toBeNull();
+    expect(presentKeyAction({ key: "Home" })).toBe("first");
+    expect(presentKeyAction({ key: "End" })).toBe("last");
+    expect(presentKeyAction({ key: "Enter" })).toBe("enter");
+    expect(presentKeyAction({ key: "7" })).toEqual({ digit: "7" });
+    expect(presentKeyAction({ key: "b" })).toBe("black");
+    expect(presentKeyAction({ key: "." })).toBe("black");
+    expect(presentKeyAction({ key: "W" })).toBe("white");
+    expect(presentKeyAction({ key: "l", ctrlKey: true })).toBe("laser");
+    expect(presentKeyAction({ key: "p", metaKey: true })).toBe("pen");
+    expect(presentKeyAction({ key: "e" })).toBe("erase");
+    expect(presentKeyAction({ key: "x" })).toBeNull();
+    expect(presentKeyAction({ key: "n", altKey: true })).toBeNull();
   });
 
-  it("only swallows navigation keys", () => {
+  it("swallows everything it handles except Esc", () => {
     expect(presentKeyPreventsDefault("next")).toBe(true);
     expect(presentKeyPreventsDefault("prev")).toBe(true);
+    expect(presentKeyPreventsDefault("pen")).toBe(true);
+    expect(presentKeyPreventsDefault({ digit: "1" })).toBe(true);
     expect(presentKeyPreventsDefault("exit")).toBe(false);
     expect(presentKeyPreventsDefault(null)).toBe(false);
   });
