@@ -283,9 +283,14 @@ func TestServeHTTP_ZitadelEnrichment(t *testing.T) {
 	repo := users.NewRepository(pool)
 	const issuer = "https://auth.example"
 
-	// alice: grown-known AND in Zitadel (must not be duplicated).
-	seedUser(t, pool, orgID, issuer, "zid-alice", "alice@example.com", "Alice")
-	// carol: has a grown row in this org but only surfaces via Zitadel search.
+	// The query is "carter". Grown's own search (display_name/email ILIKE)
+	// runs first and its rows win, so:
+	// alice: grown-known (her grown display name matches) AND in Zitadel — must
+	// not be duplicated.
+	seedUser(t, pool, orgID, issuer, "zid-alice", "alice@example.com", "Alice Carter")
+	// carol: has a grown row in this org whose name/email do NOT match
+	// "carter", so she only surfaces via the Zitadel search (where her
+	// given+family name does).
 	carolID := seedUser(t, pool, orgID, issuer, "zid-carol", "carol@example.com", "Carol")
 
 	// Fake Zitadel /v2/users returning alice, carol, and a stranger (eve) who has
@@ -308,7 +313,7 @@ func TestServeHTTP_ZitadelEnrichment(t *testing.T) {
 	t.Cleanup(stub.Close)
 
 	h := NewHandler(repo, issuer, stub.URL, "service-token")
-	ms := doRequest(t, h, orgs.Org{ID: orgID}, "a")
+	ms := doRequest(t, h, orgs.Org{ID: orgID}, "carter")
 
 	if gotAuth != "Bearer service-token" {
 		t.Fatalf("Authorization header = %q, want bearer token", gotAuth)
