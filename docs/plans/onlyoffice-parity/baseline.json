@@ -30,7 +30,7 @@
       "passing": null
     },
     "common/forms": {
-      "ported": 8,
+      "ported": 18,
       "passing": null
     },
     "common/pdf": {
@@ -62,11 +62,11 @@
       "passing": null
     },
     "docs/content-controls": {
-      "ported": 0,
+      "ported": 7,
       "passing": null
     },
     "docs/custom-xml": {
-      "ported": 0,
+      "ported": 26,
       "passing": null
     },
     "docs/engine-internals": {
@@ -86,7 +86,7 @@
       "passing": null
     },
     "docs/forms": {
-      "ported": 8,
+      "ported": 18,
       "passing": null
     },
     "docs/harness": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2245,
+    "ported": 2288,
     "passing": null
   }
 }
