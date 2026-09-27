@@ -215,3 +215,16 @@ test("Help ▸ Keyboard shortcuts and the Insert menu entries are live", async (
     expect(Array.isArray(data)).toBe(true);
   });
 });
+
+test("AutoSum over a selection writes the totals", async ({ page, request }) => {
+  await withSheet(page, book({ A1: txt("Qty"), A2: num(2), A3: num(3), B1: txt("Price"), B2: num(10), B3: num(20) }), async (id) => {
+    await select(page, "A1", 3, 1); // A1:B4, empty last row
+    await page.keyboard.press("Alt+Equal");
+    await savedMatches(request, id, (w) => {
+      expect(cellOf(w[0], "A4")?.f).toBe("=SUM(A2:A3)");
+      expect(cellOf(w[0], "B4")?.f).toBe("=SUM(B2:B3)");
+      expect(cellOf(w[0], "B4")?.v).toBe(30);
+    });
+    await expect(page.locator(".fortune-name-box")).toHaveText("A2:B4");
+  });
+});

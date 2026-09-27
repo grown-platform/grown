@@ -117,7 +117,7 @@ import type { CellRect } from "./cellRange";
 import { FillSeriesDialog } from "./FillSeriesDialog";
 import { SortDialog } from "./SortDialog";
 import { PasteSpecialDialog } from "./PasteSpecialDialog";
-import { findShortcut, arrayFormulaText, autoSumRange, a1, serialOf, stepFontSize, toggleReference, SHORTCUT_NUMBER_FORMATS, DATE_SHORTCUT_FORMAT, TIME_SHORTCUT_FORMAT } from "./sheetShortcuts";
+import { findShortcut, arrayFormulaText, a1, serialOf, stepFontSize, toggleReference, SHORTCUT_NUMBER_FORMATS, DATE_SHORTCUT_FORMAT, TIME_SHORTCUT_FORMAT } from "./sheetShortcuts";
 import { SheetShortcutsDialog } from "./SheetShortcutsDialog";
 import { FunctionWizard } from "./FunctionWizard";
 import { GoalSeekDialog } from "./GoalSeekDialog";
@@ -127,11 +127,12 @@ import { CellCommentsLayer, activeCellStore, refreshPaintThreads, threadsForPain
 import { paintCommentMarker } from "./cellComments";
 import { paintScriptCell, toggleScript, VA_SUB, VA_SUPER } from "./cellScript";
 import { applyNumberFormat } from "./numberFormatActions";
-import { formatValue } from "./numberFormat";
+import { formatKind, formatValue } from "./numberFormat";
 import { parseA1Range } from "./cellValue";
 import { gridGeometry } from "./chartAnchor";
 import { translateFormula } from "./formulaShift";
 import { selectAllTarget } from "./selectAll";
+import { autoSumSelection, proposeSum, type CellKind } from "./autoSum";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -811,13 +812,35 @@ export function SheetEditor({ user }: SheetEditorProps) {
       setEditorText(input, text, selStart, selEnd);
     }, 30);
   }
+  // Alt+=: one cell opens the editor with the proposed =SUM(…); a selection
+  // gets its totals written (autoSum.ts), as one undo step.
   function autoSum() {
+    const wb = ref.current;
     const a = activeCell();
-    if (!a) return;
-    const range = autoSumRange((r, c) => {
-      const cell = cellAt(a.sheetId, r, c);
-      return cell?.v ?? null;
-    }, a.r, a.c);
+    const sheet = currentSheet(wb);
+    const sel = selectionRect(wb);
+    if (!wb || !a || !sheet || !sel) return;
+    const data: any[][] = Array.isArray(sheet.data) ? sheet.data : [];
+    const kind = (r: number, c: number): CellKind => {
+      const cell = data[r]?.[c];
+      if (!cell) return "empty";
+      if (typeof cell.f === "string" && /^=\s*SUM\s*\(/i.test(cell.f)) return "sum";
+      const v = cell.v;
+      if (v === undefined || v === null || v === "") return cell.ct?.s ? "text" : "empty";
+      const fa = cell.ct?.fa;
+      if (fa === "@" || typeof v === "string" || typeof v === "boolean") return "text";
+      const fk = formatKind(fa);
+      return fk === "date" || fk === "time" ? "date" : "num";
+    };
+    if (sel.r1 !== sel.r2 || sel.c1 !== sel.c2) {
+      const res = autoSumSelection(kind, sel);
+      if (!res) return;
+      wb.batchCallApis(res.writes.map((w) => ({ name: "setCellValue", args: [w.r, w.c, w.f, { id: a.sheetId }] })));
+      const t = res.selection;
+      window.setTimeout(() => wb.setSelection([{ row: [t.r1, t.r2], column: [t.c1, t.c2] }], { id: a.sheetId }), 0);
+      return;
+    }
+    const range = proposeSum(kind, a.r, a.c);
     const text = `=SUM(${range})`;
     editActiveCell(text, 5, 5 + range.length);
   }

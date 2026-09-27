@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   SHEET_SHORTCUTS,
   arrayFormulaText,
-  autoSumRange,
   findShortcut,
   matchCombo,
   serialOf,
   stepFontSize,
   toggleReference,
 } from "./sheetShortcuts";
+import { proposeSum, type CellKind } from "./autoSum";
 
 describe("sheet shortcut table", () => {
   it("matches combos by physical key and exact modifiers", () => {
@@ -73,15 +73,23 @@ describe("F4 reference cycling", () => {
   });
 });
 
-describe("AutoSum range", () => {
-  const grid = (rows: unknown[][]) => (r: number, c: number) => rows[r]?.[c];
-  it("sums the numbers above, skipping one blank, else the numbers to the left", () => {
-    expect(autoSumRange(grid([[1], [2], [3], []]), 3, 0)).toBe("A1:A3");
-    expect(autoSumRange(grid([["Head"], [2], [3], [], []]), 4, 0)).toBe("A2:A3");
-    expect(autoSumRange(grid([[1, 2, 3, null]]), 0, 3)).toBe("A1:C1");
-    expect(autoSumRange(grid([[], []]), 1, 0)).toBe("");
+describe("AutoSum proposal", () => {
+  const grid = (rows: unknown[][]) => (r: number, c: number): CellKind => {
+    const v = rows[r]?.[c];
+    if (v === undefined || v === null || v === "") return "empty";
+    if (typeof v === "number") return "num";
+    return v === "SUM" ? "sum" : "text";
+  };
+  it("takes the numbers above (blanks between included), else to the left", () => {
+    expect(proposeSum(grid([[1], [2], [3], []]), 3, 0)).toBe("A1:A3");
+    expect(proposeSum(grid([["Head"], [2], [3], [], []]), 4, 0)).toBe("A2:A4");
+    expect(proposeSum(grid([[1, 2, 3, null]]), 0, 3)).toBe("A1:C1");
+    expect(proposeSum(grid([[1, null, null, null]]), 0, 3)).toBe("A1:C1");
+    expect(proposeSum(grid([[], []]), 1, 0)).toBe("");
     // Far from the data (the shortcuts suite's H8) there is nothing to propose.
-    expect(autoSumRange(grid([[1, 2]]), 7, 7)).toBe("");
+    expect(proposeSum(grid([[1, 2]]), 7, 7)).toBe("");
+    // A subtotal ends the run.
+    expect(proposeSum(grid([[1], [2], ["SUM"], [4], []]), 4, 0)).toBe("A3:A4");
   });
 });
 

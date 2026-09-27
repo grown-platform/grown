@@ -208,12 +208,7 @@ export function toggleReference(text: string, caret: number, selEnd = caret): { 
   return { text: out, caret: newCaret, selEnd: newCaret };
 }
 
-// ---- Alt+=: the range AutoSum proposes ----------------------------------------
-
-export type CellAt = (r: number, c: number) => unknown;
-
-const isNumberCell = (v: unknown) => typeof v === "number" || (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)));
-const isBlank = (v: unknown) => v === undefined || v === null || v === "";
+// ---- Alt+=: see autoSum.ts ---------------------------------------------------
 
 function colLetters(c: number): string {
   let s = "";
@@ -227,32 +222,6 @@ function colLetters(c: number): string {
 }
 export function a1(r: number, c: number): string {
   return `${colLetters(c)}${r + 1}`;
-}
-
-/**
- * The range AutoSum sums for the cell (r, c): the run of numbers directly
- * above it (blanks between the cell and the numbers are skipped, the run
- * stops at the first text or blank cell above the numbers); otherwise the run
- * to the left. "" when there is nothing to sum.
- */
-export function autoSumRange(cell: CellAt, r: number, c: number): string {
-  const run = (dr: number, dc: number): string => {
-    let i = r + dr;
-    let j = c + dc;
-    while (i >= 0 && j >= 0 && isBlank(cell(i, j)) && Math.abs(i - r) + Math.abs(j - c) <= 1) {
-      i += dr;
-      j += dc;
-    }
-    if (i < 0 || j < 0 || !isNumberCell(cell(i, j))) return "";
-    const endR = i;
-    const endC = j;
-    while (i + dr >= 0 && j + dc >= 0 && isNumberCell(cell(i + dr, j + dc))) {
-      i += dr;
-      j += dc;
-    }
-    return `${a1(i, j)}:${a1(endR, endC)}`;
-  };
-  return run(-1, 0) || run(0, -1);
 }
 
 // ---- Ctrl+] / Ctrl+[: font sizes ---------------------------------------------
