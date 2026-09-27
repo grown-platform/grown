@@ -28,6 +28,7 @@ import { setTocLevel, tocLevelAtSelection } from "./toc";
 import { getDocModel } from "./docModel";
 import { autofitTable, distributeColumns, distributeRows, setCellProps, splitTable, tableToText, toggleRepeatHeader } from "./tables";
 import { LayoutMenu } from "./LayoutMenu";
+import { FormsMenu } from "./FormsUI";
 import { openLayoutDialog } from "./LayoutDialogs";
 import { setDocSettings } from "./pageLayout";
 import { openInsertDialog, pickTextFromFile } from "./InsertDialogs";
@@ -737,6 +738,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
       )}
 
       <LayoutMenu editor={editor} actions={actions} />
+      <FormsMenu editor={editor} />
 
       {top(
         "References",

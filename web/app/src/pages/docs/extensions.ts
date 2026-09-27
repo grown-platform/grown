@@ -34,6 +34,9 @@ import { ColumnBreak, SectionBreak } from "./pageLayout";
 import { Pagination } from "./paginationPlugin";
 import { M13_EXTENSIONS } from "./m13Extensions";
 import type { WebsocketProvider } from "y-websocket";
+import { ContentControls, SdtBlock, SdtInline } from "./sdt";
+import { DocProtection } from "./protection";
+import { CustomXmlBinding } from "./customXml";
 
 // TipTap has no official font-size extension, so add a textStyle attribute that
 // renders inline `font-size`. Mirrors the shape of @tiptap/extension-color.
@@ -626,6 +629,12 @@ export function buildExtensions(opts: BuildOpts) {
     Pagination,
     // Spell check, language, view toggles, drop cap (M13).
     ...M13_EXTENSIONS,
+    // Content controls, forms and protection (M10).
+    SdtInline,
+    SdtBlock,
+    ContentControls,
+    DocProtection,
+    CustomXmlBinding,
     ...collabExts,
   ];
 }

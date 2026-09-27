@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -587,4 +588,83 @@ func (r *Repository) Updates(ctx context.Context, docID string) ([][]byte, error
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+// Protection modes stored for a document (Docs M10). Only ReadOnly changes
+// what the server does: the collab hub drops non-owners' writes.
+const (
+	ProtectionNone           = ""
+	ProtectionReadOnly       = "readOnly"
+	ProtectionComments       = "comments"
+	ProtectionTrackedChanges = "trackedChanges"
+	ProtectionForms          = "forms"
+)
+
+// ValidProtection reports whether mode is a known protection mode.
+func ValidProtection(mode string) bool {
+	switch mode {
+	case ProtectionNone, ProtectionReadOnly, ProtectionComments, ProtectionTrackedChanges, ProtectionForms:
+		return true
+	}
+	return false
+}
+
+// GetProtection returns a live document's protection mode ("" = none).
+func (r *Repository) GetProtection(ctx context.Context, id string) (string, error) {
+	var mode string
+	err := r.pool.QueryRow(ctx,
+		`SELECT protection FROM grown.docs_documents WHERE id = $1 AND trashed_at IS NULL`, id).Scan(&mode)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("docs.GetProtection: %w", err)
+	}
+	return mode, nil
+}
+
+// SetProtection stores a document's protection mode (owner checks are the
+// caller's).
+func (r *Repository) SetProtection(ctx context.Context, id, mode string) error {
+	if !ValidProtection(mode) {
+		return fmt.Errorf("docs.SetProtection: unknown mode %q", mode)
+	}
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE grown.docs_documents SET protection = $2 WHERE id = $1 AND trashed_at IS NULL`, id, mode)
+	if err != nil {
+		return fmt.Errorf("docs.SetProtection: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ProtectionGate caches a document's protection for the collab hub's
+// per-message write check (at most one query per TTL).
+type ProtectionGate struct {
+	Load func() (string, error)
+	TTL  time.Duration
+
+	mu      sync.Mutex
+	mode    string
+	fetched time.Time
+}
+
+// ReadOnly reports whether the document is protected read-only. A failed
+// lookup keeps the last known mode.
+func (g *ProtectionGate) ReadOnly(now time.Time) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	ttl := g.TTL
+	if ttl == 0 {
+		ttl = 2 * time.Second
+	}
+	if g.fetched.IsZero() || now.Sub(g.fetched) >= ttl {
+		if m, err := g.Load(); err == nil {
+			g.mode = m
+		}
+		g.fetched = now
+	}
+	return g.mode == ProtectionReadOnly
 }

@@ -208,6 +208,13 @@ func carriesData(msg []byte) bool {
 // mutations are dropped — the client still receives updates and may broadcast
 // awareness (cursor) state.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, docID string, canWrite bool) {
+	h.ServeFunc(w, r, docID, func() bool { return canWrite })
+}
+
+// ServeFunc is Serve with write access decided per message, so a change of
+// access while connected (read-only document protection turned on) takes
+// effect without a reconnect.
+func (h *Hub) ServeFunc(w http.ResponseWriter, r *http.Request, docID string, canWrite func() bool) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true, // same-origin behind auth middleware; localtest.me hosts
 	})
@@ -269,7 +276,7 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, docID string, canWri
 		}
 		// Read-only viewers may not mutate the document; drop their data
 		// updates server-side regardless of what the client sends.
-		if !canWrite && carriesData(data) {
+		if carriesData(data) && !canWrite() {
 			continue
 		}
 		h.route(ctx, docID, room, self, data)
