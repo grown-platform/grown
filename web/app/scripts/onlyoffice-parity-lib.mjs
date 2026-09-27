@@ -99,6 +99,7 @@ export function parseManifest(text, file = "manifest.csv") {
       area: normalizeArea(area),
       portability: port.value,
       portable: port.portable,
+      naCount: port.portable ? Math.min(naCount(portability), Number(count)) : 0,
       targets: splitTargets(target),
       milestones: parseMilestones(milestone),
     });
@@ -130,6 +131,17 @@ export function normalizePortability(s) {
   const first = (s || "").trim().toLowerCase().split(/[\s(]/)[0].replace(/[,;:]+$/, "");
   const value = first === "na" ? "n/a" : first || "-";
   return { value, portable: !NOT_PORTABLE.has(value) };
+}
+
+/**
+ * Cases of a mixed row that are not portable, from its portability note:
+ * the sum of every "<n> n/a" ("mixed (4 vitest / 1 n/a ParaId)" -> 1).
+ * They leave the row's portable count; the rest of the row stays portable.
+ */
+export function naCount(s) {
+  let n = 0;
+  for (const m of (s || "").matchAll(/(\d+)\s*n\/a\b/gi)) n += Number(m[1]);
+  return n;
 }
 
 /**

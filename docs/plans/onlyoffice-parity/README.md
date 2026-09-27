@@ -73,7 +73,9 @@ onlyoffice_path,test_count,area,portability,target_grown_path,milestone
   model), `low` (only the idea carries over), `none`/`n/a` (harness or fixture
   file with no cases, or not applicable). Case-insensitive; a trailing
   parenthetical note is allowed (`High (as key-map table)`) — the scoreboard
-  keys on the first word.
+  keys on the first word. In a portable row, every `<n> n/a` in the note
+  (`mixed (4 vitest / 1 n/a ParaId: …)`) takes those cases out of the
+  row's portable count; the note says why they aren't portable.
 - `target_grown_path` — one or more files/globs where the ported tests live or
   will live, separated by `;` (a quoted comma list is also accepted); may not
   exist yet. Empty means no Grown target.

@@ -4,6 +4,7 @@ import {
   parseManifest,
   normalizeResearchPath,
   normalizePortability,
+  naCount,
   normalizeArea,
   splitTargets,
   parseMilestones,
@@ -81,6 +82,14 @@ describe("normalisers", () => {
     expect(normalizePortability("none").portable).toBe(false);
     expect(normalizePortability("helper").portable).toBe(false);
     expect(normalizePortability("")).toEqual({ value: "-", portable: false });
+  });
+
+  it("n/a cases of a mixed row", () => {
+    expect(naCount("mixed (2 vitest / 3 n/a)")).toBe(3);
+    expect(naCount("mixed (30 vitest / 4 playwright / 2 n/a: zoom, drag)")).toBe(2);
+    expect(naCount("mixed (1 n/a ParaId / 2 N/A other)")).toBe(3);
+    expect(naCount("high")).toBe(0);
+    expect(naCount("n/a (harness)")).toBe(0);
   });
 
   it("areas", () => {
