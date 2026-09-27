@@ -1,4 +1,14 @@
+import {
+  useContext,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { Box, Dropdown, Menu, MenuButton, MenuItem, Divider } from "@mui/joy";
+import { DropdownActionTypes, DropdownContext } from "@mui/base/useDropdown";
 import * as Icons from "@mui/icons-material";
 import type { DriveFile } from "./types";
 import { isFolder } from "./types";
@@ -19,6 +29,84 @@ export interface RowMenuHandlers {
   onShowDetails: (f: DriveFile) => void; // open the side panel on Details tab
   onToggleStar: (f: DriveFile) => void; // star or unstar a file
   onTrash: (id: string) => void;
+}
+
+/**
+ * SubMenu is a nested menu whose trigger is a MenuItem in the parent menu.
+ * Two Joy (5.0.0-beta) behaviours stop an uncontrolled nested Dropdown from
+ * opening: the MenuItem's click runs the MenuButton's toggle and then
+ * dispatches "close" to the nearest Dropdown (the nested one) in the same
+ * click, and when focus moves into the nested menu (a separate popper) the
+ * parent menu sees a blur and closes, unmounting both. So the open state is
+ * kept here, and the parent's blur is suppressed while focus goes to the
+ * submenu; leaving the submenu for anywhere outside a menu closes the parent.
+ */
+function SubMenu({
+  testId,
+  trigger,
+  children,
+}: {
+  testId?: string;
+  trigger: ReactNode;
+  children: ReactNode;
+}) {
+  const parent = useContext(DropdownContext);
+  const [open, setOpen] = useState(false);
+  const toggleEvent = useRef<Event | null>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const inPopup = (el: EventTarget | null) =>
+    !!popup.current && el instanceof Node && popup.current.contains(el);
+  return (
+    <Dropdown
+      open={open}
+      onOpenChange={(e, next) => {
+        // Ignore the MenuItem's own "close" from the click that toggled.
+        if (e && e.nativeEvent === toggleEvent.current) return;
+        setOpen(next);
+      }}
+    >
+      <MenuButton
+        slots={{ root: MenuItem }}
+        slotProps={{
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          root: (testId ? { "data-testid": testId } : {}) as any,
+        }}
+        onClick={(e: MouseEvent) => {
+          toggleEvent.current = e.nativeEvent;
+          setOpen((o) => !o);
+        }}
+        onBlur={(e: FocusEvent) => {
+          if (inPopup(e.relatedTarget))
+            (
+              e as FocusEvent & { defaultMuiPrevented?: boolean }
+            ).defaultMuiPrevented = true;
+        }}
+      >
+        {trigger}
+      </MenuButton>
+      <Menu
+        ref={popup}
+        placement="right-start"
+        sx={{ minWidth: 220 }}
+        // The popup is portalled, but React still bubbles its events to the
+        // parent menu, whose blur handler would close it (focus is outside
+        // the parent's DOM) and whose key handler would move its highlight.
+        onKeyDown={(e: KeyboardEvent) => e.stopPropagation()}
+        onBlur={(e: FocusEvent) => {
+          e.stopPropagation();
+          const to = e.relatedTarget;
+          if (
+            !inPopup(to) &&
+            !(to instanceof Element && to.closest('[role="menu"]'))
+          ) {
+            parent?.dispatch({ type: DropdownActionTypes.blur, event: e });
+          }
+        }}
+      >
+        {children}
+      </Menu>
+    </Dropdown>
+  );
 }
 
 interface RowMenuItemsProps {
@@ -73,49 +161,45 @@ export function RowMenuItems({
           Open
         </MenuItem>
       ) : (
-        <Dropdown>
-          <MenuButton
-            slots={{ root: MenuItem }}
-            slotProps={{
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              root: { "data-testid": `open-with-${f.id}` } as any,
-            }}
-          >
-            <Icons.OpenWith sx={{ mr: 1 }} fontSize="small" />
-            <Box sx={{ flex: 1 }}>Open with</Box>
-            <Icons.ChevronRight fontSize="small" sx={{ opacity: 0.6 }} />
-          </MenuButton>
-          <Menu placement="right-start" sx={{ minWidth: 220 }}>
-            <MenuItem onClick={wrap(() => handlers.onPreview(f))}>
-              <Icons.Visibility sx={{ mr: 1 }} fontSize="small" />
-              Preview
+        <SubMenu
+          testId={`open-with-${f.id}`}
+          trigger={
+            <>
+              <Icons.OpenWith sx={{ mr: 1 }} fontSize="small" />
+              <Box sx={{ flex: 1 }}>Open with</Box>
+              <Icons.ChevronRight fontSize="small" sx={{ opacity: 0.6 }} />
+            </>
+          }
+        >
+          <MenuItem onClick={wrap(() => handlers.onPreview(f))}>
+            <Icons.Visibility sx={{ mr: 1 }} fontSize="small" />
+            Preview
+          </MenuItem>
+          <MenuItem onClick={wrap(() => handlers.onOpenInNewTab(f))}>
+            <Icons.OpenInNew sx={{ mr: 1 }} fontSize="small" />
+            Open in new tab
+          </MenuItem>
+          {editor && EditorIcon && (
+            <MenuItem onClick={wrap(() => handlers.onOpen(f))}>
+              <Box
+                sx={{
+                  mr: 1,
+                  width: 20,
+                  height: 20,
+                  borderRadius: "4px",
+                  bgcolor: editor.accentColor,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#fff",
+                }}
+              >
+                <EditorIcon sx={{ fontSize: 14 }} />
+              </Box>
+              {editor.name}
             </MenuItem>
-            <MenuItem onClick={wrap(() => handlers.onOpenInNewTab(f))}>
-              <Icons.OpenInNew sx={{ mr: 1 }} fontSize="small" />
-              Open in new tab
-            </MenuItem>
-            {editor && EditorIcon && (
-              <MenuItem onClick={wrap(() => handlers.onOpen(f))}>
-                <Box
-                  sx={{
-                    mr: 1,
-                    width: 20,
-                    height: 20,
-                    borderRadius: "4px",
-                    bgcolor: editor.accentColor,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#fff",
-                  }}
-                >
-                  <EditorIcon sx={{ fontSize: 14 }} />
-                </Box>
-                {editor.name}
-              </MenuItem>
-            )}
-          </Menu>
-        </Dropdown>
+          )}
+        </SubMenu>
       )}
 
       {!isFolder(f) && (
@@ -169,108 +253,103 @@ export function RowMenuItems({
           </MenuItem>
         </>
       ) : (
-        <Dropdown>
-          <MenuButton
-            slots={{ root: MenuItem }}
-            slotProps={{
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              root: { "data-testid": `share-submenu-${f.id}` } as any,
-            }}
+        <SubMenu
+          testId={`share-submenu-${f.id}`}
+          trigger={
+            <>
+              <Icons.PersonAdd sx={{ mr: 1 }} fontSize="small" />
+              <Box sx={{ flex: 1 }}>Share</Box>
+              <Icons.ChevronRight fontSize="small" sx={{ opacity: 0.6 }} />
+            </>
+          }
+        >
+          <MenuItem
+            onClick={wrap(() => handlers.onShareOpenPanel(f))}
+            data-testid={`share-item-${f.id}`}
           >
             <Icons.PersonAdd sx={{ mr: 1 }} fontSize="small" />
-            <Box sx={{ flex: 1 }}>Share</Box>
-            <Icons.ChevronRight fontSize="small" sx={{ opacity: 0.6 }} />
-          </MenuButton>
-          <Menu placement="right-start" sx={{ minWidth: 220 }}>
-            <MenuItem
-              onClick={wrap(() => handlers.onShareOpenPanel(f))}
-              data-testid={`share-item-${f.id}`}
-            >
-              <Icons.PersonAdd sx={{ mr: 1 }} fontSize="small" />
-              Share
-            </MenuItem>
-            <MenuItem
-              onClick={wrap(() => handlers.onCopyLink(f))}
-              data-testid={`copy-link-${f.id}`}
-            >
-              <Icons.Link sx={{ mr: 1 }} fontSize="small" />
-              Copy link
-            </MenuItem>
-            <MenuItem disabled>
-              <Icons.HistoryEdu sx={{ mr: 1 }} fontSize="small" />
-              Request eSignature
-            </MenuItem>
-            <MenuItem disabled>
-              <Icons.AssignmentTurnedIn sx={{ mr: 1 }} fontSize="small" />
-              Approvals
-            </MenuItem>
-          </Menu>
-        </Dropdown>
+            Share
+          </MenuItem>
+          <MenuItem
+            onClick={wrap(() => handlers.onCopyLink(f))}
+            data-testid={`copy-link-${f.id}`}
+          >
+            <Icons.Link sx={{ mr: 1 }} fontSize="small" />
+            Copy link
+          </MenuItem>
+          <MenuItem disabled>
+            <Icons.HistoryEdu sx={{ mr: 1 }} fontSize="small" />
+            Request eSignature
+          </MenuItem>
+          <MenuItem disabled>
+            <Icons.AssignmentTurnedIn sx={{ mr: 1 }} fontSize="small" />
+            Approvals
+          </MenuItem>
+        </SubMenu>
       )}
 
       {/* Organize submenu — all disabled placeholders for now. */}
-      <Dropdown>
-        <MenuButton slots={{ root: MenuItem }}>
-          <Icons.DriveFileMove sx={{ mr: 1 }} fontSize="small" />
-          <Box sx={{ flex: 1 }}>Organize</Box>
-          <Icons.ChevronRight fontSize="small" sx={{ opacity: 0.6 }} />
-        </MenuButton>
-        <Menu placement="right-start" sx={{ minWidth: 220 }}>
-          <MenuItem
-            onClick={wrap(() => handlers.onMove(f))}
-            data-testid={`move-to-${f.id}`}
-          >
+      <SubMenu
+        trigger={
+          <>
             <Icons.DriveFileMove sx={{ mr: 1 }} fontSize="small" />
-            Move to
-          </MenuItem>
-          <MenuItem disabled>
-            <Icons.AddLink sx={{ mr: 1 }} fontSize="small" />
-            Add shortcut
-          </MenuItem>
-          <MenuItem
-            onClick={wrap(() => handlers.onToggleStar(f))}
-            data-testid={`toggle-star-${f.id}`}
-          >
-            {f.starred ? (
-              <Icons.Star
-                sx={{ mr: 1, color: "warning.400" }}
-                fontSize="small"
-              />
-            ) : (
-              <Icons.StarBorder sx={{ mr: 1 }} fontSize="small" />
-            )}
-            {f.starred ? "Remove from starred" : "Add to starred"}
-          </MenuItem>
-        </Menu>
-      </Dropdown>
+            <Box sx={{ flex: 1 }}>Organize</Box>
+            <Icons.ChevronRight fontSize="small" sx={{ opacity: 0.6 }} />
+          </>
+        }
+      >
+        <MenuItem
+          onClick={wrap(() => handlers.onMove(f))}
+          data-testid={`move-to-${f.id}`}
+        >
+          <Icons.DriveFileMove sx={{ mr: 1 }} fontSize="small" />
+          Move to
+        </MenuItem>
+        <MenuItem disabled>
+          <Icons.AddLink sx={{ mr: 1 }} fontSize="small" />
+          Add shortcut
+        </MenuItem>
+        <MenuItem
+          onClick={wrap(() => handlers.onToggleStar(f))}
+          data-testid={`toggle-star-${f.id}`}
+        >
+          {f.starred ? (
+            <Icons.Star sx={{ mr: 1, color: "warning.400" }} fontSize="small" />
+          ) : (
+            <Icons.StarBorder sx={{ mr: 1 }} fontSize="small" />
+          )}
+          {f.starred ? "Remove from starred" : "Add to starred"}
+        </MenuItem>
+      </SubMenu>
 
       {/* File information submenu — Details opens the side panel; versions for files. */}
-      <Dropdown>
-        <MenuButton slots={{ root: MenuItem }}>
-          <Icons.InfoOutlined sx={{ mr: 1 }} fontSize="small" />
-          <Box sx={{ flex: 1 }}>File information</Box>
-          <Icons.ChevronRight fontSize="small" sx={{ opacity: 0.6 }} />
-        </MenuButton>
-        <Menu placement="right-start" sx={{ minWidth: 220 }}>
-          <MenuItem onClick={wrap(() => handlers.onShowDetails(f))}>
+      <SubMenu
+        trigger={
+          <>
             <Icons.InfoOutlined sx={{ mr: 1 }} fontSize="small" />
-            Details
+            <Box sx={{ flex: 1 }}>File information</Box>
+            <Icons.ChevronRight fontSize="small" sx={{ opacity: 0.6 }} />
+          </>
+        }
+      >
+        <MenuItem onClick={wrap(() => handlers.onShowDetails(f))}>
+          <Icons.InfoOutlined sx={{ mr: 1 }} fontSize="small" />
+          Details
+        </MenuItem>
+        {!isFolder(f) && (
+          <MenuItem
+            onClick={wrap(() => handlers.onManageVersions(f))}
+            data-testid={`manage-versions-${f.id}`}
+          >
+            <Icons.History sx={{ mr: 1 }} fontSize="small" />
+            Manage versions
           </MenuItem>
-          {!isFolder(f) && (
-            <MenuItem
-              onClick={wrap(() => handlers.onManageVersions(f))}
-              data-testid={`manage-versions-${f.id}`}
-            >
-              <Icons.History sx={{ mr: 1 }} fontSize="small" />
-              Manage versions
-            </MenuItem>
-          )}
-          <MenuItem disabled>
-            <Icons.QueryStats sx={{ mr: 1 }} fontSize="small" />
-            Activity
-          </MenuItem>
-        </Menu>
-      </Dropdown>
+        )}
+        <MenuItem disabled>
+          <Icons.QueryStats sx={{ mr: 1 }} fontSize="small" />
+          Activity
+        </MenuItem>
+      </SubMenu>
 
       {/* Labels — disabled placeholder. */}
       <MenuItem disabled>
