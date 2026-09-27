@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Slides
 
-Status: plan (2026-09-26); M0–M9 and M11 landed — see the status notes in §6.4–6.15.
+Status: plan (2026-09-26); M0–M11 landed — see the status notes in §6.4–6.16.
 
 Scope: the OnlyOffice **presentation editor** (`sdkjs/slide`, the shared drawing
 engine in `sdkjs/common`, and the `web-apps/apps/presentationeditor` UI) versus
@@ -395,7 +395,7 @@ OnlyOffice: `sdkjs/slide/Editor/Format/Comments.js` (1,198), UI `Comments` (33)
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| Comments | Missing | Insert → Comment disabled; Docs has a comments implementation to mirror |
+| Comments | Have (M10): slide/object threads, replies, resolve, @mentions, markers, pptx | `comments.ts`, `CommentsPanel.tsx`, `pptx/commentsXml.ts` (§6.16) |
 
 ### 2.14 Collaboration
 
@@ -404,10 +404,10 @@ chat, version history, "show others' changes".
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| Live ops + presence avatars/dots per slide | Have | `collab.go`, `DeckEditor.tsx` |
-| Concurrent edit safety | Partial (element-level LWW; whole-deck `slides` op clobbers) | — see M10 / F2 |
-| Object locks / "being edited by" hint | Missing | — |
-| Version history | Missing | menu disabled |
+| Live ops + presence avatars/dots per slide | Have; M10 adds selection outlines with names | `collab.go`, `useDeckCollab.ts`, `CanvasOverlay.tsx` |
+| Concurrent edit safety | Have (M10): seq-stamped ops, stale ops rejected and re-based, whole-deck changes sent as fine ops, reconnect catch-up | `collab.go`, `collabSync.ts`, `deckDiff.ts` (§6.16) |
+| Object locks / "being edited by" hint | Partial (M10): the hint (outline + name); no locks | `CanvasOverlay.tsx` |
+| Version history | Have (CC7) | `DeckVersionHistory`, `internal/server/versions.go` |
 | Read-only viewer role enforcement | Have (server drops ops) | `collab.go Serve(canWrite)` |
 
 ### 2.15 Hyperlinks
@@ -2049,4 +2049,138 @@ line per warp, effects apply to the whole box (runs can't differ), the
 glow/shadow of a gradient text in the SVG export uses a CSS filter that
 some SVG viewers ignore, and the in-place text editor shows plain text
 while editing.
+
+### 6.16 M10 status (Wave 8): comments, collab hardening
+
+Version history had already landed with CC7 (`grown.object_versions`,
+File ▸ Version history), so M10 covers comments and the collab hub. No
+CRDT (F2): the op relay stays, with a sequence number, a log and conflict
+checks added on top.
+
+**Hub (`internal/slides/collab.go`).** The hub was checked for the bug
+classes the Docs hub fix (26e41eb) found. Failing Go tests were written first
+(`collab_serve_test.go`, `collab_ops_test.go`), and three of those bugs were
+present:
+
+- **Leaked handlers.** The writer waited on the request context, and for a
+  hijacked connection that context is only cancelled when the handler
+  returns. A lone client that closed its socket left the handler and the
+  room alive (Serve now cancels its own context when the reader stops). This
+  also meant CC7's "session ended" snapshot hook ran late.
+- **Silent drops.** A full peer queue dropped ops without notice, so that
+  peer diverged for the rest of its session. Now the peer is disconnected
+  (the queue holds 1024 messages) and catches up when it reconnects.
+- **Lost ops.** There was no reconnect at all. The client stayed "offline"
+  and its later edits went nowhere but the autosave. A late joiner also
+  missed any op made after the last autosave, which runs 1.2 s behind.
+
+The protocol is additive. Older tabs that send no hello still relay, and
+their ops are never rejected.
+
+- Each deck op is stamped `{"seq","cid",…}` with a per-room sequence number
+  and kept in a room log. The log is trimmed past 2000 entries or 16 MiB, but
+  only for entries a save has covered: after a successful PUT the client
+  sends `{"t":"saved","seq"}`. Hard caps are 8000 entries and 64 MiB. The hub
+  relays ops in seq order, since it fans out under the room lock, and sends
+  the sender an `ack`.
+- A client opens with `hello {cid, since, epoch}`. The hub answers `welcome
+  {epoch, seq, fresh}`, then the logged ops after `since`, then `synced`. It
+  writes this catch-up directly to the socket, not through the queue.
+  `fresh` means the client reloads the stored deck and re-bases on it. That
+  happens for a new tab, for another room epoch (everyone had left), when the
+  log no longer covers `since`, and after a version restore (which clears the
+  log).
+- Stale ops are rejected. An op carries `id` and `base`, the last seq its tab
+  had applied. The hub rejects it if another client changed an overlapping
+  key after `base`. The keys are: `e:slide:el`, `s:slide` (element list,
+  z-order), `p:slide` (slide properties), `c:comment`, `r:comment:reply`,
+  and `*` (the slide list or the whole deck). A resent op id is acked again
+  and not re-applied.
+
+**Client (`collabSync.ts`, `deckDiff.ts`, `useDeckCollab.ts`).**
+
+- `DeckSync` keeps two things: `confirmed`, the server-ordered deck, and
+  `pending`, this tab's unacked ops. Remote ops apply to the local deck as
+  before. When one of our ops is rejected, the local deck becomes
+  `confirmed` plus the remaining pending ops, and a snackbar says a
+  collaborator changed that at the same time. So when two people move the
+  same element, both tabs end with the first move the hub stamped.
+- The socket reconnects with backoff (0.5–8 s). Edits made while offline
+  are queued and resent after `synced`.
+- `diffOps` converts whole-deck `slides`/`deck` changes (notes, background,
+  transitions, undo) into `slideProps`, element and `setElements` ops, so they
+  no longer clobber collaborators. Only a changed slide list or a changed
+  deck property still goes out whole, and those are the ops the `*` key makes
+  strict.
+- Undo only undoes your own changes. `OwnHistory` keeps, for each step, the
+  deck before it and "before plus my changes". Undo carries after→before
+  onto the live deck strictly (`carryChanges`): only keys that still hold
+  your value are reverted. That covers elements (added, removed, changed,
+  z-order), slide properties, and the slide list (added, removed, moved,
+  with slot-preserving reorder). A collaborator's later edit to the same
+  object is left alone. Only the reverted changes are sent.
+- Presence adds `slideId`, `sel` and `editingText`. `CanvasOverlay` outlines
+  each collaborator's selection in their colour, with their name and
+  "(editing)".
+
+**Comments.** Following Sheets, threads are stored in the document
+(`DeckDoc.comments`) rather than a table, so they autosave, sync, are kept by
+version history and are exported to pptx. No migration was needed.
+
+- A `SlideComment` has a slide, an optional element and a point, plus the
+  Docs shape (author, body, created, replies, resolved and resolved-by,
+  mentions).
+- Ops are `comment` (the head; replies are kept), `commentResolve`,
+  `commentRemove`, `commentReply` and `commentReplyRemove`. Their keys are
+  per thread and per reply, so two people replying at once do not conflict.
+  Comments are not undone.
+- UI:
+  - Insert ▸ Comment and Ctrl+Alt+M anchor a new comment to the selected
+    object, or to the slide when nothing is selected.
+  - View ▸ Comments opens `CommentsPanel`. It filters by Open, Resolved or
+    All, and by all slides or this slide. It has reply boxes,
+    resolve/reopen, and delete for the author's own threads and replies.
+  - Yellow markers show the thread count. They follow their element, and an
+    orphaned marker stays at its point. Clicking a marker opens the thread.
+    Clicking a thread shows its slide and selects its object.
+- @mentions complete from the directory. `POST
+  /api/v1/slides/d/{id}/mentions` (`internal/slides/mentions.go`, write
+  access required) creates a `slides_mention` notification for each
+  mentioned user who can open the deck (org member or grantee), at most 20
+  per comment. The notification links to `/slides/d/{id}?comment=…`, which
+  opens the thread.
+- pptx (`pptx/commentsXml.ts`): the writer produces `p:cmAuthorLst` and one
+  `p:cmLst` per slide. Replies are written as `p:cm` with
+  `p15:threadingInfo`, and positions are in 1/576-inch units. A Grown
+  extension keeps the thread id, author id, anchor and resolved state. The
+  reader rebuilds the threads, and an element comment finds its element
+  again by the corner it was written at, since imported element ids are new.
+  Foreign files import from their position. File ▸ Import slides (append)
+  does not bring comments.
+
+**Tests.**
+
+- Go: `collab_serve_test.go` (11, real WebSockets), `collab_ops_test.go`
+  (keys, overlap, stamping, kick, trim) and `mentions_test.go` (4).
+- vitest: `collabSync.test.ts` models the hub rules, and checks convergence
+  of concurrent moves, rollback on reject, reconnect catch-up, a lost ack,
+  epoch re-base and own-op undo. Also `deckDiff.test.ts`, `comments.test.ts`
+  and `pptx/comments.test.ts`.
+- e2e `slides-collab.spec.ts` uses two browser contexts: a presence outline;
+  both move one element at once, and the tabs converge before and after
+  reload; a raw stale op is rejected; undo leaves a collaborator's move; a
+  comment thread with a reply and resolve is checked in both tabs and
+  persists. Screenshot: `GROWN_SLIDES_M10_SHOT`.
+
+**Not done.**
+
+- Object locks.
+- Server-side validation of op contents (unknown slide ids, rate limits).
+  The hub still treats deck JSON as opaque.
+- Comments for commenter-role grantees. A commenter's socket is read-only
+  and comments live in the deck, so they would need a server-side merge
+  endpoint.
+- Conflict checks only span one room lifetime. Once everyone has left, the
+  next session starts from the stored deck.
+- Two tabs of the same user show each other as a collaborator.
 
