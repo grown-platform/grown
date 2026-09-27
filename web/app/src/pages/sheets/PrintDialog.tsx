@@ -77,6 +77,7 @@ export function PrintDialog({ open, onClose, sheet, selection, title, showFormul
   const [rowsText, setRowsText] = useState("");
   const [colsText, setColsText] = useState("");
   const [formulas, setFormulas] = useState(showFormulas);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -277,6 +278,33 @@ export function PrintDialog({ open, onClose, sheet, selection, title, showFormul
                 disabled={invalid}
               >
                 Save settings
+              </Button>
+              <Button
+                size="sm"
+                variant="outlined"
+                data-testid="print-download-pdf"
+                loading={pdfBusy}
+                onClick={async () => {
+                  // These pages, as a PDF file (Sheets ▸ Download ▸ PDF uses
+                  // each sheet's stored settings instead).
+                  setPdfBusy(true);
+                  try {
+                    const { sheetsToPdf } = await import("./pdfExport");
+                    const bytes = await sheetsToPdf([{ sheet, settings: effective }], title, { showFormulas: formulas });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+                    a.download = `${(title || "sheet").replace(/[/\\?%*:|"<>]/g, "-")}.pdf`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                  } catch (e) {
+                    window.alert(`PDF export failed: ${(e as Error).message}`);
+                  } finally {
+                    setPdfBusy(false);
+                  }
+                }}
+                disabled={invalid || preview.pages === 0}
+              >
+                Download PDF
               </Button>
               <Button
                 size="sm"

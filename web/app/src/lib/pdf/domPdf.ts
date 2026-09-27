@@ -492,6 +492,9 @@ export async function withHtmlFrame<T>(html: string, width: number, fn: (doc: Do
   }
 }
 
+/** Blocks that end a page in flowHtmlToPdfPages. */
+const PAGE_BREAK = "[data-page-break], [data-section-break]:not([data-kind='continuous'])";
+
 export interface FlowPage {
   /** Page size and margins, CSS px. */
   w: number;
@@ -505,7 +508,8 @@ export interface FlowPage {
 /**
  * flowHtmlToPdfPages lays out a document body (no pagination of its own)
  * on pages of `page`'s size: top-level blocks fill a page until the next
- * one overflows it, and `[data-page-break]` starts a new page. Blocks
+ * one overflows it, and a page break or a (non-continuous) section break
+ * starts a new page. Blocks
  * taller than a page are clipped. Used where no paginated view exists
  * (mail merge output).
  */
@@ -516,7 +520,7 @@ export async function flowHtmlToPdfPages(bodyHtml: string, css: string, page: Fl
 .grown-flow-body{height:${innerH}px;overflow:hidden;display:flow-root}
 .grown-flow-src{width:${page.w - page.left - page.right}px}
 body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;line-height:1.4;color:#000}
-[data-page-break]{border:0;margin:0;height:0}`;
+[data-page-break],[data-section-break]{border:0;margin:0;height:0}`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}\n${pageCss}</style></head><body><div class="grown-flow-src">${bodyHtml}</div></body></html>`;
   return withHtmlFrame(html, page.w, async (doc) => {
     const src = doc.querySelector(".grown-flow-src") as HTMLElement;
@@ -535,7 +539,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;line-height:1.4;color
     };
     let cur = newPage();
     for (const node of Array.from(src.childNodes)) {
-      if (node.nodeType === 1 && (node as Element).matches("[data-page-break]")) {
+      if (node.nodeType === 1 && (node as Element).matches(PAGE_BREAK)) {
         cur = newPage();
         continue;
       }
