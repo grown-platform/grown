@@ -103,12 +103,22 @@ type Recorder struct {
 	store Store
 	hc    *http.Client
 
+	// afterSave, when set, is called after each song is cached (used to kick
+	// the cache janitor so the instance-wide cap is enforced promptly).
+	afterSave func()
+
 	mu         sync.Mutex
 	recordings map[string]*recording // keyed by station id
 }
 
-// NewRecorder constructs a Recorder. The retention sweep runs separately via
-// StartRetentionSweeper.
+// WithAfterSave registers a hook run after each cached song. Returns r.
+func (r *Recorder) WithAfterSave(fn func()) *Recorder {
+	r.afterSave = fn
+	return r
+}
+
+// NewRecorder constructs a Recorder. Retention and the cache cap are enforced
+// separately by a Janitor (see sweeper.go).
 func NewRecorder(repo Repo, store Store) *Recorder {
 	// Streams are long-lived, so the client has NO overall timeout. The
 	// connect/TLS/header phase is bounded by the transport timeouts; once the
@@ -407,6 +417,9 @@ func (r *Recorder) saveSong(ctx context.Context, rec *recording, song *songBuf, 
 	}
 	slog.Info("radio: cached song", "station", rec.station.Name, "artist", song.artist,
 		"title", song.title, "dur", int(durationSeconds), "track", t.ID)
+	if r.afterSave != nil {
+		r.afterSave()
+	}
 }
 
 func blobKey() string {

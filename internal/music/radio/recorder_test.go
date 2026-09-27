@@ -108,13 +108,17 @@ func TestReadStreamSavesCompleteSongs(t *testing.T) {
 
 	repo := &fakeRepo{}
 	store := &fakeStore{}
-	rec := NewRecorder(repo, store)
+	kicks := 0
+	rec := NewRecorder(repo, store).WithAfterSave(func() { kicks++ })
 	recState := &recording{station: music.Station{ID: "st1", Name: "Test FM"}, orgID: "org", ownerID: "u1"}
 
 	ctx := context.Background()
 	br := bufio.NewReader(bytes.NewReader(stream))
 	// bitrate=8 kbps → ~40s per 10-block (40000 byte) song, clears the minimum.
 	_ = rec.readStream(ctx, recState, br, metaint, 8, "audio/mpeg")
+	if kicks != 1 {
+		t.Errorf("afterSave hook ran %d times, want 1 (once per cached song)", kicks)
+	}
 
 	// First song ("A - One") is the partial-join discard. Last song ("C - Three")
 	// never flushes (no following title change). So exactly "B - Two" saves.

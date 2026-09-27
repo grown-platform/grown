@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -93,6 +94,27 @@ func (b *Blobs) Delete(ctx context.Context, key string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("s3.Delete %s: %w", key, err)
+	}
+	return nil
+}
+
+// ListObjects calls fn for every object under prefix (paginated
+// ListObjectsV2). Returning an error from fn stops the listing.
+func (b *Blobs) ListObjects(ctx context.Context, prefix string, fn func(key string, size int64, modified time.Time) error) error {
+	p := s3.NewListObjectsV2Paginator(b.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(b.bucket),
+		Prefix: aws.String(prefix),
+	})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("s3.List %s: %w", prefix, err)
+		}
+		for _, o := range page.Contents {
+			if err := fn(aws.ToString(o.Key), aws.ToInt64(o.Size), aws.ToTime(o.LastModified)); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
