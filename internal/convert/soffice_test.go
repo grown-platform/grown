@@ -299,7 +299,7 @@ func TestConvertTimeoutKillsProcessGroup(t *testing.T) {
 	}
 	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
 	deadline := time.Now().Add(3 * time.Second)
-	for syscall.Kill(pid, 0) == nil {
+	for processAlive(pid) {
 		if time.Now().After(deadline) {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 			t.Fatalf("child %d survived the timeout (process group not killed)", pid)
@@ -432,4 +432,22 @@ func TestHandler(t *testing.T) {
 	if w := do(on, "GET", OfficePath, nil, true); w.Code != 404 {
 		t.Errorf("GET convert: %d", w.Code)
 	}
+}
+
+// processAlive reports whether pid is a live (non-zombie) process. A killed
+// child whose parent is gone is reparented to the container's PID 1; when
+// that isn't a reaping init (as in CI job containers) it lingers as a zombie,
+// which kill(pid, 0) still reports as present. Linux exposes the state in
+// /proc/<pid>/stat ("Z"); elsewhere kill(pid, 0) is the whole answer.
+func processAlive(pid int) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return false
+	}
+	if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+		// Format: pid (comm) state ...; comm may contain spaces/parens.
+		if i := strings.LastIndexByte(string(b), ')'); i >= 0 && i+2 < len(b) && b[i+2] == 'Z' {
+			return false
+		}
+	}
+	return true
 }

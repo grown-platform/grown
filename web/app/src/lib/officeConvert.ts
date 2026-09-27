@@ -154,11 +154,13 @@ export async function convertOnServer(file: Blob, name: string): Promise<File> {
     const msg = (await r.text().catch(() => "")).trim();
     throw new Error(msg || `Conversion failed (HTTP ${r.status})`);
   }
-  const blob = await r.blob();
+  // An ArrayBuffer, not r.blob(): a Blob from one realm (e.g. Node's fetch
+  // under jsdom) isn't a valid File part in another and gets stringified.
+  const bytes = await r.arrayBuffer();
   const mime: Record<OfficeTarget, string> = {
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   };
-  return new File([blob], `${base}.${to}`, { type: mime[to] });
+  return new File([bytes], `${base}.${to}`, { type: mime[to] });
 }
