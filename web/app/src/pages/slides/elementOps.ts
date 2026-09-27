@@ -16,6 +16,8 @@ const TYPE_LABEL: Record<ElementType, string> = {
   roundRect: "Rounded Rectangle",
   table: "Table",
   group: "Group",
+  shape: "Shape",
+  connector: "Connector",
 };
 
 /** allElements lists every element on the slide, group members included. */
@@ -80,4 +82,50 @@ export function findElementsByName(
 ): SlideElement[] {
   const want = new Set(names);
   return slides.flatMap((s) => allElements(s.elements).filter((e) => !!e.name && want.has(e.name)));
+}
+
+/** An outline as the OnlyOffice JS API's CreateStroke describes it: a width
+ *  in points (0 = hairline/no width) and a solid colour or "none". */
+export interface Outline {
+  width: number;
+  color: string;
+}
+
+function isOutline(v: unknown): v is Outline {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.width === "number" &&
+    Number.isFinite(o.width) &&
+    o.width >= 0 &&
+    typeof o.color === "string" &&
+    (o.color === "none" || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(o.color))
+  );
+}
+
+/** setOutline sets a shape's outline (stroke colour and width in pt). Like
+ *  OnlyOffice's SetOutLine it reports success and rejects malformed input,
+ *  leaving the element unchanged. */
+export function setOutline(el: SlideElement, outline: unknown): { el: SlideElement; ok: boolean } {
+  if (!isOutline(outline)) return { el, ok: false };
+  const none = outline.color === "none" || outline.width === 0;
+  return {
+    el: { ...el, stroke: none ? "none" : outline.color, strokeWidth: none ? 0 : outline.width },
+    ok: true,
+  };
+}
+
+/** setFlip sets (not toggles) horizontal or vertical mirroring; non-boolean
+ *  values are rejected, as OnlyOffice's SetFlipH/SetFlipV do. */
+export function setFlip(
+  el: SlideElement,
+  axis: "h" | "v",
+  value: unknown,
+): { el: SlideElement; ok: boolean } {
+  if (typeof value !== "boolean") return { el, ok: false };
+  const k = axis === "h" ? "flipH" : "flipV";
+  const next = { ...el };
+  if (value) next[k] = true;
+  else delete next[k];
+  return { el: next, ok: true };
 }

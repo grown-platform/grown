@@ -26,6 +26,10 @@ export interface SlideActions {
   undo: () => void;
   redo: () => void;
   insert: (type: ElementType) => void;
+  /** Open the shape gallery (toolbar). */
+  openShapes: () => void;
+  /** Arm the draw tool for a gallery id ("star5", "bentConnector3:arrow"). */
+  drawShape: (id: string) => void;
   insertImageFile: () => void;
   newSlide: () => void;
   duplicateSlide: () => void;
@@ -199,6 +203,9 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem onClick={actions.insertImageFile}>Image</MenuItem>
           <MenuItem onClick={() => actions.insert("text")}>Text box</MenuItem>
           {section("Shape")}
+          <MenuItem sx={sub} onClick={actions.openShapes}>
+            All shapes…
+          </MenuItem>
           <MenuItem sx={sub} onClick={() => actions.insert("rect")}>
             Rectangle
           </MenuItem>
@@ -219,6 +226,15 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           </MenuItem>
           <MenuItem onClick={() => actions.insert("line")}>
             Line{kbd("Q")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.drawShape("straightConnector1:arrow")}>
+            Arrow
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.drawShape("bentConnector3:arrow")}>
+            Elbow connector
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.drawShape("curvedConnector3:arrow")}>
+            Curved connector
           </MenuItem>
           <ListDivider />
           <MenuItem disabled>Diagram{arrow}</MenuItem>

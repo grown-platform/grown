@@ -179,6 +179,40 @@ function addShape(s: PSlide, el: SlideElement, extra: Extra) {
   });
 }
 
+/** A preset-geometry shape or connector. The preset name goes straight into
+ *  `a:prstGeom@prst`; adjust values, connector conversion (`p:cxnSp`) and
+ *  glue are patched in afterwards (patchElements). */
+function addPreset(s: PSlide, el: SlideElement, extra: Extra) {
+  const conn = el.type === "connector";
+  const noFill =
+    conn || !el.fill || el.fill === "none" || el.fill === "transparent";
+  const stroked = !!el.stroke && el.stroke !== "none" && (el.strokeWidth ?? 1) > 0;
+  const line = stroked
+    ? {
+        color: hex6(el.stroke),
+        width: el.strokeWidth || 1,
+        ...(el.dash && el.dash !== "solid" ? { dashType: el.dash } : {}),
+        ...(conn && el.headEnd && el.headEnd !== "none" ? { beginArrowType: el.headEnd } : {}),
+        ...(conn && el.tailEnd && el.tailEnd !== "none" ? { endArrowType: el.tailEnd } : {}),
+      }
+    : undefined;
+  s.addShape(el.preset as Parameters<PSlide["addShape"]>[0], {
+    ...geomOpts(el),
+    ...(conn ? { h: pxToInch(el.h) } : {}),
+    fill: noFill
+      ? { type: "none" }
+      : {
+          color: hex6(el.fill),
+          ...(transparencyOf(el.fill)
+            ? { transparency: transparencyOf(el.fill) }
+            : {}),
+        },
+    ...(line ? { line } : {}),
+    ...linkOpt(el),
+    ...extra,
+  } as Parameters<PSlide["addShape"]>[1]);
+}
+
 function addTable(s: PSlide, el: SlideElement, extra: Extra) {
   const t = el.table;
   if (!t || !t.rows || !t.cols) return;
@@ -229,10 +263,15 @@ export async function deckToPptx(
   pptx.layout = "GROWN16x9";
   pptx.title = title;
   const slideGroups: Map<string, SlideElement>[] = [];
+  const slideEls: ElementMark[][] = [];
   for (const slide of deck.slides) {
     const s = pptx.addSlide();
     s.background = { color: hex6(slide.background || "#ffffff") };
     const groups = new Map<string, SlideElement>();
+    // Slides with preset shapes/connectors mark every element, so adjust
+    // values, connectors and glue targets can be found after pptxgenjs.
+    const marks: ElementMark[] = [];
+    const mark = needsElementPatch(slide.elements);
     const emit = (el: SlideElement, path: string[]) => {
       if (el.type === "group") {
         const key = `g${groups.size + 1}`;
@@ -240,9 +279,15 @@ export async function deckToPptx(
         for (const c of el.children || []) emit(c, [...path, key]);
         return;
       }
-      const extra: Extra = path.length ? { objectName: groupMarker(path) } : {};
+      let extra: Extra = path.length ? { objectName: groupMarker(path) } : {};
+      if (mark) {
+        extra = { objectName: `${ELEMENT_MARKER}${marks.length}` };
+        marks.push({ el, path });
+      }
       try {
-        if (el.type === "text") addText(s, el, extra);
+        if (el.type === "shape" || el.type === "connector") {
+          if (el.preset) addPreset(s, el, extra);
+        } else if (el.type === "text") addText(s, el, extra);
         else if (el.type === "table") addTable(s, el, extra);
         else if (el.type === "line") {
           s.addShape("line", {
@@ -265,10 +310,11 @@ export async function deckToPptx(
     };
     for (const el of slide.elements) emit(el, []);
     slideGroups.push(groups);
+    slideEls.push(marks);
     if (slide.notes && slide.notes.trim()) s.addNotes(slide.notes);
   }
   const raw = (await pptx.write({ outputType: "uint8array" })) as Uint8Array;
-  return patchPptx(raw, deck, slideGroups);
+  return patchPptx(raw, deck, slideGroups, slideEls);
 }
 
 /** Apply the XML patches pptxgenjs cannot express: transitions, and the
@@ -277,21 +323,25 @@ export async function patchPptx(
   raw: Uint8Array,
   deck: DeckDoc,
   slideGroups: Map<string, SlideElement>[] = [],
+  slideEls: ElementMark[][] = [],
 ): Promise<Uint8Array> {
   const hasTransitions = deck.slides.some(
     (s) => s.transition && s.transition !== "none",
   );
   const hasGroups = slideGroups.some((g) => g.size > 0);
-  if (!hasTransitions && !hasGroups) return raw;
+  const hasMarks = slideEls.some((m) => m.length > 0);
+  if (!hasTransitions && !hasGroups && !hasMarks) return raw;
   const zip = await JSZip.loadAsync(raw);
   for (let i = 0; i < deck.slides.length; i++) {
     const xml = transitionXml(deck.slides[i].transition);
     const groups = slideGroups[i];
-    if (!xml && !groups?.size) continue;
+    const marks = slideEls[i];
+    if (!xml && !groups?.size && !marks?.length) continue;
     const path = `ppt/slides/slide${i + 1}.xml`;
     const f = zip.file(path);
     if (!f) continue;
     let out = await f.async("string");
+    if (marks?.length) out = patchElements(out, marks);
     if (groups?.size) out = wrapGroups(out, groups);
     if (xml) out = insertTransition(out, xml);
     zip.file(path, out);
@@ -393,4 +443,118 @@ export function wrapGroups(
   const decl = /^<\?xml[^>]*\?>\s*/.exec(slideXml);
   if (decl && !out.startsWith("<?xml")) out = decl[0] + out;
   return out;
+}
+
+// ------------------------------------------------------------ presets
+
+/** An element emitted on a marked slide, with its group path. */
+export interface ElementMark {
+  el: SlideElement;
+  path: string[];
+}
+
+export const ELEMENT_MARKER = "grown-el:";
+
+function needsElementPatch(els: readonly SlideElement[]): boolean {
+  return els.some(
+    (e) =>
+      e.type === "shape" ||
+      e.type === "connector" ||
+      (e.children ? needsElementPatch(e.children) : false),
+  );
+}
+
+const TYPE_NAME: Partial<Record<SlideElement["type"], string>> = {
+  text: "TextBox",
+  image: "Picture",
+  table: "Table",
+  connector: "Connector",
+  line: "Straight Connector",
+};
+
+/**
+ * Finish the elements pptxgenjs wrote for a marked slide: write adjust
+ * values into `a:avLst`, turn connectors into `p:cxnSp` with `a:stCxn` /
+ * `a:endCxn` glue (ids of the target shapes), and replace the marker names
+ * with the element's name (or a group marker for wrapGroups).
+ */
+export function patchElements(slideXml: string, marks: ElementMark[]): string {
+  const doc = new DOMParser().parseFromString(slideXml, "application/xml");
+  const idOf = new Map<string, string>();
+  const found: { mark: ElementMark; node: Element; cNvPr: Element }[] = [];
+  for (const cNvPr of Array.from(doc.getElementsByTagNameNS(P_NS, "cNvPr"))) {
+    const name = cNvPr.getAttribute("name") ?? "";
+    if (!name.startsWith(ELEMENT_MARKER)) continue;
+    const mark = marks[Number(name.slice(ELEMENT_MARKER.length))];
+    const node = cNvPr.parentNode?.parentNode as Element | null;
+    if (!mark || !node) continue;
+    idOf.set(mark.el.id, cNvPr.getAttribute("id") ?? "");
+    found.push({ mark, node, cNvPr });
+  }
+  const a = (name: string, attrs: Record<string, string>) => {
+    const e = doc.createElementNS(A_NS, `a:${name}`);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+  for (const { mark, node, cNvPr } of found) {
+    const { el, path } = mark;
+    cNvPr.setAttribute(
+      "name",
+      path.length
+        ? groupMarker(path)
+        : el.name || `${TYPE_NAME[el.type] ?? "Shape"} ${cNvPr.getAttribute("id")}`,
+    );
+    if ((el.type !== "shape" && el.type !== "connector") || !el.preset) continue;
+    const geom = node.getElementsByTagNameNS(A_NS, "prstGeom")[0];
+    if (geom) {
+      geom.setAttribute("prst", el.preset);
+      let av = geom.getElementsByTagNameNS(A_NS, "avLst")[0];
+      if (!av) {
+        av = a("avLst", {});
+        geom.appendChild(av);
+      }
+      while (av.firstChild) av.removeChild(av.firstChild);
+      for (const [k, v] of Object.entries(el.adj ?? {}))
+        if (Number.isFinite(v)) av.appendChild(a("gd", { name: k, fmla: `val ${Math.round(v)}` }));
+    }
+    if (el.type === "connector" && node.localName === "sp") toCxnSp(doc, node, cNvPr, el, idOf);
+  }
+  let out = new XMLSerializer().serializeToString(doc);
+  const decl = /^<\?xml[^>]*\?>\s*/.exec(slideXml);
+  if (decl && !out.startsWith("<?xml")) out = decl[0] + out;
+  return out;
+}
+
+/** Rebuild a `p:sp` as a `p:cxnSp` (no text body), with glue references. */
+function toCxnSp(
+  doc: Document,
+  sp: Element,
+  cNvPr: Element,
+  el: SlideElement,
+  idOf: Map<string, string>,
+) {
+  const p = (name: string) => doc.createElementNS(P_NS, `p:${name}`);
+  const cxn = p("cxnSp");
+  const nv = p("nvCxnSpPr");
+  const cNv = p("cNvCxnSpPr");
+  for (const [tag, ref] of [
+    ["stCxn", el.stCxn],
+    ["endCxn", el.endCxn],
+  ] as const) {
+    const id = ref && idOf.get(ref.id);
+    if (!ref || !id) continue;
+    const e = doc.createElementNS(A_NS, `a:${tag}`);
+    e.setAttribute("id", id);
+    e.setAttribute("idx", String(ref.idx));
+    cNv.appendChild(e);
+  }
+  const oldNv = cNvPr.parentNode as Element;
+  const nvPr = Array.from(oldNv.children).find((c) => c.localName === "nvPr") ?? p("nvPr");
+  nv.append(cNvPr, cNv, nvPr);
+  cxn.appendChild(nv);
+  const spPr = Array.from(sp.children).find((c) => c.localName === "spPr");
+  if (spPr) cxn.appendChild(spPr);
+  const style = Array.from(sp.children).find((c) => c.localName === "style");
+  if (style) cxn.appendChild(style);
+  sp.parentNode?.replaceChild(cxn, sp);
 }

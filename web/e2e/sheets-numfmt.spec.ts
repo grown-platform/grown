@@ -74,8 +74,7 @@ async function srText(page: Page, ref: string, want: string, timeout?: number) {
   await expect(page.locator("#sr-selection")).toHaveText(`${col}. ${row} ${want}`, { timeout });
 }
 
-// FortuneSheet can put the selection back to the sheet's saved one (A1) while
-// the editor settles after opening, so a check that navigates is retried.
+// A check that navigates is retried while the editor settles after opening.
 async function checkCell(page: Page, ref: string, want: string) {
   await expect(async () => {
     await goTo(page, ref);
@@ -83,20 +82,10 @@ async function checkCell(page: Page, ref: string, want: string) {
   }).toPass({ timeout: 20_000 });
 }
 
-// After an edit FortuneSheet also moves the selection back to A1 (a
-// pre-existing editor quirk); wait for that before navigating again.
-async function settleAfterEdit(page: Page) {
-  await expect(page.locator(".fortune-name-box"))
-    .toHaveText("A1", { timeout: 3_000 })
-    .catch(() => {});
-}
-
 async function openSheet(page: Page, id: string) {
   await page.goto(`/sheets/d/${id}`);
   await expect(page.locator(".fortune-sheet-canvas")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("live", { exact: true })).toBeVisible({ timeout: 20_000 });
-  // Let the post-open selection restore happen before driving the keyboard.
-  await page.waitForTimeout(1_500);
 }
 
 test.describe.serial("sheets number formats", () => {
@@ -136,7 +125,6 @@ test.describe.serial("sheets number formats", () => {
         await goTo(page, ref);
         await page.keyboard.type(text);
         await page.keyboard.press("Enter");
-        await settleAfterEdit(page);
         await checkCell(page, ref, want);
       }
 
@@ -144,7 +132,6 @@ test.describe.serial("sheets number formats", () => {
       await goTo(page, "B1");
       await page.getByRole("button", { name: "Format", exact: true }).click();
       await page.locator('[data-numfmt="accounting"]').click();
-      await settleAfterEdit(page);
       await checkCell(page, "B1", "$1,234.50");
 
       // Format > Number > Custom number format.
@@ -157,7 +144,6 @@ test.describe.serial("sheets number formats", () => {
       await expect(page.getByTestId("numfmt-preview").first()).toHaveText("12.5% growth");
       await page.screenshot({ path: path.join(SHOT_DIR, "sheets-number-format-dialog.png") });
       await page.getByRole("button", { name: "Apply" }).click();
-      await settleAfterEdit(page);
       await checkCell(page, "B2", "12.5% growth");
       await page.screenshot({ path: path.join(SHOT_DIR, "sheets-number-formats-typed.png") });
 

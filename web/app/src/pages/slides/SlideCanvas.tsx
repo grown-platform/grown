@@ -4,9 +4,20 @@ import { CANVAS_W, CANVAS_H, type Slide, type SlideElement } from "./model";
 import {
   elementStyle,
   GroupChildren,
+  ShapeSvg,
   SlideTable,
   renderSlideText,
 } from "./SlideView";
+import {
+  GLUE_DISTANCE,
+  adjustHandles,
+  connectionSites,
+  connectorEnds,
+  dragAdjustHandle,
+  nearestSite,
+  setConnectorEnds,
+} from "./connectorOps";
+import { drawnElement, type DrawTool } from "./drawTool";
 import {
   GRID_SIZE,
   HANDLES,
@@ -52,6 +63,10 @@ interface SlideCanvasProps {
   showGrid?: boolean;
   onEditingText?: (editing: boolean) => void;
   onContext?: (x: number, y: number, elId: string | null) => void;
+  /** Armed draw-to-insert tool (shape gallery); null = normal editing. */
+  drawTool?: DrawTool | null;
+  /** A draw gesture finished: insert this element. */
+  onDrawn?: (el: SlideElement) => void;
 }
 
 type Drag =
@@ -71,10 +86,14 @@ type Drag =
       y0: number;
       additive: boolean;
       prior: string[];
-    };
+    }
+  | { kind: "adjust"; el0: SlideElement; index: number; moved: boolean }
+  | { kind: "endpoint"; el0: SlideElement; end: "start" | "end"; moved: boolean }
+  | { kind: "draw"; x0: number; y0: number };
 
 const SELECT_BLUE = "#4285f4";
 const GUIDE_COLOR = "#e8398d";
+const ADJUST_YELLOW = "#f9ce1d";
 
 /** SlideCanvas renders the active slide for editing: elements are selectable
  *  (click, Shift/Ctrl+click, rubber-band), draggable and resizable as a
@@ -91,6 +110,8 @@ export function SlideCanvas({
   showGrid,
   onEditingText,
   onContext,
+  drawTool,
+  onDrawn,
 }: SlideCanvasProps) {
   const scale = canvasScale(width);
   const height = canvasHeight(width);
@@ -98,6 +119,10 @@ export function SlideCanvas({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [marquee, setMarquee] = useState<Rect | null>(null);
+  // Connection sites shown while a connector end is dragged or drawn.
+  const [sites, setSites] = useState<[number, number][]>([]);
+  // Live preview of a draw-to-insert gesture.
+  const [drawPreview, setDrawPreview] = useState<SlideElement | null>(null);
   const drag = useRef<Drag | null>(null);
 
   const selSet = new Set(selectedIds);
@@ -172,6 +197,39 @@ export function SlideCanvas({
       setMarquee(normalizeRect(d.x0, d.y0, p.x, p.y));
       return;
     }
+    if (d.kind === "draw") {
+      const p = toLogical(e);
+      if (!drawTool) return;
+      if (drawTool.kind === "connector") setSites(sitesNear(p.x, p.y));
+      setDrawPreview(
+        drawnElement(drawTool, d.x0, d.y0, p.x, p.y, {
+          elements: slide.elements,
+          shift: e.shiftKey,
+          glue: glueDist,
+        }),
+      );
+      return;
+    }
+    if (d.kind === "adjust") {
+      const p = toLogical(e);
+      onChangeMany([dragAdjustHandle(d.el0, d.index, p.x, p.y)], { history: !d.moved });
+      d.moved = true;
+      return;
+    }
+    if (d.kind === "endpoint") {
+      const p = toLogical(e);
+      const hit = e.altKey ? null : nearestSite(slide.elements, p.x, p.y, d.el0.id, glueDist);
+      const at: [number, number] = hit ? [hit.x, hit.y] : [p.x, p.y];
+      const { start, end } = connectorEnds(d.el0);
+      const next =
+        d.end === "start"
+          ? setConnectorEnds(d.el0, at, end, { stCxn: hit ? hit.ref : null })
+          : setConnectorEnds(d.el0, start, at, { endCxn: hit ? hit.ref : null });
+      setSites(sitesNear(p.x, p.y, d.el0.id));
+      onChangeMany([next], { history: !d.moved });
+      d.moved = true;
+      return;
+    }
     let { dx, dy } = screenToLogical(e.clientX - d.px, e.clientY - d.py, scale);
     if (!d.moved && Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
     const snapOn = !!snap && (snap.guides || !!snap.grid) && !e.altKey;
@@ -217,10 +275,24 @@ export function SlideCanvas({
     d.moved = true;
   }
 
-  function onPointerUp() {
+  function onPointerUp(e?: React.PointerEvent) {
     const d = drag.current;
     drag.current = null;
     setGuides([]);
+    setSites([]);
+    if (d?.kind === "draw") {
+      setDrawPreview(null);
+      if (!drawTool || !e) return;
+      const p = toLogical(e);
+      onDrawn?.(
+        drawnElement(drawTool, d.x0, d.y0, p.x, p.y, {
+          elements: slide.elements,
+          shift: e.shiftKey,
+          glue: glueDist,
+        }),
+      );
+      return;
+    }
     if (d?.kind === "marquee") {
       const rect = marquee;
       setMarquee(null);
@@ -228,6 +300,45 @@ export function SlideCanvas({
       const hits = marqueeSelect(slide.elements, rect);
       onSelect(marqueeMerge(d.prior, hits, d.additive));
     }
+  }
+
+  // Glue radius: 10 logical px, but at least ~12 screen px when zoomed out.
+  const glueDist = Math.max(GLUE_DISTANCE, 12 / scale);
+  /** Connection sites of the elements near (x, y). */
+  function sitesNear(x: number, y: number, excludeId?: string): [number, number][] {
+    const pad = 30;
+    return slide.elements
+      .filter(
+        (el) =>
+          el.id !== excludeId &&
+          x >= el.x - pad &&
+          x <= el.x + el.w + pad &&
+          y >= el.y - pad &&
+          y <= el.y + el.h + pad,
+      )
+      .flatMap(connectionSites);
+  }
+
+  function onDrawPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0 || !drawTool) return;
+    e.stopPropagation();
+    const p = toLogical(e);
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    drag.current = { kind: "draw", x0: p.x, y0: p.y };
+  }
+
+  function onAdjustPointerDown(e: React.PointerEvent, el: SlideElement, index: number) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    drag.current = { kind: "adjust", el0: { ...el }, index, moved: false };
+  }
+
+  function onEndpointPointerDown(e: React.PointerEvent, el: SlideElement, end: "start" | "end") {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    drag.current = { kind: "endpoint", el0: { ...el }, end, moved: false };
   }
 
   const handleSize = 10 / scale;
@@ -250,7 +361,7 @@ export function SlideCanvas({
       onPointerDown={onBackgroundPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerCancel={() => onPointerUp()}
       onContextMenu={(e) => {
         if (onContext) {
           e.preventDefault();
@@ -295,6 +406,7 @@ export function SlideCanvas({
           const editing = el.id === editingId;
           const style = elementStyle(el);
           const single = selected && !multi && !editing && !el.locked;
+          const isConnector = el.type === "connector";
           return (
             <div
               key={el.id}
@@ -304,9 +416,12 @@ export function SlideCanvas({
               style={{
                 ...style,
                 cursor: editing ? "text" : el.locked ? "default" : "move",
-                outline: selected
-                  ? `${2 / scale}px ${el.locked ? "dashed" : "solid"} ${SELECT_BLUE}`
-                  : "none",
+                outline:
+                  selected && !(isConnector && single)
+                    ? `${2 / scale}px ${el.locked ? "dashed" : "solid"} ${SELECT_BLUE}`
+                    : "none",
+                // A connector is clicked on its stroke, not its (often 0-high) box.
+                ...(isConnector ? { pointerEvents: "none" as const } : {}),
               }}
               onPointerDown={(e) => onElementPointerDown(e, el)}
               onContextMenu={(e) => {
@@ -391,6 +506,8 @@ export function SlideCanvas({
                     {renderSlideText(el)}
                   </span>
                 )
+              ) : el.type === "shape" || isConnector ? (
+                <ShapeSvg el={el} hit />
               ) : el.type === "table" ? (
                 <SlideTable
                   el={el}
@@ -402,8 +519,60 @@ export function SlideCanvas({
                 />
               ) : null}
 
+              {/* connector end handles (single selection) */}
+              {single &&
+                isConnector &&
+                ([
+                  ["start", 0, 0],
+                  ["end", el.w, el.h],
+                ] as const).map(([end, x, y]) => (
+                  <div
+                    key={end}
+                    data-handle={`cxn-${end}`}
+                    onPointerDown={(e) => onEndpointPointerDown(e, el, end)}
+                    style={{
+                      position: "absolute",
+                      left: x - handleSize / 2,
+                      top: y - handleSize / 2,
+                      width: handleSize,
+                      height: handleSize,
+                      background: "#fff",
+                      border: `${1.5 / scale}px solid ${SELECT_BLUE}`,
+                      borderRadius: "50%",
+                      boxSizing: "border-box",
+                      cursor: "crosshair",
+                      pointerEvents: "auto",
+                    }}
+                  />
+                ))}
+
+              {/* adjust handles: yellow diamonds (single selection) */}
+              {single &&
+                adjustHandles(el).map((h, i) => (
+                  <div
+                    key={`adj${i}`}
+                    data-handle={`adj-${i}`}
+                    onPointerDown={(e) => onAdjustPointerDown(e, el, i)}
+                    style={{
+                      position: "absolute",
+                      left: h.x - handleSize / 2,
+                      top: h.y - handleSize / 2,
+                      width: handleSize,
+                      height: handleSize,
+                      background: ADJUST_YELLOW,
+                      border: `${1 / scale}px solid #7a5c00`,
+                      boxSizing: "border-box",
+                      transform: "rotate(45deg) scale(0.85)",
+                      cursor: "pointer",
+                      pointerEvents: "auto",
+                      zIndex: 2,
+                    }}
+                  />
+                ))}
+
               {/* resize handles (single selection) */}
               {single &&
+                !isConnector &&
                 (el.type === "line" ? LINE_HANDLES : HANDLES).map((h) => (
                   <div
                     key={h}
@@ -460,6 +629,44 @@ export function SlideCanvas({
             }}
           />
         ))}
+
+        {/* connection sites while a connector end is dragged/drawn */}
+        {sites.map(([x, y], i) => (
+          <div
+            key={`site${i}`}
+            data-testid="cxn-site"
+            style={{
+              position: "absolute",
+              left: x - 4 / scale,
+              top: y - 4 / scale,
+              width: 8 / scale,
+              height: 8 / scale,
+              borderRadius: "50%",
+              background: "rgba(66,133,244,0.35)",
+              border: `${1 / scale}px solid ${SELECT_BLUE}`,
+              boxSizing: "border-box",
+              pointerEvents: "none",
+            }}
+          />
+        ))}
+
+        {/* draw-to-insert preview */}
+        {drawPreview && (
+          <div
+            style={{ ...elementStyle(drawPreview), opacity: 0.6, pointerEvents: "none" }}
+          >
+            <ShapeSvg el={drawPreview} />
+          </div>
+        )}
+
+        {/* draw-to-insert: captures the next drag (Esc cancels upstream) */}
+        {drawTool && (
+          <div
+            data-testid="draw-overlay"
+            onPointerDown={onDrawPointerDown}
+            style={{ position: "absolute", inset: 0, cursor: "crosshair", zIndex: 10 }}
+          />
+        )}
 
         {/* rubber-band marquee */}
         {marquee && (

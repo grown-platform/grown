@@ -4,6 +4,7 @@ import {
   elementName,
   findElementsByName,
   setElementName,
+  setOutline,
 } from "./elementOps";
 import { newElement, type Slide, type SlideElement } from "./model";
 
@@ -63,5 +64,24 @@ describe("OnlyOffice parity: presentation", () => {
     const one = findElementsByName(slides, ["Shape1"]);
     expect(one).toHaveLength(1);
     expect(one[0].name).toBe("Shape1");
+  });
+});
+
+describe("OnlyOffice parity: outline", () => {
+  // CreateStroke(25400 EMU = 2 pt, red) → SetOutLine returns true and the
+  // shape's outline is 2 pt red; null / {} are rejected (false, unchanged).
+  it("oo:slide/js-api/api-drawing.js#Test: SetOutLine", () => {
+    const shape = mk("r", { fill: "#646464", stroke: "none", strokeWidth: 0 });
+    expect(shape.stroke).toBe("none");
+    const r = setOutline(shape, { width: 25400 / 12700, color: "#ff0000" });
+    expect(r.ok).toBe(true);
+    expect(r.el.strokeWidth).toBe(2);
+    expect(r.el.stroke).toBe("#ff0000");
+    for (const bad of [null, {}, { width: -1, color: "#ff0000" }, { width: 1, color: "red" }]) {
+      const b = setOutline(r.el, bad);
+      expect(b.ok).toBe(false);
+      expect(b.el).toBe(r.el);
+    }
+    expect(setOutline(r.el, { width: 0, color: "#000000" }).el.stroke).toBe("none");
   });
 });

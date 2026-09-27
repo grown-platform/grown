@@ -17,7 +17,53 @@ export type ElementType =
   | "rightArrow"
   | "roundRect"
   | "table"
-  | "group";
+  | "group"
+  /** A DrawingML preset shape (`preset` + `adj`), drawn as inline SVG. */
+  | "shape"
+  /** A line/connector preset between two points (the box corners, with
+   *  flipH/flipV choosing the diagonal), with optional arrowheads. */
+  | "connector";
+
+/** pptx `a:prstDash` values Grown can write (pptxgenjs `dashType`). */
+export type DashStyle =
+  | "solid"
+  | "dash"
+  | "dashDot"
+  | "lgDash"
+  | "lgDashDot"
+  | "lgDashDotDot"
+  | "sysDash"
+  | "sysDot";
+
+export const DASH_STYLES: { value: DashStyle; label: string }[] = [
+  { value: "solid", label: "Solid" },
+  { value: "sysDot", label: "Round dot" },
+  { value: "sysDash", label: "Square dot" },
+  { value: "dash", label: "Dash" },
+  { value: "dashDot", label: "Dash dot" },
+  { value: "lgDash", label: "Long dash" },
+  { value: "lgDashDot", label: "Long dash dot" },
+  { value: "lgDashDotDot", label: "Long dash dot dot" },
+];
+
+/** Line-end decoration (pptx `a:headEnd`/`a:tailEnd` `type`). */
+export type ArrowHead = "none" | "triangle" | "stealth" | "diamond" | "oval" | "arrow";
+
+export const ARROW_HEADS: { value: ArrowHead; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "triangle", label: "Arrow" },
+  { value: "arrow", label: "Open arrow" },
+  { value: "stealth", label: "Stealth arrow" },
+  { value: "diamond", label: "Diamond" },
+  { value: "oval", label: "Oval" },
+];
+
+/** A connector end glued to a connection site of another element. */
+export interface CxnRef {
+  id: string;
+  /** Index into the target preset's connection sites. */
+  idx: number;
+}
 
 /** Table element data: a grid of cell text (cells[row][col]). */
 export interface TableData {
@@ -44,6 +90,7 @@ export const SHAPE_TYPES: ElementType[] = [
   "diamond",
   "rightArrow",
   "roundRect",
+  "shape",
 ];
 
 export function isShape(type: ElementType): boolean {
@@ -142,6 +189,19 @@ export interface SlideElement {
   flipV?: boolean;
   /** Entrance animation for this element (optional; absent = no animation). */
   animation?: ElementAnimation;
+  // preset geometry ("shape" / "connector")
+  /** ECMA-376 preset name (`a:prstGeom@prst`), e.g. "star5". */
+  preset?: string;
+  /** Adjust values (`a:avLst`); missing names take the preset defaults. */
+  adj?: Record<string, number>;
+  /** Outline dash style (absent = solid). */
+  dash?: DashStyle;
+  /** Arrowheads at the path start (`headEnd`) and end (`tailEnd`). */
+  headEnd?: ArrowHead;
+  tailEnd?: ArrowHead;
+  /** Connector ends glued to connection sites (`stCxn`/`endCxn`). */
+  stCxn?: CxnRef;
+  endCxn?: CxnRef;
   /** Object name (Selection pane / pptx `cNvPr@name`); optional. */
   name?: string;
   /** Position lock: a locked element can be selected but not moved/resized. */
@@ -293,7 +353,78 @@ export function newElement(type: ElementType, src?: string): SlideElement {
       };
     case "group":
       return { ...base, type, children: [] };
+    case "shape":
+      return newShape("rect");
+    case "connector":
+      return newConnector("straightConnector1");
   }
+}
+
+/** Default box for a preset shape inserted from the gallery. */
+const SQUARE_PRESETS = /^(ellipse|donut|pie|smileyFace|heart|star|octagon|hexagon|pentagon|plus|flowChartConnector|flowChartOffpageConnector|math|cube|frame|lightningBolt|diamond|flowChartSort|flowChartMerge|flowChartExtract|quadArrow)/;
+const TALL_PRESETS = /^(upArrow|downArrow|upDownArrow|can)$/;
+
+/** Default gallery size of a preset (PowerPoint-like proportions). */
+export function presetDefaultSize(preset: string): { w: number; h: number } {
+  if (TALL_PRESETS.test(preset)) return { w: 120, h: 200 };
+  if (SQUARE_PRESETS.test(preset)) return { w: 160, h: 160 };
+  return { w: 240, h: 120 };
+}
+
+/** newShape builds a preset-geometry shape with the preset's default adjust
+ *  values left implicit (stored `adj` only once a handle is dragged). */
+export function newShape(preset: string, at?: { x: number; y: number; w?: number; h?: number }): SlideElement {
+  const size = presetDefaultSize(preset);
+  const w = at?.w ?? size.w;
+  const h = at?.h ?? size.h;
+  return {
+    id: uid(),
+    type: "shape",
+    preset,
+    x: at?.x ?? Math.round((CANVAS_W - w) / 2),
+    y: at?.y ?? Math.round((CANVAS_H - h) / 2),
+    w,
+    h,
+    fill: "#4285f4",
+    stroke: "#1a5dc8",
+    strokeWidth: 1,
+  };
+}
+
+/** newConnector builds a connector from (x1,y1) to (x2,y2) (default: a
+ *  horizontal 240 px line in the middle of the slide). */
+export function newConnector(
+  preset: string,
+  opts: { tailEnd?: ArrowHead; headEnd?: ArrowHead; from?: [number, number]; to?: [number, number] } = {},
+): SlideElement {
+  const [x1, y1] = opts.from ?? [360, 270];
+  const [x2, y2] = opts.to ?? [600, 270];
+  return {
+    id: uid(),
+    type: "connector",
+    preset,
+    ...connectorBox(x1, y1, x2, y2),
+    stroke: "#202124",
+    strokeWidth: 2,
+    ...(opts.headEnd && opts.headEnd !== "none" ? { headEnd: opts.headEnd } : {}),
+    ...(opts.tailEnd && opts.tailEnd !== "none" ? { tailEnd: opts.tailEnd } : {}),
+  };
+}
+
+/** The box + flips that draw a connector from (x1,y1) to (x2,y2): presets
+ *  run from the box's top-left to its bottom-right, and flipH/flipV mirror
+ *  that (the pptx `cxnSp` convention). */
+export function connectorBox(x1: number, y1: number, x2: number, y2: number) {
+  const r = (n: number) => Math.round(n * 100) / 100;
+  return {
+    x: r(Math.min(x1, x2)),
+    y: r(Math.min(y1, y2)),
+    w: r(Math.abs(x2 - x1)),
+    h: r(Math.abs(y2 - y1)),
+    flipH: x2 < x1 ? true : undefined,
+    flipV: y2 < y1 ? true : undefined,
+    rotation: undefined,
+  };
 }
 
 export function parseDeck(data?: string): DeckDoc {
