@@ -36,9 +36,11 @@ type Mode = "unicode" | "latex";
 
 function Preview({ content, display }: { content: Content; display: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  // The engine edits its model in place, so compare by value.
+  const json = JSON.stringify(content);
   useEffect(() => {
-    if (ref.current) renderMath(ref.current, content, display);
-  }, [content, display]);
+    if (ref.current) renderMath(ref.current, JSON.parse(json) as Content, display);
+  }, [json, display]);
   return <Box ref={ref} data-testid="equation-preview" sx={{ minHeight: 32, py: 1, overflowX: "auto", textAlign: "center" }} />;
 }
 
