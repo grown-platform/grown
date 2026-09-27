@@ -36,7 +36,9 @@ func makeOrgUser(t *testing.T, pool *pgxpool.Pool, slug, subject, email string) 
 // TestCrossOrgCommentAccess proves that comment operations respect the same
 // doc-access control as document reads:
 //   - a user outside the doc's org cannot list or add comments (NotFound),
-//   - after a grant, they can list and add comments (as a viewer/commenter),
+//   - after a viewer grant, they can list comments but not write them
+//     (PermissionDenied); after a commenter grant, they can add, reply,
+//     resolve and reopen (delete stays org-member only),
 //   - after a grant is revoked, access is denied again.
 func TestCrossOrgCommentAccess(t *testing.T) {
 	pool, orgA, alice := setupDB(t)
@@ -76,6 +78,51 @@ func TestCrossOrgCommentAccess(t *testing.T) {
 	}
 	if len(list.GetComments()) != 0 {
 		t.Errorf("expected empty list, got %d", len(list.GetComments()))
+	}
+
+	// 4b. A viewer grant is read-only: bob cannot add a comment, nor reply to /
+	//     resolve / reopen alice's.
+	parent, err := svc.AddComment(aliceCtx, &grownv1.AddCommentRequest{DocId: doc.GetId(), Body: "alice"})
+	if err != nil {
+		t.Fatalf("AddComment alice: %v", err)
+	}
+	if _, err := svc.AddComment(bobCtx, &grownv1.AddCommentRequest{DocId: doc.GetId(), Body: "hi"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("AddComment viewer: got %v want PermissionDenied", status.Code(err))
+	}
+	if _, err := svc.ReplyToComment(bobCtx, &grownv1.ReplyToCommentRequest{DocId: doc.GetId(), CommentId: parent.GetId(), Body: "re"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("ReplyToComment viewer: got %v want PermissionDenied", status.Code(err))
+	}
+	if _, err := svc.ResolveComment(bobCtx, &grownv1.ResolveCommentRequest{DocId: doc.GetId(), CommentId: parent.GetId(), Resolved: true}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("ResolveComment viewer: got %v want PermissionDenied", status.Code(err))
+	}
+	if _, err := svc.ReopenComment(bobCtx, &grownv1.ReopenCommentRequest{DocId: doc.GetId(), CommentId: parent.GetId()}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("ReopenComment viewer: got %v want PermissionDenied", status.Code(err))
+	}
+	if list, err := svc.ListComments(bobCtx, &grownv1.ListCommentsRequest{DocId: doc.GetId()}); err != nil || len(list.GetComments()) != 1 {
+		t.Fatalf("ListComments viewer after alice comment = %v, %v; want 1", list.GetComments(), err)
+	}
+
+	// 4c. Upgraded to commenter, bob can add, reply, resolve and reopen.
+	if _, err := svc.GrantAccess(aliceCtx, &grownv1.GrantDocAccessRequest{
+		DocId: doc.GetId(), GranteeUserId: bob, Role: sharing.RoleCommenter,
+	}); err != nil {
+		t.Fatalf("GrantAccess commenter: %v", err)
+	}
+	if _, err := svc.AddComment(bobCtx, &grownv1.AddCommentRequest{DocId: doc.GetId(), Body: "bob"}); err != nil {
+		t.Fatalf("AddComment commenter: %v", err)
+	}
+	if _, err := svc.ReplyToComment(bobCtx, &grownv1.ReplyToCommentRequest{DocId: doc.GetId(), CommentId: parent.GetId(), Body: "re"}); err != nil {
+		t.Fatalf("ReplyToComment commenter: %v", err)
+	}
+	if _, err := svc.ResolveComment(bobCtx, &grownv1.ResolveCommentRequest{DocId: doc.GetId(), CommentId: parent.GetId(), Resolved: true}); err != nil {
+		t.Fatalf("ResolveComment commenter: %v", err)
+	}
+	if _, err := svc.ReopenComment(bobCtx, &grownv1.ReopenCommentRequest{DocId: doc.GetId(), CommentId: parent.GetId()}); err != nil {
+		t.Fatalf("ReopenComment commenter: %v", err)
+	}
+	// Deleting comments stays an org-member operation.
+	if _, err := svc.DeleteComment(bobCtx, &grownv1.DeleteCommentRequest{DocId: doc.GetId(), CommentId: parent.GetId()}); status.Code(err) != codes.NotFound {
+		t.Fatalf("DeleteComment grantee: got %v want NotFound", status.Code(err))
 	}
 
 	// 5. Revoke → Bob loses access again.

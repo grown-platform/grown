@@ -464,16 +464,39 @@ func (s *Service) RestoreVersion(ctx context.Context, req *grownv1.RestoreVersio
 	return toVersionProto(v), nil
 }
 
+// commentAccess gates the comment RPCs with the same access check as GetDoc
+// (accessDoc): org members and per-user grantees (possibly cross-org) may read
+// comments; writing (add/reply/resolve/reopen) additionally needs a role that
+// may comment (owner, editor, or a commenter/editor grant). A viewer grantee
+// gets PermissionDenied; anyone without access gets NotFound.
+func (s *Service) commentAccess(ctx context.Context, docID string, write bool) error {
+	orgID, userID, err := callerOrgUser(ctx)
+	if err != nil {
+		return err
+	}
+	_, role, aerr := s.accessDoc(ctx, orgID, userID, docID)
+	if aerr != nil {
+		return aerr
+	}
+	if write && !canComment(role) {
+		return status.Error(codes.PermissionDenied, "commenting requires commenter or editor access")
+	}
+	return nil
+}
+
+// canComment reports whether an effective accessDoc role may write comments.
+func canComment(role string) bool {
+	switch role {
+	case "owner", sharing.RoleEditor, sharing.RoleCommenter:
+		return true
+	}
+	return false
+}
+
 // ListComments returns a document's comments.
 func (s *Service) ListComments(ctx context.Context, req *grownv1.ListCommentsRequest) (*grownv1.ListCommentsResponse, error) {
-	orgID, err := callerOrg(ctx)
-	if err != nil {
+	if err := s.commentAccess(ctx, req.GetDocId(), false); err != nil {
 		return nil, err
-	}
-	if _, err := s.repo.Get(ctx, orgID, req.GetDocId()); errors.Is(err, ErrNotFound) {
-		return nil, status.Error(codes.NotFound, "document not found")
-	} else if err != nil {
-		return nil, status.Errorf(codes.Internal, "get doc: %v", err)
 	}
 	list, err := s.repo.ListComments(ctx, req.GetDocId())
 	if err != nil {
@@ -492,10 +515,6 @@ func (s *Service) AddComment(ctx context.Context, req *grownv1.AddCommentRequest
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "no session")
 	}
-	o, ok := auth.OrgFromContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Internal, "missing org context")
-	}
 	body := req.GetBody()
 	if len(body) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "comment body required")
@@ -503,10 +522,8 @@ func (s *Service) AddComment(ctx context.Context, req *grownv1.AddCommentRequest
 	if len(body) > maxCommentBytes {
 		body = body[:maxCommentBytes]
 	}
-	if _, err := s.repo.Get(ctx, o.ID, req.GetDocId()); errors.Is(err, ErrNotFound) {
-		return nil, status.Error(codes.NotFound, "document not found")
-	} else if err != nil {
-		return nil, status.Errorf(codes.Internal, "get doc: %v", err)
+	if err := s.commentAccess(ctx, req.GetDocId(), true); err != nil {
+		return nil, err
 	}
 	c, err := s.repo.CreateComment(ctx, req.GetDocId(), u.ID, body, req.GetQuote(), req.GetAnchorFrom(), req.GetAnchorTo())
 	if err != nil {
@@ -522,10 +539,6 @@ func (s *Service) ReplyToComment(ctx context.Context, req *grownv1.ReplyToCommen
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "no session")
 	}
-	o, ok := auth.OrgFromContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Internal, "missing org context")
-	}
 	body := req.GetBody()
 	if len(body) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "reply body required")
@@ -533,10 +546,8 @@ func (s *Service) ReplyToComment(ctx context.Context, req *grownv1.ReplyToCommen
 	if len(body) > maxCommentBytes {
 		body = body[:maxCommentBytes]
 	}
-	if _, err := s.repo.Get(ctx, o.ID, req.GetDocId()); errors.Is(err, ErrNotFound) {
-		return nil, status.Error(codes.NotFound, "document not found")
-	} else if err != nil {
-		return nil, status.Errorf(codes.Internal, "get doc: %v", err)
+	if err := s.commentAccess(ctx, req.GetDocId(), true); err != nil {
+		return nil, err
 	}
 	c, err := s.repo.ReplyToComment(ctx, req.GetDocId(), req.GetCommentId(), u.ID, body)
 	if errors.Is(err, ErrNotFound) {
@@ -551,14 +562,8 @@ func (s *Service) ReplyToComment(ctx context.Context, req *grownv1.ReplyToCommen
 
 // ReopenComment reopens a previously resolved comment thread.
 func (s *Service) ReopenComment(ctx context.Context, req *grownv1.ReopenCommentRequest) (*grownv1.DocComment, error) {
-	orgID, err := callerOrg(ctx)
-	if err != nil {
+	if err := s.commentAccess(ctx, req.GetDocId(), true); err != nil {
 		return nil, err
-	}
-	if _, err := s.repo.Get(ctx, orgID, req.GetDocId()); errors.Is(err, ErrNotFound) {
-		return nil, status.Error(codes.NotFound, "document not found")
-	} else if err != nil {
-		return nil, status.Errorf(codes.Internal, "get doc: %v", err)
 	}
 	c, err := s.repo.ResolveComment(ctx, req.GetDocId(), req.GetCommentId(), false)
 	if errors.Is(err, ErrNotFound) {
@@ -572,14 +577,8 @@ func (s *Service) ReopenComment(ctx context.Context, req *grownv1.ReopenCommentR
 
 // ResolveComment marks a comment resolved or reopens it.
 func (s *Service) ResolveComment(ctx context.Context, req *grownv1.ResolveCommentRequest) (*grownv1.DocComment, error) {
-	orgID, err := callerOrg(ctx)
-	if err != nil {
+	if err := s.commentAccess(ctx, req.GetDocId(), true); err != nil {
 		return nil, err
-	}
-	if _, err := s.repo.Get(ctx, orgID, req.GetDocId()); errors.Is(err, ErrNotFound) {
-		return nil, status.Error(codes.NotFound, "document not found")
-	} else if err != nil {
-		return nil, status.Errorf(codes.Internal, "get doc: %v", err)
 	}
 	c, err := s.repo.ResolveComment(ctx, req.GetDocId(), req.GetCommentId(), req.GetResolved())
 	if errors.Is(err, ErrNotFound) {

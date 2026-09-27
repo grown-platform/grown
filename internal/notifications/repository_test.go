@@ -161,7 +161,7 @@ func TestRepository_OrgUserIsolation(t *testing.T) {
 		t.Fatalf("seed org: %v", err)
 	}
 	if err := pool.QueryRow(ctx,
-		`INSERT INTO grown.users (org_id, oidc_issuer, oidc_subject, email) VALUES ($1,'test','sub3','o@o.com') RETURNING id::text`,
+		`INSERT INTO grown.users (org_id, oidc_issuer, oidc_subject, email, display_name) VALUES ($1,'test','sub3','o@o.com','Other') RETURNING id::text`,
 		otherOrg).Scan(&otherUser); err != nil {
 		t.Fatalf("seed other user: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestSharingOnGrantFiresNotification(t *testing.T) {
 		t.Fatalf("default org: %v", err)
 	}
 	if err := pool.QueryRow(ctx,
-		`INSERT INTO grown.users (org_id, oidc_issuer, oidc_subject, email) VALUES ($1,'test','sg1','grant@test.com') RETURNING id::text`,
+		`INSERT INTO grown.users (org_id, oidc_issuer, oidc_subject, email, display_name) VALUES ($1,'test','sg1','grant@test.com','Grantee') RETURNING id::text`,
 		orgID).Scan(&userID); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
