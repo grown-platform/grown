@@ -3931,8 +3931,10 @@ export function EditorPage() {
             const shownText = disp ? disp.text : raw;
             if (shownText) tf.setText(shownText);
             if (f.required) tf.enableRequired();
-            tf.setFontSize(size);
             tf.addToPage(page, { x, y, width: w, height: h, font: formFont, borderWidth: 1, hidden: f.hidden });
+            // Font size needs the /DA that addToPage writes — setting it first
+            // threw (caught below) and left the field without a widget.
+            tf.setFontSize(size);
             if (shownText !== raw) {
               tf.updateAppearances(formFont);
               tf.acroField.setValue(PDFHexString.fromText(raw));
@@ -3953,8 +3955,8 @@ export function EditorPage() {
             if (f.required) lb.enableRequired();
             const sel = (f.selected ?? []).filter((o) => opts.includes(o));
             if (sel.length) lb.select(f.multiSelect ? sel : sel.slice(0, 1));
-            lb.setFontSize(size);
             lb.addToPage(page, { x, y, width: w, height: h, font: formFont, hidden: f.hidden });
+            lb.setFontSize(size);
             track(f, lb);
           } else if (f.fieldType === "button") {
             const btn = form.createButton(uniqueName(f.name));
@@ -3967,8 +3969,8 @@ export function EditorPage() {
             if (opts.length) dd.addOptions(opts);
             if (f.required) dd.enableRequired();
             if (typeof f.value === "string" && f.value && opts.includes(f.value)) dd.select(f.value);
-            dd.setFontSize(size);
             dd.addToPage(page, { x, y, width: w, height: h, font: formFont, hidden: f.hidden });
+            dd.setFontSize(size);
             track(f, dd);
           } else if (f.fieldType === "radio") {
             const key = f.groupName || f.name || "radio";
