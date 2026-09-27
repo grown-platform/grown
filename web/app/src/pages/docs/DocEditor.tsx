@@ -43,6 +43,8 @@ import { Presence } from "./Presence";
 import { Ruler, type Indents } from "./Ruler";
 import { ParagraphDialogs } from "./ParagraphDialogs";
 import { TableDialogs, TableSettings, onOpenTableSettings, openConvertTextDialog, openTableSettings } from "./TableUI";
+import { ObjectDialogs, ObjectSettings, onOpenObjectSettings, openInsertObject, openObjectSettings } from "./ObjectsUI";
+import { setAssetDoc } from "./docAssets";
 import { distributeColumns, distributeRows, splitTable, tableToText, toggleRepeatHeader } from "./tables";
 import { selectedParagraphIndents } from "./docModel";
 import { ShareDialog } from "./ShareDialog";
@@ -147,9 +149,11 @@ export function DocEditor({ user }: DocEditorProps) {
   };
   // Right-hand side panel: version history, comments, or suggestions.
   const [panel, setPanel] = useState<
-    null | "versions" | "comments" | "suggestions" | "table"
+    null | "versions" | "comments" | "suggestions" | "table" | "object"
   >(null);
   useEffect(() => onOpenTableSettings(() => setPanel("table")), []);
+  // Pictures, shapes and charts (M7): their settings panel.
+  useEffect(() => onOpenObjectSettings(() => setPanel("object")), []);
   // Track changes (M5): my choice for this doc, the doc-wide setting (a Yjs
   // map, set below once collab exists) and my default; the newest wins.
   const [trackMine, setTrackMine] = useState<TrackChoice | null>(() => loadTrackMine(user.id, id));
@@ -494,6 +498,13 @@ export function DocEditor({ user }: DocEditorProps) {
     setDrawing({ open: false, pos: null });
   }
 
+  // Pictures go to this document's asset store (M7).
+  useEffect(() => {
+    if (!editor) return;
+    setAssetDoc(editor.view, id);
+    return () => setAssetDoc(editor.view, null);
+  }, [editor, id]);
+
   // Clicking an equation (or inserting one) opens the equation panel.
   useEffect(() => {
     if (!editor) return;
@@ -679,6 +690,12 @@ export function DocEditor({ user }: DocEditorProps) {
         run: () => e.chain().focus().insertFootnote().run(),
       },
       { label: "Drawing", section: "Insert", run: actions.insertDrawing },
+      { label: "Image from file", section: "Insert", run: () => openInsertObject("picture") },
+      { label: "Image by URL", section: "Insert", run: () => openInsertObject("pictureUrl") },
+      { label: "Shape", section: "Insert", run: () => openInsertObject("shape") },
+      { label: "Text box", section: "Insert", run: () => openInsertObject("textBox") },
+      { label: "Chart", section: "Insert", run: () => openInsertObject("chart") },
+      { label: "Image settings", section: "Format", run: () => openObjectSettings() },
       { label: "Equation", section: "Insert", run: () => e.chain().focus().insertEquation().run() },
       { label: "Insert emoji", section: "Insert", run: actions.emoji },
       { label: "Table of contents", section: "Insert", run: () => insertTableOfContents(e) },
@@ -1132,6 +1149,35 @@ export function DocEditor({ user }: DocEditorProps) {
             </Box>
           </>
         )}
+        {panel === "object" && (
+          <>
+            <Box
+              onClick={() => setPanel(null)}
+              sx={{
+                display: { xs: "block", md: "none" },
+                position: "fixed",
+                inset: 0,
+                bgcolor: "rgba(0,0,0,0.4)",
+                zIndex: 1200,
+              }}
+            />
+            <Box
+              sx={{
+                position: { xs: "fixed", md: "sticky" },
+                top: { xs: 0, md: 8 },
+                right: { xs: 0, md: "auto" },
+                bottom: { xs: 0, md: "auto" },
+                alignSelf: "flex-start",
+                zIndex: { xs: 1201, md: 1 },
+                width: { xs: "min(320px, 100vw)", md: "auto" },
+                height: { xs: "100vh", md: "auto" },
+                overflowY: { xs: "auto", md: "visible" },
+              }}
+            >
+              <ObjectSettings editor={editor} onClose={() => setPanel(null)} />
+            </Box>
+          </>
+        )}
         {panel === "suggestions" && (
           <>
             <Box
@@ -1251,6 +1297,7 @@ export function DocEditor({ user }: DocEditorProps) {
           onClose={() => setMathEdit(null)}
         />
       )}
+      <ObjectDialogs editor={editor} />
       {drawing.open && (
         <Suspense fallback={null}>
           <DrawingDialog

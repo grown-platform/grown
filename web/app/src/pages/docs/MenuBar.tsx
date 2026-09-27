@@ -20,6 +20,7 @@ import { applyStyle, continueNumbering, currentStyle, restartNumbering } from ".
 import { openParagraphDialog } from "./ParagraphDialogs";
 import { promptLink } from "./links";
 import { TableSizePicker, insertPickedTable, openConvertTextDialog, openTableSettings } from "./TableUI";
+import { openInsertObject, openObjectSettings } from "./ObjectsUI";
 import { openReferenceDialog } from "./ReferenceDialogs";
 import { openCompareDialog } from "./CompareDialog";
 import { openMailMerge } from "./MailMergePanel";
@@ -341,13 +342,15 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
       {top(
         "Insert",
         <>
-          <MenuItem
-            onClick={run((e) => {
-              const u = window.prompt("Image URL");
-              if (u) e.chain().focus().setImage({ src: u }).run();
-            })}
-          >
-            Image…
+          <MenuItem onClick={run(() => openInsertObject("picture"))} data-testid="insert-image-file">
+            Image from computer…
+          </MenuItem>
+          <MenuItem onClick={run(() => openInsertObject("pictureUrl"))}>Image by URL…</MenuItem>
+          <MenuItem onClick={run(() => openInsertObject("shape"))} data-testid="insert-shape">
+            Shape…
+          </MenuItem>
+          <MenuItem onClick={run(() => openInsertObject("textBox"))} data-testid="insert-textbox">
+            Text box
           </MenuItem>
           <Typography level="body-xs" sx={{ px: 1.5, pt: 0.5, opacity: 0.6 }}>
             Table
@@ -373,7 +376,9 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem onClick={actions.insertEquation} data-testid="insert-equation">
             Equation{kbd("Ctrl+Alt+=")}
           </MenuItem>
-          <MenuItem disabled>Chart</MenuItem>
+          <MenuItem onClick={run(() => openInsertObject("chart"))} data-testid="insert-chart">
+            Chart…
+          </MenuItem>
           <ListDivider />
           <MenuItem onClick={actions.emoji}>Emoji…</MenuItem>
           <MenuItem onClick={actions.specialChars}>
@@ -693,6 +698,9 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem onClick={run((e) => splitTable(e))}>Split table</MenuItem>
           <MenuItem onClick={run((e) => tableToText(e))}>Convert table to text</MenuItem>
           <MenuItem onClick={() => openTableSettings()}>Table settings…</MenuItem>
+          <MenuItem onClick={() => openObjectSettings()} data-testid="format-image-settings">
+            Image settings…
+          </MenuItem>
           {(
             [
               ["Yellow", "#fff3a0"],

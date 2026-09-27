@@ -29,6 +29,7 @@ import FormatColorTextIcon from "@mui/icons-material/FormatColorText";
 import BorderColorIcon from "@mui/icons-material/BorderColor";
 import LinkIcon from "@mui/icons-material/Link";
 import ImageIcon from "@mui/icons-material/Image";
+import { openInsertObject } from "./ObjectsUI";
 import FunctionsIcon from "@mui/icons-material/Functions";
 import FormatAlignLeftIcon from "@mui/icons-material/FormatAlignLeft";
 import FormatAlignCenterIcon from "@mui/icons-material/FormatAlignCenter";
@@ -161,10 +162,8 @@ export function Toolbar({
   );
 
   const askLink = () => promptLink(editor);
-  const promptImage = () => {
-    const url = window.prompt("Image URL");
-    if (url) editor.chain().focus().setImage({ src: url }).run();
-  };
+  // M7: pick a picture file (uploaded to the document's asset store).
+  const promptImage = () => openInsertObject("picture");
 
   return (
     <Sheet
