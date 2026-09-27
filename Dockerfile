@@ -86,3 +86,22 @@ ENV GROWN_STATIC_DIR=/app/web/dist \
 USER grown
 EXPOSE 8080 9000
 ENTRYPOINT ["/app/server"]
+
+# ---------------------------------------------------------------------------
+# Optional: LibreOffice import (CC8). Not in the default image: LibreOffice
+# adds ~500 MB. To accept legacy .doc/.xls/.ppt, build a derived image and
+# run it with GROWN_LIBREOFFICE=1 (Helm: grown.libreoffice.enabled=true):
+#
+#   FROM code.pick.haus/grown/grown:<tag>
+#   USER root
+#   RUN apk add --no-cache libreoffice-writer libreoffice-calc \
+#         libreoffice-impress font-liberation font-carlito
+#   USER grown
+#   # soffice is auto-detected (PATH, /usr/lib/libreoffice/program)
+#   ENV GROWN_LIBREOFFICE=1
+#
+# LibreOffice (MPL-2.0) is exec'd as a separate program over files, never
+# linked. Each conversion uses its own throwaway profile with macros
+# disabled (internal/convert). For extra isolation run grown with no egress
+# network policy; soffice never needs the network.
+# ---------------------------------------------------------------------------

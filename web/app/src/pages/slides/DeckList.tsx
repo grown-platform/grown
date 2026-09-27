@@ -34,6 +34,7 @@ import {
 } from "./api";
 import type { Deck } from "./types";
 import { DECK_TEMPLATES, type DeckTemplate } from "./templates";
+import { joinAccept, legacyAccept, useOfficeConvertCaps } from "../../lib/officeConvert";
 import { PPTX_ACCEPT, importPptxAsNewDeck } from "./pptx/importDeck";
 
 export function DeckList({ user }: { user: User }) {
@@ -44,6 +45,7 @@ export function DeckList({ user }: { user: User }) {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const pptxInput = useRef<HTMLInputElement | null>(null);
+  const officeCaps = useOfficeConvertCaps();
   const [view, setView] = useState<"mine" | "shared">("mine");
 
   useEffect(() => {
@@ -125,7 +127,7 @@ export function DeckList({ user }: { user: User }) {
           <input
             ref={pptxInput}
             type="file"
-            accept={PPTX_ACCEPT}
+            accept={joinAccept(PPTX_ACCEPT, legacyAccept(officeCaps, "pptx"))}
             hidden
             data-testid="pptx-upload-input"
             onChange={onPptxPicked}

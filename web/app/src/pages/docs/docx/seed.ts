@@ -17,6 +17,16 @@ export function stashDocxSeed(docId: string, imp: DocxImport): void {
   }
 }
 
+/** Whether a seed is waiting for `docId` (without consuming it). */
+export function hasDocxSeed(docId: string): boolean {
+  if (pending.has(docId)) return true;
+  try {
+    return sessionStorage.getItem(key(docId)) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function takeDocxSeed(docId: string): DocxImport | null {
   let imp = pending.get(docId) ?? null;
   pending.delete(docId);

@@ -42,6 +42,7 @@ import type { Doc } from "./types";
 import { TemplateGallery } from "./TemplateGallery";
 import { templateHtml, type DocTemplate } from "./templates";
 import { stashDocxSeed } from "./docx/seed";
+import { joinAccept, legacyAccept, useOfficeConvertCaps } from "../../lib/officeConvert";
 
 interface DocListProps {
   user: User;
@@ -179,6 +180,7 @@ export function DocList({ user }: DocListProps) {
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const officeCaps = useOfficeConvertCaps();
 
   const [view, setView] = useState<View>(
     () => (localStorage.getItem("docs:view") as View) || "grid",
@@ -369,7 +371,7 @@ export function DocList({ user }: DocListProps) {
           <input
             ref={importInputRef}
             type="file"
-            accept={IMPORT_ACCEPT}
+            accept={joinAccept(IMPORT_ACCEPT, legacyAccept(officeCaps, "docx"))}
             hidden
             aria-label="Import document file"
             data-testid="docs-import-input"

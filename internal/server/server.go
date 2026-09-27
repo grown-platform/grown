@@ -35,6 +35,7 @@ import (
 	"code.pick.haus/grown/grown/internal/chat"
 	"code.pick.haus/grown/grown/internal/cloudimport"
 	"code.pick.haus/grown/grown/internal/contacts"
+	"code.pick.haus/grown/grown/internal/convert"
 	"code.pick.haus/grown/grown/internal/desktops"
 	"code.pick.haus/grown/grown/internal/directory"
 	"code.pick.haus/grown/grown/internal/docs"
@@ -254,6 +255,12 @@ type Config struct {
 	// the legacy PDFFrontendURL reverse-proxy. Empty leaves the reverse-proxy
 	// behavior unchanged.
 	PDFStaticDir string
+
+	// OfficeConverter is the optional LibreOffice-headless converter (CC8),
+	// built from GROWN_LIBREOFFICE* in main.go. nil or disabled ⇒
+	// /api/v1/convert/capabilities reports {"enabled":false} and
+	// /api/v1/convert/office returns 404.
+	OfficeConverter *convert.Converter
 
 	// LiveRepo backs multi-user live streaming. nil disables the LiveService and
 	// the MediaMTX auth/ready webhooks. LiveURLs carries the public ingest/
@@ -1111,6 +1118,11 @@ func New(cfg Config) *Server {
 	// Route /api/* and /healthz to the auth-wrapped gateway; everything
 	// else falls through to the static SPA handler.
 	static := StaticHandler(cfg.StaticDir, cfg.SiteName)
+	officeConverter := cfg.OfficeConverter
+	if officeConverter == nil {
+		officeConverter = convert.New(convert.Config{})
+	}
+	officeConvertHandler := convert.Handler(officeConverter)
 	driveAuthWrap := auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg, apiTokensRepo)
 
 	// Zitadel User API v2 proxy for the in-app account-security panel. Runs
@@ -1920,6 +1932,11 @@ func New(cfg Config) *Server {
 		// userId == caller's oidc_subject.
 		if strings.HasPrefix(r.URL.Path, zitadelproxy.MountPrefix+"/") {
 			driveAuthWrap(zproxy).ServeHTTP(w, r)
+			return
+		}
+		// Optional LibreOffice conversion (legacy .doc/.xls/.ppt → OOXML).
+		if r.URL.Path == convert.CapabilitiesPath || r.URL.Path == convert.OfficePath {
+			driveAuthWrap(officeConvertHandler).ServeHTTP(w, r)
 			return
 		}
 		// Admin-gated audit-log JSON listing.

@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/joy";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
+import { joinAccept, legacyAccept, useOfficeConvertCaps } from "../../lib/officeConvert";
 import { IMPORT_ACCEPT, IMPORT_MODES, describeImport, importKind, importSpreadsheetFile, type ImportMode, type ImportedWorkbook } from "./sheetImport";
 
 interface ImportDialogProps {
@@ -40,6 +41,7 @@ const DELIMITERS: { value: string; label: string }[] = [
 /** File ▸ Import: pick an .xlsx/.xls/.ods/.csv/.tsv file and where it goes. */
 export function ImportDialog({ open, onClose, userId, onImport }: ImportDialogProps) {
   const [file, setFile] = useState<File | null>(null);
+  const officeCaps = useOfficeConvertCaps();
   const [mode, setMode] = useState<ImportMode>("insertSheets");
   const [delim, setDelim] = useState("auto");
   const [custom, setCustom] = useState("");
@@ -94,7 +96,7 @@ export function ImportDialog({ open, onClose, userId, onImport }: ImportDialogPr
             <input
               ref={inputRef}
               type="file"
-              accept={IMPORT_ACCEPT}
+              accept={joinAccept(IMPORT_ACCEPT, legacyAccept(officeCaps, "xlsx"))}
               hidden
               data-testid="import-file-input"
               onChange={(e) => {

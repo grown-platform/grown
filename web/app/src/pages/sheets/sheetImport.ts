@@ -14,6 +14,7 @@ import { guessDelimiter, parseDelimited } from "./csvText";
 import { renameSheetInFormula } from "./formulaRefs";
 import type { NamedRange } from "./NamedRangesDialog";
 import { readXlsx, type ImportedWorkbook } from "./xlsx/xlsxRead";
+import { convertOnServer, needsServerConversion, officeConvertCaps } from "../../lib/officeConvert";
 
 export type { ImportedWorkbook };
 
@@ -230,6 +231,26 @@ async function toBytes(file: Blob | ArrayBuffer | Uint8Array): Promise<Uint8Arra
   });
 }
 
+/** Extensions the optional LibreOffice converter (CC8) may take for Sheets. */
+const SERVER_CONVERTIBLE = new Set(["xls", "xlt", "ods"]);
+
+/** With LibreOffice enabled on the server, .xls/.xlt (and .ods when the
+ *  server prefers it) are converted to .xlsx there and read by the full
+ *  xlsx reader; any failure falls back to SheetJS. */
+async function viaServer(bytes: Uint8Array, name: string, opts: ImportFileOptions): Promise<ImportedWorkbook | null> {
+  const ext = name.toLowerCase().replace(/^.*\./, "");
+  if (!SERVER_CONVERTIBLE.has(ext)) return null;
+  const caps = await officeConvertCaps();
+  if (!needsServerConversion(caps, name, "xlsx")) return null;
+  try {
+    const xlsx = await convertOnServer(new Blob([bytes as BlobPart]), name);
+    return await readXlsx(await toBytes(xlsx), { userId: opts.userId });
+  } catch (e) {
+    console.warn(`LibreOffice conversion of ${name} failed; reading it with SheetJS`, e);
+    return null;
+  }
+}
+
 /** Reads any supported spreadsheet file. */
 export async function importSpreadsheetFile(
   file: Blob | ArrayBuffer | Uint8Array,
@@ -237,6 +258,8 @@ export async function importSpreadsheetFile(
   opts: ImportFileOptions = {},
 ): Promise<ImportedWorkbook> {
   const bytes = await toBytes(file);
+  const converted = await viaServer(bytes, name, opts);
+  if (converted) return converted;
   const kind = importKind(name, bytes.subarray(0, 4));
   const base = name.replace(/\.[^.]+$/, "").slice(0, 31) || "Sheet1";
   switch (kind) {

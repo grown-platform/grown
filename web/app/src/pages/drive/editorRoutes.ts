@@ -19,7 +19,8 @@ const MIME_TO_EDITOR: Array<{ test: (m: string) => boolean; app: string }> = [
       m ===
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
       m === "application/vnd.oasis.opendocument.text" ||
-      m === "application/rtf",
+      m === "application/rtf" ||
+      m === "application/vnd.wordperfect",
     app: "docs",
   },
   {
