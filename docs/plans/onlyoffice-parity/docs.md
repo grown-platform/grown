@@ -122,6 +122,10 @@ the docs import feature, commits `c3e38aa` and `dac2186`).
   definitions, sections, headers/footers, footnote bodies, comments, tracked
   changes, fields and floating images do not survive. Six Go unit tests cover
   the importer (`internal/docs/convert_import_test.go`).
+* Since M6 (§6.9), `.docx` import and export go through a direct
+  client-side reader/writer (`web/app/src/pages/docs/docx/`) that keeps
+  styles, list definitions, headers/footers, notes, comments and tracked
+  changes; the pandoc endpoints above are its fallback.
 * Print: `window.print()`; page breaks rely on CSS `break-after`.
 
 ### 1.5 Test infrastructure
@@ -978,6 +982,127 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | styleApplicator: update from selection | Style takes the paragraph's properties; direct numbering equal to the style's counts as the style's | Same: the style captures direct paragraph props and numbering, which leave the paragraph; a paragraph whose direct list equals its style's follows the style's indents | Done (M3) |
 | api-paragraph: SetShd / SetColor theme colours | Theme colours | No document theme | n/a |
 | api-paragraph: ParaId | `w14:paraId` | No equivalent identity | n/a |
+
+
+### 6.9 M6 status (direct DOCX import and export)
+
+* **Where it lives: the client** (`web/app/src/pages/docs/docx/`, TypeScript
+  on JSZip, no new dependency). Grown's document model exists only in the
+  browser: the body is ProseMirror/TipTap, styles and list definitions are
+  the `styles` / `numbering` Yjs maps (M3), headers/footers are named Yjs
+  fragments, and the server stores opaque Yjs updates it never interprets.
+  A Go reader could only have produced HTML (the lossy path pandoc already
+  gives) or had to re-implement the TipTap schema and synthesise Yjs
+  updates server-side. In the browser the reader builds the editor's own
+  JSON and map entries, and the writer reads the live model, so styles by
+  id, `basedOn`/`next`, list instances and M3 paragraph attributes survive
+  both ways. The Go endpoints are unchanged and remain the fallback.
+* **Modules**: `xml.ts` (namespace-prefix-agnostic lookups, units,
+  colours), `props.ts` (pPr/rPr ⇄ `DirectParaProps`/`RunPr`/marks, CT_PPr /
+  CT_RPr element order), `read.ts`, `write.ts`, `apply.ts` (apply an import
+  to an editor: maps, body, header/footer via y-prosemirror, comment threads
+  created through the comments API and marks re-pointed at server ids;
+  collect an editor's model for export, anchoring server comments without
+  marks from their stored range), `seed.ts` (hand-off from the Docs home to
+  the editor, in memory plus sessionStorage when it fits). `margin.ts`
+  shares the header/footer schema with `MarginEditor`. Images gained
+  optional `width`/`height` attributes (only the width renders).
+* **Reader maps**: paragraph and character styles (built-ins matched by
+  Word's English name, so a localised `styleId` still becomes Heading 1;
+  `docDefaults` and theme fonts folded into the root style; only styles
+  that are used, their ancestors and list-linked styles are imported; table
+  and numbering styles skipped), headings from the style chain (a custom
+  style based on Heading 1 is a level-1 heading with its `styleId`),
+  `abstractNum`/`num` (formats, level text, start, indents, alignment,
+  suffix, legal, linked styles, `startOverride`, full `lvlOverride` as a
+  derived list, `numStyleLink`, Symbol/Wingdings bullets to Unicode),
+  numbering through styles, every M3 paragraph attribute, run marks (bold,
+  italic, underline, strike, sub/superscript, colour, size, font, highlight
+  and shading, character style), tables (grid widths, `gridSpan`, `vMerge`,
+  `hMerge`, `tblHeader` rows as header cells, cell shading, `gridBefore`),
+  inline and anchored DrawingML pictures and VML images (data URLs, Word
+  size), text-box content (kept after its paragraph), the default (else
+  first-page) header and footer, foot- and endnotes (text), comments with
+  replies and resolved state (`commentsExtended`), `w:ins`/`w:del`/moves as
+  insertion/deletion marks with author, external and bookmark hyperlinks,
+  simple and complex fields (result text; HYPERLINK fields become links),
+  content controls / smart tags / customXml (unwrapped), page breaks and
+  page-starting section breaks, equations as text. `javascript:`,
+  `vbscript:`, `data:` and `file:` links are dropped.
+* **Writer** is the inverse, with elements in schema order: numeric Grown
+  list/note ids keep their numbers, so docx → Grown → docx → Grown is
+  stable. Grown-only constructs are written the nearest way: TipTap bullet
+  / ordered lists as numbered paragraphs on generated definitions (nested
+  lists one level down, `start` as a `startOverride`), task items with ☐/☒,
+  block quotes as a 36pt indent, code blocks in Courier New, rules as a
+  bottom border, Excalidraw drawings rasterised to PNG in the browser.
+  Every table gets single 0.5pt grid borders (Grown has no border model
+  yet). Output: content types, package/document rels, styles, numbering,
+  foot/endnotes with separators (+ `settings.xml` footnotePr), comments +
+  commentsExtended, header1/footer1, media, core/app properties, Letter
+  page with 1in margins.
+* **Wiring**: `api.ts:importFile` reads `.docx` directly and falls back to
+  `POST /api/v1/docs/import?from=docx` (pandoc) if the reader throws;
+  `DocList` hands the model to the editor through `seed.ts`, and
+  `DocEditor` applies it and creates the comment threads.
+  `export.ts:downloadDoc("docx")` uses the writer (with the document's
+  comment threads) and falls back to `POST /api/v1/docs/convert?to=docx`.
+  odt/rtf/epub/md/txt/html import and odt/rtf/epub/md/pdf export stay on
+  pandoc.
+* **Tests**: `__tests__/docx.test.ts` (18 vitest; fixtures built in code
+  by `docx-fixture.ts`): reader mapping per area, script-URL rejection,
+  non-docx rejection, package structure (every part parses, has a content
+  type, every relationship target and `r:id`/`r:embed` resolves, `sectPr`
+  last), schema element order (pPr, rPr, tcPr; cells end with a paragraph),
+  **docx → Grown → docx → Grown model equality** (body JSON, styles map,
+  numbering map, comments, header, footer), an editor-authored document
+  (TipTap lists, task list, quote, code, rule, merged table), comment
+  import through a fake API, export anchoring of unmarked comments, the
+  pandoc fallback, and the seed hand-off. `__tests__/docx-corpus.test.ts`
+  runs every `.docx` under `GROWN_CONVERSION_CORPUS` (skipped when unset):
+  import keeps ≥ 98 % of the source's words, export parses, and the second
+  import equals the first. Playwright `web/e2e/docs-docx.spec.ts` imports a
+  generated .docx (styles, numbered + bullet list, merged/shaded table,
+  header, comment) from the Docs home, checks the render and the comment
+  thread, downloads it as .docx (direct writer: `commentsExtended.xml` is
+  present) and imports the download with the same checks. The generated
+  files were also read back by pandoc's docx reader (lists, merges,
+  comments with replies, tracked changes and notes all recognised).
+* **Corpus pass rate**: OnlyOffice's own `.docx` files
+  (`research/onlyoffice`, 5 files): **4/4 (100 %)**, plus 1 correctly
+  refused (`Fb2File/template/template.docx` has no main document part).
+  The first run was 3/5; both failures were the checker (the template, and
+  word counts split across runs). The CC2 corpus converted to .docx by
+  pandoc (46 files: libxml2 HTML tests, EpubFile books up to 138k words,
+  ODF examples, md, `internal/docs/testdata/corpus`): **46/46 (100 %)**,
+  first run 40/46, all six checker issues (words split across `w:br` /
+  runs, numeric entities). Run with
+  `GROWN_CONVERSION_CORPUS=<dir> npx vitest run docx-corpus`.
+* **OnlyOffice tests**: none (their converter tests live in `core/`, see
+  §5), so the parity scoreboard is unchanged.
+* **Dropped on import** (reported in `DocxImport.warnings`; each waits for
+  the milestone that adds the model): bookmarks (M8), table borders and
+  table styles (M4), per-section page setup, first/even headers and
+  section-level header variants (M9; the final section's page size is read
+  into `DocxImport.page` but not applied), floating image position and
+  wrap (M7), WMF/EMF/TIFF images, direct "not bold/italic" over a style,
+  caps / small caps as direct formatting, formatting-change revisions and
+  revision dates (M5), rich footnote bodies (F1), equations as math (M11).
+* **Not yet** (rest of the M6 row): opening a `.docx` from Drive and
+  importing into an existing document; a server-side OOXML schema
+  validation step (checked here by structure tests and pandoc's reader,
+  not by Word/LibreOffice, which aren't available to the test run).
+* **Semantic differences**:
+
+| Case | Word | Grown | Status |
+|---|---|---|---|
+| Comment authors | Kept per comment | Server comments belong to the importing user; the original author is appended to the text ("— Carol") when it differs | grown-variant |
+| Numbering start when `w:start` is absent | 0 (ECMA-376) | 0, per the spec | Note only |
+| Image in a paragraph | Inline in the run | Image is a block node, so the paragraph splits around it; paragraph alignment of an image-only paragraph is lost | Until M7 |
+| Header/footer content | Any block content | Margin editor schema: paragraphs/headings with alignment and basic marks; tables flatten to paragraphs, images dropped, fields keep their result text (a PAGE field becomes a fixed number) | Until M8/M9 |
+| Headings 7-9 | Built-in | Custom paragraph styles with an outline level (TipTap has h1-h6) | grown-variant |
+| Direct `jc=left` over a centred style | Left | Not stored (M3 limitation) | Known gap |
+| Export page setup | Section properties | Letter, 1in margins (orientation/margins are not persisted yet) | Until M9 |
 
 
 ### Known flaky e2e (as of 2026-09-26)

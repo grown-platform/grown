@@ -1,9 +1,7 @@
 import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import TextAlign from "@tiptap/extension-text-align";
-import Underline from "@tiptap/extension-underline";
 import Collaboration from "@tiptap/extension-collaboration";
 import type * as Y from "yjs";
+import { marginExtensions } from "./margin";
 
 // MarginEditor is a lightweight TipTap editor for page headers and footers. It
 // binds to a NAMED Yjs fragment on the shared document ("header" / "footer"),
@@ -28,9 +26,7 @@ export function MarginEditor({
     {
       editable,
       extensions: [
-        StarterKit.configure({ history: false }),
-        Underline,
-        TextAlign.configure({ types: ["heading", "paragraph"] }),
+        ...marginExtensions(),
         Collaboration.configure({ document: ydoc, field }),
       ],
     },

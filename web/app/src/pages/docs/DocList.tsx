@@ -35,12 +35,13 @@ import {
   renameDoc,
   setTemplate,
   listDocsSharedWithMe,
-  importDoc,
+  importFile,
   IMPORT_ACCEPT,
 } from "./api";
 import type { Doc } from "./types";
 import { TemplateGallery } from "./TemplateGallery";
 import { templateHtml, type DocTemplate } from "./templates";
+import { stashDocxSeed } from "./docx/seed";
 
 interface DocListProps {
   user: User;
@@ -274,10 +275,11 @@ export function DocList({ user }: DocListProps) {
     setImporting(true);
     setError(null);
     try {
-      const html = await importDoc(file);
+      const imported = await importFile(file);
       const title = file.name.replace(/\.[^.]+$/, "") || "Imported document";
       const doc = await createDoc(title);
-      sessionStorage.setItem(`docseed:${doc.id}`, html);
+      if (imported.kind === "docx") stashDocxSeed(doc.id, imported.model);
+      else sessionStorage.setItem(`docseed:${doc.id}`, imported.html);
       recordOpen(doc.id);
       navigate(`/docs/d/${doc.id}`);
     } catch (e) {

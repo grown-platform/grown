@@ -505,6 +505,33 @@ function withCellBackground<T extends { extend: (c: object) => unknown }>(base: 
   });
 }
 
+// Image with an optional display size (px). Imported .docx pictures carry
+// their Word size; the writer uses it for the drawing extent (Docs M6).
+// Only the width renders, so the browser keeps the aspect ratio.
+export const SizedImage = Image.extend({
+  addAttributes() {
+    return {
+      ...(this.parent?.() || {}),
+      width: {
+        default: null,
+        parseHTML: (el) => {
+          const v = parseInt((el as HTMLElement).getAttribute("width") ?? "", 10);
+          return Number.isFinite(v) && v > 0 ? v : null;
+        },
+        renderHTML: (attrs) => (attrs.width ? { width: String(attrs.width) } : {}),
+      },
+      height: {
+        default: null,
+        parseHTML: (el) => {
+          const v = parseInt((el as HTMLElement).getAttribute("data-height") ?? "", 10);
+          return Number.isFinite(v) && v > 0 ? v : null;
+        },
+        renderHTML: (attrs) => (attrs.height ? { "data-height": String(attrs.height) } : {}),
+      },
+    };
+  },
+});
+
 export const TableCellBg = withCellBackground(TableCell) as typeof TableCell;
 export const TableHeaderBg = withCellBackground(TableHeader) as typeof TableHeader;
 
@@ -574,7 +601,7 @@ export function buildExtensions(opts: BuildOpts) {
     TaskList,
     TaskItem.configure({ nested: true }),
     // Data-URL images (pasted, imported) must survive HTML parsing.
-    Image.configure({ allowBase64: true }),
+    SizedImage.configure({ allowBase64: true }),
     ImagePaste,
     Subscript,
     Superscript,
