@@ -125,6 +125,19 @@ function namedRanges(w: Wb): Record<string, string> {
 // ---- writing ----------------------------------------------------------------------------
 
 /** Replaces top-level fields of a sheet; broadcast sends the ops to collaborators. */
+/**
+ * Writes cells without an undo step (applyOp is FortuneSheet's remote-op
+ * path) and relays them to collaborators: for values the editor derives from
+ * an edit the user already made (the typed-input reading), so one Ctrl+Z
+ * undoes the edit as a whole.
+ */
+export function writeCellsQuietly(w: Wb, sheetId: string, cells: { r: number; c: number; value: any }[]): void {
+  const ops = cells.map(({ r, c, value }) => ({ op: "replace", id: sheetId, path: ["data", r, c], value }));
+  if (!ops.length) return;
+  w.applyOp(ops);
+  binding?.send(ops);
+}
+
 export function patchSheet(w: Wb, sheetId: string, fields: Record<string, unknown>, broadcast = true): void {
   const ops = Object.entries(fields).map(([k, value]) => ({ op: "replace", id: sheetId, path: [k], value }));
   if (!ops.length) return;

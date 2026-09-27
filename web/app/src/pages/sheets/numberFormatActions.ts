@@ -9,6 +9,8 @@
 // after each of those events the editor writes `m` from numberFormat.ts.
 
 import { formatKind, formatValue, parseInput } from "./numberFormat";
+import { writeCellsQuietly } from "./sheetDataTools";
+import { entryToFormula } from "./textFormula";
 
 export interface NumberFormatPreset {
   id: string;
@@ -161,7 +163,25 @@ export function typedInputHooks(getWb: () => any) {
   const typed = new Map<string, string>();
   return {
     beforeUpdateCell: (r: number, c: number, value: any) => {
-      if (typeof value === "string") typed.set(`${r},${c}`, value);
+      if (typeof value === "string") {
+        // "+5+5" / "-A1" typed without "=" are formulas (textFormula.ts): the
+        // typed text is replaced by the formula (one edit, one undo step).
+        if (!value.startsWith("=")) {
+          const f = entryToFormula(value);
+          const w = getWb();
+          if (f && w) {
+            setTimeout(() => {
+              try {
+                w.setCellValue(r, c, f);
+              } catch {
+                /* keep the cell as it was */
+              }
+            }, 0);
+            return false;
+          }
+        }
+        typed.set(`${r},${c}`, value);
+      }
       return true;
     },
     afterUpdateCell: (r: number, c: number, oldValue: any, newValue: any) => {
@@ -178,7 +198,11 @@ export function typedInputHooks(getWb: () => any) {
         if (parsed) {
           const m = formatValue(parsed.value, parsed.format);
           if (newValue?.v === parsed.value && newValue?.ct?.fa === parsed.format && newValue?.m === m) return;
-          w.setCellValue(r, c, { v: parsed.value, ct: { fa: parsed.format, t: cellTypeFor(parsed.format) }, m });
+          const value = { ...(newValue ?? {}), v: parsed.value, ct: { fa: parsed.format, t: cellTypeFor(parsed.format) }, m };
+          // Part of the same edit: no second undo step (Ctrl+Z undoes the typing).
+          const sheetId = w.getSheet?.()?.id;
+          if (sheetId) writeCellsQuietly(w, String(sheetId), [{ r, c, value }]);
+          else w.setCellValue(r, c, value);
         } else if (typeof newValue?.v === "number" && newValue?.ct?.fa) {
           const m = formatValue(newValue.v, newValue.ct.fa);
           if (m !== newValue.m) w.setCellFormatByRange("m", m, { row: [r, r], column: [c, c] });

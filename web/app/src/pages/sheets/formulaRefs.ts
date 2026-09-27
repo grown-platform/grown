@@ -179,7 +179,8 @@ export interface CellWrite {
   sheetId: string;
   r: number;
   c: number;
-  value: { f?: string; v: unknown; m: string; grownSpill?: string };
+  /** null clears the cell (spill output the array no longer covers). */
+  value: { f?: string; v: unknown; m: string; grownSpill?: string } | null;
 }
 
 function cellAt(sheet: any, r: number, c: number): any {
@@ -196,7 +197,8 @@ const sameValue = (a: unknown, b: unknown) =>
  * returns the writes that bring the grid in line. A formula cell is only
  * updated while it still holds the formula the server computed; a spill cell
  * only when it is empty or still holds earlier spill output (never over data
- * the user typed).
+ * the user typed). Earlier spill output that no array covers any more (the
+ * array shrank, was deleted, or is now blocked: #SPILL!) is cleared.
  */
 export function recalcWrites(sheets: any[], cells: RecalcCell[]): CellWrite[] {
   const writes: CellWrite[] = [];
@@ -224,15 +226,34 @@ export function recalcWrites(sheets: any[], cells: RecalcCell[]): CellWrite[] {
       value: { v: rc.v, m: rc.m, grownSpill: rc.m },
     });
   }
+  const covered = new Set<string>();
+  for (const rc of cells ?? []) {
+    if (!rc.spill) continue;
+    const sheet = (sheets ?? []).find((s) => rc.sheetId && s?.id === rc.sheetId) ?? sheets?.[rc.sheetIndex];
+    if (sheet) covered.add(`${sheet.id}:${rc.r}:${rc.c}`);
+  }
+  for (const sheet of sheets ?? []) {
+    forEachCell(sheet, (r, c, cell) => {
+      if (cell.grownSpill === undefined || (typeof cell.f === "string" && cell.f)) return;
+      if (!sameValue(cell.m ?? cell.v, cell.grownSpill)) return; // typed over: user data
+      if (covered.has(`${sheet.id}:${r}:${c}`)) return;
+      writes.push({ sheetId: sheet.id, r, c, value: null });
+    });
+  }
   return writes;
 }
 
-/** workbookHasFormulas reports whether any cell of any sheet holds a formula. */
+/**
+ * workbookHasFormulas reports whether any cell of any sheet holds a formula,
+ * or holds spill output a deleted array left behind (the recalc answer then
+ * clears it).
+ */
 export function workbookHasFormulas(sheets: any[]): boolean {
   for (const sheet of sheets ?? []) {
     let found = false;
     forEachCell(sheet, (_r, _c, cell) => {
       if (typeof cell.f === "string" && cell.f.startsWith("=")) found = true;
+      else if (cell.grownSpill !== undefined) found = true;
     });
     if (found) return true;
   }
