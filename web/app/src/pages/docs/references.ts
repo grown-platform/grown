@@ -7,7 +7,7 @@
 import { Extension, Node, mergeAttributes, type Editor } from "@tiptap/core";
 import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, NodeSelection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
-import { bookmarkRanges, computeFieldResults, explicitPages, parseInstr, type FieldEnv, type PageResolver } from "./fields";
+import { bookmarkRanges, computeFieldResults, explicitPages, outlineLevelOf, parseInstr, type FieldEnv, type PageResolver } from "./fields";
 import { followLink, goToBookmark, linkAt } from "./bookmarks";
 import { rebuildTocs, setTocUpdateHandler, tocNodes, TOC_DEFAULT, type TocLeader } from "./toc";
 import { computeNumbering } from "./numbering";
@@ -157,6 +157,23 @@ function scopeTargets(state: EditorState, scope: UpdateScope): { fields: Set<num
   return { fields, tocs };
 }
 
+/**
+ * growHeadingBookmarks widens hidden (_Ref / _Toc) bookmarks that start a
+ * heading's text to the end of the heading, so text typed at the end of
+ * a referenced heading shows up in its references on the next update
+ * (typing at a bookmark's end otherwise stays outside it).
+ */
+function growHeadingBookmarks(tr: Transaction, sheet: FieldEnv["sheet"]) {
+  const type = tr.doc.type.schema.marks.bookmark;
+  for (const [name, r] of bookmarkRanges(tr.doc)) {
+    if (!name.startsWith("_") || r.from >= r.to) continue;
+    const $from = tr.doc.resolve(r.from);
+    if ($from.parentOffset !== 0 || !$from.parent.isTextblock || !outlineLevelOf($from.parent, sheet)) continue;
+    const end = $from.end();
+    if (r.to < end && r.to >= $from.start()) tr.addMark(r.to, end, type.create({ name }));
+  }
+}
+
 /** updateFieldsTr applies fresh results (and rebuilt TOCs) in `tr`.
  *  Returns how many fields and tables changed. */
 export function updateFieldsTr(
@@ -165,6 +182,7 @@ export function updateFieldsTr(
   scope: { fields: Set<number> | null; tocs: Set<number> | null },
   kinds?: Set<string>,
 ): number {
+  if (!kinds) growHeadingBookmarks(tr, fieldEnv(editor, tr.doc).sheet);
   const env = fieldEnv(editor, tr.doc);
   const results = computeFieldResults(env);
   let changed = 0;
@@ -408,20 +426,33 @@ export const References = Extension.create({
       new Plugin({
         key: followKey,
         props: {
+          // On mousedown, so the browser never moves the caret to the click
+          // point afterwards (that selection change would win the race).
+          handleDOMEvents: {
+            mousedown(view, event) {
+              if (!(event.ctrlKey || event.metaKey) || event.button !== 0) return false;
+              const target = event.target as HTMLElement | null;
+              let done = false;
+              const fieldEl = target?.closest?.(".doc-field");
+              if (fieldEl && view.dom.contains(fieldEl)) {
+                try {
+                  const p = view.posAtDOM(fieldEl, 0);
+                  const at = view.state.doc.nodeAt(p)?.type.name === "field" ? p : p - 1;
+                  done = followAt(editor, at);
+                } catch {
+                  done = false;
+                }
+              }
+              if (!done) {
+                const link = target?.closest?.("a[href]");
+                if (link && view.dom.contains(link)) done = followLink(editor, link.getAttribute("href") ?? "");
+              }
+              if (done) event.preventDefault();
+              return done;
+            },
+          },
           handleClick(_view, pos, event) {
             if (!(event.ctrlKey || event.metaKey)) return false;
-            const target = event.target as HTMLElement | null;
-            const fieldEl = target?.closest?.(".doc-field");
-            if (fieldEl) {
-              try {
-                const p = editor.view.posAtDOM(fieldEl, 0);
-                if (followAt(editor, p)) return true;
-              } catch {
-                /* fall through */
-              }
-            }
-            const link = target?.closest?.("a[href]");
-            if (link) return followLink(editor, link.getAttribute("href") ?? "");
             return linkAt(editor, pos) ? followAt(editor, pos) : false;
           },
         },

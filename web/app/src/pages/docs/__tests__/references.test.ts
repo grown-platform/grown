@@ -332,6 +332,13 @@ describe("cross-references", () => {
     expect(paragraphTexts(e)[0]).toBe("See Background on page 1 below");
     updateFields(e, "all");
     expect(paragraphTexts(e)[0]).toBe("See Backed ground on page 1 below");
+    // Text typed at the end of the heading joins its hidden bookmark on
+    // the next update (grown-variant: Word leaves it outside).
+    const h2 = textblocks(e).find((b) => b.node.type.name === "heading")!;
+    setCursor(e, h2.pos + h2.node.content.size);
+    typeText(e, " notes");
+    updateFields(e, "all");
+    expect(paragraphTexts(e)[0]).toBe("See Backed ground notes on page 1 below");
     // Ctrl+click on the REF \h field follows it.
     expect(followAt(e, fields(e)[0].pos)).toBe(true);
     expect(e.state.selection.$from.parent.type.name).toBe("heading");

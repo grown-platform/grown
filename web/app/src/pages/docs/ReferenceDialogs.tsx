@@ -72,7 +72,9 @@ export function ReferenceDialogs({ editor }: { editor: Editor | null }) {
   };
   if (!editor || !kind) return null;
   return (
-    <Modal open onClose={close}>
+    // disableRestoreFocus: focus stays in the editor after an insert
+    // (restoring it to the menu button swallowed the next keystroke).
+    <Modal open onClose={close} disableRestoreFocus>
       <ModalDialog
         data-testid={`ref-dialog-${kind}`}
         sx={{ width: { xs: "calc(100vw - 32px)", sm: 480 }, maxWidth: "calc(100vw - 32px)", maxHeight: "90vh", overflowY: "auto" }}
