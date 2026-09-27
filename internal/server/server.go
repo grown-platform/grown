@@ -2659,7 +2659,19 @@ func serveSheetsWS(w http.ResponseWriter, r *http.Request, id string, repo *shee
 		http.Error(w, "sheet not found", http.StatusNotFound)
 		return
 	}
-	hub.Serve(w, r, id, canWrite)
+	// Ops on protected cells are dropped for users the protections don't list.
+	guard := &sheets.OpGuard{
+		Load: func() (string, error) {
+			sh, err := repo.GetByID(context.Background(), id)
+			return sh.Data, err
+		},
+	}
+	if sh, err := repo.GetByID(ctx, id); err == nil {
+		guard.Editor = sheets.Editor{User: u.ID, Owner: sh.OwnerID}
+	} else {
+		guard.Editor = sheets.Editor{User: u.ID}
+	}
+	hub.ServeGuarded(w, r, id, canWrite, guard)
 }
 
 // slidesConnectID returns the deck id from /api/v1/slides/d/{id}/connect.

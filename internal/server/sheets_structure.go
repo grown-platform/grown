@@ -82,6 +82,10 @@ func serveSheetsStructure(w http.ResponseWriter, r *http.Request, id string, rep
 		http.Error(w, "invalid JSON: expected {\"op\": {...}}", http.StatusBadRequest)
 		return
 	}
+	if prot := sheets.WorkbookProtection(sh.Data, req.Op.Sheet); !prot.StructureAllowed(sheets.Editor{User: u.ID, Owner: sh.OwnerID}) {
+		http.Error(w, "the sheet has protected cells you cannot edit", http.StatusForbidden)
+		return
+	}
 	data, err := sheets.ApplyStructureOpJSON(sh.Data, *req.Op)
 	switch {
 	case errors.Is(err, sheets.ErrNotWorkbook):
