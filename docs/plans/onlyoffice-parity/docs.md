@@ -2480,6 +2480,20 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   The download stays one `.md` file, most Markdown viewers show the
   pictures, and it re-imports into Grown with them. A zip (md + media/)
   was rejected: it changes the file type users asked for.
+* **Import sandbox hole (found here)**: in pandoc 3.1.13,
+  `--embed-resources` ignores `--sandbox`. The production import endpoint
+  therefore still inlined server files and fetched URLs named in an
+  uploaded html/md/txt (`<img src="/etc/passwd">` came back as
+  `data:text/plain,...`); `TestImportToHTMLSandboxLocalFile` and
+  `TestConvertSandboxNoFetch` fail under 3.1.13 and pass under 3.8+/3.10,
+  which is why local runs missed it. Import no longer passes
+  `--embed-resources`: `import_sanitize.lua` turns mediabag entries (the
+  pictures packed in docx/odt/epub/rtf) into `data:` URIs itself and never
+  reads anything else. `--wrap=none` keeps the HTML unwrapped as before.
+* **Seen under 3.1.13, not fixed**: the odt *reader* turns a table's header
+  row into ordinary cells and a code block into a paragraph
+  (`TestConvertFidelityRoundTrip/odt`, `TestConvertDocxToOdt` fail there);
+  the exported .odt itself is fine.
 * **Gaps**: RTF can only hold PNG/JPEG (pandoc skips GIF/WebP/BMP/SVG);
   charts still export empty.
 * **Tests**: `internal/docs/export_images_test.go` (data: and asset
