@@ -15,7 +15,13 @@ import {
   CANVAS_W,
   uid,
   type ArrowHead,
+  type CellBorder,
+  type CellMerge,
+  type CellProps,
+  type CellSide,
   type DashStyle,
+  type TableData,
+  type TableLook,
   type DeckDoc,
   type ElementType,
   type Slide,
@@ -39,6 +45,8 @@ import { withRuns } from "../textOps";
 import { fromPpAction } from "../links";
 import { hasPreset } from "../presetGeometry";
 import { isConnectorPreset } from "../presetDefs";
+import { cellTextEl, setCellText } from "../tableOps";
+import { findTableTemplate, NO_STYLE_NO_GRID } from "../tableStyles";
 
 export interface PptxImport {
   deck: DeckDoc;
@@ -1270,51 +1278,183 @@ async function readGraphicFrame(
     );
     return;
   }
-  const rows = kids(tbl, "tr");
-  const cols =
-    kids(kid(tbl, "tblGrid"), "gridCol").length ||
-    Math.max(0, ...rows.map((r) => kids(r, "tc").length));
-  if (!rows.length || !cols) return;
-  const cells = rows.map((tr) => {
-    const tcs = kids(tr, "tc");
-    return Array.from({ length: cols }, (_, i) =>
-      txBodyText(kid(tcs[i], "txBody")),
-    );
-  });
-  const rowsH = rows.reduce((s, r) => s + (num(r, "h") ?? 0), 0);
-  const box = tf({ ...raw, h: Math.max(raw.h, rowsH) });
+  const box = tf({ ...raw, h: Math.max(raw.h, kids(tbl, "tr").reduce((s, r) => s + (num(r, "h") ?? 0), 0)) });
+  const cNvPr = path(gf, "nvGraphicFramePr", "cNvPr");
+  const el = await readTable(tbl, sc);
+  if (!el) return;
+  const descr = cNvPr?.getAttribute("descr");
+  out.push({ ...el, ...toPx(box, sc), ...(descr ? { alt: descr } : {}) });
+}
 
-  const tc0 = kid(rows[0], "tc");
-  const tcPr = kid(tc0, "tcPr");
-  const fill = readFill(tcPr, sc.pc.color);
-  const lnL = kid(tcPr, "lnL") ?? kid(tcPr, "lnT");
-  const bColor =
-    lnL && !kid(lnL, "noFill") ? readFill(lnL, sc.pc.color) : undefined;
-  const bw = num(lnL, "w");
-  const run = desc(tc0, "r")[0];
-  const rPr = kid(run, "rPr");
-  const sz = num(rPr, "sz");
-  out.push({
+/** A cell border line: undefined = not specified, width 0 = no line. */
+function readCellLine(ln: Element | null, ctx: ColorCtx): CellBorder | undefined {
+  if (!ln) return undefined;
+  if (kid(ln, "noFill")) return { color: "#000000", width: 0 };
+  const color = readFill(ln, ctx);
+  if (!color || color === "none") return color === "none" ? { color: "#000000", width: 0 } : undefined;
+  const w = num(ln, "w");
+  const dash = kid(ln, "prstDash")?.getAttribute("val") as DashStyle | null;
+  return {
+    color,
+    width: w === undefined ? 1 : r2(w / EMU_PER_PT),
+    ...(dash && dash !== "solid" ? { dash } : {}),
+  };
+}
+
+const SIDE_TAGS: [CellSide, string][] = [
+  ["l", "lnL"],
+  ["r", "lnR"],
+  ["t", "lnT"],
+  ["b", "lnB"],
+];
+const sameLine = (a: CellBorder | undefined, b: CellBorder | undefined) =>
+  (a?.width ?? 0) === (b?.width ?? 0) && (!(a?.width ?? 0) || (a!.color === b!.color && (a!.dash ?? "solid") === (b!.dash ?? "solid")));
+
+/**
+ * An `a:tbl` → a Grown table (box set by the caller): grid widths, row
+ * heights, merges, the style id and options, per-cell fills and borders and
+ * rich cell text. A table without a style whose cells all share one fill
+ * and one border becomes a legacy Grown table (element fill/stroke).
+ */
+async function readTable(tbl: Element, sc: SlideCtx): Promise<SlideElement | null> {
+  const trs = kids(tbl, "tr");
+  const grid = kids(kid(tbl, "tblGrid"), "gridCol").map((g) => num(g, "w") ?? 0);
+  const cols = grid.length || Math.max(0, ...trs.map((r) => kids(r, "tc").length));
+  const rows = trs.length;
+  if (!rows || !cols) return null;
+  const tblPr = kid(tbl, "tblPr");
+  const styleId = kid(tblPr, "tableStyleId")?.textContent?.trim() || undefined;
+  const look: TableLook = {};
+  for (const [k, attr] of [
+    ["header", "firstRow"],
+    ["banded", "bandRow"],
+    ["lastRow", "lastRow"],
+    ["firstCol", "firstCol"],
+    ["lastCol", "lastCol"],
+    ["bandedCols", "bandCol"],
+  ] as const)
+    if (boolAttr(tblPr, attr)) look[k] = true;
+
+  const merges: CellMerge[] = [];
+  const props: (CellProps | null)[][] = [];
+  const texts: (TextProps | null)[][] = [];
+  const anchors: [number, number][] = [];
+  const chain: TextChain = {
+    lists: [kid(sc.masterTxStyles, "otherStyle"), sc.defaultTextStyle],
+    bodyPrs: [],
+    fontRef: null,
+  };
+  for (let r = 0; r < rows; r++) {
+    const tcs = kids(trs[r], "tc");
+    props.push([]);
+    texts.push([]);
+    for (let c = 0; c < cols; c++) {
+      const tc = tcs[c];
+      const covered = !!tc && (boolAttr(tc, "hMerge") || boolAttr(tc, "vMerge"));
+      const tcPr = kid(tc, "tcPr");
+      const p: CellProps = {};
+      if (tc && !covered) {
+        anchors.push([r, c]);
+        const cs = num(tc, "gridSpan") ?? 1;
+        const rs = num(tc, "rowSpan") ?? 1;
+        if (cs > 1 || rs > 1) merges.push({ r, c, rs: Math.min(rs, rows - r), cs: Math.min(cs, cols - c) });
+        const fill = readFill(tcPr, sc.pc.color);
+        if (fill) p.fill = fill;
+        for (const [side, tag] of SIDE_TAGS) {
+          const b = readCellLine(kid(tcPr, tag), sc.pc.color);
+          if (b) p.borders = { ...(p.borders ?? {}), [side]: b };
+        }
+        const anchor = tcPr?.getAttribute("anchor");
+        if (anchor === "ctr") p.valign = "middle";
+        else if (anchor === "b") p.valign = "bottom";
+      }
+      props[r].push(Object.keys(p).length ? p : null);
+      const body = kid(tc, "txBody");
+      texts[r].push(body && !covered ? await readText(body, chain, sc.pc, sc.scale) : null);
+    }
+  }
+
+  // Legacy (unstyled, uniform) or explicit cell formatting.
+  let legacy: { fill: string; line: CellBorder | undefined } | null = null;
+  if (!styleId) {
+    const fills = anchors.map(([r, c]) => props[r][c]?.fill ?? "none");
+    const lines = anchors.flatMap(([r, c]) => SIDE_TAGS.map(([s]) => props[r][c]?.borders?.[s]));
+    if (fills.every((f) => f === fills[0]) && lines.every((l) => sameLine(l, lines[0])))
+      legacy = { fill: fills[0], line: lines[0] };
+  }
+  let style = styleId;
+  if (styleId && !findTableTemplate(styleId)) {
+    sc.warnings.add("A table style Grown doesn't have was drawn without its colours");
+    style = NO_STYLE_NO_GRID;
+  }
+  if (!styleId && !legacy) style = NO_STYLE_NO_GRID;
+
+  const first = anchors.map(([r, c]) => texts[r][c]).find(Boolean) ?? null;
+  const toRel = (vs: number[]) => {
+    const px = vs.map((v) => r2(v * sc.scale));
+    return px.length && px.every((v) => Math.abs(v - px[0]) < 0.5) ? undefined : px;
+  };
+  const table: TableData = {
+    rows,
+    cols,
+    cells: Array.from({ length: rows }, () => Array(cols).fill("")),
+  };
+  const colW = grid.length === cols ? toRel(grid) : undefined;
+  const rowH = toRel(trs.map((tr) => num(tr, "h") ?? 0));
+  if (colW && colW.every((v) => v > 0)) table.colW = colW;
+  if (rowH && rowH.every((v) => v > 0)) table.rowH = rowH;
+  if (merges.length) table.merges = merges;
+  if (style) {
+    table.style = style;
+    if (Object.keys(look).length) table.look = look;
+  }
+  if (!legacy && props.some((row) => row.some(Boolean))) table.props = props.map((row) => row.map((p) => p && ({ ...p })));
+  else if (legacy) {
+    const va = props.map((row) => row.map((p) => (p?.valign ? { valign: p.valign } : null)));
+    if (va.some((row) => row.some(Boolean))) table.props = va;
+  }
+  let el: SlideElement = {
     id: uid(),
     type: "table",
-    ...toPx(box, sc),
-    table: { rows: rows.length, cols, cells },
-    fill: fill && fill !== "none" ? fill : "none",
-    stroke: bColor && bColor !== "none" ? bColor : "none",
-    strokeWidth:
-      bColor && bColor !== "none"
-        ? bw === undefined
-          ? 1
-          : r2(bw / EMU_PER_PT)
-        : 0,
-    fontSize: sz
-      ? r2((sz / 100) * EMU_PER_PT * sc.scale)
-      : r2(18 * EMU_PER_PT * sc.scale),
-    ...(kid(rPr, "latin")?.getAttribute("typeface")
-      ? { fontFamily: kid(rPr, "latin")!.getAttribute("typeface")! }
-      : {}),
-    color: readColor(kid(rPr, "solidFill"), sc.pc.color) ?? "#000000",
-  });
+    x: 0,
+    y: 0,
+    w: 0,
+    h: 0,
+    table,
+    fill: legacy ? legacy.fill : "none",
+    stroke: legacy?.line && legacy.line.width ? legacy.line.color : "none",
+    strokeWidth: legacy?.line && legacy.line.width ? legacy.line.width : 0,
+    fontSize: first?.fontSize ?? r2(18 * EMU_PER_PT * sc.scale),
+    ...(first?.fontFamily ? { fontFamily: first.fontFamily } : {}),
+    color: first?.color ?? "#000000",
+  };
+  for (const [r, c] of anchors) {
+    const tp = texts[r][c];
+    if (!tp) continue;
+    const base = cellTextEl(el, r, c);
+    const runs = (tp.runs ?? [{ text: tp.text }]).map((x) => (tp.url ? { ...x, url: tp.url } : x));
+    const te = withRuns(
+      {
+        ...base,
+        fontSize: tp.fontSize,
+        fontFamily: tp.fontFamily,
+        bold: tp.bold || undefined,
+        italic: tp.italic || undefined,
+        underline: tp.underline || undefined,
+        strike: tp.strike || undefined,
+        baseline: tp.baseline,
+        color: tp.color,
+        align: tp.align,
+        runs: undefined,
+        paras: undefined,
+        text: "",
+      },
+      runs,
+      tp.paras,
+    );
+    el = setCellText(el, r, c, te);
+  }
+  return el;
 }
 
 /** A `p:grpSp` becomes a Grown group holding its members; a group with no

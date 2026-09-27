@@ -64,6 +64,7 @@ export function TextEditor({
   onExit,
   onTextKey,
   onMouseUp,
+  onNavKey,
 }: {
   el: SlideElement;
   /** Selection on entry: model offsets, "all", or "end" (default). */
@@ -78,6 +79,9 @@ export function TextEditor({
    *  it was handled (the key's default is then prevented). */
   onTextKey?: (a: TextKeyAction, h: TextEditorHandle) => boolean;
   onMouseUp?: (h: TextEditorHandle) => void;
+  /** Checked before the editor's own keys (table cells: Tab/arrows move
+   *  between cells). Return true when handled (default prevented). */
+  onNavKey?: (e: React.KeyboardEvent, h: TextEditorHandle) => boolean;
 }) {
   const root = useRef<HTMLDivElement | null>(null);
   const elRef = useRef(el);
@@ -155,6 +159,10 @@ export function TextEditor({
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (onNavKey?.(e, handle)) {
+      e.preventDefault();
+      return;
+    }
     const a = textKeyAction(e.nativeEvent, { editing: true, hasFormat: true });
     if (!a) return;
     if (a.type === "exitEdit") {

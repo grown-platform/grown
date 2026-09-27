@@ -41,6 +41,7 @@ import CropSquareIcon from "@mui/icons-material/CropSquare";
 import CircleOutlinedIcon from "@mui/icons-material/CircleOutlined";
 import HorizontalRuleIcon from "@mui/icons-material/HorizontalRule";
 import InterestsIcon from "@mui/icons-material/Interests";
+import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import SpeakerNotesIcon from "@mui/icons-material/SpeakerNotes";
 import SpeakerNotesOffIcon from "@mui/icons-material/SpeakerNotesOff";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
@@ -159,6 +160,35 @@ import { ShapeGallery } from "./ShapeGallery";
 import { toolFromGalleryId, type DrawTool } from "./drawTool";
 import { withGluedConnectors } from "./connectorOps";
 import { ShapeFormatControls } from "./ShapeFormatControls";
+import { SplitCellDialog, TableControls, TableSizePicker, type TableCommands } from "./TableControls";
+import {
+  allCells,
+  canSplit,
+  cellTextEl,
+  clearCells,
+  deleteCols,
+  deleteRows,
+  distributeCols,
+  distributeRows,
+  insertCols,
+  insertRows,
+  mapCellTexts,
+  mergeCells,
+  newTableElement,
+  parseCellId,
+  rangeAnchors,
+  selRange,
+  setBorders as setCellBorders,
+  setCellFill,
+  setCellText,
+  setLook as setTableLook,
+  setTableStyle,
+  spanOf,
+  splitCell,
+  tableKey,
+  type CellRange,
+  type CellSel,
+} from "./tableOps";
 import { TextFormatControls, type TextCommands } from "./TextFormatControls";
 import {
   FindReplacePanel,
@@ -264,7 +294,8 @@ export function DeckEditor({ user }: { user: User }) {
   const [editRequest, setEditRequestState] = useState<{ id: string; sel: [number, number]; nonce: number } | null>(null);
   // Resume editing a text box (after a dialog/menu): it is also selected.
   const setEditRequest = (r: { id: string; sel: [number, number]; nonce: number }) => {
-    setSel([r.id]);
+    const cell = parseCellId(r.id);
+    setSel([cell && docRef.current?.slides.some((s) => s.elements.some((e) => e.id === cell.tableId)) ? cell.tableId : r.id]);
     setEditRequestState(r);
   };
   const [painter, setPainter] = useState<RunStyle | null>(null);
@@ -276,6 +307,11 @@ export function DeckEditor({ user }: { user: User }) {
   const [charsOpen, setCharsOpen] = useState(false);
   const charsTarget = useRef<{ id: string; from: number; to: number } | null>(null);
   const [textOptsOpen, setTextOptsOpen] = useState(false);
+  // ---- tables (M5) ----
+  // Cell selection inside the selected table (anchor + focus cell).
+  const [tableSel, setTableSel] = useState<{ id: string; sel: CellSel } | null>(null);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [tablePickerOpen, setTablePickerOpen] = useState(false);
 
   const me = {
     userId: user.id,
@@ -293,6 +329,18 @@ export function DeckEditor({ user }: { user: User }) {
   const selIds = sel.filter((i) => live.has(i)); // click order, last = primary
   const selId = primaryId(selIds);
   const selected: SlideElement | undefined = selectedElement(slide, selId);
+
+  // The cell selection belongs to the selected table.
+  const selTable = selected?.type === "table" && selected.table && selIds.length === 1 ? selected : undefined;
+  const activeSel = selTable && tableSel?.id === selTable.id ? tableSel.sel : null;
+  useEffect(() => {
+    if (tableSel && tableSel.id !== selId) setTableSel(null);
+  }, [selId]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** The cell range table commands act on (the whole table when none). */
+  function tableRange(el: SlideElement): CellRange {
+    const s = tableSel?.id === el.id ? tableSel.sel : null;
+    return s ? selRange(el.table!, s) : allCells(el.table!);
+  }
 
   // A saved text selection belongs to the slide it was made on.
   useEffect(() => {
@@ -519,6 +567,11 @@ export function DeckEditor({ user }: { user: User }) {
         (e.target as HTMLElement)?.isContentEditable
       )
         return;
+      // A selected table: arrows/Tab/Enter/Delete act on its cells.
+      if (handleTableKey(e)) {
+        e.preventDefault();
+        return;
+      }
       // Text formatting shortcuts on the selected text boxes.
       const ta = textKeyAction(e, { editing: false, hasFormat: !!painter });
       if (ta && handleTextKey(ta)) {
@@ -793,10 +846,30 @@ export function DeckEditor({ user }: { user: User }) {
         return true;
       }
     }
-    const texts = selectedEls.filter((e) => e.type === "text");
+    // A cell whose editing ended (a menu or dialog took focus).
+    const sc = saved ? parseCellId(saved.id) : null;
+    if (saved && sc && selected?.type === "table" && selected.id === sc.tableId && selected.table) {
+      const te = cellTextEl(selected, sc.r, sc.c);
+      const [x, y] = widen(te, saved.from, saved.to);
+      if (x !== y || collapsed === "para") {
+        const r = fn(te, x, y, false);
+        if (!r) return true;
+        const { el, sel: s } = unwrap(r);
+        upsertElement(setCellText(selected, sc.r, sc.c, el));
+        savedTextSel.current = null;
+        setEditRequest({ id: saved.id, sel: s ?? [saved.from, saved.to], nonce: Date.now() });
+        return true;
+      }
+    }
+    const texts = selectedEls.filter((e) => e.type === "text" || (e.type === "table" && e.table));
     if (!texts.length) return false;
     upsertMany(
       texts.map((e) => {
+        if (e.type === "table")
+          return mapCellTexts(e, tableRange(e), (te) => {
+            const r = fn(te, 0, (te.text || "").length, true);
+            return r ? unwrap(r).el : null;
+          });
         const r = fn(e, 0, (e.text || "").length, true);
         return r ? unwrap(r).el : e;
       }),
@@ -813,17 +886,29 @@ export function DeckEditor({ user }: { user: User }) {
     const saved = savedTextSel.current;
     if (saved && selected?.id === saved.id && selected.type === "text")
       return { el: selected, from: saved.from, to: saved.to };
+    const sc = saved ? parseCellId(saved.id) : null;
+    if (saved && sc && selected?.type === "table" && selected.id === sc.tableId && selected.table)
+      return { el: cellTextEl(selected, sc.r, sc.c), from: saved.from, to: saved.to };
     if (selected?.type === "text") return { el: selected, from: 0, to: (selected.text || "").length };
     return null;
   }
   function toggleText(k: TextToggle): boolean {
     const prim = selected;
+    // Several boxes (or cells): the primary decides on or off, so all end up alike.
+    const primOn =
+      k === "super" || k === "sub"
+        ? undefined
+        : prim?.type === "text"
+          ? rangeHas(prim, 0, (prim.text || "").length, k, true)
+          : prim?.type === "table" && prim.table
+            ? rangeAnchors(prim.table, tableRange(prim)).every(([r, c]) => {
+                const te = cellTextEl(prim, r, c);
+                return rangeHas(te, 0, (te.text || "").length, k, true);
+              })
+            : undefined;
     return editText((el, a, b, whole) => {
-      if (!whole || k === "super" || k === "sub" || !prim || prim.type !== "text")
-        return toggleRange(el, a, b, k);
-      // Several boxes: the primary decides on or off, so all end up alike.
-      const on = rangeHas(prim, 0, (prim.text || "").length, k, true);
-      return formatRange(el, 0, (el.text || "").length, { [k]: !on });
+      if (!whole || k === "super" || k === "sub" || primOn === undefined) return toggleRange(el, a, b, k);
+      return formatRange(el, 0, (el.text || "").length, { [k]: !primOn });
     });
   }
   function styleText(patch: RunStyle): boolean {
@@ -1000,7 +1085,7 @@ export function DeckEditor({ user }: { user: User }) {
   }
   /** Formatting shortcuts (inside a text box, or on selected boxes). */
   function handleTextKey(a: TextKeyAction): boolean {
-    const hasText = editingText || selectedEls.some((e) => e.type === "text");
+    const hasText = editingText || selectedEls.some((e) => e.type === "text" || e.type === "table");
     if (a.type === "link") {
       if (!editingText && !selectedEls.length) return false;
       openLink();
@@ -1055,6 +1140,101 @@ export function DeckEditor({ user }: { user: User }) {
       }, "para"),
     setDirection: (d) => void editText((el) => withDirection(el, d), "para"),
   };
+  // ---- tables (M5) ----
+  function insertTable(rows: number, cols: number) {
+    setTablePickerOpen(false);
+    const el = newTableElement(rows, cols);
+    upsertElement(el);
+    setSelId(el.id);
+  }
+  /** Apply a table op to the selected table; null deletes it. */
+  function tableOp(fn: (el: SlideElement, g: CellRange) => SlideElement | null, nextSel?: (el: SlideElement) => CellSel | null) {
+    const el = selTable;
+    if (!el) return;
+    const next = fn(el, tableRange(el));
+    if (next === null) {
+      removeMany([el.id]);
+      return;
+    }
+    upsertElement(next);
+    if (nextSel) {
+      const s = nextSel(next);
+      setTableSel(s ? { id: el.id, sel: s } : null);
+    }
+  }
+  const one = (r: number, c: number): CellSel => ({ r, c, r2: r, c2: c });
+  const tableCmd: TableCommands | null = selTable
+    ? {
+        insertRow: (where) =>
+          tableOp(
+            (el, g) => insertRows(el, where === "above" ? g.r0 : g.r1 + 1),
+            () => {
+              const g = tableRange(selTable);
+              return one(where === "above" ? g.r0 : g.r1 + 1, g.c0);
+            },
+          ),
+        insertCol: (where) =>
+          tableOp(
+            (el, g) => insertCols(el, where === "left" ? g.c0 : g.c1 + 1),
+            () => {
+              const g = tableRange(selTable);
+              return one(g.r0, where === "left" ? g.c0 : g.c1 + 1);
+            },
+          ),
+        deleteRow: () => tableOp((el, g) => deleteRows(el, g.r0, g.r1), () => null),
+        deleteCol: () => tableOp((el, g) => deleteCols(el, g.c0, g.c1), () => null),
+        deleteTable: () => removeMany([selTable.id]),
+        merge: () => tableOp((el, g) => mergeCells(el, g), (el) => one(tableRange(el).r0, tableRange(el).c0)),
+        canMerge: !!activeSel && (activeSel.r !== activeSel.r2 || activeSel.c !== activeSel.c2),
+        split: () => setSplitOpen(true),
+        distributeRows: () => tableOp((el, g) => (activeSel ? distributeRows(el, g.r0, g.r1) : distributeRows(el))),
+        distributeCols: () => tableOp((el, g) => (activeSel ? distributeCols(el, g.c0, g.c1) : distributeCols(el))),
+        setFill: (color) => tableOp((el, g) => setCellFill(el, g, color)),
+        setBorders: (preset, border) => tableOp((el, g) => setCellBorders(el, g, preset, border)),
+        setStyle: (id) => tableOp((el) => setTableStyle(el, id)),
+        setLook: (k, on) => tableOp((el) => setTableLook(el, k, on)),
+        selectRow: () => {
+          const g = tableRange(selTable);
+          setTableSel({ id: selTable.id, sel: { r: g.r0, c: 0, r2: g.r1, c2: selTable.table!.cols - 1 } });
+        },
+        selectCol: () => {
+          const g = tableRange(selTable);
+          setTableSel({ id: selTable.id, sel: { r: 0, c: g.c0, r2: selTable.table!.rows - 1, c2: g.c1 } });
+        },
+        selectTable: () => {
+          const t = selTable.table!;
+          setTableSel({ id: selTable.id, sel: { r: 0, c: 0, r2: t.rows - 1, c2: t.cols - 1 } });
+        },
+      }
+    : null;
+  /** Keys on a selected table (not while editing a cell): see tableKey. */
+  function handleTableKey(e: KeyboardEvent): boolean {
+    const el = selTable;
+    if (!el || e.ctrlKey || e.metaKey || e.altKey) return false;
+    const sel = activeSel;
+    // Without an active cell, arrows keep nudging and Delete deletes the table.
+    if (!sel && e.key !== "Enter") return false;
+    const res = tableKey(el.table!, sel, e.key, e.shiftKey);
+    if (!res) return false;
+    if (res.type === "select") setTableSel({ id: el.id, sel: res.sel });
+    else if (res.type === "clear") upsertElement(clearCells(el, res.range));
+    else if (res.type === "addRow") {
+      upsertElement(insertRows(el, el.table!.rows));
+      setTableSel({ id: el.id, sel: res.sel });
+    } else if (res.type === "edit") {
+      let next = el;
+      if (res.clear) {
+        next = clearCells(el, res.clear);
+        upsertElement(next);
+      }
+      const len = (next.table!.cells[res.r]?.[res.c] ?? "").length;
+      const s: [number, number] = res.sel === "all" ? [0, len] : res.sel === "start" ? [0, 0] : [len, len];
+      setTableSel({ id: el.id, sel: one(res.r, res.c) });
+      setEditRequest({ id: `${el.id}:${res.r}:${res.c}`, sel: s, nonce: Date.now() });
+    }
+    return true;
+  }
+
   function setList(v: "bullet" | "number" | null) {
     if (editText((el) => setListStyle(el, v), "para")) return;
     updateSelected((e) => setListOp(e, v));
@@ -1257,6 +1437,8 @@ export function DeckEditor({ user }: { user: User }) {
     openTransition: () => setTransitionOpen(true),
     openAnimations: () => setAnimationsOpen(true),
     toggleNotes: () => setShowNotes((v) => !v),
+    insertTable: () => setTablePickerOpen(true),
+    table: tableCmd,
   };
 
   if (doc === null) {
@@ -1460,6 +1642,19 @@ export function DeckEditor({ user }: { user: User }) {
               <ShapeGallery onPick={pickShape} />
             </Menu>
           </Dropdown>
+          <Dropdown open={tablePickerOpen} onOpenChange={(_, o) => setTablePickerOpen(o)}>
+            <Tooltip title="Table">
+              <MenuButton
+                slots={{ root: IconButton }}
+                slotProps={{ root: { size: "sm", variant: "plain", "aria-label": "Table" } }}
+              >
+                <TableChartOutlinedIcon />
+              </MenuButton>
+            </Tooltip>
+            <Menu size="sm" placement="bottom-start" sx={{ p: 0 }}>
+              <TableSizePicker onPick={insertTable} />
+            </Menu>
+          </Dropdown>
           {drawTool && (
             <Typography
               level="body-xs"
@@ -1526,6 +1721,7 @@ export function DeckEditor({ user }: { user: User }) {
               style={{ marginLeft: 4 }}
             />
           )}
+          <TableControls el={selTable} cmd={tableCmd} activeCell={activeSel ? [activeSel.r, activeSel.c] : null} />
           <ShapeFormatControls
             el={selected}
             onChange={(patch) =>
@@ -1749,6 +1945,8 @@ export function DeckEditor({ user }: { user: User }) {
                   setPainterArmed(false);
                 }}
                 onFollowLink={followLink}
+                tableSel={tableSel}
+                onTableSel={setTableSel}
                 findHighlight={
                   findOpen && findHit && findHit.where === "text" && findHit.slideIdx === cur && findHit.topId === findHit.elId
                     ? { elId: findHit.elId!, start: findHit.start, end: findHit.end }
@@ -1928,6 +2126,21 @@ export function DeckEditor({ user }: { user: User }) {
                           ? "Unlock position"
                           : "Lock position"}
                       </MenuItem>
+                      {tableCmd && targets.length === 1 && targets[0].id === selTable?.id && (
+                        <>
+                          <ListDivider />
+                          <MenuItem onClick={close(() => tableCmd.insertRow("above"))}>Insert row above</MenuItem>
+                          <MenuItem onClick={close(() => tableCmd.insertRow("below"))}>Insert row below</MenuItem>
+                          <MenuItem onClick={close(() => tableCmd.insertCol("left"))}>Insert column left</MenuItem>
+                          <MenuItem onClick={close(() => tableCmd.insertCol("right"))}>Insert column right</MenuItem>
+                          <MenuItem onClick={close(tableCmd.deleteRow)}>Delete row</MenuItem>
+                          <MenuItem onClick={close(tableCmd.deleteCol)}>Delete column</MenuItem>
+                          <MenuItem disabled={!tableCmd.canMerge} onClick={close(tableCmd.merge)}>
+                            Merge cells
+                          </MenuItem>
+                          <MenuItem onClick={close(tableCmd.split)}>Split cell…</MenuItem>
+                        </>
+                      )}
                       <ListDivider />
                       <MenuItem
                         color="danger"
@@ -2124,6 +2337,26 @@ export function DeckEditor({ user }: { user: User }) {
         onApply={applyTextOptions}
         onClose={() => setTextOptsOpen(false)}
       />
+      {splitOpen && selTable && (
+        <SplitCellDialog
+          open
+          initial={(() => {
+            const s0 = activeSel ?? one(0, 0);
+            const sp = spanOf(selTable.table!, s0.r, s0.c);
+            return sp.rs > 1 || sp.cs > 1 ? { rows: sp.rs, cols: sp.cs } : { rows: 1, cols: 2 };
+          })()}
+          onClose={() => setSplitOpen(false)}
+          onSplit={(nr, nc) => {
+            setSplitOpen(false);
+            const s0 = activeSel ?? one(0, 0);
+            if (!canSplit(selTable.table!, s0.r, s0.c, nr, nc)) {
+              setImportMsg("That cell can't be split into that many rows and columns.");
+              return;
+            }
+            tableOp((el) => splitCell(el, s0.r, s0.c, nr, nc), () => one(s0.r, s0.c));
+          }}
+        />
+      )}
       <ShareDialog
         open={shareOpen}
         onClose={() => setShareOpen(false)}

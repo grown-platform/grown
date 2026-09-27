@@ -14,6 +14,7 @@ import {
   type TransitionType,
 } from "../model";
 import { textBodyXml, type LinkRef, type LinkResolver } from "./textXml";
+import { tableXml } from "./tableXml";
 import { toPpAction } from "../links";
 
 /** Slide size written to every pptx: 10 in × 5.625 in (16:9). */
@@ -451,6 +452,9 @@ function needsElementPatch(els: readonly SlideElement[]): boolean {
       e.type === "shape" ||
       e.type === "connector" ||
       e.type === "text" ||
+      e.type === "table" ||
+      e.type === "image" ||
+      !!e.alt ||
       (e.children ? needsElementPatch(e.children) : false),
   );
 }
@@ -552,8 +556,13 @@ export function patchElements(slideXml: string, marks: ElementMark[], link?: Lin
         ? groupMarker(path)
         : el.name || `${TYPE_NAME[el.type] ?? "Shape"} ${cNvPr.getAttribute("id")}`,
     );
+    if (el.alt) cNvPr.setAttribute("descr", el.alt);
     if (el.type === "text") {
       replaceTxBody(doc, node, textBodyXml(el, link ?? (() => null)));
+      continue;
+    }
+    if (el.type === "table" && el.table) {
+      replaceTable(doc, node, tableXml(el, link ?? (() => null)));
       continue;
     }
     if ((el.type !== "shape" && el.type !== "connector") || !el.preset) continue;
@@ -589,6 +598,18 @@ function replaceTxBody(doc: Document, sp: Element, xml: string) {
   const old = Array.from(sp.children).find((c) => c.localName === "txBody");
   if (old) sp.replaceChild(node, old);
   else sp.appendChild(node);
+}
+
+/** Swap a graphic frame's `a:tbl` for `xml` (from tableXml). */
+function replaceTable(doc: Document, frame: Element, xml: string) {
+  const parsed = new DOMParser().parseFromString(
+    `<w xmlns:a="${A_NS}" xmlns:r="${R_NS}">${xml}</w>`,
+    "application/xml",
+  );
+  const tbl = parsed.documentElement.firstElementChild;
+  if (!tbl || parsed.getElementsByTagName("parsererror").length) return;
+  const old = frame.getElementsByTagNameNS(A_NS, "tbl")[0];
+  if (old) old.parentNode?.replaceChild(doc.importNode(tbl, true), old);
 }
 
 /** Rebuild a `p:sp` as a `p:cxnSp` (no text body), with glue references. */

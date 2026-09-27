@@ -501,8 +501,8 @@ export function distributeCols(el: SlideElement, c0 = 0, c1 = (el.table?.cols ??
   const w = colWidths(el);
   const sum = w.slice(c0, c1 + 1).reduce((a, b) => a + b, 0);
   for (let c = c0; c <= c1; c++) w[c] = sum / (c1 - c0 + 1);
-  const next = { ...t, colW: w.map(r2) };
-  if (next.colW.every((v) => Math.abs(v - next.colW[0]) < 0.01)) delete next.colW;
+  const next: TableData = { ...t, colW: w.map(r2) };
+  if (next.colW!.every((v) => Math.abs(v - next.colW![0]) < 0.01)) delete next.colW;
   return { ...el, table: next };
 }
 
@@ -513,8 +513,8 @@ export function distributeRows(el: SlideElement, r0 = 0, r1 = (el.table?.rows ??
   const h = rowHeights(el);
   const sum = h.slice(r0, r1 + 1).reduce((a, b) => a + b, 0);
   for (let r = r0; r <= r1; r++) h[r] = sum / (r1 - r0 + 1);
-  const next = { ...t, rowH: h.map(r2) };
-  if (next.rowH.every((v) => Math.abs(v - next.rowH[0]) < 0.01)) delete next.rowH;
+  const next: TableData = { ...t, rowH: h.map(r2) };
+  if (next.rowH!.every((v) => Math.abs(v - next.rowH![0]) < 0.01)) delete next.rowH;
   return { ...el, table: next };
 }
 
