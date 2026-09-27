@@ -220,8 +220,8 @@ test("sheets: rich workbook round-trips through xlsx/ods/csv/pdf download, File 
       expect(cellAt(d, "C3")?.v, label).toBe(20);
       // Number formats are lost: SheetJS CE 0.18.5's ODS writer emits no
       // number styles for cell formats (only its default date style), so the
-      // currency cells come back as General. sheets.md §14.1 and export.ts
-      // say ods export keeps number formats; it does not.
+      // currency cells come back as General (sheets.md §14.1 status table,
+      // "Export: File ▸ Download …"; export.ts).
       expect(String(cellAt(d, "C3")?.ct?.fa ?? "General"), label).not.toContain("$");
       expect(cellAt(d, "F2"), label).toMatchObject({ f: "=Summary!A1+1", v: 42 });
       expect(cellAt(sheetNamed(wb, "Summary"), "A1"), label).toMatchObject({ f: "=SUM(Data!C2:C5)", v: 41 });
@@ -230,8 +230,8 @@ test("sheets: rich workbook round-trips through xlsx/ods/csv/pdf download, File 
       // Documented losses: ods goes through SheetJS CE, which does not write
       // conditional formats, validation, tables or charts (sheets.md §14.1,
       // "SheetJS CE drops styles, conditional formats, validation …";
-      // `export.ts`: "ods — SheetJS writes values, formulas, number formats,
-      // merges and column widths"), nor pivots (§15.3).
+      // `export.ts`: "ods — SheetJS CE writes values, formulas, merges and
+      // column widths"), nor pivots (§15.3).
       expect(d.grownCF ?? [], label).toEqual([]);
       expect(d.grownDV ?? [], label).toEqual([]);
       expect(d.grownTables ?? [], label).toEqual([]);

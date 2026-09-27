@@ -182,7 +182,8 @@ export async function downloadSheet(
     return;
   }
 
-  // ods — SheetJS writes values, formulas, number formats, merges and column widths.
+  // ods — SheetJS CE writes values, formulas, merges and column widths (its ODS
+  // writer emits no number styles, so cell number formats are not kept).
   const XLSX = await import("xlsx");
   const out = sheetjsWorkbook(XLSX, allSheets(wb));
   XLSX.writeFile(out, `${name}.${fmt}`, { bookType: fmt });
