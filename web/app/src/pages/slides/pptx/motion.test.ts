@@ -207,3 +207,27 @@ describe("reading foreign timing", () => {
     ]);
   });
 });
+
+describe("shape ids on a slide with a table", () => {
+  // pptxgenjs numbers a table frame `tableNo * slideNo + 1`, which repeated
+  // the id of another shape: the effect on the table was read back on that
+  // shape instead (found by the Slides integration round trip).
+  it("keeps cNvPr ids unique, so an effect on a table stays on the table", async () => {
+    const slide: Slide = {
+      id: "s1",
+      background: "#ffffff",
+      elements: [
+        { id: "r", type: "rect", x: 40, y: 300, w: 120, h: 80, fill: "#34a853" } as SlideElement,
+        { id: "t", type: "table", x: 40, y: 40, w: 400, h: 100, table: { rows: 1, cols: 2, cells: [["a", "b"]] } } as SlideElement,
+      ],
+      anims: [{ id: "a1", el: "t", cls: "entr", kind: "fade", start: "click" }],
+    };
+    const bytes = await deckToPptx({ slides: [slide] } as DeckDoc);
+    const xml = await (await JSZip.loadAsync(bytes)).file("ppt/slides/slide1.xml")!.async("string");
+    const ids = [...xml.matchAll(/<p:cNvPr id="(\d+)"/g)].map((m) => m[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+    const back = (await readPptx(bytes)).deck.slides[0];
+    const table = back.elements.find((e) => e.type === "table")!;
+    expect(back.anims?.map((a) => a.el)).toEqual([table.id]);
+  });
+});
