@@ -351,12 +351,9 @@ export function PageHeadersFooters(props: PageLayerProps) {
             props.onShowHeaderFooter();
           }
         }}
+        // Inline, so the legacy .doc-header-region CSS can't move it.
+        style={{ position: "absolute", left: g.x + page.textLeft, right: "auto", width: g.textWidth, bottom: "auto", ...pos, ...counterStyle(dl, page) }}
         sx={{
-          position: "absolute",
-          left: g.x + page.textLeft,
-          width: g.textWidth,
-          ...pos,
-          ...counterStyle(dl, page),
           pointerEvents: "auto",
           fontSize: "0.85rem",
           color: "#5f6368",

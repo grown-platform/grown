@@ -21,7 +21,7 @@ export async function runCommand(page: Page, label: string) {
 /** openDoc opens a doc in the editor and waits for the collab provider. */
 export async function openDoc(page: Page, id: string) {
   await page.goto(`${BASE_URL}/docs/d/${id}`);
-  await expect(page.locator(".ProseMirror")).toBeVisible();
+  await expect(page.locator(".ProseMirror").first()).toBeVisible();
   // Wait for the collab socket, then let the hub's history replay land before
   // editing. (The Grown hub replays updates rather than answering the y-protocol
   // sync handshake, so the provider's `synced` flag never flips; "connected"

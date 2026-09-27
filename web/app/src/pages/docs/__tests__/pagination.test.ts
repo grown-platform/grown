@@ -28,7 +28,7 @@ describe("page fields (M9)", () => {
     // "Here" is block 21: 21 lines in, on page 2.
     const here = paragraphTexts(e).indexOf("Here");
     let pos = 0;
-    e.state.doc.forEach((n, p, i) => {
+    e.state.doc.forEach((_n, p, i) => {
       if (i === here) pos = p + 1;
     });
     setCursor(e, pos);

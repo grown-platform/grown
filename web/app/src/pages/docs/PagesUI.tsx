@@ -393,6 +393,7 @@ export function PrintPreview({ editor, sheetRef, open, onClose }: { editor: Edit
           </Typography>
           <Box sx={{ flex: 1 }} />
           <Button
+            sx={{ mr: 5 }}
             data-testid="print-go"
             onClick={() => {
               const sheet = sheetRef.current;
