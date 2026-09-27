@@ -17,6 +17,8 @@ export interface Measurer {
   lineCount(text: string, width: number): number;
   /** Height of a paragraph with `text` laid out in `width` px. */
   paragraphHeight(text: string, width: number): number;
+  /** Character offsets where each line starts (M9 pagination). */
+  lineBreaks?(text: string, width: number): number[];
 }
 
 export interface MockMeasurerOpts {
@@ -72,5 +74,47 @@ export class MockMeasurer implements Measurer {
 
   paragraphHeight(text: string, width: number): number {
     return this.lineCount(text, width) * this.lineHeight;
+  }
+
+  /** lineBreaks: the (UTF-16) offsets where lines start, with the same
+   *  wrapping rules as lineCount (its length is lineCount). */
+  lineBreaks(text: string, width: number): number[] {
+    const perLine = Math.max(1, Math.floor(width / this.charWidth));
+    const starts: number[] = [];
+    let offset = 0;
+    for (const hard of text.split("\n")) {
+      starts.push(offset);
+      let used = 0;
+      let at = offset;
+      for (const word of hard.split(/(\s+)/)) {
+        const chars = [...word];
+        let len = chars.length;
+        if (!len) continue;
+        if (used + len <= perLine) {
+          used += len;
+          at += word.length;
+          continue;
+        }
+        if (/^\s+$/.test(word)) {
+          used = perLine;
+          at += word.length;
+          continue;
+        }
+        if (used > 0) {
+          starts.push(at);
+          used = 0;
+        }
+        let k = 0;
+        while (len > perLine) {
+          k += perLine;
+          starts.push(at + chars.slice(0, k).join("").length);
+          len -= perLine;
+        }
+        used = len;
+        at += word.length;
+      }
+      offset += hard.length + 1;
+    }
+    return starts;
   }
 }

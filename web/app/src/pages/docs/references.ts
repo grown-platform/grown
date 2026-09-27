@@ -107,6 +107,23 @@ export function setPageResolver(editor: Editor, f: PageResolverFactory | null) {
   else pageResolvers.delete(editor);
 }
 
+type LayoutWaiter = (fn: () => void) => void;
+const layoutWaiters = new WeakMap<Editor, LayoutWaiter>();
+
+/** setLayoutWaiter lets pagination (M9) run page-dependent second passes
+ *  once the layout has caught up with an update. */
+export function setLayoutWaiter(editor: Editor, f: LayoutWaiter | null) {
+  if (f) layoutWaiters.set(editor, f);
+  else layoutWaiters.delete(editor);
+}
+
+/** afterLayout runs `fn` after the next layout (or the next frame). */
+export function afterLayout(editor: Editor, fn: () => void) {
+  const w = layoutWaiters.get(editor);
+  if (w) w(fn);
+  else if (typeof requestAnimationFrame === "function") requestAnimationFrame(fn);
+}
+
 /** setFieldClock fixes DATE/TIME results for tests. */
 export function setFieldClock(editor: Editor, now: (() => Date) | null) {
   if (now) nowOverride.set(editor, now);
@@ -232,7 +249,7 @@ export function updateFields(editor: Editor, scope: UpdateScope = "selection"): 
       updateFieldsTr(editor, t2, scopeTargets(editor.state, scope === "all" ? "all" : "selection"));
       if (t2.docChanged) editor.view.dispatch(t2.setMeta("addToHistory", false));
     };
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(again);
+    afterLayout(editor, again);
   }
   return true;
 }
