@@ -19,6 +19,7 @@ import {
   TabPanel,
 } from "@mui/joy";
 import AddIcon from "@mui/icons-material/Add";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import GestureIcon from "@mui/icons-material/Gesture";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { Header } from "../../components/Header";
@@ -31,6 +32,7 @@ import {
   listWhiteboardsSharedWithMe,
 } from "./api";
 import { ShareDialog } from "./ShareDialog";
+import { setPendingImport } from "./sceneIO";
 import type { Whiteboard } from "./types";
 
 export function WhiteboardList({ user }: { user: User }) {
@@ -58,6 +60,17 @@ export function WhiteboardList({ user }: { user: User }) {
     setCreating(true);
     try {
       const b = await createWhiteboard();
+      navigate(`/whiteboard/d/${b.id}`);
+    } catch (e) {
+      setError((e as Error).message);
+      setCreating(false);
+    }
+  }
+  async function onImport(file: File) {
+    setCreating(true);
+    try {
+      const b = await createWhiteboard(file.name.replace(/\.vsdx$/i, ""));
+      setPendingImport(b.id, file);
       navigate(`/whiteboard/d/${b.id}`);
     } catch (e) {
       setError((e as Error).message);
@@ -161,6 +174,26 @@ export function WhiteboardList({ user }: { user: User }) {
           <Typography level="h2" sx={{ flex: 1 }}>
             Whiteboard
           </Typography>
+          <Button
+            component="label"
+            variant="outlined"
+            startDecorator={<UploadFileIcon />}
+            disabled={creating}
+            sx={{ mr: 1 }}
+            data-testid="import-vsdx"
+          >
+            Import .vsdx
+            <input
+              type="file"
+              accept=".vsdx,application/vnd.ms-visio.drawing.main+xml"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void onImport(f);
+              }}
+            />
+          </Button>
           <Button
             startDecorator={<AddIcon />}
             loading={creating}

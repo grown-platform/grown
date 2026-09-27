@@ -12,7 +12,14 @@ import {
   AvatarGroup,
   Tooltip,
   Button,
+  Dropdown,
+  MenuButton,
+  Menu,
+  MenuItem,
+  ListDivider,
+  Snackbar,
 } from "@mui/joy";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import GestureIcon from "@mui/icons-material/Gesture";
 import ShareIcon from "@mui/icons-material/Share";
@@ -27,6 +34,12 @@ import {
   collabURL,
 } from "./api";
 import { ShareDialog } from "./ShareDialog";
+import {
+  importVsdx,
+  exportScene,
+  takePendingImport,
+  type ExportKind,
+} from "./sceneIO";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Excalidraw types are heavy; we use loose typing. */
 
@@ -64,6 +77,9 @@ export function WhiteboardEditor({ user }: { user: User }) {
   const [peers, setPeers] = useState<Record<string, Peer>>({});
   const [shareOpen, setShareOpen] = useState(false);
   const apiRef = useRef<any>(null);
+  const [apiReady, setApiReady] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const applyingRemote = useRef(false);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -180,6 +196,35 @@ export function WhiteboardEditor({ user }: { user: User }) {
     }, 1500);
   }
 
+  async function runImport(file: File) {
+    const api = apiRef.current;
+    if (!api) return;
+    try {
+      const r = await importVsdx(api, file);
+      setNotice(
+        `Imported ${r.elements} element${r.elements === 1 ? "" : "s"} from ${r.pages} page${r.pages === 1 ? "" : "s"}`,
+      );
+    } catch (e) {
+      setNotice(`Couldn't import ${file.name}: ${(e as Error).message}`);
+    }
+  }
+
+  // A .vsdx chosen on the list page ("Import .vsdx") lands here once.
+  useEffect(() => {
+    if (!apiReady || initial === null) return;
+    const f = takePendingImport(id);
+    if (f) void runImport(f);
+  }, [apiReady, initial, id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function runExport(kind: ExportKind) {
+    if (!apiRef.current) return;
+    try {
+      await exportScene(apiRef.current, kind, title);
+    } catch (e) {
+      setNotice(`Export failed: ${(e as Error).message}`);
+    }
+  }
+
   async function commitTitle() {
     const t = title.trim() || "Untitled whiteboard";
     setTitle(t);
@@ -252,6 +297,43 @@ export function WhiteboardEditor({ user }: { user: User }) {
               ))}
             </AvatarGroup>
           </Box>
+          <Dropdown>
+            <MenuButton
+              size="sm"
+              variant="outlined"
+              startDecorator={<FolderOpenIcon />}
+              data-testid="whiteboard-file-menu"
+            >
+              File
+            </MenuButton>
+            <Menu size="sm" placement="bottom-end">
+              <MenuItem onClick={() => fileInput.current?.click()}>
+                Import Visio (.vsdx)…
+              </MenuItem>
+              <ListDivider />
+              <MenuItem onClick={() => runExport("png")}>
+                Export as PNG
+              </MenuItem>
+              <MenuItem onClick={() => runExport("svg")}>
+                Export as SVG
+              </MenuItem>
+              <MenuItem onClick={() => runExport("excalidraw")}>
+                Download .excalidraw
+              </MenuItem>
+            </Menu>
+          </Dropdown>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".vsdx,application/vnd.ms-visio.drawing.main+xml"
+            hidden
+            data-testid="vsdx-input"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void runImport(f);
+            }}
+          />
           <Button
             size="sm"
             variant="outlined"
@@ -279,11 +361,23 @@ export function WhiteboardEditor({ user }: { user: User }) {
       <Divider />
       <Box sx={{ flex: 1, minHeight: 0 }} data-testid="whiteboard-canvas">
         <Excalidraw
-          excalidrawAPI={(api: any) => (apiRef.current = api)}
+          excalidrawAPI={(api: any) => {
+            apiRef.current = api;
+            setApiReady(true);
+          }}
           initialData={initial}
           onChange={onChange}
         />
       </Box>
+
+      <Snackbar
+        open={notice !== null}
+        autoHideDuration={5000}
+        onClose={() => setNotice(null)}
+        data-testid="whiteboard-notice"
+      >
+        {notice}
+      </Snackbar>
 
       <ShareDialog
         open={shareOpen}
