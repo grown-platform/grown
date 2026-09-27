@@ -208,6 +208,7 @@ type workbookView struct {
 	inProgress map[sheetCell]bool     // formula cells being evaluated (cycle guard)
 	nameStack  map[string]bool        // defined names being resolved (cycle guard)
 	pivots     []pivotOutput          // stored pivot reports (GETPIVOTDATA)
+	tables     []*tableDef            // Excel tables (structured references)
 }
 
 // sheetIndexByName resolves a sheet name case-insensitively.
@@ -595,6 +596,7 @@ func newWorkbookEvaluator(wb FsWorkbook, now time.Time) *Evaluator {
 	}
 	loadNamedRanges(wb, view)
 	loadPivots(wb, view)
+	loadTables(wb, view)
 	ev := &Evaluator{wb: view, now: now}
 	ev.cur = 0
 	ev.grid, ev.results = view.sheets[0].grid, view.sheets[0].results
