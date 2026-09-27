@@ -42,6 +42,10 @@ import (
 
 const readLimit = 8 << 20
 
+// peerQueue is a peer's outbound queue. A peer that falls this far behind
+// is disconnected and catches up from the log when it reconnects.
+const peerQueue = 1024
+
 // Room log bounds. Entries a saved snapshot covers ({"t":"saved","seq"}) are
 // trimmed past the soft limits; unsaved ones are kept up to the hard limits.
 const (
@@ -468,7 +472,7 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, deckID string, canWr
 	// (or a full queue kicks the peer).
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	self := &peer{out: make(chan []byte, 256), kick: cancel}
+	self := &peer{out: make(chan []byte, peerQueue), kick: cancel}
 
 	write := func(msg []byte) error {
 		wctx, wcancel := context.WithTimeout(ctx, 10*time.Second)

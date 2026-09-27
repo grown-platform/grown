@@ -117,7 +117,7 @@ export function CanvasOverlay({
               fontSize: 11,
               fontWeight: 700,
               opacity: pos.orphan ? 0.7 : 1,
-              "& svg": { fontSize: 13 },
+              "& svg": { fontSize: 13, color: "inherit" },
             }}
           >
             <ChatBubbleIcon />

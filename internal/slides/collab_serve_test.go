@@ -238,11 +238,14 @@ func TestServe_ReplayIsNotBoundedByTheQueue(t *testing.T) {
 	a := s.dial(t)
 	hello(t, a, "A", 0, "")
 	const n = 1000
-	for i := 0; i < n; i++ {
-		send(t, a, upsert(fmt.Sprintf("a%d", i), i, "x"))
-	}
-	for i := 0; i < n; i++ {
-		recvT(t, a, "ack")
+	// In batches: a burst larger than the queue would (rightly) kick A.
+	for i := 0; i < n; i += 100 {
+		for j := i; j < i+100; j++ {
+			send(t, a, upsert(fmt.Sprintf("a%d", j), j, "x"))
+		}
+		for j := i; j < i+100; j++ {
+			recvT(t, a, "ack")
+		}
 	}
 	b := s.dial(t)
 	w, ops := hello(t, b, "B", 0, "")
@@ -389,7 +392,26 @@ func TestServe_LegacyClientsStillRelay(t *testing.T) {
 	a, b := s.dial(t), s.dial(t)
 	send(t, a, msg{"t": "presence", "p": msg{"userId": "a"}})
 	send(t, b, msg{"t": "presence", "p": msg{"userId": "b"}})
-	recvT(t, a, "presence")
+	// Legacy peers join on their first message: wait until both have.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		s.h.mu.Lock()
+		r := s.h.rooms["deck1"]
+		s.h.mu.Unlock()
+		n := 0
+		if r != nil {
+			r.mu.Lock()
+			n = len(r.peers)
+			r.mu.Unlock()
+		}
+		if n == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("peers = %d", n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	send(t, a, msg{"t": "upsert", "si": "s1", "el": msg{"id": "x"}})
 	got := recvT(t, b, "upsert")
 	if num(got, "seq") != 1 {
