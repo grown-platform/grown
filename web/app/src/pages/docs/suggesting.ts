@@ -597,9 +597,6 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
     const user = () => this.options.user;
     const active = () => tracking.get(editor) ?? false;
     let viewRef: EditorView | null = null;
-    // A drag-move under tracking: the source range, marked deleted once the
-    // drop lands.
-    let pendingDrop: { from: number; to: number } | null = null;
     return [
       new Plugin({
         key: suggestingKey,
@@ -651,17 +648,11 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
           const splits: number[] = [];
           const fmts: FmtSeg[] = [];
           const props: PropsSeg[] = [];
-          let drop: { from: number; to: number } | null = null;
           transactions.forEach((t, k) => {
             if (skipTransaction(t) || !t.docChanged) return;
             const after = new Mapping();
             for (let j = k + 1; j < transactions.length; j++) after.appendMapping(transactions[j].mapping);
             const ui = t.getMeta("uiEvent");
-            if (pendingDrop && ui === "drop") {
-              const m = t.mapping;
-              drop = { from: after.map(m.map(pendingDrop.from, 1), 1), to: after.map(m.map(pendingDrop.to, -1), -1) };
-              pendingDrop = null;
-            }
             // Untracked typing must not inherit review marks (an insertion
             // is inclusive; typing inside a deleted run takes its mark).
             const keepMarks = ui === "paste" || ui === "drop" || !!t.getMeta("keepReviewMarks");
@@ -790,12 +781,6 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
                 changed = true;
               }
             }
-            const d = drop as { from: number; to: number } | null;
-            if (d && d.to > d.from) {
-              const m = tr.mapping;
-              const r = markDeleted(tr, m.map(d.from, 1), m.map(d.to, -1), u);
-              if (r.marked || r.end !== r.start) changed = true;
-            }
           }
           if (!changed) return null;
           tr.setMeta(suggestingKey, true);
@@ -827,17 +812,41 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
             view.dispatch(trackedReplace(view.state, from, to, text, user()));
             return true;
           },
-          handleDOMEvents: {
-            drop(view) {
-              const dragging = view.dragging as { move?: boolean } | null;
-              if (active() && dragging?.move) {
-                // Copy instead of move, then mark the source deleted.
-                const { from, to } = view.state.selection;
-                pendingDrop = { from, to };
-                dragging.move = false;
-              }
-              return false;
-            },
+          handleDrop(view, event, slice, moved) {
+            // A drag-move while tracking: insert at the drop point and mark
+            // the source deleted (a copy-drop is a plain insertion).
+            if (!active() || !moved || !slice.size) return false;
+            const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+            if (!at) return false;
+            const { from, to } = view.state.selection;
+            if (at.pos >= from && at.pos <= to) return true;
+            const u = user();
+            const tr = view.state.tr;
+            const id = newChangeId();
+            const date = nowIso();
+            const insert = (pos: number) => {
+              const size = tr.doc.content.size;
+              tr.replace(pos, pos, slice);
+              const end = pos + (tr.doc.content.size - size);
+              markInserted(tr, pos, end, u, id, date);
+              return end;
+            };
+            let end: number;
+            if (at.pos > to) {
+              end = insert(at.pos);
+              const k = tr.steps.length;
+              markDeleted(tr, from, to, u, id, date);
+              end = tr.mapping.slice(k).map(end);
+            } else {
+              markDeleted(tr, from, to, u, id, date);
+              end = insert(at.pos);
+            }
+            setCaret(tr, Math.min(end, tr.doc.content.size));
+            tr.setMeta(suggestingKey, true);
+            tr.setMeta("uiEvent", "drop");
+            view.dispatch(tr.scrollIntoView());
+            event.preventDefault();
+            return true;
           },
         },
       }),

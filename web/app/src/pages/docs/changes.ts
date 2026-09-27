@@ -357,6 +357,7 @@ export function describeChange(c: TrackedChange): string {
     case "delete":
       return paraOnly(c.deleted) ? "Merged paragraphs" : `Deleted: "${clip(c.deleted.replace(/¶/g, " "))}"`;
     case "replace":
+      if (c.inserted === c.deleted) return `Moved: "${clip(c.inserted.replace(/¶/g, " "))}"`;
       return `Replaced: "${clip(c.deleted.replace(/¶/g, " "))}" with "${clip(c.inserted.replace(/¶/g, " "))}"`;
     case "format":
       return `Formatted: "${clip(c.formatted)}"`;

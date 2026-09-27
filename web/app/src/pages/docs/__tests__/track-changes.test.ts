@@ -105,6 +105,20 @@ describe("track changes: records", () => {
     expect(reviewText(e)).toEqual([["add", "new"], ["common", "er"]]);
   });
 
+  it("tracks a drag-move as an insertion at the drop point plus a deletion", () => {
+    const e = makeEditor("<p>alpha beta gamma</p>", { suggesting: true });
+    selectText(e, "beta ");
+    const slice = e.state.selection.content();
+    const target = paragraphPos(e, 0, 16);
+    e.view.posAtCoords = () => ({ pos: target, inside: -1 });
+    const ev = new Event("drop") as DragEvent;
+    Object.assign(ev, { clientX: 0, clientY: 0 });
+    const handled = e.view.someProp("handleDrop", (f) => f(e.view, ev, slice, true));
+    expect(handled).toBe(true);
+    expect(reviewText(e)).toEqual([["common", "alpha "], ["remove", "beta "], ["common", "gamma"], ["add", "beta "]]);
+    expect(collectChanges(e.state.doc).map((c) => c.kind)).toEqual(["replace"]);
+  });
+
   it("types an insertion (not a deletion) inside deleted text", () => {
     const e = makeEditor(`<p>${reviewHtml([{ text: "gone", type: "remove", author: "Bob" }])}</p>`, { suggesting: true });
     setCursor(e, paragraphPos(e, 0, 2));
