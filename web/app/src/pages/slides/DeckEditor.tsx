@@ -96,6 +96,7 @@ import { SlideShow } from "./SlideShow";
 import { MotionPanel } from "./MotionPanel";
 import { effectsOf, removeEffects } from "./animOps";
 import { activeTheme, applyTheme, reconcileRefs, setActiveTheme, themeOf, withColorRef } from "./theme";
+import { setSolidFill } from "./elementOps";
 import {
   applyLayout as applyLayoutOp,
   findLayout,
@@ -1626,9 +1627,6 @@ export function DeckEditor({ user }: { user: User }) {
     if (alignText(a)) return;
     updateSelected((e) => ({ ...e, align: a }));
   }
-  function setField<K extends keyof SlideElement>(k: K, v: SlideElement[K]) {
-    updateSelected((e) => ({ ...e, [k]: v }));
-  }
   function arrange(dir: ArrangeDir) {
     if (!slide || !selIds.length) return;
     const els = arrangeMany(slide.elements, selIds, dir);
@@ -2210,7 +2208,10 @@ export function DeckEditor({ user }: { user: User }) {
                   ? selected.fill.slice(0, 7)
                   : "#4285f4"
               }
-              onChange={(e) => setField("fill", e.target.value)}
+              onChange={(e) => {
+                const c = e.target.value;
+                updateSelected((el) => setSolidFill(el, c));
+              }}
               title="Fill color"
               aria-label="Fill color"
               style={{ marginLeft: 4 }}

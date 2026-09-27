@@ -1,7 +1,7 @@
 // Pure element-naming helpers (the Selection-pane name OnlyOffice's JS API
 // exposes as GetName/SetName, and pptx stores as `p:cNvPr@name`).
 
-import type { ElementType, Slide, SlideElement } from "./model";
+import type { ElementType, GradientFill, Slide, SlideElement } from "./model";
 import { findDeep } from "./groupOps";
 
 const TYPE_LABEL: Record<ElementType, string> = {
@@ -130,4 +130,52 @@ export function setFlip(
   if (value) next[k] = true;
   else delete next[k];
   return { el: next, ok: true };
+}
+
+const HEX = /^#[0-9a-f]{6}([0-9a-f]{2})?$/i;
+
+function isGradient(v: unknown): v is GradientFill {
+  if (!v || typeof v !== "object") return false;
+  const g = v as Record<string, unknown>;
+  if (g.kind !== "gradient" || !Array.isArray(g.stops) || g.stops.length < 2) return false;
+  if (g.angle !== undefined && !(typeof g.angle === "number" && Number.isFinite(g.angle))) return false;
+  return g.stops.every((st: unknown) => {
+    const o = st as Record<string, unknown> | null;
+    return (
+      !!o &&
+      typeof o.pos === "number" &&
+      o.pos >= 0 &&
+      o.pos <= 1 &&
+      typeof o.color === "string" &&
+      HEX.test(o.color)
+    );
+  });
+}
+
+/** setGradientFill fills a shape with a linear or radial gradient (at least
+ *  two stops, positions 0–1, in any order; they are sorted). `fill` keeps the
+ *  first stop so a client without gradients still draws a sensible colour,
+ *  and a theme fill reference no longer applies. Malformed input is rejected
+ *  with the element unchanged, like OnlyOffice's Fill(CreateGradientFill…). */
+export function setGradientFill(el: SlideElement, grad: unknown): { el: SlideElement; ok: boolean } {
+  if (!isGradient(grad)) return { el, ok: false };
+  const stops = [...grad.stops].sort((a, b) => a.pos - b.pos).map((st) => ({ pos: st.pos, color: st.color }));
+  const gradFill: GradientFill = grad.radial
+    ? { kind: "gradient", stops, radial: true }
+    : { kind: "gradient", stops, angle: grad.angle ?? 90 };
+  const next: SlideElement = { ...el, fill: stops[0].color, gradFill };
+  if (next.themeRefs?.fill) {
+    const { fill: _f, ...rest } = next.themeRefs;
+    void _f;
+    if (Object.keys(rest).length) next.themeRefs = rest;
+    else delete next.themeRefs;
+  }
+  return { el: next, ok: true };
+}
+
+/** setSolidFill sets a plain fill colour (or "none"), dropping any gradient. */
+export function setSolidFill(el: SlideElement, color: string): SlideElement {
+  const next: SlideElement = { ...el, fill: color };
+  delete next.gradFill;
+  return next;
 }

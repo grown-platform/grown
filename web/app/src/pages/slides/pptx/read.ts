@@ -1189,6 +1189,8 @@ async function readSp(
     (num(kid(style, "fillRef"), "idx")
       ? readColor(kid(style, "fillRef"), pc.color)
       : undefined);
+  const gradEl = kid(spPr, "gradFill");
+  const gradFill = gradEl ? readGradient(gradEl, pc.color) : null;
   const lineSpec = readLine(spPr, pc.color);
   const line: Stroke | undefined =
     lineSpec === "none"
@@ -1278,7 +1280,8 @@ async function readSp(
   }
   const visible = hasFill || !!line;
   if (visible) {
-    const legacy = lineStyle.dash ? null : legacyShape(prst, adj);
+    // A gradient needs the preset renderer, so such shapes stay presets.
+    const legacy = lineStyle.dash || (gradFill && hasPreset(prst)) ? null : legacyShape(prst, adj);
     const preset = !legacy && hasPreset(prst);
     let type: ElementType = legacy ?? (preset ? "shape" : (kind ?? "rect"));
     if (!legacy && !preset && !kind) sc.unsupported.add(prst === "custom" ? "freeform" : prst);
@@ -1291,6 +1294,7 @@ async function readSp(
       ...orient(box),
       ...(preset && adj ? { adj } : {}),
       fill: hasFill ? fill : "none",
+      ...(preset && gradFill ? { gradFill } : {}),
       stroke: line ? line.color : "none",
       strokeWidth: line ? line.width : 0,
       ...(preset && lineStyle.dash ? { dash: lineStyle.dash } : {}),

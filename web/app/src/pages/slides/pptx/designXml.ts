@@ -3,7 +3,7 @@
 // layouts with their placeholders, and slide placeholder tags/fields.
 // String/DOM helpers used by write.ts after pptxgenjs has built the package.
 
-import type { DeckTheme, Placeholder, Slide, SlideElement, SlideLayout, ThemeColors } from "../model";
+import type { DeckTheme, Placeholder, Slide, SlideElement, SlideFill, SlideLayout, ThemeColors } from "../model";
 import { EMU_PER_PX, esc, schemeClrXml, textBodyXml } from "./textXml";
 
 export { schemeClrXml };
@@ -42,20 +42,24 @@ export function patchClrMap(masterXml: string, dark: boolean): string {
   );
 }
 
+/** An `a:gradFill` for a Grown gradient (backgrounds and shapes): stops at
+ *  0–100000, and a linear angle (60000ths of a degree) or a centred circle. */
+export function gradFillXml(f: Extract<SlideFill, { kind: "gradient" }>): string {
+  const gs = f.stops
+    .map((st) => `<a:gs pos="${Math.round(st.pos * 100000)}"><a:srgbClr val="${hex(st.color)}"/></a:gs>`)
+    .join("");
+  const shade = f.radial
+    ? `<a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path>`
+    : `<a:lin ang="${Math.round((((f.angle ?? 90) % 360) + 360) % 360 * 60000)}" scaled="0"/>`;
+  return `<a:gradFill rotWithShape="1"><a:gsLst>${gs}</a:gsLst>${shade}</a:gradFill>`;
+}
+
 /** The `p:bg` for a slide or layout, when pptxgenjs's plain colour isn't
  *  enough: a gradient, or a theme background colour. Null otherwise (a
  *  picture background is written by pptxgenjs). */
 export function bgXml(s: Pick<Slide, "background" | "bgFill" | "bgRef">): string | null {
   const f = s.bgFill;
-  if (f?.kind === "gradient") {
-    const gs = f.stops
-      .map((st) => `<a:gs pos="${Math.round(st.pos * 100000)}"><a:srgbClr val="${hex(st.color)}"/></a:gs>`)
-      .join("");
-    const shade = f.radial
-      ? `<a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path>`
-      : `<a:lin ang="${Math.round((((f.angle ?? 90) % 360) + 360) % 360 * 60000)}" scaled="0"/>`;
-    return `<p:bg><p:bgPr><a:gradFill rotWithShape="1"><a:gsLst>${gs}</a:gsLst>${shade}</a:gradFill><a:effectLst/></p:bgPr></p:bg>`;
-  }
+  if (f?.kind === "gradient") return `<p:bg><p:bgPr>${gradFillXml(f)}<a:effectLst/></p:bgPr></p:bg>`;
   if (!f && s.bgRef) {
     const clr = schemeClrXml(s.bgRef);
     if (clr) return `<p:bg><p:bgPr><a:solidFill>${clr}</a:solidFill><a:effectLst/></p:bgPr></p:bg>`;

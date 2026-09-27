@@ -23,7 +23,7 @@ import { findLayout, layoutsOf, withFooters } from "../layouts";
 import { themeOf } from "../theme";
 import { insertTiming, insertTransition, timingXml, transitionXml } from "./motionXml";
 import { effectsOf } from "../animOps";
-import { bgXml, patchClrMap, patchLayoutXml, patchThemeXml, replaceBg, setPh, setSchemeFill, toField } from "./designXml";
+import { bgXml, gradFillXml, patchClrMap, patchLayoutXml, patchThemeXml, replaceBg, setPh, setSchemeFill, toField } from "./designXml";
 import {
   CT_CHART,
   CT_XLSX,
@@ -703,6 +703,7 @@ export function patchElements(
       continue;
     }
     if ((el.type !== "shape" && el.type !== "connector") || !el.preset) continue;
+    if (el.type === "shape" && el.gradFill && spPr) setGradFill(doc, spPr, gradFillXml(el.gradFill));
     const geom = node.getElementsByTagNameNS(A_NS, "prstGeom")[0];
     if (geom) {
       geom.setAttribute("prst", el.preset);
@@ -721,6 +722,20 @@ export function patchElements(
   const decl = /^<\?xml[^>]*\?>\s*/.exec(slideXml);
   if (decl && !out.startsWith("<?xml")) out = decl[0] + out;
   return out;
+}
+
+/** Replace the fill of `spPr` with an `a:gradFill` (after the geometry, as
+ *  CT_ShapeProperties orders it). */
+function setGradFill(doc: Document, spPr: Element, xml: string) {
+  const parsed = new DOMParser().parseFromString(`<w xmlns:a="${A_NS}">${xml}</w>`, "application/xml");
+  const grad = parsed.documentElement.firstElementChild;
+  if (!grad || parsed.getElementsByTagName("parsererror").length) return;
+  const FILLS = new Set(["noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill"]);
+  for (const c of Array.from(spPr.children)) if (FILLS.has(c.localName)) spPr.removeChild(c);
+  const geom = Array.from(spPr.children).find((c) => c.localName === "prstGeom" || c.localName === "custGeom");
+  const node = doc.importNode(grad, true);
+  if (geom) spPr.insertBefore(node, geom.nextSibling);
+  else spPr.appendChild(node);
 }
 
 /** Swap a chart's stand-in shape for a p:graphicFrame showing chart `rid`. */
