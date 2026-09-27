@@ -1,7 +1,7 @@
-// A small PDF 1.4 writer for the Slides PDF export (M12), written from the
-// PDF 1.7 spec (ISO 32000-1): one JPEG picture per page (the rendered page),
-// an invisible text layer so the file is searchable and copyable, and link
-// annotations. Pure: bytes in, bytes out.
+// A small PDF 1.4 writer, written from the PDF 1.7 spec (ISO 32000-1): one
+// JPEG picture per page (the rendered page), an invisible text layer so the
+// file is searchable and copyable, and link annotations. Pure: bytes in,
+// bytes out. Used by the Slides (M12), Docs and Sheets PDF exports.
 
 export interface PdfJpeg {
   /** Baseline JPEG bytes (DCTDecode). */
@@ -25,6 +25,9 @@ export interface PdfText {
   y: number;
   size: number;
   text: string;
+  /** Width the text covers on the page, in points. When set, the text is
+   *  stretched (Tz) so a selection highlights the rendered words. */
+  w?: number;
 }
 
 export interface PdfPage {
@@ -44,6 +47,24 @@ export interface PdfMeta {
   author?: string;
   /** Fixed creation date (tests); default now. */
   date?: Date;
+  /** The /Producer (default "Grown Slides"). */
+  producer?: string;
+}
+
+// Helvetica advance widths (1/1000 em, Adobe AFM) for ASCII 32–126; every
+// other WinAnsi byte counts as 556, near the font's average.
+const HELV = [
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556,
+  278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667,
+  611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833,
+  556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+];
+
+/** helveticaWidth is the advance width of WinAnsi bytes in Helvetica, in em. */
+export function helveticaWidth(bytes: readonly number[]): number {
+  let w = 0;
+  for (const b of bytes) w += b >= 32 && b <= 126 ? HELV[b - 32] : 556;
+  return w / 1000;
 }
 
 // Unicode → WinAnsiEncoding (PDF spec Annex D) for the non-Latin-1 slots.
@@ -135,7 +156,7 @@ export function buildPdf(pages: readonly PdfPage[], meta: PdfMeta = {}): Uint8Ar
   obj(1, `<< /Type /Catalog /Pages 2 0 R >>`);
   obj(2, `<< /Type /Pages /Kids [${plan.map((p) => `${p.page} 0 R`).join(" ")}] /Count ${pages.length} >>`);
   obj(3, `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>`);
-  const info = [`/Producer ${utf16Hex("Grown Slides")}`, `/CreationDate (${pdfDate(meta.date ?? new Date())})`];
+  const info = [`/Producer ${utf16Hex(meta.producer ?? "Grown Slides")}`, `/CreationDate (${pdfDate(meta.date ?? new Date())})`];
   if (meta.title) info.push(`/Title ${utf16Hex(meta.title)}`);
   if (meta.author) info.push(`/Author ${utf16Hex(meta.author)}`);
   obj(4, `<< ${info.join(" ")} >>`);
@@ -154,9 +175,15 @@ export function buildPdf(pages: readonly PdfPage[], meta: PdfMeta = {}): Uint8Ar
     const texts = (p.texts ?? []).filter((t) => t.text.trim());
     if (texts.length) {
       c += "BT 3 Tr\n";
+      let tz = 100;
       for (const t of texts) {
         const bytes = winAnsiBytes(t.text);
         if (!bytes.length) continue;
+        // Stretch the invisible Helvetica run to the rendered width.
+        const natural = helveticaWidth(bytes) * t.size;
+        const want = t.w && natural > 0 ? Math.min(1000, Math.max(10, Math.round((t.w / natural) * 1000) / 10)) : 100;
+        if (want !== tz) c += `${n(want)} Tz `;
+        tz = want;
         c += `/F1 ${n(t.size)} Tf 1 0 0 1 ${n(t.x)} ${n(p.h - t.y)} Tm ${literal(bytes)} Tj\n`;
       }
       c += "ET\n";

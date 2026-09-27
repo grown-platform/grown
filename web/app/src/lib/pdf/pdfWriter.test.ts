@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { buildPdf, utf16Hex, winAnsiBytes } from "./pdfWriter";
+import { buildPdf, helveticaWidth, utf16Hex, winAnsiBytes } from "./pdfWriter";
 
 const latin1 = (b: Uint8Array) => Array.from(b, (c) => String.fromCharCode(c)).join("");
 const fakeJpeg = { data: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), width: 4, height: 2 };
@@ -81,5 +81,15 @@ describe("pdfWriter", () => {
     expect(p2.view).toEqual([0, 0, 612, 792]);
     const meta = await doc.getMetadata();
     expect((meta.info as { Title?: string }).Title).toBe("Quarterly");
+  });
+
+  it("stretches a text run to its rendered width with Tz", () => {
+    expect(helveticaWidth(winAnsiBytes("Hi"))).toBeCloseTo(0.944);
+    const pdf = latin1(
+      buildPdf([{ w: 100, h: 100, texts: [{ x: 0, y: 10, size: 10, text: "Hi", w: 18.88 }, { x: 0, y: 30, size: 10, text: "Hi" }] }], { producer: "Grown Docs" }),
+    );
+    expect(pdf).toContain("200 Tz /F1 10 Tf");
+    expect(pdf).toContain("100 Tz /F1 10 Tf");
+    expect(pdf).toContain(utf16Hex("Grown Docs"));
   });
 });
