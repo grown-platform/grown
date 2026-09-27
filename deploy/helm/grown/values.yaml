@@ -257,7 +257,10 @@ minio:
     repository: minio/minio
     tag: "RELEASE.2025-04-08T15-41-24Z"
     pullPolicy: IfNotPresent
-  mcImage: minio/mc:latest      # used by the bucket-init Job
+  # Bucket-init Job image. MinIO no longer publishes public images (minio/mc
+  # and minio/minio stopped pulling in 2025), so buckets are created with the
+  # AWS CLI's S3 API instead of `mc`.
+  mcImage: public.ecr.aws/aws-cli/aws-cli:2.22.35
   accessKey: grown
   secretKey: DevPassword!1
   bucket: grown-default

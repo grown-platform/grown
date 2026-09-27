@@ -120,19 +120,24 @@ spec:
     spec:
       restartPolicy: OnFailure
       containers:
-        - name: mc
+        - name: s3init
           image: {{ .Values.minio.mcImage }}
           command:
             - sh
             - -c
             - |
+              export AWS_ACCESS_KEY_ID="$ACCESS" AWS_SECRET_ACCESS_KEY="$SECRET" AWS_DEFAULT_REGION=us-east-1
+              ep=http://{{ .Release.Name }}-minio:{{ .Values.minio.apiPort }}
               echo "waiting for minio S3 auth..."
-              until mc alias set m http://{{ .Release.Name }}-minio:{{ .Values.minio.apiPort }} "$ACCESS" "$SECRET" 2>/dev/null; do sleep 3; done
-              mc mb --ignore-existing m/{{ .Values.minio.bucket }}
-              echo "bucket {{ .Values.minio.bucket }} ready"
+              until aws --endpoint-url "$ep" s3api list-buckets >/dev/null 2>&1; do sleep 3; done
+              mkbucket() {
+                aws --endpoint-url "$ep" s3api head-bucket --bucket "$1" 2>/dev/null ||
+                  aws --endpoint-url "$ep" s3api create-bucket --bucket "$1" >/dev/null
+                echo "bucket $1 ready"
+              }
+              mkbucket {{ .Values.minio.bucket }}
               {{- if .Values.pdf.enabled }}
-              mc mb --ignore-existing m/{{ .Values.pdf.bucket }}
-              echo "bucket {{ .Values.pdf.bucket }} ready"
+              mkbucket {{ .Values.pdf.bucket }}
               {{- end }}
           env:
             - name: ACCESS
