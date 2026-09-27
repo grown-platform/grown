@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12. M8 (references and fields) has landed; see §6.13.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12. M8 (references and fields) has landed; see §6.13. M9 (page layout, sections, pagination) has landed; see §6.14.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -258,8 +258,8 @@ Grown paths are relative to the repo root; `docs/` below means
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
 | Edit header / footer | HeaderFooterTab | Partial | one global header + footer via Yjs fragments `docs/MarginEditor.tsx` |
-| Different first page / odd-even | HeaderFooterSettings | Missing | — |
-| Link to previous (per section) | HeaderFooterSettings `textSameAs` | Missing | — |
+| Different first page / odd-even | HeaderFooterSettings | Have | M9 (§6.14) |
+| Link to previous (per section) | HeaderFooterSettings `textSameAs` | Have | M9 (§6.14) |
 | Header from top / footer from bottom distances | HeaderFooterSettings | Missing | — |
 | Page number field (position, format, start at) | HeaderFooterSettings, PageNumberingDlg | Partial | overlay labels toggle `docs/DocEditor.tsx:105`, not a field |
 | Number of pages, date/time, other fields, image in header | HeaderFooterTab | Missing | — |
@@ -268,18 +268,18 @@ Grown paths are relative to the repo root; `docs/` below means
 
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
-| Page size presets + custom | PageSizeDialog | Missing | Letter only `docs/editorStyles.ts:676` |
-| Orientation | Toolbar `capBtnPageOrient` | Have | global, not persisted in doc |
-| Margins presets / custom / gutter / mirror | PageMarginsDialog | Partial | numeric T/B/L/R, global, not persisted |
-| Sections + section breaks (next/continuous/odd/even) | Toolbar `textInsSectionBreak`, `Editor/sections` | Missing | — |
-| Columns (1/2/3/left/right/custom, spacing, divider) + column break | CustomColumnsDialog, `api-section.js` | Missing | — |
+| Page size presets + custom | PageSizeDialog | Have | M9 `docs/sections.ts` |
+| Orientation | Toolbar `capBtnPageOrient` | Have | per section, persisted (M9) |
+| Margins presets / custom / gutter / mirror | PageMarginsDialog | Have | M9 |
+| Sections + section breaks (next/continuous/odd/even) | Toolbar `textInsSectionBreak`, `Editor/sections` | Have | M9 `sectionBreak` |
+| Columns (1/2/3/left/right/custom, spacing, divider) + column break | CustomColumnsDialog, `api-section.js` | Have | M9 |
 | Page break | Toolbar | Have | `PageBreak` node (CSS only) |
 | Blank page | Toolbar `capBtnBlankPage` | Missing | — |
-| Page color, watermark | Toolbar, WatermarkSettingsDialog | Missing | — |
-| True pagination (content reflow across pages) | `Editor/Layout/*`, document-calculation tests | Missing | page count is a height estimate |
-| Page thumbnails, zoom, fit page/width | PageThumbnails, Statusbar | Missing | — |
+| Page color, watermark | Toolbar, WatermarkSettingsDialog | Have | M9 |
+| True pagination (content reflow across pages) | `Editor/Layout/*`, document-calculation tests | Have | M9 measurement-based `pagination.ts` |
+| Page thumbnails, zoom, fit page/width | PageThumbnails, Statusbar | Partial | M9 thumbnails + zoom; no fit page/width |
 | Rulers (toggle, paragraph indents, tab stops) | ViewTab `textRulers` | Partial | `docs/Ruler.tsx` drives page margins; toggle disabled |
-| Print layout vs pageless | Google reference | Missing | — |
+| Print layout vs pageless | Google reference | Have | M9 |
 
 ### 2.9 Footnotes and endnotes
 
@@ -1100,10 +1100,10 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | Comment authors | Kept per comment | Server comments belong to the importing user; the original author is appended to the text ("— Carol") when it differs | grown-variant |
 | Numbering start when `w:start` is absent | 0 (ECMA-376) | 0, per the spec | Note only |
 | Image in a paragraph | Inline in the run | Image is a block node, so the paragraph splits around it; paragraph alignment of an image-only paragraph is lost | Until M7 |
-| Header/footer content | Any block content | Margin editor schema: paragraphs/headings with alignment and basic marks; tables flatten to paragraphs, images dropped, fields keep their result text (a PAGE field becomes a fixed number; body fields are field nodes since M8) | Until M9 |
+| Header/footer content | Any block content | Margin editor schema: paragraphs/headings with alignment and basic marks; tables flatten to paragraphs, images dropped; PAGE / NUMPAGES / SECTIONPAGES are field nodes since M9 (other fields keep their result text) | Partly done (M9) |
 | Headings 7-9 | Built-in | Custom paragraph styles with an outline level (TipTap has h1-h6) | grown-variant |
 | Direct `jc=left` over a centred style | Left | Not stored (M3 limitation) | Known gap |
-| Export page setup | Section properties | Letter, 1in margins (orientation/margins are not persisted yet) | Until M9 |
+| Export page setup | Section properties | Every section's w:sectPr since M9 (§6.14) | Done (M9) |
 
 
 ### 6.10 M4 status (tables)
@@ -1582,11 +1582,137 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | cross-ref: heading in a (locked) block content control | Heading inside a block-level sdt | Plain heading until M10's content controls; same text and `_Ref1` bookmark | grown-variant until M10 |
 | shortcuts: visit hyperlink | Enter on the link (OnlyOffice); Ctrl+click (Word) | Alt+Enter (Google Docs) and Ctrl+click | grown-variant chord |
 | shortcuts: insert page number | Ctrl+Shift+P (OnlyOffice) | Alt+Shift+P (Word's chord) | grown-variant chord |
-| Page numbers in PAGE / PAGEREF / TOC | Laid-out pages | The rendered page grid (browser) or explicit breaks (headless) until M9 | Until M9 |
+| Page numbers in PAGE / PAGEREF / TOC | Laid-out pages | Exact from the pagination layout since M9 (§6.14); PAGE / NUMPAGES / SECTIONPAGES in the body follow the layout live, PAGEREF / TOC on F9 | Done (M9) |
 | SEQ renumbering | On update (F9, print) | After every edit; other fields on F9 | grown-variant |
 | STYLEREF `\s` on unnumbered headings | Needs heading numbering | Falls back to the heading's ordinal (chapter 2 = second Heading 1) | grown-variant |
 | Text typed at the end of a referenced heading | Stays outside the bookmark | Joins the hidden `_Ref` / `_Toc` bookmark on the next update | grown-variant |
 | Hidden bookmark names | `_Ref` + random digits | `_Ref<n>` / `_Toc<n>`, the first free number (OnlyOffice's `_Ref1`) | Note only |
+
+### 6.14 M9 status (page layout, sections, pagination)
+
+* **Model** (additive): `sectionBreak` block atom (`id`, `kind` = how the
+  *next* section starts: next page / continuous / even / odd, `sectPr` =
+  JSON setup of the section it ends, Word's paragraph-level w:sectPr) and
+  `columnBreak` block atom (Ctrl+Shift+Enter). The final section's setup
+  and the document settings live in a `docSettings` Yjs map (page colour,
+  watermark text/image, different odd & even, mirror margins, pageless,
+  hyphenation). `sections.ts` is pure: page size presets / custom,
+  orientation (rotating margins as Word does), margins presets / gutter /
+  header & footer distance, columns (equal or unequal widths, spacing,
+  line between; `setEqualColumns` / `setNotEqualColumns`), different
+  first page, line numbering (count by, start, distance, restart per page
+  / section / continuous), page numbering (start, format), page borders,
+  and header/footer ownership. Existing documents (no breaks, no settings)
+  are one Letter section with 1in margins — what the editor always drew;
+  orientation and margins are no longer React state, they persist.
+* **Headers/footers per section**: each section owns or links (Word's
+  "Link to previous") its default / first / even header and footer; own
+  parts are Yjs fragments `hf:<section id>:<kind>:<header|footer>`, the
+  first section's default keeps the original `header` / `footer`
+  fragments (first-section first/even: `hf:first-section:…`). Unlinking
+  copies the linked content. The margin schema gained the `field` node:
+  PAGE / NUMPAGES / SECTIONPAGES render through CSS counters that every
+  page's header/footer box sets, so one shared header shows each page's
+  own number (section number formats and `\* roman` switches included).
+* **Pagination** (`pagination.ts`, pure; architecture item 1): a measurer
+  turns each top-level block into a box — line heights for text blocks
+  (nested lists, quotes and TOCs included), row heights for tables, CSS
+  margins — and `paginate` assigns them to pages and columns: page /
+  column / section breaks, page break before, keep with next (chains, with
+  backtracking), keep lines together, widow/orphan control (two lines at
+  each end), tables split between rows with their leading header rows
+  repeated and never left alone at a page bottom (Word 2013+), rows taller
+  than a page split (pure layout), odd/even starts with a blank page,
+  page-number restarts, columns filled in order and balanced before a
+  continuous break, mirror margins and gutter. It resumes from the first
+  changed block's keep-with-next chain; the app's DOM measurer caches boxes
+  by node identity and width and re-reads a block only when its node or
+  rendered height changes.
+* **Rendering** (`paginationPlugin.ts`, `PageLayer.tsx`): decorations
+  only, no DOM re-parenting — a spacer widget before a block that starts a
+  page/column, a `display:block` spacer span at the first character of the
+  line that moves on inside a split paragraph, a spacer row plus header-row
+  clones inside a split table, and a translate + right-margin node
+  decoration for blocks in another column or on a page of another size.
+  The sheet becomes as wide as the widest page; `PageLayer` draws the
+  pages behind the text (size, orientation, page colour, border,
+  watermark, column lines, line numbers) and every page's header/footer in
+  front (page 1's header and the last footer are live editors; any other
+  becomes live on double-click). Top-level blocks become block formatting
+  contexts in the paged view so measured margins are exactly the rendered
+  ones. Pageless view (status bar / View menu, a doc setting) keeps the
+  old continuous sheet; print preview forces pages temporarily.
+* **Fields**: the plugin installs the page resolver (fields.ts) from the
+  layout: PAGE / NUMPAGES / SECTIONPAGES (new `sectionPageCount`) are
+  exact and body PAGE-type fields refresh after each layout (as Word shows
+  them); PAGEREF / TOC take exact pages on F9 — the F9 second pass and a
+  freshly inserted TOC wait for the next layout (`setLayoutWaiter`).
+* **UI**: a Layout menu (margins, orientation, size, columns, breaks,
+  line numbers, hyphenation, watermark, page colour, page border,
+  header/footer options, page numbers), a tabbed Page setup dialog
+  (margins, paper, layout; apply to this section / whole document / this
+  point forward), Watermark, Hyphenation (CSS `hyphens`, zone and limit
+  where the browser supports them), Header & footer options, Page numbers
+  (header/footer, alignment, "Page X of Y", first page, start, format); a
+  status bar (page x of y, words, zoom 50–200 %, print layout / pageless);
+  a page thumbnails pane; print preview with page ranges (Ctrl+P, File ▸
+  Print) that prints page clones with one `@page` size per page size, so
+  mixed orientation prints correctly; the ruler follows the section's page
+  width and sets its margins.
+* **DOCX** both ways (`docx/sections.ts`): body and paragraph-level
+  w:sectPr (a w:sectPr-only paragraph becomes just the break) with type,
+  pgSz, pgMar (gutter), pgBorders, lnNumType, pgNumType, cols (equal /
+  unequal, sep), titlePg, header/footer references per section and type
+  (a missing reference links to the previous section), `w:br
+  w:type="column"`, header/footer PAGE / NUMPAGES / SECTIONPAGES fields,
+  settings (evenAndOddHeaders, mirrorMargins, autoHyphenation,
+  consecutiveHyphenLimit, hyphenationZone, doNotHyphenateCaps) and
+  w:background page colour, in CT_SectPr / CT_Settings order. The M6
+  "per-section page setup" and "first/even headers" import warnings are
+  gone. Corpus: OnlyOffice's documents 4/4.
+* **Tests**: ported (all passing): `oo/pagination-keep-next.test.ts` 2,
+  `oo/pagination-table.test.ts` 4 (pageBreak.js 3, table-header.js 1),
+  `oo/sections.test.ts` 1 (api-section.js); un-skipped
+  `oo/shortcuts.test.ts` "Check column break shortcut". The docs-tests.csv
+  M9 rows are 7/7. Grown-native: `oo/sections.test.ts` (breaks, forward
+  scope, columns, orientation, header/footer resolution, odd/even and
+  restarts, per-section sizes, widow/orphan/keep-lines/page-break-before,
+  column fill + balancing, mirror margins), `pagination.test.ts` (exact
+  PAGE / NUMPAGES / SECTIONPAGES after edits, exact TOC pages, spacer
+  decorations, pageless, line numbers, thumbnails, incremental layout
+  equals a full one, 50-page performance: a full layout well under 500 ms
+  and an incremental one under 25 ms on the MockMeasurer grid, typing in a
+  50-page paged editor under 80 ms per keystroke), `docx-sections.test.ts`
+  (Word-shaped three-section document; Word → Grown → docx → Grown
+  equality, schema order; editor-authored breaks). Playwright
+  `web/e2e/docs-pages.spec.ts` (a long document paginating with split
+  paragraphs and a repeated table header row, no text in page gaps, "Page
+  X of Y" footer, a header on every page, a landscape two-column section,
+  a TOC with exact page numbers, reload, .docx download and re-import;
+  print preview with a page range; pageless). All docs e2e (22) pass on
+  :8093.
+* **Semantic differences**:
+
+| Case | OnlyOffice / Word | Grown | Status |
+|---|---|---|---|
+| keep-next / pageBreak "page count of an element" | An element has an (empty) page on every page it spans | Pieces exist only where content is; "first page empty" reads as "starts on the next page" | Note only |
+| pageBreak.js: float table (bug 57159) | Floating table positioned below its anchor | No floating tables (F2): the vertical offset is space before the table | grown-variant |
+| pageBreak.js: bottom border | Border in mm | The M4 cell border width (pt) adds to the row | Note only |
+| table-header.js: Word 2010 compatibility | Header row may stay alone at a page bottom | One mode (Word 2013+); the 2010 assertions are n/a | grown-variant |
+| Column break | A run break inside the paragraph | A block node between the halves (like Grown's page break) | grown-variant |
+| Paragraph split across columns | Lines flow into the next column | Blocks move to the next column whole (a block can't be in two columns on screen); pages split by line | Known gap |
+| Table rows taller than a page | Split across pages | Split in the pure layout; on screen the row overflows | Known gap |
+| Mirror margins on a split paragraph | Each page part at its page's margin | The part on the next page keeps the first page's horizontal offset | Known gap |
+| Style-based right indent in a narrower section | Kept | A block moved to another column/section width loses a style's right indent (direct ones are kept) | Known gap |
+| Line numbers | In the margin by the text | Drawn by the page layer; table rows and atoms not counted | Note only |
+| Watermark in DOCX | A VML/DrawingML shape in the header | Kept in the document settings; not written to or read from .docx | Known gap |
+| Header/footer navigation hotkeys (shortcuts.js) | Previous/next header-footer | Double-click a page's header/footer; hotkeys not bound (skipped, M13) | Not yet |
+
+* **Not yet**: vertical page alignment, text direction per section,
+  paper source, footnotes at the bottom of each page (the notes panel sits
+  below the pages), header/footer images, the watermark in DOCX,
+  hyphenation of caps (no CSS switch), line-number suppression per
+  paragraph, page borders on one side / art borders.
 
 ### Known flaky e2e (as of 2026-09-26)
 

@@ -405,7 +405,9 @@ describe("OnlyOffice shortcuts: later milestones", () => {
     // TODO(M7): arrow-key nudging, Tab between objects, Enter into a shape.
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check actions with headers/footers", () => {
-    // TODO(M9): per-page headers/footers and moving between them.
+    // TODO(M13): per-page headers/footers exist since M9 (double-click one
+    // to edit it); OnlyOffice's previous/next header-footer hotkeys are not
+    // bound yet.
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check reset actions shortcut", () => {
     // TODO(M7): Escape cancels shape insertion / sticky format painter.
