@@ -259,6 +259,22 @@ test.describe.serial("drive: upload → open with → open in editor", () => {
         expect((deck!.slides[0] as any).notes, k).toContain("Drive notes");
       }
 
+      // --- .vsdx → Whiteboard -------------------------------------------------
+      await openWith(page, id("vsdx"), "Whiteboard");
+      await page.getByTestId("open-in-whiteboard").click();
+      await page.waitForURL(/\/whiteboard\/d\/[^/]+$/, { timeout: 30_000 });
+      const boardId = page.url().split("/whiteboard/d/")[1];
+      made.boards.push(boardId);
+      await expect(page.getByTestId("whiteboard-canvas")).toBeVisible({ timeout: 20_000 });
+      await expect
+        .poll(async () => {
+          const r = await page.request.get(`${BASE_URL}/api/v1/whiteboards/d/${boardId}`);
+          const b = await r.json();
+          const els = b.data ? JSON.parse(b.data).elements ?? [] : [];
+          return els.filter((e: any) => e.type === "text").map((e: any) => e.text).join("|");
+        }, { timeout: 15_000 })
+        .toContain("Drive box");
+
       // --- .pdf → PDF (preview) -----------------------------------------------
       // Documented: Drive's /pdf/:id is a preview page; opening a Drive item in
       // the PDF editor is "Missing (deferred)" (cross-cutting.md §2.1, row
@@ -284,6 +300,8 @@ test.describe.serial("drive: upload → open with → open in editor", () => {
       await page.goto(`${BASE_URL}/sheets/d/${xlsxSheet}`);
       await expect(page.locator(".fortune-sheet-canvas")).toBeVisible({ timeout: 20_000 });
       for (const d of made.decks.slice(1)) expect((await getDeckData(page.request, d))?.slides).toHaveLength(2);
+      await page.goto(`${BASE_URL}/whiteboard/d/${boardId}`);
+      await expect(page.getByTestId("whiteboard-canvas")).toBeVisible({ timeout: 20_000 });
 
       // --- restore through the Trash view; the originals open again --------
       for (const f of files) {

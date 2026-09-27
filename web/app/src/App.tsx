@@ -531,6 +531,12 @@ export default function App() {
                   path="/pdf/:id"
                   element={<EditorPlaceholder user={auth.user} appId="pdf" />}
                 />
+                <Route
+                  path="/whiteboard/:id"
+                  element={
+                    <EditorPlaceholder user={auth.user} appId="whiteboard" />
+                  }
+                />
                 <Route path="/sign-in" element={<Navigate to="/" replace />} />
                 <Route path="*" element={<NotFound />} />
               </>
