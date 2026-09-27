@@ -9,7 +9,7 @@
 // items always sit above their children with subtotals to the right.
 
 import { err, isError, type Scalar } from "./cellValue";
-import { formatGeneral, formatValue } from "./numberFormat";
+import { formatGeneral, formatKind, formatValue } from "./numberFormat";
 import {
   AGG_LABEL,
   BLANK_LABEL,
@@ -26,6 +26,7 @@ import {
   type FieldFilter,
   type LabelOp,
   type PivotConfig,
+  type PivotEdit,
   type PivotEntry,
   type PivotSource,
   type SrcCell,
@@ -52,6 +53,10 @@ export interface GridCell {
   /** Format implied by show-values-as (percentages); used when fmt is unset. */
   autoFmt?: string;
   bold?: boolean;
+  /** The field a label or caption belongs to. */
+  field?: number;
+  /** What typing into this cell renames. */
+  edit?: PivotEdit;
 }
 
 export interface PivotReport {
@@ -321,7 +326,8 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
     }
     return m;
   };
-  const labelOf = (f: number, k: string) => itemLabels(f).get(k) ?? (k === "z" ? BLANK_LABEL : k.slice(1));
+  const labelOf = (f: number, k: string) =>
+    fieldSettings(f).itemNames?.[k] ?? itemLabels(f).get(k) ?? (k === "z" ? BLANK_LABEL : k.slice(1));
   const fieldSettings = (f: number) => cfg.fields?.[f] ?? {};
   const orderedKeys = (f: number, keys: string[]): string[] => {
     const set = new Set(keys);
@@ -397,6 +403,60 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
     rowAxis.includes(f) ? "rows" : colAxis.includes(f) ? "cols" : null;
   const parentFields = (axis: number[], f: number) => axis.slice(0, axis.indexOf(f)).filter((x) => x !== VALUES);
   const preds: { rows: ((i: number) => boolean)[]; cols: ((i: number) => boolean)[] } = { rows: [], cols: [] };
+  // ---- calculated items ----------------------------------------------------
+  // Solved in order: each adds one record per combination of the other
+  // layout fields' items, whose data values are the formula over this
+  // field's items there; later items see earlier ones.
+  const layoutFields = [...new Set([...rowAxis, ...colAxis].filter((f) => f !== VALUES))];
+  for (const ci of cfg.calculatedItems ?? []) {
+    const F = ci.field;
+    if (!layoutFields.includes(F) || !ci.name.trim()) continue;
+    const others = layoutFields.filter((f) => f !== F);
+    const tuples = new Map<string, { rep: number; byItem: Map<string, number[]> }>();
+    for (const i of r0) {
+      const tk = others.map((f) => keyOf(i, f)).join("\u0001");
+      let t = tuples.get(tk);
+      if (!t) tuples.set(tk, (t = { rep: i, byItem: new Map() }));
+      const k = keyOf(i, F);
+      let l = t.byItem.get(k);
+      if (!l) t.byItem.set(k, (l = []));
+      l.push(i);
+    }
+    // Item captions of F (current, renamed and calculated) → keys.
+    const byCaption = new Map<string, string>();
+    for (const i of r0) {
+      const k = keyOf(i, F);
+      byCaption.set(labelOf(F, k).toLowerCase(), k);
+      const raw = cellOf(i, F);
+      if (raw.s !== null) byCaption.set(String(raw.s).toLowerCase(), k);
+    }
+    labelCache.delete(F);
+    for (const [, t] of tuples) {
+      const rec: SrcCell[] = [];
+      for (const f of others) rec[f] = cellOf(t.rep, f);
+      rec[F] = { s: ci.name, text: ci.name, ...{ ci: true } } as SrcCell;
+      const cell = ci.cells?.find((x) =>
+        Object.entries(x.items).every(([f, cap]) => {
+          const fi = Number(f);
+          return others.includes(fi) && labelOf(fi, keyOf(t.rep, fi)).toLowerCase() === cap.toLowerCase();
+        }),
+      );
+      for (let di = 0; di < nd; di++) {
+        const v = evalCalculated(cell?.formula ?? ci.formula, (name) => {
+          const k = byCaption.get(name.toLowerCase());
+          if (k === undefined) return err("#REF!");
+          const recs = t.byItem.get(k) ?? [];
+          const x = recs.length ? aggOver(di, recs) : 0;
+          return x === undefined ? 0 : x;
+        });
+        rec[values[di].field] = { s: isError(v) ? v : (v as Scalar), text: "" };
+      }
+      for (let f = 0; f < nFields; f++) if (!rec[f]) rec[f] = { s: null, text: "" };
+      records.push(rec);
+      r0.push(records.length - 1);
+    }
+  }
+
   let rCur = r0.slice();
   for (const flt of cfg.fieldFilters ?? []) {
     const ax = axisOf(flt.field);
@@ -673,6 +733,7 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
   }
 
   const grandRow = cfg.grandTotalRow ?? true;
+  const grandCaption = cfg.grandTotalCaption || "Grand Total";
   const grandCol = cfg.grandTotalCol ?? true;
 
   const rowLines: Line[] = [];
@@ -683,7 +744,7 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
     if (rowReal && grandRow) {
       if (rowAxis.includes(VALUES)) {
         for (let i = 0; i < nd; i++) rowLines.push({ kind: "grand", node: null, recs: recsV, di: i, func: null, labels: [[0, `Total ${dataNames[i]}`]], path: [], hasValues: true });
-      } else rowLines.push({ kind: "grand", node: null, recs: recsV, di: null, func: null, labels: [[0, "Grand Total"]], path: [], hasValues: true });
+      } else rowLines.push({ kind: "grand", node: null, recs: recsV, di: null, func: null, labels: [[0, grandCaption, undefined, "#grand"]], path: [], hasValues: true });
     }
   } else if (nd >= 1) {
     const label = cfg.gridDropZones ? "Total" : nd === 1 && colReal ? dataNames[0] : null;
@@ -697,7 +758,7 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
     if (colReal && grandCol) {
       if (colAxis.includes(VALUES)) {
         for (let i = 0; i < nd; i++) colLines.push({ kind: "grand", node: null, recs: recsV, di: i, func: null, labels: [[0, `Total ${dataNames[i]}`]], path: [], hasValues: true });
-      } else colLines.push({ kind: "grand", node: null, recs: recsV, di: null, func: null, labels: [[0, "Grand Total"]], path: [], hasValues: true });
+      } else colLines.push({ kind: "grand", node: null, recs: recsV, di: null, func: null, labels: [[0, grandCaption, undefined, "#grand"]], path: [], hasValues: true });
     }
   } else if (nd >= 1) {
     colLines.push({ kind: "grand", node: null, recs: recsV, di: null, func: null, labels: [], path: [], hasValues: true });
@@ -903,19 +964,33 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
     const text = (v: string, kind: GridCellKind, bold = false): GridCell => ({ v, kind, bold });
     // Numeric items are written as numbers in their field's format.
     const itemCell = (lab: string, kind: GridCellKind, bold: boolean, f?: number, k?: string): GridCell => {
-      if (f !== undefined && f !== VALUES && k && k[0] === "n") {
+      if (k === "#grand") return { v: lab, kind, bold, edit: { kind: "grandTotal" } };
+      if (f === VALUES) return { v: lab, kind, bold, field: VALUES, edit: { kind: "dataName", di: Number(k) } };
+      const meta = f !== undefined && k !== undefined ? { field: f, edit: { kind: "item" as const, field: f, key: k } } : {};
+      if (f !== undefined && k && k[0] === "n" && !cfg.fields?.[f]?.itemNames?.[k]) {
         const fmt = uniformFmt(f);
-        return { v: Number(k.slice(1)), kind, bold, ...(fmt ? { fmt } : {}) };
+        return { v: Number(k.slice(1)), kind, bold, ...(fmt ? { fmt } : {}), ...meta };
       }
-      return text(lab, kind, bold);
+      return { ...text(lab, kind, bold), ...meta };
     };
+    const firstReal = (axis: number[]) => axis.find((f) => f !== VALUES);
+    const captionCell = (v: string, f: number | undefined, edit: PivotEdit): GridCell => ({
+      v,
+      kind: "caption",
+      bold: false,
+      ...(f !== undefined ? { field: f } : {}),
+      edit,
+    });
     // Caption row.
     if (colReal || gd) {
-      if (dataCaption) put(T, 0, text(dataNames[0], "caption"));
+      if (dataCaption) put(T, 0, captionCell(dataNames[0], undefined, { kind: "dataName", di: 0 }));
       if (!headers) {
         /* no field captions */
-      } else if (pivotCompact) put(T, W, text("Column Labels", "caption"));
-      else colAxis.forEach((f, i) => put(T, W + i, text(fieldName(cfg, src, f), "caption")));
+      } else if (pivotCompact) put(T, W, captionCell(cfg.colHeaderCaption || "Column Labels", firstReal(colAxis), { kind: "colCaption" }));
+      else
+        colAxis.forEach((f, i) =>
+          put(T, W + i, captionCell(fieldName(cfg, src, f), f, f === VALUES ? { kind: "valuesCaption" } : { kind: "field", field: f })),
+        );
     }
     // Row captions.
     if (rowAxis.length && headers) {
@@ -924,9 +999,9 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
         const c = rowCol[d];
         if (seen.has(c)) return;
         seen.add(c);
-        let cap = fieldName(cfg, src, f);
-        if (c === 0 && pivotCompact && rowReal) cap = "Row Labels";
-        put(lastHeader, c, text(cap, "caption"));
+        if (c === 0 && pivotCompact && rowReal) {
+          put(lastHeader, c, captionCell(cfg.rowHeaderCaption || "Row Labels", firstReal(rowAxis), { kind: "rowCaption" }));
+        } else put(lastHeader, c, captionCell(fieldName(cfg, src, f), f, f === VALUES ? { kind: "valuesCaption" } : { kind: "field", field: f }));
       });
     }
     // Column item labels and data headers.
@@ -934,7 +1009,7 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
       for (const [lvl, lab, lf, lk] of cl.labels) put(T + captionRow + lvl, W + j, itemCell(lab, "colLabel", cl.kind !== "data", lf, lk));
       if (!colAxis.length && cl.kind === "grand") {
         const h = gd ? "Total" : nd === 1 ? dataNames[0] : "";
-        if (h) put(lastHeader, W + j, text(h, "caption"));
+        if (h) put(lastHeader, W + j, gd || nd !== 1 ? text(h, "caption") : captionCell(h, undefined, { kind: "dataName", di: 0 }));
       }
     });
     // Rows.
@@ -960,11 +1035,22 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
           const cell: GridCell = { v: isError(v) ? { error: v.error } : (v as CellValue), kind, fmt: d.numFmt, autoFmt, bold: kind !== "value" };
           put(r, c, cell);
         }
-        const f: [string, string, number?][] = [];
-        for (const [pf, pk] of [...(rl.kind === "grand" ? [] : rl.path), ...(cl.kind === "grand" ? [] : cl.path)]) {
+        const f: PivotEntry["f"] = [];
+        // Items in field order, as Excel lists them in GETPIVOTDATA.
+        const pairs = [...(rl.kind === "grand" ? [] : rl.path), ...(cl.kind === "grand" ? [] : cl.path)].sort((a, b) => a[0] - b[0]);
+        for (const [pf, pk] of pairs) {
           const lab = labelOf(pf, pk);
-          const cellNum = pk[0] === "n" ? Number(pk.slice(1)) : pk[0] === "g" ? groupNumber(pf, Number(pk.slice(1))) : undefined;
-          f.push(cellNum !== undefined ? [fieldName(cfg, src, pf), lab, cellNum] : [fieldName(cfg, src, pf), lab]);
+          const outside = pk[0] === "g" && /^[<>]/.test(lab);
+          const cellNum = pk[0] === "n" ? Number(pk.slice(1)) : pk[0] === "g" && !outside ? groupNumber(pf, Number(pk.slice(1))) : undefined;
+          const type = outside
+            ? "r"
+            : pk[0] === "n" && isDateFormat(uniformFmt(pf))
+              ? "d"
+              : pk[0] === "b" || pk[0] === "e" || pk[0] === "z"
+                ? pk[0]
+                : undefined;
+          const name = fieldName(cfg, src, pf);
+          f.push(type ? [name, lab, cellNum ?? null, type] : cellNum !== undefined ? [name, lab, cellNum] : [name, lab]);
         }
         if (!func) entries.push({ r, c, d: di, f, v: v === undefined ? null : isError(v) ? { error: v.error } : (v as number | string | boolean) });
       });
@@ -1046,7 +1132,7 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
         if (p.selected.length === 1) value = labelOf(p.field, p.selected[0]);
         else value = "(Multiple Items)";
       }
-      out.push([r, c, { v: fieldName(cfg, src, p.field), kind: "pageName", bold: true }]);
+      out.push([r, c, { v: fieldName(cfg, src, p.field), kind: "pageName", bold: true, field: p.field, edit: { kind: "field", field: p.field } }]);
       const sel = p.selected?.length === 1 ? p.selected[0] : null;
       const fmt = sel && sel[0] === "n" ? pageFormat(p.field, sel) : undefined;
       out.push([r, c + 1, { v: fmt ? Number(sel!.slice(1)) : value, kind: "pageValue", fmt }]);
@@ -1063,6 +1149,12 @@ export function computeReport(input: PivotConfig, src: PivotSource): PivotReport
     }
     return undefined;
   }
+}
+
+function isDateFormat(fmt: string | undefined): boolean {
+  if (!fmt) return false;
+  const k = formatKind(fmt);
+  return k === "date" || k === "time";
 }
 
 /** Display text of a report cell (format applied). */

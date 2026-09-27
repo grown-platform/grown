@@ -7,9 +7,9 @@
 // cell changed some other way is put back on the next refresh. What was
 // written is kept on the pivot (`output`) for GETPIVOTDATA and the guard.
 
-import { formatGeneral, formatValue } from "./numberFormat";
+import { formatGeneral, formatValue, serialToDate } from "./numberFormat";
 import { cellText, detailRecords, type GridCell, type PivotReport } from "./pivotEngine";
-import { buildReport, type PivotConfig, type PivotEntry, type PivotOutput } from "./pivotData";
+import { applyPivotEdit, buildReport, type PivotConfig, type PivotEdit, type PivotEntry, type PivotOutput } from "./pivotData";
 import { blockingProtection, sheetProtection } from "./protection";
 import { editContext } from "./viewTools";
 
@@ -48,8 +48,10 @@ export function fortuneCell(cell: GridCell | null): any {
     out.m = cellText(cell);
     out.ct = { fa: "General", t: "g" };
   }
-  if (cell.bold) out.bl = 1;
+  // Header cells get a fill; FortuneSheet 1.0.4 drops a fill written together
+  // with bold in one setCellValue, so header cells stay regular weight.
   if (cell.kind === "caption" || cell.kind === "colLabel" || cell.kind === "pageName") out.bg = HEADER_BG;
+  else if (cell.bold) out.bl = 1;
   return out;
 }
 
@@ -157,6 +159,38 @@ export function writePivot(wb: Wb, cfg: PivotConfig, others: PivotConfig[] = [])
   return { cfg: changed ? { ...cfg, output } : cfg, written: writes.length };
 }
 
+/**
+ * autoFitPivot widens the report's columns to fit their text (never
+ * narrower, and not columns sized by hand), like Excel's autofit.
+ */
+export function autoFitPivot(wb: Wb, cfg: PivotConfig): void {
+  const out = cfg.output;
+  if (!out) return;
+  const sheet = sheetOf(wb, out.sheetId);
+  if (!sheet) return;
+  const lens = sheet.config?.columnlen ?? {};
+  const custom = sheet.config?.customWidth ?? {};
+  const widths: Record<string, number> = {};
+  for (let c = out.c0; c < out.c0 + out.cols; c++) {
+    if (custom[c]) continue;
+    let chars = 0;
+    for (let r = out.r0; r < out.r0 + out.rows; r++) {
+      const cell = gridCell(sheet, r, c);
+      const text = cell ? String(cell.m ?? cell.v ?? "") : "";
+      chars = Math.max(chars, text.length);
+    }
+    const px = Math.min(260, Math.max(73, Math.round(chars * 7.5 + 14)));
+    if (px > (Number(lens[c]) || 73)) widths[String(c)] = px;
+  }
+  if (Object.keys(widths).length) {
+    try {
+      wb.setColumnWidth?.(widths, { id: out.sheetId });
+    } catch {
+      /* keep the widths */
+    }
+  }
+}
+
 /** clearPivot empties the cells a pivot wrote. */
 export function clearPivot(wb: Wb, cfg: PivotConfig): void {
   const out = cfg.output;
@@ -184,7 +218,7 @@ export function pivotAt(pivots: PivotConfig[], sheetId: string, r: number, c: nu
 
 /** Warns that pivot cells are not typed into; the pivot is edited instead. */
 export function pivotEditNotice(): void {
-  notify("error", "Pivot table", "You can't change this part of a pivot table. Edit the pivot (Pivots ▸ Edit) or its source data instead.");
+  notify("error", "Pivot table", "You can't change this part of a pivot table. Edit the pivot (Pivots ▸ Edit) or its source data instead. Captions and item labels can be retyped to rename them.");
 }
 
 /**
@@ -240,15 +274,32 @@ export function createPivotSync(opts: {
     },
     runNow: run,
     /** beforeUpdateCell guard: typing into a pivot's cells is refused. */
-    guard(r: number, c: number): boolean {
+    /**
+     * beforeUpdateCell guard: typing into a pivot's cells is refused, except
+     * over a caption or item label, which renames it (like Excel).
+     */
+    guard(r: number, c: number, value?: unknown): boolean {
       const wb = opts.getWb();
       const id = wb?.getSheet?.()?.id;
       if (id == null) return true;
-      if (pivotAt(opts.getPivots(), String(id), r, c)) {
-        pivotEditNotice();
+      const list = opts.getPivots();
+      const p = pivotAt(list, String(id), r, c);
+      if (!p?.output) return true;
+      const text = value == null ? "" : String(value).trim();
+      let edit: PivotEdit | undefined;
+      try {
+        edit = buildReport(wb, p).cells[r - p.output.r0]?.[c - p.output.c0]?.edit;
+      } catch {
+        edit = undefined;
+      }
+      if (edit && text && !text.startsWith("=")) {
+        const renamed = applyPivotEdit(p, edit, text);
+        opts.setPivots(list.map((x) => (x.id === p.id ? renamed : x)));
+        window.setTimeout(run, 0);
         return false;
       }
-      return true;
+      pivotEditNotice();
+      return false;
     },
   };
 }
@@ -317,20 +368,102 @@ export function entryAt(out: PivotOutput, r: number, c: number): PivotEntry | nu
   return out.entries.find((e) => e.r === r && e.c === c) ?? null;
 }
 
+const DEFAULT_NAME = /^(Sum|Count|Average|Max|Min|Product|StdDev|StdDevp|Var|Varp) of (.+)$/;
+
+/** An item as a GETPIVOTDATA argument: numbers bare, dates as DATE(), text quoted. */
+function itemArg(cap: string, num: number | null | undefined, type: string | undefined): string {
+  switch (type) {
+    case "z":
+      return "";
+    case "r":
+      // A group's out-of-range bucket ("<10", ">14") is named by its sign.
+      return quote(cap.slice(0, 1));
+    case "b":
+      return cap.toUpperCase() === "TRUE" ? "TRUE" : "FALSE";
+    case "e":
+      return cap;
+    case "d": {
+      if (typeof num !== "number") return quote(cap);
+      const whole = Math.floor(num);
+      const d = serialToDate(whole);
+      let out = `DATE(${d.y},${d.m},${d.d})`;
+      const secs = Math.round((num - whole) * 86400);
+      if (secs > 0) out += `+TIME(${Math.floor(secs / 3600)},${Math.floor((secs % 3600) / 60)},${secs % 60})`;
+      return out;
+    }
+  }
+  if (typeof num === "number") return formatGeneral(num);
+  return quote(cap);
+}
+
 /**
  * The GETPIVOTDATA formula that reads a pivot value cell (sheet
- * coordinates), as Excel writes it when you point at a pivot cell.
+ * coordinates), as Excel writes it when you point at a pivot cell: the
+ * source field for a data field that keeps its default name, the pivot's
+ * top-left table cell, then the cell's field/item pairs.
  */
 export function getPivotDataFormula(out: PivotOutput, r: number, c: number, table?: { r: number; c: number }): string | null {
   const e = entryAt(out, r - out.r0, c - out.c0);
   if (!e) return null;
   const d = out.dataFields[e.d];
   if (!d) return null;
-  const at = table ?? { r: out.r0, c: out.c0 };
-  const args = [quote(d.name), a1(at.r, at.c)];
-  for (const [f, cap, num] of e.f) {
-    args.push(quote(f));
-    args.push(num !== undefined && String(num) === cap ? String(num) : quote(cap));
+  const at = table ?? { r: out.r0 + (out.pages?.length ? out.pages.length + 1 : 0), c: out.c0 };
+  // One data field keeping its default name is named by its source field.
+  const m = DEFAULT_NAME.exec(d.name);
+  const args = [quote(out.dataFields.length === 1 && m && m[2] === d.field ? d.field : d.name), a1(at.r, at.c)];
+  for (const item of e.f) {
+    args.push(quote(item[0]));
+    args.push(itemArg(item[1], item[2], item[3]));
   }
   return `GETPIVOTDATA(${args.join(",")})`;
+}
+
+// ---- report areas and GETPIVOTDATA parameters ------------------------------------
+
+export interface Area {
+  r1: number;
+  r2: number;
+  c1: number;
+  c2: number;
+}
+
+/** The column header, row label and data body areas of a report (report coordinates). */
+export function reportAreas(rep: { tableRow: number; headerRows: number; rowLabelCols: number; rows: number; cols: number }): {
+  columns: Area;
+  rows: Area;
+  body: Area;
+} {
+  const head = rep.tableRow;
+  const body = rep.tableRow + rep.headerRows;
+  return {
+    columns: { r1: head, r2: body - 1, c1: rep.rowLabelCols, c2: rep.cols - 1 },
+    rows: { r1: body - 1, r2: rep.rows - 1, c1: 0, c2: rep.rowLabelCols - 1 },
+    body: { r1: body, r2: rep.rows - 1, c1: rep.rowLabelCols, c2: rep.cols - 1 },
+  };
+}
+
+export interface PivotDataParams {
+  dataFieldName: string;
+  /** field, item, field, item … */
+  optParams: string[];
+}
+
+function paramsOf(out: PivotOutput, e: PivotEntry): PivotDataParams {
+  const d = out.dataFields[e.d];
+  return { dataFieldName: d?.name ?? "", optParams: e.f.flatMap((it) => [it[0], it[1]]) };
+}
+
+/** GETPIVOTDATA's arguments for a report value cell (sheet coordinates). */
+export function pivotDataParams(out: PivotOutput, r: number, c: number): PivotDataParams | null {
+  const e = entryAt(out, r - out.r0, c - out.c0);
+  return e ? paramsOf(out, e) : null;
+}
+
+/** GETPIVOTDATA's arguments for the cell named by item captions (any order). */
+export function pivotDataParamsFor(out: PivotOutput, items: string[], dataField = 0): PivotDataParams | null {
+  const want = items.map((x) => x.toLowerCase()).sort();
+  const e = out.entries.find(
+    (x) => x.d === dataField && x.f.length === want.length && x.f.map((it) => it[1].toLowerCase()).sort().every((v, i) => v === want[i]),
+  );
+  return e ? paramsOf(out, e) : null;
 }

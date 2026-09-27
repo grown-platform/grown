@@ -23,6 +23,8 @@ interface PivotPanelProps {
   onDetails: (p: PivotConfig, r: number, c: number) => void;
   /** Show details for the grid's selected cell, when it is a pivot value. */
   onDetailsHere: () => void;
+  /** Copy the GETPIVOTDATA formula for the grid's selected pivot value. */
+  onFormulaHere: () => void;
 }
 
 function sheetName(wb: any, id?: string): string {
@@ -34,7 +36,7 @@ function sheetName(wb: any, id?: string): string {
   }
 }
 
-export function PivotPanel({ open, onClose, getWb, pivots, onDelete, onNew, onEdit, onRefresh, onDetails, onDetailsHere }: PivotPanelProps) {
+export function PivotPanel({ open, onClose, getWb, pivots, onDelete, onNew, onEdit, onRefresh, onDetails, onDetailsHere, onFormulaHere }: PivotPanelProps) {
   const wb = getWb();
   return (
     <Modal open={open} onClose={onClose}>
@@ -52,6 +54,9 @@ export function PivotPanel({ open, onClose, getWb, pivots, onDelete, onNew, onEd
           </Button>
           <Button size="sm" variant="plain" onClick={onDetailsHere}>
             Show details for selected cell
+          </Button>
+          <Button size="sm" variant="plain" onClick={onFormulaHere}>
+            Copy GETPIVOTDATA for selected cell
           </Button>
         </Box>
         <Box sx={{ flex: 1, overflow: "auto" }}>

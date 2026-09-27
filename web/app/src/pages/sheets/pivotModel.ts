@@ -183,6 +183,8 @@ export interface PivotFieldSettings {
   sort?: { order: "asc" | "desc"; dataField?: number };
   /** Item order kept across refreshes (item keys); new items go last. */
   order?: string[];
+  /** Captions given to items (item key → caption). */
+  itemNames?: Record<string, string>;
 }
 
 export type GroupBy = "years" | "quarters" | "months" | "days" | "hours" | "minutes" | "seconds";
@@ -217,6 +219,24 @@ export interface PivotConfig {
   fields?: Record<number, PivotFieldSettings>;
   groups?: PivotGroup[];
   calculated?: PivotCalculated[];
+  /**
+   * Calculated items: an item of a row/column field computed from the other
+   * items of that field ("=East-West", "=Region[East]*2"), solved in list
+   * order at the report's level of detail; totals include them.
+   */
+  calculatedItems?: {
+    field: number;
+    name: string;
+    formula: string;
+    /** A different formula for single cells: other fields' item captions → formula. */
+    cells?: { items: Record<string, string>; formula: string }[];
+  }[];
+  /** Caption of the Values pseudo-field (default "Values"). */
+  dataCaption?: string;
+  /** Captions for "Row Labels", "Column Labels" and "Grand Total". */
+  rowHeaderCaption?: string;
+  colHeaderCaption?: string;
+  grandTotalCaption?: string;
   layout?: PivotLayout;
   /** Pivot-level defaults for the field settings. */
   subtotalTop?: boolean;
@@ -262,8 +282,11 @@ export interface PivotEntry {
   r: number;
   c: number;
   d: number;
-  /** [field caption, item caption, item value (number) when numeric] */
-  f: [string, string, number?][];
+  /**
+   * [field caption, item caption, item number (numbers, dates, group
+   * numbers) or null, item type: "d" date, "b" logical, "e" error, "z" blank]
+   */
+  f: ([string, string] | [string, string, number | null] | [string, string, number | null, string])[];
   v: number | string | boolean | { error: string } | null;
 }
 
@@ -354,6 +377,8 @@ function kindRank(key: string): number {
       return 3;
     case "g":
       return 0;
+    case "c":
+      return 5;
     default:
       return 4;
   }
@@ -440,6 +465,7 @@ function fmtNum(n: number): string {
 
 /** Item key of a (possibly grouped) cell: grouped items sort by group order. */
 export function cellItemKey(c: SrcCell): string {
+  if ((c as SrcCell & { ci?: boolean }).ci) return "c" + String(c.s).toLowerCase();
   const gk = (c as SrcCell & { gk?: number }).gk;
   if (gk !== undefined) return "g" + String(gk);
   return itemKey(c.s);
@@ -480,7 +506,7 @@ export function fieldSourceName(cfg: PivotConfig, src: PivotSource, f: number): 
 
 /** Caption of a field (custom name or source name). */
 export function fieldName(cfg: PivotConfig, src: PivotSource, f: number): string {
-  if (f === VALUES) return "Values";
+  if (f === VALUES) return cfg.dataCaption || "Values";
   return cfg.fields?.[f]?.name || fieldSourceName(cfg, src, f);
 }
 
@@ -561,6 +587,74 @@ export function remapFields(cfg: PivotConfig, oldNames: string[], newNames: stri
     fieldFilters: (c.fieldFilters ?? []).filter((f) => keep(f.field)).map((f) => ({ ...f, field: map(f.field) })),
     groups: (c.groups ?? []).filter((g) => keep(g.source)).map((g) => ({ ...g, source: map(g.source) })),
   };
+}
+
+/** What typing into a report cell renames (Excel lets you retype captions). */
+export type PivotEdit =
+  | { kind: "dataName"; di: number }
+  | { kind: "item"; field: number; key: string }
+  | { kind: "field"; field: number }
+  | { kind: "rowCaption" }
+  | { kind: "colCaption" }
+  | { kind: "valuesCaption" }
+  | { kind: "grandTotal" };
+
+/** applyPivotEdit renames what a report cell shows. */
+export function applyPivotEdit(cfg: PivotConfig, edit: PivotEdit, text: string): PivotConfig {
+  const t = text.trim();
+  const c = normalizeConfig(cfg);
+  const field = (f: number, patch: Partial<PivotFieldSettings>) => ({ ...(c.fields ?? {}), [f]: { ...(c.fields?.[f] ?? {}), ...patch } });
+  switch (edit.kind) {
+    case "dataName":
+      return { ...c, values: (c.values ?? []).map((d, i) => (i === edit.di ? { ...d, name: t || undefined } : d)) };
+    case "item": {
+      const names = { ...(c.fields?.[edit.field]?.itemNames ?? {}) };
+      if (t) names[edit.key] = t;
+      else delete names[edit.key];
+      return { ...c, fields: field(edit.field, { itemNames: names }) };
+    }
+    case "field":
+      return { ...c, fields: field(edit.field, { name: t || undefined }) };
+    case "rowCaption":
+      return { ...c, rowHeaderCaption: t || undefined };
+    case "colCaption":
+      return { ...c, colHeaderCaption: t || undefined };
+    case "valuesCaption":
+      return { ...c, dataCaption: t || undefined };
+    case "grandTotal":
+      return { ...c, grandTotalCaption: t || undefined };
+  }
+}
+
+/**
+ * Why a calculated item can't be added to a field, or null. Pivots over the
+ * same source share their items, so a field one of them sums or counts
+ * ("notUniqueField") or filters by page ("pageField") can't get one.
+ */
+export function calculatedItemError(sharing: PivotConfig[], field: number): "notUniqueField" | "pageField" | null {
+  for (const p of sharing) {
+    const c = normalizeConfig(p);
+    if ((c.values ?? []).some((d) => d.field === field)) return "notUniqueField";
+  }
+  for (const p of sharing) {
+    const c = normalizeConfig(p);
+    if ((c.pages ?? []).some((x) => x.field === field)) return "pageField";
+  }
+  return null;
+}
+
+/** Whether a name is free for a new calculated item of a field (no item or caption has it). */
+export function canAddCalculatedItemName(cfg: PivotConfig, src: PivotSource, field: number, name: string): boolean {
+  const n = name.trim().toLowerCase();
+  if (!n) return false;
+  const taken = new Set<string>();
+  for (const r of src.records) {
+    const c = r[field];
+    if (c && c.s !== null) taken.add(String(c.s).toLowerCase());
+  }
+  for (const v of Object.values(cfg.fields?.[field]?.itemNames ?? {})) taken.add(v.toLowerCase());
+  for (const ci of cfg.calculatedItems ?? []) if (ci.field === field) taken.add(ci.name.toLowerCase());
+  return !taken.has(n);
 }
 
 /** A new pivot id. */

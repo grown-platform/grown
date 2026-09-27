@@ -8,7 +8,7 @@ import { useRef, useState, type MutableRefObject } from "react";
 import { PivotDialog, type Placement } from "./PivotDialog";
 import { PivotPanel } from "./PivotPanel";
 import type { PivotConfig } from "./pivotData";
-import { clearPivot, createPivotSync, pivotAt, showDetails, writePivot } from "./pivotGrid";
+import { autoFitPivot, clearPivot, createPivotSync, getPivotDataFormula, pivotAt, showDetails, writePivot } from "./pivotGrid";
 
 type Wb = any;
 
@@ -92,6 +92,7 @@ export function usePivotTools(opts: {
         );
       }
       if (res.cfg !== next) commit(pivotsRef.current.map((p) => (p.id === next.id ? res.cfg : p)));
+      if (!res.blocked) autoFitPivot(wb, res.cfg);
       if (activate) {
         try {
           wb.activateSheet?.({ id: activate });
@@ -128,6 +129,22 @@ export function usePivotTools(opts: {
     optsRef.current.setPanelOpen(false);
   }
 
+  function formulaHere() {
+    const wb = getWb();
+    const sel = wb?.getSelection?.()?.[0];
+    const sheetId = String(wb?.getSheet?.()?.id ?? "");
+    const r = sel?.row?.[0];
+    const c = sel?.column?.[0];
+    const p = r != null && c != null ? pivotAt(pivotsRef.current, sheetId, r, c) : null;
+    const f = p?.output ? getPivotDataFormula(p.output, r, c) : null;
+    if (!f) {
+      notify("info", "GETPIVOTDATA", "Select a value cell of a pivot table on the sheet first.");
+      return;
+    }
+    navigator.clipboard?.writeText(`=${f}`).catch(() => {});
+    notify("info", "GETPIVOTDATA copied", `=${f}`);
+  }
+
   const element = (
     <>
       <PivotDialog
@@ -162,6 +179,7 @@ export function usePivotTools(opts: {
           if (wb && showDetails(wb, p, r, c)) opts.setPanelOpen(false);
         }}
         onDetailsHere={detailsHere}
+        onFormulaHere={formulaHere}
       />
     </>
   );
@@ -169,7 +187,7 @@ export function usePivotTools(opts: {
   return {
     element,
     /** beforeUpdateCell hook part: refuses typing into a pivot's cells. */
-    guard: (r: number, c: number) => sync.current!.guard(r, c),
+    guard: (r: number, c: number, v?: unknown) => sync.current!.guard(r, c, v),
     /** Call after every workbook change: refreshes the pivots (debounced). */
     changed: () => sync.current!.schedule(),
   };

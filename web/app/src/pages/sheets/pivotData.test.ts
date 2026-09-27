@@ -141,8 +141,8 @@ describe("pivotGrid", () => {
     const out = res.cfg.output!;
     expect(out).toMatchObject({ sheetId: "s2", r0: 1, c0: 1, rows: 5, cols: 4 });
     expect(out.dataFields).toEqual([{ name: "Sum of Amount", field: "Amount" }]);
-    expect(getPivotDataFormula(out, 3, 3)).toBe('GETPIVOTDATA("Sum of Amount",$B$2,"Region","East","Product","B")');
-    expect(getPivotDataFormula(out, 5, 4)).toBe('GETPIVOTDATA("Sum of Amount",$B$2)');
+    expect(getPivotDataFormula(out, 3, 3)).toBe('GETPIVOTDATA("Amount",$B$2,"Region","East","Product","B")');
+    expect(getPivotDataFormula(out, 5, 4)).toBe('GETPIVOTDATA("Amount",$B$2)');
     expect(pivotAt([res.cfg], "s2", 5, 4)?.id).toBe("p1");
     expect(pivotAt([res.cfg], "s2", 6, 4)).toBeNull();
   });
@@ -170,6 +170,21 @@ describe("pivotGrid", () => {
     const sync = createPivotSync({ getWb: () => wb, getPivots: () => pivots, setPivots: (n) => (pivots = n) });
     expect(sync.guard(2, 6)).toBe(false);
     expect(sync.guard(2, 2)).toBe(true);
+  });
+
+  it("typing over a caption or item label renames it", () => {
+    const ok = writePivot(wb, cfgOf({ anchor: { sheetId: "s1", r: 0, c: 5 } }));
+    let pivots = [ok.cfg];
+    const sync = createPivotSync({ getWb: () => wb, getPivots: () => pivots, setPivots: (n) => (pivots = n) });
+    expect(sync.guard(2, 5, "Oriente")).toBe(false); // the "East" label
+    expect(pivots[0].fields?.[0]?.itemNames).toEqual({ seast: "Oriente" });
+    expect(sync.guard(1, 5, "Regions")).toBe(false); // "Row Labels"
+    expect(pivots[0].rowHeaderCaption).toBe("Regions");
+    sync.runNow();
+    expect(wb.cell("s1", 2, 5)?.v).toBe("Oriente");
+    expect(wb.cell("s1", 1, 5)?.v).toBe("Regions");
+    expect(sync.guard(2, 6, "5")).toBe(false); // a value stays
+    expect(wb.cell("s1", 2, 6)?.v).toBe(100);
   });
 
   it("show details puts the records behind a value on a new sheet", () => {

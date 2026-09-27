@@ -212,7 +212,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [pivots, setPivots] = useState<PivotConfig[]>([]);
   const pivotsRef = useRef<PivotConfig[]>([]);
   // Pivot tables on the grid (usePivotTools): typing guard and refresh after edits.
-  const pivotToolsRef = useRef<{ guard: (r: number, c: number) => boolean; changed: () => void } | null>(null);
+  const pivotToolsRef = useRef<{ guard: (r: number, c: number, v?: unknown) => boolean; changed: () => void } | null>(null);
   const iconSetsRef = useRef<IconSetRule[]>([]);
   const dataRef = useRef<any[] | null>(null);
   const ref = useRef<any>(null);
@@ -227,7 +227,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
       // Protection first, then validation; a rejected value never reaches typed-input parsing.
       beforeUpdateCell: (r: number, c: number, v: any) =>
         viewHooks.beforeUpdateCell(r, c) !== false &&
-        pivotToolsRef.current?.guard(r, c) !== false &&
+        pivotToolsRef.current?.guard(r, c, v) !== false &&
         dataToolHooks.beforeUpdateCell(r, c, v) !== false &&
         typed.beforeUpdateCell(r, c, v),
       beforePaste: (selection: any) => viewHooks.beforePaste(selection),

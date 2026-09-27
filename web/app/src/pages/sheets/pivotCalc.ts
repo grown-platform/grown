@@ -11,6 +11,44 @@ function tokenize(src: string): Tok[] | null {
   const s = src.trim().replace(/^=/, "");
   const out: Tok[] = [];
   let i = 0;
+  // 'quoted name' with '' for a quote; i is on the opening quote.
+  const quoted = (): string | null => {
+    let j = i + 1;
+    let name = "";
+    while (j < s.length) {
+      if (s[j] === "'") {
+        if (s[j + 1] === "'") {
+          name += "'";
+          j += 2;
+          continue;
+        }
+        i = j + 1;
+        return name;
+      }
+      name += s[j++];
+    }
+    return null;
+  };
+  // Field[Item] / Field['It''em']: the item in brackets after a field name
+  // (undefined when there is none, null when it is malformed).
+  const bracket = (): string | undefined | null => {
+    if (s[i] !== "[") return undefined;
+    i++;
+    while (s[i] === " ") i++;
+    let item: string | null;
+    if (s[i] === "'") item = quoted();
+    else {
+      const close = s.indexOf("]", i);
+      if (close < 0) return null;
+      item = s.slice(i, close).trim();
+      i = close;
+    }
+    if (item === null) return null;
+    while (s[i] === " ") i++;
+    if (s[i] !== "]") return null;
+    i++;
+    return item;
+  };
   while (i < s.length) {
     const ch = s[i];
     if (/\s/.test(ch)) {
@@ -25,22 +63,11 @@ function tokenize(src: string): Tok[] | null {
       continue;
     }
     if (ch === "'") {
-      let j = i + 1;
-      let name = "";
-      while (j < s.length) {
-        if (s[j] === "'") {
-          if (s[j + 1] === "'") {
-            name += "'";
-            j += 2;
-            continue;
-          }
-          break;
-        }
-        name += s[j++];
-      }
-      if (j >= s.length) return null;
-      out.push({ t: "name", v: name });
-      i = j + 1;
+      const name = quoted();
+      if (name === null) return null;
+      const item = bracket();
+      if (item === null) return null;
+      out.push({ t: "name", v: item ?? name });
       continue;
     }
     if ("+-*/^%()".includes(ch)) {
@@ -48,10 +75,12 @@ function tokenize(src: string): Tok[] | null {
       i++;
       continue;
     }
-    const m = /^[A-Za-z_À-￿][\wÀ-￿.]*/.exec(s.slice(i));
+    const m = /^[A-Za-z_À-￯][\wÀ-￯.]*/.exec(s.slice(i));
     if (!m) return null;
-    out.push({ t: "name", v: m[0] });
     i += m[0].length;
+    const item = bracket();
+    if (item === null) return null;
+    out.push({ t: "name", v: item ?? m[0] });
   }
   return out;
 }
