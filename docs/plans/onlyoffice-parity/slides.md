@@ -435,7 +435,7 @@ OnlyOffice: conversion is server-side C++ (`core/X2tConverter`, `core/OOXML`,
 | Feature | Grown | Where |
 | --- | --- | --- |
 | Export pptx | Have (M1). Animations are not exported | `pptx/write.ts` |
-| Export pdf | Have (M12): a PDF file built in the browser, plus File ▸ Print | `pdfExport.ts`, `pdfWriter.ts` |
+| Export pdf | Have (M12): a PDF file built in the browser, plus File ▸ Print | `pdfExport.ts`, `lib/pdf/pdfWriter.ts` |
 | Export txt / html / jpg / png / svg | Have; every slide as a zip since M12 | `export.ts` |
 | Export odp | Have (M12) | `odp/write.ts` |
 | Import pptx / Import slides | Have (M1). All slides are appended; there is no slide picker | `pptx/read.ts`, File ▸ Import slides, Slides home ▸ Upload .pptx |
@@ -2076,7 +2076,8 @@ colour-matrix filter. The page SVG serves three outputs:
 - **Print window:** inline SVG, so the browser prints vectors ("Save as
   PDF" gives a vector PDF).
 - **PDF file:** `pdfExport.deckToPdf` rasterizes each page at 144 dpi
-  (JPEG) and `pdfWriter.ts` writes it. `pdfWriter.ts` is a small PDF 1.4
+  (JPEG) and `pdfWriter.ts` writes it (now `web/app/src/lib/pdf/`, shared
+  with the Docs and Sheets PDF exports). `pdfWriter.ts` is a small PDF 1.4
   writer written from ISO 32000; it adds no dependency, because pdf-lib
   lives only in `pdf/`. Each page gets an invisible Helvetica text layer
   (text boxes, table cells, notes, outline and headers, WinAnsi-encoded),

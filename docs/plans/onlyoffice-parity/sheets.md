@@ -31,7 +31,7 @@ justification, not planned.
 | API | gRPC/gateway `grown.v1.SheetsService`: List/Create/Get/Rename/Trash/Save, ListSharedWithMe, GrantAccess/ListGrants/RevokeAccess. REST paths `/api/v1/sheets…` | `proto/grown/v1/sheets.proto`, `internal/sheets/service.go`, `web/app/src/pages/sheets/api.ts` |
 | Collaboration | WebSocket hub relays fortune-sheet **ops** verbatim between peers + presence (cursor colour/selection). No OT/CRDT; persistence is a 1.5 s debounced full-workbook `PUT …/data` from each client (last writer wins). | `internal/sheets/collab.go`, `internal/server/server.go:2623`, `SheetEditor.tsx:168-301` |
 | Sharing | Per-user object grants (viewer/editor), cross-org; list "mine" / "shared with me". | `ShareDialog.tsx`, `SheetList.tsx`, `internal/sheets/service.go:211-316` |
-| Export | xlsx/ods via SheetJS (`xlsx` 0.18.5, **values only** — formulas/formats dropped), csv/tsv/html in-browser, pdf via `/api/v1/docs/convert` (HTML table → pandoc/tectonic). Import: **disabled menu item**. | `web/app/src/pages/sheets/export.ts` |
+| Export | xlsx/ods via SheetJS (`xlsx` 0.18.5, **values only** — formulas/formats dropped), csv/tsv/html in-browser, pdf via `/api/v1/docs/convert` (HTML table → pandoc/tectonic; since 2026-09-27 built in the browser, §14). Import: **disabled menu item**. | `web/app/src/pages/sheets/export.ts` |
 | Charts | Dependency-free SVG renderer: column, bar, line, area (plain/stacked/100 %), combo with a secondary axis, scatter, pie, doughnut, histogram, waterfall; trendlines, data labels, axis options, legend placement. Stored in `grownCharts` on sheet 0, anchored on the grid (and listed in a panel); exported to and imported from xlsx (M10, §15). | `ChartDialog.tsx`, `ChartRenderer.tsx`, `ChartOverlay.tsx`, `chartData.ts`, `trendlines.ts`, `histogram.ts`, `chartAxis.ts`, `xlsx/xlsxCharts.ts` |
 | Pivot | Pure TS pivot: one row field, optional column field, one value field, aggs sum/count/average/min/max, row+col totals. Rendered as an HTML table in a panel. (M9, §15: Excel-layout engine written onto the grid.) | `PivotDialog.tsx`, `pivotData.ts`, `PivotTableView.tsx`, `PivotPanel.tsx` |
 | Conditional formatting | Dialog over fortune-sheet's `luckysheet_conditionformat_save`: single-colour "default" rules (greaterThan/lessThan/between/equal…), `colorGradation` (colour scale), `dataBar`. Plus Grown icon sets (arrows/traffic/signs) as a display overlay on `m`. | `ConditionalFormatDialog.tsx`, `iconSets.ts` |
@@ -259,7 +259,7 @@ Legend: **Have** = works end-to-end in Grown · **Partial** = exists but materia
 | Export ods | Partial (values only) |
 | Export csv/tsv (current sheet) | Have |
 | Export html | Have (all sheets) |
-| Export pdf | Partial (unstyled HTML table → pdf) |
+| Export pdf | Have: print layout drawn in the browser (§14 print, docs.md §6.19) |
 | Import xlsx/xls/ods/csv/tsv | Missing (stub) |
 | Drive open of `.xlsx` in the editor | Missing (`EditorPlaceholder.tsx`, per `docs/TODO-feature-gaps.md:67`) |
 
@@ -1142,8 +1142,15 @@ preview), Insert ▸ Page break and a protected range.
   relayed ops. The client cannot tell which of its saved edits the server
   undid until it reloads. Toolbar formatting of protected cells is undone
   through the op check, not refused up front.
-- Print uses the browser's print dialog; PDF export still goes through the
-  HTML-table convert endpoint rather than the print renderer.
+- Print uses the browser's print dialog. PDF export (since 2026-09-27) is
+  built in the browser from the print renderer: `sheets/pdfExport.ts`
+  renders every visible sheet's `renderPrintHtml` pages with the sheet's
+  stored page setup (print area, orientation, paper, margins, scale / fit
+  to pages, gridlines, headings, title rows/columns, breaks, centring,
+  header/footer) and draws them with `lib/pdf/domPdf.ts` (docs.md §6.19)
+  under a searchable text layer. The HTML-table pandoc path is a fallback
+  only when the server reports a PDF engine. Charts and pictures on the
+  grid are not printed (the print renderer draws cells only).
 
 
 ## 15. M9 results (Wave 5, 2026-09-26)
