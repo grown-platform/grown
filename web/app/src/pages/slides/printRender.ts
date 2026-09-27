@@ -4,7 +4,7 @@
 
 import { CANVAS_W, newElement, type Slide, type SlideElement } from "./model";
 import { flattenGroups } from "./groupOps";
-import { slideToSVG } from "./export";
+import { slideToSVG, tableCellTexts } from "./export";
 import { canvasMeasure, layoutTextLines, lineText, type Measure } from "./svgText";
 import { OUTLINE_BODY_PT, OUTLINE_LINE, OUTLINE_TITLE_PT, type Box, type OutlineEntry, type PrintOptions, type PrintPage } from "./printLayout";
 import type { PdfPage, PdfText } from "./pdfWriter";
@@ -100,13 +100,15 @@ export function renderPage(page: PrintPage, slides: readonly Slide[], opts: Pick
       for (const el of flattenGroups(slide.elements)) {
         const box = { x: it.box.x + el.x * s, y: it.box.y + el.y * s, w: el.w * s, h: el.h * s };
         if (el.url && /^(https?:|mailto:)/i.test(el.url)) links.push({ box, url: el.url });
-        if (el.type !== "text" || !(el.text || "").trim()) continue;
-        for (const l of layoutTextLines(el, measure)) {
-          texts.push({ x: it.box.x + (l.segs[0]?.x ?? el.x) * s, y: it.box.y + l.y * s, size: l.size * s, text: lineText(l) });
-          for (const sg of l.segs)
-            if (sg.run.url && /^(https?:|mailto:)/i.test(sg.run.url))
-              links.push({ box: { x: it.box.x + sg.x * s, y: it.box.y + (l.y - l.size) * s, w: sg.w * s, h: l.size * 1.2 * s }, url: sg.run.url });
-        }
+        // Text boxes and table cells feed the text layer.
+        const bodies = el.type === "table" && el.table ? tableCellTexts(el) : el.type === "text" && (el.text || "").trim() ? [el] : [];
+        for (const te of bodies)
+          for (const l of layoutTextLines(te, measure)) {
+            texts.push({ x: it.box.x + (l.segs[0]?.x ?? te.x) * s, y: it.box.y + l.y * s, size: l.size * s, text: lineText(l) });
+            for (const sg of l.segs)
+              if (sg.run.url && /^(https?:|mailto:)/i.test(sg.run.url))
+                links.push({ box: { x: it.box.x + sg.x * s, y: it.box.y + (l.y - l.size) * s, w: sg.w * s, h: l.size * 1.2 * s }, url: sg.run.url });
+          }
       }
     } else if (it.kind === "notes") {
       const notes = (slides[it.index].notes || "").trim();

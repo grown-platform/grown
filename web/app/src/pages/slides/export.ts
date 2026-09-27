@@ -229,10 +229,29 @@ function tableSVG(el: SlideElement, measure: Measure): string {
       seg(f.borders.b, [x0, y1], [x1, y1]);
       seg(f.borders.l, [x0, y0], [x0, y1]);
       seg(f.borders.r, [x1, y0], [x1, y1]);
-      const te = cellTextEl(el, r, c);
-      if (te.text) texts.push(textSVG({ ...te, x: x0 + CELL_PAD, y: y0 + CELL_PAD, w: x1 - x0 - 2 * CELL_PAD, h: y1 - y0 - 2 * CELL_PAD, insets: { l: 0, t: 0, r: 0, b: 0 } }, measure));
     }
+  for (const te of tableCellTexts(el)) texts.push(textSVG(te, measure));
   return fills.join("") + lines.join("") + texts.join("");
+}
+
+/** Each non-empty table cell's text as a text element in slide
+ *  coordinates (the SVG export and the PDF text layer). */
+export function tableCellTexts(el: SlideElement): SlideElement[] {
+  const t = el.table!;
+  const xs = offsets(colWidths(el));
+  const ys = offsets(rowHeights(el));
+  const out: SlideElement[] = [];
+  for (let r = 0; r < t.rows; r++)
+    for (let c = 0; c < t.cols; c++) {
+      if (isCovered(t, r, c)) continue;
+      const { rs, cs } = spanOf(t, r, c);
+      const te = cellTextEl(el, r, c);
+      if (!te.text) continue;
+      const x0 = el.x + xs[c];
+      const y0 = el.y + ys[r];
+      out.push({ ...te, x: x0 + CELL_PAD, y: y0 + CELL_PAD, w: el.x + xs[c + cs] - x0 - 2 * CELL_PAD, h: el.y + ys[r + rs] - y0 - 2 * CELL_PAD, insets: { l: 0, t: 0, r: 0, b: 0 } });
+    }
+  return out;
 }
 
 export function slideHTML(slide: Slide, idx: number, slides: readonly Slide[]): string {
