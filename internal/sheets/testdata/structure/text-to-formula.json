@@ -1,0 +1,71 @@
+{
+  "_doc": "Typed input that starts with + or - and is not a number becomes a formula (Excel/OnlyOffice); a unary + right before a number is dropped and unclosed parentheses are closed. Shared by vitest (__parity__/textFormula.parity.test.ts: input -> formula) and Go (text_formula_test.go: formula -> value at the cell). expect is the display value of `at` (and `next`, the cell right of it, for arrays). A null formula means the input stays text. ooFormula records OnlyOffice's text where Grown's differs.",
+  "cases": [
+    {
+      "id": "oo:cell/spreadsheet-calculation/SheetStructureTests.js#Text to formula tests",
+      "cells": { "A1": 1, "A2": 2, "A3": 3, "B1": "+5", "B2": "+5+5", "B3": "-5", "B4": "-5-5" },
+      "names": { "dName": "Sheet1!A3" },
+      "entries": [
+        { "input": "+5+5", "formula": "=5+5", "expect": 10 },
+        { "input": "-5-5", "formula": "=-5-5", "expect": -10 },
+        { "input": "*5-5", "formula": null, "expect": "*5-5" },
+        { "input": "/5-5", "formula": null, "expect": "/5-5" },
+        { "input": "^5-5", "formula": null, "expect": "^5-5" },
+        { "input": "+A1-5", "formula": "=+A1-5", "expect": -4 },
+        { "input": "-A1-5", "formula": "=-A1-5", "expect": -6 },
+        { "input": "+5-A1", "formula": "=5-A1", "expect": 4 },
+        { "input": "-5-A1", "formula": "=-5-A1", "expect": -6 },
+        { "input": "+5-A1:A2", "formula": "=5-A1:A2", "expect": 4, "below": 3 },
+        { "input": "-5-A1:A2", "formula": "=-5-A1:A2", "expect": -6, "below": -7 },
+        { "input": "+#N/A", "formula": "=+#N/A", "expect": "#N/A" },
+        { "input": "-#DIV/0!", "formula": "=-#DIV/0!", "expect": "#DIV/0!" },
+        { "input": "+dsdsd", "formula": "=+dsdsd", "expect": "#NAME?" },
+        { "input": "-dsdsd", "formula": "=-dsdsd", "expect": "#NAME?" },
+        { "input": "+dName", "formula": "=+dName", "expect": 3, "pending": "oo-diff/suite-state: the suite reads 0 from a name whose cell it cleared earlier; here A3 holds 3" },
+        { "input": "+{1,2}", "formula": "=+{1,2}", "expect": 1, "next": 2 },
+        { "input": "-{1,2}", "formula": "=-{1,2}", "ooFormula": "=-{-1,-2}", "expect": -1, "next": -2 },
+        { "input": "-1*(1)", "formula": "=-1*(1)", "expect": -1 },
+        { "input": "+1*(1)", "formula": "=1*(1)", "expect": 1 },
+        { "input": "+SIN({1,2})", "formula": "=+SIN({1,2})", "expect": 0.841470985, "next": 0.909297427 },
+        { "input": "+SIN({1,2}", "formula": "=+SIN({1,2})", "expect": 0.841470985, "next": 0.909297427 },
+        { "input": "-SUM(1,1,1", "formula": "=-SUM(1,1,1)", "expect": -3 }
+      ]
+    },
+    {
+      "id": "oo:cell/spreadsheet-calculation/SheetStructureTests.js#Unar operator removing tests",
+      "cells": { "A1": 1, "A2": 3, "A3": "#N/A", "B1": "+5", "B2": "+5+5", "B3": "-5", "B4": "-5-5" },
+      "entries": [
+        { "input": "++1", "formula": "=+1", "expect": 1 },
+        { "input": "++-+1", "formula": "=++-1", "expect": -1 },
+        { "input": "++-+-+-1", "formula": "=++-+-+-1", "expect": -1 },
+        { "input": "++1++1", "formula": "=+1+1", "expect": 2 },
+        { "input": "+++1+++1++1", "formula": "=++1++1+1", "expect": 3 },
+        { "input": "=1++-+2/3", "formula": "=1++-+2/3", "ooFormula": "=1++-2/3", "expect": 0.333333333 },
+        { "input": "=+++\"STR\"", "formula": "=+++\"STR\"", "expect": "STR" },
+        { "input": "=+++TRUE", "formula": "=+++TRUE", "expect": "TRUE" },
+        { "input": "=+++FALSE", "formula": "=+++FALSE", "expect": "FALSE" },
+        { "input": "=+++A3", "formula": "=+++A3", "expect": "#N/A" },
+        { "input": "=+++A1:A2", "formula": "=+++A1:A2", "expect": 1, "below": 3 },
+        { "input": "=+++{1,2}", "formula": "=+++{1,2}", "expect": 1, "next": 2 },
+        { "input": "+SUM(-1)", "formula": "=+SUM(-1)", "expect": -1 },
+        { "input": "+++SIN(++1)", "formula": "=+++SIN(+1)", "expect": 0.841470985 },
+        { "input": "+++-SIN(+++++-1++1---++1)", "formula": "=+++-SIN(+++++-1+1---+1)", "expect": 0.841470985 },
+        { "input": "+++1", "formula": "=++1", "expect": 1 },
+        { "input": "+++2", "at": "C2", "formula": "=++2", "expect": 2 },
+        { "input": "+++3", "at": "C3", "formula": "=++3", "expect": 3 },
+        { "input": "-5", "at": "C3", "formula": null, "expect": -5 },
+        { "input": "--5", "at": "C3", "formula": "=--5", "expect": 5 },
+        { "input": "+5", "at": "C3", "formula": null, "expect": 5 },
+        { "input": "++5", "at": "C3", "formula": "=+5", "expect": 5 },
+        { "input": "-A1", "at": "C3", "formula": "=-A1", "expect": -1 },
+        { "input": "+A1", "at": "C3", "formula": "=+A1", "expect": 1 },
+        { "input": "-@A1:A2", "at": "C3", "formula": "=-@A1:A2", "expect": "#VALUE!" },
+        { "input": "-A1:A2", "at": "C3", "formula": "=-A1:A2", "expect": -1 },
+        { "input": "+@A1:A2", "at": "C3", "formula": "=+@A1:A2", "expect": "#VALUE!" },
+        { "input": "+A1:A2", "at": "C3", "formula": "=+A1:A2", "expect": 1 },
+        { "input": "-{1,2,3}", "at": "C3", "formula": "=-{1,2,3}", "ooFormula": "=-{-1,-2,-3}", "expect": -1 },
+        { "input": "+{1,2,3}", "at": "C3", "formula": "=+{1,2,3}", "expect": 1 }
+      ]
+    }
+  ]
+}
