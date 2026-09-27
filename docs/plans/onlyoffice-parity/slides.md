@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Slides
 
-Status: research + plan only (2026-09-26). No app code changed.
+Status: plan (2026-09-26); M0–M3 landed — see the status notes in §6.4–6.7.
 
 Scope: the OnlyOffice **presentation editor** (`sdkjs/slide`, the shared drawing
 engine in `sdkjs/common`, and the `web-apps/apps/presentationeditor` UI) versus
@@ -222,18 +222,18 @@ combine/fragment/intersect/subtract via `path-boolean.js`). Connectors
 | Feature | Grown | Where |
 | --- | --- | --- |
 | Rect, roundRect, ellipse, triangle, diamond, rightArrow | Have | `model.ts` `SHAPE_TYPES`, `shapeClipPath` |
-| Other presets (~180: arrows, callouts, flowchart, stars, math, action buttons…) | Missing | — see M3 |
+| Other presets (~180: arrows, callouts, flowchart, stars, math, action buttons…) | Partial (69 presets, M3) | `presetDefs.ts`, `presetGeometry.ts` |
 | Straight line | Have (horizontal only, `h:0`) | `newElement("line")` |
-| Diagonal lines, arrows, elbow/curved connectors, polyline/scribble | Missing | Insert → "Line" submenu in Google ref |
+| Diagonal lines, arrows, elbow/curved connectors, polyline/scribble | Have except polyline/scribble (M3) | `type: "connector"`, `connectorOps.ts` |
 | Solid fill / stroke colour / stroke width | Have | `fill/stroke/strokeWidth` |
 | No fill / no line | Have | `"none"` sentinel |
 | Gradient fill, picture/texture fill, pattern | Missing | — |
 | Opacity / transparency | Missing | — |
-| Dash style, line caps/arrowheads | Missing | — |
+| Dash style, line caps/arrowheads | Have (M3; caps fixed) | `dash`, `headEnd`/`tailEnd` |
 | Shadow / reflection | Missing | "Format options" disabled |
 | Rotation (90° steps + arbitrary) | Have (model) / Partial (UI is 90° only) | `rotate()` |
 | Flip H/V | Have | `rotate("flipH")` |
-| Adjust handles (e.g. roundRect radius) | Missing | radius is a fixed 18% |
+| Adjust handles (e.g. roundRect radius) | Have for presets (M3) | `solveHandle`; legacy roundRect stays 18% |
 | Edit points / merge shapes | Missing | — see F4 |
 | Change shape type | Missing | — |
 | Shape name / alt text | Missing | OO `SetName/GetName` (`api-drawing.js`) |
@@ -1168,3 +1168,129 @@ reloads, and ungroups.
 - Names are not yet read from, or written to, pptx `cNvPr@name`, and there
   is no Selection pane.
 
+
+### 6.7 M3 status (Wave 3): preset geometry, shapes, lines
+
+**Geometry data and licence.** No copy of ECMA-376's
+`presetShapeDefinitions.xml` was available locally (none under
+`research/onlyoffice/core`, the LibreOffice install or elsewhere on disk).
+So the preset table (`presetDefs.ts`) was transcribed by hand from the
+ECMA-376 Part 1 formulas (§20.1.10.56 and the annex definitions). Nothing
+comes from OnlyOffice's `CreateGeometry.js` (AGPL) or LibreOffice. The file
+header records this.
+
+It covers 69 presets:
+
+- 22 basic shapes, including `pie`, `can`, `cube`, `heart`, `smileyFace` and
+  `lightningBolt`.
+- 10 block arrows.
+- 5 equation shapes (`mathNotEqual` is not included).
+- 18 flowchart shapes.
+- 5 stars and banners.
+- 3 wedge callouts.
+- 5 line presets: `line`, `straightConnector1`, `bentConnector2`,
+  `bentConnector3` and `curvedConnector3`.
+
+Adjust names, defaults, ranges, guides and paths follow the spec, so avLst
+values round-trip with PowerPoint. The text rectangles of parallelogram,
+hexagon, octagon, wave and the callouts are simplified. Other presets (cloud,
+ribbons, scrolls, action buttons, curved arrows, `borderCallout*`,
+`bentConnector4/5`, `curvedConnector2/4/5`) still import as the closest legacy
+shape, with a warning.
+
+**Engine (`presetGeometry.ts`).**
+
+- It evaluates all 17 guide operators and the six path commands (arcTo uses
+  the spec's visual angles and becomes ≤90° cubic Béziers).
+- Path `w`/`h` scaling and the path `fill`/`stroke` modes are supported.
+- It returns SVG path data, adjust-handle positions, connection sites and
+  the text rectangle.
+- `solveHandle` inverts a handle drag for any formula. It does a coarse scan,
+  then a golden-section refine per referenced adjust value; this covers both
+  XY and polar handles. It clamps to the handle's (guide-valued) min and max,
+  and ±2³¹ is treated as unbounded.
+
+**Model.**
+
+- New `type: "shape"` elements carry `preset` and `adj`.
+- New `type: "connector"` elements carry a line preset between two box
+  corners. flipH/flipV pick the diagonal, as in a pptx `cxnSp`.
+- Both take the optional `dash` (pptx `prstDash`).
+- Connectors also take `headEnd`/`tailEnd` (none, triangle, stealth,
+  diamond, oval, arrow) and `stCxn`/`endCxn` glue.
+- The six legacy shape types are unchanged.
+
+**Rendering.** `shapeRender.ts` turns the geometry into layers: fill,
+darken/lighten shading, dashed outline, and arrowheads with the line pulled
+back under filled heads. SlideView/SlideCanvas render these layers as inline
+SVG inside the element `<div>`, so rotation and flip are still CSS. The HTML,
+PDF, SVG and PNG exports use the same markup.
+
+**Editor.**
+
+- The **Shapes** toolbar gallery groups Lines, Basic shapes, Block arrows,
+  Equation shapes, Flowchart, Stars and banners, and Callouts. Insert ▸ All
+  shapes opens it; Insert ▸ Arrow / Elbow connector / Curved connector arm a
+  tool directly.
+- Picking arms draw-to-insert: a click inserts at the preset's default size,
+  a drag draws the box (Shift keeps it square), and Esc cancels.
+- A selected preset shows yellow diamond adjust handles.
+- A selected connector shows end handles. These glue to the connection sites
+  of any top-level element within 10 px (the sites are shown while
+  dragging). Glued connectors follow their shapes on every upsert.
+  Dragging a connector away on its own unglues it.
+- The toolbar adds line colour, weight, dash type, and start/end arrowheads.
+
+**pptx.**
+
+- Preset shapes are written by `prst` name through pptxgenjs. On slides that
+  have presets, every element carries a marker name. `patchElements` then
+  writes the `avLst` adjust values, rebuilds connectors as `p:cxnSp` with
+  `a:stCxn`/`a:endCxn` pointing at the target shapes' `cNvPr` ids, and
+  restores the names.
+- The reader turns `prstGeom` + `avLst` into presets. It keeps the legacy
+  types only where they draw identically: rect, ellipse and diamond;
+  roundRect at Grown's 18 % corner; and triangle and rightArrow at their
+  defaults. Connectors keep their preset, adjust, flips, arrowheads, dash
+  and glue (resolved per shape tree). A plain straight line without
+  arrowheads is still a legacy line.
+
+**Tests.**
+
+- `presetGeometry.test.ts` (26) covers each operator, and checks path
+  strings, bounds and points against hand-computed values. The presets
+  checked are rect, roundRect, ellipse, triangle, rightArrow, star5, pie,
+  the flowchart w/h scaling, both wedge callouts, can and the connectors.
+  It also checks that every preset is finite at four sizes, including 0×0.
+  It solves handles for roundRect, rightArrow, donut (polar R), pie (polar
+  angle), wedgeRectCallout (unbounded 2-axis) and bentConnector3.
+- `shapeRender.test.ts`, `connectorOps.test.ts` (glue, reroute and unglue)
+  and `drawTool.test.ts` cover rendering, glue and draw-to-insert.
+- `pptx/presets.test.ts` round-trips all 64 non-legacy presets with shifted
+  adjust values, rotation, flips and dash. It also round-trips connectors
+  with glue, and runs a double round trip.
+- The e2e test `web/e2e/slides-shapes.spec.ts` covers gallery click and drag,
+  Esc cancel, a glued elbow connector, an adjust-handle drag, moving a glued
+  shape, and reload.
+
+**Ported (now passing):**
+
+- `api-drawing.js#Test: SetOutLine`, as `elementOps.setOutline`, with
+  invalid-input rejection.
+- `#Test: SetFlipH` and `#Test: SetFlipV`, as the typed setter
+  `elementOps.setFlip`. These were `it.skip` in M0.
+- `shortcuts.js#Check reset action with adding new shape`, as the keymap
+  `cancelDraw` action plus the e2e test.
+
+**Not done / gaps.**
+
+- `#Test: Create shape with gradient fill` needs gradient fills.
+- There is no Format options side panel: opacity, shadow and gradients are
+  missing.
+- There is no change-shape-type command, and no text inside preset shapes
+  (the text rect is computed but unused).
+- Polyline and scribble are missing.
+- Connectors are re-routed only by moving their ends. There is no
+  PowerPoint-style elbow re-layout around obstacles, and nothing is glued
+  to group members.
+- Imported glue that targets a picture or a graphic frame is dropped.
