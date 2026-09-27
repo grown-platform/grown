@@ -30,7 +30,7 @@
       "passing": null
     },
     "common/forms": {
-      "ported": 0,
+      "ported": 8,
       "passing": null
     },
     "common/pdf": {
@@ -86,7 +86,7 @@
       "passing": null
     },
     "docs/forms": {
-      "ported": 0,
+      "ported": 8,
       "passing": null
     },
     "docs/harness": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 906,
+    "ported": 914,
     "passing": null
   }
 }
