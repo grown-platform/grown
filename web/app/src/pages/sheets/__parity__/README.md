@@ -28,7 +28,9 @@ Current files:
 |---|---|---|
 | `range.parity.test.ts` | `cell/spreadsheet-calculation/tests.js` (Asc.round, Asc.Range, intersection, union) | `../cellRange.ts` |
 | `formulaRefs.parity.test.ts` | `cell/spreadsheet-calculation/formula-tests/FormulaTests.js` (rename sheet #1) | `../formulaRefs.ts` |
+| `filter.parity.test.ts` | `cell/spreadsheet-calculation/autoFilterTests.js`, `cell/js-api/api-auto-filter.js` | `../filterOps.ts` |
+| `condFormat.parity.test.ts` | `cell/spreadsheet-calculation/conditionalFormattingTests.js`, `cell/js-api/api-format-conditions.js` | `../cfOps.ts` |
+| `validation.parity.test.ts` | `cell/spreadsheet-calculation/DataValidationTests.js`, `cell/js-api/api-validation.js` | `../validationOps.ts` |
 | `numberFormat.parity.test.ts` | `NumFormatParse.js`, `testsForFWB.html.js`, `CellFormatTests.js` (fixtures in `internal/sheets/testdata/numfmt/`, shared with the Go port) | `../numberFormat.ts` |
 
-Later milestones add number formats (M6), autofill/sort/CSV (M7),
-filters/CF/validation (M8), pivots (M9) and charts (M10).
+Later milestones add autofill/sort/CSV (M7), pivots (M9) and charts (M10).

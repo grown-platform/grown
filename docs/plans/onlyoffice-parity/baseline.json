@@ -174,11 +174,11 @@
       "passing": null
     },
     "sheets/conditional formatting": {
-      "ported": 0,
+      "ported": 22,
       "passing": null
     },
     "sheets/data validation": {
-      "ported": 0,
+      "ported": 23,
       "passing": null
     },
     "sheets/drawing": {
@@ -226,7 +226,7 @@
       "passing": null
     },
     "sheets/sort-filter": {
-      "ported": 0,
+      "ported": 55,
       "passing": null
     },
     "sheets/utils": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 795,
+    "ported": 895,
     "passing": null
   }
 }

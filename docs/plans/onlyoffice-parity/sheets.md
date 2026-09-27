@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Sheets
 
-Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9.
+Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done.
 Companion: `sheets-tests.csv` (one row per OnlyOffice test file).
 Inventory baseline: **`origin/main` @ `c90064e`**. (The worktree used for reading was `96ca7c0`,
 55 commits behind; for Sheets the only difference is `internal/sheets/formula_more{,2,3}.go`
@@ -888,3 +888,66 @@ E2e: `web/e2e/sheets-numfmt.spec.ts` checks a thirteen-format sheet cell by
 cell through the grid's screen-reader text, typing six kinds of input, a
 preset and the custom dialog, and the saved values and formats.
 
+
+## 12. M8 results (Wave 3, 2026-09-26)
+
+M8 is done: filters, conditional formatting and data validation have their
+own rule models with Excel/OnlyOffice semantics, the editor paints and
+enforces them, and all 100 OnlyOffice cases listed for M8 are ported and pass.
+
+### 12.1 What landed
+
+| Piece | Where |
+|---|---|
+| AutoFilter model: current-region detection, value checklists (blanks, date groups year → second), custom conditions (=, ≠, >, ≥, <, ≤, begins/ends/contains and negations, `?`/`*` wildcards) joined by AND/OR, top/bottom N items or %, above/below average, 30 relative date periods, fill/font colour. Hidden rows are recomputed from the criteria (header never hidden); sort by a column keeps the header. An Excel-API view (`setAutoFilter`/`apiFilters`) for the API suite. | `filterOps.ts` |
+| Conditional formatting: cell value (8 operators, constants, references or formulas), text contains/not/begins/ends (literal or `=formula`), dates occurring (10 periods), blanks/errors, duplicate/unique, top/bottom N/%, above/below average (with ≥ and standard deviations), custom formula, 2- and 3-colour scales (min/max/number/percent/percentile/formula stops), data bars (auto/min/max stops, axis automatic/midpoint/none, direction, negative colour, border, gradient/solid, min/max length, bar only), 20 icon sets with ≥/> thresholds, reverse and icon only. Priority order with per-property precedence and stop-if-true; move up/down, first/last/explicit priority, clear from a range. | `cfOps.ts` |
+| Formula rules are evaluated on the client, against the same cell values the grid paints (FortuneSheet's values, into which the Go engine's `/recalc` results are written back). The evaluator shifts relative references per cell from the rule's base cell and covers whole rows/columns, other sheets, named ranges, operators and ~70 functions (COUNTIF, SEARCH, ISERROR, AND/OR, dates, …); anything else is `#NAME?`, which never matches. | `sheetFormula.ts`, `cellValue.ts` |
+| Data validation: any, whole number, decimal, list (items or a range/formula), date, time, text length, custom formula, checkbox; operators; ignore blank; input title/message; error alert stop/warning/information. Range algebra: add fails over existing validation, delete trims (splits) rules, modify carves the area out of every rule it touches and adds the new rule. "Circle invalid data". | `validationOps.ts`, `cellRange.ts` (`rectSubtract`) |
+| Editor glue: models persist per sheet (`grownFilter`, `grownCF`, `grownDV`, `grownCircleInvalid`) through applyOp patches that are also sent to collaborators. FortuneSheet's own fields are derived: font-colour CF entries (`luckysheet_conditionformat_save`, marked `grownDerived`), per-cell `dataVerification` (dropdowns, checkboxes, hints), `filter_select`/`filter`/`rowhidden`. Fills, colour scales, data bars, icons and invalid-data circles are painted from the `beforeRenderCell`/`afterRenderCell` hooks; typed input is checked in `beforeUpdateCell` (stop rejects with a notice, warning asks, information tells). Older FortuneSheet-native rules, and rules made with FortuneSheet's toolbar dialogs, are converted into the models. | `sheetDataTools.ts`, `SheetEditor.tsx`, `SheetNotice.tsx` |
+| UI: Data ▸ Filter by values or condition… (column, sort A→Z/Z→A, values/condition/top 10/average & dates/colour tabs, clear column, remove filter); the conditional formatting rules manager rebuilt on `cfOps` (all rule types, applies-to ranges, priority arrows, stop if true); the data validation dialog rebuilt on `validationOps` (apply-to range, all types, messages, alert style, circle invalid data); Data ▸ Circle invalid data; Format ▸ Icon set now adds an icon-set rule. | `FilterDialog.tsx`, `ConditionalFormatDialog.tsx`, `DataValidationDialog.tsx`, `SheetMenuBar.tsx` |
+
+### 12.2 Ports
+
+| OnlyOffice file | Tags ported / passing | Where |
+|---|---|---|
+| `autoFilterTests.js` | 39 / 39 | `__parity__/filter.parity.test.ts` |
+| `api-auto-filter.js` | 16 / 16 | `__parity__/filter.parity.test.ts` |
+| `conditionalFormattingTests.js` | 5 / 5 | `__parity__/condFormat.parity.test.ts` |
+| `api-format-conditions.js` | 17 / 17 | `__parity__/condFormat.parity.test.ts` |
+| `DataValidationTests.js` | 1 / 1 | `__parity__/validation.parity.test.ts` |
+| `api-validation.js` | 22 / 22 | `__parity__/validation.parity.test.ts` |
+
+Notes on the ports:
+
+- The date filters' commented-out OnlyOffice assertions (the day after a
+  week/month/quarter/year still visible) are checked the Excel way: hidden.
+- "equals" on a filter matches the shown text, so `8/20/1994` matches a date
+  cell and `34566` does not; "does not equal" also treats a numeric match as
+  equal. Text operators only match text cells. This is what the suite records.
+- OnlyOffice anchors a text rule's `=A1` to the active cell when the rule is
+  created; Grown rules carry an explicit `base` (default: the range's
+  top-left), and the port sets it where the suite relied on the selection.
+- The API suites share one sheet between tests; the ports start each test
+  from an empty model, so counts are absolute rather than relative.
+- The Excel API classes themselves (ApiRange, ApiFormatCondition, …) are not
+  modelled; the ports check the same properties on Grown's rule objects.
+
+E2e: `web/e2e/sheets-data.spec.ts` adds a 3-colour scale, a data bar, a list
+validation and a "greater than 50" filter through the menus, checks the saved
+model and hidden rows, that an off-list value is rejected with a notice, and
+after a reload that navigation skips the filtered rows and the rules are
+still listed.
+
+### 12.3 Not done / follow-ups
+
+- Formula rules use the client evaluator; functions it lacks never match.
+  Routing them through the Go engine (for example as extra cells in the
+  `/recalc` workbook) would give full coverage at the cost of a round trip.
+- CF number formats, bold/italic/underline and borders are stored but not
+  painted (FortuneSheet has no hook for them).
+- Remove duplicates and row/column grouping (listed under M8 in §5) are not
+  done; neither has OnlyOffice tests in the M8 suites.
+- Validation of formula input is checked by value only through "Circle invalid
+  data" (the typed text is a formula, not its result).
+- The selection jump to A1 (§11.4) also affects these dialogs; they take the
+  range from an editable "Apply to range" field, and the e2e waits for it.
