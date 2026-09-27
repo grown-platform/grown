@@ -115,8 +115,8 @@ Legend: **Have** = works end-to-end in Grown · **Partial** = exists but materia
 | Borders (all/outer/inner/top/bottom/left/right/diagonal, style, colour) | Have (toolbar) | fortune-sheet `border` |
 | Horizontal/vertical alignment, wrap, clip/overflow, rotation | Have (toolbar; Format ▸ Wrapping/Rotation menu items are stubs) | — |
 | Merge (all / across / centre) + unmerge | Partial (merge-all + unmerge) | `SheetMenuBar.tsx` |
-| Number formats: General, Number, Currency, Accounting, Financial, Percent, Scientific, Date, Time, Date-time, Duration, Fraction, Text, Custom | Partial — menu presets for 10 of them; no Accounting/Financial/Duration/Fraction/Custom dialog | `SheetMenuBar.tsx` Format ▸ Number |
-| Number-format parsing of typed input (`1,234.5`, `12%`, `$5`, `(3)`, dates, times, fractions, locale) | Partial (fortune-sheet client heuristics; no Grown tests) | M6 |
+| Number formats: General, Number, Currency, Accounting, Financial, Percent, Scientific, Date, Time, Date-time, Duration, Fraction, Text, Custom | Have (M6): 14 presets + Custom number format dialog; rendering by `numberFormat.ts` / `numfmt.go` | `SheetMenuBar.tsx` Format ▸ Number, `NumberFormatDialog.tsx` |
+| Number-format parsing of typed input (`1,234.5`, `12%`, `$5`, `(3)`, dates, times, fractions, locale) | Have (M6): `parseInput` in `numberFormat.ts`, wired through the workbook hooks; separators are parameterised, the UI uses en-US | `numberFormatActions.ts` |
 | Increase/decrease decimals | Have (toolbar) | — |
 | Format painter / clear formatting | Have | — |
 | Cell styles gallery / table styles | Missing | — |
@@ -662,7 +662,7 @@ truncation, DDB fractional periods, and a panic on `DEC2BIN(1,1E+10)`.
 
 | Key | Checks | Note / home |
 |---|---|---|
-| `number-format` | 172 | TEXT/DOLLAR/FIXED format codes and OnlyOffice locale output → M6 |
+| `number-format` | 172 | TEXT/DOLLAR/FIXED format codes and OnlyOffice locale output → M6 (done; see §10.3 for what passes and the re-keyed rest) |
 | `array-lifting`, `whole-ref-arith` | 118 | scalar functions and range arithmetic over arrays outside ARRAYFORMULA → M5 |
 | `direct-text-args`, `sum-of-text-result` | 103 | `SUM("10")` vs a text cell: single-cell references reach functions as values, so literal and reference cannot be told apart → M1 (reference values) |
 | `semicolon-args` | 74 | `;` as argument separator → M1 (locale) |
@@ -763,17 +763,26 @@ Now possible but not done here: values carry their reference, so functions
 can tell `SUM("10")` from a text cell (`direct-text-args`, 85 checks).
 FormulaTrace's remaining six tests need the trace UI (M5).
 
+<<<<<<< HEAD
 ## 10. M3 results (Wave 3, 2026-09-26)
 
 M3a (distributions) and M3b (tests and descriptive statistics) are done.
 All 155 `statisticalTests.js` tags are ported, and 151 of them pass. The
 four FORECAST.ETS tags (M3c, optional) are pending as whole cases, because
 Grown has no FORECAST.ETS functions yet.
+=======
+## 10. M6 results (Wave 3, 2026-09-26)
+
+M6 is done: a number-format engine renders format codes and reads typed
+input, in TypeScript for the grid and in Go for TEXT() and computed cells,
+both tested from the same fixtures.
+>>>>>>> wave3/sheets-m6
 
 ### 10.1 What landed
 
 | Piece | Where |
 |---|---|
+<<<<<<< HEAD
 | Special functions: regularized incomplete gamma (series and continued fraction) and beta (Lentz continued fraction, symmetric branch), a Brent root finder. The prefactors x^a·e^−x/Γ(a) and x^a·y^b/B(a,b) are computed from Stirling's series for large shapes, so there is no cancellation of huge logarithms. The beta function takes 1 − x separately, so t and F tails stay exact. | `formula_stat_numerics.go` |
 | Distributions, each in its Excel 2010 name and its legacy name: T (DIST, DIST.RT, DIST.2T, INV, INV.2T, TDIST, TINV), CHISQ / CHI, F, BETA, GAMMA, LOGNORM / LOGINV, WEIBULL, EXPON, POISSON, BINOM (plus DIST.RANGE, INV, CRITBINOM), HYPGEOM and NEGBINOM. Also GAMMA, GAMMALN(.PRECISE), FISHER and FISHERINV. Each maps over ranges inside ARRAYFORMULA. The inverses solve the smaller tail. | `formula_stat_dist.go` |
 | T.TEST (paired, pooled, and Welch with fractional df), Z.TEST, F.TEST and CHISQ.TEST, with the legacy names TTEST, ZTEST, FTEST and CHITEST. Also CONFIDENCE.T, COVARIANCE.P/S, PROB, STEYX, PERMUTATIONA, VARA, VARPA and STDEVPA. | `formula_stat_tests.go` |
@@ -817,3 +826,65 @@ Scoreboard `sheets/formulas`: 378 → 533 ported tags. One pending check in
 
 Not done: FORECAST.ETS, FORECAST.ETS.CONFINT, FORECAST.ETS.SEASONALITY and
 FORECAST.ETS.STAT (M3c, 142 checks).
+=======
+| Format-code renderer: General (11 characters, then `1.23457E+11`), `0 # ?`, grouping/scaling commas, `%`, scientific (engineering exponents, `\E` markers), fractions (convergents, fixed denominators), literals, `\x`, `"…"`, `_x`, `*x`, `@`, up to four sections, `[>100]` conditions, colours, dates, times, `[h] [mm] [ss]` elapsed, `.000` sub-seconds, month-vs-minute, `AM/PM`/`A/P`, `aaa`, localised names of General. Returns text runs (skip/fill marked) plus the section colour. | `web/app/src/pages/sheets/numberFormat.ts` (`formatRuns`, `formatValue`) |
+| Typed-input parser: grouped numbers, decimals, `%` (prefix or suffix), currency symbols (prefix or suffix, `р.`), parenthesised and signed negatives, scientific, mixed and simple fractions (a date in General cells, a fraction in numeric cells), dates with month names, numeric dates, times incl. `55:34` elapsed and `AM/PM`, date-times; the 1900 leap-year bug; Date1904; culture separators. Picks the format the cell should get, keeping a compatible existing one. | `numberFormat.ts` (`parseInput`, `parseDatePDF`, `isValidDate` …) |
+| Go port of both | `internal/sheets/numfmt.go` |
+| TEXT() on the engine; DOLLAR/FIXED round on 15 digits; VALUE() and date-text arguments fall back to the typed-input parser (`"5-JUL"`, `"3/15/11"`, `"25:00"`, `"1 1/2"`, `"€5"`); the display text `m` of computed and spilled cells follows the cell's format (General otherwise) | `numfmt_cell.go`, `formula_text.go`, `formula_datetime.go` (`dtTextSerial`), `formula_refs.go` (`writeBack`) |
+| Format ▸ Number: Automatic, Plain text, Number, Percent, Scientific, **Accounting**, **Financial**, Currency, Currency (rounded), Date, Time, Date time, **Duration**, **Fraction** (each with a live sample), and **Custom number format…** (code input, preview of the cell and samples, suggestions) | `SheetMenuBar.tsx`, `NumberFormatDialog.tsx`, `numberFormatActions.ts` |
+| Typed input goes through `parseInput` (workbook `beforeUpdateCell`/`afterUpdateCell` hooks); numbers under a custom format get `m` from `numberFormat.ts` on load, on format change and on edit | `numberFormatActions.ts`, `normalize.ts`, `SheetEditor.tsx` |
+
+### 10.2 Ports
+
+The facts were extracted like Wave 0 (a local recording harness, not
+committed): format code + value → text, and text (+ cell format, culture) →
+value, format and kind. The shared fixtures are
+`internal/sheets/testdata/numfmt/{format,parse}.json`; the Go runner is
+`numfmt_test.go` and the vitest runner
+`__parity__/numberFormat.parity.test.ts`. OnlyOffice's formatRecognition
+matrix is one QUnit.test run once per cell format, so it is one tag.
+
+| OnlyOffice file | Tags | Checks | Pending |
+|---|---|---|---|
+| `NumFormatParse.js` | 40 / 40 | 996 | 4 |
+| `testsForFWB.html.js` | 13 / 13 | 210 | 9 |
+| `CellFormatTests.js` | 4 / 4 | 32,277 | 3 |
+
+Pending keys (all `oo-diff`, Grown follows Excel): `serial-zero` (OnlyOffice
+shows serials below 1 as 1899-12-31 in upper-case codes), `question-mark`
+(`?` printed as 0), `frac-placeholders` (`##.##0` drops a digit),
+`fraction-sign`, `overflow-hash` (long results become `#`s), `elapsed-ampm`
+(`[hh]` as a clock hour next to AM/PM).
+
+### 10.3 Formula-suite effect
+
+The 166 `number-format` checks from Wave 1: 30 now pass (TEXT codes, comma
+runs, `aaa`, `mmmmm`, DOLLAR/FIXED precision, `FIXED(…,"abc")`), and the other
+136 are re-keyed to what they really test: `number-format-locale` (109:
+OnlyOffice runs them in fi/nl/es/ru/fr/de/it/sv/zh/el/hu/tr/pl/cs/ko with
+localised format letters, day names and separators), `arraytotext-args` (23),
+`sum-of-text-result` (2) and `fixed-decimals` (2). The date-text fallback
+lifts 22 more checks (DAY/YEAR/DAYS/WEEKDAY/NETWORKDAYS/ACCRINT … on text
+dates, INDIRECT of TEXT), of which 7 are re-pended as `current-year`: their
+expected values were recorded in 2026 for date text without a year. Net: 52
+formula checks move from pending to passing.
+
+### 10.4 Found on the way (not fixed here)
+
+- The grid moves its selection back to A1 shortly after opening a sheet, after
+  every edit, and when the editor re-renders (for example when a dialog
+  opens). This is on main too; the number-format dialog keeps its own copy of
+  the selection, and the e2e waits for the jump.
+- FortuneSheet 1.0.4 aligns every cell left (`ht` defaults to left), numbers
+  included.
+- The engine's `DATE(1900,2,29)` is 61, not 60 (the `date-1900` backlog); the
+  renderer itself shows serial 60 as 29-Feb-1900.
+- Locale-aware formatting (separators, localised codes and names) needs a
+  workbook locale first; the parser and renderer take separators as a
+  parameter so that can be added without new code paths.
+
+E2e: `web/e2e/sheets-numfmt.spec.ts` checks a thirteen-format sheet cell by
+cell through the grid's screen-reader text, typing six kinds of input, a
+preset and the custom dialog, and the saved values and formats.
+
+>>>>>>> wave3/sheets-m6

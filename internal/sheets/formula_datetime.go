@@ -86,6 +86,10 @@ func dtTextSerial(s string) (float64, bool) {
 	if d, ok := dtParseTime(s); ok {
 		return d.Seconds() / 86400.0, true
 	}
+	// Typed-input forms the parsers above miss ("5-Jul", "Mar-15-2011", "25:00").
+	if p, ok := nfParseInput(s, nfParseOpts{}); ok && p.date {
+		return p.value, true
+	}
 	return 0, false
 }
 

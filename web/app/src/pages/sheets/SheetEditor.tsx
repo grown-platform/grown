@@ -60,6 +60,8 @@ import {
 import { downloadSheet } from "./export";
 import { storableWorkbook } from "./workbookJson";
 import { normalizeWorkbook, seedSelection } from "./normalize";
+import { NumberFormatDialog } from "./NumberFormatDialog";
+import { selectionRanges, typedInputHooks } from "./numberFormatActions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -127,6 +129,8 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [cfOpen, setCfOpen] = useState(false);
   const [nrOpen, setNrOpen] = useState(false);
+  const [numFmtOpen, setNumFmtOpen] = useState(false);
+  const [numFmtRanges, setNumFmtRanges] = useState<any[]>([]);
   const [dvOpen, setDvOpen] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
   const [chartsOpen, setChartsOpen] = useState(false);
@@ -139,6 +143,12 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const iconSetsRef = useRef<IconSetRule[]>([]);
   const dataRef = useRef<any[] | null>(null);
   const ref = useRef<any>(null);
+  // Stable across renders: FortuneSheet keeps the hooks object it mounted with.
+  const hooks = useRef<any>(null);
+  if (!hooks.current) {
+    hooks.current = { ...WORKBOOK_HOOKS, ...typedInputHooks(() => ref.current) };
+  }
+  const getWbRef = useRef(() => ref.current);
   const wsRef = useRef<WebSocket | null>(null);
   const applyingRemote = useRef(false);
   // Last known tab name per sheet id (to spot renames in onChange).
@@ -570,6 +580,10 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onInsertPivot={() => setPivotOpen(true)}
               onIconSet={addIconSet}
               onClearIconSets={clearAllIconSets}
+              onCustomNumberFormat={() => {
+                setNumFmtRanges(selectionRanges(ref.current));
+                setNumFmtOpen(true);
+              }}
             />
           </Box>
           <Box sx={{ flex: 1 }} />
@@ -632,7 +646,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
             data={data}
             onChange={onChange}
             onOp={onOp}
-            hooks={WORKBOOK_HOOKS}
+            hooks={hooks.current}
           />
         </Box>
       </Box>
@@ -650,6 +664,12 @@ export function SheetEditor({ user }: SheetEditorProps) {
         open={cfOpen}
         onClose={() => setCfOpen(false)}
         getWb={() => ref.current}
+      />
+      <NumberFormatDialog
+        open={numFmtOpen}
+        onClose={() => setNumFmtOpen(false)}
+        getWb={getWbRef.current}
+        ranges={numFmtRanges}
       />
       <NamedRangesDialog
         open={nrOpen}

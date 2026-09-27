@@ -100,3 +100,17 @@ describe("seedSelection", () => {
     ]);
   });
 });
+
+describe("fillCellDisplay with number formats", () => {
+  it("renders custom formats with numberFormat.ts", () => {
+    const acct = '_($* #,##0.00_);_($* (#,##0.00);_($* "-"??_);_(@_)';
+    expect(fillCellDisplay({ v: -1234.5, ct: { fa: acct, t: "n" } }).m).toBe(" $(1,234.50)");
+    expect(fillCellDisplay({ v: 1.5, ct: { fa: "[h]:mm", t: "d" } }).m).toBe("36:00");
+    expect(fillCellDisplay({ v: 1.75, ct: { fa: "# ?/?", t: "n" } }).m).toBe("1 3/4");
+    expect(fillCellDisplay({ v: 60, ct: { fa: "yyyy-mm-dd", t: "d" } }).m).toBe("1900-02-29");
+  });
+  it("re-renders a stale m under a custom format but keeps General text", () => {
+    expect(fillCellDisplay({ v: 0.5, m: "0.5", ct: { fa: "0%", t: "n" } }).m).toBe("50%");
+    expect(fillCellDisplay({ v: 0.5, m: "kept", ct: { fa: "General", t: "n" } }).m).toBe("kept");
+  });
+});
