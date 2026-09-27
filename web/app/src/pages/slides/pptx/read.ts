@@ -334,7 +334,9 @@ interface Box {
   flipV: boolean;
 }
 
-/** Child → parent EMU mapping for group shapes. */
+/** Child → parent EMU mapping for group shapes. Only the offset and scale
+ *  are mapped: a group's rotation/flip stays on the Grown group element,
+ *  whose members use the group's unrotated frame. */
 type Tf = (b: Box) => Box;
 const identity: Tf = (b) => b;
 
@@ -372,7 +374,6 @@ function groupTf(grpSpPr: Element | null, parent: Tf): Tf {
       y: b.y + (c.y - cy) * sy,
       w: c.w * sx,
       h: c.h * sy,
-      rot: c.rot + b.rot,
     });
 }
 
@@ -1012,6 +1013,34 @@ async function readGraphicFrame(
   });
 }
 
+/** A `p:grpSp` becomes a Grown group holding its members; a group with no
+ *  transform is flattened, and an empty one is dropped. */
+async function readGroup(
+  grp: Element,
+  tf: Tf,
+  sc: SlideCtx,
+  out: SlideElement[],
+  skipPh: boolean,
+) {
+  const grpSpPr = kid(grp, "grpSpPr");
+  const kids: SlideElement[] = [];
+  await readTree(grp, groupTf(grpSpPr, tf), sc, kids, skipPh);
+  if (!kids.length) return;
+  const raw = readXfrm(kid(grpSpPr, "xfrm"));
+  if (!raw) {
+    out.push(...kids);
+    return;
+  }
+  const box = tf(raw);
+  out.push({
+    id: uid(),
+    type: "group",
+    ...toPx(box, sc),
+    ...orient(box),
+    children: kids,
+  });
+}
+
 async function readTree(
   tree: Element,
   tf: Tf,
@@ -1036,7 +1065,7 @@ async function readTree(
         await readGraphicFrame(c, tf, sc, out);
         break;
       case "grpSp":
-        await readTree(c, groupTf(kid(c, "grpSpPr"), tf), sc, out, skipPh);
+        await readGroup(c, tf, sc, out, skipPh);
         break;
       case "contentPart":
         sc.warnings.add("Ink was skipped");

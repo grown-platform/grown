@@ -288,18 +288,36 @@ describe("geometry", () => {
     expect(r.warnings.join()).toMatch(/16:9/);
   });
 
-  it("flattens group shapes through the child coordinate space", async () => {
+  it("reads group shapes as Grown groups, mapping members through the child space", async () => {
     const grp = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="5" name="g"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-<p:grpSpPr><a:xfrm><a:off x="${px(100)}" y="${px(100)}"/><a:ext cx="${px(200)}" cy="${px(100)}"/><a:chOff x="0" y="0"/><a:chExt cx="${px(100)}" cy="${px(50)}"/></a:xfrm></p:grpSpPr>
-${sp({ x: 50, y: 25, w: 50, h: 25, prst: "ellipse", fill: solid(`<a:srgbClr val="0000FF"/>`) })}</p:grpSp>`;
+<p:grpSpPr><a:xfrm rot="5400000" flipH="1"><a:off x="${px(100)}" y="${px(100)}"/><a:ext cx="${px(200)}" cy="${px(100)}"/><a:chOff x="0" y="0"/><a:chExt cx="${px(100)}" cy="${px(50)}"/></a:xfrm></p:grpSpPr>
+${sp({ x: 50, y: 25, w: 50, h: 25, prst: "ellipse", fill: solid(`<a:srgbClr val="0000FF"/>`) })}
+${sp({ x: 0, y: 0, w: 10, h: 10, prst: "rect", fill: solid(`<a:srgbClr val="FF0000"/>`) })}</p:grpSp>`;
     const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(grp) }] }));
-    expect(r.deck.slides[0].elements[0]).toMatchObject({
-      type: "ellipse",
-      x: 200,
-      y: 150,
-      w: 100,
-      h: 50,
-    });
+    const g = r.deck.slides[0].elements[0];
+    expect(g).toMatchObject({ type: "group", x: 100, y: 100, w: 200, h: 100, rotation: 90, flipH: true });
+    expect(g.children).toHaveLength(2);
+    // Members keep their own (unrotated) transform in the group's frame.
+    expect(g.children![0]).toMatchObject({ type: "ellipse", x: 200, y: 150, w: 100, h: 50 });
+    expect(g.children![0].rotation).toBeUndefined();
+    expect(g.children![1]).toMatchObject({ type: "rect", x: 100, y: 100, w: 20, h: 20 });
+  });
+
+  it("reads nested groups and drops empty ones", async () => {
+    const inner = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="6" name="i"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${px(50)}" cy="${px(50)}"/><a:chOff x="0" y="0"/><a:chExt cx="${px(50)}" cy="${px(50)}"/></a:xfrm></p:grpSpPr>
+${sp({ x: 0, y: 0, w: 50, h: 50, prst: "rect", fill: solid(`<a:srgbClr val="00FF00"/>`) })}</p:grpSp>`;
+    const empty = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="8" name="e"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:grpSp>`;
+    const outer = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="7" name="o"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+<p:grpSpPr><a:xfrm><a:off x="${px(10)}" y="${px(20)}"/><a:ext cx="${px(100)}" cy="${px(100)}"/><a:chOff x="0" y="0"/><a:chExt cx="${px(100)}" cy="${px(100)}"/></a:xfrm></p:grpSpPr>
+${inner}${sp({ x: 60, y: 60, w: 40, h: 40, prst: "rect", fill: solid(`<a:srgbClr val="0000FF"/>`) })}</p:grpSp>${empty}`;
+    const r = await readPptx(await pkg({ slides: [{ xml: SLIDE(outer) }] }));
+    const els = r.deck.slides[0].elements;
+    expect(els).toHaveLength(1);
+    expect(els[0]).toMatchObject({ type: "group", x: 10, y: 20 });
+    expect(els[0].children![0]).toMatchObject({ type: "group", x: 10, y: 20, w: 50, h: 50 });
+    expect(els[0].children![0].children![0]).toMatchObject({ type: "rect", x: 10, y: 20 });
+    expect(els[0].children![1]).toMatchObject({ x: 70, y: 80 });
   });
 
   it("turns preset lines, connectors and straight freeforms into rotated Grown lines", async () => {

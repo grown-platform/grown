@@ -91,6 +91,8 @@ export function insertTransition(slideXml: string, xml: string): string {
 // ------------------------------------------------------------ build
 
 type Pptx = PptxGenJSType;
+/** Extra pptxgenjs options (the group marker name). */
+type Extra = { objectName?: string };
 type PSlide = ReturnType<Pptx["addSlide"]>;
 
 function linkOpt(el: SlideElement) {
@@ -121,7 +123,7 @@ function textRunOpts(el: SlideElement) {
   };
 }
 
-function addText(s: PSlide, el: SlideElement) {
+function addText(s: PSlide, el: SlideElement, extra: Extra) {
   const lines = (el.text || "").split("\n");
   const bullet =
     el.list === "number"
@@ -148,10 +150,11 @@ function addText(s: PSlide, el: SlideElement) {
           ? "bottom"
           : "top",
     ...(el.lineSpacing ? { lineSpacingMultiple: el.lineSpacing } : {}),
+    ...extra,
   });
 }
 
-function addShape(s: PSlide, el: SlideElement) {
+function addShape(s: PSlide, el: SlideElement, extra: Extra) {
   const noFill = !el.fill || el.fill === "none" || el.fill === "transparent";
   const line =
     el.stroke && el.stroke !== "none"
@@ -172,10 +175,11 @@ function addShape(s: PSlide, el: SlideElement) {
       ? { rectRadius: pxToInch(Math.min(el.w, el.h) * ROUND_RECT_RATIO) }
       : {}),
     ...linkOpt(el),
+    ...extra,
   });
 }
 
-function addTable(s: PSlide, el: SlideElement) {
+function addTable(s: PSlide, el: SlideElement, extra: Extra) {
   const t = el.table;
   if (!t || !t.rows || !t.cols) return;
   const bcol = el.stroke && el.stroke !== "none" ? hex6(el.stroke) : undefined;
@@ -202,6 +206,7 @@ function addTable(s: PSlide, el: SlideElement) {
     ...(bcol
       ? { border: { type: "solid", pt: el.strokeWidth || 1, color: bcol } }
       : { border: { type: "none" } }),
+    ...extra,
   });
 }
 
@@ -223,52 +228,169 @@ export async function deckToPptx(
   });
   pptx.layout = "GROWN16x9";
   pptx.title = title;
+  const slideGroups: Map<string, SlideElement>[] = [];
   for (const slide of deck.slides) {
     const s = pptx.addSlide();
     s.background = { color: hex6(slide.background || "#ffffff") };
-    for (const el of slide.elements) {
+    const groups = new Map<string, SlideElement>();
+    const emit = (el: SlideElement, path: string[]) => {
+      if (el.type === "group") {
+        const key = `g${groups.size + 1}`;
+        groups.set(key, el);
+        for (const c of el.children || []) emit(c, [...path, key]);
+        return;
+      }
+      const extra: Extra = path.length ? { objectName: groupMarker(path) } : {};
       try {
-        if (el.type === "text") addText(s, el);
-        else if (el.type === "table") addTable(s, el);
+        if (el.type === "text") addText(s, el, extra);
+        else if (el.type === "table") addTable(s, el, extra);
         else if (el.type === "line") {
           s.addShape("line", {
             ...geomOpts({ ...el, h: 0 }),
             h: 0,
             line: { color: hex6(el.stroke), width: el.strokeWidth || 2 },
             ...linkOpt(el),
+            ...extra,
           });
         } else if (el.type === "image") {
-          if (!el.src) continue;
+          if (!el.src) return;
           const src = el.src.startsWith("data:")
             ? { data: el.src }
             : { path: el.src };
-          s.addImage({ ...geomOpts(el), ...src, ...linkOpt(el) });
-        } else addShape(s, el);
+          s.addImage({ ...geomOpts(el), ...src, ...linkOpt(el), ...extra });
+        } else addShape(s, el, extra);
       } catch {
         /* skip an element pptxgenjs rejects rather than failing the export */
       }
-    }
+    };
+    for (const el of slide.elements) emit(el, []);
+    slideGroups.push(groups);
     if (slide.notes && slide.notes.trim()) s.addNotes(slide.notes);
   }
   const raw = (await pptx.write({ outputType: "uint8array" })) as Uint8Array;
-  return patchPptx(raw, deck);
+  return patchPptx(raw, deck, slideGroups);
 }
 
-/** Apply the XML patches pptxgenjs cannot express (currently: transitions). */
+/** Apply the XML patches pptxgenjs cannot express: transitions, and the
+ *  `p:grpSp` wrappers for groups (see wrapGroups). */
 export async function patchPptx(
   raw: Uint8Array,
   deck: DeckDoc,
+  slideGroups: Map<string, SlideElement>[] = [],
 ): Promise<Uint8Array> {
-  if (!deck.slides.some((s) => s.transition && s.transition !== "none"))
-    return raw;
+  const hasTransitions = deck.slides.some(
+    (s) => s.transition && s.transition !== "none",
+  );
+  const hasGroups = slideGroups.some((g) => g.size > 0);
+  if (!hasTransitions && !hasGroups) return raw;
   const zip = await JSZip.loadAsync(raw);
   for (let i = 0; i < deck.slides.length; i++) {
     const xml = transitionXml(deck.slides[i].transition);
-    if (!xml) continue;
+    const groups = slideGroups[i];
+    if (!xml && !groups?.size) continue;
     const path = `ppt/slides/slide${i + 1}.xml`;
     const f = zip.file(path);
     if (!f) continue;
-    zip.file(path, insertTransition(await f.async("string"), xml));
+    let out = await f.async("string");
+    if (groups?.size) out = wrapGroups(out, groups);
+    if (xml) out = insertTransition(out, xml);
+    zip.file(path, out);
   }
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
+// ------------------------------------------------------------ groups
+
+/**
+ * pptxgenjs has no group shapes, so group members are written flat in
+ * z-order with a marker `cNvPr@name` naming their group path; wrapGroups
+ * then nests them into `p:grpSp` elements. Grown stores members in absolute
+ * coordinates, so each group's child frame equals its own frame
+ * (chOff = off, chExt = ext).
+ */
+export const GROUP_MARKER = "grown-grp:";
+
+/** The marker object name for a member of the (nested) groups `path`. */
+export function groupMarker(path: string[]): string {
+  return `${GROUP_MARKER}${path.join("/")}`;
+}
+
+const P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main";
+const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const EMU_PER_IN = 914400;
+const emu = (px: number) => String(Math.round(pxToInch(px) * EMU_PER_IN));
+
+/** Nest marker-named members of a slide part into `p:grpSp` elements. */
+export function wrapGroups(
+  slideXml: string,
+  groups: Map<string, SlideElement>,
+): string {
+  const doc = new DOMParser().parseFromString(slideXml, "application/xml");
+  const spTree = doc.getElementsByTagNameNS(P_NS, "spTree")[0];
+  if (!spTree) return slideXml;
+  let nextId = 0;
+  for (const c of Array.from(doc.getElementsByTagNameNS(P_NS, "cNvPr")))
+    nextId = Math.max(nextId, Number(c.getAttribute("id")) || 0);
+  let memberNo = 0;
+  const p = (name: string) => doc.createElementNS(P_NS, `p:${name}`);
+  const a = (name: string, attrs: Record<string, string>) => {
+    const e = doc.createElementNS(A_NS, `a:${name}`);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+  const makeGroup = (key: string): Element => {
+    const g = groups.get(key);
+    const grp = p("grpSp");
+    const nv = p("nvGrpSpPr");
+    const cNvPr = p("cNvPr");
+    cNvPr.setAttribute("id", String(++nextId));
+    cNvPr.setAttribute("name", g?.name || `Group ${nextId}`);
+    nv.append(cNvPr, p("cNvGrpSpPr"), p("nvPr"));
+    const pr = p("grpSpPr");
+    const xfrm = a("xfrm", {});
+    if (g?.rotation) xfrm.setAttribute("rot", String(Math.round(g.rotation * 60000)));
+    if (g?.flipH) xfrm.setAttribute("flipH", "1");
+    if (g?.flipV) xfrm.setAttribute("flipV", "1");
+    const x = emu(g?.x ?? 0);
+    const y = emu(g?.y ?? 0);
+    const cx = emu(g?.w ?? 0);
+    const cy = emu(g?.h ?? 0);
+    xfrm.append(
+      a("off", { x, y }),
+      a("ext", { cx, cy }),
+      a("chOff", { x, y }),
+      a("chExt", { cx, cy }),
+    );
+    pr.append(xfrm);
+    grp.append(nv, pr);
+    return grp;
+  };
+  const stack: { key: string; node: Element }[] = [];
+  for (const k of Array.from(spTree.children)) {
+    const cNvPr = k.getElementsByTagNameNS(P_NS, "cNvPr")[0];
+    const name = cNvPr?.getAttribute("name") ?? "";
+    const path = name.startsWith(GROUP_MARKER)
+      ? name.slice(GROUP_MARKER.length).split("/")
+      : [];
+    if (path.length) cNvPr!.setAttribute("name", `Shape ${++memberNo}`);
+    // Close groups this element is not in.
+    while (
+      stack.length &&
+      (stack.length > path.length ||
+        stack.some((s, i) => s.key !== path[i]))
+    )
+      stack.pop();
+    // Open the groups it starts.
+    for (let d = stack.length; d < path.length; d++) {
+      const grp = makeGroup(path[d]);
+      if (d === 0) spTree.insertBefore(grp, k);
+      else stack[d - 1].node.appendChild(grp);
+      stack.push({ key: path[d], node: grp });
+    }
+    if (stack.length) stack[stack.length - 1].node.appendChild(k);
+  }
+  let out = new XMLSerializer().serializeToString(doc);
+  const decl = /^<\?xml[^>]*\?>\s*/.exec(slideXml);
+  if (decl && !out.startsWith("<?xml")) out = decl[0] + out;
+  return out;
 }

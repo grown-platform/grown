@@ -333,3 +333,67 @@ describe("deckToPptx emitted XML", () => {
     expect(await s(3)).toContain(`<p:push dir="u"/>`);
   });
 });
+
+describe("groups (p:grpSp)", () => {
+  const rect = (id: string, x: number, y: number): SlideElement => ({
+    id,
+    type: "rect",
+    x,
+    y,
+    w: 96,
+    h: 48,
+    fill: "#4285f4",
+    stroke: "none",
+    strokeWidth: 0,
+  });
+  const group = (id: string, children: SlideElement[], over: Partial<SlideElement> = {}): SlideElement => ({
+    id,
+    type: "group",
+    x: 0,
+    y: 0,
+    w: 480,
+    h: 240,
+    children,
+    ...over,
+  });
+
+  it("wraps members in a p:grpSp with chOff = off and chExt = ext", async () => {
+    const { xml } = await slideXml(
+      deckOf([rect("before", 0, 0), group("g", [rect("a", 0, 0), text({ id: "b" })], { rotation: 30, flipV: true }), rect("after", 0, 0)]),
+    );
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const tree = doc.getElementsByTagName("p:spTree")[0];
+    const kinds = Array.from(tree.children).map((c) => c.localName).filter((n) => n === "sp" || n === "grpSp");
+    expect(kinds).toEqual(["sp", "grpSp", "sp"]);
+    const grp = doc.getElementsByTagName("p:grpSp")[0];
+    expect(grp.getElementsByTagName("p:sp")).toHaveLength(2);
+    const xfrm = grp.getElementsByTagName("a:xfrm")[0];
+    expect(xfrm.getAttribute("rot")).toBe("1800000");
+    expect(xfrm.getAttribute("flipV")).toBe("1");
+    const attr = (n: string, a: string) => xfrm.getElementsByTagName(n)[0].getAttribute(a);
+    expect(attr("a:ext", "cx")).toBe(String(Math.round(pxToInch(480) * 914400)));
+    expect(attr("a:chExt", "cx")).toBe(attr("a:ext", "cx"));
+    expect(attr("a:chOff", "x")).toBe(attr("a:off", "x"));
+    // No marker names leak into the package; ids stay unique.
+    expect(xml).not.toContain("grown-grp:");
+    const ids = Array.from(doc.getElementsByTagName("p:cNvPr")).map((c) => c.getAttribute("id"));
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(xml.startsWith("<?xml")).toBe(true);
+  });
+
+  it("nests groups", async () => {
+    const { xml } = await slideXml(deckOf([group("o", [group("i", [rect("a", 0, 0), rect("b", 100, 0)]), rect("c", 200, 0)])]));
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const outer = doc.getElementsByTagName("p:grpSp")[0];
+    const direct = Array.from(outer.children).map((c) => c.localName);
+    expect(direct).toEqual(["nvGrpSpPr", "grpSpPr", "grpSp", "sp"]);
+    expect(outer.getElementsByTagName("p:grpSp")[0].getElementsByTagName("p:sp")).toHaveLength(2);
+  });
+
+  it("keeps two adjacent sibling groups apart", async () => {
+    const { xml } = await slideXml(deckOf([group("g1", [rect("a", 0, 0), rect("b", 1, 1)]), group("g2", [rect("c", 0, 0), rect("d", 1, 1)])]));
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const tree = doc.getElementsByTagName("p:spTree")[0];
+    expect(Array.from(tree.children).filter((c) => c.localName === "grpSp")).toHaveLength(2);
+  });
+});

@@ -8,6 +8,7 @@ import {
   type Slide,
   type SlideElement,
 } from "./model";
+import { relativeTo } from "./groupOps";
 
 // CSS keyframes for element entrance animations (injected globally once).
 export const ELEMENT_ANIM_CSS = `
@@ -218,7 +219,14 @@ function ElementView({
       />
     ) : null;
 
-  const inner = renderElementBody(el, merged);
+  const inner =
+    el.type === "group" ? (
+      <div style={merged}>
+        <GroupChildren el={el} />
+      </div>
+    ) : (
+      renderElementBody(el, merged)
+    );
   return linkOverlay ? (
     <>
       {inner}
@@ -261,6 +269,18 @@ function renderElementBody(
       </div>
     );
   return <div style={merged} />;
+}
+
+/** GroupChildren renders a group's members inside the group's own box (the
+ *  box carries the group's rotation/flip, so members turn with it). */
+export function GroupChildren({ el }: { el: SlideElement }) {
+  return (
+    <>
+      {(el.children || []).map((c) => (
+        <ElementView key={c.id} el={relativeTo(c, el.x, el.y)} />
+      ))}
+    </>
+  );
 }
 
 /** renderSlideText returns a text element's body, prefixing each line with a
