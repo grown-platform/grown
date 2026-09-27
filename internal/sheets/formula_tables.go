@@ -57,11 +57,11 @@ func (t *tableDef) colIndex(name string) int {
 
 // tableStore is the `grownTables` entry shape the engine reads.
 type tableStore struct {
-	Name           string `json:"name"`
-	DisplayName    string `json:"displayName"`
+	Name           string                        `json:"name"`
+	DisplayName    string                        `json:"displayName"`
 	Ref            *struct{ R1, C1, R2, C2 int } `json:"ref"`
-	HeaderRowCount *int   `json:"headerRowCount"`
-	TotalsRowCount int    `json:"totalsRowCount"`
+	HeaderRowCount *int                          `json:"headerRowCount"`
+	TotalsRowCount int                           `json:"totalsRowCount"`
 	Columns        []struct {
 		Name string `json:"name"`
 	} `json:"columns"`
