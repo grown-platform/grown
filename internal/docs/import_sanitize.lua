@@ -7,7 +7,15 @@
 --   * raw HTML blocks, and raw inline HTML other than bare formatting tags
 --     (<u>, <sup>, ...), are dropped (their text never reaches the doc);
 --   * link/image targets with script-capable schemes are blanked;
---   * attributes named on* are removed from every element that has any.
+--   * attributes named on* are removed from every element that has any;
+--   * pictures packed in the file (docx/odt/epub/rtf media, in pandoc's
+--     mediabag) become data: URIs.
+--
+-- The filter embeds pictures itself instead of pandoc's --embed-resources:
+-- in pandoc 3.1.13 (the production image's Alpine package) --embed-resources
+-- ignores --sandbox and inlines any server file or URL an uploaded html/md
+-- names (<img src="/etc/passwd">). Only mediabag entries are embedded here,
+-- and a mediabag lookup never reads the filesystem or the network.
 
 -- unsafe reports whether url may run script. data: is allowed only for
 -- images (how imports embed media; an <img> never executes it); a data: link
@@ -19,6 +27,39 @@ local function unsafe(url, is_image)
     return not (is_image and u:match("^data:image/"))
   end
   return false
+end
+
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local enc = {}
+for i = 0, 63 do enc[i] = B64:sub(i + 1, i + 1) end
+
+local function base64(s)
+  local out, n, len = {}, 0, #s
+  for i = 1, len - 2, 3 do
+    local a, b, c = s:byte(i, i + 2)
+    local v = a << 16 | b << 8 | c
+    n = n + 1
+    out[n] = enc[v >> 18] .. enc[v >> 12 & 63] .. enc[v >> 6 & 63] .. enc[v & 63]
+  end
+  local rem = len % 3
+  if rem == 1 then
+    local v = s:byte(len) << 16
+    out[n + 1] = enc[v >> 18] .. enc[v >> 12 & 63] .. "=="
+  elseif rem == 2 then
+    local a, b = s:byte(len - 1, len)
+    local v = a << 16 | b << 8
+    out[n + 1] = enc[v >> 18] .. enc[v >> 12 & 63] .. enc[v >> 6 & 63] .. "="
+  end
+  return table.concat(out)
+end
+
+-- embed returns a data: URI for a picture packed in the imported file, or nil.
+local function embed(src)
+  local mt, contents = pandoc.mediabag.lookup(src)
+  if mt == nil or contents == nil then return nil end
+  mt = mt:lower():gsub(";.*", "")
+  if not mt:match("^image/[%w.+-]+$") then return nil end
+  return "data:" .. mt .. ";base64," .. base64(contents)
 end
 
 local function clean_attr(el)
@@ -67,7 +108,12 @@ return {{
     return clean_attr(el)
   end,
   Image = function(el)
-    if unsafe(el.src, true) then el.src = "" end
+    local data = embed(el.src)
+    if data then
+      el.src = data
+    elseif unsafe(el.src, true) then
+      el.src = ""
+    end
     return clean_attr(el)
   end,
   Div = clean_attr,
