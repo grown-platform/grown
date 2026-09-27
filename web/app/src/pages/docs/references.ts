@@ -306,6 +306,16 @@ export function insertTableOfContents(editor: Editor, instr = TOC_DEFAULT, leade
   tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(end + 1, tr.doc.content.size))));
   editor.view.dispatch(tr.scrollIntoView());
   editor.view.focus();
+  // The table itself moves what follows: take its page numbers again once
+  // the layout has caught up (M9).
+  if (layoutWaiters.has(editor)) {
+    const mapped = at;
+    afterLayout(editor, () => {
+      if (editor.isDestroyed) return;
+      const t = tocNodes(editor.state.doc).sort((x, y) => Math.abs(x.pos - mapped) - Math.abs(y.pos - mapped))[0];
+      if (t) updateTocAt(editor, t.pos);
+    });
+  }
   return true;
 }
 
