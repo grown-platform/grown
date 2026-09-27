@@ -1570,7 +1570,11 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 * **Corpus note**: `docx-corpus` on OnlyOffice's documents is 3/4 on this
   branch and on main 240ff36 alike — "Изменение настроек таблиц по
   умолчанию.docx" re-imports with Grown's legacy grid borders on an
-  unstyled table (an M4 writer behaviour, not M8).
+  unstyled table (an M4 writer behaviour, not M8). **Fixed**: the reader
+  now treats a side equal to Grown's light grid on an unstyled table as
+  the default (null), so the grid the writer spells out for Word reads
+  back as it was; 4/4 again (`docx-tables.test.ts`, "unstyled or
+  unknown-style table without borders round-trips").
 * **Semantic differences**:
 
 | Case | OnlyOffice / Word | Grown | Status |

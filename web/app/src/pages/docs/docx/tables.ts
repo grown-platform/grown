@@ -134,6 +134,10 @@ export interface ReadTableProps {
 /** Table styles from styles.xml: raw id -> element (and name). */
 export type TableStyles = Map<string, { name: string; el: Element; basedOn: string | null }>;
 
+/** Grown's light grid: an unstyled table's default on every side. */
+const LEGACY: TBorder = { width: 0.5, style: "solid", color: "#ccced1" };
+const isLegacy = (b: TBorder) => b.style === LEGACY.style && b.width === LEGACY.width && b.color.toLowerCase() === LEGACY.color;
+
 /** styleBorders collects tblBorders along a table style's basedOn chain
  *  (the nearest definition of a side wins). */
 function styleBorders(styles: TableStyles, id: string | null): TBorders {
@@ -168,6 +172,11 @@ export function readTblPr(tblPr: Element | null, styles: TableStyles): ReadTable
     }
   }
   Object.assign(borders, readBorders(kid(tblPr, "tblBorders")));
+  // An unstyled table already draws Grown's light grid, and the writer
+  // spells that grid out for Word (writeTblPr). A side equal to it is
+  // the default, not a direct border: dropping it keeps an unstyled
+  // table's borders null across docx -> Grown -> docx -> Grown.
+  if (!attrs.tableStyle) for (const side of TABLE_SIDES) if (borders[side] && isLegacy(borders[side]!)) delete borders[side];
   if (Object.keys(borders).length) attrs.borders = encodeTableBorders(borders);
   const look = readLook(kid(tblPr, "tblLook"));
   // Word's default look is stored as null (= DEFAULT_LOOK).
@@ -213,7 +222,6 @@ export function readTrPr(trPr: Element | null): Record<string, unknown> {
 
 // --- writing ------------------------------------------------------------------------------
 
-const LEGACY: TBorder = { width: 0.5, style: "solid", color: "#ccced1" };
 const XML_SIDE: Record<TableBorderSide, string> = {
   top: "top",
   left: "left",
