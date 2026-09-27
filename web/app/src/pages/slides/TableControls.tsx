@@ -23,7 +23,7 @@ import {
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import type { CellBorder, SlideElement, TableLook } from "./model";
 import { BORDER_PRESETS, cellFormat, type BorderPreset } from "./tableOps";
-import { TABLE_TEMPLATES, templateCell, type TableTemplate } from "./tableStyles";
+import { tableTemplates, templateCell, type TableTemplate } from "./tableStyles";
 
 export interface TableCommands {
   insertRow: (where: "above" | "below") => void;
@@ -194,7 +194,7 @@ export function TableControls({
             >
               <TemplateThumb tpl={undefined} look={look} />
             </Box>
-            {TABLE_TEMPLATES.map((tpl) => (
+            {tableTemplates().map((tpl) => (
               <Box
                 key={tpl.id}
                 component="button"
