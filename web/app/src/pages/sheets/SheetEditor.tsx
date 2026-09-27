@@ -52,7 +52,6 @@ import type { PivotConfig } from "./pivotData";
 import {
   applyIconSets,
   clearIconSets,
-  newIconSetId,
   rangeFromSelection,
   type IconSetRule,
   type IconStyle,
@@ -60,6 +59,19 @@ import {
 import { downloadSheet } from "./export";
 import { storableWorkbook } from "./workbookJson";
 import { normalizeWorkbook, seedSelection } from "./normalize";
+import { FilterDialog } from "./FilterDialog";
+import { SheetNotice } from "./SheetNotice";
+import {
+  bindDataTools,
+  currentSheet,
+  dataToolHooks,
+  migrateWorkbook,
+  setCircleInvalid,
+  setSheetCF,
+  sheetCF,
+  syncDerived,
+} from "./sheetDataTools";
+import { addRule, newRule, type IconSetName } from "./cfOps";
 import { NumberFormatDialog } from "./NumberFormatDialog";
 import { selectionRanges, typedInputHooks } from "./numberFormatActions";
 
@@ -132,6 +144,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [numFmtOpen, setNumFmtOpen] = useState(false);
   const [numFmtRanges, setNumFmtRanges] = useState<any[]>([]);
   const [dvOpen, setDvOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
   const [chartsOpen, setChartsOpen] = useState(false);
   const [charts, setCharts] = useState<ChartConfig[]>([]);
@@ -146,7 +159,15 @@ export function SheetEditor({ user }: SheetEditorProps) {
   // Stable across renders: FortuneSheet keeps the hooks object it mounted with.
   const hooks = useRef<any>(null);
   if (!hooks.current) {
-    hooks.current = { ...WORKBOOK_HOOKS, ...typedInputHooks(() => ref.current) };
+    const typed = typedInputHooks(() => ref.current);
+    hooks.current = {
+      ...WORKBOOK_HOOKS,
+      ...typed,
+      ...dataToolHooks,
+      // Validation runs first; a rejected value never reaches typed-input parsing.
+      beforeUpdateCell: (r: number, c: number, v: any) =>
+        dataToolHooks.beforeUpdateCell(r, c, v) !== false && typed.beforeUpdateCell(r, c, v),
+    };
   }
   const getWbRef = useRef(() => ref.current);
   const wsRef = useRef<WebSocket | null>(null);
@@ -171,8 +192,10 @@ export function SheetEditor({ user }: SheetEditorProps) {
           // Fill display text the API/imports may have left out, so the
           // canvas paints every value, and seed a complete A1 selection
           // (see normalize.ts).
-          const parsed = normalizeWorkbook(
-            s.data ? JSON.parse(s.data) : structuredClone(DEFAULT_DATA),
+          // Older FortuneSheet-native CF/validation rules become Grown rules
+          // (see sheetDataTools.ts).
+          const parsed = migrateWorkbook(
+            normalizeWorkbook(s.data ? JSON.parse(s.data) : structuredClone(DEFAULT_DATA)),
           );
           // Charts persist on the first sheet under `grownCharts`.
           const loaded: ChartConfig[] = Array.isArray(parsed?.[0]?.grownCharts)
@@ -208,6 +231,20 @@ export function SheetEditor({ user }: SheetEditorProps) {
       cancelled = true;
     };
   }, [id]);
+
+  // Filters, conditional formats and validation write their models with
+  // applyOp; the same ops go to collaborators over the socket.
+  useEffect(
+    () =>
+      bindDataTools(
+        () => ref.current,
+        (ops) => {
+          const ws = wsRef.current;
+          if (ws && ws.readyState === WebSocket.OPEN && ops.length) ws.send(JSON.stringify(ops));
+        },
+      ),
+    [],
+  );
 
   // Live collaboration: relay ops + presence over the WebSocket.
   useEffect(() => {
@@ -378,6 +415,14 @@ export function SheetEditor({ user }: SheetEditorProps) {
       }
       names.set(sh.id, sh.name);
     }
+    // Keep derived CF/validation/filter fields in step with the edit.
+    setTimeout(() => {
+      try {
+        syncDerived(ref.current);
+      } catch {
+        /* ignore */
+      }
+    }, 0);
     // Re-apply icon-set overlays after edits. applyIconSets is idempotent, so
     // the write it triggers settles in one pass without looping.
     if (iconSetsRef.current.length) {
@@ -449,20 +494,24 @@ export function SheetEditor({ user }: SheetEditorProps) {
     }
   }
 
+  // Format ▸ Icon set adds a conditional-format icon-set rule (cfOps.ts);
+  // sheets that still carry the older display-overlay icons are cleared too.
   function addIconSet(style: IconStyle) {
     const range = rangeFromSelection(ref.current);
-    if (!range) return;
-    iconSetsRef.current = [
-      ...iconSetsRef.current,
-      { id: newIconSetId(), range, style },
-    ];
-    applyIconSets(ref.current, iconSetsRef.current);
-    persistExtras();
+    const sheet = currentSheet(ref.current);
+    if (!range || !sheet?.id) return;
+    const set: Record<IconStyle, IconSetName> = { arrows: "3Arrows", traffic: "3TrafficLights1", signs: "3Signs" };
+    const rule = newRule("iconSet", [{ r1: range.r0, r2: range.r1, c1: range.c0, c2: range.c1 }], { iconSet: set[style] });
+    setSheetCF(ref.current, sheet.id, addRule(sheetCF(sheet), rule));
   }
   function clearAllIconSets() {
-    clearIconSets(ref.current, iconSetsRef.current);
-    iconSetsRef.current = [];
-    persistExtras();
+    const sheet = currentSheet(ref.current);
+    if (sheet?.id) setSheetCF(ref.current, sheet.id, sheetCF(sheet).filter((r) => r.type !== "iconSet"));
+    if (iconSetsRef.current.length) {
+      clearIconSets(ref.current, iconSetsRef.current);
+      iconSetsRef.current = [];
+      persistExtras();
+    }
   }
   // persistExtras saves charts/pivots immediately (they aren't FortuneSheet
   // cell edits, so they won't trigger onChange).
@@ -580,6 +629,11 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onInsertPivot={() => setPivotOpen(true)}
               onIconSet={addIconSet}
               onClearIconSets={clearAllIconSets}
+              onFilterColumn={() => setFilterOpen(true)}
+              onCircleInvalid={() => {
+                const sheet = currentSheet(ref.current);
+                if (sheet?.id) setCircleInvalid(ref.current, sheet.id, !sheet.grownCircleInvalid);
+              }}
               onCustomNumberFormat={() => {
                 setNumFmtRanges(selectionRanges(ref.current));
                 setNumFmtOpen(true);
@@ -681,6 +735,12 @@ export function SheetEditor({ user }: SheetEditorProps) {
         onClose={() => setDvOpen(false)}
         getWb={() => ref.current}
       />
+      <FilterDialog
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        getWb={() => ref.current}
+      />
+      <SheetNotice />
       <ChartDialog
         open={chartOpen}
         onClose={() => setChartOpen(false)}

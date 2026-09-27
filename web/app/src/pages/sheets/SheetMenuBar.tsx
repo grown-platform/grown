@@ -57,6 +57,10 @@ interface SheetMenuBarProps {
   onClearIconSets: () => void;
   /** Opens the Custom number format dialog. */
   onCustomNumberFormat: () => void;
+  /** Opens the column filter dialog (values, conditions, top 10, colour, sort). */
+  onFilterColumn?: () => void;
+  /** Toggles red circles around cells that break their validation rule. */
+  onCircleInvalid?: () => void;
 }
 
 // Example values shown next to each Format ▸ Number preset.
@@ -123,6 +127,8 @@ export function SheetMenuBar({
   onIconSet,
   onClearIconSets,
   onCustomNumberFormat,
+  onFilterColumn,
+  onCircleInvalid,
 }: SheetMenuBarProps) {
   const wb = () => {
     try {
@@ -491,6 +497,9 @@ export function SheetMenuBar({
           <MenuItem onClick={dataOp((w) => toggleFilter(w))}>
             Create a filter
           </MenuItem>
+          {onFilterColumn && (
+            <MenuItem onClick={onFilterColumn}>Filter by values or condition…</MenuItem>
+          )}
           <MenuItem disabled>Create group by view{arrow}</MenuItem>
           <MenuItem disabled>Create filter view</MenuItem>
           <MenuItem disabled>Add a slicer</MenuItem>
@@ -504,6 +513,11 @@ export function SheetMenuBar({
           <ListDivider />
           <MenuItem disabled>Column stats</MenuItem>
           <MenuItem onClick={onDataValidation}>Data validation</MenuItem>
+          {onCircleInvalid && (
+            <MenuItem sx={sub} onClick={onCircleInvalid}>
+              Circle invalid data
+            </MenuItem>
+          )}
           <MenuItem disabled>Data cleanup{arrow}</MenuItem>
           <MenuItem onClick={dataOp((w) => splitTextToColumns(w))}>
             Split text to columns

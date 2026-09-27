@@ -144,6 +144,11 @@ export function FilterDialog({ open, onClose, getWb }: FilterDialogProps) {
     setErr(null);
     let st = sheetFilter(sheet);
     const sel = selectionRect(wb);
+    const fs = sheet?.filter_select;
+    if (!st && fs?.row && fs?.column) {
+      // A filter made with Data ▸ Create a filter (FortuneSheet's own).
+      st = { range: { r1: fs.row[0], r2: fs.row[1], c1: fs.column[0], c2: fs.column[1] }, columns: {} };
+    }
     if (!st && sel) st = createFilter(g, sel);
     setState(st);
     if (!st) {
