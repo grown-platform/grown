@@ -34,7 +34,13 @@ export type EditorKeyAction =
   | { type: "deselect" }
   | { type: "group" }
   | { type: "ungroup" }
-  | { type: "cancelDraw" };
+  | { type: "cancelDraw" }
+  /** Enter / F2 on a selected text box or shape: edit its text. */
+  | { type: "editText" }
+  /** Ctrl+= / Ctrl+- / Ctrl+0: editor zoom (instead of the browser's). */
+  | { type: "zoom"; dir: 1 | -1 | 0 }
+  /** Ctrl+Shift+8 with no text selected: show paragraph marks. */
+  | { type: "toggleMarks" };
 
 /** isSaveKey reports Ctrl/Cmd+S. The editor handles it even while a text box
  *  is being edited, so the browser's "Save page" dialog never opens. */
@@ -46,6 +52,75 @@ export function isSaveKey(e: KeyInput): boolean {
  *  (also while a text box is being edited) instead of printing the page. */
 export function isPrintKey(e: KeyInput): boolean {
   return (!!e.ctrlKey || !!e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "p";
+}
+
+/** zoomKey maps Ctrl/Cmd+= (or +) to zoom in, Ctrl/Cmd+- to zoom out and
+ *  Ctrl/Cmd+0 to fit; null for other keys. */
+export function zoomKey(e: KeyInput): 1 | -1 | 0 | null {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
+  if (e.key === "=" || e.key === "+" || e.code === "Equal" || e.code === "NumpadAdd") return 1;
+  if (e.key === "-" || e.key === "_" || e.code === "Minus" || e.code === "NumpadSubtract") return -1;
+  if (!e.shiftKey && (e.key === "0" || e.code === "Digit0" || e.code === "Numpad0")) return 0;
+  return null;
+}
+
+/** preventsDefaultKey reports keys the editor swallows so the browser does
+ *  not act on them: NumLock and ScrollLock, and Ctrl+=/-/0 (the editor's own
+ *  zoom replaces the page zoom, as in OnlyOffice and PowerPoint). */
+export function preventsDefaultKey(e: KeyInput): boolean {
+  return e.key === "NumLock" || e.key === "ScrollLock" || zoomKey(e) !== null;
+}
+
+/** paneKey: F6 / Shift+F6 move focus to the next / previous pane (slide
+ *  rail, canvas, speaker notes), as in PowerPoint. */
+export function paneKey(e: KeyInput): 1 | -1 | null {
+  if (e.key !== "F6" || e.ctrlKey || e.metaKey || e.altKey) return null;
+  return e.shiftKey ? -1 : 1;
+}
+
+// ---- the slide rail (thumbnails) ----
+
+export type RailKeyAction =
+  | { type: "go"; to: "prev" | "next" | "pageUp" | "pageDown" | "first" | "last"; extend: boolean }
+  | { type: "move"; how: 1 | -1 | "start" | "end" }
+  | { type: "delete" }
+  | { type: "selectAll" }
+  | { type: "newSlide" }
+  | { type: "duplicate" }
+  | { type: "hide" };
+
+/**
+ * railKeyAction maps a key press in the slide rail (OnlyOffice thumbnails /
+ * PowerPoint slide pane): Up/Down (and Left/Right), PgUp/PgDn, Home/End
+ * move, adding Shift extends the selection; Ctrl+Up/Down moves the selected
+ * slides one place, Ctrl+Shift+Up/Down to the start/end; Delete/Backspace
+ * delete them; Ctrl+A selects all; Enter or Ctrl+M adds a slide; Ctrl+D
+ * duplicates; Ctrl+Shift+H hides/unhides.
+ */
+export function railKeyAction(e: KeyInput): RailKeyAction | null {
+  const mod = !!e.ctrlKey || !!e.metaKey;
+  const shift = !!e.shiftKey;
+  if (e.altKey) return null;
+  const up = e.key === "ArrowUp" || e.key === "ArrowLeft";
+  const down = e.key === "ArrowDown" || e.key === "ArrowRight";
+  if (mod && (up || down)) return { type: "move", how: shift ? (up ? "start" : "end") : up ? -1 : 1 };
+  if (mod) {
+    const k = e.key.toLowerCase();
+    if (k === "a" && !shift) return { type: "selectAll" };
+    if (k === "m" && !shift) return { type: "newSlide" };
+    if (k === "d" && !shift) return { type: "duplicate" };
+    if (k === "h" && shift) return { type: "hide" };
+    return null;
+  }
+  if (up) return { type: "go", to: "prev", extend: shift };
+  if (down) return { type: "go", to: "next", extend: shift };
+  if (e.key === "PageUp") return { type: "go", to: "pageUp", extend: shift };
+  if (e.key === "PageDown") return { type: "go", to: "pageDown", extend: shift };
+  if (e.key === "Home") return { type: "go", to: "first", extend: shift };
+  if (e.key === "End") return { type: "go", to: "last", extend: shift };
+  if ((e.key === "Delete" || e.key === "Backspace") && !shift) return { type: "delete" };
+  if (e.key === "Enter" && !shift) return { type: "newSlide" };
+  return null;
 }
 
 /** nudgeDelta maps an arrow key to a (dx, dy) move, or null for other keys. */
@@ -85,6 +160,10 @@ export function editorKeyAction(
   if (mod && (e.key.toLowerCase() === "g" || e.code === "KeyG"))
     return { type: e.shiftKey ? "ungroup" : "group" };
   if (e.key === "Escape") return ctx.hasSelection ? { type: "deselect" } : null;
+  if ((e.key === "Enter" || e.key === "F2") && !mod && !e.altKey && !e.shiftKey && ctx.hasSelection) return { type: "editText" };
+  const z = zoomKey(e);
+  if (z !== null) return { type: "zoom", dir: z };
+  if (mod && e.shiftKey && !e.altKey && (e.code === "Digit8" || e.key === "*" || e.key === "8")) return { type: "toggleMarks" };
   if (e.key === "Tab" && !mod && !e.altKey)
     return { type: "cycle", dir: e.shiftKey ? -1 : 1 };
   if (mod && !e.altKey) {

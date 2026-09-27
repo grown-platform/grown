@@ -333,17 +333,7 @@ describe("OnlyOffice parity: drawings", () => {
 });
 
 describe("OnlyOffice parity: shortcuts", () => {
-  // SKIP: Grown's thumbnail rail has no keyboard navigation (Up/Down/PgUp/PgDn/
-  // Home/End), no multi-slide selection (Shift+…, Ctrl+A) and no multi-slide
-  // move (Ctrl+Up/Down, Ctrl+Shift+Up/Down). What exists — Ctrl+M add next
-  // slide, single-slide Up/Down buttons, Delete slide — is covered by the
-  // addNextSlide/moveSlide/deleteSlideAt tests above.
-  it.skip("oo:slide/shortcuts/shortcuts.js#Check actions with slides", () => {
-    // Expected: moving the selected slides [0..3] down one position keeps
-    // them selected at [1..4]. Grown only moves one slide at a time.
-    const r = moveSlide(deck(7), 0, 1)!;
-    expect(r.cur).toEqual([1, 2, 3, 4]);
-  });
+  // `#Check actions with slides` is ported in railOps.test.ts (M13).
 
   // Ctrl/Cmd+D dispatches like OnlyOffice: the selected element is
   // duplicated, and with nothing selected the current slide is.

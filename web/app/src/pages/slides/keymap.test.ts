@@ -5,7 +5,11 @@ import {
   editorKeyAction,
   isSaveKey,
   nudgeDelta,
+  paneKey,
   presentKeyAction,
+  preventsDefaultKey,
+  railKeyAction,
+  zoomKey,
   presentKeyPreventsDefault,
   textKeyAction,
   type KeyInput,
@@ -38,8 +42,10 @@ describe("editorKeyAction", () => {
   });
 
   it("ignores unbound keys", () => {
-    for (const key of ["a", "Enter", "q"])
+    for (const key of ["a", "q"])
       expect(editorKeyAction({ key, ctrlKey: key === "q" }, sel)).toBeNull();
+    // Enter edits the selected text box (M13), and means nothing without one.
+    expect(editorKeyAction({ key: "Enter" }, none)).toBeNull();
     // Esc only means something with a selection.
     expect(editorKeyAction({ key: "Escape" }, none)).toBeNull();
   });
@@ -225,5 +231,54 @@ describe("OnlyOffice parity: draw-to-insert", () => {
       type: "cancelDraw",
     });
     expect(editorKeyAction({ key: "Escape" }, { hasSelection: true })).toEqual({ type: "deselect" });
+  });
+});
+
+describe("OnlyOffice parity: M13 shortcuts", () => {
+  // NumLock, ScrollLock and Ctrl+= are swallowed. Ctrl+=/-/0 drive the
+  // editor's own zoom (the page zoom would scale the toolbars instead).
+  it("oo:slide/shortcuts/shortcuts.js#Check prevent default", () => {
+    expect(preventsDefaultKey({ key: "NumLock" })).toBe(true);
+    expect(preventsDefaultKey({ key: "ScrollLock" })).toBe(true);
+    expect(preventsDefaultKey({ key: "=", code: "Equal", ctrlKey: true })).toBe(true);
+    expect(preventsDefaultKey({ key: "=", code: "Equal", metaKey: true })).toBe(true);
+    expect(preventsDefaultKey({ key: "=" })).toBe(false);
+    expect(preventsDefaultKey({ key: "a", ctrlKey: true })).toBe(false);
+    expect(editorKeyAction({ key: "=", code: "Equal", ctrlKey: true }, none)).toEqual({ type: "zoom", dir: 1 });
+    expect(editorKeyAction({ key: "-", code: "Minus", ctrlKey: true }, none)).toEqual({ type: "zoom", dir: -1 });
+    expect(editorKeyAction({ key: "0", code: "Digit0", ctrlKey: true }, none)).toEqual({ type: "zoom", dir: 0 });
+  });
+
+  // (grown-variant) OnlyOffice toggles paragraph marks with Ctrl+Shift+8
+  // everywhere. Grown keeps Google Slides' Ctrl+Shift+8 = bulleted list
+  // when text boxes are selected or edited (textKeyAction runs first), and
+  // toggles the marks otherwise (also View ▸ Show paragraph marks).
+  it("oo:slide/shortcuts/shortcuts.js#Check show paragraph marks (grown-variant)", () => {
+    const key = { key: "*", code: "Digit8", ctrlKey: true, shiftKey: true };
+    expect(editorKeyAction(key, none)).toEqual({ type: "toggleMarks" });
+    expect(textKeyAction(key, { editing: true })).toEqual({ type: "list", list: "bullet" });
+  });
+});
+
+describe("keyboard-only operation", () => {
+  it("Enter and F2 edit the selected text box; F6 cycles panes", () => {
+    expect(editorKeyAction({ key: "Enter" }, sel)).toEqual({ type: "editText" });
+    expect(editorKeyAction({ key: "F2" }, sel)).toEqual({ type: "editText" });
+    expect(editorKeyAction({ key: "F2" }, none)).toBeNull();
+    expect(paneKey({ key: "F6" })).toBe(1);
+    expect(paneKey({ key: "F6", shiftKey: true })).toBe(-1);
+    expect(paneKey({ key: "F6", ctrlKey: true })).toBeNull();
+    expect(zoomKey({ key: "+", shiftKey: true, ctrlKey: true })).toBe(1);
+    expect(zoomKey({ key: "0" })).toBeNull();
+  });
+
+  it("rail keys", () => {
+    expect(railKeyAction({ key: "ArrowRight" })).toEqual({ type: "go", to: "next", extend: false });
+    expect(railKeyAction({ key: "End", shiftKey: true })).toEqual({ type: "go", to: "last", extend: true });
+    expect(railKeyAction({ key: "ArrowUp", metaKey: true, shiftKey: true })).toEqual({ type: "move", how: "start" });
+    expect(railKeyAction({ key: "d", ctrlKey: true })).toEqual({ type: "duplicate" });
+    expect(railKeyAction({ key: "H", ctrlKey: true, shiftKey: true })).toEqual({ type: "hide" });
+    expect(railKeyAction({ key: "ArrowDown", altKey: true })).toBeNull();
+    expect(railKeyAction({ key: "x" })).toBeNull();
   });
 });
