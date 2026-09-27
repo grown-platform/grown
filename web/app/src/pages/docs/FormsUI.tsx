@@ -470,6 +470,16 @@ function Chooser({ editor }: { editor: Editor }) {
   useTick(editor);
   const hit = sdtAt(editor.state);
   const [closed, setClosed] = useState<string | null>(null);
+  const [, setScroll] = useState(0);
+  useEffect(() => {
+    const on = () => setScroll((x) => x + 1);
+    window.addEventListener("scroll", on, true);
+    window.addEventListener("resize", on);
+    return () => {
+      window.removeEventListener("scroll", on, true);
+      window.removeEventListener("resize", on);
+    };
+  }, []);
   const pr = hit ? prOf(hit.node) : null;
   const key = hit ? `${hit.node.attrs.sdtId}` : null;
   useEffect(() => setClosed(null), [key]);
@@ -478,10 +488,12 @@ function Chooser({ editor }: { editor: Editor }) {
   if (pr.lock === "contentLocked" || pr.lock === "sdtContentLocked") return null;
   const st = editor.state;
   if (isFillMode(st) && (!pr.form || (sdtState(st).role && pr.form.role && pr.form.role !== sdtState(st).role))) return null;
-  let rect: { left: number; bottom: number };
+  let place: { left: number; top?: number; bottom?: number };
   try {
     const c = editor.view.coordsAtPos(hit.pos + hit.node.nodeSize - 1);
-    rect = { left: c.left, bottom: c.bottom };
+    // Below the control, or above it when it wouldn't fit.
+    const h = pr.type === "date" ? 90 : Math.max(1, pr.items?.length ?? 0) * 34 + 12;
+    place = c.bottom + 4 + h > window.innerHeight ? { left: c.left, bottom: window.innerHeight - c.top + 4 } : { left: c.left, top: c.bottom + 4 };
   } catch {
     return null;
   }
@@ -495,7 +507,7 @@ function Chooser({ editor }: { editor: Editor }) {
       variant="outlined"
       data-testid="sdt-chooser"
       onMouseDown={(e) => e.preventDefault()}
-      sx={{ position: "fixed", left: rect.left, top: rect.bottom + 4, zIndex: 1300, p: 0.5, borderRadius: "sm", boxShadow: "md", minWidth: 160 }}
+      sx={{ position: "fixed", ...place, zIndex: 1300, p: 0.5, borderRadius: "sm", boxShadow: "md", minWidth: 160 }}
     >
       {pr.type === "date" ? (
         <Stack spacing={0.5} sx={{ p: 0.5 }}>

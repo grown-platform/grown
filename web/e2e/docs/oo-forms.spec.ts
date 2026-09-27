@@ -31,8 +31,28 @@ function complexDocx(): Buffer {
   });
 }
 
+/** n quick clicks at a point (mousedown/up with click counts 1…n). */
+async function clicks(page: Page, p: { x: number; y: number }, n: number) {
+  await page.mouse.move(p.x, p.y);
+  for (let i = 1; i <= n; i++) {
+    await page.mouse.down({ clickCount: i });
+    await page.mouse.up({ clickCount: i });
+    // A person's clicks are some tens of ms apart; ProseMirror's pointer
+    // selection from the first click settles in between.
+    await page.waitForTimeout(60);
+  }
+}
+
 const editor = (page: Page) => page.locator(".ProseMirror:not(.margin-editor .ProseMirror)").first();
-const selected = (page: Page) => page.evaluate(() => window.getSelection()?.toString() ?? "");
+/** The editor's selected text (TipTap puts the editor on its root). */
+const selected = (page: Page) =>
+  page.evaluate(() => {
+    const root = document.querySelector(".ProseMirror:not(.margin-editor .ProseMirror)") as unknown as {
+      editor?: { state: { selection: { from: number; to: number }; doc: { textBetween: (a: number, b: number) => string } } };
+    };
+    const st = root.editor?.state;
+    return st ? st.doc.textBetween(st.selection.from, st.selection.to) : window.getSelection()?.toString() ?? "";
+  });
 
 /** Centre of the first occurrence of `needle` in the editor's text. */
 async function pointOf(page: Page, needle: string): Promise<{ x: number; y: number }> {
@@ -65,18 +85,21 @@ test.describe.serial("OnlyOffice complex form ports", () => {
       await expect(page.getByTestId("forms-fill-bar")).toBeVisible();
 
       let p = await pointOf(page, "abc");
-      await page.mouse.dblclick(p.x, p.y);
+      await clicks(page, p, 2);
       await page.waitForTimeout(100);
       expect(await selected(page), "double click in the first sub-field").toBe("abc def");
-      await page.mouse.click(p.x, p.y, { clickCount: 3 });
+      await page.waitForTimeout(700); // ProseMirror counts clicks within 500 ms
+      await clicks(page, p, 3);
       await page.waitForTimeout(100);
       expect(await selected(page), "triple click in a sub-field").toBe("111abc def222ABC DEF333 444");
 
       p = await pointOf(page, "333");
-      await page.mouse.dblclick(p.x, p.y);
+      await page.waitForTimeout(700);
+      await clicks(page, p, 2);
       await page.waitForTimeout(100);
-      expect((await selected(page)).trim(), "double click outside the sub-fields: a word").toBe("333");
-      await page.mouse.click(p.x, p.y, { clickCount: 3 });
+      expect(await selected(page), "double click outside the sub-fields: a word").toBe("333 ");
+      await page.waitForTimeout(700); // ProseMirror counts clicks within 500 ms
+      await clicks(page, p, 3);
       await page.waitForTimeout(100);
       expect(await selected(page), "triple click outside the sub-fields").toBe("111abc def222ABC DEF333 444");
     } finally {

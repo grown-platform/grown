@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12. M8 (references and fields) has landed; see §6.13. M9 (page layout, sections, pagination) has landed; see §6.14.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12. M8 (references and fields) has landed; see §6.13. M9 (page layout, sections, pagination) has landed; see §6.14. M10 (content controls, forms, protection) has landed; see §6.16.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -344,12 +344,12 @@ Grown paths are relative to the repo root; `docs/` below means
 
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
-| Content controls: plain text, rich text, picture, checkbox, combo, dropdown, date | Toolbar `capBtnInsControls`, ControlSettingsDialog, `content-control/*` | Missing | — |
-| Control settings (title, tag, appearance, color, lock) | ControlSettingsDialog | Missing | — |
-| Forms: text field (mask/regex/format/comb), checkbox, radio, combo, dropdown, image, email, phone, zip, credit card, date, signature, complex field | FormsTab, FormSettings, `forms/*.js` | Missing | Grown has a separate Forms app, not in-document fields |
-| Required fields, roles/recipients, filling status, submit, save as PDF form | FormsTab, RolesManagerDlg, FillingStatusSettings | Missing | — |
-| Custom XML data binding | `custom-xml/*`, `Editor/custom-xml` | Missing | — |
-| Document protection (read-only / comments / forms / tracked, password) | ProtectDialog, DocProtection | Missing | — |
+| Content controls: plain text, rich text, picture, checkbox, combo, dropdown, date | Toolbar `capBtnInsControls`, ControlSettingsDialog, `content-control/*` | Have (M10) | `sdt.ts`, `sdtModel.ts` |
+| Control settings (title, tag, appearance, color, lock) | ControlSettingsDialog | Have (M10) | `FormsUI.tsx` |
+| Forms: text field (mask/regex/format/comb), checkbox, radio, combo, dropdown, image, email, phone, zip, credit card, date, signature, complex field | FormsTab, FormSettings, `forms/*.js` | Have (M10) except signature | `forms.ts` (reuses the Forms app's CC4 masks) |
+| Required fields, roles/recipients, filling status, submit, save as PDF form | FormsTab, RolesManagerDlg, FillingStatusSettings | Partial (M10) | Required, roles, status, submit/JSON; no PDF form |
+| Custom XML data binding | `custom-xml/*`, `Editor/custom-xml` | Have (M10) | `customXml.ts` |
+| Document protection (read-only / comments / forms / tracked, password) | ProtectDialog, DocProtection | Have (M10) | `protection.ts`; server enforces read-only |
 | Digital signatures, encryption | SignatureSettings, Protection, PasswordDialog | Missing | — |
 
 ### 2.15 Equations
@@ -1302,7 +1302,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 |---|---|---|---|
 | replace-text-smart: with revisions | Character-level diff, so "common" → "and another" becomes interleaved single-letter deletions and insertions ("c" / "and an" / "o" / "mmo" / …) | Word-level diff (M2's `diffChunks`): one deletion ("common") plus one insertion ("and another inserted"). Same review rules (deleted text skipped and kept, own insertions removed, other users' insertions kept under a deletion) | grown-variant |
 | replace-text-smart: with revisions, tracking off | The upstream sub-case marks part of the new text as removed (its own TODO says the case is wrong without tracking) | New text is plain; deleted text stays deleted | grown-variant |
-| document-content: block-level sdt | The "entire document" cases include a block content control | A middle paragraph stands in until M10; the sdt-only cases are skipped | Until M10 |
+| document-content: block-level sdt | The "entire document" cases include a block content control | Real block content controls since M10; the two sdt-only cases run (§6.16) | Done (M10) |
 | Rejecting an inserted paragraph mark | The merged paragraph's properties follow Word's mark rules | The first paragraph keeps its type and attributes and takes the next paragraph's mark state (so a heading split by Enter stays a heading) | Note only |
 | Review colours | Per-user colours for all change types | Insertions take the author's colour; deletions are red, formatting purple | Note only |
 
@@ -1579,7 +1579,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 
 | Case | OnlyOffice / Word | Grown | Status |
 |---|---|---|---|
-| cross-ref: heading in a (locked) block content control | Heading inside a block-level sdt | Plain heading until M10's content controls; same text and `_Ref1` bookmark | grown-variant until M10 |
+| cross-ref: heading in a (locked) block content control | Heading inside a block-level sdt | Heading inside a block content control (and a locked one) since M10 | Done (M10) |
 | shortcuts: visit hyperlink | Enter on the link (OnlyOffice); Ctrl+click (Word) | Alt+Enter (Google Docs) and Ctrl+click | grown-variant chord |
 | shortcuts: insert page number | Ctrl+Shift+P (OnlyOffice) | Alt+Shift+P (Word's chord) | grown-variant chord |
 | Page numbers in PAGE / PAGEREF / TOC | Laid-out pages | Exact from the pagination layout since M9 (§6.14); PAGE / NUMPAGES / SECTIONPAGES in the body follow the layout live, PAGEREF / TOC on F9 | Done (M9) |
@@ -1866,6 +1866,156 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | deleted-text recovery: Split run | " how" (what was selected) | "how " — a snapshot diff can't tell the two apart; like diff-match-patch the later one | grown-variant |
 | deleted-text recovery: history navigation | Per-keystroke history points | Saved versions only | n/a |
 | Compare with tracked changes in the inputs | Word warns and treats them as accepted | Accepted first (combine keeps them) | Note only |
+
+
+### 6.16 M10 status (content controls, forms, protection)
+
+* **Model** (`sdtModel.ts` pure, `sdt.ts` the extension; architecture
+  item 14). Two nodes: `sdtInline` (inline, content `inline*`) and
+  `sdtBlock` (block, content `block+`), each with `sdtId` (w:id), `pr`
+  (the w:sdtPr as JSON: type, title/alias, tag, colour, appearance, lock,
+  placeholder, temporary, check box symbols and radio group, list items,
+  date format and value, picture, form and text-form properties, data
+  binding) and `plc` (w:showingPlcHdr: the content *is* the placeholder
+  text, as in Word, so the caret has somewhere to go). Types: rich text,
+  plain text, check box, combo box, drop-down list, date picker, picture
+  and complex field. Strings/booleans only, so they ride y-prosemirror.
+* **Editing rules** (a plugin at priority 1100): Backspace / Delete next
+  to an inline control selects it; with it selected, a plain control
+  showing its placeholder is emptied, anything else (and any form field)
+  is removed — OnlyOffice's three- and two-press sequences. Typing into a
+  placeholder replaces it; a control emptied by editing shows it again
+  (native/IME input that went around the placeholder is repaired in
+  `appendTransaction`). Check boxes toggle on click / Space; under track
+  changes the new symbol is an insertion before the old one, which is
+  marked deleted, and toggling back restores it. Lists, dates and
+  pictures are chosen (a chooser under the control; a file picker).
+  Temporary controls unwrap once set. Locks are a `filterTransaction`
+  over the steps (sdtLocked: not removable; contentLocked: content not
+  editable; comments, review marks and bookmarks always pass). Block
+  controls keep their paragraphs: Backspace at the start of the paragraph
+  after one (Delete at the end of the one before) moves into it, removes
+  that paragraph when empty, and under tracking marks the paragraph mark
+  between them deleted. Accepting the deletion of a block control's whole
+  content (or rejecting its whole insertion) removes the control
+  (`changes.ts`); review parts and `reviewRuns` look inside inline
+  controls.
+* **Forms** (`forms.ts`): a control with form properties (key, label, tip,
+  required, role, fixed) is a field. Text fields reuse the Forms app's CC4
+  `TextFormFormat`, masks and presets (digits, letters, e-mail, phone,
+  ZIP, credit card, mask, regexp), max characters and comb. Typing
+  follows OnlyOffice: forbidden characters are dropped, a full field
+  passes the rest to the next text field of its complex form, a value
+  that stops fitting its mask or regexp reverts to the last one that did
+  when the field is left; Grown adds one convenience — a character that
+  fits a later mask slot fills in the literals before it, so "5551234567"
+  becomes "(555) 123-4567". Radio buttons are check boxes with a group
+  key and choice name (checking one clears the group). `getAllFormsData`
+  / `setAllFormsData` have OnlyOffice's shapes (one entry per key; a radio
+  group's options are its choices), `isAllRequiredFormsFilled` counts a
+  wrongly formatted value as unfilled, `mainForm` and fixed/inline
+  conversion are there. **Fill-in view** (`setFillMode`, or "filling
+  forms only" protection): only fields take edits (a step filter), Tab /
+  Shift+Tab and Enter move between fields, arrows cross field edges, a
+  double click selects a sub-field and a triple click a whole complex
+  form, fields of other roles are read-only when filling as a role.
+* **Protection** (`protection.ts`): the `protection` Yjs map holds mode,
+  enforcement and an optional password hash (w:documentProtection:
+  SHA-512 over salt + UTF-16LE password, then 100,000 rounds with a
+  4-byte little-endian counter; `sha512.ts` is a synchronous
+  implementation checked against node:crypto). Read only and comments
+  only make the editor read-only (comment marks still apply); tracked
+  changes only forces tracking and blocks accept / reject (resolving
+  transactions carry `reviewResolve`); filling forms only is the fill-in
+  view. **Server**: `docs_documents.protection` (migration 0096),
+  `GET/PUT /api/v1/docs/d/{id}/protection` (the owner sets it; the
+  Protect dialog calls it), and the collab hub's new `ServeFunc` checks
+  write access per message, so non-owners' updates are dropped while a
+  document is read-only (a `ProtectionGate` caches the mode for 2 s).
+  The other modes are enforced by every editor, not the server (the hub
+  doesn't parse Yjs).
+* **Custom XML** (`customXml.ts`, last): parts in a `customXml` Yjs map
+  (item id → xml + schema URIs); an XPath subset (absolute paths, `//`,
+  `*`, prefixes from w:prefixMappings, `[n]`, a final `@attr`) and
+  `xpathOf`; w:dataBinding loads a part's value into every control type
+  (check boxes from true/1, dates from ISO or the display format, pictures
+  from base64) and editing a bound control writes the part back;
+  changing a part refreshes bound controls.
+* **UI** (`FormsUI.tsx`): a Forms menu (content controls, form fields,
+  control settings, remove control, fill in form, export JSON, protect),
+  the settings dialog (title, tag, colour, appearance, lock, placeholder,
+  temporary, items, date format, symbols, form key / role / tip /
+  required / fixed, radio group, text format preset, max characters,
+  comb, multiline), the list / date chooser, the picture chooser, the
+  fill-in bar (roles, previous / next, required left, export, submit —
+  submit checks every field, jumps to the first problem, and downloads the
+  values as JSON) and the Protect / Stop protection dialog.
+* **Bridge to the Forms app — not done, by choice.** A Grown Forms
+  response belongs to a Forms form (questions with ids, sections,
+  branching, server-side validation per question); a document's fields
+  have no Forms counterpart, and creating one per document would be a
+  second source of truth. Submitting exports the values as JSON (the
+  shape OnlyOffice and the Forms app's `getAllFormsData` both use); the
+  validators are shared instead, so a field and a question accept the
+  same values.
+* **DOCX** both ways (`docx/sdt.ts`): w:sdt inline and block (building
+  blocks such as the TOC, header/footer and row/cell controls stay
+  unwrapped) with alias, tag, id (unique on write), lock, temporary,
+  showingPlcHdr (a shown placeholder's text becomes the placeholder),
+  dataBinding, w15:color / w15:appearance and the type elements (w:text,
+  w14:checkbox, w:comboBox, w:dropDownList, w:date, w:picture with its
+  drawing); form properties Word has no element for go into `<gf:pr>`
+  in an ignorable namespace (mc:Ignorable), and OnlyOffice's w:formPr /
+  w:textFormPr / w:complexFormPr / w14:groupKey are read;
+  w:documentProtection in settings.xml (before w:defaultTabStop);
+  customXml/itemN.xml with itemPropsN.xml and relationships.
+* **Tests**: ported (all passing): `oo/sdt-inline.test.ts` (inline
+  cursorAndSelection 2, checkbox 1, date-time 1), `oo/sdt-block.test.ts`
+  (block cursorAndSelection 1), `oo/forms.test.ts` (forms.js "Check
+  remove/delete in editing mode" plus the five forms.js cases already
+  tagged by CC4 again through the editor, complexForm.js "Check main
+  form", "Check conversion to fixed", "Positioning, moving cursor and
+  adding/removing text", api-text-form.js 5, api-inline-level-sdt.js 2),
+  `oo/custom-xml.test.ts` (26), Playwright `web/e2e/docs/oo-forms.spec.ts`
+  (complexForm.js "Check mouse clicks"); un-skipped
+  `oo/revisions-document.test.ts` "Check replacing text in a block-level
+  content control (bug 67071)" and "Check accepting all changes when
+  entire content of a block-level sdt was deleted", and the two "entire
+  document" cases now use a real block control; `oo/cross-ref.test.ts`
+  puts the heading in a block control and a locked one. Scoreboard:
+  content-controls 7/7, custom-xml 26/26, forms 18/18. Grown-native:
+  `protection.test.ts` (SHA-512 vs node:crypto, the password hash vs a
+  node:crypto reference, all four modes), `docx-forms.test.ts` (Word-shaped
+  document with every control type, protection and a bound custom XML
+  part; schema order and unique ids; docx → Grown → docx → Grown equality
+  for it and for an editor-built form), Go `internal/docs/protection_test.go`
+  (modes, gate caching, `ServeFunc` dropping writes while not allowed) and
+  `internal/server/docs_protection_test.go`. Playwright
+  `web/e2e/docs-forms.spec.ts`: a form with every field type built from
+  the Forms menu, settings (key, title, required), protected for filling,
+  filled from a second view (text outside fields refused, Tab order,
+  phone mask, check box, radio, list, date, picture), JSON export and
+  submit, the first view seeing the values, and a .docx download /
+  re-import keeping fields, values and protection.
+* **Semantic differences**:
+
+| Case | OnlyOffice | Grown | Status |
+|---|---|---|---|
+| revisions: replacing text in a block control (bug 67071) | Deletion, then insertion | Insertion before the text it replaces (M5's replace order) | grown-variant |
+| custom-xml: repeated case names in the block and inline modules | Same QUnit names | Inline cases tagged "… (inline)" so each has its own tag | Note only |
+| custom-xml: picture fixtures | Upstream JPEG data | Small made-up base64 payloads (JPEG/PNG magic numbers) | Note only |
+| api-text-form: theme background colour | ApiColor with a theme colour | Stored as `theme:<name>`, shown as Word's default accent (no document theme) | grown-variant |
+| API calls (CreateTextForm, Delete, SetLock, …) | Document Builder API | The same operations as Grown functions (`insertContentControl`, `removeContentControl`, `updateContentControl`); a scripting API is M13's | grown-variant |
+| Mask typing | Characters typed as they are; literals only by Correct() | Also fills in literals before a slot the character fits | grown-variant (UX) |
+| Word's legacy password hash (w:hash / w:salt) | Checked | Kept and written back, not checkable; Stop protection asks for confirmation instead | Known gap |
+
+* **Not yet**: signature fields, save as PDF form / OFORM, a roles manager
+  with colours (roles are free text per field), filling status per role,
+  building-block (docPart) placeholders and the glossary part (placeholder
+  text lives in Grown's extension), repeating sections, content controls
+  in headers / footers (unwrapped on import), the formatting-only
+  protection option, and server-side enforcement of the comments / tracked
+  / forms modes.
 
 ### Known flaky e2e (as of 2026-09-26)
 

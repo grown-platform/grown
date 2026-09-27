@@ -403,7 +403,8 @@ export function insertContentControl(editor: Editor, type: SdtType, opts: Insert
   }
   const node = tr.doc.nodeAt(pos)!;
   const inner = pos + 1 + (node.type.name === SDT_BLOCK ? 1 : 0);
-  tr.setSelection(TextSelection.create(tr.doc, Math.min(inner, tr.doc.content.size)));
+  if (node.attrs.plc && node.type.name === SDT_INLINE && node.content.size) tr.setSelection(TextSelection.create(tr.doc, pos + 1, pos + node.nodeSize - 1));
+  else tr.setSelection(TextSelection.create(tr.doc, Math.min(inner, tr.doc.content.size)));
   editor.view.dispatch(tr.scrollIntoView());
   const hit = editor.state.doc.nodeAt(pos);
   return isSdt(hit) ? { node: hit, pos } : null;
@@ -604,9 +605,11 @@ export function moveIntoControl(editor: Editor, pos: number, atEnd = false): boo
     tr.setSelection(TextSelection.create(tr.doc, pos + 1 + s.from));
   } else {
     const { from, to } = contentRange({ node, pos });
-    tr.setSelection(TextSelection.create(tr.doc, atEnd && !node.attrs.plc ? to : from));
+    // A placeholder is selected whole, so typing replaces it (Word).
+    if (node.attrs.plc && to > from) tr.setSelection(TextSelection.create(tr.doc, from, to));
+    else tr.setSelection(TextSelection.create(tr.doc, atEnd ? to : from));
   }
-  editor.view.dispatch(tr);
+  editor.view.dispatch(tr.scrollIntoView());
   return true;
 }
 
@@ -794,6 +797,24 @@ const Selectionish = {
 };
 
 const editors = new WeakMap<EditorView, Editor>();
+/** The word (and the spaces after it) inside the text node at `pos`. */
+function wordIn(doc: PMNode, pos: number): { from: number; to: number } | null {
+  const $p = doc.resolve(pos);
+  const node = $p.parent.maybeChild($p.index());
+  const start = pos - $p.textOffset;
+  const text = node?.isText ? node.text! : $p.nodeBefore?.isText ? $p.nodeBefore.text! : null;
+  if (!text) return null;
+  const base = node?.isText ? start : pos - $p.nodeBefore!.nodeSize;
+  let a = pos - base;
+  let b = a;
+  while (a > 0 && WORD_CH.test(text[a - 1])) a--;
+  while (b < text.length && WORD_CH.test(text[b])) b++;
+  while (b < text.length && text[b] === " ") b++;
+  return b > a ? { from: base + a, to: base + b } : null;
+}
+
+/** A multi-click selection in the fill-in view, kept briefly. */
+const sticky = new WeakMap<EditorView, { from: number; to: number; until: number }>();
 const editorOf = (view: EditorView) => editors.get(view)!;
 
 function handleDelete(view: EditorView, dir: -1 | 1, word: boolean): boolean {
@@ -1126,6 +1147,12 @@ export const ContentControls = Extension.create({
           return true;
         },
         appendTransaction(trs, oldState, newState) {
+          const st = sticky.get(editor.view);
+          if (st && Date.now() < st.until && !trs.some((t) => t.docChanged) && newState.selection.empty) {
+            const p = newState.selection.from;
+            if (p >= st.from && p <= st.to && st.to <= newState.doc.content.size)
+              return newState.tr.setSelection(TextSelection.create(newState.doc, st.from, st.to));
+          }
           const local = trs.filter((t) => t.docChanged && !isRemote(t) && !t.getMeta("sdtAppend"));
           const tr = newState.tr;
           const keepEmpty = trs.some((t) => (t.getMeta(sdtKey) as Meta | undefined)?.keepEmpty);
@@ -1242,31 +1269,49 @@ export const ContentControls = Extension.create({
               event.preventDefault();
               return true;
             }
-            if (node.attrs.plc && view.editable) {
-              // Clicking a placeholder puts the caret at its start.
-              view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, nodePos + 1)));
+            if (node.attrs.plc && view.editable && node.content.size) {
+              // Clicking a placeholder selects it, so typing replaces it.
+              view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, nodePos + 1, nodePos + node.nodeSize - 1)));
               return true;
             }
             return false;
           },
           // In the fill-in view a double click selects a whole field (a
           // sub-field of a complex form), a triple click the whole complex
-          // form (OnlyOffice).
-          handleDoubleClickOn(view, pos, node, nodePos) {
-            if (!isFillMode(view.state) || node.type.name !== SDT_INLINE) return false;
-            const pr = prOf(node);
-            if (pr.type === "complex" || !pr.form) return false;
-            const inner = sdtAncestors(view.state.doc.resolve(pos))[0];
-            if (inner && inner.pos !== nodePos) return false;
-            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, nodePos + 1, nodePos + node.nodeSize - 1)));
-            return true;
-          },
-          handleTripleClick(view, pos) {
-            if (!isFillMode(view.state)) return false;
-            const complex = sdtAncestors(view.state.doc.resolve(pos)).find((h) => prOf(h.node).type === "complex");
-            if (!complex) return false;
-            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, complex.pos + 1, complex.pos + complex.node.nodeSize - 1)));
-            return true;
+          // form (OnlyOffice). Read from the event's click count, so it
+          // doesn't depend on ProseMirror's own click timing.
+          handleDOMEvents: {
+            mousedown(view, event) {
+              if (event.button !== 0 || event.detail < 2 || !isFillMode(view.state)) return false;
+              const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+              if (!at) return false;
+              const hits = sdtAncestors(view.state.doc.resolve(at.pos));
+              let target: SdtHit | undefined;
+              if (event.detail >= 3) target = hits.find((h) => prOf(h.node).type === "complex");
+              else {
+                const inner = hits[0];
+                if (inner && prOf(inner.node).form && prOf(inner.node).type !== "complex") target = inner;
+              }
+              let range: { from: number; to: number } | null = target ? contentRange(target) : null;
+              // A double click on a complex form's own text selects a word
+              // of that text, not across the fields next to it.
+              if (!range && event.detail === 2 && hits.some((h) => prOf(h.node).type === "complex")) range = wordIn(view.state.doc, at.pos);
+              if (!range) return false;
+              const { from, to } = range;
+              const apply = () => {
+                if (view.isDestroyed) return;
+                const doc = view.state.doc;
+                if (to > doc.content.size) return;
+                view.dispatch(view.state.tr.setSelection(TextSelection.create(doc, from, to)));
+              };
+              apply();
+              view.focus();
+              event.preventDefault();
+              // The browser collapses the selection to the click point a
+              // moment after the click; keep this one for a little while.
+              sticky.set(view, { from, to, until: Date.now() + 400 });
+              return true;
+            },
           },
           attributes(state): Record<string, string> {
             return isFillMode(state) ? { class: "doc-forms-fill" } : {};
