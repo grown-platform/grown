@@ -240,6 +240,19 @@ function adjacentId(doc: PMNode, pos: number, markName: string, author: string, 
   return null;
 }
 
+/** paragraphInsertId: at the start of a paragraph, the id of the author's
+ *  inserted paragraph mark just before (typing after Enter continues it). */
+function paragraphInsertId(doc: PMNode, pos: number, author: string): string | null {
+  const $p = doc.resolve(pos);
+  if (!$p.parent.isTextblock || $p.parentOffset !== 0 || $p.depth < 1) return null;
+  const before = $p.before();
+  if (before < 1) return null;
+  const $b = doc.resolve(before - 1);
+  if (!$b.parent.isTextblock || before - 1 !== $b.end()) return null;
+  const pc = parseParaChange($b.parent.attrs.paraChange);
+  return pc?.type === "insert" && pc.author === author && pc.id ? pc.id : null;
+}
+
 /** markDeleted records [from, to) of tr.doc as deleted by `user`: text gets
  *  a deletion mark, paragraph marks inside the range a "delete" paraChange;
  *  the user's own pending insertions are removed outright. Returns the
@@ -730,7 +743,7 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
           if (on) {
             for (const r of inserts) {
               if (r.to <= r.from) continue;
-              insId ??= adjacentId(tr.doc, r.from, "insertion", u.name, -1) ?? newChangeId();
+              insId ??= adjacentId(tr.doc, r.from, "insertion", u.name, -1) ?? paragraphInsertId(tr.doc, r.from, u.name) ?? newChangeId();
               if (markInserted(tr, r.from, r.to, u, insId, date)) changed = true;
             }
             // Formatting changes, then drop the ones that were undone.

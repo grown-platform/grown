@@ -53,7 +53,7 @@ export function formatMarks(marks: readonly Mark[]): Mark[] {
   return marks.filter((m) => isFormatMark(m.type.name));
 }
 
-type MarkJSON = { type: string; attrs?: Record<string, unknown> };
+export type MarkJSON = { type: string; attrs?: Record<string, unknown> };
 
 function cleanAttrs(attrs: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!attrs) return undefined;
@@ -62,14 +62,21 @@ function cleanAttrs(attrs: Record<string, unknown> | undefined): Record<string, 
   return Object.keys(out).length ? out : undefined;
 }
 
-/** marksJSON serialises formatting marks in a stable order. */
-export function marksJSON(marks: readonly Mark[]): MarkJSON[] {
-  return formatMarks(marks)
+/** canonicalMarks puts JSON formatting marks in a stable form: review
+ *  marks, comments and links dropped, null attributes dropped, sorted. */
+export function canonicalMarks(marks: readonly MarkJSON[]): MarkJSON[] {
+  return marks
+    .filter((m) => isFormatMark(m.type))
     .map((m) => {
-      const attrs = cleanAttrs(m.attrs as Record<string, unknown>);
-      return attrs ? { type: m.type.name, attrs } : { type: m.type.name };
+      const attrs = cleanAttrs(m.attrs);
+      return attrs ? { type: m.type, attrs } : { type: m.type };
     })
     .sort((a, b) => (a.type < b.type ? -1 : a.type > b.type ? 1 : 0));
+}
+
+/** marksJSON serialises formatting marks in a stable order. */
+export function marksJSON(marks: readonly Mark[]): MarkJSON[] {
+  return canonicalMarks(marks.map((m) => ({ type: m.type.name, attrs: m.attrs as Record<string, unknown> })));
 }
 
 /** marksKey is a comparable string for a set of formatting marks. */
