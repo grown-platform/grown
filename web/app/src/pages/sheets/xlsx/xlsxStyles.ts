@@ -10,6 +10,7 @@
 // `tr` rotation ("1" 45°, "2" −45°, "3" stacked, "4" 90° up, "5" 90° down),
 // `lo` locked (0 = unlocked). Borders live on the sheet (`config.borderInfo`).
 
+import { resolveImportedFont } from "../../../lib/fonts";
 import type { CfStyle } from "../cfOps";
 import { all, attr, attrs, boolAttr, esc, kid, kids, numAttr, readColor, toArgb } from "./ooxml";
 
@@ -131,7 +132,8 @@ function readFont(el: Element | null, theme: string[]): Record<string, any> {
   const sz = numAttr(kid(el, "sz"), "val");
   if (sz !== null) out.fs = sz;
   const name = attr(kid(el, "name"), "val");
-  if (name) out.ff = name;
+  // Keep the name; Calibri & co. render with the bundled fallback (CC7).
+  if (name) out.ff = resolveImportedFont(name) || name;
   const color = readColor(kid(el, "color"), theme);
   if (color) out.fc = color;
   return out;

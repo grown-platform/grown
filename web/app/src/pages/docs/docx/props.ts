@@ -8,6 +8,7 @@
 // DirectParaProps (paragraphProps.ts) for paragraphs and styles.ts's RunPr
 // plus a few mark-only fields for runs, so an imported document is the
 // same model a user could have built in the editor.
+import { resolveImportedFont } from "../../../lib/fonts";
 import type { JSONContent } from "@tiptap/core";
 import type { ParaPr, RunPr } from "../styles";
 import type { Align, BorderSide, BorderSpec, Borders, LineRule, TabStop } from "../paragraphProps";
@@ -306,7 +307,8 @@ export function readRPr(rPr: Element | null | undefined, theme: ThemeFonts = {})
     const face = attr(fonts, "w:ascii") ?? attr(fonts, "w:hAnsi");
     const themed = attr(fonts, "w:asciiTheme") ?? attr(fonts, "w:hAnsiTheme");
     const font = face ?? (themed ? (/^major/.test(themed) ? theme.major : theme.minor) : undefined);
-    if (font) r.fontFamily = font;
+    // Keep the name; Calibri & co. render with the bundled fallback (CC7).
+    if (font) r.fontFamily = resolveImportedFont(font) || font;
   }
   const flag = (name: string, key: "bold" | "italic" | "allCaps" | "smallCaps") => {
     const v = onOff(kid(rPr, name));

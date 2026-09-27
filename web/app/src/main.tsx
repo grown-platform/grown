@@ -2,6 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { installFonts } from "./lib/fonts";
+
+// The shared open-font bundle and Calibri/Arial/… fallbacks (CC7).
+installFonts();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

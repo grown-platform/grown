@@ -15,3 +15,10 @@ their own licences.
 
 See `web/app/public/fonts/README.md` for the list, sources and licence
 files.
+
+| Family | Licence | Copyright |
+|---|---|---|
+| Noto Sans, Noto Serif, Noto Sans Mono | SIL OFL 1.1 | The Noto Project Authors |
+| Carlito | SIL OFL 1.1 | The Carlito Project Authors |
+| Caladea | SIL OFL 1.1 | The Caladea Project Authors |
+| Arimo, Tinos, Cousine | SIL OFL 1.1 | The Arimo / Tinos / Cousine Project Authors |
