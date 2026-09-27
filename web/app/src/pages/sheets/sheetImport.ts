@@ -218,9 +218,25 @@ export interface ImportFileOptions extends CsvImportOptions {
   userId?: string;
 }
 
+async function toBytes(file: Blob | ArrayBuffer | Uint8Array): Promise<Uint8Array> {
+  if (file instanceof Uint8Array) return file;
+  if (file instanceof ArrayBuffer) return new Uint8Array(file);
+  if (typeof (file as Blob).arrayBuffer === "function") return new Uint8Array(await (file as Blob).arrayBuffer());
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(new Uint8Array(fr.result as ArrayBuffer));
+    fr.onerror = () => reject(fr.error);
+    fr.readAsArrayBuffer(file as Blob);
+  });
+}
+
 /** Reads any supported spreadsheet file. */
-export async function importSpreadsheetFile(file: Blob, name: string, opts: ImportFileOptions = {}): Promise<ImportedWorkbook> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
+export async function importSpreadsheetFile(
+  file: Blob | ArrayBuffer | Uint8Array,
+  name: string,
+  opts: ImportFileOptions = {},
+): Promise<ImportedWorkbook> {
+  const bytes = await toBytes(file);
   const kind = importKind(name, bytes.subarray(0, 4));
   const base = name.replace(/\.[^.]+$/, "").slice(0, 31) || "Sheet1";
   switch (kind) {
