@@ -298,3 +298,14 @@ session:
   cookieName: grown_session
   cookieSecure: false        # set true once served over https
   lifetime: 168h
+
+# -----------------------------------------------------------------------------
+# Music radio song cache. Stations cache every song they play as objects in S3;
+# this is an INSTANCE-wide cap across all orgs (the object store is shared).
+# When exceeded, the oldest cached radio songs are erased first; songs a user
+# liked or added to a playlist are never erased. 0 disables a limit.
+# -----------------------------------------------------------------------------
+music:
+  radioCache:
+    maxBytes: "5Gi"   # bytes or a size: 5Gi, 500Mi, 2GB
+    maxDays: 30
