@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Sheet,
   IconButton,
@@ -44,6 +45,8 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import AddIcon from "@mui/icons-material/Add";
 import type { Editor } from "@tiptap/react";
 import { promptLink } from "./links";
+import GridOnIcon from "@mui/icons-material/GridOn";
+import { TableSizePicker, insertPickedTable } from "./TableUI";
 
 export type EditorMode = "editing" | "viewing";
 
@@ -107,6 +110,7 @@ export function Toolbar({
   mode,
   onModeChange,
 }: ToolbarProps) {
+  const [tableOpen, setTableOpen] = useState(false);
   if (!editor) return null;
 
   const iconBtn = (
@@ -361,6 +365,24 @@ export function Toolbar({
         <LinkIcon />,
       )}
       {iconBtn(false, promptImage, "Insert image", <ImageIcon />)}
+      <Dropdown open={tableOpen} onOpenChange={(_, o) => setTableOpen(o)}>
+        <Tooltip title="Insert table" size="sm">
+          <MenuButton
+            slots={{ root: IconButton }}
+            slotProps={{ root: { size: "sm", variant: "plain", "aria-label": "Insert table" } }}
+          >
+            <GridOnIcon />
+          </MenuButton>
+        </Tooltip>
+        <Menu sx={{ p: 0 }}>
+          <TableSizePicker
+            onPick={(r, c) => {
+              setTableOpen(false);
+              insertPickedTable(editor, r, c);
+            }}
+          />
+        </Menu>
+      </Dropdown>
 
       <Divider orientation="vertical" sx={{ mx: 0.5 }} />
 

@@ -47,6 +47,8 @@ import { MenuBar, type DocActions } from "./MenuBar";
 import { Presence } from "./Presence";
 import { Ruler, type Indents } from "./Ruler";
 import { ParagraphDialogs } from "./ParagraphDialogs";
+import { TableDialogs, TableSettings, onOpenTableSettings, openConvertTextDialog, openTableSettings } from "./TableUI";
+import { distributeColumns, distributeRows, splitTable, tableToText, toggleRepeatHeader } from "./tables";
 import { selectedParagraphIndents } from "./docModel";
 import { ShareDialog } from "./ShareDialog";
 import { CommandPalette, type Command } from "./CommandPalette";
@@ -120,8 +122,9 @@ export function DocEditor({ user }: DocEditorProps) {
   };
   // Right-hand side panel: version history, comments, or suggestions.
   const [panel, setPanel] = useState<
-    null | "versions" | "comments" | "suggestions"
+    null | "versions" | "comments" | "suggestions" | "table"
   >(null);
+  useEffect(() => onOpenTableSettings(() => setPanel("table")), []);
   // Track-changes ("Suggesting") mode.
   const [suggesting, setSuggesting] = useState(false);
   // Drawing editor: open + the scene being edited + the node pos (null = new).
@@ -543,6 +546,13 @@ export function DocEditor({ user }: DocEditorProps) {
             .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
             .run(),
       },
+      { label: "Table settings", section: "Format", run: () => openTableSettings() },
+      { label: "Convert text to table", section: "Format", run: () => openConvertTextDialog() },
+      { label: "Convert table to text", section: "Format", run: () => tableToText(e) },
+      { label: "Split table", section: "Format", run: () => splitTable(e) },
+      { label: "Distribute rows", section: "Format", run: () => distributeRows(e) },
+      { label: "Distribute columns", section: "Format", run: () => distributeColumns(e) },
+      { label: "Repeat header row", section: "Format", run: () => toggleRepeatHeader(e) },
       {
         label: "Horizontal line",
         section: "Insert",
@@ -846,6 +856,35 @@ export function DocEditor({ user }: DocEditorProps) {
             </Box>
           </>
         )}
+        {panel === "table" && (
+          <>
+            <Box
+              onClick={() => setPanel(null)}
+              sx={{
+                display: { xs: "block", md: "none" },
+                position: "fixed",
+                inset: 0,
+                bgcolor: "rgba(0,0,0,0.4)",
+                zIndex: 1200,
+              }}
+            />
+            <Box
+              sx={{
+                position: { xs: "fixed", md: "sticky" },
+                top: { xs: 0, md: 8 },
+                right: { xs: 0, md: "auto" },
+                bottom: { xs: 0, md: "auto" },
+                alignSelf: "flex-start",
+                zIndex: { xs: 1201, md: 1 },
+                width: { xs: "min(320px, 100vw)", md: "auto" },
+                height: { xs: "100vh", md: "auto" },
+                overflowY: { xs: "auto", md: "visible" },
+              }}
+            >
+              <TableSettings editor={editor} onClose={() => setPanel(null)} />
+            </Box>
+          </>
+        )}
         {panel === "suggestions" && (
           <>
             <Box
@@ -881,6 +920,7 @@ export function DocEditor({ user }: DocEditorProps) {
         onComment={() => actions.commentOnSelection()}
       />
       <ParagraphDialogs editor={editor} />
+      <TableDialogs editor={editor} />
       <ShortcutsDialog
         open={dialog === "shortcuts"}
         onClose={() => setDialog(null)}

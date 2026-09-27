@@ -19,6 +19,8 @@ import { downloadDoc, DOWNLOAD_FORMATS } from "./export";
 import { applyStyle, continueNumbering, currentStyle, restartNumbering } from "./docModel";
 import { openParagraphDialog } from "./ParagraphDialogs";
 import { promptLink } from "./links";
+import { TableSizePicker, insertPickedTable, openConvertTextDialog, openTableSettings } from "./TableUI";
+import { autofitTable, distributeColumns, distributeRows, setCellProps, splitTable, tableToText, toggleRepeatHeader } from "./tables";
 
 const menuButtonSx = {
   fontWeight: 400,
@@ -175,9 +177,16 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
       applyStyle(e, id);
     });
 
+  // Insert is controlled so the table size picker (not a MenuItem) can
+  // close it after a pick.
+  const [insertOpen, setInsertOpen] = useState(false);
   // Dropdowns open left-aligned (bottom-start) under their menu title.
-  const top = (label: string, children: React.ReactNode) => (
-    <Dropdown>
+  const top = (
+    label: string,
+    children: React.ReactNode,
+    ctl?: { open: boolean; setOpen: (o: boolean) => void },
+  ) => (
+    <Dropdown {...(ctl ? { open: ctl.open, onOpenChange: (_: unknown, o: boolean) => ctl.setOpen(o) } : {})}>
       <MenuButton variant="plain" size="sm" sx={menuButtonSx}>
         {label}
       </MenuButton>
@@ -281,17 +290,17 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           >
             Image…
           </MenuItem>
-          <MenuItem
-            onClick={run((e) =>
-              e
-                .chain()
-                .focus()
-                .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-                .run(),
-            )}
-          >
-            Table (3×3)
-          </MenuItem>
+          <Typography level="body-xs" sx={{ px: 1.5, pt: 0.5, opacity: 0.6 }}>
+            Table
+          </Typography>
+          <TableSizePicker
+            onPick={(r, c) => {
+              setInsertOpen(false);
+              if (editor) insertPickedTable(editor, r, c);
+            }}
+          />
+          <MenuItem onClick={() => openConvertTextDialog()}>Convert text to table…</MenuItem>
+          <ListDivider />
           <MenuItem disabled>Building blocks</MenuItem>
           <MenuItem disabled>Smart chips</MenuItem>
           <MenuItem
@@ -332,6 +341,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Comment{kbd("Ctrl+Alt+M")}
           </MenuItem>
         </>,
+        { open: insertOpen, setOpen: setInsertOpen },
       )}
 
       {top(
@@ -573,6 +583,19 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem onClick={run((e) => e.chain().focus().mergeOrSplit().run())}>
             Merge / split cells
           </MenuItem>
+          <MenuItem onClick={run((e) => distributeRows(e))}>Distribute rows</MenuItem>
+          <MenuItem onClick={run((e) => distributeColumns(e))}>Distribute columns</MenuItem>
+          <MenuItem onClick={run((e) => toggleRepeatHeader(e))}>Repeat header row</MenuItem>
+          <MenuItem onClick={run((e) => autofitTable(e, "contents"))}>Autofit to contents</MenuItem>
+          <MenuItem onClick={run((e) => autofitTable(e, "window"))}>Autofit to window</MenuItem>
+          {(["top", "middle", "bottom"] as const).map((v) => (
+            <MenuItem key={v} onClick={run((e) => setCellProps(e, { verticalAlign: v === "top" ? null : v }))}>
+              Align cell {v}
+            </MenuItem>
+          ))}
+          <MenuItem onClick={run((e) => splitTable(e))}>Split table</MenuItem>
+          <MenuItem onClick={run((e) => tableToText(e))}>Convert table to text</MenuItem>
+          <MenuItem onClick={() => openTableSettings()}>Table settings…</MenuItem>
           {(
             [
               ["Yellow", "#fff3a0"],
