@@ -58,6 +58,8 @@ export function editorPageSx(
     pt: `${MT}px`,
     pb: `${MB}px`,
     pl: { xs: 2, md: `${indents.left * PX_PER_INCH}px` },
+    // Left page margin for page-relative object offsets (M7, objects.ts).
+    "--doc-ml": `${indents.left * PX_PER_INCH}px`,
     pr: { xs: 2, md: `${indents.right * PX_PER_INCH}px` },
     // Page boundaries every page: a ${PAGE_GAP}px gray gap (matching the
     // workspace) with faint edge shadows, so the document reads as separate sheets.
@@ -335,6 +337,7 @@ export function pagedSheetSx(base: BaseGeom, height: number, hyph?: Hyphenation 
     pt: `${base.top}px`,
     pb: 0,
     pl: `${base.left}px`,
+    "--doc-ml": `${base.left}px`,
     pr: `${base.maxW - base.left - base.width}px`,
     bgcolor: "transparent",
     boxShadow: "none",

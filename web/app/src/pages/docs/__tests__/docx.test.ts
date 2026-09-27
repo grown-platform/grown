@@ -150,7 +150,8 @@ describe("docx reader", () => {
   it("maps images, notes, comments, tracked changes, fields and breaks", async () => {
     const { editor, imp } = await importInto(await buildDocx(richParts()));
     const json = editor.getJSON();
-    const img = findNode(json, (n) => n.type === "image")!;
+    // Since M7 a DrawingML picture is an inline node in its paragraph.
+    const img = findNode(json, (n) => n.type === "inlineImage")!;
     expect(img.attrs).toMatchObject({ src: `data:image/png;base64,${PNG_1PX}`, alt: "Logo", width: 100, height: 50 });
 
     const fn = findNode(json, (n) => n.type === "footnote")!;

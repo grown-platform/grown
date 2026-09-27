@@ -33,6 +33,11 @@ import { CUSTOM_XML_REL, documentProtectionXml, sdtPrXml, writeCustomXml } from 
 import { prOf } from "../sdtModel";
 import type { Protection } from "../protection";
 import type { CustomXmlPart } from "../customXml";
+import { chartGraphicXml, CT_CHART, CT_XLSX, drawingBoxXml, REL_CHART, REL_PACKAGE, srcRectXml, wspGraphicXml, xfrmAttrs } from "./drawings";
+import { chartConfigOf, chartInputOf, normalizeGrid } from "../../slides/chartElement";
+import { chartWorkbook } from "../../slides/pptx/objectsXml";
+import { chartSpaceXml } from "../../sheets/xlsx/xlsxCharts";
+import { chartOfAttr } from "../chartData";
 
 export interface RasterImage {
   data: Uint8Array;
@@ -199,6 +204,8 @@ class Writer {
   endnoteIds = new Map<string, number>();
   revId = 1000;
   drawingId = 1;
+  /** Chart parts (M7). */
+  charts: { name: string; xml: string; workbook: Uint8Array | null }[] = [];
   leaf = 0;
   commentFirst = new Map<string, number>();
   commentLast = new Map<string, number>();
@@ -718,7 +725,9 @@ class Writer {
       else if (c.type.name === "hardBreak") run = `<w:r>${rPr}<w:br/></w:r>`;
       else if (c.type.name === "footnote" || c.type.name === "endnote") {
         if (ctx.body) run = this.noteRef(c, writeRPr({ ...marksRunProps(c.marks), vertAlign: "super" }));
-      } else if (c.type.name === "image") run = (await this.imageRun(c, ctx)) ?? "";
+      } else if (c.type.name === "image" || c.type.name === "inlineImage") run = ctx.body || c.type.name === "inlineImage" ? ((await this.imageRun(c, ctx)) ?? "") : "";
+      else if (c.type.name === "shape" || c.type.name === "textBox") run = await this.shapeRun(c, ctx);
+      else if (c.type.name === "chart") run = ctx.body ? await this.chartRun(c, ctx) : "";
       else if (c.type.name === "math") run = writeOMML(contentFromAttr(c.attrs.data), !!c.attrs.display);
       else if (c.type.name === "field") run = fieldRuns(String(c.attrs.instr ?? ""), String(c.attrs.result ?? ""), rPr, !!c.attrs.locked, (t) => this.textXml(t, false));
       else if (c.type.name === "sdtInline") {
@@ -860,19 +869,70 @@ class Writer {
     const cy = Math.max(1, Math.round(h * EMU_PER_PX));
     const id = this.drawingId++;
     const alt = String(node.attrs.alt ?? "");
-    return (
-      "<w:r><w:drawing>" +
-      `<wp:inline distT="0" distB="0" distL="0" distR="0">` +
-      el("wp:extent", { cx, cy }) +
-      el("wp:effectExtent", { l: 0, t: 0, r: 0, b: 0 }) +
-      el("wp:docPr", { id, name: `Picture ${id}`, descr: alt || undefined }) +
-      `<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>` +
+    // Docs M7: wrap / position (wp:anchor), crop, rotation, flips, name.
+    const graphic =
       `<a:graphic><a:graphicData uri="${NS.pic}"><pic:pic>` +
-      `<pic:nvPicPr>${el("pic:cNvPr", { id: 0, name })}<pic:cNvPicPr/></pic:nvPicPr>` +
-      `<pic:blipFill>${el("a:blip", { "r:embed": rid })}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
-      `<pic:spPr><a:xfrm><a:off x="0" y="0"/>${el("a:ext", { cx, cy })}</a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
-      "</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"
-    );
+      `<pic:nvPicPr>${el("pic:cNvPr", { id: 0, name, descr: alt || undefined })}<pic:cNvPicPr/></pic:nvPicPr>` +
+      `<pic:blipFill>${el("a:blip", { "r:embed": rid })}${srcRectXml(node.attrs)}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+      `<pic:spPr>${el("a:xfrm", xfrmAttrs(node.attrs), `<a:off x="0" y="0"/>${el("a:ext", { cx, cy })}`)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+      "</pic:pic></a:graphicData></a:graphic>";
+    const attrs = node.type.name === "image" && node.attrs.wrap !== "topBottom" ? { ...node.attrs, wrap: "inline" } : node.attrs;
+    const box = drawingBoxXml({ attrs, cx, cy, id, name: String(node.attrs.name || `Picture ${id}`), descr: alt, graphic, picture: true });
+    return `<w:r><w:drawing>${box}</w:drawing></w:r>`;
+  }
+
+  /** A wps shape or text box (Docs M7), inside mc:AlternateContent as Word
+   *  writes it (no VML fallback: Word 2010+ and LibreOffice read wps). */
+  async shapeRun(node: PMNode, ctx: PartCtx): Promise<string> {
+    const w = Math.max(1, Number(node.attrs.width) || 160);
+    const h = Math.max(1, Number(node.attrs.height) || 100);
+    const cx = Math.round(w * EMU_PER_PX);
+    const cy = Math.round(h * EMU_PER_PX);
+    const id = this.drawingId++;
+    const textBox = node.type.name === "textBox";
+    const inner = node.childCount ? await this.inline(node, { ...ctx, body: false }, "") : "";
+    const para = `<w:p>${inner}</w:p>`;
+    const graphic = wspGraphicXml(node.attrs, cx, cy, para, textBox);
+    const box = drawingBoxXml({ attrs: node.attrs, cx, cy, id, name: String(node.attrs.name || `${textBox ? "Text Box" : "Shape"} ${id}`), descr: String(node.attrs.alt ?? ""), graphic });
+    return `<w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>${box}</w:drawing></mc:Choice></mc:AlternateContent></w:r>`;
+  }
+
+  /** A chart (Docs M7): word/charts/chartN.xml from the Sheets chart writer
+   *  with every value cached, its data as an embedded workbook, and the
+   *  Grown chart in the part's extension entry. */
+  async chartRun(node: PMNode, ctx: PartCtx): Promise<string> {
+    const chart = chartOfAttr(node.attrs.chart);
+    const n = this.charts.length + 1;
+    const input = chartInputOf(chart);
+    let wbRid: string | undefined;
+    let workbook: Uint8Array | null = null;
+    try {
+      workbook = await chartWorkbook(chart);
+      wbRid = "rId1";
+    } catch {
+      workbook = null;
+    }
+    let xml = chartSpaceXml(chartConfigOf(chart), "Sheet1", {
+      cache: { categories: input.categories, series: input.series, xValues: chart.type === "scatter" ? input.xValues : undefined },
+      externalData: wbRid,
+    });
+    const own = esc(JSON.stringify({ ...chart, data: normalizeGrid(chart.data) }));
+    xml = xml.replace(/<g:chart>[\s\S]*?<\/g:chart>/, () => `<g:chart>${own}</g:chart>`);
+    this.charts.push({ name: `chart${n}.xml`, xml, workbook });
+    const rid = ctx.rels.add(REL_CHART, `charts/chart${n}.xml`);
+    const w = Math.max(1, Number(node.attrs.width) || 480);
+    const h = Math.max(1, Number(node.attrs.height) || 300);
+    const id = this.drawingId++;
+    const box = drawingBoxXml({
+      attrs: node.attrs,
+      cx: Math.round(w * EMU_PER_PX),
+      cy: Math.round(h * EMU_PER_PX),
+      id,
+      name: String(node.attrs.name || `Chart ${id}`),
+      descr: String(node.attrs.alt ?? chart.title ?? ""),
+      graphic: chartGraphicXml(rid),
+    });
+    return `<w:r><w:drawing>${box}</w:drawing></w:r>`;
   }
 
   // --- table of contents (M8) ---------------------------------------------------------------
@@ -1122,6 +1182,18 @@ class Writer {
     if (input.customXml?.length)
       for (const target of writeCustomXml(this.zip, input.customXml, (p, t) => this.override(p, t))) this.rels.add(CUSTOM_XML_REL, target);
     for (const m of this.media) this.zip.file(`word/media/${m.name}`, m.data);
+    this.charts.forEach((c, i) => {
+      this.zip.file(`word/charts/${c.name}`, c.xml);
+      this.override(`word/charts/${c.name}`, CT_CHART);
+      if (c.workbook) {
+        const wb = `Microsoft_Excel_Worksheet${i + 1}.xlsx`;
+        this.zip.file(`word/embeddings/${wb}`, c.workbook);
+        this.defaults.set("xlsx", CT_XLSX);
+        const rels = new Rels();
+        rels.add(REL_PACKAGE, `../embeddings/${wb}`);
+        this.zip.file(`word/charts/_rels/${c.name}.rels`, rels.xml());
+      }
+    });
     this.zip.file("word/_rels/document.xml.rels", this.rels.xml());
 
     // Package parts.

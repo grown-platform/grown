@@ -153,6 +153,9 @@ export const NS = {
   w14: "http://schemas.microsoft.com/office/word/2010/wordml",
   w15: "http://schemas.microsoft.com/office/word/2012/wordml",
   mc: "http://schemas.openxmlformats.org/markup-compatibility/2006",
+  /** Word 2010 drawing extensions (M7): relative sizes / positions, shapes. */
+  wp14: "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",
+  wps: "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
   m: "http://schemas.openxmlformats.org/officeDocument/2006/math",
   /** Grown's form-field extension (M10), ignorable for other readers. */
   gf: "urn:grown:docs:forms:2026",
@@ -160,7 +163,8 @@ export const NS = {
 
 export const ROOT_NS =
   `xmlns:w="${NS.w}" xmlns:r="${NS.r}" xmlns:wp="${NS.wp}" xmlns:a="${NS.a}" ` +
-  `xmlns:pic="${NS.pic}" xmlns:m="${NS.m}" xmlns:w14="${NS.w14}" xmlns:w15="${NS.w15}" xmlns:gf="${NS.gf}" xmlns:mc="${NS.mc}" mc:Ignorable="w14 w15 gf"`;
+  `xmlns:pic="${NS.pic}" xmlns:m="${NS.m}" xmlns:w14="${NS.w14}" xmlns:w15="${NS.w15}" xmlns:gf="${NS.gf}" xmlns:mc="${NS.mc}" ` +
+  `xmlns:wp14="${NS.wp14}" xmlns:wps="${NS.wps}" mc:Ignorable="w14 w15 gf wp14"`;
 
 // --- colours ---------------------------------------------------------------------
 

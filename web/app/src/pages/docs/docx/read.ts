@@ -56,6 +56,9 @@ import { readSectPr, readSettings } from "./sections";
 import { encodeSection } from "../sections";
 import { readCustomXml, readDocProtection, readSdtPr } from "./sdt";
 import { encodePr } from "../sdtModel";
+import { readDrawingBox, readVmlStyle, readWsp, readXfrm, textBoxContent } from "./drawings";
+import { readSlideChart } from "../../slides/pptx/objectsXml";
+import { chartAttr } from "../chartData";
 import { attr, descendants, EMU_PER_PX, kid, kids, nameOf, num, onOff, parseXml, path, TWIPS_PER_PX, twipsToPt } from "./xml";
 
 type Mark = NonNullable<JSONContent["marks"]>[number];
@@ -284,6 +287,8 @@ class Reader {
   /** Point bookmarks that ended between paragraphs, for the next one. */
   pendingPoints: string[] = [];
   media = new Map<string, string>();
+  /** Chart parts by `<part>#<rid>` (M7). */
+  charts = new Map<string, Document>();
   warnings = new Set<string>();
   tableStyles: TableStyles = new Map();
   /** Paragraph-level w:sectPr in document order, with the section break
@@ -605,6 +610,17 @@ class Reader {
   // --- media --------------------------------------------------------------------------
 
   async loadMedia(part: Part) {
+    // Chart parts (M7): read ahead, the body walk is synchronous.
+    for (const [rid, rel] of part.rels) {
+      if (rel.external || !/\/chart$/.test(rel.type)) continue;
+      const text = await readText(this.zip, rel.target);
+      if (text == null) continue;
+      try {
+        this.charts.set(`${part.path}#${rid}`, parseXml(text));
+      } catch {
+        this.warn("unreadable chart");
+      }
+    }
     for (const [rid, rel] of part.rels) {
       if (rel.external || !/\/image$/.test(rel.type)) continue;
       const key = `${part.path}#${rid}`;
@@ -620,7 +636,7 @@ class Reader {
     }
   }
 
-  imageNode(ctx: Ctx, rid: string | null, extent: Element | null, docPr: Element | null): JSONContent | null {
+  imageNode(ctx: Ctx, rid: string | null, extent: Element | null, docPr: Element | null, extra?: Record<string, unknown>): JSONContent | null {
     if (ctx.margin) {
       this.warn("header/footer images");
       return null;
@@ -637,6 +653,9 @@ class Reader {
       attrs.width = Math.round(cx / EMU_PER_PX);
       attrs.height = Math.round(cy / EMU_PER_PX);
     }
+    // Docs M7: a picture is an inline node in its paragraph (Word's model)
+    // carrying its wrap, position, crop, rotation and name.
+    if (extra) return { type: "inlineImage", attrs: { ...attrs, ...extra } };
     return { type: "image", attrs };
   }
 
@@ -1029,7 +1048,7 @@ class Reader {
           const rest: Inline[] = [];
           const kept: Inline[] = [];
           for (const it of items) {
-            if (it.kind !== "text" && it.node.type === "image" && info.pr.type === "picture") {
+            if (it.kind !== "text" && (it.node.type === "image" || it.node.type === "inlineImage") && info.pr.type === "picture") {
               const a = it.node.attrs ?? {};
               const ext = info.pr.picture;
               info.pr.picture =
@@ -1260,6 +1279,7 @@ class Reader {
 
   drawing(d: Element, ctx: Ctx, out: Inline[]) {
     const box = kid(d, "inline") ?? kid(d, "anchor");
+    if (box && !ctx.margin && this.drawingObject(box, ctx, out)) return;
     if (box && nameOf(box) === "anchor") this.warn("floating image position");
     const blip = descendants(d, "blip")[0];
     if (blip) {
@@ -1270,11 +1290,83 @@ class Reader {
     this.textBoxes(d, ctx, out);
   }
 
+  /** A wp:inline / wp:anchor holding one picture, wps shape / text box or
+   *  chart as an object node (M7). False for anything else (groups,
+   *  canvases, SmartArt), which keeps the pre-M7 handling. */
+  drawingObject(box: Element, ctx: Ctx, out: Inline[]): boolean {
+    const gd = path(box, "graphic", "graphicData");
+    if (!gd) return false;
+    const common = readDrawingBox(box);
+    const pic = kid(gd, "pic");
+    if (pic) {
+      const blip = descendants(pic, "blip")[0];
+      const rid = attr(blip, "r:embed");
+      if (!rid) {
+        if (attr(blip, "r:link")) this.warn("linked (external) images");
+        return true;
+      }
+      const node = this.imageNode(ctx, rid, kid(box, "extent"), kid(box, "docPr"), { ...common, ...readXfrm(pic) });
+      if (node) out.push({ kind: "node", node });
+      return true;
+    }
+    const wsp = kid(gd, "wsp");
+    if (wsp) {
+      const sh = readWsp(wsp);
+      const { textBox, ...attrs } = sh;
+      const tb = textBoxContent(wsp);
+      if (tb && descendants(tb, "tbl").length) return false; // tables in a text box: old path
+      const content = tb ? this.textBoxInline(tb, ctx) : [];
+      out.push({ kind: "node", node: { type: textBox ? "textBox" : "shape", attrs: { ...common, ...attrs }, ...(content.length ? { content } : {}) } });
+      return true;
+    }
+    const ch = kid(gd, "chart");
+    if (ch) {
+      const doc = this.charts.get(`${ctx.part.path}#${attr(ch, "r:id")}`);
+      const chart = doc ? readSlideChart(doc) : null;
+      if (!chart) {
+        this.warn("charts without cached values");
+        return true;
+      }
+      out.push({ kind: "node", node: { type: "chart", attrs: { ...common, chart: chartAttr(chart) } } });
+      return true;
+    }
+    return false;
+  }
+
+  /** A text box's paragraphs as shape text: runs with their marks, the
+   *  paragraphs joined by line breaks. */
+  textBoxInline(tb: Element, ctx: Ctx): JSONContent[] {
+    const out: JSONContent[] = [];
+    kids(tb, "p").forEach((p, i) => {
+      const items: Inline[] = [];
+      this.inline(p, { ...ctx, marks: [] }, items);
+      const content = itemsToContent(items).filter((n) => n.type === "text" || n.type === "hardBreak");
+      if (i > 0) out.push({ type: "hardBreak" });
+      out.push(...content);
+    });
+    while (out.length && out[out.length - 1].type === "hardBreak") out.pop();
+    return out;
+  }
+
   vml(v: Element, ctx: Ctx, out: Inline[]) {
     const img = descendants(v, "imagedata")[0];
     if (img) {
       const node = this.imageNode(ctx, attr(img, "r:id"), null, null);
       if (node) out.push({ kind: "block", node });
+    }
+    // A VML text box (the pre-2010 fallback, M7): read-only, as a text box.
+    const tbEl = descendants(v, "textbox")[0];
+    const tb = tbEl ? textBoxContent(tbEl) : null;
+    if (!img && tb && !ctx.margin && !descendants(tb, "tbl").length) {
+      const shape = kids(v).find((k) => nameOf(k) !== "textbox") ?? tbEl!.parentElement;
+      const content = this.textBoxInline(tb, ctx);
+      const attrs: Record<string, unknown> = { wrap: "inline", ...readVmlStyle(attr(shape, "style")) };
+      const fill = attr(shape, "fillcolor");
+      const stroke = attr(shape, "strokecolor");
+      if (fill && /^#[0-9a-f]{6}$/i.test(fill)) attrs.fill = fill.toLowerCase();
+      if (stroke && /^#[0-9a-f]{6}$/i.test(stroke)) attrs.stroke = stroke.toLowerCase();
+      out.push({ kind: "node", node: { type: "textBox", attrs, ...(content.length ? { content } : {}) } });
+      return;
     }
     this.textBoxes(v, ctx, out);
   }
@@ -1704,8 +1796,22 @@ export async function readDocx(data: ArrayBuffer | Uint8Array | Blob): Promise<D
   if (docLang) out.lang = docLang;
   stripDefaultLang(out.doc, docLang);
   mergeDropCaps(out.doc);
+  rankZ(out.doc);
   for (const m of Object.values(margins)) stripDefaultLang(m, docLang);
   return out;
+}
+
+/** rankZ turns Word's relativeHeight values (large, sparse) into ranks
+ *  1..n over the document's objects, keeping their order (M7). */
+function rankZ(json: JSONContent) {
+  const objs: JSONContent[] = [];
+  const walk = (n: JSONContent) => {
+    if (n.attrs && typeof n.attrs.z === "number" && ["inlineImage", "shape", "textBox", "chart"].includes(n.type ?? "")) objs.push(n);
+    n.content?.forEach(walk);
+  };
+  walk(json);
+  const ranked = [...objs].sort((a, b) => (a.attrs!.z as number) - (b.attrs!.z as number));
+  ranked.forEach((n, i) => (n.attrs = { ...n.attrs, z: i + 1 }));
 }
 
 /** mergeDropCaps folds each Word drop-cap frame paragraph into the

@@ -46,7 +46,7 @@ import { isDataUrl, migrateDataUrl, naturalSize, storePicture } from "./docAsset
 import { shapeLayersMarkup } from "../slides/shapeRender";
 import { evaluatePreset } from "../slides/presetGeometry";
 import { isConnectorPreset } from "../slides/presetDefs";
-import { defaultChartData, normalizeGrid } from "../slides/chartElement";
+import { chartAttr, chartOfAttr } from "./chartData";
 import type { SlideChart, SlideElement } from "../slides/model";
 
 // --- CSS -------------------------------------------------------------------------------
@@ -102,18 +102,10 @@ function injectCss() {
 
 /** A chart node's chart (the JSON attribute), normalised. */
 export function chartOf(node: PMNode | { attrs: Record<string, unknown> }): SlideChart {
-  try {
-    const c = JSON.parse(String(node.attrs.chart ?? "")) as SlideChart;
-    if (c && c.type && Array.isArray(c.data)) return { ...c, data: normalizeGrid(c.data) };
-  } catch {
-    /* default below */
-  }
-  return { type: "column", title: "", data: defaultChartData("column") };
+  return chartOfAttr(node.attrs.chart);
 }
 
-export function chartAttr(chart: SlideChart): string {
-  return JSON.stringify({ ...chart, data: normalizeGrid(chart.data) });
-}
+export { chartAttr };
 
 // --- shape drawing -----------------------------------------------------------------------
 
