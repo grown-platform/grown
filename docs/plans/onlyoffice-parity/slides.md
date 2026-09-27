@@ -1055,8 +1055,7 @@ which creates a new deck. A .pptx opened from Drive (`/slides/:id`) gets
 
 - Element animations (`p:timing`) are neither written nor read, so
   M8 is needed.
-- Per-run formatting is lost: Grown styles a whole text box from its first
-  run, so mixed runs collapse (M4).
+- ~~Per-run formatting is lost~~ (resolved in M4, see §6.8).
 - Underline on a hyperlinked run is dropped on import, because it can't be
   told apart from the hyperlink style.
 - Table merges and per-cell styles are not kept; table styles
@@ -1294,3 +1293,112 @@ PDF, SVG and PNG exports use the same markup.
   PowerPoint-style elbow re-layout around obstacles, and nothing is glued
   to group members.
 - Imported glue that targets a picture or a graphic frame is dropped.
+
+### 6.8 M4 status (Wave 4): text formatting depth
+
+**Runs (F1).** Text elements gain optional `runs?: TextRun[]` (bold,
+italic, underline, strike, super/subscript, size, font, colour, link per
+run) and `paras?: ParaProps[]` (level 0–8 and alignment per paragraph).
+`text` stays the plain-text mirror: the runs always concatenate to it, and
+runs whose text no longer matches (an edit by an older client) are ignored.
+"\n" separates paragraphs; "\v" is a line break inside one (Shift+Enter,
+pptx `a:br`). `textOps.withRuns` normalises every edit: adjacent equal runs
+merge, run values equal to the element's are dropped, a value every run
+shares moves up to the element, and `runs`/`paras` vanish when they carry
+nothing, so a box that was never range-formatted keeps its old shape.
+Collab needs no new op: `upsert` relays the whole element.
+
+Other new element fields: `baseline`, `bulletStyle` (bullet character or
+`buAutoNum` scheme), `spaceBefore`/`spaceAfter`, `insets` (default 4 px),
+`autofit: "shrink"`, `rtl`, `vert` (`vert`/`vert270`); `align` gains
+`justify`.
+
+**Modules.**
+
+- `textOps.ts` (pure): range format/toggle, font-size ladder (`fontStep`:
+  8…28, 36, 48, 72, then ±10), change case (the Docs logic, now shared from
+  `lib/textCase.ts`), clear formatting, paint-format capture/apply, text
+  replace keeping runs, paragraph align/indent, multi-level list markers
+  (bullets •◦▪ by level; numbering arabic/alpha/roman by level, restarting
+  per level), insets with invalid-input rejection, link ranges.
+- `links.ts`: slide targets stored as `#slide:first|last|next|prev|<id>`,
+  resolved from the current slide; pptx `ppaction://hlinkshowjump` and
+  `hlinksldjump` both ways; dialog input classified via `lib/urlType`.
+- `findReplace.ts`: matches across text boxes (in groups too), table cells
+  and notes; match case / whole word; replace one or all, keeping runs.
+- `textDom.ts` + `TextEditor.tsx`: the in-place editor owns its DOM
+  imperatively (`div[data-para]` > `span[data-run]` with each run's style as
+  JSON). Typing, Enter, Shift+Enter and deletes are native contentEditable;
+  the DOM is read back into runs when a command runs and when editing ends.
+  Browser-made markup (b/i/u/sup/sub/a, inline styles, bare divs) is read
+  too. `textLayout.ts` gives SlideView, the editor and the HTML export the
+  same run/paragraph CSS.
+- `specialChars.ts`, `TextDialogs.tsx` (hyperlink, find and replace, special
+  characters, text options), `TextFormatControls.tsx` (toolbar).
+
+**Editor.** A text command applies to the live selection while a box is
+edited, else to the selection the box had when editing ended (a menu,
+dialog or colour picker took focus; editing then resumes with it), else to
+every selected box as a whole. A collapsed caret acts on its word
+(character formatting) or its paragraph (paragraph formatting). Toolbar:
+font, size ±, colour, strikethrough, super/subscript, justify, vertical
+align, bullet/number styles, indent ±, change case, paint format, clear
+formatting, link. Format menu: the same plus text fitting, text direction
+and Text options… (insets, paragraph spacing, shrink on overflow,
+direction). Edit ▸ Find and replace (Ctrl+H) is a floating panel; matches
+in top-level boxes are highlighted with the CSS Custom Highlight API
+without taking focus. Insert ▸ Special characters… (categories + search).
+The hyperlink dialog links to a web/email address (classified live;
+script schemes rejected, other schemes flagged) or to the first, last,
+next, previous or a chosen slide; Ctrl/Cmd+click follows a link in the
+editor and a click follows it in the slideshow.
+
+Keys (`keymap.textKeyAction`): Ctrl+B/I/U, Ctrl+5 and Alt+Shift+5, Ctrl+.
+and Ctrl+, , Ctrl+] / Ctrl+[ and Ctrl+Shift+> / <, Ctrl+E/J/L/R (and the
+Ctrl+Shift Google aliases), Ctrl+Shift+L or Ctrl+Shift+8 bullets,
+Ctrl+Shift+7 numbering, Ctrl+Shift+C/V paint format, Ctrl+Space or Ctrl+\
+clear, Ctrl+K link, Ctrl+H find; while editing Ctrl+Shift+Space (NBSP),
+Ctrl+Alt+E (€), Ctrl+Alt+- (en dash), Tab/Shift+Tab (indent a list
+paragraph, else a tab character), Esc (leave the box).
+
+**pptx.** Text boxes are no longer written by pptxgenjs's text code (it
+merges element options into every run and repeats `a:pPr` per run).
+pptxgenjs lays down the shape and `pptx/textXml.ts` writes the `p:txBody`
+(every run's full `a:rPr`, `a:br`, `lvl`/`algn`/`rtl`, spacing, bullet char
+or `buAutoNum`, `marL`/`indent`, insets, anchor, `vert`, `normAutofit`),
+swapped in by `patchElements`, which also adds hyperlink and slide
+relationships. The reader builds runs from each run's resolved properties
+(the whole inheritance chain) and normalises with `withRuns`; one link over
+the whole text stays an element link. Round-trip: `pptx/richText.test.ts`.
+
+**Tests.** `textOps.test.ts` (29), `links.test.ts`, `findReplace.test.ts`,
+`textDom.test.ts`, `pptx/richText.test.ts`, additions to `keymap.test.ts`
+and `pptx/read.test.ts`; e2e `web/e2e/slides-text.spec.ts` (12).
+
+**Ported (now passing):** `shortcuts.js#Check add various characters`,
+`#Check actions with text movements`, `#Check remove parts of text`,
+`#Check add break line`, `#Check add new paragraph`, `#Check add tab
+symbol`, `#Check select all` (e2e, browser-native caret/delete behaviour);
+`#Check text property change` and `#Check paragraph property change` (were
+`it.skip`); `#Check copy/paste format and clear formatting actions`;
+`#Check visit hyperlink`; `api-shape.js#Test: SetPaddings` (px, not mm).
+
+**Semantic differences / gaps.**
+
+- Caret movement, word deletes and select-all are the browser's; on macOS
+  the word/line keys are Alt/Cmd+arrows and Alt+Delete keeps the space
+  after the word. The e2e asserts the OnlyOffice selections, not caret
+  indices.
+- Enter in a title placeholder makes a paragraph (Grown has no
+  placeholders); equation line breaks are out of scope.
+- Link "visited" state is not tracked; tooltips (ScreenTips) aren't stored.
+- Ctrl+5 is reserved by some browsers (tab switching); Alt+Shift+5 works.
+- A collapsed caret with Ctrl+B formats the word at the caret; there is no
+  pending "type in bold" state.
+- Group members and table cells can't be edited as rich text; find matches
+  in them select the group/table without highlighting.
+- The editor's native undo stack resets when a formatting command rebuilds
+  its DOM; the deck-level undo still has every command.
+- Shrink-on-overflow uses CSS zoom on the rendered text and doesn't write
+  a `fontScale` (PowerPoint recomputes it when the box is edited).
+
