@@ -28,6 +28,7 @@ import (
 	"code.pick.haus/grown/grown/internal/chat"
 	"code.pick.haus/grown/grown/internal/cloudimport"
 	"code.pick.haus/grown/grown/internal/contacts"
+	"code.pick.haus/grown/grown/internal/convert"
 	"code.pick.haus/grown/grown/internal/docs"
 	"code.pick.haus/grown/grown/internal/drive"
 	"code.pick.haus/grown/grown/internal/email"
@@ -203,6 +204,18 @@ func main() {
 	// grown's session via the auth bridge. Default (unset/anything-but-"true")
 	// leaves the legacy /pdf-api reverse-proxy path untouched — behavior is
 	// byte-for-byte identical to before this feature.
+	// Feature flag: GROWN_LIBREOFFICE=1 enables the optional LibreOffice
+	// headless converter (legacy .doc/.xls/.ppt import). Off by default; the
+	// default image doesn't ship LibreOffice.
+	officeConverter := convert.New(convert.ConfigFromEnv())
+	if os.Getenv("GROWN_LIBREOFFICE") != "" {
+		if officeConverter.Enabled() {
+			logger.Info("libreoffice conversion enabled", "soffice", officeConverter.Binary())
+		} else {
+			logger.Warn("GROWN_LIBREOFFICE is set but no soffice binary was found (set GROWN_SOFFICE_PATH); legacy office import stays off")
+		}
+	}
+
 	var pdfBuiltin *pdfapp.App
 	if os.Getenv("GROWN_PDF_BUILTIN") == "true" {
 		var perr error
@@ -286,6 +299,7 @@ func main() {
 		VideoProgressRepo: video.NewProgressRepository(pool),
 		VideoCaptionRepo:  video.NewCaptionRepository(pool),
 		PublicHost:        os.Getenv("GROWN_PUBLIC_HOST"),
+		OfficeConverter:   officeConverter,
 		LiveRepo:          live.NewRepository(pool),
 		LiveURLs: live.URLConfig{
 			HLSBase:  defaultEnv("GROWN_LIVE_HLS_BASE", "/live-hls"),
