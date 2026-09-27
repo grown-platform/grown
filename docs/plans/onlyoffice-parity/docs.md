@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12. M8 (references and fields) has landed; see §6.13.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -297,13 +297,13 @@ Grown paths are relative to the repo root; `docs/` below means
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
 | Outline / navigation pane | Navigation | Have | `docs/Outline.tsx` (no promote/demote/select) |
-| Table of contents in document (levels, styles, page numbers, leader, update) | TableOfContentsSettings, `Editor/ComplexFields` | Missing | — |
-| Table of figures | TableOfContentsSettings `textTitleTOF` | Missing | — |
-| Captions (label, numbering, chapter) | CaptionDialog | Missing | — |
-| Cross-references (heading, bookmark, footnote, caption, numbered item) | CrossReferenceDialog, `api/cross-ref.js` | Missing | — |
-| Bookmarks (add, go to, get link) | BookmarksDialog, `Editor/Bookmarks.js` | Missing | — |
-| Fields (insert, toggle codes, update all F9) | DocumentHolder `textFieldCodes`, shortcut `UpdateFields` | Missing | — |
-| "Add text" (heading outline level for TOC) | Links `capBtnAddText` | Missing | — |
+| Table of contents in document (levels, styles, page numbers, leader, update) | TableOfContentsSettings, `Editor/ComplexFields` | Have (M8) | `toc.ts`, `ReferenceDialogs.tsx` |
+| Table of figures | TableOfContentsSettings `textTitleTOF` | Have (M8) | `toc.ts` (`TOC \c`) |
+| Captions (label, numbering, chapter) | CaptionDialog | Have (M8) | `captions.ts` |
+| Cross-references (heading, bookmark, footnote, caption, numbered item) | CrossReferenceDialog, `api/cross-ref.js` | Have (M8), no "numbered item" type | `crossref.ts` |
+| Bookmarks (add, go to, get link) | BookmarksDialog, `Editor/Bookmarks.js` | Have (M8), no "get link" | `bookmarks.ts` |
+| Fields (insert, toggle codes, update all F9) | DocumentHolder `textFieldCodes`, shortcut `UpdateFields` | Have (M8) | `fields.ts`, `references.ts` |
+| "Add text" (heading outline level for TOC) | Links `capBtnAddText` | Have (M8) | `toc.ts:setTocLevel` |
 
 ### 2.11 Track changes / review
 
@@ -901,7 +901,7 @@ Google Docs binding or model and the ported test asserts Grown's behaviour.
 | replace-text-smart: with revisions | Smart replace under tracking | See §6.11 (word-level diff) | Done (M5), grown-variant |
 | as-you-type: which text is judged | `EnterText` doesn't trigger corrections; only the final Space does | Same in the ports (`addText`, then a typed space); in the app every word end triggers | Done (M2) |
 | autocorrect: dashes | Word turns spaced ` - ` / ` -- ` into an en dash and `--` between words into an em dash | `--` always becomes an em dash | grown-variant |
-| pluginsApi: current word/sentence around a hidden field | A PAGE field inside "Test" splits the word | No field node | M8 |
+| pluginsApi: current word/sentence around a hidden field | A PAGE field inside "Test" splits the word | A field breaks the word and reads as its result in the sentence | Done (M8) |
 
 TipTap 2 note: extension `storage` is shared by every editor built from the
 same extension object, so per-editor state (AutoCorrect settings) lives in a
@@ -1081,7 +1081,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 * **OnlyOffice tests**: none (their converter tests live in `core/`, see
   §5), so the parity scoreboard is unchanged.
 * **Dropped on import** (reported in `DocxImport.warnings`; each waits for
-  the milestone that adds the model): bookmarks (M8), table borders and
+  the milestone that adds the model): bookmarks (mapped since M8, §6.13), table borders and
   table styles (mapped since M4, §6.10), per-section page setup, first/even headers and
   section-level header variants (M9; the final section's page size is read
   into `DocxImport.page` but not applied), floating image position and
@@ -1100,7 +1100,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | Comment authors | Kept per comment | Server comments belong to the importing user; the original author is appended to the text ("— Carol") when it differs | grown-variant |
 | Numbering start when `w:start` is absent | 0 (ECMA-376) | 0, per the spec | Note only |
 | Image in a paragraph | Inline in the run | Image is a block node, so the paragraph splits around it; paragraph alignment of an image-only paragraph is lost | Until M7 |
-| Header/footer content | Any block content | Margin editor schema: paragraphs/headings with alignment and basic marks; tables flatten to paragraphs, images dropped, fields keep their result text (a PAGE field becomes a fixed number) | Until M8/M9 |
+| Header/footer content | Any block content | Margin editor schema: paragraphs/headings with alignment and basic marks; tables flatten to paragraphs, images dropped, fields keep their result text (a PAGE field becomes a fixed number; body fields are field nodes since M8) | Until M9 |
 | Headings 7-9 | Built-in | Custom paragraph styles with an outline level (TipTap has h1-h6) | grown-variant |
 | Direct `jc=left` over a centred style | Left | Not stored (M3 limitation) | Known gap |
 | Export page setup | Section properties | Letter, 1in margins (orientation/margins are not persisted yet) | Until M9 |
@@ -1429,6 +1429,160 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | Done / leaving the equation | Keeps partly built-up text | Done builds up the whole equation (Word's "Professional") | grown-variant |
 | Phantom linear form | `\mphantom` | ⟡ (UnicodeMath) | grown-variant |
 | Insert equation chord | Alt+= | Ctrl+Alt+= (Alt+= types ≠ on macOS) | grown-variant |
+
+### 6.13 M8 status (references and fields)
+
+* **Model** (all additive, strings/booleans so they ride y-prosemirror):
+  * `bookmark` mark (`name`; `excludes: ""` so bookmarks overlap,
+    non-inclusive) over the text it covers, and a zero-width
+    `bookmarkPoint` inline atom for a bookmark on an empty selection
+    (`bookmarks.ts`). Word's name rule (letter first, letters / digits /
+    `_`, ≤ 40); `_`-names are hidden (`_Toc…`, `_Ref…`). Moving a name
+    re-adds it; pasting a copy drops bookmarks whose names already exist.
+  * `field` inline atom (`references.ts`): `instr` (Word field code),
+    cached `result`, `locked`. Renders the result in a grey-on-hover
+    span; Alt+F9 shows `{ code }` instead (CSS). `fields.ts` is the pure
+    engine: instruction parser (types, arguments, switches, `\*`
+    formats), Word date pictures (`\@`), number formats (ARABIC,
+    alphabetic, roman, Ordinal, case formats) and `computeFieldResults`:
+    PAGE / NUMPAGES / SECTIONPAGES, DATE / TIME, SEQ (`\c \h \n \r \s`,
+    per-identifier counters reset by heading level), STYLEREF (style name
+    or level; `\n \r \s \w` numbers), then REF (`\h \n \r \w \p`),
+    PAGEREF (`\p` = "on page N" / above / below) and NOTEREF (`\f \p`)
+    over the phase-1 results. Unknown types keep their cached result.
+  * `tableOfContents` block (`toc.ts`) holding `tocEntry` paragraphs (level,
+    page) plus the TOC instruction (`TOC \o "1-3" \h \z \u`; a table of
+    figures is `TOC \h \z \c "Figure"`) and a `leader` (dot / dash /
+    underline / none). Entries are the paragraphs with an outline level in
+    range (direct `outlineLevel`, else the style's, else the heading
+    level) or the captions whose SEQ has the `\c` label; each source gets
+    a hidden `_Toc<n>` bookmark and, with `\h`, the entry text links to
+    it. Page numbers sit right-aligned after a CSS tab leader; `\n` hides
+    them. A node view adds an "Update table" button.
+* **Page numbers (placeholder until M9)**: `setPageResolver` — the app
+  measures the caret's page on the rendered page grid (the same grid as
+  the page-number labels); without a resolver (headless tests, before
+  mount) pages are counted from explicit page breaks and "page break
+  before" paragraphs. After an update that moved content, a second pass
+  on the next frame refreshes page-dependent results.
+* **Updating**: F9 updates the fields in the selection, or with a caret
+  the field next to it / the table of contents around it (Word);
+  Ctrl+F9 and References ▸ Update all fields update everything;
+  Ctrl+Shift+F9 unlinks fields to text; locked fields never change. SEQ
+  and STYLEREF fields renumber after every edit (an `appendTransaction`,
+  idempotent across collaborators), so captions stay 1, 2, 3; other
+  fields wait for F9 as in Word. An update also widens hidden bookmarks
+  that start a heading to the heading's end (typed text joins references
+  and TOC entries).
+* **Captions** (`captions.ts`): Insert ▸ Caption / References ▸ Insert
+  caption — label (Figure / Table / Equation, custom labels kept per
+  browser, plus every SEQ identifier in the document), text, above /
+  below the selected item (tables default above; a caret in a table
+  captions the table), exclude label, number format, chapter numbering
+  (`STYLEREF n \s` + separator + `SEQ … \s n`). The paragraph uses the
+  built-in Caption style.
+* **Cross-references** (`crossref.ts`): heading (text, page, number with
+  / without / full context, above/below), bookmark (same), footnote /
+  endnote (number, formatted number, page, above/below), caption per label
+  (entire caption, label and number, text only, page, above/below);
+  insert as hyperlink, include above/below. Headings, notes and captions
+  get a `_Ref<n>` bookmark (reused when one covers the same span; caption
+  parts get their own). Ctrl+click or Alt+Enter on a `\h` reference goes
+  to its target; so does "Go to reference" in the context menu.
+* **Links**: the link mark gained `title` (ScreenTip). References ▸ Link
+  settings edits or creates a link: external URL, or a place in the
+  document (Beginning of document = `#_top`, headings — via a `_Ref`
+  bookmark — and bookmarks), display text, ScreenTip, remove. Ctrl+click
+  (handled on mousedown so the browser's caret move can't win) and
+  Alt+Enter follow links; `#name` links select the bookmark. Ctrl+K keeps
+  the quick URL prompt (`promptLink`), which already accepted `#name`.
+* **Add text**: References ▸ Add text sets the paragraph's TOC level
+  (1-9) or "None" (outline level 10 = body text over a heading style; the
+  M3 attribute now accepts 10, and DOCX `w:outlineLvl 9` maps to it). The
+  Outline pane follows the same effective levels.
+* **UI**: a References menu (insert / settings / update tables, table of
+  figures, Add text level row, caption, cross-reference, bookmarks, link
+  settings, page number, page count, date / time / field code dialog,
+  show field codes), Insert menu entries (page number, bookmark, caption,
+  cross-reference, table of contents), command palette entries, context
+  menu items (update field / table, go to reference, open link, link
+  settings). Dialogs are `ReferenceDialogs.tsx` (mounted once, opened by
+  event like `ParagraphDialogs`); they read the DOM selection when they
+  open (the `links.ts` pattern) and don't hand focus back to the menu
+  button, which swallowed the next keystroke. Shortcuts dialog: a "Fields
+  & links" group (F9, Ctrl+F9, Alt+F9, Ctrl+Shift+F9, Alt+Shift+P / D / T,
+  Ctrl+click / Alt+Enter).
+* **DOCX** both ways (`docx/read.ts`, `docx/write.ts`):
+  `w:bookmarkStart` / `w:bookmarkEnd` (in paragraphs and between them;
+  an empty one is a point bookmark; `_GoBack` dropped) ⇄ bookmark marks
+  and points, written around the first / last marked run with unique ids;
+  complex fields (`w:fldChar` / `w:instrText`, `w:fldLock`) and
+  `w:fldSimple` of the computed types plus CREATEDATE / SAVEDATE /
+  PRINTDATE / AUTHOR / TITLE / SUBJECT / FILENAME / NUMWORDS / NUMCHARS ⇄
+  field nodes with their result (formatting from the first result run;
+  HYPERLINK fields stay links; other fields, e.g. MERGEFIELD, keep their
+  result text; header/footer fields keep their text until M9); a TOC field
+  — usually inside a "Table of Contents" content control, begin in the
+  first entry, end wherever it ends — ⇄ a tableOfContents node (level from
+  the `toc N` style name, so localised style ids work; text before the
+  last tab, page after it; target from the entry's `w:anchor` or its
+  PAGEREF), written as that content control with `TOC1-9` / "table of
+  figures" styles (right tab with the leader), per-entry hyperlink and
+  PAGEREF; `w:hyperlink/@w:tooltip` ⇄ link title.
+* **Tests**: `oo/cross-ref.test.ts` 1 tagged case (passes;
+  grown-variant: the heading stands without a content control until M10,
+  including the locked-control half); un-skipped in `oo/shortcuts.test.ts`:
+  "Check update fields" (F9 in the TOC: 3 → 4 entries), "Check visit
+  hyperlink" (Alt+Enter on a `#_top` link after a page break) and "Check
+  insert page number" (Alt+Shift+P inserts a PAGE field);
+  `oo/text-selection-units.test.ts` now runs pluginsApi's hidden-PAGE
+  sub-case ("Te" / "Te1st text"). The OnlyOffice cross-ref row is 1/1;
+  shortcuts gains 3 passing cases. Grown-native:
+  `references.test.ts` (15: instruction parser, formats and date
+  pictures, explicit pages, PAGE / NUMPAGES / DATE / TIME with F9, a page
+  resolver, field codes and unlink, HTML + Yjs round trips, bookmarks
+  add / move / delete / go to / points, following `#name` / `#_top` /
+  external links, paste de-duplication, TOC build / edit / F9 / pages /
+  links / options / table of figures / Add text / empty messages,
+  captions with renumbering, tables, formats, custom and excluded labels,
+  chapter numbering, cross-references to headings / bookmarks /
+  footnotes / captions with F9 after edits and broken targets),
+  `docx-references.test.ts` (6: Word-shaped TOC content control +
+  bookmarks + fields + tooltips, unknown fields as text, locked fields,
+  writer XML — bookmark pairs, field chars, content control, styles,
+  anchors, tooltips —, Grown → docx → Grown equality and stability, Word
+  document → Grown → docx → Grown). `harness.paragraphText` reads fields
+  as their results (as OnlyOffice's `GetParagraphText` does). Playwright
+  `web/e2e/docs-references.spec.ts`: headings, References ▸ Insert table
+  of contents, Insert ▸ Caption, Insert ▸ Bookmark on a DOM-selected
+  word, two cross-references (figure label and number; heading text), a
+  heading edit, F9 in the table and Ctrl+F9, Ctrl+click to the heading,
+  reload, .docx download and re-import (same TOC, caption, references and
+  bookmark). All docs e2e (19) pass on :8093.
+* **Not yet**: fields in headers / footers (the margin schema has no
+  field node; M9 with per-page headers), real pagination for page
+  numbers (M9), Word's "numbered item" cross-reference type, visible
+  bookmark brackets ("show bookmarks"), a TOC built from custom styles
+  (`\t`), TC fields and `\b` / `\f` / `\l` switches, formatted TOC entry
+  text (entries are plain text), index and table of authorities (not
+  planned), AutoCaption, Ctrl+K opening the Link settings dialog (it keeps
+  the quick prompt), `\#` numeric pictures.
+* **Corpus note**: `docx-corpus` on OnlyOffice's documents is 3/4 on this
+  branch and on main 240ff36 alike — "Изменение настроек таблиц по
+  умолчанию.docx" re-imports with Grown's legacy grid borders on an
+  unstyled table (an M4 writer behaviour, not M8).
+* **Semantic differences**:
+
+| Case | OnlyOffice / Word | Grown | Status |
+|---|---|---|---|
+| cross-ref: heading in a (locked) block content control | Heading inside a block-level sdt | Plain heading until M10's content controls; same text and `_Ref1` bookmark | grown-variant until M10 |
+| shortcuts: visit hyperlink | Enter on the link (OnlyOffice); Ctrl+click (Word) | Alt+Enter (Google Docs) and Ctrl+click | grown-variant chord |
+| shortcuts: insert page number | Ctrl+Shift+P (OnlyOffice) | Alt+Shift+P (Word's chord) | grown-variant chord |
+| Page numbers in PAGE / PAGEREF / TOC | Laid-out pages | The rendered page grid (browser) or explicit breaks (headless) until M9 | Until M9 |
+| SEQ renumbering | On update (F9, print) | After every edit; other fields on F9 | grown-variant |
+| STYLEREF `\s` on unnumbered headings | Needs heading numbering | Falls back to the heading's ordinal (chapter 2 = second Heading 1) | grown-variant |
+| Text typed at the end of a referenced heading | Stays outside the bookmark | Joins the hidden `_Ref` / `_Toc` bookmark on the next update | grown-variant |
+| Hidden bookmark names | `_Ref` + random digits | `_Ref<n>` / `_Toc<n>`, the first free number (OnlyOffice's `_Ref1`) | Note only |
 
 ### Known flaky e2e (as of 2026-09-26)
 

@@ -146,7 +146,7 @@ function ParagraphSettings({ editor, onClose }: { editor: Editor; onClose: () =>
   const [after, setAfter] = useState(r2(d.spaceAfter ?? sp.after));
   const [rule, setRule] = useState<LineRule>(d.lineRule ?? "auto");
   const [line, setLine] = useState(r2(d.lineValue ?? (d.lineRule && d.lineRule !== "auto" ? 12 : 1.15)));
-  const [outline, setOutline] = useState<string>(d.outlineLevel ? String(d.outlineLevel) : "body");
+  const [outline, setOutline] = useState<string>(d.outlineLevel && d.outlineLevel <= 9 ? String(d.outlineLevel) : "body");
   const [keepNext, setKeepNext] = useState(!!d.keepNext);
   const [keepLines, setKeepLines] = useState(!!d.keepLines);
   const [widow, setWidow] = useState(d.widowControl !== false);

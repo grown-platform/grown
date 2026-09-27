@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 import type { Editor } from "@tiptap/core";
 import { SYMBOLS } from "../../shortcuts";
+import { insertTableOfContents } from "../../references";
 import {
   blockPaths,
   makeEditor,
@@ -353,15 +354,34 @@ describe("OnlyOffice shortcuts: later milestones", () => {
     });
     expect(found).toBe(true);
   });
-  it.skip("oo:word/shortcuts/shortcuts.js#Check insert page number", () => {
-    // TODO(M9): needs page-number fields.
+  it("oo:word/shortcuts/shortcuts.js#Check insert page number", () => {
+    // grown-variant chord: Alt+Shift+P (Word's); OnlyOffice's own binding
+    // is Ctrl+Shift+P. Inserts a PAGE field at the caret (M8).
+    const e = makeEditor("<p></p>");
+    expect(pressKey(e, "Alt-Shift-p")).toBe(true);
+    const first = e.state.doc.firstChild!.firstChild!;
+    expect(first.type.name).toBe("field");
+    expect(first.attrs.instr).toBe("PAGE");
+    expect(paragraphText(e)).toBe("1");
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check show/hide non printing symbols", () => {
     // TODO(M13): non-printing characters view. OnlyOffice's Ctrl+Shift+8
     // is Grown's bulleted list; the toggle will need another chord.
   });
-  it.skip("oo:word/shortcuts/shortcuts.js#Check update fields", () => {
-    // TODO(M8): F9 updates a table of contents; needs fields.
+  it("oo:word/shortcuts/shortcuts.js#Check update fields", () => {
+    // Three Heading 1 paragraphs, a table of contents at the start, a
+    // fourth heading added afterwards: F9 with the caret in the table
+    // updates it from 3 to 4 entries.
+    const e = makeEditor("<h1>Hello</h1><h1>Hello</h1><h1>Hello</h1>", { cursor: "start" });
+    insertTableOfContents(e);
+    const entries = () => e.state.doc.firstChild!.type.name === "tableOfContents" ? e.state.doc.firstChild!.childCount : -1;
+    expect(entries()).toBe(3);
+    setCursor(e, e.state.doc.content.size - 1);
+    e.commands.insertContent({ type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Hello" }] });
+    expect(entries()).toBe(3);
+    setCursor(e, 2); // start of the table, one step right
+    expect(pressKey(e, "F9")).toBe(true);
+    expect(entries()).toBe(4);
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check actions with shapes", () => {
     // TODO(M7): arrow-key nudging, Tab between objects, Enter into a shape.
@@ -396,8 +416,16 @@ describe("OnlyOffice shortcuts: later milestones", () => {
   it.skip("oo:word/shortcuts/shortcuts.js#Check add break line to inlinelvlsdt", () => {
     // TODO(M10): multi-line complex form.
   });
-  it.skip("oo:word/shortcuts/shortcuts.js#Check visit hyperlink", () => {
-    // TODO(M8): internal hyperlinks / bookmarks.
+  it("oo:word/shortcuts/shortcuts.js#Check visit hyperlink", () => {
+    // A page break, then a link to the beginning of the document ("_top").
+    // grown-variant chord: Alt+Enter follows the link at the caret (Google
+    // Docs); OnlyOffice uses Enter on a selected link, Word Ctrl+click
+    // (also bound, see references.test.ts).
+    const e = makeEditor('<p></p><div data-page-break></div><p><a href="#_top">Beginning of document</a></p>');
+    setCursor(e, e.state.doc.content.size - 3);
+    expect(pressKey(e, "Alt-Enter")).toBe(true);
+    expect(e.state.selection.from).toBe(1);
+    expect(e.state.selection.$from.index(0)).toBe(0);
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check handle tab in math", () => {
     // Not planned for M11: equation line breaks and alignment points (m:brk,

@@ -1,7 +1,7 @@
 // Port of OnlyOffice's current word / sentence plugin-API test (behaviour
 // only): word/plugins/pluginsApi.js "Test CurrenWord/CurrentSentence".
 // The other pluginsApi cases (add-in fields, editing restrictions) belong
-// to M8/M10/M13 and are not ported here.
+// to M10/M13 and are not ported here.
 import { describe, expect, it } from "vitest";
 import type { Editor } from "@tiptap/core";
 import { makeEditor, paragraphPos, paragraphText, setCursor } from "../harness";
@@ -62,8 +62,12 @@ describe("OnlyOffice pluginsApi: current word / sentence", () => {
     at(e, 2);
     expect(getCurrentWord(e)).toBe("Test");
     expect(getCurrentSentence(e)).toBe("Test text");
-    // OnlyOffice then inserts a hidden PAGE field inside "Test" and expects
-    // "Te" / "Te1st text". Grown has no field node yet: TODO(M8).
+    // A PAGE field inside "Test" (M8): the field breaks the word but reads
+    // as its result ("1") in the sentence.
+    e.commands.insertField("PAGE");
+    at(e, 0);
+    expect(getCurrentWord(e)).toBe("Te");
+    expect(getCurrentSentence(e)).toBe("Te1st text");
 
     e = withText("Test text");
     at(e, 0);
