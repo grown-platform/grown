@@ -166,7 +166,7 @@
       "passing": null
     },
     "docs/track-changes": {
-      "ported": 7,
+      "ported": 0,
       "passing": null
     },
     "sheets/charts": {
@@ -186,7 +186,7 @@
       "passing": null
     },
     "sheets/editing": {
-      "ported": 0,
+      "ported": 68,
       "passing": null
     },
     "sheets/engine-internal": {
@@ -194,7 +194,7 @@
       "passing": null
     },
     "sheets/formatting": {
-      "ported": 57,
+      "ported": 58,
       "passing": null
     },
     "sheets/formulas": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 931,
+    "ported": 993,
     "passing": null
   }
 }

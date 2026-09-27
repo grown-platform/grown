@@ -31,6 +31,11 @@ Current files:
 | `filter.parity.test.ts` | `cell/spreadsheet-calculation/autoFilterTests.js`, `cell/js-api/api-auto-filter.js` | `../filterOps.ts` |
 | `condFormat.parity.test.ts` | `cell/spreadsheet-calculation/conditionalFormattingTests.js`, `cell/js-api/api-format-conditions.js` | `../cfOps.ts` |
 | `validation.parity.test.ts` | `cell/spreadsheet-calculation/DataValidationTests.js`, `cell/js-api/api-validation.js` | `../validationOps.ts` |
+| `autofill.parity.test.ts` | `SerialTests.js`, `SheetStructureTests.js` (autofill) | `../autofill.ts` |
+| `sort.parity.test.ts` | `js-api/api-range.js`, `SheetStructureTests.js` (sortRangeTest) | `../sortOps.ts` |
+| `structure.parity.test.ts` | `SheetStructureTests.js` (move/shift) | `../formulaShift.ts` |
+| `paste.parity.test.ts`, `csv.parity.test.ts` | `copy-paste-tests.js` | `../pasteSpecial.ts`, `../csvText.ts` |
+| `textCase.parity.test.ts` | `CellSettingsTests.js` | `../textCase.ts` |
 | `numberFormat.parity.test.ts` | `NumFormatParse.js`, `testsForFWB.html.js`, `CellFormatTests.js` (fixtures in `internal/sheets/testdata/numfmt/`, shared with the Go port) | `../numberFormat.ts` |
 
-Later milestones add autofill/sort/CSV (M7), pivots (M9) and charts (M10).
+Later milestones add pivots (M9) and charts (M10).

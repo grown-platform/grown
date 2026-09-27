@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet ref API is loosely typed. */
+import { guessHeader, sortRangeWith } from "./editActions";
 import {
-  sortGridRows,
   shuffleGridRows,
   splitDelimited,
   detectDelimiter,
@@ -69,7 +69,9 @@ export type SortError = "no-selection" | "single-cell" | null;
 
 /**
  * Sort the currently selected range by its first column (or `byCol` offset within
- * the range). Returns null on success or an error code the caller can surface.
+ * the range). Stable, Excel order (numbers, text, booleans, errors, blanks last);
+ * formulas in moved rows keep pointing at the same relative cells (sortOps.ts).
+ * Returns null on success or an error code the caller can surface.
  */
 export function sortRange(wb: Wb, asc: boolean, byCol = 0): SortError {
   const sel = selection(wb);
@@ -77,40 +79,21 @@ export function sortRange(wb: Wb, asc: boolean, byCol = 0): SortError {
   const [r0, r1] = sel.row;
   const [c0, c1] = sel.column;
   if (r0 === r1 && c0 === c1) return "single-cell";
-  const grid = fullGrid(wb);
-  const block: CellGrid = [];
-  for (let r = r0; r <= r1; r++) {
-    const row: Cell[] = [];
-    for (let c = c0; c <= c1; c++) row.push(grid[r]?.[c] ?? null);
-    block.push(row);
-  }
-  const sorted = sortGridRows(block, byCol, asc);
-  writeRange(wb, sorted, r0, c0);
+  sortRangeWith(wb, { r1: r0, r2: r1, c1: c0, c2: c1 }, { keys: [{ index: c0 + byCol, ascending: asc }] });
   return null;
 }
 
 /**
- * Sort the entire sheet by `byCol` (absolute column index). Treats row 0 as a
- * header (left in place) — matching Sheets' "Sort sheet" default which keeps
- * the frozen/first row. We keep row 0 fixed only when it looks like a header
- * (non-empty); otherwise sort everything.
+ * Sort the entire used area of the sheet by `byCol` (absolute column index).
+ * Row 0 stays in place when it looks like a header (sortOps.detectHeader).
  */
 export function sortSheet(wb: Wb, asc: boolean, byCol: number): SortError {
   const grid = fullGrid(wb);
   const { rows, cols } = usedExtent(grid);
   if (rows < 1) return "single-cell";
-  // Heuristic header detection: row 0 has text in the sort column and row 1 differs.
-  const headerCell = cellText(grid[0]?.[byCol] ?? null);
-  const hasHeader = headerCell !== "" && Number.isNaN(Number(headerCell));
-  const startRow = hasHeader ? 1 : 0;
-  const block: CellGrid = [];
-  for (let r = startRow; r <= rows; r++) {
-    const row: Cell[] = [];
-    for (let c = 0; c <= cols; c++) row.push(grid[r]?.[c] ?? null);
-    block.push(row);
-  }
-  const sorted = sortGridRows(block, byCol, asc);
-  writeRange(wb, sorted, startRow, 0);
+  const range = { r1: 0, c1: 0, r2: rows, c2: Math.max(cols, byCol) };
+  const header = guessHeader(wb, range);
+  sortRangeWith(wb, range, { keys: [{ index: byCol, ascending: asc }], header });
   return null;
 }
 
