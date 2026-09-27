@@ -357,7 +357,7 @@ describe("docx import/export wiring", () => {
   });
 
   it("falls back to the pandoc importer when the direct reader fails", async () => {
-    const fetchMock = vi.fn(async () => new Response("<p>from pandoc</p>", { status: 200 }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response("<p>from pandoc</p>", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     try {
       const bad = new File([new TextEncoder().encode("not a zip")], "broken.docx");
@@ -367,7 +367,7 @@ describe("docx import/export wiring", () => {
       expect(res).toEqual({ kind: "html", html: "<p>from pandoc</p>" });
       expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/import\?from=docx/);
 
-      const good = new File([await buildDocx({ body: "<w:p><w:r><w:t>direct</w:t></w:r></w:p>" })], "good.docx");
+      const good = new File([(await buildDocx({ body: "<w:p><w:r><w:t>direct</w:t></w:r></w:p>" })) as BlobPart], "good.docx");
       const ok = await importFile(good);
       expect(ok.kind).toBe("docx");
       expect(fetchMock).toHaveBeenCalledTimes(1);
