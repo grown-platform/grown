@@ -1,4 +1,5 @@
 import { tableSx } from "./tableModel";
+import { referencesSx } from "./referencesStyles";
 import type { SxProps } from "@mui/joy/styles/types";
 import type { Indents } from "./Ruler";
 
@@ -225,6 +226,7 @@ export function editorPageSx(
     "& .ProseMirror table:not([data-table-style]) th": { bgcolor: "#f1f3f4", fontWeight: 600 },
     // Table borders, margins and style templates (Docs M4).
     ...tableEditorSx,
+    ...referencesSx,
     "& .ProseMirror .selectedCell::after": {
       content: '""',
       position: "absolute",

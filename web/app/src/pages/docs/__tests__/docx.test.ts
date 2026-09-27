@@ -179,7 +179,11 @@ describe("docx reader", () => {
     const brk = blocks.findIndex((b) => b.type === "pageBreak");
     expect(brk).toBeGreaterThan(0);
     expect(textOf(blocks[brk + 1] as Record<string, unknown>)).toBe("After the break");
-    expect(imp.warnings).toContain("bookmarks");
+    // Since M8: the DATE field is a field node with its result, the empty
+    // bookmark a point bookmark.
+    expect(findNode(json, (n) => n.type === "field")!.attrs).toEqual({ instr: 'DATE \\@ "yyyy-MM-dd"', result: "2026-09-26", locked: false });
+    expect(findNode(json, (n) => n.type === "bookmarkPoint")!.attrs).toEqual({ name: "intro" });
+    expect(imp.warnings).not.toContain("bookmarks");
   });
 
   it("reads the header, footer and page setup", async () => {

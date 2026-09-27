@@ -26,7 +26,7 @@
       "passing": null
     },
     "common/conversion": {
-      "ported": 59,
+      "ported": 25,
       "passing": null
     },
     "common/forms": {
@@ -126,7 +126,7 @@
       "passing": null
     },
     "docs/references": {
-      "ported": 0,
+      "ported": 1,
       "passing": null
     },
     "docs/scripting-api": {
@@ -206,7 +206,7 @@
       "passing": null
     },
     "sheets/import": {
-      "ported": 1,
+      "ported": 0,
       "passing": null
     },
     "sheets/pivot": {
@@ -214,11 +214,11 @@
       "passing": null
     },
     "sheets/print": {
-      "ported": 4,
+      "ported": 0,
       "passing": null
     },
     "sheets/protection": {
-      "ported": 5,
+      "ported": 0,
       "passing": null
     },
     "sheets/shortcuts": {
@@ -234,7 +234,7 @@
       "passing": null
     },
     "sheets/view": {
-      "ported": 1,
+      "ported": 0,
       "passing": null
     },
     "slides/chartex": {
@@ -298,7 +298,7 @@
       "passing": null
     },
     "slides/shortcuts": {
-      "ported": 22,
+      "ported": 21,
       "passing": null
     },
     "slides/shortcuts fixture": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 1982,
+    "ported": 1937,
     "passing": null
   }
 }

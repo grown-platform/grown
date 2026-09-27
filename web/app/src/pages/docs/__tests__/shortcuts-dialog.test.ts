@@ -23,6 +23,8 @@ const NOT_EDITOR = new Set([
   "Ctrl+Alt+M", // DocEditor: comment
   "Ctrl+Alt+Shift+H", // DocEditor: version history
   "Ctrl+Alt+V", // needs formatting copied first (tested in oo/shortcuts)
+  "Ctrl+Click", // mouse (references.test.ts)
+  "Alt+Enter", // needs a link at the caret (oo/shortcuts "Check visit hyperlink")
 ]);
 
 /** "Ctrl+Shift+." -> "Mod-Shift-."; "Num-" -> NumpadSubtract. */

@@ -369,6 +369,19 @@ export const SHORTCUT_GROUPS: { title: string; items: ShortcutRow[] }[] = [
     ],
   },
   {
+    title: "Fields & links",
+    items: [
+      { label: "Update fields / table of contents", keys: "F9" },
+      { label: "Update all fields", keys: "Ctrl+F9" },
+      { label: "Show field codes", keys: "Alt+F9" },
+      { label: "Unlink fields (keep the text)", keys: "Ctrl+Shift+F9" },
+      { label: "Insert page number", keys: "Alt+Shift+P", note: "OnlyOffice: Ctrl+Shift+P" },
+      { label: "Insert date", keys: "Alt+Shift+D" },
+      { label: "Insert time", keys: "Alt+Shift+T" },
+      { label: "Follow link", keys: "Ctrl+Click / Alt+Enter" },
+    ],
+  },
+  {
     title: "Menus & tools",
     items: [
       { label: "Search the menus", keys: "Alt+/" },

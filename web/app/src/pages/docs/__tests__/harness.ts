@@ -241,6 +241,8 @@ export function typeText(editor: Editor, text: string): void {
 // --- reading the document ----------------------------------------------------
 function leafText(node: PMNode): string {
   if (node.type.name === "hardBreak") return "\n";
+  // Fields read as their result, like OnlyOffice's GetParagraphText (M8).
+  if (node.type.name === "field") return String(node.attrs.result ?? "");
   return "";
 }
 function blockText(node: PMNode): string {

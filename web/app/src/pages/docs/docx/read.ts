@@ -16,12 +16,15 @@
 // (content inlined after the paragraph), headers/footers (default), foot-
 // and endnotes, comments (+ replies and resolved state from
 // commentsExtended), tracked insertions/deletions/moves, hyperlinks
-// (external and bookmark anchors), fields (result text; HYPERLINK fields
-// become links), content controls and smart tags (unwrapped), page and
-// section breaks, equations (as math nodes since M11).
+// (external and bookmark anchors, tooltips), fields (HYPERLINK fields
+// become links; since M8 PAGE, NUMPAGES, DATE, TIME, REF, PAGEREF,
+// NOTEREF, SEQ, STYLEREF and a few document-property fields become field
+// nodes with their result, other fields keep their result text), TOC
+// fields as table-of-contents nodes, bookmarks (M8), content controls and
+// smart tags (unwrapped), page and section breaks, equations (as math
+// nodes since M11).
 //
-// Dropped (no Grown model yet, reported in `warnings`): bookmarks (M8),
-// conditional formatting of table styles Grown doesn't know (their
+// Dropped (no Grown model yet, reported in `warnings`): conditional formatting of table styles Grown doesn't know (their
 // borders are kept), per-section page setup (M9), floating image
 // positions (M7), direct "not bold/italic" overrides, caps/small caps as
 // direct formatting, formatting-change revisions.
@@ -47,6 +50,7 @@ import { canonicalMarks, propsAttrs } from "../changes";
 import { readOMathPara, readOMML } from "../math/omml";
 import { toLinear } from "../math/linear";
 import { serializeContent } from "../math/model";
+import { fieldType, KEPT_FIELDS } from "../fields";
 import { attr, descendants, EMU_PER_PX, kid, kids, nameOf, num, onOff, parseXml, path, TWIPS_PER_PX, twipsToPt } from "./xml";
 
 type Mark = NonNullable<JSONContent["marks"]>[number];
@@ -214,6 +218,14 @@ interface FieldState {
   phase: "instr" | "result";
   instr: string;
   href?: string;
+  /** Kept as a field node: the result is collected instead of emitted. */
+  capture?: boolean;
+  result?: string;
+  marks?: Mark[];
+  /** Already emitted (its result ran past a paragraph end). */
+  emitted?: boolean;
+  /** w:fldLock: the field is not updated. */
+  locked?: boolean;
 }
 
 interface Ctx {
@@ -241,6 +253,10 @@ class Reader {
   comments = new Map<string, DocxComment>();
   openComments = new Set<string>();
   fields: FieldState[] = [];
+  /** Open bookmarks by w:id (M8); `used` once they marked something. */
+  openBookmarks = new Map<string, { name: string; used: boolean }>();
+  /** Point bookmarks that ended between paragraphs, for the next one. */
+  pendingPoints: string[] = [];
   media = new Map<string, string>();
   warnings = new Set<string>();
   tableStyles: TableStyles = new Map();
@@ -599,11 +615,20 @@ class Reader {
 
   blocks(parent: Element, ctx: Ctx): JSONContent[] {
     const out: JSONContent[] = [];
-    for (const c of kids(parent)) {
+    const list = kids(parent);
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
       switch (nameOf(c)) {
-        case "p":
+        case "p": {
+          const toc = ctx.margin ? null : this.tocBlock(list, i);
+          if (toc) {
+            out.push(toc.node);
+            i = toc.last;
+            break;
+          }
           out.push(...this.paragraph(c, ctx));
           break;
+        }
         case "tbl": {
           const t = this.table(c, ctx);
           if (t) out.push(t);
@@ -628,7 +653,8 @@ class Reader {
           break;
         }
         case "bookmarkStart":
-          this.warn("bookmarks");
+        case "bookmarkEnd":
+          this.bookmark(c, ctx, null);
           break;
         case "commentRangeStart":
         case "commentRangeEnd":
@@ -649,6 +675,151 @@ class Reader {
     if (id == null || !this.comments.has(id)) return;
     if (nameOf(c) === "commentRangeStart") this.openComments.add(id);
     else this.openComments.delete(id);
+  }
+
+  /** bookmark handles w:bookmarkStart / w:bookmarkEnd: open bookmarks mark
+   *  what follows; one that ends before marking anything is a point
+   *  bookmark (inline here, or at the start of the next paragraph). */
+  bookmark(c: Element, ctx: Ctx, out: Inline[] | null) {
+    if (ctx.margin) return;
+    const id = attr(c, "w:id");
+    if (id == null) return;
+    if (nameOf(c) === "bookmarkStart") {
+      const name = attr(c, "w:name") ?? "";
+      if (!name || name === "_GoBack" || !/^[A-Za-z_][\w]{0,39}$/u.test(name)) return;
+      this.openBookmarks.set(id, { name, used: false });
+      return;
+    }
+    const b = this.openBookmarks.get(id);
+    if (!b) return;
+    this.openBookmarks.delete(id);
+    if (b.used) return;
+    if (out) out.push({ kind: "node", node: { type: "bookmarkPoint", attrs: { name: b.name } } });
+    else this.pendingPoints.push(b.name);
+  }
+
+  /** Bookmark marks for what is being read now. */
+  bookmarkMarks(): Mark[] {
+    const out: Mark[] = [];
+    for (const b of this.openBookmarks.values()) {
+      b.used = true;
+      out.push({ type: "bookmark", attrs: { name: b.name } });
+    }
+    return out;
+  }
+
+  // --- table of contents (M8) -------------------------------------------------------------
+
+  /**
+   * tocBlock: when paragraph list[i] starts a TOC field, reads the field's
+   * result paragraphs (up to the one that ends it) as a table-of-contents
+   * node. Entry level from the TOC n style, text before the last tab, page
+   * after it, target from the entry's hyperlink anchor or PAGEREF.
+   */
+  tocBlock(list: Element[], i: number): { node: JSONContent; last: number } | null {
+    const ev = fieldEvents(list[i]);
+    let depth = 0;
+    let instr: string | null = null;
+    let cur = "";
+    let startDepth = -1;
+    for (const e of ev) {
+      if (e.k === "begin") {
+        depth++;
+        if (depth === 1) cur = "";
+      } else if (e.k === "instr") {
+        if (depth === 1) cur += e.text;
+      } else if (e.k === "sep" || e.k === "end") {
+        if (depth === 1 && instr == null && /^\s*TOC\b/i.test(cur)) {
+          instr = cur.trim();
+          startDepth = 1;
+        }
+        if (e.k === "end") depth--;
+      }
+      if (instr != null) break;
+    }
+    if (instr == null || startDepth < 0) return null;
+    // Find the paragraph where the TOC field ends.
+    depth = 0;
+    let last = list.length - 1;
+    let started = false;
+    outer: for (let j = i; j < list.length; j++) {
+      for (const e of fieldEvents(list[j])) {
+        if (e.k === "begin") {
+          depth++;
+          started = true;
+        } else if (e.k === "end") {
+          depth--;
+          if (started && depth === 0) {
+            last = j;
+            break outer;
+          }
+        }
+      }
+    }
+    const figures = /\\c\s/.test(instr);
+    const entries: JSONContent[] = [];
+    for (let j = i; j <= last; j++) {
+      if (nameOf(list[j]) !== "p") continue;
+      const e = this.tocEntry(list[j]);
+      if (e) entries.push(e);
+    }
+    if (!entries.length)
+      entries.push({
+        type: "tocEntry",
+        attrs: { level: 1, page: "" },
+        content: [{ type: "text", text: figures ? "No table of figures entries found." : "No table of contents entries found." }],
+      });
+    return { node: { type: "tableOfContents", attrs: { instr }, content: entries }, last };
+  }
+
+  tocEntry(p: Element): JSONContent | null {
+    let text = "";
+    let target: string | null = null;
+    const stack: ("instr" | "result")[] = [];
+    let instr = "";
+    const walk = (n: Element) => {
+      for (const c of kids(n)) {
+        const name = nameOf(c);
+        if (name === "pPr" || name === "rPr" || name === "del" || name === "moveFrom") continue;
+        if (name === "hyperlink" && !target) target = attr(c, "w:anchor");
+        if (name === "fldChar") {
+          const t = attr(c, "w:fldCharType");
+          if (t === "begin") {
+            stack.push("instr");
+            instr = "";
+          } else if (t === "separate" && stack.length) {
+            stack[stack.length - 1] = "result";
+            const m = /^\s*PAGEREF\s+(\S+)/i.exec(instr);
+            if (m && !target) target = m[1];
+          } else if (t === "end") stack.pop();
+          continue;
+        }
+        if (name === "instrText") {
+          instr += c.textContent ?? "";
+          continue;
+        }
+        // Text only outside field instructions (the TOC field's own result
+        // is where the entries are).
+        const visible = stack.every((s) => s === "result");
+        if (name === "t" && visible) text += c.textContent ?? "";
+        else if ((name === "tab" || name === "ptab") && visible) text += "\t";
+        else walk(c);
+      }
+    };
+    walk(p);
+    const tab = text.lastIndexOf("\t");
+    const title = (tab >= 0 ? text.slice(0, tab) : text).replace(/\t/g, " ").trim();
+    const page = tab >= 0 ? text.slice(tab + 1).trim() : "";
+    if (!title) return null;
+    const style = attr(kid(kid(p, "pPr"), "pStyle"), "w:val") ?? "";
+    const sname = this.raw.get(style)?.name ?? style;
+    const lvl = /toc\s*(\d)/i.exec(sname) ?? /toc\s*(\d)/i.exec(style);
+    const href = target ? safeHref(`#${target}`) : null;
+    return {
+      type: "tocEntry",
+      attrs: { level: lvl ? +lvl[1] : 1, page },
+      content: [href ? { type: "text", text: title, marks: [{ type: "link", attrs: { href } }] } : { type: "text", text: title }],
+    };
   }
 
   /** paraTypeAttrs maps paragraph props to a node type and attributes. */
@@ -697,7 +868,17 @@ class Reader {
     }
 
     const items: Inline[] = [];
+    if (!ctx.margin && this.pendingPoints.length) {
+      for (const name of this.pendingPoints) items.push({ kind: "node", node: { type: "bookmarkPoint", attrs: { name } } });
+      this.pendingPoints = [];
+    }
     this.inline(p, ctx, items);
+    // A kept field whose result runs past this paragraph: emit it here.
+    for (const f of this.fields)
+      if (f.capture && !f.emitted) {
+        items.push({ kind: "node", node: this.fieldNode(f) });
+        f.emitted = true;
+      }
 
     const out: JSONContent[] = [];
     let cur: JSONContent[] = [];
@@ -749,7 +930,9 @@ class Reader {
           break;
         case "hyperlink": {
           const href = this.hyperlinkHref(c, ctx);
-          const marks = href ? [...ctx.marks.filter((m) => m.type !== "link"), { type: "link", attrs: { href } }] : ctx.marks;
+          const tip = attr(c, "w:tooltip");
+          const link: Mark = { type: "link", attrs: tip ? { href, title: tip } : { href } };
+          const marks = href ? [...ctx.marks.filter((m) => m.type !== "link"), link] : ctx.marks;
           this.inline(c, { ...ctx, marks }, out);
           break;
         }
@@ -762,7 +945,16 @@ class Reader {
           this.inline(c, { ...ctx, marks: [...ctx.marks, changeMark("deletion", c)] }, out);
           break;
         case "fldSimple": {
-          const href = parseHyperlinkInstr(attr(c, "w:instr") ?? "");
+          const instr = attr(c, "w:instr") ?? "";
+          const href = parseHyperlinkInstr(instr);
+          if (!href && !ctx.margin && this.inResult && !this.capturing() && KEPT_FIELDS.has(fieldType(instr))) {
+            const f: FieldState = { phase: "result", instr, capture: true, result: "" };
+            this.fields.push(f);
+            this.inline(c, ctx, out);
+            this.fields.pop();
+            if (!f.emitted) out.push({ kind: "node", node: this.fieldNode(f, ctx) });
+            break;
+          }
           const marks = href ? [...ctx.marks, { type: "link", attrs: { href } }] : ctx.marks;
           this.inline(c, { ...ctx, marks }, out);
           break;
@@ -781,7 +973,8 @@ class Reader {
           this.commentRange(c);
           break;
         case "bookmarkStart":
-          if (attr(c, "w:name") !== "_GoBack") this.warn("bookmarks");
+        case "bookmarkEnd":
+          this.bookmark(c, ctx, out);
           break;
         case "oMath":
         case "oMathPara": {
@@ -832,6 +1025,7 @@ class Reader {
     if (ctx.margin) marks = marks.filter((m) => MARGIN_MARKS.has(m.type as string));
     const href = this.fieldHref();
     const all = [...ctx.marks, ...marks];
+    if (!ctx.margin) all.push(...this.bookmarkMarks());
     if (href && !all.some((m) => m.type === "link")) all.push({ type: "link", attrs: { href } });
     if (!ctx.margin)
       for (const id of this.openComments)
@@ -855,7 +1049,27 @@ class Reader {
 
   pushText(text: string, ctx: Ctx, out: Inline[], rPr: RunProps = {}) {
     if (!text || !this.inResult) return;
+    const cap = this.capturing();
+    if (cap) {
+      if (cap.emitted) return;
+      if (!cap.marks) cap.marks = this.runMarksFor(rPr, ctx);
+      cap.result = (cap.result ?? "") + text;
+      return;
+    }
     out.push({ kind: "text", text, marks: this.runMarksFor(rPr, ctx) });
+  }
+
+  /** The field whose result is being collected, if any. */
+  capturing(): FieldState | undefined {
+    return this.fields.find((f) => f.capture);
+  }
+
+  /** A field node from a kept field (instruction + collected result). */
+  fieldNode(f: FieldState, ctx?: Ctx): JSONContent {
+    const marks = (f.marks ?? (ctx ? this.runMarksFor({}, ctx) : [])).filter((m) => m.type !== "link");
+    const node: JSONContent = { type: "field", attrs: { instr: f.instr.trim(), result: f.result ?? "", ...(f.locked ? { locked: true } : {}) } };
+    if (marks.length) node.marks = marks;
+    return node;
   }
 
   run(r: Element, ctx0: Ctx, out: Inline[]) {
@@ -867,15 +1081,27 @@ class Reader {
       const n = nameOf(c);
       if (n === "fldChar") {
         const t = attr(c, "w:fldCharType");
-        if (t === "begin") this.fields.push({ phase: "instr", instr: "" });
+        const keep = (f: FieldState) =>
+          !ctx.margin && !f.href && !this.fields.some((x) => x !== f && x.capture) && this.fields.every((x) => x === f || x.phase === "result") && KEPT_FIELDS.has(fieldType(f.instr));
+        if (t === "begin") this.fields.push({ phase: "instr", instr: "", locked: /^(1|true|on)$/.test(attr(c, "w:fldLock") ?? "") });
         else if (t === "separate") {
           const f = this.fields[this.fields.length - 1];
           if (f) {
             f.phase = "result";
             const href = parseHyperlinkInstr(f.instr);
             if (href) f.href = href;
+            if (keep(f)) {
+              f.capture = true;
+              f.result = "";
+            }
           }
-        } else if (t === "end") this.fields.pop();
+        } else if (t === "end") {
+          const f = this.fields[this.fields.length - 1];
+          // A field without a result part (begin, instr, end) still counts.
+          if (f && f.phase === "instr" && keep(f)) f.capture = true;
+          this.fields.pop();
+          if (f?.capture && !f.emitted) out.push({ kind: "node", node: this.fieldNode(f, ctx) });
+        }
         continue;
       }
       if (n === "instrText") {
@@ -885,6 +1111,7 @@ class Reader {
       }
       if (!this.inResult) continue;
       if (rPr.hidden) continue;
+      if (this.capturing() && !["t", "delText", "tab", "ptab", "noBreakHyphen", "softHyphen", "sym"].includes(n)) continue;
       switch (n) {
         case "t":
         case "delText":
@@ -919,9 +1146,10 @@ class Reader {
           if (id == null) break;
           const foot = n === "footnoteReference";
           const content = (foot ? this.footnotes : this.endnotes).get(id) ?? "";
+          const bm = this.bookmarkMarks();
           out.push({
             kind: "node",
-            node: { type: foot ? "footnote" : "endnote", attrs: { id: `${foot ? "fn" : "en"}-${id}`, content } },
+            node: { type: foot ? "footnote" : "endnote", attrs: { id: `${foot ? "fn" : "en"}-${id}`, content }, ...(bm.length ? { marks: bm } : {}) },
           });
           break;
         }
@@ -1176,6 +1404,27 @@ export function groupRevisions(docs: (JSONContent | null | undefined)[]): void {
     fmt = null;
     walk(d);
   }
+}
+
+type FieldEvent = { k: "begin" | "sep" | "end" } | { k: "instr"; text: string };
+
+/** fieldEvents lists an element's complex-field markers in document order. */
+function fieldEvents(e: Element): FieldEvent[] {
+  const out: FieldEvent[] = [];
+  const walk = (n: Element) => {
+    for (const c of kids(n)) {
+      const name = nameOf(c);
+      if (name === "fldChar") {
+        const t = attr(c, "w:fldCharType");
+        if (t === "begin") out.push({ k: "begin" });
+        else if (t === "separate") out.push({ k: "sep" });
+        else if (t === "end") out.push({ k: "end" });
+      } else if (name === "instrText") out.push({ k: "instr", text: c.textContent ?? "" });
+      else if (name !== "del" && name !== "moveFrom") walk(c);
+    }
+  };
+  walk(e);
+  return out;
 }
 
 /** plainText is a note or comment body as text: paragraphs joined by

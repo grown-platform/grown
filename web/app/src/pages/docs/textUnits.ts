@@ -26,12 +26,27 @@ interface Caret {
   off: number;
   /** Position of the paragraph's first character. */
   start: number;
+  /** Field results by offset: a field breaks words but reads as its
+   *  result in a sentence (M8). */
+  fields: Map<number, string>;
 }
 
 function caret(editor: Editor): Caret | null {
   const { $head } = editor.state.selection;
   if (!$head.parent.isTextblock) return null;
-  return { text: blockString($head.parent), off: $head.parentOffset, start: $head.start() };
+  const fields = new Map<number, string>();
+  $head.parent.forEach((c, off) => {
+    if (c.type.name === "field") fields.set(off, String(c.attrs.result ?? ""));
+  });
+  return { text: blockString($head.parent), off: $head.parentOffset, start: $head.start(), fields };
+}
+
+/** The text of [a, b) with fields read as their results. */
+function sliceText(c: Caret, a: number, b: number): string {
+  if (!c.fields.size) return c.text.slice(a, b);
+  let s = "";
+  for (let i = a; i < b; i++) s += c.fields.get(i) ?? c.text[i];
+  return s;
 }
 
 /** wordRange returns the [from, to) offsets of the word at `off`. */
@@ -107,7 +122,7 @@ function unitRange(editor: Editor, unit: "word" | "sentence", which: UnitPart) {
   else r = sentenceRange(c.text, c.off);
   if (!r) return { c, from: c.start + c.off, to: c.start + c.off, empty: true };
   const [a, b] = part(r, c.off, which);
-  return { c, from: c.start + a, to: c.start + b, empty: false, text: c.text.slice(a, b) };
+  return { c, from: c.start + a, to: c.start + b, empty: false, text: sliceText(c, a, b) };
 }
 
 /** getCurrentWord returns the word at the caret (or its part before/after

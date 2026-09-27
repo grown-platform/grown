@@ -91,6 +91,8 @@ import { Comments, type CommentsHandle } from "./Comments";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { EquationEditor } from "./math/EquationEditor";
 import { setMathEditHandler } from "./math/MathNode";
+import { ReferenceDialogs, openReferenceDialog } from "./ReferenceDialogs";
+import { insertTableOfContents, setPageResolver, toggleFieldCodes, updateFields } from "./references";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { FindBar, type FindMode } from "./FindBar";
 import { AutoCorrectDialog } from "./AutoCorrectDialog";
@@ -282,6 +284,29 @@ export function DocEditor({ user }: DocEditorProps) {
     update();
     return () => ro.disconnect();
   }, [orientation, editor]);
+
+  // Page numbers for PAGE / NUMPAGES / PAGEREF fields and TOC entries
+  // (M8): measured on the rendered page, the same way as the page-number
+  // labels, until M9's pagination.
+  useEffect(() => {
+    if (!editor) return;
+    setPageResolver(editor, (doc) => {
+      const el = pageRef.current;
+      if (!el) throw new Error("no page");
+      const { h } = pageDims(orientation);
+      const top = el.getBoundingClientRect().top;
+      const view = editor.view;
+      return {
+        pageAt: (pos: number) => {
+          const p = Math.max(0, Math.min(pos, view.state.doc.content.size));
+          void doc;
+          return Math.max(1, Math.floor((view.coordsAtPos(p).top - top) / h) + 1);
+        },
+        pageCount: () => Math.max(1, Math.ceil(el.scrollHeight / h)),
+      };
+    });
+    return () => setPageResolver(editor, null);
+  }, [editor, orientation]);
 
   // Debounced thumbnail save: a few seconds after the last edit, store a small
   // HTML preview for the Docs home grid.
@@ -660,6 +685,17 @@ export function DocEditor({ user }: DocEditorProps) {
       { label: "Drawing", section: "Insert", run: actions.insertDrawing },
       { label: "Equation", section: "Insert", run: () => e.chain().focus().insertEquation().run() },
       { label: "Insert emoji", section: "Insert", run: actions.emoji },
+      { label: "Table of contents", section: "Insert", run: () => insertTableOfContents(e) },
+      { label: "Table of figures", section: "Insert", run: () => openReferenceDialog("tof") },
+      { label: "Caption", section: "Insert", run: () => openReferenceDialog("caption") },
+      { label: "Cross-reference", section: "Insert", run: () => openReferenceDialog("crossref") },
+      { label: "Bookmark", section: "Insert", run: () => openReferenceDialog("bookmarks") },
+      { label: "Link settings", section: "Insert", run: () => openReferenceDialog("hyperlink") },
+      { label: "Page number", section: "Insert", run: () => e.chain().focus().insertField("PAGE").run() },
+      { label: "Date and time field", section: "Insert", run: () => openReferenceDialog("field") },
+      { label: "Update fields", section: "Tools", run: () => updateFields(e, "selection") },
+      { label: "Update all fields", section: "Tools", run: () => updateFields(e, "all") },
+      { label: "Show field codes", section: "View", run: () => toggleFieldCodes(e) },
       {
         label: "Special characters",
         section: "Insert",
@@ -1051,6 +1087,7 @@ export function DocEditor({ user }: DocEditorProps) {
       />
       <ParagraphDialogs editor={editor} />
       <TableDialogs editor={editor} />
+      <ReferenceDialogs editor={editor} />
       <ShortcutsDialog
         open={dialog === "shortcuts"}
         onClose={() => setDialog(null)}

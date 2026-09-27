@@ -12,7 +12,7 @@
 //   widowControl     false = off (default on)        widows/orphans
 //   pageBreakBefore  page break before               break-before: page
 //   borders          JSON {top,bottom,left,right,between?} of "w style color"
-//   outlineLevel     1-9 (body text = null)          data-outline-level
+//   outlineLevel     1-9 (inherit = null, body text = 10) data-outline-level
 //
 // The left indent (`indent`), space before/after and shading stay in
 // paragraphFormat.ts (M1); line height multiples stay in LineHeight.
@@ -350,7 +350,8 @@ export const ParagraphProps = Extension.create({
             default: null,
             parseHTML: (el) => {
               const v = parseInt((el as HTMLElement).getAttribute("data-outline-level") ?? "", 10);
-              return v >= 1 && v <= 9 ? v : null;
+              // 10 = body text over a style's outline level (M8 Add text).
+              return v >= 1 && v <= 10 ? v : null;
             },
             renderHTML: (a) =>
               a.outlineLevel ? { "data-outline-level": String(a.outlineLevel) } : {},

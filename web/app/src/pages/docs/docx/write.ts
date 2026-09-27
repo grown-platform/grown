@@ -180,6 +180,12 @@ class Writer {
   comments = new Map<string, DocxComment>();
   replies = new Map<string, DocxComment[]>();
   commentNum = new Map<string, number>();
+  /** Bookmarks (M8): leaf index of the first / last marked inline node. */
+  bookmarkFirst = new Map<string, number>();
+  bookmarkLast = new Map<string, number>();
+  bookmarkIds = new Map<string, number>();
+  /** TOC levels written (for the TOC n / table of figures styles). */
+  tocStyles = new Set<string>();
   date: string;
 
   constructor(readonly input: DocxWriteInput) {
@@ -288,6 +294,29 @@ class Writer {
     }
   }
 
+  /** planBookmarks numbers bookmarks and finds each one's first and last
+   *  inline node (same leaf order as planComments). */
+  planBookmarks() {
+    let i = 0;
+    let next = 0;
+    const id = (name: string) => {
+      if (!this.bookmarkIds.has(name)) this.bookmarkIds.set(name, next++);
+    };
+    this.input.doc.descendants((n) => {
+      if (!n.isInline) return true;
+      if (n.type.name === "bookmarkPoint" && n.attrs.name) id(String(n.attrs.name));
+      for (const m of n.marks) {
+        if (m.type.name !== "bookmark" || !m.attrs.name) continue;
+        const name = String(m.attrs.name);
+        id(name);
+        if (!this.bookmarkFirst.has(name)) this.bookmarkFirst.set(name, i);
+        this.bookmarkLast.set(name, i);
+      }
+      i++;
+      return false;
+    });
+  }
+
   threadIds(id: string): number[] {
     return [id, ...(this.replies.get(id) ?? []).map((r) => r.id)].map((x) => this.commentNum.get(x)!);
   }
@@ -338,7 +367,31 @@ class Writer {
       el("w:szCs", { "w:val": 24 }) +
       el("w:lang", { "w:val": "en-US" }) +
       "</w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults>";
-    return `${XML_DECL}<w:styles ${ROOT_NS}>${defaults}${body}${tableStyles}</w:styles>`;
+    return `${XML_DECL}<w:styles ${ROOT_NS}>${defaults}${body}${tableStyles}${this.tocStylesXml()}</w:styles>`;
+  }
+
+  /** TOC 1-9 / table of figures paragraph styles for written tables:
+   *  right tab with the leader at the text edge. */
+  tocStylesXml(): string {
+    return [...this.tocStyles]
+      .sort()
+      .map((key) => {
+        const [id, leader] = key.split(":");
+        const lvl = /^TOC(\d)$/.exec(id)?.[1];
+        const name = lvl ? `toc ${lvl}` : "table of figures";
+        const tab = leader === "none" ? "" : el("w:tabs", {}, el("w:tab", { "w:val": "right", "w:leader": leader === "dash" ? "hyphen" : leader, "w:pos": 9350 }));
+        const ind = lvl && +lvl > 1 ? el("w:ind", { "w:left": (+lvl - 1) * 220 }) : "";
+        return el(
+          "w:style",
+          { "w:type": "paragraph", "w:styleId": id },
+          el("w:name", { "w:val": name }) +
+            (this.usedStyles.has(NORMAL) ? el("w:basedOn", { "w:val": NORMAL }) + el("w:next", { "w:val": NORMAL }) : "") +
+            el("w:uiPriority", { "w:val": 39 }) +
+            el("w:unhideWhenUsed") +
+            el("w:pPr", {}, tab + el("w:spacing", { "w:after": 100 }) + ind),
+        );
+      })
+      .join("");
   }
 
   stylePPr(p: ParaPr): string {
@@ -489,6 +542,8 @@ class Writer {
       }
       case "table":
         return this.table(node, ctx);
+      case "tableOfContents":
+        return this.tableOfContents(node, ctx);
       default:
         // Unknown blocks: keep their text.
         if (node.isTextblock) return this.paragraph(node, ctx, list, extraInd);
@@ -578,7 +633,7 @@ class Writer {
   }
 
   async inline(node: PMNode, ctx: PartCtx, prefix: string): Promise<string> {
-    type Item = { href: string | null; xml: string };
+    type Item = { href: string | null; title?: string | null; xml: string };
     const items: Item[] = [];
     if (prefix) items.push({ href: null, xml: `<w:r>${this.textXml(prefix, false)}</w:r>` });
     for (let i = 0; i < node.childCount; i++) {
@@ -586,6 +641,9 @@ class Writer {
       const idx = ctx.body ? this.leaf++ : -1;
       const link = c.marks.find((m) => m.type.name === "link");
       const href = (link?.attrs.href as string | undefined) || null;
+      const title = (link?.attrs.title as string | undefined) || null;
+      if (ctx.body) for (const [name, first] of this.bookmarkFirst) if (first === idx)
+        items.push({ href, title, xml: el("w:bookmarkStart", { "w:id": this.bookmarkIds.get(name)!, "w:name": name }) });
       if (ctx.body) for (const [id, first] of this.commentFirst) if (first === idx)
         for (const n of this.threadIds(id)) items.push({ href, xml: el("w:commentRangeStart", { "w:id": n }) });
       const fc = c.marks.find((m) => m.type.name === "formatChange");
@@ -597,8 +655,13 @@ class Writer {
         if (ctx.body) run = this.noteRef(c, writeRPr({ ...marksRunProps(c.marks), vertAlign: "super" }));
       } else if (c.type.name === "image") run = (await this.imageRun(c, ctx)) ?? "";
       else if (c.type.name === "math") run = writeOMML(contentFromAttr(c.attrs.data), !!c.attrs.display);
+      else if (c.type.name === "field") run = fieldRuns(String(c.attrs.instr ?? ""), String(c.attrs.result ?? ""), rPr, !!c.attrs.locked, (t) => this.textXml(t, false));
+      else if (c.type.name === "bookmarkPoint") {
+        const id = ctx.body ? this.bookmarkIds.get(String(c.attrs.name)) : undefined;
+        if (id != null) run = el("w:bookmarkStart", { "w:id": id, "w:name": String(c.attrs.name) }) + el("w:bookmarkEnd", { "w:id": id });
+      }
       else if (c.textContent) run = `<w:r>${rPr}${this.textXml(c.textContent, false)}</w:r>`;
-      if (run) items.push({ href, xml: this.tracked(c.marks, run) });
+      if (run) items.push({ href, title, xml: c.type.name === "bookmarkPoint" ? run : this.tracked(c.marks, run) });
       if (ctx.body) for (const [id, last] of this.commentLast) if (last === idx)
         for (const n of this.threadIds(id))
           items.push({
@@ -607,11 +670,14 @@ class Writer {
               el("w:commentRangeEnd", { "w:id": n }) +
               `<w:r>${el("w:commentReference", { "w:id": n })}</w:r>`,
           });
+      if (ctx.body) for (const [name, last] of this.bookmarkLast) if (last === idx)
+        items.push({ href, title, xml: el("w:bookmarkEnd", { "w:id": this.bookmarkIds.get(name)! }) });
     }
     // Group consecutive items with the same link into one w:hyperlink.
     let out = "";
     for (let i = 0; i < items.length; ) {
       const href = items[i].href;
+      const title = items.slice(i).find((x) => x.href === href && x.title)?.title ?? null;
       let j = i;
       let body = "";
       while (j < items.length && items[j].href === href) body += items[j++].xml;
@@ -619,6 +685,7 @@ class Writer {
         const attrs: Record<string, string> = {};
         if (href.startsWith("#")) attrs["w:anchor"] = href.slice(1);
         else attrs["r:id"] = ctx.rels.add("hyperlink", href, true);
+        if (title) attrs["w:tooltip"] = title;
         out += el("w:hyperlink", attrs, body);
       } else out += body;
       i = j;
@@ -718,6 +785,47 @@ class Writer {
       `<pic:blipFill>${el("a:blip", { "r:embed": rid })}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
       `<pic:spPr><a:xfrm><a:off x="0" y="0"/>${el("a:ext", { cx, cy })}</a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
       "</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"
+    );
+  }
+
+  // --- table of contents (M8) ---------------------------------------------------------------
+
+  /** A TOC as Word writes it: a "Table of Contents" content control around
+   *  a TOC field whose result is the entry paragraphs (TOC n styles, a
+   *  hyperlink to the heading's _Toc bookmark, a tab and a PAGEREF). */
+  async tableOfContents(node: PMNode, ctx: PartCtx): Promise<string> {
+    const instr = String(node.attrs.instr ?? "TOC");
+    const figures = /\\c\s/.test(instr);
+    const noPages = /\\n(\s|$)/.test(instr);
+    const leader = String(node.attrs.leader ?? "dot");
+    const paras: string[] = [];
+    const count = node.childCount;
+    for (let i = 0; i < count; i++) {
+      const entry = node.child(i);
+      const level = Math.min(9, Math.max(1, Number(entry.attrs.level) || 1));
+      const styleId = figures ? "TableofFigures" : `TOC${level}`;
+      this.tocStyles.add(`${styleId}:${leader}`);
+      const begin = i === 0 ? fieldBegin(instr) : "";
+      const end = i === count - 1 ? '<w:r><w:fldChar w:fldCharType="end"/></w:r>' : "";
+      const body = await this.inline(entry, ctx, "");
+      let page = "";
+      const pageText = String(entry.attrs.page ?? "");
+      if (!noPages && pageText) {
+        let target: string | null = null;
+        entry.forEach((c) => {
+          const href = c.marks.find((m) => m.type.name === "link")?.attrs.href as string | undefined;
+          if (!target && href?.startsWith("#")) target = href.slice(1);
+        });
+        page =
+          "<w:r><w:tab/></w:r>" +
+          (target ? fieldRuns(`PAGEREF ${target} \\h`, pageText, "", false, (t) => this.textXml(t, false)) : `<w:r>${this.textXml(pageText, false)}</w:r>`);
+      }
+      paras.push(`<w:p>${el("w:pPr", {}, el("w:pStyle", { "w:val": styleId }))}${begin}${body}${page}${end}</w:p>`);
+    }
+    return (
+      "<w:sdt><w:sdtPr>" +
+      el("w:docPartObj", {}, el("w:docPartGallery", { "w:val": figures ? "Table of Figures" : "Table of Contents" }) + el("w:docPartUnique")) +
+      `</w:sdtPr><w:sdtContent>${paras.join("")}</w:sdtContent></w:sdt>`
     );
   }
 
@@ -852,6 +960,7 @@ class Writer {
     const { input } = this;
     this.planNumbering();
     this.planComments();
+    this.planBookmarks();
     const body = await this.blocks(input.doc, { rels: this.rels, body: true });
     const headerId = await this.marginPart("header", input.header);
     const footerId = await this.marginPart("footer", input.footer);
@@ -960,6 +1069,24 @@ class Writer {
 }
 
 /** writeDocx serialises a Grown document as a .docx package. */
+/** The begin, instruction and separate runs of a complex field. */
+function fieldBegin(instr: string, rPr = "", locked = false): string {
+  return (
+    `<w:r>${rPr}${el("w:fldChar", { "w:fldCharType": "begin", "w:fldLock": locked ? "1" : undefined })}</w:r>` +
+    `<w:r>${rPr}<w:instrText xml:space="preserve"> ${esc(instr.trim())} </w:instrText></w:r>` +
+    `<w:r>${rPr}<w:fldChar w:fldCharType="separate"/></w:r>`
+  );
+}
+
+/** A complex field (w:fldChar begin / instrText / separate / result / end). */
+function fieldRuns(instr: string, result: string, rPr: string, locked: boolean, text: (t: string) => string): string {
+  return (
+    fieldBegin(instr, rPr, locked) +
+    (result ? `<w:r>${rPr}${text(result)}</w:r>` : "") +
+    `<w:r>${rPr}<w:fldChar w:fldCharType="end"/></w:r>`
+  );
+}
+
 export function writeDocx(input: DocxWriteInput): Promise<Uint8Array> {
   return new Writer(input).write();
 }

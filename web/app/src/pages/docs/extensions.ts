@@ -7,7 +7,6 @@ import Underline from "@tiptap/extension-underline";
 import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
-import Link from "@tiptap/extension-link";
 import TextAlign from "@tiptap/extension-text-align";
 import FontFamily from "@tiptap/extension-font-family";
 import TaskList from "@tiptap/extension-task-list";
@@ -27,6 +26,9 @@ import { DocModel, CharStyle } from "./docModel";
 import { ClipboardHandling } from "./clipboard";
 import { Search } from "./search";
 import { AutoCorrect } from "./autocorrect";
+import { BookmarkMark, BookmarkPoint, LinkWithTitle } from "./bookmarks";
+import { Field, References } from "./references";
+import { TableOfContents, TocEntry } from "./toc";
 import type * as Y from "yjs";
 import type { WebsocketProvider } from "y-websocket";
 
@@ -575,7 +577,7 @@ export function buildExtensions(opts: BuildOpts) {
     PageBreak,
     FontFamily,
     Highlight.configure({ multicolor: true }),
-    Link.configure({ openOnClick: false, autolink: true, linkOnPaste: true }),
+    LinkWithTitle.configure({ openOnClick: false, autolink: true, linkOnPaste: true }),
     TextAlign.configure({ types: ["heading", "paragraph"] }),
     TaskList,
     TaskItem.configure({ nested: true }),
@@ -598,6 +600,13 @@ export function buildExtensions(opts: BuildOpts) {
     TrackParagraphs,
     Drawing,
     MathNode,
+    // References and fields (M8).
+    BookmarkMark,
+    BookmarkPoint,
+    Field,
+    TableOfContents,
+    TocEntry,
+    References,
     Suggesting.configure({ user: { name: userName, color: userColor } }),
     ClipboardHandling,
     Search,
