@@ -580,6 +580,49 @@ function shiftTables(list: any[], op: StructureOp): any[] {
     .filter((t) => t && t.ref);
 }
 
+/**
+ * grownCharts (on sheet 0) after op: charts on the target sheet (sheetId, or
+ * the first sheet for charts saved before M10) get their source range shifted
+ * like any reference and their grid anchor moved with its cell; a deleted
+ * anchor cell leaves the chart at the first row/column after the deletion.
+ * Cell shifts (insert/delete cells) move ranges only, as drawings stay put.
+ */
+export function shiftCharts(list: any[], sheets: any[], op: StructureOp, target: number): any[] {
+  const targetId = String(sheets[target]?.id ?? "");
+  const firstId = String(sheets[0]?.id ?? "");
+  return list.map((ch) => {
+    if (!ch || typeof ch !== "object") return ch;
+    const onTarget = String(ch.sheetId ?? firstId) === targetId;
+    if (!onTarget) return ch;
+    const next: any = { ...ch };
+    const rg = ch.range;
+    if (rg && typeof rg.r0 === "number") {
+      const moved = shiftRect({ r1: rg.r0, c1: rg.c0, r2: rg.r1, c2: rg.c1 }, op);
+      if (moved) next.range = { r0: moved.r1, r1: moved.r2, c0: moved.c1, c1: moved.c2 };
+    }
+    const a = ch.anchor;
+    if (a && typeof a.r === "number" && op.kind !== "insertCells" && op.kind !== "deleteCells") {
+      const p = mapCell(a.r, a.c, op);
+      if (p) next.anchor = { ...a, r: p[0], c: p[1] };
+      else if (op.kind === "delete") {
+        next.anchor = op.axis === "row" ? { ...a, r: op.index, dy: 0 } : { ...a, c: op.index, dx: 0 };
+      }
+    }
+    return next;
+  });
+}
+
+/** grownSparklines after op: data and location ranges move; a group whose cells are all deleted goes. */
+function shiftSparklines(list: any[], op: StructureOp): any[] {
+  const move = (rg: any) => {
+    const m = rg && typeof rg.r0 === "number" ? shiftRect({ r1: rg.r0, c1: rg.c0, r2: rg.r1, c2: rg.c1 }, op) : null;
+    return m ? { r0: m.r1, r1: m.r2, c0: m.c1, c1: m.c2 } : null;
+  };
+  return list
+    .map((g) => (g && typeof g === "object" ? { ...g, data: move(g.data) ?? g.data, location: move(g.location) } : g))
+    .filter((g) => g && g.location);
+}
+
 /** The grown* model fields (and _namedRanges on sheet 0) a sheet has after op. */
 function modelFields(sheets: any[], i: number, op: StructureOp, target: number): Record<string, unknown> {
   const sheet = sheets[i];
@@ -591,7 +634,9 @@ function modelFields(sheets: any[], i: number, op: StructureOp, target: number):
   if (i === target && sheet?.grownProtection) out.grownProtection = shiftProtectionField(sheet.grownProtection, op);
   if (i === target && sheet?.grownPrint) out.grownPrint = shiftPrintField(sheet.grownPrint, op);
   if (i === target && Array.isArray(sheet?.grownTables)) out.grownTables = shiftTables(sheet.grownTables, op);
+  if (i === target && Array.isArray(sheet?.grownSparklines)) out.grownSparklines = shiftSparklines(sheet.grownSparklines, op);
   if (i === 0 && "_namedRanges" in (sheet ?? {})) out._namedRanges = shiftNamedRanges(sheet._namedRanges, sheets, op);
+  if (i === 0 && Array.isArray(sheet?.grownCharts)) out.grownCharts = shiftCharts(sheet.grownCharts, sheets, op, target);
   return out;
 }
 

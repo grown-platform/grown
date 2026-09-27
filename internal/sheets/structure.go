@@ -822,6 +822,55 @@ func shiftNamedRangeList(v interface{}, wb FsWorkbook, op StructureOp) interface
 	return out
 }
 
+// shiftChartList moves grownCharts (sheet 0) with a structure op on sheet
+// targetID: source ranges shift like references, anchors move with their
+// cell (a deleted anchor cell leaves the chart at op.Index), cell shifts move
+// ranges only. Charts without a sheetId belong to firstID (formulaShift.ts
+// shiftCharts).
+func shiftChartList(v interface{}, targetID, firstID string, op StructureOp) interface{} {
+	list, ok := v.([]interface{})
+	if !ok {
+		return v
+	}
+	out := make([]interface{}, len(list))
+	for i, x := range list {
+		out[i] = x
+		ch, ok := x.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		sid := firstID
+		if s, ok := ch["sheetId"]; ok && s != nil {
+			sid = fmt.Sprint(s)
+		}
+		if sid != targetID {
+			continue
+		}
+		next := copyMap(ch)
+		if rg, ok := ch["range"].(map[string]interface{}); ok {
+			rect := StructureRect{R1: jsonInt(rg["r0"]), C1: jsonInt(rg["c0"]), R2: jsonInt(rg["r1"]), C2: jsonInt(rg["c1"])}
+			if moved, ok := ShiftRect(rect, op); ok {
+				next["range"] = map[string]interface{}{"r0": moved.R1, "r1": moved.R2, "c0": moved.C1, "c1": moved.C2}
+			}
+		}
+		if a, ok := ch["anchor"].(map[string]interface{}); ok && op.Kind != "insertCells" && op.Kind != "deleteCells" {
+			na := copyMap(a)
+			if r, c, ok := structMapCell(jsonInt(a["r"]), jsonInt(a["c"]), op); ok {
+				na["r"], na["c"] = r, c
+			} else if op.Kind == "delete" {
+				if op.Axis == "row" {
+					na["r"], na["dy"] = op.Index, 0
+				} else {
+					na["c"], na["dx"] = op.Index, 0
+				}
+			}
+			next["anchor"] = na
+		}
+		out[i] = next
+	}
+	return out
+}
+
 // shiftRectList shifts a JSON list of rects, dropping deleted ones.
 func shiftRectList(v interface{}, op StructureOp) []interface{} {
 	list, _ := v.([]interface{})
@@ -1211,6 +1260,9 @@ func ApplyStructureOp(wb FsWorkbook, op StructureOp) error {
 		if i == 0 {
 			if v, ok := extraValue(sh, "_namedRanges"); ok {
 				setExtra(sh, "_namedRanges", shiftNamedRangeList(v, wb, op))
+			}
+			if v, ok := extraValue(sh, "grownCharts"); ok {
+				setExtra(sh, "grownCharts", shiftChartList(v, wb[target].ID, wb[0].ID, op))
 			}
 		}
 		if !onTarget {

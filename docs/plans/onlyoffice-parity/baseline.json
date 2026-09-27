@@ -126,7 +126,7 @@
       "passing": null
     },
     "docs/references": {
-      "ported": 1,
+      "ported": 0,
       "passing": null
     },
     "docs/scripting-api": {
@@ -170,7 +170,7 @@
       "passing": null
     },
     "sheets/charts": {
-      "ported": 0,
+      "ported": 16,
       "passing": null
     },
     "sheets/conditional formatting": {
@@ -210,7 +210,7 @@
       "passing": null
     },
     "sheets/pivot": {
-      "ported": 41,
+      "ported": 0,
       "passing": null
     },
     "sheets/print": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2024,
+    "ported": 1998,
     "passing": null
   }
 }

@@ -24,6 +24,8 @@ import { attrs, cellRef, esc, pxToPt, pxToWidth, quoteSheet, rectRef, toArgb } f
 import { StyleBuilder, flattenBorders, type CellBorder } from "./xlsxStyles";
 import { writeAutoFilter, writeConditionalFormatting, writeDataValidations } from "./xlsxRules";
 import { writeTable, type TableModel } from "./xlsxTables";
+import { chartSpaceXml, drawingXml, CT_CHART, CT_DRAWING, REL_CHART, REL_DRAWING } from "./xlsxCharts";
+import type { ChartConfig } from "../chartData";
 
 export const GROWN_EXT_NS = "https://grown.pick.haus/xlsx/2026";
 export const GROWN_EXT_URI = "{6F1B8B4E-6A36-4C5B-9C1A-6772726F776E}";
@@ -272,6 +274,13 @@ export async function workbookToXlsx(input: any[], opts: WriteOptions = {}): Pro
   });
   let tableSeq = 0;
   let commentSeq = 0;
+  let drawingSeq = 0;
+  let chartSeq = 0;
+  // Charts live on the first stored sheet; each belongs to its sheetId (or that first sheet).
+  const firstInput = (Array.isArray(input) ? input : []).find((s) => s && typeof s === "object");
+  const allCharts: ChartConfig[] = Array.isArray(firstInput?.grownCharts) ? firstInput.grownCharts : [];
+  const chartsFor = (sheet: any) =>
+    allCharts.filter((c) => c && c.range && String(c.sheetId ?? firstInput?.id ?? "") === String(sheet.id ?? "") && (c.sheetId !== undefined || sheet === firstInput));
   // The first visible sheet is active.
   const active = Math.max(0, sheets.findIndex((s) => !(s.hide === 1 || s.hide === true)));
 
@@ -441,6 +450,32 @@ export async function workbookToXlsx(input: any[], opts: WriteOptions = {}): Pro
       }
     }
 
+    // Charts (a drawing part with one chart part per chart).
+    let drawing = "";
+    const charts = chartsFor(sheet);
+    if (charts.length) {
+      drawingSeq++;
+      const dPath = `xl/drawings/drawing${drawingSeq}.xml`;
+      zip.file(dPath, drawingXml(charts));
+      contentOverrides.push(`<Override PartName="/${dPath}" ContentType="${CT_DRAWING}"/>`);
+      const dRels: string[] = [];
+      charts.forEach((c, i) => {
+        chartSeq++;
+        const cPath = `xl/charts/chart${chartSeq}.xml`;
+        zip.file(cPath, chartSpaceXml(c, names[idx]));
+        contentOverrides.push(`<Override PartName="/${cPath}" ContentType="${CT_CHART}"/>`);
+        dRels.push(`<Relationship Id="rId${i + 1}" Type="${REL_CHART}" Target="../charts/chart${chartSeq}.xml"/>`);
+      });
+      zip.file(
+        `xl/drawings/_rels/drawing${drawingSeq}.xml.rels`,
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+          `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${dRels.join("")}</Relationships>`,
+      );
+      const rd = `rId${rels.length + 1}`;
+      rels.push(`<Relationship Id="${rd}" Type="${REL_DRAWING}" Target="../drawings/drawing${drawingSeq}.xml"/>`);
+      drawing = `<drawing r:id="${rd}"/>`;
+    }
+
     // Comments.
     let legacyDrawing = "";
     if (comments.length) {
@@ -494,6 +529,7 @@ export async function workbookToXlsx(input: any[], opts: WriteOptions = {}): Pro
       headerFooter +
       rowBreaks +
       colBreaks +
+      drawing +
       legacyDrawing +
       (tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.join("")}</tableParts>` : "") +
       ext +

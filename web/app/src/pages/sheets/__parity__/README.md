@@ -36,9 +36,10 @@ Current files:
 | `structure.parity.test.ts` | `SheetStructureTests.js` (move/shift) | `../formulaShift.ts` |
 | `paste.parity.test.ts`, `csv.parity.test.ts` | `copy-paste-tests.js` | `../pasteSpecial.ts`, `../csvText.ts` |
 | `textCase.parity.test.ts` | `CellSettingsTests.js` | `../textCase.ts` |
+| `charts.parity.test.ts` | `ChartsDrawTest.js` | `../trendlines.ts`, `../histogram.ts`, `../chartAxis.ts`, `../chartData.ts` |
 | `numberFormat.parity.test.ts` | `NumFormatParse.js`, `testsForFWB.html.js`, `CellFormatTests.js` (fixtures in `internal/sheets/testdata/numfmt/`, shared with the Go port) | `../numberFormat.ts` |
 
 | `pivot.parity.test.ts` | `PivotTests.js` (recorded reports in `pivot.fixtures.json`) | `../pivotEngine.ts` |
 | `pivot2.parity.test.ts` | `PivotTests2.js` (workbook facts in `pivot2.fixtures.json`; GETPIVOTDATA in `internal/sheets/formula_pivot_test.go`) | `../pivotEngine.ts`, `../pivotGrid.ts` |
 
-Later milestones add charts (M10).
+Charts (M10): `ChartsDrawTest.js` ports live next to the chart modules (see sheets.md §16).

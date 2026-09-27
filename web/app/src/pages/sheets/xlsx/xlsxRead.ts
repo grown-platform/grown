@@ -38,6 +38,8 @@ import { bordersToInfo, isDateFormat, readStyles, type CellBorder, type ReadStyl
 import { readAutoFilter, readConditionalFormatting, readDataValidations } from "./xlsxRules";
 import { readTable, type TableModel } from "./xlsxTables";
 import { GROWN_EXT_URI } from "./xlsxWrite";
+import { readChartSpace, readDrawingAnchors } from "./xlsxCharts";
+import type { ChartConfig } from "../chartData";
 
 export interface ImportedWorkbook {
   /** FortuneSheet sheets (stored form: celldata), Grown models attached. */
@@ -177,6 +179,7 @@ export async function readXlsx(data: ArrayBuffer | Uint8Array | Blob, opts: Read
   const sheetNames = sheetEls.map((el) => attr(el, "name") ?? "Sheet");
   const prefix = opts.idPrefix ?? `x${Date.now().toString(36)}`;
   const sheets: any[] = [];
+  const charts: ChartConfig[] = [];
 
   // Defined names: print areas/titles per sheet, the rest become named ranges.
   const printArea = new Map<number, CellRect>();
@@ -520,7 +523,38 @@ export async function readXlsx(data: ArrayBuffer | Uint8Array | Blob, opts: Read
       }
       sheet.grownPrint = s;
     }
-    if (kid(ws, "drawing")) warnings.push(`Charts, images and shapes on "${sheet.name}" were not imported.`);
+    const drawingEl = kid(ws, "drawing");
+    if (drawingEl) {
+      const rid = drawingEl.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") ?? attr(drawingEl, "id");
+      const dRel = rels.find((r) => r.id === rid);
+      const dPath = dRel ? resolvePath(dirOf(path), dRel.target) : null;
+      const dDoc = dPath ? await readPart(zip, dPath) : null;
+      let other = 0;
+      if (dDoc && dPath) {
+        const dRels = await partRels(zip, dPath);
+        const colPx = (c: number) => (columnlen[String(c)] ?? 73) + 1;
+        const rowPx = (r: number) => (rowlen[String(r)] ?? 19) + 1;
+        const anchors = readDrawingAnchors(dDoc, colPx, rowPx);
+        other = Array.from(dDoc.documentElement.children).filter((a) => /Anchor$/.test(a.localName)).length - anchors.length;
+        for (const a of anchors) {
+          const cRel = dRels.find((r) => r.id === a.rid);
+          const cDoc = cRel ? await readPart(zip, resolvePath(dirOf(dPath), cRel.target)) : null;
+          const got = cDoc ? readChartSpace(cDoc) : null;
+          if (!got) {
+            other++;
+            continue;
+          }
+          const dataSheet = got.sheet === null ? si : sheetNames.indexOf(got.sheet);
+          charts.push({
+            ...got.cfg,
+            id: `chart-${prefix}-${charts.length}`,
+            sheetId: `${prefix}-${dataSheet >= 0 ? dataSheet : si}`,
+            anchor: a.anchor,
+          } as ChartConfig);
+        }
+      }
+      if (other > 0) warnings.push(`Images, shapes or unsupported charts on "${sheet.name}" were not imported.`);
+    }
 
     sheet.config = {
       ...(Object.keys(merge).length ? { merge } : {}),
@@ -542,5 +576,6 @@ export async function readXlsx(data: ArrayBuffer | Uint8Array | Blob, opts: Read
   }
   if (!sheets.length) throw new Error("The workbook has no worksheets");
   if (namedRanges.length) sheets[0]._namedRanges = namedRanges;
+  if (charts.length) sheets[0].grownCharts = charts;
   return { sheets, namedRanges, warnings };
 }
