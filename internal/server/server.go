@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -2849,9 +2851,8 @@ func serveDocsConvert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported format", http.StatusBadRequest)
 		return
 	}
-	html, err := io.ReadAll(io.LimitReader(r.Body, 16<<20))
-	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
+	html, ok := readConvertBody(w, r)
+	if !ok {
 		return
 	}
 	data, f, err := docs.ConvertHTML(r.Context(), html, to)
@@ -2885,19 +2886,41 @@ func serveDocsImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported format", http.StatusBadRequest)
 		return
 	}
-	data, err := io.ReadAll(io.LimitReader(r.Body, 16<<20))
-	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
+	data, ok := readConvertBody(w, r)
+	if !ok {
 		return
 	}
 	html, err := docs.ImportToHTML(r.Context(), data, from)
 	if err != nil {
-		http.Error(w, "import failed: "+err.Error(), http.StatusInternalServerError)
+		// pandoc refusing the file is the uploader's problem (422); anything
+		// else is ours. Neither echoes pandoc's output (temp paths, stderr).
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			http.Error(w, "import failed: the file could not be read as "+from, http.StatusUnprocessableEntity)
+			return
+		}
+		slog.Error("docs import", "from", from, "err", err)
+		http.Error(w, "import failed", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(html)
+}
+
+// readConvertBody reads a conversion input, refusing (413) one over the
+// converter's limit rather than silently converting a truncated file.
+func readConvertBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	data, err := io.ReadAll(io.LimitReader(r.Body, docs.MaxConvertBytes+1))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return nil, false
+	}
+	if len(data) > docs.MaxConvertBytes {
+		http.Error(w, fmt.Sprintf("file too large (max %d bytes)", docs.MaxConvertBytes), http.StatusRequestEntityTooLarge)
+		return nil, false
+	}
+	return data, true
 }
 
 // redirectOnAuthURL converts AuthService.Login responses into HTTP 302 redirects
