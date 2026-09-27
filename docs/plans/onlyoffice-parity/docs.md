@@ -107,9 +107,12 @@ the docs import feature, commits `c3e38aa` and `dac2186`).
 * `web/app/src/pages/docs/export.ts`: txt and html client-side; docx, odt,
   rtf, epub, md, pdf via `POST /api/v1/docs/convert`
   (`internal/server/server.go:883`, `internal/docs/convert.go`) which runs
-  **pandoc** on the editor's HTML (tectonic for PDF; both in `flake.nix` and
-  the `Dockerfile`). Because the source is rendered HTML, page setup, header/
+  **pandoc** on the editor's HTML (pandoc is in `flake.nix` and the
+  `Dockerfile`). Because the source is rendered HTML, page setup, header/
   footer, footnote text, comments and suggestions are lost or flattened.
+  PDF is built in the browser from the page layout since 2026-09-27 (see
+  §6.19); the pandoc PDF path is a fallback used only when the server
+  reports a PDF engine (`GET /api/v1/docs/convert/capabilities`).
 * Import (origin/main `c3e38aa`, `dac2186`): `DocList.tsx` has an "Import"
   button (`data-testid="docs-import"`) accepting .docx/.odt/.rtf/.epub/.md/
   .markdown/.txt/.html/.htm. `api.ts:importDoc` POSTs the raw file to
@@ -1047,8 +1050,8 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   `DocEditor` applies it and creates the comment threads.
   `export.ts:downloadDoc("docx")` uses the writer (with the document's
   comment threads) and falls back to `POST /api/v1/docs/convert?to=docx`.
-  odt/rtf/epub/md/txt/html import and odt/rtf/epub/md/pdf export stay on
-  pandoc.
+  odt/rtf/epub/md/txt/html import and odt/rtf/epub/md export stay on
+  pandoc (PDF: §6.19).
 * **Tests**: `__tests__/docx.test.ts` (18 vitest; fixtures built in code
   by `docx-fixture.ts`): reader mapping per area, script-URL rejection,
   non-docx rejection, package structure (every part parses, has a content
@@ -2311,7 +2314,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | Shape text | Any block content (lists, tables) | Runs and line breaks (paragraphs join with a break); text boxes with tables keep the M6 path | Known gap |
 | Relative size (wp14:sizeRelH/V) | Size follows the page / margin | Kept and written back; the object renders at its stored size | Known gap |
 | Picture in a shared (token) view | — | Asset GET accepts `?token=`, but the page's `<img>` doesn't send it, so token views show stored pictures only to signed-in readers | Known gap |
-| HTML-based exports (pandoc: odt, pdf, epub…) | — | Stored pictures are relative URLs the converter can't fetch; charts export empty | Known gap |
+| HTML-based exports (pandoc: odt, epub…) | — | Stored pictures are relative URLs the converter can't fetch; charts export empty | Known gap |
 
 * **Not yet**: grouping, shape effects (shadow, 3-D, gradients),
   edit points / merge shapes, vertical text boxes, SmartArt, text art,
@@ -2403,3 +2406,51 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   during in-progress Sheets work on unfinished branches, not reproduced on
   merged main; auth/dashboard/drive `waitForURL` timeouts in one report
   were the :8080 stack being redeployed mid-run. None is tracked as flaky.
+
+### 6.19 PDF export in the browser (2026-09-27)
+
+* **Why**: `?to=pdf` ran pandoc with `--pdf-engine=tectonic`; the
+  production image (`Dockerfile`, Alpine pandoc) has no engine, so the
+  download failed with HTTP 500. Tectonic would also fetch TeX bundles at
+  run time.
+* **How**: `pages/docs/pdfExport.ts` forces the page layout (pageless
+  documents too), clones every laid-out page with `buildPageDom` (what
+  print preview shows: each section's page size, orientation and margins,
+  page colour, border, watermark, columns, line numbers, headers and
+  footers with PAGE / NUMPAGES, pictures) and hands them to
+  `lib/pdf/domPdf.ts`. That draws each page through an SVG
+  `<foreignObject>` (the page's markup, the stylesheet rules that apply to
+  it with `@media print` on, pictures and used web fonts inlined) onto a
+  144 dpi canvas and writes a JPEG per page with `lib/pdf/pdfWriter.ts`
+  (lifted from Slides M12), under an invisible Helvetica text layer read
+  from the live line boxes (stretched with `Tz` to the rendered width, so
+  search and selection line up) and link annotations for http(s)/mailto
+  links. Mail merge PDFs are laid out by `flowHtmlToPdfPages` (blocks fill
+  pages of the template's first page size; each record starts a page).
+* **Server**: `ConvertHTML` looks for a PDF engine on PATH (tectonic,
+  xelatex, lualatex, pdflatex, weasyprint, wkhtmltopdf) and returns 501
+  (no engine) or 503 (no pandoc) instead of 500; `GET
+  /api/v1/docs/convert/capabilities` reports `{pandoc, formats, pdf,
+  pdf_engine}`. The client falls back to the server only when `pdf` is
+  true.
+* **Gaps**: the page picture is raster (144 dpi), not vector text; the text
+  layer is WinAnsi only (other scripts are in the picture but not
+  searchable); CSS-counter page numbers are drawn but not in the text
+  layer; browsers that taint canvases drawn from `foreignObject` (older
+  Safari) fail the export with a message unless the server has an engine.
+* **Tests**: `lib/pdf/domPdf.test.ts`, `lib/pdf/pdfWriter.test.ts`;
+  Playwright `web/e2e/integration/pdf-export.spec.ts` (page count and
+  per-section page sizes match the layout, header text on every page,
+  body/table text, link annotation, pdf.js render of the first and the
+  landscape page) and the PDF step of `docs-roundtrip.spec.ts`.
+* **Other pandoc exports in the production image** (checked in
+  `alpine:3.20` with `apk add pandoc`, which installs `pandoc-cli` 3.1.13):
+  docx, odt, rtf (standalone), epub3 and gfm all convert, and docx / odt /
+  rtf / epub import back. No extra packages are needed for them. PDF needs
+  an engine the image doesn't have (pandoc defaults to pdflatex). One loss:
+  pandoc 3.1.13 under `--sandbox` refuses `data:` image URIs
+  ("Could not fetch resource data:image/png…"), so pictures are missing
+  from odt/rtf/epub (and the docx fallback) built by the production
+  server; the pandoc 3.10 in `flake.nix` keeps them. A newer pandoc in
+  the image (a newer Alpine or a static release) should fix it; not yet
+  verified.

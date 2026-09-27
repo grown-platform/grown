@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -438,6 +439,12 @@ func New(cfg Config) *Server {
 			docsSvc = docsSvc.WithSharing(cfg.SharingRepo, nil)
 		}
 		docsHub = docs.NewHub(cfg.DocsRepo)
+		if c := docs.Capabilities(); !c.PDF {
+			// Docs/Sheets build PDFs in the browser; the server path is a fallback.
+			slog.Info("docs convert: no server PDF engine (client-side PDF only)", "pandoc", c.Pandoc)
+		} else {
+			slog.Info("docs convert: server PDF engine available", "engine", c.PDFEngine)
+		}
 		grownv1.RegisterDocsServiceServer(grpcSrv, docsSvc)
 		if cfg.DocsBlobs != nil {
 			docsAssets = newDocsAssets(cfg.DocsBlobs, cfg.DocsRepo, cfg.SharingRepo)
@@ -924,6 +931,10 @@ func New(cfg Config) *Server {
 				}
 				if r.URL.Path == "/api/v1/docs/convert" && r.Method == http.MethodPost {
 					serveDocsConvert(w, r)
+					return
+				}
+				if r.URL.Path == "/api/v1/docs/convert/capabilities" && r.Method == http.MethodGet {
+					serveDocsConvertCapabilities(w, r)
 					return
 				}
 				if r.URL.Path == "/api/v1/docs/import" && r.Method == http.MethodPost {
@@ -2859,7 +2870,16 @@ func serveDocsConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, f, err := docs.ConvertHTML(r.Context(), html, to)
-	if err != nil {
+	switch {
+	case errors.Is(err, docs.ErrPDFUnavailable):
+		// A missing engine is a server configuration, not a failure: 501 so
+		// clients (and monitoring) can tell it apart from a broken conversion.
+		http.Error(w, err.Error(), http.StatusNotImplemented)
+		return
+	case errors.Is(err, docs.ErrPandocUnavailable):
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	case err != nil:
 		http.Error(w, "conversion failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -2871,6 +2891,18 @@ func serveDocsConvert(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+"."+f.Ext))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// serveDocsConvertCapabilities reports which ?to= formats serveDocsConvert
+// can produce on this server (pandoc and a PDF engine are optional binaries).
+func serveDocsConvertCapabilities(w http.ResponseWriter, r *http.Request) {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(docs.Capabilities())
 }
 
 // serveDocsImport is the inverse of serveDocsConvert: it converts an uploaded

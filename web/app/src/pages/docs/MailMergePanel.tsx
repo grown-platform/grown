@@ -38,6 +38,8 @@ import type { Editor } from "@tiptap/react";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { DOMSerializer } from "@tiptap/pm/model";
 import * as Y from "yjs";
+import { getLayout } from "./paginationPlugin";
+import { postConvert, serverConvertCapabilities } from "../../lib/serverConvert";
 import { getSheet, listSheets } from "../sheets/api";
 import type { Sheet as GrownSheet } from "../sheets/types";
 import { sendMessage } from "../mail/api";
@@ -97,11 +99,12 @@ function download(blob: Blob, name: string) {
   URL.revokeObjectURL(a.href);
 }
 
+const MERGE_CSS = "table{border-collapse:collapse} td,th{border:1px solid #999;padding:4px} div[data-page-break]{break-after:page;page-break-after:always} img{max-width:100%}";
+
 function docHtml(doc: PMNode, title: string): string {
   const holder = document.createElement("div");
   holder.appendChild(DOMSerializer.fromSchema(doc.type.schema).serializeFragment(doc.content));
-  const css = "table{border-collapse:collapse} td,th{border:1px solid #999;padding:4px} div[data-page-break]{break-after:page;page-break-after:always}";
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body>${holder.innerHTML}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${MERGE_CSS}</style></head><body>${holder.innerHTML}</body></html>`;
 }
 
 type Range = "all" | "current" | "some";
@@ -296,16 +299,25 @@ export function MailMerge({ editor, title }: { editor: Editor | null; title: str
     try {
       const merged = mergeAll(templateDoc(), chosen()).doc;
       const name = `${title || "merged"}`;
-      const resp = await fetch(`/api/v1/docs/convert?to=pdf&name=${encodeURIComponent(name)}`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "text/html" },
-        body: docHtml(merged, name),
-      });
-      if (!resp.ok) throw new Error(`PDF export failed: HTTP ${resp.status}`);
-      download(await resp.blob(), `${name}.pdf`);
+      const holder = document.createElement("div");
+      holder.appendChild(DOMSerializer.fromSchema(merged.type.schema).serializeFragment(merged.content));
+      let blob: Blob;
+      try {
+        // Built in the browser on the template's first page size and margins;
+        // each record starts a new page.
+        const [{ flowHtmlToPdfPages }, { buildPdf }] = await Promise.all([import("../../lib/pdf/domPdf"), import("../../lib/pdf/pdfWriter")]);
+        const spec = editor ? getLayout(editor)?.layout.pages[0]?.spec : undefined;
+        const page = spec ?? { w: 816, h: 1056, top: 96, bottom: 96, left: 96, right: 96 };
+        const pages = await flowHtmlToPdfPages(holder.innerHTML, MERGE_CSS, page, { printMedia: true });
+        blob = new Blob([buildPdf(pages, { title: name, producer: "Grown Docs" }) as BlobPart], { type: "application/pdf" });
+      } catch (e) {
+        console.warn("mail merge PDF in the browser failed", e);
+        if (!(await serverConvertCapabilities())?.pdf) throw e;
+        blob = await postConvert(docHtml(merged, name), "pdf", name);
+      }
+      download(blob, `${name}.pdf`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Export failed.");
+      setError(e instanceof Error ? `PDF export failed: ${e.message}` : "Export failed.");
     } finally {
       setBusy("");
     }

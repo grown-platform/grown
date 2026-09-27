@@ -38,7 +38,7 @@ export function DownloadDialog({
     setError(null);
     try {
       await downloadDoc(editor, title, fmt);
-      if (fmt !== "pdf") onClose();
+      onClose();
     } catch (e) {
       setError((e as Error).message);
     } finally {

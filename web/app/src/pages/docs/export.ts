@@ -1,6 +1,7 @@
 import type { Editor } from "@tiptap/react";
 import { exportBodyHtml } from "./docModel";
 import { tableCss } from "./tableModel";
+import { postConvert, serverConvertCapabilities } from "../../lib/serverConvert";
 
 export type DownloadFormat =
   | "docx"
@@ -93,10 +94,10 @@ function fullHtml(editor: Editor, title: string): string {
 }
 
 /**
- * downloadDoc exports the document in the requested format. Plain text, HTML,
- * are produced client-side, .docx by the direct writer (docx/write.ts); the
- * other formats are converted by the backend pandoc endpoint from the
- * editor's rendered HTML.
+ * downloadDoc exports the document in the requested format. Plain text and
+ * HTML are produced client-side, .docx by the direct writer (docx/write.ts),
+ * PDF from the paginated layout (pdfExport.ts); the other formats are
+ * converted by the backend pandoc endpoint from the editor's rendered HTML.
  */
 export async function downloadDoc(
   editor: Editor,
@@ -129,21 +130,21 @@ export async function downloadDoc(
       console.warn("direct .docx export failed; falling back to pandoc", e);
     }
   }
-  // Everything else (pdf/odt/rtf/epub/md) is rendered by the backend.
-  const resp = await fetch(
-    `/api/v1/docs/convert?to=${fmt}&name=${encodeURIComponent(name)}`,
-    {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "text/html" },
-      body: fullHtml(editor, name),
-    },
-  );
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => "");
-    throw new Error(
-      `Export failed: HTTP ${resp.status}${detail ? " — " + detail.slice(0, 400) : ""}`,
-    );
+  if (fmt === "pdf") {
+    // Built in the browser from the page layout; the server's pandoc path is
+    // a fallback only where a PDF engine is installed.
+    try {
+      const { docToPdf } = await import("./pdfExport");
+      const bytes = await docToPdf(editor, title || name);
+      triggerDownload(new Blob([bytes as BlobPart], { type: "application/pdf" }), `${name}.pdf`);
+      return;
+    } catch (e) {
+      console.warn("PDF export in the browser failed", e);
+      if (!(await serverConvertCapabilities())?.pdf) {
+        throw new Error(`PDF export failed: ${(e as Error).message || "the page could not be drawn"}`);
+      }
+    }
   }
-  triggerDownload(await resp.blob(), `${name}.${fmt}`);
+  // Everything else (odt/rtf/epub/md) is rendered by the backend.
+  triggerDownload(await postConvert(fullHtml(editor, name), fmt, name), `${name}.${fmt}`);
 }

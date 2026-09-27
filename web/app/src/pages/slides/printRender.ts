@@ -7,7 +7,7 @@ import { flattenGroups } from "./groupOps";
 import { slideToSVG, tableCellTexts } from "./export";
 import { canvasMeasure, layoutTextLines, lineText, type Measure } from "./svgText";
 import { OUTLINE_BODY_PT, OUTLINE_LINE, OUTLINE_TITLE_PT, type Box, type OutlineEntry, type PrintOptions, type PrintPage } from "./printLayout";
-import type { PdfPage, PdfText } from "./pdfWriter";
+import type { PdfPage, PdfText } from "../../lib/pdf/pdfWriter";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

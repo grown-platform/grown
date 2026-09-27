@@ -207,7 +207,9 @@ function installStyles() {
   s.dataset.grown = "docs-spell";
   s.textContent =
     ".ProseMirror .spell-error{text-decoration:underline wavy #d93025;text-decoration-skip-ink:none;text-underline-offset:3px;text-decoration-thickness:1px}" +
-    ".doc-dark .ProseMirror .spell-error{text-decoration-color:#ff7b72}";
+    ".doc-dark .ProseMirror .spell-error{text-decoration-color:#ff7b72}" +
+    // Squiggles are for the screen: not printed, not in the PDF export.
+    "@media print{.ProseMirror .spell-error{text-decoration:none}}";
   document.head.appendChild(s);
 }
 

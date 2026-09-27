@@ -5,7 +5,7 @@
 
 import { CANVAS_H, CANVAS_W, type DeckDoc } from "./model";
 import { prepareDeck, svgToImage } from "./export";
-import { buildPdf, type PdfPage } from "./pdfWriter";
+import { buildPdf, type PdfPage } from "../../lib/pdf/pdfWriter";
 import { DEFAULT_PRINT, printedSlides, printPages, type PrintOptions, type PrintPage } from "./printLayout";
 import { printDocument, renderPage, slideSvgCache, type RenderedPage } from "./printRender";
 

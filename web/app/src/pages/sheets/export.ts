@@ -101,8 +101,8 @@ function currentSheet(wb: any): any {
 
 /**
  * downloadSheet exports the spreadsheet in the requested format. xlsx/ods are
- * produced via SheetJS, csv/tsv/html in-browser, and pdf by routing an HTML
- * table through the backend pandoc/tectonic convert endpoint (shared with Docs).
+ * produced via SheetJS, csv/tsv/html in-browser, and pdf from the print
+ * layout (pdfExport.ts), with the backend pandoc endpoint as a fallback.
  */
 export async function downloadSheet(
   wb: any,
@@ -147,28 +147,30 @@ export async function downloadSheet(
   }
 
   if (fmt === "pdf") {
-    const body = allSheets(wb)
+    // Every visible sheet with its own page setup, built in the browser. The
+    // server's pandoc path (an HTML table per sheet) is a fallback only
+    // where a PDF engine is installed.
+    const sheets = allSheets(wb).filter((s) => Number(s?.hide) !== 1);
+    try {
+      const { sheetsToPdf } = await import("./pdfExport");
+      const bytes = await sheetsToPdf(sheets.map((sheet) => ({ sheet })), title || name);
+      triggerDownload(new Blob([bytes as BlobPart], { type: "application/pdf" }), `${name}.pdf`);
+      return;
+    } catch (e) {
+      console.warn("PDF export in the browser failed", e);
+      const { serverConvertCapabilities } = await import("../../lib/serverConvert");
+      if (!(await serverConvertCapabilities())?.pdf) {
+        throw new Error(`PDF export failed: ${(e as Error).message || "the pages could not be drawn"}`);
+      }
+    }
+    const body = sheets
       .map(
         (s) => `<h3>${esc(s.name || "Sheet")}</h3>${aoaToTable(sheetToAoa(s))}`,
       )
       .join("<br/>");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(name)}</title></head><body>${body}</body></html>`;
-    const resp = await fetch(
-      `/api/v1/docs/convert?to=pdf&name=${encodeURIComponent(name)}`,
-      {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "text/html" },
-        body: html,
-      },
-    );
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      throw new Error(
-        `Export failed: HTTP ${resp.status}${detail ? " — " + detail.slice(0, 400) : ""}`,
-      );
-    }
-    triggerDownload(await resp.blob(), `${name}.pdf`);
+    const { postConvert } = await import("../../lib/serverConvert");
+    triggerDownload(await postConvert(html, "pdf", name), `${name}.pdf`);
     return;
   }
 
