@@ -131,6 +131,32 @@ describe("docx tables: reader", () => {
     expect(m.attrs!.rowspan).toBe(2);
     expect(Object.keys(parseTableBorders(m.attrs!.borders)).sort()).toEqual(["bottom", "top"]);
   });
+  it("an unstyled or unknown-style table without borders round-trips docx -> Grown -> docx -> Grown", async () => {
+    // OnlyOffice's "Изменение настроек таблиц по умолчанию.docx": tables
+    // whose (unknown) style defines no tblBorders import with null
+    // borders; the writer spells out Grown's light grid for Word, and the
+    // re-import must read that grid back as the default, not as direct
+    // borders. A direct side next to the grid stays direct.
+    const styles = TABLE_STYLES.replace(
+      "</w:styles>",
+      `<w:style w:type="table" w:styleId="NewLined"><w:name w:val="New_Lined"/><w:tblPr><w:tblCellMar><w:left w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>`,
+    );
+    const grid = `<w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/></w:tblGrid>`;
+    const rows = `<w:tr>${tc("a")}${tc("b")}</w:tr><w:tr>${tc("c")}${tc("d")}</w:tr>`;
+    const body =
+      `<w:tbl><w:tblPr><w:tblStyle w:val="NewLined"/><w:tblW w:w="0" w:type="auto"/><w:tblLook w:val="01E0"/></w:tblPr>${grid}${rows}</w:tbl>` +
+      p("between") +
+      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>${grid}${rows}</w:tbl>` +
+      p("between") +
+      `<w:tbl><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="18" w:color="000000"/></w:tblBorders></w:tblPr>${grid}${rows}</w:tbl>`;
+    const { editor } = await importBody(body, styles);
+    const first = tables(editor).map((t) => t.attrs?.borders ?? null);
+    expect(first).toEqual([null, null, JSON.stringify({ top: "2.25 solid #000000" })]);
+    const { bytes } = await exportXml(editor);
+    const back = makeEditor("<p></p>");
+    applyDocxImport(back, await readDocx(bytes));
+    expect(back.getJSON()).toEqual(editor.getJSON());
+  });
 });
 
 describe("docx tables: writer", () => {
