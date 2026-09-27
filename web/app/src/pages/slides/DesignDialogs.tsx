@@ -245,19 +245,33 @@ export function ThemeDialog({
 
 // ------------------------------------------------------------ layouts
 
-/** A layout drawn as a thumbnail, with prompts in its empty placeholders. */
+/** A layout drawn as a thumbnail: dashed boxes for its placeholders, with
+ *  their prompts. */
 export function LayoutThumb({ layout, width = 120 }: { layout: SlideLayout; width?: number }) {
+  const els = layout.elements.filter((e) => !isHF(e));
+  const k = CANVAS_W / width;
   const slide: Slide = {
     id: layout.id,
     background: layout.background ?? "#ffffff",
     bgFill: layout.bgFill,
-    elements: layout.elements
-      .filter((e) => !isHF(e))
-      .map((e) =>
-        isEmptyPlaceholder(e)
-          ? { ...e, text: placeholderPrompt(e), runs: undefined }
-          : e,
-      ),
+    elements: [
+      ...els
+        .filter((e) => e.placeholder)
+        .map((e) => ({
+          id: `${e.id}-box`,
+          type: "shape" as const,
+          preset: "rect",
+          x: e.x,
+          y: e.y,
+          w: e.w,
+          h: e.h,
+          fill: "none",
+          stroke: "#9aa0a6",
+          strokeWidth: k * 0.75,
+          dash: "sysDash" as const,
+        })),
+      ...els.map((e) => (isEmptyPlaceholder(e) ? { ...e, text: placeholderPrompt(e), runs: undefined } : e)),
+    ],
   };
   return (
     <Box sx={{ border: "1px solid", borderColor: "divider", lineHeight: 0 }}>
@@ -279,7 +293,15 @@ export function LayoutGrid({
   return (
     <Box
       data-testid="layout-grid"
-      sx={{ display: "grid", gridTemplateColumns: "repeat(3, 128px)", gap: 1, p: 1, maxHeight: "70vh", overflowY: "auto" }}
+      sx={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 136px)",
+        alignItems: "start",
+        gap: 1,
+        p: 1,
+        maxHeight: "70vh",
+        overflowY: "auto",
+      }}
     >
       {layouts.map((l) => (
         <Box

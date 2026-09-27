@@ -275,6 +275,9 @@ describe("applyCollabOp", () => {
     const deck = { slides: [slide("q")], size: { w: 960, h: 600 } };
     expect(applyCollabOp(themed, { t: "deck", deck })).toBe(deck);
     expect(applyCollabOp(themed, { t: "deck" })).toBe(themed);
+    // Element ops keep deck props too.
+    const up = applyCollabOp(themed, { t: "upsert", si: "s1", el: el("b") });
+    expect(up.size).toEqual({ w: 960, h: 720 });
   });
   it("ignores unknown/malformed ops", () => {
     expect(applyCollabOp(doc, { t: "presence" })).toBe(doc);

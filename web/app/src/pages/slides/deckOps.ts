@@ -111,7 +111,7 @@ export function mapSlide(
   slideId: string,
   fn: (s: Slide) => Slide,
 ): DeckDoc {
-  return { slides: doc.slides.map((s) => (s.id === slideId ? fn(s) : s)) };
+  return { ...doc, slides: doc.slides.map((s) => (s.id === slideId ? fn(s) : s)) };
 }
 
 // ---- element ops within a slide ----

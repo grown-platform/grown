@@ -120,7 +120,7 @@ describe("round trip (M7)", () => {
     // Changing the theme after import restyles the placeholders and the ref'd shape.
     const focus = applyTheme(d, findTheme("focus")!);
     expect(focus.slides[0].elements[0].color).toBe(findTheme("focus")!.colors.lt1); // dark: tx1 → lt1
-    expect(focus.slides[0].elements[0].fontFamily).toBe("Inter");
+    expect(focus.slides[0].elements[0].fontFamily).toBe("Trebuchet MS");
     expect(focus.slides[1].elements.find((e) => e.type === "rect")!.fill).toBe(findTheme("focus")!.colors.accent2);
   });
 

@@ -101,7 +101,7 @@ export const BUILTIN_THEMES: DeckTheme[] = [
     "#4285f4", "#ea4335", "#fbbc04", "#34a853", "#ff6d01", "#46bdc6",
     "#1a73e8", "#681da8",
   ]),
-  t("simple-dark", "Simple Dark", ["Roboto", "Roboto"], [
+  t("simple-dark", "Simple Dark", ["Arial", "Arial"], [
     "#202124", "#ffffff", "#303134", "#e8eaed",
     "#8ab4f8", "#f28b82", "#fdd663", "#81c995", "#fcad70", "#78d9ec",
     "#8ab4f8", "#c58af9",
@@ -111,7 +111,7 @@ export const BUILTIN_THEMES: DeckTheme[] = [
     "#0c7c8c", "#e4572e", "#76b041", "#ffc914", "#2e86ab", "#a23b72",
     "#0c7c8c", "#6c4675",
   ]),
-  t("focus", "Focus", ["Inter", "Inter"], [
+  t("focus", "Focus", ["Trebuchet MS", "Verdana"], [
     "#111827", "#ffffff", "#1f2937", "#f3f4f6",
     "#6366f1", "#ec4899", "#14b8a6", "#f59e0b", "#8b5cf6", "#10b981",
     "#818cf8", "#c084fc",
