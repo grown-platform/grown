@@ -9,9 +9,12 @@ import type PptxGenJSType from "pptxgenjs";
 import {
   CANVAS_W,
   type DeckDoc,
+  type Slide,
   type SlideElement,
   type TransitionType,
 } from "../model";
+import { textBodyXml, type LinkRef, type LinkResolver } from "./textXml";
+import { toPpAction } from "../links";
 
 /** Slide size written to every pptx: 10 in × 5.625 in (16:9). */
 export const SLIDE_W_IN = 10;
@@ -123,33 +126,12 @@ function textRunOpts(el: SlideElement) {
   };
 }
 
+/** A text box. pptxgenjs only lays down the shape; its text body is
+ *  replaced by textBodyXml in patchElements (runs, levels, links…). */
 function addText(s: PSlide, el: SlideElement, extra: Extra) {
-  const lines = (el.text || "").split("\n");
-  const bullet =
-    el.list === "number"
-      ? { type: "number" as const }
-      : el.list === "bullet"
-        ? true
-        : undefined;
-  const runs = lines.map((ln, i) => ({
-    text: ln,
-    options: {
-      ...(bullet ? { bullet } : {}),
-      ...(el.url ? { hyperlink: { url: el.url } } : {}),
-      breakLine: i < lines.length - 1,
-    },
-  }));
-  s.addText(runs, {
+  s.addText((el.text || "").replace(/\v/g, "\n") || " ", {
     ...geomOpts(el),
     ...textRunOpts(el),
-    align: el.align || "left",
-    valign:
-      el.valign === "middle"
-        ? "middle"
-        : el.valign === "bottom"
-          ? "bottom"
-          : "top",
-    ...(el.lineSpacing ? { lineSpacingMultiple: el.lineSpacing } : {}),
     ...extra,
   });
 }
@@ -341,7 +323,13 @@ export async function patchPptx(
     const f = zip.file(path);
     if (!f) continue;
     let out = await f.async("string");
-    if (marks?.length) out = patchElements(out, marks);
+    if (marks?.length) {
+      const relsPath = `ppt/slides/_rels/slide${i + 1}.xml.rels`;
+      const relsFile = zip.file(relsPath);
+      const rels = relsFile ? new SlideRels(await relsFile.async("string")) : null;
+      out = patchElements(out, marks, rels ? linkResolver(rels, deck.slides) : undefined);
+      if (rels?.changed) zip.file(relsPath, rels.xml());
+    }
     if (groups?.size) out = wrapGroups(out, groups);
     if (xml) out = insertTransition(out, xml);
     zip.file(path, out);
@@ -455,13 +443,73 @@ export interface ElementMark {
 
 export const ELEMENT_MARKER = "grown-el:";
 
+/** Slides with preset shapes, connectors or text boxes are marked: presets
+ *  get adjust values and glue, text boxes get their own text body. */
 function needsElementPatch(els: readonly SlideElement[]): boolean {
   return els.some(
     (e) =>
       e.type === "shape" ||
       e.type === "connector" ||
+      e.type === "text" ||
       (e.children ? needsElementPatch(e.children) : false),
   );
+}
+
+const REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
+const REL_HYPERLINK = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+const REL_SLIDE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide";
+const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+/** A slide's relationships part, for adding hyperlink/slide targets. */
+export class SlideRels {
+  private doc: Document;
+  private next = 1;
+  changed = false;
+  constructor(xml: string) {
+    this.doc = new DOMParser().parseFromString(xml, "application/xml");
+    for (const r of Array.from(this.doc.getElementsByTagNameNS(REL_NS, "Relationship"))) {
+      const m = /^rId(\d+)$/.exec(r.getAttribute("Id") || "");
+      if (m) this.next = Math.max(this.next, Number(m[1]) + 1);
+    }
+  }
+  /** Add (or reuse) a relationship; returns its id. */
+  add(type: string, target: string, external: boolean): string {
+    for (const r of Array.from(this.doc.getElementsByTagNameNS(REL_NS, "Relationship")))
+      if (
+        r.getAttribute("Type") === type &&
+        r.getAttribute("Target") === target &&
+        (r.getAttribute("TargetMode") === "External") === external
+      )
+        return r.getAttribute("Id")!;
+    const id = `rId${this.next++}`;
+    const r = this.doc.createElementNS(REL_NS, "Relationship");
+    r.setAttribute("Id", id);
+    r.setAttribute("Type", type);
+    r.setAttribute("Target", target);
+    if (external) r.setAttribute("TargetMode", "External");
+    this.doc.documentElement.appendChild(r);
+    this.changed = true;
+    return id;
+  }
+  xml(): string {
+    const out = new XMLSerializer().serializeToString(this.doc);
+    return out.startsWith("<?xml") ? out : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${out}`;
+  }
+}
+
+/** Link resolver for textBodyXml: external URLs become hyperlink
+ *  relationships, slide jumps `ppaction://` actions (plus a slide
+ *  relationship for a specific slide). */
+export function linkResolver(rels: SlideRels, slides: readonly Slide[]): LinkResolver {
+  return (url: string): LinkRef | null => {
+    const pp = toPpAction(url, slides);
+    if (pp) {
+      if (pp.slideIndex === undefined) return { rid: "", action: pp.action };
+      return { rid: rels.add(REL_SLIDE, `slide${pp.slideIndex + 1}.xml`, false), action: pp.action };
+    }
+    if (url.startsWith("#")) return null;
+    return { rid: rels.add(REL_HYPERLINK, url, true) };
+  };
 }
 
 const TYPE_NAME: Partial<Record<SlideElement["type"], string>> = {
@@ -478,7 +526,7 @@ const TYPE_NAME: Partial<Record<SlideElement["type"], string>> = {
  * `a:endCxn` glue (ids of the target shapes), and replace the marker names
  * with the element's name (or a group marker for wrapGroups).
  */
-export function patchElements(slideXml: string, marks: ElementMark[]): string {
+export function patchElements(slideXml: string, marks: ElementMark[], link?: LinkResolver): string {
   const doc = new DOMParser().parseFromString(slideXml, "application/xml");
   const idOf = new Map<string, string>();
   const found: { mark: ElementMark; node: Element; cNvPr: Element }[] = [];
@@ -504,6 +552,10 @@ export function patchElements(slideXml: string, marks: ElementMark[]): string {
         ? groupMarker(path)
         : el.name || `${TYPE_NAME[el.type] ?? "Shape"} ${cNvPr.getAttribute("id")}`,
     );
+    if (el.type === "text") {
+      replaceTxBody(doc, node, textBodyXml(el, link ?? (() => null)));
+      continue;
+    }
     if ((el.type !== "shape" && el.type !== "connector") || !el.preset) continue;
     const geom = node.getElementsByTagNameNS(A_NS, "prstGeom")[0];
     if (geom) {
@@ -523,6 +575,20 @@ export function patchElements(slideXml: string, marks: ElementMark[]): string {
   const decl = /^<\?xml[^>]*\?>\s*/.exec(slideXml);
   if (decl && !out.startsWith("<?xml")) out = decl[0] + out;
   return out;
+}
+
+/** Swap a shape's `p:txBody` for `xml` (from textBodyXml). */
+function replaceTxBody(doc: Document, sp: Element, xml: string) {
+  const parsed = new DOMParser().parseFromString(
+    `<w xmlns:p="${P_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">${xml}</w>`,
+    "application/xml",
+  );
+  const body = parsed.documentElement.firstElementChild;
+  if (!body || parsed.getElementsByTagName("parsererror").length) return;
+  const node = doc.importNode(body, true);
+  const old = Array.from(sp.children).find((c) => c.localName === "txBody");
+  if (old) sp.replaceChild(node, old);
+  else sp.appendChild(node);
 }
 
 /** Rebuild a `p:sp` as a `p:cxnSp` (no text body), with glue references. */
