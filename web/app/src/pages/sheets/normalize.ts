@@ -12,19 +12,24 @@
 // `luckysheet_select_save`, FortuneSheet 1.0.4 selects `{row: [0], column:
 // [0]}` (no end index), which the name box renders as "A1:NaN".
 
-import { update as formatValue } from "@fortune-sheet/core";
+import { formatValue } from "./numberFormat";
 
-/** Display text for a raw value under number format `fa` (FortuneSheet's own formatter). */
+/** Display text for a raw value under number format `fa` (numberFormat.ts). */
 function displayText(v: unknown, fa: string | undefined): string {
   if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
   if (typeof v === "number") {
     try {
-      const m = formatValue(fa || "General", v);
-      if (m != null && m !== "") return String(m);
+      return formatValue(v, fa || "General");
     } catch {
-      /* fall through to the plain rendering */
+      return String(v);
     }
-    return String(v);
+  }
+  if (typeof v === "string" && fa && fa !== "General" && fa !== "@") {
+    try {
+      return formatValue(v, fa);
+    } catch {
+      return v;
+    }
   }
   return String(v);
 }
@@ -33,14 +38,20 @@ function displayText(v: unknown, fa: string | undefined): string {
  * Fill a cell's missing display text `m` from its value `v`, formatted with
  * the cell's number format (`ct.fa`). Numeric cells without a `ct` get the
  * General number type FortuneSheet itself assigns to typed-in numbers, so
- * they right-align like any other number. Returns the cell (mutated) for
- * convenience; non-cells and cells that already have `m` are left alone.
+ * they right-align like any other number. Numbers with a custom format get
+ * `m` rewritten from numberFormat.ts. Returns the cell (mutated) for
+ * convenience; non-cells and other cells that already have `m` are left alone.
  */
 export function fillCellDisplay(cell: any): any {
   if (cell == null || typeof cell !== "object") return cell;
   const v = cell.v;
   if (v == null || typeof v === "object") return cell; // empty or rich text
-  if (cell.m != null) return cell;
+  const fa = cell.ct?.fa;
+  // A stored `m` is kept, except for numbers under a custom format: those are
+  // re-rendered so every workbook shows the same text (FortuneSheet's own
+  // formatter lacks accounting padding, elapsed time, fractions, conditions…).
+  const custom = typeof v === "number" && fa && fa !== "General" && fa !== "@";
+  if (cell.m != null && !custom) return cell;
   if (typeof v === "number" && cell.ct == null) {
     cell.ct = { fa: "General", t: "n" };
   }
