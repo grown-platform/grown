@@ -153,3 +153,21 @@ func TestFormulasCalc(t *testing.T) {
 		}
 	})
 }
+
+func TestAssembleFormulas(t *testing.T) {
+	t.Run("oo:cell/spreadsheet-calculation/SheetStructureTests.js#Assemble formulas test", func(t *testing.T) {
+		for _, f := range []string{"=TAKE({1,2,3},2,1)", "=TAKE({1;2;3},2,1)", "=TAKE(A1:A3,2,1)", "=TAKE(A1:C1,2,1)"} {
+			wb := FsWorkbook{sheetFromCells(map[string]interface{}{"A1": 1.0, "A2": 2.0, "A3": 3.0, "B1": 4.0, "C1": 5.0, "E1": f})}
+			recomputeFsWorkbook(wb, time.Now())
+			if got := displayOf(wb[0], "E1"); !sameDisplay(got, 1.0) {
+				t.Errorf("%s = %v, want 1", f, got)
+			}
+			// The formula text is kept as typed.
+			for _, cd := range wb[0].CellData {
+				if cd.R == 0 && cd.C == 4 && cd.V.F != f {
+					t.Errorf("formula text %q, want %q", cd.V.F, f)
+				}
+			}
+		}
+	})
+}
