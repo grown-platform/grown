@@ -40,6 +40,7 @@ import { readTable, type TableModel } from "./xlsxTables";
 import { GROWN_EXT_URI } from "./xlsxWrite";
 import { readChartSpace, readDrawingAnchors } from "./xlsxCharts";
 import type { ChartConfig } from "../chartData";
+import { importedThread, type CommentThread } from "../cellComments";
 
 export interface ImportedWorkbook {
   /** FortuneSheet sheets (stored form: celldata), Grown models attached. */
@@ -452,6 +453,8 @@ export async function readXlsx(data: ArrayBuffer | Uint8Array | Blob, opts: Read
     const commentsPath = relTarget(rels, path, isType("comments"));
     if (commentsPath) {
       const cd = await readPart(zip, commentsPath);
+      const authors = all(cd, "author").map((x) => text(x));
+      const threads: CommentThread[] = [];
       for (const cm of all(cd, "comment")) {
         const p = parseCellRef(attr(cm, "ref") ?? "");
         if (!p) continue;
@@ -462,7 +465,10 @@ export async function readXlsx(data: ArrayBuffer | Uint8Array | Blob, opts: Read
         const cell = cells.get(k) ?? {};
         cell.ps = { left: null, top: null, width: null, height: null, value: t, isShow: false };
         cells.set(k, cell);
+        // The note also shows as a comment thread.
+        if (t.trim()) threads.push(noteThread(p.r, p.c, t, authors[Number(attr(cm, "authorId") ?? 0)] ?? ""));
       }
+      if (threads.length) sheet.grownComments = threads;
     }
 
     // Tables.
@@ -578,4 +584,25 @@ export async function readXlsx(data: ArrayBuffer | Uint8Array | Blob, opts: Read
   if (namedRanges.length) sheets[0]._namedRanges = namedRanges;
   if (charts.length) sheets[0].grownCharts = charts;
   return { sheets, namedRanges, warnings };
+}
+
+/**
+ * A note read as a comment thread. Notes Grown wrote from a thread
+ * ("Author: text" per line, author "Grown") are split back into comments.
+ */
+function noteThread(r: number, c: number, note: string, author: string): CommentThread {
+  if (author !== "Grown") return importedThread(r, c, note, author || "Imported");
+  const parts: { name: string; body: string }[] = [];
+  for (const line of note.split("\n")) {
+    const m = /^([^:\n]{1,80}): (.*)$/.exec(line);
+    if (m) parts.push({ name: m[1], body: m[2] });
+    else if (parts.length) parts[parts.length - 1].body += `\n${line}`;
+    else parts.push({ name: "Imported", body: line });
+  }
+  const base = importedThread(r, c, parts[0].body, parts[0].name);
+  for (const x of parts.slice(1)) {
+    const extra = importedThread(r, c, x.body, x.name).comments[0];
+    base.comments.push(extra);
+  }
+  return base;
 }

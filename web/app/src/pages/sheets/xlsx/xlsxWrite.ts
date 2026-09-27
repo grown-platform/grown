@@ -26,6 +26,7 @@ import { writeAutoFilter, writeConditionalFormatting, writeDataValidations } fro
 import { writeTable, type TableModel } from "./xlsxTables";
 import { chartSpaceXml, drawingXml, CT_CHART, CT_DRAWING, REL_CHART, REL_DRAWING } from "./xlsxCharts";
 import type { ChartConfig } from "../chartData";
+import { sheetComments, threadNoteText } from "../cellComments";
 
 export const GROWN_EXT_NS = "https://grown.pick.haus/xlsx/2026";
 export const GROWN_EXT_URI = "{6F1B8B4E-6A36-4C5B-9C1A-6772726F776E}";
@@ -303,6 +304,7 @@ export async function workbookToXlsx(input: any[], opts: WriteOptions = {}): Pro
     }
     const rows = new Map<number, { c: number; xml: string }[]>();
     const comments: CommentOut[] = [];
+    const noted = new Set<string>();
     let maxR = 0;
     let maxC = 0;
     for (const [k, cell] of byKey) {
@@ -319,8 +321,19 @@ export async function workbookToXlsx(input: any[], opts: WriteOptions = {}): Pro
       maxR = Math.max(maxR, r);
       maxC = Math.max(maxC, c);
       const ps = cell?.ps;
-      if (ps && typeof ps.value === "string" && ps.value.trim()) comments.push({ r, c, text: ps.value });
+      if (ps && typeof ps.value === "string" && ps.value.trim()) {
+        comments.push({ r, c, text: ps.value });
+        noted.add(k);
+      }
     }
+    // Comment threads (grownComments) become notes on cells without one.
+    for (const t of sheetComments(sheet)) {
+      const k = `${t.r}_${t.c}`;
+      if (noted.has(k)) continue;
+      noted.add(k);
+      comments.push({ r: t.r, c: t.c, text: threadNoteText(t) });
+    }
+    comments.sort((a, b) => a.r - b.r || a.c - b.c);
     const rowlen: Record<string, number> = cfg.rowlen ?? {};
     const rowhidden: Record<string, number> = cfg.rowhidden ?? {};
     const rowIdx = new Set<number>([...rows.keys(), ...Object.keys(rowlen).map(Number), ...Object.keys(rowhidden).map(Number)]);

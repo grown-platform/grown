@@ -8,7 +8,8 @@
 // - shiftFormula: refs keep pointing at the same cells after a structure op
 //   (absolute refs included, as in Excel); refs to deleted cells → #REF!.
 // - applyStructureOp: the whole-workbook rewrite (cells, merges, row/column
-//   sizes, hidden flags, borders, grownCF / grownDV / grownFilter, named
+//   sizes, hidden flags, borders, grownCF / grownDV / grownFilter, cell
+//   comment threads (grownComments), named
 //   ranges). structureFormulaEdits / structureModelPatches are the pieces the
 //   editor needs when FortuneSheet already moved the cells itself.
 //
@@ -16,6 +17,7 @@
 // internal/sheets/testdata/structure/shift.json). Keep them in step.
 
 import type { CellRect } from "./cellRange";
+import { shiftCommentThreads } from "./cellComments";
 
 export type StructureOp =
   | { kind: "insert"; axis: "row" | "col"; sheet: string; index: number; count: number }
@@ -635,6 +637,7 @@ function modelFields(sheets: any[], i: number, op: StructureOp, target: number):
   if (i === target && sheet?.grownPrint) out.grownPrint = shiftPrintField(sheet.grownPrint, op);
   if (i === target && Array.isArray(sheet?.grownTables)) out.grownTables = shiftTables(sheet.grownTables, op);
   if (i === target && Array.isArray(sheet?.grownSparklines)) out.grownSparklines = shiftSparklines(sheet.grownSparklines, op);
+  if (i === target && Array.isArray(sheet?.grownComments)) out.grownComments = shiftCommentThreads(sheet.grownComments, (r, c) => mapCell(r, c, op));
   if (i === 0 && "_namedRanges" in (sheet ?? {})) out._namedRanges = shiftNamedRanges(sheet._namedRanges, sheets, op);
   if (i === 0 && Array.isArray(sheet?.grownCharts)) out.grownCharts = shiftCharts(sheet.grownCharts, sheets, op, target);
   return out;
