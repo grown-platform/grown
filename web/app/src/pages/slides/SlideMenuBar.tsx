@@ -39,6 +39,26 @@ export interface SlideActions {
   rotate: (op: "cw" | "ccw" | "flipH" | "flipV") => void;
   setLink: () => void;
   deleteSelected: () => void;
+  selectAll: () => void;
+  align: (how: "left" | "center" | "right" | "top" | "middle" | "bottom") => void;
+  distribute: (axis: "horizontal" | "vertical") => void;
+  centerOnPage: (axis: "horizontal" | "vertical") => void;
+  group: () => void;
+  ungroup: () => void;
+  toggleLock: () => void;
+  /** Align/distribute reference: the slide or the selection. */
+  alignTo: "slide" | "selection";
+  setAlignTo: (v: "slide" | "selection") => void;
+  snapGuides: boolean;
+  toggleSnapGuides: () => void;
+  snapGrid: boolean;
+  toggleSnapGrid: () => void;
+  selection: {
+    count: number;
+    canGroup: boolean;
+    canUngroup: boolean;
+    locked: boolean;
+  };
   setBackground: () => void;
   paste: () => void;
   duplicateSelected: () => void;
@@ -72,6 +92,12 @@ const section = (s: string) => (
 );
 const arrow = <ArrowRightIcon sx={{ ml: "auto", opacity: 0.4 }} />;
 const sub = { pl: 3 };
+/** A check mark column for toggle items (blank when off, to keep alignment). */
+const check = (on: boolean) => (
+  <Box component="span" sx={{ width: 18, display: "inline-block", opacity: on ? 1 : 0 }}>
+    ✓
+  </Box>
+);
 
 // Menu structures mirror docs/google-reference/slides/editor.md (captured 2026-06-09):
 // File · Edit · View · Insert · Format · Slide · Arrange · Tools · Extensions · Help.
@@ -124,7 +150,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem onClick={actions.paste}>
             Paste without formatting{kbd("Ctrl+Shift+V")}
           </MenuItem>
-          <MenuItem disabled>Select all{kbd("Ctrl+A")}</MenuItem>
+          <MenuItem onClick={actions.selectAll}>Select all{kbd("Ctrl+A")}</MenuItem>
           <ListDivider />
           <MenuItem onClick={actions.deleteSelected}>Delete</MenuItem>
           <MenuItem onClick={actions.duplicateSelected}>
@@ -147,7 +173,13 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem disabled>Theme builder</MenuItem>
           <MenuItem disabled>Comments{arrow}</MenuItem>
           <MenuItem disabled>Guides{arrow}</MenuItem>
-          <MenuItem disabled>Snap to{arrow}</MenuItem>
+          {section("Snap to")}
+          <MenuItem sx={sub} onClick={actions.toggleSnapGuides}>
+            {check(actions.snapGuides)}Guides
+          </MenuItem>
+          <MenuItem sx={sub} onClick={actions.toggleSnapGrid}>
+            {check(actions.snapGrid)}Grid
+          </MenuItem>
           <MenuItem disabled>Live pointers{arrow}</MenuItem>
           <MenuItem disabled>Zoom{arrow}</MenuItem>
           <ListDivider />
@@ -306,9 +338,70 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
             Send to back
           </MenuItem>
           <ListDivider />
-          <MenuItem disabled>Align{arrow}</MenuItem>
-          <MenuItem disabled>Distribute{arrow}</MenuItem>
-          <MenuItem disabled>Center on page{arrow}</MenuItem>
+          {section("Align")}
+          {(
+            [
+              ["left", "Left"],
+              ["center", "Center"],
+              ["right", "Right"],
+              ["top", "Top"],
+              ["middle", "Middle"],
+              ["bottom", "Bottom"],
+            ] as const
+          ).map(([how, label]) => (
+            <MenuItem
+              key={how}
+              sx={sub}
+              disabled={!actions.selection.count}
+              onClick={() => actions.align(how)}
+            >
+              {label}
+            </MenuItem>
+          ))}
+          <MenuItem
+            sx={sub}
+            onClick={() =>
+              actions.setAlignTo(
+                actions.alignTo === "slide" ? "selection" : "slide",
+              )
+            }
+          >
+            {check(actions.alignTo === "slide")}Align to slide
+          </MenuItem>
+          {section("Distribute")}
+          <MenuItem
+            sx={sub}
+            disabled={
+              actions.selection.count < (actions.alignTo === "slide" ? 1 : 3)
+            }
+            onClick={() => actions.distribute("horizontal")}
+          >
+            Horizontally
+          </MenuItem>
+          <MenuItem
+            sx={sub}
+            disabled={
+              actions.selection.count < (actions.alignTo === "slide" ? 1 : 3)
+            }
+            onClick={() => actions.distribute("vertical")}
+          >
+            Vertically
+          </MenuItem>
+          {section("Center on page")}
+          <MenuItem
+            sx={sub}
+            disabled={!actions.selection.count}
+            onClick={() => actions.centerOnPage("horizontal")}
+          >
+            Horizontally
+          </MenuItem>
+          <MenuItem
+            sx={sub}
+            disabled={!actions.selection.count}
+            onClick={() => actions.centerOnPage("vertical")}
+          >
+            Vertically
+          </MenuItem>
           {section("Rotate")}
           <MenuItem sx={sub} onClick={() => actions.rotate("cw")}>
             Rotate clockwise 90°
@@ -322,8 +415,25 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem sx={sub} onClick={() => actions.rotate("flipV")}>
             Flip vertically
           </MenuItem>
-          <MenuItem disabled>Group{kbd("Ctrl+Alt+G")}</MenuItem>
-          <MenuItem disabled>Ungroup{kbd("Ctrl+Alt+Shift+G")}</MenuItem>
+          <ListDivider />
+          <MenuItem
+            disabled={!actions.selection.canGroup}
+            onClick={actions.group}
+          >
+            Group{kbd("Ctrl+Alt+G")}
+          </MenuItem>
+          <MenuItem
+            disabled={!actions.selection.canUngroup}
+            onClick={actions.ungroup}
+          >
+            Ungroup{kbd("Ctrl+Alt+Shift+G")}
+          </MenuItem>
+          <MenuItem
+            disabled={!actions.selection.count}
+            onClick={actions.toggleLock}
+          >
+            {actions.selection.locked ? "Unlock position" : "Lock position"}
+          </MenuItem>
         </>,
       )}
 
