@@ -44,3 +44,17 @@ func TestErrorArgumentsPropagate(t *testing.T) {
 	mustErr(t, eval(t, "TAKE({1,2,3},1/0)"), "#DIV/0!")
 	mustNum(t, eval(t, "CHOOSE(2,NA(),7)"), 7) // an unchosen error is not the result
 }
+
+func TestXLookupAndXMatchRules(t *testing.T) {
+	col := []FsCellData{cell(0, 0, 1), cell(1, 0, 2), cell(2, 0, 3), cell(0, 1, 10), cell(1, 1, 20), cell(2, 1, 30)}
+	mustErr(t, eval(t, "XLOOKUP(9,A1:A3,B1:B3,,0)", col...), "#N/A") // an empty if_not_found is not a value
+	mustNum(t, eval(t, "XLOOKUP(2.5,A1:A3,B1:B3,,1)", col...), 30)
+	mustErr(t, eval(t, "XLOOKUP(2,A1:A3,B1:B2)", col...), "#VALUE!") // return array too short
+	mustErr(t, eval(t, "XMATCH(2,A1:A3,5)", col...), "#VALUE!")
+	mustErr(t, eval(t, "XMATCH(2,A1:A3,2,2)", col...), "#VALUE!")
+	mustNum(t, eval(t, "XMATCH(12,{13,\"b\",92,#NUM!,13},1)"), 1) // errors are skipped
+	mustNum(t, eval(t, "XMATCH(TRUE,{1,2,TRUE})"), 3)             // TRUE is not 1
+	mustStr(t, eval(t, `ADDRESS(1,7,,,)`), "$G$1")
+	mustNum(t, eval(t, "SUM(TAKE({1,2;3,4},,-1))"), 6)
+	mustNum(t, eval(t, "SUM(INDEX({1,2;3,4},,2))"), 6)
+}

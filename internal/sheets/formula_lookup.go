@@ -326,9 +326,9 @@ func fnIndex(c *callCtx) value {
 			}
 			return rng.cells[rowNum-1][0]
 		}
-		// 2-D range with a single index is ambiguous for a scalar result.
+		// A 2-D array with an empty or 0 index: the whole array.
 		if rowNum == 0 {
-			return errRef
+			return arrayValue(rng.cells)
 		}
 		if rowNum > rng.rows {
 			return errRef
@@ -343,23 +343,21 @@ func fnIndex(c *callCtx) value {
 	case rowNum == 0 && colNum == 0:
 		return arrayValue(rng.cells) // the whole array
 	case rowNum == 0:
-		// Whole column colNum → single cell only if one row.
+		// The whole column colNum.
 		if colNum > rng.cols {
 			return errRef
 		}
-		if rng.rows != 1 {
-			return errRef
+		col := make([][]value, rng.rows)
+		for r := range col {
+			col[r] = []value{rng.cells[r][colNum-1]}
 		}
-		return rng.cells[0][colNum-1]
+		return arrayValue(col)
 	case colNum == 0:
-		// Whole row rowNum → single cell only if one column.
+		// The whole row rowNum.
 		if rowNum > rng.rows {
 			return errRef
 		}
-		if rng.cols != 1 {
-			return errRef
-		}
-		return rng.cells[rowNum-1][0]
+		return arrayValue([][]value{append([]value(nil), rng.cells[rowNum-1]...)})
 	default:
 		if rowNum > rng.rows || colNum > rng.cols {
 			return errRef
@@ -446,21 +444,155 @@ func fnMatch(c *callCtx) value {
 	}
 }
 
-// ---- XMATCH -----------------------------------------------------------------
+// ---- XMATCH / XLOOKUP --------------------------------------------------------
 
-// XMATCH(lookup, rangeVal, [match_mode=0], [search_mode=1]).
+// xlModes reads XMATCH/XLOOKUP's match_mode and search_mode arguments at mi
+// and si (empty or absent: 0 and 1). Other values are #VALUE!.
+func xlModes(c *callCtx, mi, si int) (int, int, *value) {
+	matchMode, searchMode := 0, 1
+	if !c.omitted(mi) {
+		f, ok := c.num(mi)
+		if !ok {
+			return 0, 0, &errValue
+		}
+		matchMode = int(math.Trunc(f))
+	}
+	if !c.omitted(si) {
+		f, ok := c.num(si)
+		if !ok {
+			return 0, 0, &errValue
+		}
+		searchMode = int(math.Trunc(f))
+	}
+	if matchMode < -1 || matchMode > 2 || (searchMode != 1 && searchMode != -1 && searchMode != 2 && searchMode != -2) {
+		return 0, 0, &errValue
+	}
+	if matchMode == 2 && (searchMode == 2 || searchMode == -2) {
+		return 0, 0, &errValue // wildcards need a linear search
+	}
+	return matchMode, searchMode, nil
+}
+
+// xlRank orders value types the way Excel sorts them: numbers, text,
+// logicals. Empty cells and errors never match (-1).
+func xlRank(v value) int {
+	switch {
+	case v.isErr(), v.blank, isEmptyArg(v):
+		return -1
+	case v.kind == kindNum:
+		return 0
+	case v.kind == kindStr:
+		return 1
+	case v.kind == kindBool:
+		return 2
+	}
+	return -1
+}
+
+// xlCompare orders two matchable values: by type rank, then by value (text
+// case-insensitively).
+func xlCompare(a, b value) int {
+	ra, rb := xlRank(a), xlRank(b)
+	if ra != rb {
+		if ra < rb {
+			return -1
+		}
+		return 1
+	}
+	switch ra {
+	case 1:
+		return strings.Compare(strings.ToUpper(a.str), strings.ToUpper(b.str))
+	default:
+		switch {
+		case a.num < b.num:
+			return -1
+		case a.num > b.num:
+			return 1
+		}
+	}
+	return 0
+}
+
+// xlFind returns the 0-based position XMATCH/XLOOKUP pick in cells, or -1.
 //
-//	match_mode  0 → exact
-//	match_mode -1 → exact or next smaller
-//	match_mode  1 → exact or next larger
-//	match_mode  2 → wildcard
-//	search_mode  1 → first-to-last (default)
-//	search_mode -1 → last-to-first
+//	match_mode 0 exact, -1 exact or next smaller, 1 exact or next larger,
+//	2 wildcards (* ? ~) in a text lookup value;
+//	search_mode 1 first to last, -1 last to first, 2 / -2 for data sorted
+//	ascending / descending.
 //
-// (Binary-search modes 2/-2 are treated as their linear equivalents since the
-// engine cannot assume sorted order beyond what the caller provides.)
+// An exact match needs the same type (1 never matches "1" or TRUE); the next
+// smaller/larger value follows xlCompare across types. Errors in the lookup
+// array are skipped, and so are empty cells unless the lookup value is an
+// empty cell too. The binary modes search linearly in the same direction:
+// on sorted data that finds the same value, and on unsorted data (where a
+// binary search's answer is undefined) the result stays predictable.
+func xlFind(needle value, cells []value, matchMode, searchMode int) int {
+	n := len(cells)
+	if needle.blank {
+		for i := 0; i < n; i++ {
+			j := i
+			if searchMode < 0 {
+				j = n - 1 - i
+			}
+			if cells[j].blank {
+				return j
+			}
+		}
+		return -1
+	}
+	order := make([]int, n)
+	for i := range order {
+		if searchMode < 0 {
+			order[i] = n - 1 - i
+		} else {
+			order[i] = i
+		}
+	}
+	nr := xlRank(needle)
+	if nr < 0 {
+		return -1
+	}
+	if matchMode == 2 && needle.kind == kindStr {
+		re := wildcardToRegexp(needle.str)
+		for _, i := range order {
+			if cells[i].kind == kindStr && xlRank(cells[i]) == 1 && re != nil && re.MatchString(cells[i].str) {
+				return i
+			}
+		}
+		return -1
+	}
+	best := -1
+	for _, i := range order {
+		x := cells[i]
+		if xlRank(x) < 0 {
+			continue
+		}
+		cmp := xlCompare(x, needle)
+		if cmp == 0 {
+			return i
+		}
+		switch {
+		case matchMode == -1 && cmp < 0 && (best < 0 || xlCompare(x, cells[best]) > 0):
+			best = i
+		case matchMode == 1 && cmp > 0 && (best < 0 || xlCompare(x, cells[best]) < 0):
+			best = i
+		}
+	}
+	return best
+}
+
+// xlVector returns a lookup array's cells if it is one row or one column.
+func xlVector(r rangeVal) ([]value, bool) {
+	if r.rows > 1 && r.cols > 1 {
+		return nil, false
+	}
+	return r.flat(), true
+}
+
+// XMATCH(lookup_value, lookup_array, [match_mode], [search_mode]) — the
+// 1-based position of the match (see xlFind), #N/A when there is none.
 func fnXMatch(c *callCtx) value {
-	if c.nargs() < 2 {
+	if c.nargs() < 2 || c.nargs() > 4 {
 		return errValue
 	}
 	needle := c.scalar(0)
@@ -468,97 +600,29 @@ func fnXMatch(c *callCtx) value {
 		return needle
 	}
 	rng, ok := c.rangeArg(1)
+	if !ok || c.omitted(1) {
+		return errValue
+	}
+	matchMode, searchMode, e := xlModes(c, 2, 3)
+	if e != nil {
+		return *e
+	}
+	cells, ok := xlVector(rng)
 	if !ok {
 		return errValue
 	}
-	matchMode := 0
-	if c.nargs() >= 3 {
-		mm, mok := c.num(2)
-		if !mok {
-			return errValue
-		}
-		matchMode = int(math.Trunc(mm))
-	}
-	searchMode := 1
-	if c.nargs() >= 4 {
-		sm, sok := c.num(3)
-		if !sok {
-			return errValue
-		}
-		searchMode = int(math.Trunc(sm))
-	}
-
-	cells := rng.flat()
-	// Establish iteration order.
-	order := make([]int, len(cells))
-	if searchMode < 0 {
-		for i := range order {
-			order[i] = len(cells) - 1 - i
-		}
-	} else {
-		for i := range order {
-			order[i] = i
-		}
-	}
-
-	wildcard := matchMode == 2
-
-	// First pass: exact match (modes 0, -1, 1, 2 all accept an exact hit).
-	for _, i := range order {
-		cell := cells[i]
-		if cell.isErr() {
-			return cell
-		}
-		if wildcard {
-			if re := wildcardToRegexp(needle.toStr()); re != nil && re.MatchString(cell.toStr()) {
-				return numVal(float64(i + 1))
-			}
-			continue
-		}
-		if lkpEqual(needle, cell) {
-			return numVal(float64(i + 1))
-		}
-	}
-
-	if matchMode == -1 || matchMode == 1 {
-		// Find nearest smaller (-1) or larger (1) by value, breaking ties toward
-		// the search direction's first occurrence.
-		best := -1
-		var bestVal value
-		bestSet := false
-		for _, i := range order {
-			cell := cells[i]
-			cmp := lkpCompare(cell, needle)
-			if matchMode == -1 && cmp <= 0 {
-				// candidate ≤ needle; want the largest such.
-				if !bestSet || lkpCompare(cell, bestVal) > 0 {
-					best, bestVal, bestSet = i, cell, true
-				}
-			}
-			if matchMode == 1 && cmp >= 0 {
-				// candidate ≥ needle; want the smallest such.
-				if !bestSet || lkpCompare(cell, bestVal) < 0 {
-					best, bestVal, bestSet = i, cell, true
-				}
-			}
-		}
-		if bestSet {
-			return numVal(float64(best + 1))
-		}
+	if pos := xlFind(needle, cells, matchMode, searchMode); pos >= 0 {
+		return numVal(float64(pos + 1))
 	}
 	return errNA
 }
 
-// ---- XLOOKUP ----------------------------------------------------------------
-
-// XLOOKUP(lookup, lookup_rangeVal, return_rangeVal, [if_not_found],
-//
-//	[match_mode=0], [search_mode=1])
-//
-// Finds lookup in lookup_range and returns the corresponding cell from
-// return_range. On no match: if_not_found if provided, else #N/A.
+// XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found],
+// [match_mode], [search_mode]) — the row (for a lookup column) or column
+// (for a lookup row) of return_array at the match; return_array must be as
+// long as lookup_array. No match: if_not_found when given, else #N/A.
 func fnXLookup(c *callCtx) value {
-	if c.nargs() < 3 {
+	if c.nargs() < 3 || c.nargs() > 6 {
 		return errValue
 	}
 	needle := c.scalar(0)
@@ -566,100 +630,38 @@ func fnXLookup(c *callCtx) value {
 		return needle
 	}
 	lookupRange, ok1 := c.rangeArg(1)
-	if !ok1 {
-		return errValue
-	}
 	returnRange, ok2 := c.rangeArg(2)
-	if !ok2 {
+	if !ok1 || !ok2 {
 		return errValue
 	}
-	matchMode := 0
-	if c.nargs() >= 5 {
-		mm, mok := c.num(4)
-		if !mok {
-			return errValue
-		}
-		matchMode = int(math.Trunc(mm))
+	matchMode, searchMode, e := xlModes(c, 4, 5)
+	if e != nil {
+		return *e
 	}
-	searchMode := 1
-	if c.nargs() >= 6 {
-		sm, sok := c.num(5)
-		if !sok {
-			return errValue
-		}
-		searchMode = int(math.Trunc(sm))
+	cells, ok := xlVector(lookupRange)
+	if !ok {
+		return errValue
 	}
-
-	lookupCells := lookupRange.flat()
-	returnCells := returnRange.flat()
-
-	order := make([]int, len(lookupCells))
-	if searchMode < 0 {
-		for i := range order {
-			order[i] = len(lookupCells) - 1 - i
-		}
-	} else {
-		for i := range order {
-			order[i] = i
-		}
+	vertical := lookupRange.cols == 1 && (lookupRange.rows > 1 || returnRange.cols > 1 || returnRange.rows == 1)
+	if vertical && returnRange.rows != lookupRange.rows || !vertical && returnRange.cols != lookupRange.cols {
+		return errValue
 	}
-
-	wildcard := matchMode == 2
-	pos := -1
-
-	// Exact pass (all modes accept exact).
-	for _, i := range order {
-		cell := lookupCells[i]
-		if cell.isErr() {
-			return cell
-		}
-		if wildcard {
-			if re := wildcardToRegexp(needle.toStr()); re != nil && re.MatchString(cell.toStr()) {
-				pos = i
-				break
-			}
-			continue
-		}
-		if lkpEqual(needle, cell) {
-			pos = i
-			break
-		}
-	}
-
-	if pos < 0 && (matchMode == -1 || matchMode == 1) {
-		best := -1
-		var bestVal value
-		bestSet := false
-		for _, i := range order {
-			cell := lookupCells[i]
-			cmp := lkpCompare(cell, needle)
-			if matchMode == -1 && cmp <= 0 {
-				if !bestSet || lkpCompare(cell, bestVal) > 0 {
-					best, bestVal, bestSet = i, cell, true
-				}
-			}
-			if matchMode == 1 && cmp >= 0 {
-				if !bestSet || lkpCompare(cell, bestVal) < 0 {
-					best, bestVal, bestSet = i, cell, true
-				}
-			}
-		}
-		if bestSet {
-			pos = best
-		}
-	}
-
+	pos := xlFind(needle, cells, matchMode, searchMode)
 	if pos < 0 {
-		// Not found.
-		if c.nargs() >= 4 {
-			return c.scalar(3)
+		if c.nargs() >= 4 && !c.omitted(3) {
+			return asValue(c.raw(3))
 		}
 		return errNA
 	}
-	if pos >= len(returnCells) {
-		return errRef
+	var out [][]value
+	if vertical {
+		out = [][]value{append([]value(nil), returnRange.cells[pos]...)}
+	} else {
+		for _, row := range returnRange.cells {
+			out = append(out, []value{row[pos]})
+		}
 	}
-	return returnCells[pos]
+	return arrayValue(out)
 }
 
 // ---- CHOOSE -----------------------------------------------------------------
@@ -809,7 +811,7 @@ func fnAddress(c *callCtx) value {
 	absRow := absType == 1 || absType == 2
 	absCol := absType == 1 || absType == 3
 	var b strings.Builder
-	if c.nargs() >= 5 {
+	if c.nargs() >= 5 && !c.omitted(4) {
 		v := c.scalar(4)
 		if v.isErr() {
 			return v

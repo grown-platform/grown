@@ -30,7 +30,7 @@ func init() {
 
 // optScalar returns argument i, or def when the argument is absent.
 func optScalar(c *callCtx, i int, def value) value {
-	if i < c.nargs() {
+	if i < c.nargs() && !c.omitted(i) {
 		return c.scalar(i)
 	}
 	return def
@@ -398,8 +398,8 @@ func arrTake(c *callCtx) value {
 	if !ok {
 		return errNA
 	}
-	rowsPresent := c.nargs() >= 2
-	colsPresent := c.nargs() >= 3
+	rowsPresent := c.nargs() >= 2 && !c.omitted(1)
+	colsPresent := c.nargs() >= 3 && !c.omitted(2)
 	rn, cn := 0, 0
 	if rowsPresent {
 		f, ok := c.num(1)
@@ -426,8 +426,8 @@ func arrDrop(c *callCtx) value {
 	if !ok {
 		return errNA
 	}
-	rowsPresent := c.nargs() >= 2
-	colsPresent := c.nargs() >= 3
+	rowsPresent := c.nargs() >= 2 && !c.omitted(1)
+	colsPresent := c.nargs() >= 3 && !c.omitted(2)
 	rn, cn := 0, 0
 	if rowsPresent {
 		f, ok := c.num(1)
@@ -526,7 +526,7 @@ func arrExpand(c *callCtx) value {
 		return errNA
 	}
 	targetRows := rv.rows
-	if c.nargs() >= 2 {
+	if c.nargs() >= 2 && !c.omitted(1) {
 		f, ok := c.num(1)
 		if !ok {
 			return errValue
@@ -536,7 +536,7 @@ func arrExpand(c *callCtx) value {
 	targetCols := rv.cols
 	if c.nargs() >= 3 {
 		// columns may be omitted (blank) → keep current width.
-		if v := c.scalar(2); !isBlankVal(v) {
+		if v := c.scalar(2); !isBlankVal(v) && !c.omitted(2) {
 			f, ok := v.toNum()
 			if !ok {
 				return errValue
