@@ -134,7 +134,7 @@ export function readPPr(pPr: Element | null | undefined): ReadPPr {
   if (widow === false) p.widowControl = false;
 
   const outline = num(attr(kid(pPr, "outlineLvl"), "w:val"));
-  if (outline != null && outline >= 0 && outline <= 8) p.outlineLevel = outline + 1;
+  if (outline != null && outline >= 0 && outline <= 9) p.outlineLevel = outline + 1;
 
   const pBdr = kid(pPr, "pBdr");
   if (pBdr) {

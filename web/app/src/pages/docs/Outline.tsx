@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { Sheet, Box, Typography, IconButton } from "@mui/joy";
 import CloseIcon from "@mui/icons-material/Close";
 import type { Editor } from "@tiptap/react";
+import { outlineLevelOf } from "./fields";
+import { getDocModel } from "./docModel";
 
 // Outline / table-of-contents pane. Walks the document for heading nodes and
 // renders a clickable, live-updating navigation tree — the equivalent of Google
@@ -16,17 +18,18 @@ interface HeadingItem {
 
 function extractHeadings(editor: Editor): HeadingItem[] {
   const items: HeadingItem[] = [];
+  const sheet = getDocModel(editor)?.sheet;
   editor.state.doc.descendants((node, pos) => {
-    // Headings, plus paragraphs given an outline level (M3).
-    if (node.type.name === "heading" || (node.type.name === "paragraph" && node.attrs.outlineLevel)) {
+    if (node.type.name === "tableOfContents") return false;
+    if (!node.isTextblock) return true;
+    // Headings and paragraphs with an outline level (M3), minus those
+    // taken out of the table of contents (M8 Add text).
+    const level = outlineLevelOf(node, sheet);
+    if (level) {
       const text = node.textContent.trim();
-      items.push({
-        level: (node.attrs.level as number) || Math.min(6, node.attrs.outlineLevel as number) || 1,
-        text: text || "(untitled heading)",
-        pos,
-      });
+      items.push({ level: Math.min(6, level), text: text || "(untitled heading)", pos });
     }
-    return true;
+    return false;
   });
   return items;
 }
