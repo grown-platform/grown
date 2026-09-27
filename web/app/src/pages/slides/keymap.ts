@@ -33,7 +33,8 @@ export type EditorKeyAction =
   | { type: "cycle"; dir: 1 | -1 }
   | { type: "deselect" }
   | { type: "group" }
-  | { type: "ungroup" };
+  | { type: "ungroup" }
+  | { type: "cancelDraw" };
 
 /** isSaveKey reports Ctrl/Cmd+S. The editor handles it even while a text box
  *  is being edited, so the browser's "Save page" dialog never opens. */
@@ -62,12 +63,14 @@ export function nudgeDelta(
 }
 
 /** editorKeyAction maps a key press on the editing canvas (not inside a text
- *  field) to an editor action. `hasSelection` is whether an element is selected.
+ *  field) to an editor action. `hasSelection` is whether an element is selected;
+ *  `drawing` is whether a draw-to-insert tool is armed (Esc cancels it first).
  *  Ctrl and Cmd are interchangeable. */
 export function editorKeyAction(
   e: KeyInput,
-  ctx: { hasSelection: boolean },
+  ctx: { hasSelection: boolean; drawing?: boolean },
 ): EditorKeyAction | null {
+  if (e.key === "Escape" && ctx.drawing) return { type: "cancelDraw" };
   if ((e.key === "Delete" || e.key === "Backspace") && ctx.hasSelection)
     return { type: "deleteSelected" };
   const mod = !!e.ctrlKey || !!e.metaKey;

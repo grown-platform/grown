@@ -40,10 +40,6 @@ import ImageIcon from "@mui/icons-material/Image";
 import CropSquareIcon from "@mui/icons-material/CropSquare";
 import CircleOutlinedIcon from "@mui/icons-material/CircleOutlined";
 import HorizontalRuleIcon from "@mui/icons-material/HorizontalRule";
-import ChangeHistoryIcon from "@mui/icons-material/ChangeHistory";
-import CategoryIcon from "@mui/icons-material/Category";
-import ArrowRightAltIcon from "@mui/icons-material/ArrowRightAlt";
-import RoundedCornerIcon from "@mui/icons-material/RoundedCorner";
 import InterestsIcon from "@mui/icons-material/Interests";
 import SpeakerNotesIcon from "@mui/icons-material/SpeakerNotes";
 import SpeakerNotesOffIcon from "@mui/icons-material/SpeakerNotesOff";
@@ -155,6 +151,10 @@ import {
   pasteElements,
 } from "./clipboard";
 import { colorFor, prunePeers } from "./presence";
+import { ShapeGallery } from "./ShapeGallery";
+import { toolFromGalleryId, type DrawTool } from "./drawTool";
+import { withGluedConnectors } from "./connectorOps";
+import { ShapeFormatControls } from "./ShapeFormatControls";
 
 interface Peer {
   userId: string;
@@ -210,6 +210,9 @@ export function DeckEditor({ user }: { user: User }) {
   const fileInput = useRef<HTMLInputElement | null>(null);
   const pptxInput = useRef<HTMLInputElement | null>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  // Shape gallery (toolbar dropdown) and the armed draw-to-insert tool.
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [drawTool, setDrawTool] = useState<DrawTool | null>(null);
 
   const me = {
     userId: user.id,
@@ -290,8 +293,15 @@ export function DeckEditor({ user }: { user: User }) {
     (el: SlideElement, opts?: { history?: boolean }) => {
       if (!slide) return;
       if (opts?.history !== false) pushHistory();
-      applyToSlide(slide.id, (s) => upsertElementOp(s, el));
-      broadcast({ t: "upsert", si: slide.id, el });
+      // Connectors glued to this element move with it.
+      const all = withGluedConnectors(slide.elements, [el]);
+      if (all.length > 1) {
+        applyToSlide(slide.id, (s) => upsertElementsOp(s, all));
+        broadcast({ t: "upsertMany", si: slide.id, els: all });
+      } else {
+        applyToSlide(slide.id, (s) => upsertElementOp(s, all[0]));
+        broadcast({ t: "upsert", si: slide.id, el: all[0] });
+      }
       scheduleSave();
     },
     [slide, applyToSlide, broadcast, scheduleSave, pushHistory],
@@ -302,8 +312,9 @@ export function DeckEditor({ user }: { user: User }) {
     (els: SlideElement[], opts?: { history?: boolean }) => {
       if (!slide || !els.length) return;
       if (opts?.history !== false) pushHistory();
-      applyToSlide(slide.id, (s) => upsertElementsOp(s, els));
-      broadcast({ t: "upsertMany", si: slide.id, els });
+      const all = withGluedConnectors(slide.elements, els);
+      applyToSlide(slide.id, (s) => upsertElementsOp(s, all));
+      broadcast({ t: "upsertMany", si: slide.id, els: all });
       scheduleSave();
     },
     [slide, applyToSlide, broadcast, scheduleSave, pushHistory],
@@ -412,6 +423,15 @@ export function DeckEditor({ user }: { user: User }) {
         e.preventDefault();
         saveNow();
         return;
+      }
+      if (drawTool && e.key === "Escape") {
+        // Esc cancels an armed draw-to-insert tool (before anything else).
+        const a = editorKeyAction(e, { hasSelection: selIds.length > 0, drawing: true });
+        if (a?.type === "cancelDraw") {
+          e.preventDefault();
+          setDrawTool(null);
+          return;
+        }
       }
       if (editingText) return;
       const tag = (e.target as HTMLElement)?.tagName;
@@ -590,6 +610,17 @@ export function DeckEditor({ user }: { user: User }) {
     const el = newElement(type);
     upsertElement(el);
     setSelId(el.id);
+  }
+  // Shape gallery pick: arm the draw tool; the next click/drag on the slide
+  // inserts the shape (Esc cancels).
+  function pickShape(id: string) {
+    setGalleryOpen(false);
+    setDrawTool(toolFromGalleryId(id));
+  }
+  function onDrawn(el: SlideElement) {
+    setDrawTool(null);
+    upsertMany([el]);
+    setSel([el.id]);
   }
   function insertImageFile() {
     fileInput.current?.click();
@@ -797,6 +828,8 @@ export function DeckEditor({ user }: { user: User }) {
     insert,
     insertImageFile,
     newSlide: doNewSlide,
+    openShapes: () => setGalleryOpen(true),
+    drawShape: pickShape,
     duplicateSlide,
     deleteSlide,
     present: () => {
@@ -1013,41 +1046,35 @@ export function DeckEditor({ user }: { user: User }) {
               <HorizontalRuleIcon />
             </IconButton>
           </Tooltip>
-          {/* More shapes */}
-          <Dropdown>
-            <Tooltip title="More shapes">
+          {/* Shape gallery: pick a preset, then click/drag on the slide */}
+          <Dropdown open={galleryOpen} onOpenChange={(_, o) => setGalleryOpen(o)}>
+            <Tooltip title="Shapes">
               <MenuButton
                 slots={{ root: IconButton }}
                 slotProps={{
                   root: {
                     size: "sm",
-                    variant: "plain",
-                    "aria-label": "More shapes",
+                    variant: drawTool ? "soft" : "plain",
+                    "aria-label": "Shapes",
                   },
                 }}
               >
                 <InterestsIcon />
               </MenuButton>
             </Tooltip>
-            <Menu size="sm" placement="bottom-start">
-              <MenuItem onClick={() => insert("roundRect")}>
-                <RoundedCornerIcon sx={{ mr: 1 }} />
-                Rounded rectangle
-              </MenuItem>
-              <MenuItem onClick={() => insert("triangle")}>
-                <ChangeHistoryIcon sx={{ mr: 1 }} />
-                Triangle
-              </MenuItem>
-              <MenuItem onClick={() => insert("diamond")}>
-                <CategoryIcon sx={{ mr: 1 }} />
-                Diamond
-              </MenuItem>
-              <MenuItem onClick={() => insert("rightArrow")}>
-                <ArrowRightAltIcon sx={{ mr: 1 }} />
-                Right arrow
-              </MenuItem>
+            <Menu size="sm" placement="bottom-start" sx={{ p: 0 }}>
+              <ShapeGallery onPick={pickShape} />
             </Menu>
           </Dropdown>
+          {drawTool && (
+            <Typography
+              level="body-xs"
+              data-testid="draw-hint"
+              sx={{ mx: 0.5, color: "text.tertiary", whiteSpace: "nowrap" }}
+            >
+              Click or drag on the slide to draw · Esc cancels
+            </Typography>
+          )}
           <Divider orientation="vertical" sx={{ mx: 0.5 }} />
           <IconButton
             size="sm"
@@ -1113,12 +1140,28 @@ export function DeckEditor({ user }: { user: User }) {
           {selected && isShape(selected.type) && (
             <input
               type="color"
-              value={selected.fill || "#4285f4"}
+              value={
+                selected.fill && /^#[0-9a-f]{6}/i.test(selected.fill)
+                  ? selected.fill.slice(0, 7)
+                  : "#4285f4"
+              }
               onChange={(e) => setField("fill", e.target.value)}
               title="Fill color"
+              aria-label="Fill color"
               style={{ marginLeft: 4 }}
             />
           )}
+          <ShapeFormatControls
+            el={selected}
+            onChange={(patch) =>
+              updateSelected((e) => {
+                const next = { ...e, ...patch };
+                for (const k of Object.keys(patch) as (keyof SlideElement)[])
+                  if (patch[k] === undefined) delete next[k];
+                return next;
+              })
+            }
+          />
         </Box>
       </JoySheet>
       <Divider />
@@ -1304,6 +1347,8 @@ export function DeckEditor({ user }: { user: User }) {
                 showGrid={snapGrid}
                 onEditingText={setEditingText}
                 onContext={(x, y, elId) => setCtxMenu({ x, y, elId })}
+                drawTool={drawTool}
+                onDrawn={onDrawn}
               />
             )}
           </Box>

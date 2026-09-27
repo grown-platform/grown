@@ -14,6 +14,8 @@ import {
   CANVAS_H,
   CANVAS_W,
   uid,
+  type ArrowHead,
+  type DashStyle,
   type DeckDoc,
   type ElementType,
   type Slide,
@@ -27,6 +29,8 @@ import {
   type ColorSpec,
 } from "../../../lib/colorMods";
 import { getUrlType } from "../../../lib/urlType";
+import { hasPreset } from "../presetGeometry";
+import { isConnectorPreset } from "../presetDefs";
 
 export interface PptxImport {
   deck: DeckDoc;
@@ -420,6 +424,73 @@ export function mapPreset(prst: string): ElementType | "line" | null {
   }
 }
 
+/** Adjust values from `a:avLst` (`<a:gd name="adj" fmla="val 16667"/>`). */
+export function readAdjust(prstGeom: Element | null): Record<string, number> | undefined {
+  const out: Record<string, number> = {};
+  for (const gd of kids(kid(prstGeom, "avLst"), "gd")) {
+    const m = /^\s*val\s+(-?\d+(?:\.\d+)?)\s*$/.exec(gd.getAttribute("fmla") ?? "");
+    const name = gd.getAttribute("name");
+    if (m && name) out[name] = Number(m[1]);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+const DASHES: Record<string, DashStyle> = {
+  solid: "solid",
+  dash: "dash",
+  dashDot: "dashDot",
+  lgDash: "lgDash",
+  lgDashDot: "lgDashDot",
+  lgDashDotDot: "lgDashDotDot",
+  sysDash: "sysDash",
+  sysDot: "sysDot",
+  dot: "sysDot",
+  sysDashDot: "dashDot",
+  sysDashDotDot: "lgDashDotDot",
+};
+const HEADS = new Set<ArrowHead>(["triangle", "stealth", "diamond", "oval", "arrow"]);
+
+/** Dash style and arrowheads of an `a:ln`. */
+function readLineStyle(spPr: Element | null): {
+  dash?: DashStyle;
+  headEnd?: ArrowHead;
+  tailEnd?: ArrowHead;
+} {
+  const ln = kid(spPr, "ln");
+  const d = kid(ln, "prstDash")?.getAttribute("val");
+  const dash = d ? (DASHES[d] ?? "dash") : undefined;
+  const head = kid(ln, "headEnd")?.getAttribute("type") as ArrowHead | null;
+  const tail = kid(ln, "tailEnd")?.getAttribute("type") as ArrowHead | null;
+  return {
+    ...(dash && dash !== "solid" ? { dash } : {}),
+    ...(head && HEADS.has(head) ? { headEnd: head } : {}),
+    ...(tail && HEADS.has(tail) ? { tailEnd: tail } : {}),
+  };
+}
+
+/**
+ * Should a preset import as a legacy Grown shape type? Only when it would
+ * look identical: rect/ellipse always, roundRect with Grown's 18 % corner,
+ * and triangle/diamond/rightArrow at their default adjusts (and no dash).
+ */
+function legacyShape(prst: string, adj: Record<string, number> | undefined): ElementType | null {
+  const none = !adj;
+  switch (prst) {
+    case "rect":
+    case "ellipse":
+    case "diamond":
+      return prst;
+    case "roundRect":
+      return none || Math.abs((adj?.adj ?? 0) - 18000) <= 1 ? "roundRect" : null;
+    case "triangle":
+      return none || adj?.adj === 50000 ? "triangle" : null;
+    case "rightArrow":
+      return none ? "rightArrow" : null;
+    default:
+      return null;
+  }
+}
+
 // ------------------------------------------------------------ text
 
 interface PartCtx {
@@ -663,6 +734,31 @@ interface SlideCtx {
   warnings: Set<string>;
   /** Preset names drawn as a rectangle (or dropped, for open freeforms). */
   unsupported: Set<string>;
+  /** Per shape tree: `cNvPr@id` → Grown element id, and connectors whose
+   *  `stCxn`/`endCxn` still name a cNvPr id (resolved by resolveGlue). */
+  glue?: GlueCtx;
+}
+
+interface GlueCtx {
+  ids: Map<string, string>;
+  pending: { el: SlideElement; st?: [string, number]; end?: [string, number] }[];
+}
+
+/** Read one shape tree, then resolve connector glue within it. */
+async function readTreeGlued(
+  tree: Element,
+  sc: SlideCtx,
+  out: SlideElement[],
+  skipPh: boolean,
+) {
+  const glue: GlueCtx = { ids: new Map(), pending: [] };
+  await readTree(tree, identity, { ...sc, glue }, out, skipPh);
+  for (const p of glue.pending) {
+    const st = p.st && glue.ids.get(p.st[0]);
+    const end = p.end && glue.ids.get(p.end[0]);
+    if (st) p.el.stCxn = { id: st, idx: p.st![1] };
+    if (end) p.el.endCxn = { id: end, idx: p.end![1] };
+  }
 }
 
 /**
@@ -800,6 +896,47 @@ async function readSp(
           : undefined));
 
   const seg = prst === "custom" ? straightSegment(kid(spPr, "custGeom")) : null;
+  const adj = readAdjust(prstEl);
+  const lineStyle = readLineStyle(spPr);
+  const cNvPrId = cNvPr?.getAttribute("id") ?? undefined;
+  const nvCxn = kid(nvSpPr, "cNvCxnSpPr");
+  const glueRef = (n: string): [string, number] | undefined => {
+    const e = kid(nvCxn, n);
+    const id = e?.getAttribute("id");
+    return id ? [id, Number(e!.getAttribute("idx")) || 0] : undefined;
+  };
+  const st = glueRef("stCxn");
+  const end = glueRef("endCxn");
+  // Line presets become Grown connectors (arrowheads, dash, elbows, curves,
+  // glue); a plain straight line stays a legacy line.
+  if ((isCxn || isConnectorPreset(prst)) && hasPreset(prst)) {
+    const plain =
+      (prst === "line" || prst === "straightConnector1") &&
+      !lineStyle.dash &&
+      !lineStyle.headEnd &&
+      !lineStyle.tailEnd &&
+      !st &&
+      !end;
+    if (!plain) {
+      if (!line) return;
+      const el: SlideElement = {
+        id: uid(),
+        type: "connector",
+        preset: prst,
+        ...toPx(box, sc),
+        ...orient(box),
+        ...(adj ? { adj } : {}),
+        stroke: line.color,
+        strokeWidth: line.width,
+        ...lineStyle,
+        ...(shapeUrl ? { url: shapeUrl } : {}),
+      };
+      out.push(el);
+      if (cNvPrId) sc.glue?.ids.set(cNvPrId, el.id);
+      if (st || end) sc.glue?.pending.push({ el, st, end });
+      return;
+    }
+  }
   const kind = isCxn || seg ? "line" : mapPreset(prst);
   if (kind === "line") {
     if (!line) return;
@@ -821,19 +958,26 @@ async function readSp(
   }
   const visible = hasFill || !!line;
   if (visible) {
-    let type: ElementType = kind ?? "rect";
-    if (!kind) sc.unsupported.add(prst === "custom" ? "freeform" : prst);
+    const legacy = lineStyle.dash ? null : legacyShape(prst, adj);
+    const preset = !legacy && hasPreset(prst);
+    let type: ElementType = legacy ?? (preset ? "shape" : (kind ?? "rect"));
+    if (!legacy && !preset && !kind) sc.unsupported.add(prst === "custom" ? "freeform" : prst);
     if (type === "text") type = "rect";
-    out.push({
+    const el: SlideElement = {
       id: uid(),
       type,
+      ...(preset ? { preset: prst } : {}),
       ...toPx(box, sc),
       ...orient(box),
+      ...(preset && adj ? { adj } : {}),
       fill: hasFill ? fill : "none",
       stroke: line ? line.color : "none",
       strokeWidth: line ? line.width : 0,
+      ...(preset && lineStyle.dash ? { dash: lineStyle.dash } : {}),
       ...(shapeUrl ? { url: shapeUrl } : {}),
-    });
+    };
+    out.push(el);
+    if (cNvPrId) sc.glue?.ids.set(cNvPrId, el.id);
   }
 
   const txBody = kid(sp, "txBody");
@@ -883,6 +1027,7 @@ async function readSp(
       : {}),
   };
   out.push(el);
+  if (!visible && cNvPrId) sc.glue?.ids.set(cNvPrId, el.id);
 }
 
 const IMAGE_MIME: Record<string, string> = {
@@ -1228,23 +1373,11 @@ export async function readPptx(
     const layoutShowsMaster =
       layout?.documentElement.getAttribute("showMasterSp") !== "0";
     if (showMaster && layoutShowsMaster && sc.masterTree)
-      await readTree(
-        sc.masterTree,
-        identity,
-        { ...sc, pc: pcMaster },
-        elements,
-        true,
-      );
+      await readTreeGlued(sc.masterTree, { ...sc, pc: pcMaster }, elements, true);
     if (showMaster && sc.layoutTree)
-      await readTree(
-        sc.layoutTree,
-        identity,
-        { ...sc, pc: pcLayout },
-        elements,
-        true,
-      );
+      await readTreeGlued(sc.layoutTree, { ...sc, pc: pcLayout }, elements, true);
     const tree = kid(slideCSld, "spTree");
-    if (tree) await readTree(tree, identity, sc, elements, false);
+    if (tree) await readTreeGlued(tree, sc, elements, false);
 
     let notes: string | undefined;
     const notesPath = await pkg.relOfType(slidePath, "notesSlide");

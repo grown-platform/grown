@@ -6,8 +6,12 @@ import {
   defaultDeck,
   elementTransform,
   isShape,
+  connectorBox,
+  newConnector,
   newElement,
+  newShape,
   newSlide,
+  presetDefaultSize,
   newTable,
   parseDeck,
   shapeClipPath,
@@ -87,12 +91,28 @@ describe("newElement defaults", () => {
     expect(e).toMatchObject({ text: "Text", fontSize: 18, align: "left", valign: "top", fontFamily: "Arial", w: 240, h: 100 });
   });
 
-  it("gives shapes a fill and no stroke", () => {
-    for (const t of SHAPE_TYPES) {
+  it("gives legacy shapes a fill and no stroke", () => {
+    for (const t of SHAPE_TYPES.filter((x) => x !== "shape")) {
       const e = newElement(t);
       expect(e.fill).toMatch(/^#[0-9a-f]{6}$/);
       expect(e.stroke).toBe("none");
     }
+  });
+
+  it("gives preset shapes a fill and a thin outline, sized per preset", () => {
+    expect(newElement("shape")).toMatchObject({ type: "shape", preset: "rect", fill: "#4285f4", strokeWidth: 1 });
+    expect(newShape("star5")).toMatchObject({ w: 160, h: 160, x: 400, y: 190 });
+    expect(newShape("upArrow")).toMatchObject({ w: 120, h: 200 });
+    expect(newShape("flowChartProcess", { x: 1, y: 2, w: 3, h: 4 })).toMatchObject({ x: 1, y: 2, w: 3, h: 4 });
+    expect(presetDefaultSize("chevron")).toEqual({ w: 240, h: 120 });
+  });
+
+  it("connectors span two points; flips pick the diagonal", () => {
+    expect(newElement("connector")).toMatchObject({ type: "connector", preset: "straightConnector1", x: 360, y: 270, w: 240, h: 0 });
+    const c = newConnector("bentConnector3", { from: [500, 400], to: [100, 100], tailEnd: "triangle", headEnd: "none" });
+    expect(c).toMatchObject({ x: 100, y: 100, w: 400, h: 300, flipH: true, flipV: true, tailEnd: "triangle" });
+    expect(c.headEnd).toBeUndefined();
+    expect(connectorBox(0, 0, 10.004, 5)).toMatchObject({ w: 10, h: 5, flipH: undefined });
   });
 
   it("makes lines zero-height with a stroke", () => {

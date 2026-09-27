@@ -145,3 +145,18 @@ describe("OnlyOffice parity", () => {
     expect(isSaveKey({ key: "s", ctrlKey: true })).toBe(true);
   });
 });
+
+describe("OnlyOffice parity: draw-to-insert", () => {
+  // StartAddShape('rect') then Esc: the pending "add shape" track is reset.
+  // Grown arms a draw tool from the shape gallery; Esc maps to cancelDraw
+  // (before deselect), and DeckEditor clears the tool (e2e: slides-shapes).
+  it("oo:slide/shortcuts/shortcuts.js#Check reset action with adding new shape", () => {
+    expect(editorKeyAction({ key: "Escape" }, { hasSelection: false, drawing: true })).toEqual({
+      type: "cancelDraw",
+    });
+    expect(editorKeyAction({ key: "Escape" }, { hasSelection: true, drawing: true })).toEqual({
+      type: "cancelDraw",
+    });
+    expect(editorKeyAction({ key: "Escape" }, { hasSelection: true })).toEqual({ type: "deselect" });
+  });
+});
