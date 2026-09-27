@@ -261,7 +261,12 @@ export function DeckEditor({ user }: { user: User }) {
   // The text selection a box had when editing ended (a menu, dialog or
   // colour picker took focus): formatting then applies to it.
   const savedTextSel = useRef<{ id: string; from: number; to: number } | null>(null);
-  const [editRequest, setEditRequest] = useState<{ id: string; sel: [number, number]; nonce: number } | null>(null);
+  const [editRequest, setEditRequestState] = useState<{ id: string; sel: [number, number]; nonce: number } | null>(null);
+  // Resume editing a text box (after a dialog/menu): it is also selected.
+  const setEditRequest = (r: { id: string; sel: [number, number]; nonce: number }) => {
+    setSel([r.id]);
+    setEditRequestState(r);
+  };
   const [painter, setPainter] = useState<RunStyle | null>(null);
   const [painterArmed, setPainterArmed] = useState(false);
   type LinkTarget = { kind: "range"; id: string; from: number; to: number } | { kind: "elements"; ids: string[] };

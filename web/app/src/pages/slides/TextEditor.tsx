@@ -207,6 +207,9 @@ export function TextEditor({
         e.preventDefault();
         document.execCommand("insertText", false, t);
       }}
+      onFocus={() => {
+        exited.current = false;
+      }}
       onBlur={finish}
     />
   );

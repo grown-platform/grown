@@ -93,7 +93,7 @@ export function HyperlinkDialog({
                 : { color: "danger" as const, text: "Not a valid link" };
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} disableRestoreFocus>
       <ModalDialog sx={{ minWidth: 380 }} aria-label="Hyperlink">
         <Typography level="title-md">Hyperlink</Typography>
         <RadioGroup
@@ -320,7 +320,7 @@ export function SpecialCharsDialog({
   const [q, setQ] = useState("");
   const shown = q.trim() ? searchChars(q) : CHAR_CATEGORIES[cat].chars;
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} disableRestoreFocus>
       <ModalDialog sx={{ width: 460, maxWidth: "95vw" }} aria-label="Special characters">
         <Typography level="title-md">Special characters</Typography>
         <Box sx={{ display: "flex", gap: 1 }}>
@@ -439,7 +439,7 @@ export function TextOptionsDialog({
     </Box>
   );
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} disableRestoreFocus>
       <ModalDialog sx={{ minWidth: 340 }} aria-label="Text options">
         <Typography level="title-md">Text options</Typography>
         <Typography level="title-sm" sx={{ mt: 1 }}>

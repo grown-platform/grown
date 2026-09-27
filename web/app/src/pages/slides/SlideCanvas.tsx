@@ -146,7 +146,9 @@ export function SlideCanvas({
   const scale = canvasScale(width);
   const height = canvasHeight(width);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const [editing, setEditing] = useState<{ id: string; sel?: [number, number] | "all" } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; sel?: [number, number] | "all"; n: number } | null>(null);
+  // Each edit session mounts a fresh editor.
+  const editSession = useRef(0);
   const editingId = editing?.id ?? null;
   const [guides, setGuides] = useState<Guide[]>([]);
   const [marquee, setMarquee] = useState<Rect | null>(null);
@@ -171,7 +173,7 @@ export function SlideCanvas({
   }
 
   function beginEdit(id: string, sel?: [number, number] | "all") {
-    setEditing({ id, sel });
+    setEditing({ id, sel, n: ++editSession.current });
     onEditingText?.(true);
   }
   function endEdit() {
@@ -466,9 +468,9 @@ export function SlideCanvas({
         )}
         {slide.elements.map((el) => {
           const selected = selSet.has(el.id);
-          const editing = el.id === editingId;
+          const isEditing = el.id === editingId;
           const style = elementStyle(el);
-          const single = selected && !multi && !editing && !el.locked;
+          const single = selected && !multi && !isEditing && !el.locked;
           const isConnector = el.type === "connector";
           return (
             <div
@@ -478,7 +480,7 @@ export function SlideCanvas({
               data-selected={selected ? "true" : undefined}
               style={{
                 ...style,
-                cursor: editing ? "text" : el.locked ? "default" : "move",
+                cursor: isEditing ? "text" : el.locked ? "default" : "move",
                 outline:
                   selected && !(isConnector && single)
                     ? `${2 / scale}px ${el.locked ? "dashed" : "solid"} ${SELECT_BLUE}`
@@ -541,8 +543,9 @@ export function SlideCanvas({
                   </div>
                 )
               ) : el.type === "text" ? (
-                editing ? (
+                isEditing ? (
                   <TextEditor
+                    key={editing?.n}
                     el={el}
                     initialSel={editingSel(el)}
                     handleRef={textEditorRef}
