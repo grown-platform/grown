@@ -108,6 +108,20 @@ start_backend() {
   )
   wait_http "http://127.0.0.1:$PORT/healthz" backend 30 ||
     { tail -30 "$DATA/backend$SUF.log"; exit 1; }
+  # /healthz answering isn't proof it's *our* process: a stray backend already
+  # bound to $PORT (another worktree/agent) answers while ours dies on bind.
+  # Require the process we started to be alive and to own the listener.
+  local pid; pid="$(cat "$DATA/backend$SUF.pid")"
+  sleep 1
+  if ! kill -0 "$pid" 2>/dev/null; then
+    tail -30 "$DATA/backend$SUF.log"
+    die "backend exited after start; is :$PORT or :$GRPC_PORT held by another process? ($(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1))"
+  fi
+  if command -v lsof >/dev/null; then
+    local owner; owner="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1)"
+    [ -z "$owner" ] || [ "$owner" = "$pid" ] ||
+      die ":$PORT is served by pid $owner, not the backend just started ($pid)"
+  fi
   echo "$t" >"$DATA/deployed-tree$SUF"
   log "backend up: http://workspace.localtest.me:$PORT  (tree: $t @ $(git -C "$t" rev-parse --short HEAD))"
 }
