@@ -9,6 +9,7 @@ import {
   type SlideElement,
 } from "./model";
 import { relativeTo } from "./groupOps";
+import { connectorHitPath, shapeLayers } from "./shapeRender";
 
 // CSS keyframes for element entrance animations (injected globally once).
 export const ELEMENT_ANIM_CSS = `
@@ -172,6 +173,55 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
   return base;
 }
 
+/** ShapeSvg draws a "shape"/"connector" element's preset geometry in its box
+ *  (overflow visible, so arrowheads and callout tails may leave the box).
+ *  With `hit`, a connector gets a wide invisible stroke to click on. */
+export function ShapeSvg({ el, hit }: { el: SlideElement; hit?: boolean }) {
+  const layers = shapeLayers(el);
+  const hitD = hit && el.type === "connector" ? connectorHitPath(el) : undefined;
+  return (
+    <svg
+      width={Math.max(el.w, 1)}
+      height={Math.max(el.h, 1)}
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        overflow: "visible",
+        pointerEvents: "none",
+      }}
+      data-preset={el.preset}
+    >
+      {layers.map((l, i) => (
+        <g key={i}>
+          {l.fill && <path d={l.d} fill={l.fill} fillRule="evenodd" />}
+          {l.shade && <path d={l.d} fill={l.shade} fillRule="evenodd" />}
+          {l.stroke && (
+            <path
+              d={l.d}
+              fill="none"
+              stroke={l.stroke}
+              strokeWidth={l.strokeWidth}
+              strokeDasharray={l.dash}
+              strokeLinejoin={l.lineJoin}
+            />
+          )}
+        </g>
+      ))}
+      {hitD && (
+        <path
+          data-testid="connector-hit"
+          d={hitD}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={Math.max(12, (el.strokeWidth || 1) + 8)}
+          style={{ pointerEvents: "stroke" }}
+        />
+      )}
+    </svg>
+  );
+}
+
 function ElementView({
   el,
   revealedIds,
@@ -266,6 +316,12 @@ function renderElementBody(
     return (
       <div style={merged}>
         <SlideTable el={el} />
+      </div>
+    );
+  if (el.type === "shape" || el.type === "connector")
+    return (
+      <div style={merged}>
+        <ShapeSvg el={el} />
       </div>
     );
   return <div style={merged} />;

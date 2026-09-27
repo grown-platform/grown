@@ -21,7 +21,8 @@ import {
   toggleStyle,
   upsertElement,
 } from "./deckOps";
-import { newElement, newTable, type Slide, type SlideElement } from "./model";
+import { newElement, newShape, newTable, type Slide, type SlideElement } from "./model";
+import { setFlip } from "./elementOps";
 import { editorKeyAction } from "./keymap";
 
 // Deterministic fixtures: slides/elements with readable ids.
@@ -290,20 +291,32 @@ describe("OnlyOffice parity: drawings", () => {
     expect(rotateElement(shape, "flipV").flipV).toBe(true);
   });
 
-  // SKIP: Grown has no explicit SetFlipH(bool) setter that reports success and
-  // rejects non-boolean input; flipping is a toggle only.
-  it.skip("oo:slide/js-api/api-drawing.js#Test: SetFlipH", () => {
-    const shape = newElement("rect");
-    // Setting "true" twice should stay flipped with an explicit setter; the
-    // toggle un-flips instead.
-    const once = rotateElement(shape, "flipH");
-    expect(rotateElement(once, "flipH").flipH).toBe(true);
+  // SetFlipH/SetFlipV: an explicit boolean setter (elementOps.setFlip) that
+  // reports success and rejects non-boolean input; the toolbar keeps toggles.
+  it("oo:slide/js-api/api-drawing.js#Test: SetFlipH", () => {
+    const shape = newShape("cube");
+    let r = setFlip(shape, "h", true);
+    expect(r.ok).toBe(true);
+    expect(r.el.flipH).toBe(true);
+    r = setFlip(r.el, "h", true); // setting twice stays flipped (not a toggle)
+    expect(r.el.flipH).toBe(true);
+    r = setFlip(r.el, "h", false);
+    expect(r.ok).toBe(true);
+    expect(!!r.el.flipH).toBe(false);
+    const bad = setFlip(r.el, "h", "invalid");
+    expect(bad.ok).toBe(false);
+    expect(bad.el).toBe(r.el);
   });
 
-  // SKIP: as SetFlipH — toggle-only, no typed setter / invalid-input rejection.
-  it.skip("oo:slide/js-api/api-drawing.js#Test: SetFlipV", () => {
-    const once = rotateElement(newElement("rect"), "flipV");
-    expect(rotateElement(once, "flipV").flipV).toBe(true);
+  it("oo:slide/js-api/api-drawing.js#Test: SetFlipV", () => {
+    const shape = newShape("cube");
+    let r = setFlip(shape, "v", true);
+    expect(r.ok).toBe(true);
+    expect(r.el.flipV).toBe(true);
+    r = setFlip(r.el, "v", false);
+    expect(r.ok).toBe(true);
+    expect(!!r.el.flipV).toBe(false);
+    expect(setFlip(r.el, "v", "invalid").ok).toBe(false);
   });
 });
 

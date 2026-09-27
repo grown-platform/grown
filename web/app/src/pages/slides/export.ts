@@ -8,6 +8,7 @@ import {
   type SlideElement,
 } from "./model";
 import { flattenGroups } from "./groupOps";
+import { shapeLayersMarkup, shapeSvgGroup } from "./shapeRender";
 
 export type DeckFormat =
   | "pptx"
@@ -91,6 +92,8 @@ function elementHTML(el: SlideElement): string {
   }
   if (el.type === "line")
     return `<div style="position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${Math.max(el.strokeWidth || 2, 1)}px;background:${el.stroke};"></div>`;
+  if (el.type === "shape" || el.type === "connector")
+    return `<svg style="${box}overflow:visible;" width="${Math.max(el.w, 1)}" height="${Math.max(el.h, 1)}">${shapeLayersMarkup(el)}</svg>`;
   if (el.type === "image")
     return el.src
       ? `<img src="${el.src}" style="${box}object-fit:contain;"/>`
@@ -198,6 +201,8 @@ function slideToSVG(slide: Slide): string {
       parts.push(
         `<line x1="${el.x}" y1="${el.y}" x2="${el.x + el.w}" y2="${el.y}" stroke="${el.stroke || "#000"}" stroke-width="${el.strokeWidth || 2}"/>`,
       );
+    } else if (el.type === "shape" || el.type === "connector") {
+      parts.push(shapeSvgGroup(el));
     } else if (el.type === "image" && el.src) {
       parts.push(
         `<image href="${el.src}" x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" preserveAspectRatio="xMidYMid meet"/>`,

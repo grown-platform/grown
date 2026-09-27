@@ -170,7 +170,7 @@ export function pointInElement(el: SlideElement, px: number, py: number): boolea
   const p = normDeg(el.rotation)
     ? rotatePoint(px, py, cx, cy, -normDeg(el.rotation))
     : { x: px, y: py };
-  const slop = el.type === "line" ? Math.max(LINE_HIT_SLOP, (el.strokeWidth || 0) / 2) : 0;
+  const slop = el.type === "line" || el.type === "connector" ? Math.max(LINE_HIT_SLOP, (el.strokeWidth || 0) / 2) : 0;
   return (
     p.x >= el.x - slop &&
     p.x <= el.x + el.w + slop &&
