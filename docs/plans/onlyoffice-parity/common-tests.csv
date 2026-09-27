@@ -18,8 +18,8 @@ sdkjs-tests-v9.3.1/tests/visio/serialize/sax-serialize.js,7,visio,medium,web/app
 sdkjs-tests-v9.3.1/tests/visio/serialize/sax-serialize-files.js,0,visio,none,,CC6
 sdkjs-tests-v9.3.1/tests/visio/serialize/sax-serialize-files-many.js,0,visio,none,,CC6
 sdkjs-tests-v9.3.1/tests/visio/api/api.js,0,visio,none,,CC6
-sdkjs-tests-v9.3.1/tests/visio/api/api-test.js,0,visio,low,web/app/src/pages/whiteboard/vsdx.test.ts,CC6
-sdkjs-tests-v9.3.1/tests/visio/api/test-files.js,0,visio,low,web/app/src/pages/whiteboard/vsdx.test.ts,CC6
+sdkjs-tests-v9.3.1/tests/visio/api/api-test.js,2,visio,low,web/app/src/pages/whiteboard/vsdx.test.ts,CC6
+sdkjs-tests-v9.3.1/tests/visio/api/test-files.js,14,visio,low,web/app/src/pages/whiteboard/vsdx.test.ts,CC6
 sdkjs-tests-v9.3.1/tests/visio/draw-main/draw-main.js,0,visio,none,,CC6
 sdkjs-tests-v9.3.1/tests/visio/drawFile/draw-file.js,0,visio,none,,CC6
 sdkjs-tests-v9.3.1/tests/code-style/check.py,4,code-style,medium,.editorconfig;web/app/src/codeStyle.test.ts,CC1
