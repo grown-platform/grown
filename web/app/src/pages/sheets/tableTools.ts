@@ -117,12 +117,29 @@ export function saveTable(w: Wb, sheetId: string, oldName: string | null, next: 
     else out.push(next);
   }
   patchSheet(w, sheetId, { grownTables: out });
-  syncTableFilter(w, sheetId);
+  // The patch lands with FortuneSheet's next update: pass the new list on.
+  syncTableFilter(w, sheetId, out);
   invalidatePaint();
 }
 
+// Cells written here: their afterUpdateCell echoes are not user edits.
+const ownWrites = new Set<string>();
+
 function write(w: Wb, sheetId: string, writes: TableWrite[]) {
-  if (writes.length) writeCells(w, writes.map((x) => ({ r: x.r, c: x.c, cell: x.cell })), sheetId);
+  for (const x of writes) ownWrites.add(`${sheetId}:${x.r}:${x.c}`);
+  window.setTimeout(() => {
+    for (const x of writes) ownWrites.delete(`${sheetId}:${x.r}:${x.c}`);
+  }, 1000);
+  const sets = writes.filter((x) => x.cell);
+  if (sets.length) writeCells(w, sets.map((x) => ({ r: x.r, c: x.c, cell: x.cell })), sheetId);
+  for (const x of writes) {
+    if (x.cell) continue;
+    try {
+      w.clearCell(x.r, x.c, { id: sheetId });
+    } catch {
+      /* already empty */
+    }
+  }
 }
 
 function formulaWrites(w: Wb, edits: { sheetId: string; r: number; c: number; f: string }[]) {
@@ -138,11 +155,11 @@ function formulaWrites(w: Wb, edits: { sheetId: string; r: number; c: number; f:
 }
 
 /** The first row of a table's header filter: header row + data rows. */
-export function syncTableFilter(w: Wb, sheetId: string): void {
+export function syncTableFilter(w: Wb, sheetId: string, list?: TableModel[]): void {
   const sheet = sheetById(w, sheetId);
   const cur = currentSheet(w);
   if (!sheet || cur?.id !== sheetId) return; // filters apply to the active sheet
-  const tables = sheetTables(sheet);
+  const tables = list ?? sheetTables(sheet);
   const filter = sheetFilter(sheet);
   if (filter && !filter.table) return; // a plain sheet filter owns the buttons
   if (filter?.table) {
@@ -184,11 +201,16 @@ export function insertTable(w: Wb, range: CellRect, hasHeaders: boolean, style: 
   const f = sheetFilter(currentSheet(w));
   if (f && !f.table && f.range.r1 === res.table.ref.r1 && f.range.c1 === res.table.ref.c1) applyFilter(w, null);
   saveTable(w, sheet.id, null, res.table);
-  try {
-    w.setSelection([{ row: [res.table.ref.r1, res.table.ref.r2], column: [res.table.ref.c1, res.table.ref.c2] }], { id: sheet.id });
-  } catch {
-    /* the table is made either way */
-  }
+  // Outside the update in progress (FortuneSheet's setSelection mutates its
+  // argument, which fails on frozen state while React replays the update).
+  const ref = res.table.ref;
+  window.setTimeout(() => {
+    try {
+      w.setSelection([{ row: [ref.r1, ref.r2], column: [ref.c1, ref.c2] }], { id: sheet.id });
+    } catch {
+      /* the table is made either way */
+    }
+  }, 0);
   return null;
 }
 
@@ -311,10 +333,16 @@ export function selectTable(w: Wb, name: string, part: "data" | "all" = "data"):
   const rc = part === "data" ? dataRect(hit.table) : hit.table.ref;
   try {
     if (currentSheet(w)?.id !== hit.sheetId) w.activateSheet?.({ id: hit.sheetId });
-    w.setSelection([{ row: [rc.r1, rc.r2], column: [rc.c1, rc.c2] }], { id: hit.sheetId });
   } catch {
     /* ignore */
   }
+  window.setTimeout(() => {
+    try {
+      w.setSelection([{ row: [rc.r1, rc.r2], column: [rc.c1, rc.c2] }], { id: hit.sheetId });
+    } catch {
+      /* ignore */
+    }
+  }, 0);
 }
 
 // ---- following edits ------------------------------------------------------------------------------
@@ -332,6 +360,7 @@ export function afterTableEdit(w: Wb, r: number, c: number, newValue: any): void
   if (applying || !w) return;
   const sheet = currentSheet(w);
   if (!sheet?.id) return;
+  if (ownWrites.has(`${sheet.id}:${r}:${c}`)) return;
   const tables = sheetTables(sheet);
   const get = getter(sheet);
   const cell = get(r, c);
@@ -470,7 +499,9 @@ function paintCell(cell: any, look: CellLook, info: CellInfo, ctx: CanvasRenderi
   if (text) {
     const size = Math.max(6, Math.round((Number(cell?.fs) || 10) * (4 / 3) * zoom));
     ctx.fillStyle = cell?.fc || look.text || "#000000";
-    ctx.font = `${cell?.it ? "italic " : ""}${look.bold || cell?.bl ? "bold " : ""}${size}px ${cell?.ff || "Arial"}, sans-serif`;
+    // FortuneSheet's default face is the first of its font list (Times New Roman).
+    const ff = typeof cell?.ff === "string" && cell.ff && !/^\d+$/.test(cell.ff) ? `"${cell.ff.replace(/"/g, "")}"` : '"Times New Roman"';
+    ctx.font = `${cell?.it ? "italic " : ""}${look.bold || cell?.bl ? "bold " : ""}${size}px ${ff}, "Helvetica Neue", Helvetica, Arial, sans-serif`;
     const ht = String(cell?.ht ?? "1");
     ctx.textAlign = ht === "0" ? "center" : ht === "2" ? "right" : "left";
     ctx.textBaseline = "middle";

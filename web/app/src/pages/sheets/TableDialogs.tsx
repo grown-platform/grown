@@ -231,7 +231,10 @@ export function TablePropertiesDialog({ open, onClose, getWb, name }: { open: bo
       return;
     }
     setError("");
-    reload(next ?? current);
+    // The model patch lands with the grid's next update.
+    const target = next ?? current;
+    if (next) setCurrent(next);
+    window.setTimeout(() => reload(target), 80);
   };
   const flag = (label: string, checked: boolean, patch: any) => (
     <Checkbox size="sm" label={label} checked={checked} onChange={(e) => run(() => setTableOptions(getWb(), current!, { [patch]: e.target.checked }))} />

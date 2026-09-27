@@ -514,8 +514,11 @@ export function calculatedColumnFill(t: TableModel, r: number, c: number, formul
   const writes: TableWrite[] = [];
   for (let rr = d.r1; rr <= d.r2; rr++) {
     if (rr === r) continue;
-    writes.push({ r: rr, c, cell: { f: calcFormulaAt(t, base, rr) } });
+    const f = calcFormulaAt(t, base, rr);
+    if (get(rr, c)?.f === f) continue; // already there
+    writes.push({ r: rr, c, cell: { f } });
   }
+  if (!writes.length && cur === base) return null; // nothing changes
   const columns = t.columns.map((col, k) => (k === i ? { ...col, calculatedColumnFormula: base } : col));
   return { table: { ...t, columns }, writes };
 }

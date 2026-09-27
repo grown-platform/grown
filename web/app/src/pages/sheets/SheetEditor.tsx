@@ -476,12 +476,14 @@ export function SheetEditor({ user }: SheetEditorProps) {
       if (i < 0) return;
       e.preventDefault();
       e.stopPropagation();
-      try {
-        wb.setSelection([{ row: [f.range.r1, f.range.r1], column: [f.range.c1 + i, f.range.c1 + i] }], { id: sheet.id });
-      } catch {
-        /* the dialog falls back to the first column */
-      }
-      setTimeout(() => setFilterOpen(true), 0);
+      setTimeout(() => {
+        try {
+          wb.setSelection([{ row: [f.range.r1, f.range.r1], column: [f.range.c1 + i, f.range.c1 + i] }], { id: sheet.id });
+        } catch {
+          /* the dialog falls back to the first column */
+        }
+        setTimeout(() => setFilterOpen(true), 0);
+      }, 0);
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
