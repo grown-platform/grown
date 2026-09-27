@@ -53,6 +53,7 @@ import { clickSelect, marqueeMerge } from "./selection";
 import { moveElementBy } from "./deckOps";
 import { cropPan, cropResize, fullImageRect } from "./imageOps";
 import { backgroundCss } from "./slideProps";
+import { elementLabel } from "./a11y";
 import { isEmptyPlaceholder, placeholderPrompt } from "./layouts";
 import {
   cellTextEl,
@@ -116,6 +117,11 @@ interface SlideCanvasProps {
   cropId?: string | null;
   /** Header/footer boxes drawn over the slide (not selectable). */
   decorations?: SlideElement[];
+  /** Accessible name of the canvas and the id of its usage hint (M13). */
+  a11yLabel?: string;
+  describedBy?: string;
+  /** Show paragraph marks (¶) at the end of text paragraphs. */
+  showMarks?: boolean;
 }
 
 type Drag =
@@ -177,6 +183,9 @@ export function SlideCanvas({
   onTableSel,
   cropId,
   decorations,
+  a11yLabel,
+  describedBy,
+  showMarks,
 }: SlideCanvasProps) {
   const scale = canvasScale(width);
   const height = canvasHeight(width);
@@ -591,6 +600,17 @@ export function SlideCanvas({
     <Box
       ref={rootRef}
       data-testid="slide-canvas"
+      role="region"
+      aria-roledescription="slide"
+      aria-label={a11yLabel ?? "Slide editing canvas"}
+      aria-describedby={describedBy}
+      tabIndex={0}
+      data-marks={showMarks ? "" : undefined}
+      onPointerDownCapture={(e) => {
+        // Clicks give the canvas keyboard focus (not while typing in a box).
+        const t = e.target as HTMLElement;
+        if (!t.closest?.("[contenteditable=true], input, textarea")) rootRef.current?.focus({ preventScroll: true });
+      }}
       onPointerDown={onBackgroundPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -611,6 +631,18 @@ export function SlideCanvas({
         flexShrink: 0,
         userSelect: "none",
         touchAction: "none",
+        outline: "none",
+        "&:focus-visible": { outline: "3px solid", outlineColor: "focusVisible", outlineOffset: 3 },
+        "&[data-marks] [data-el-type=text] [data-para]::after, &[data-marks] [data-el-type=table] [data-para]::after": {
+          content: '"¶"',
+          opacity: 0.4,
+          fontWeight: 400,
+          fontStyle: "normal",
+          textDecoration: "none",
+        },
+        "@media (forced-colors: active)": {
+          "& [data-selected=true]": { outlineColor: "Highlight !important" },
+        },
       }}
     >
       <Box
@@ -648,6 +680,7 @@ export function SlideCanvas({
               data-el-id={el.id}
               data-el-type={el.type}
               data-selected={selected ? "true" : undefined}
+              {...(el.type === "text" || el.type === "table" ? {} : { role: el.type === "group" ? "group" : "img", "aria-label": elementLabel(el) })}
               style={{
                 ...style,
                 cursor: isEditing ? "text" : el.locked ? "default" : "move",
@@ -733,7 +766,7 @@ export function SlideCanvas({
                   </div>
                 ) : (
                   <div style={{ width: "100%", pointerEvents: "none" }}>
-                    <ShrinkFit on={el.autofit === "shrink"}>{renderSlideText(el)}</ShrinkFit>
+                    <ShrinkFit on={el.autofit === "shrink"}>{renderSlideText(el, undefined, undefined, { marks: showMarks })}</ShrinkFit>
                   </div>
                 )
               ) : el.type === "shape" || isConnector ? (

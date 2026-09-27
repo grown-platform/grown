@@ -101,3 +101,15 @@ describe("fitting", () => {
     expect(fitPresentWidth(1920, 900)).toBe(1600);
   });
 });
+
+describe("zoomStep", () => {
+  it("steps through the zoom stops from any scale", async () => {
+    const { zoomStep } = await import("./geometry");
+    expect(zoomStep(1, 1)).toBe(1.25);
+    expect(zoomStep(1, -1)).toBe(0.9);
+    expect(zoomStep(0.8, 1)).toBe(0.9); // a fitted 80 % canvas
+    expect(zoomStep(0.8, -1)).toBe(0.75);
+    expect(zoomStep(4, 1)).toBe(4);
+    expect(zoomStep(0.25, -1)).toBe(0.25);
+  });
+});
