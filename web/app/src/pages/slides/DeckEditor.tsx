@@ -57,7 +57,7 @@ import {
   createDeck,
   trashDeck,
   saveDeck,
-  collabURL,
+  notifyMentions,
   deckImageSrc,
   imageNaturalSize,
   uploadDeckAsset,
@@ -120,13 +120,12 @@ import { selectionAnnouncement, slideLabel } from "./a11y";
 import { deleteSlides, moveSlides, railAt, railClamp, railClick, railGo, railSelectAll, railTarget, type RailSel } from "./railOps";
 import { ShareDialog } from "./ShareDialog";
 import { DeckVersionHistory } from "../../components/versions/DeckVersionPreview";
-import { VERSION_RESTORED_MSG, isVersionRestoredMsg } from "../../components/versions/api";
+import { VERSION_RESTORED_MSG } from "../../components/versions/api";
 import { PPTX_ACCEPT, readPptxSlides, slidesForDeck } from "./pptx/importDeck";
 import {
   addNextSlide,
   insertSlideAfter,
   alignElements,
-  applyCollabOp,
   arrangeMany,
   centerOnPage,
   cycleSelection,
@@ -152,13 +151,11 @@ import {
   type SlidesResult,
   type StyleToggle,
 } from "./deckOps";
-import {
-  emptyHistory,
-  recordHistory,
-  redoHistory,
-  undoHistory,
-  type History,
-} from "./history";
+import { useDeckCollab } from "./useDeckCollab";
+import { CommentsPanel } from "./CommentsPanel";
+import { CanvasOverlay } from "./CanvasOverlay";
+import { applyCommentOp, commentsFor, type CommentOp, type MentionCandidate } from "./comments";
+import { searchDirectory } from "../../api/directory";
 import {
   editorKeyAction,
   isSaveKey,
@@ -262,13 +259,6 @@ import { linkLabel, parseSlideLink, resolveSlideLink } from "./links";
 import { replaceAll, replaceMatch, type FindOptions, type Match } from "./findReplace";
 import type { CaseMode } from "../../lib/textCase";
 
-interface Peer {
-  userId: string;
-  username: string;
-  color: string;
-  slideIdx: number;
-  ts: number;
-}
 
 /** Off-screen but read by screen readers. */
 const VISUALLY_HIDDEN = {
@@ -298,10 +288,6 @@ export function DeckEditor({ user }: { user: User }) {
   const [snapGuides, setSnapGuides] = useState(true);
   const [snapGrid, setSnapGrid] = useState(false);
   const [present, setPresent] = useState(false);
-  const [status, setStatus] = useState<"connecting" | "live" | "offline">(
-    "connecting",
-  );
-  const [peers, setPeers] = useState<Record<string, Peer>>({});
   const [canvasW, setCanvasW] = useState(720);
   const [editingText, setEditingText] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{
@@ -331,11 +317,28 @@ export function DeckEditor({ user }: { user: User }) {
   const copyPending = useRef(false);
   const pastePending = useRef(false);
 
-  const wsRef = useRef<WebSocket | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
   const docRef = useRef<DeckDoc | null>(null);
+  // Collab (M10): socket with catch-up, stale-op re-basing, presence, and
+  // undo that only undoes your own changes (useDeckCollab.ts).
+  const collab = useDeckCollab({
+    deckId: id,
+    docRef,
+    setDoc,
+    onRejected: () =>
+      setImportMsg("A collaborator changed that at the same time, so your edit was undone."),
+    onRestored: () => {
+      window.clearTimeout(saveTimer.current);
+      window.location.reload();
+    },
+  });
+  const { status, peers, setPeers } = collab;
+  // Comments (M10).
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [activeComment, setActiveComment] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState(0);
+  const mentionPool = useRef<MentionCandidate[] | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const hist = useRef<History>(emptyHistory());
   const fileInput = useRef<HTMLInputElement | null>(null);
   const pptxInput = useRef<HTMLInputElement | null>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -458,7 +461,7 @@ export function DeckEditor({ user }: { user: User }) {
         if (cancelled) return;
         setTitle(d.title);
         // A deck that was never saved starts from the title layout (M7).
-        setDoc(d.data ? parseDeck(d.data) : newLayoutDeck());
+        setDoc(collab.setSnapshot(d.data ? parseDeck(d.data) : newLayoutDeck()));
       })
       .catch(() => !cancelled && setDoc(parseDeck()));
     return () => {
@@ -477,29 +480,29 @@ export function DeckEditor({ user }: { user: User }) {
     return () => ro.disconnect();
   }, [doc]);
 
-  const broadcast = useCallback((msg: object) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-  }, []);
+  const broadcast = collab.broadcast;
+
+  // A save tells the hub which ops it covers, so its log can be trimmed.
+  const saveCurrent = useCallback(() => {
+    if (!docRef.current) return;
+    const seq = collab.saveMark();
+    saveDeck(id, JSON.stringify(docRef.current))
+      .then(() => collab.saved(seq))
+      .catch(() => {});
+  }, [id, collab]);
 
   const scheduleSave = useCallback(() => {
     window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      if (docRef.current)
-        saveDeck(id, JSON.stringify(docRef.current)).catch(() => {});
-    }, 1200);
-  }, [id]);
+    saveTimer.current = window.setTimeout(saveCurrent, 1200);
+  }, [saveCurrent]);
 
   // saveNow flushes the pending autosave immediately (Ctrl/Cmd+S).
   const saveNow = useCallback(() => {
     window.clearTimeout(saveTimer.current);
-    if (docRef.current)
-      saveDeck(id, JSON.stringify(docRef.current)).catch(() => {});
-  }, [id]);
+    saveCurrent();
+  }, [saveCurrent]);
 
-  const pushHistory = useCallback(() => {
-    hist.current = recordHistory(hist.current, docRef.current, Date.now());
-  }, []);
+  const pushHistory = collab.record;
 
   // ---- local mutations (update state + broadcast op + autosave) ----
   const applyToSlide = useCallback(
@@ -601,58 +604,13 @@ export function DeckEditor({ user }: { user: User }) {
     [broadcast, scheduleSave, pushHistory],
   );
 
-  // ---- WebSocket: ops + presence ----
-  useEffect(() => {
-    const ws = new WebSocket(collabURL(id));
-    wsRef.current = ws;
-    ws.onopen = () => setStatus("live");
-    ws.onclose = () => setStatus("offline");
-    ws.onerror = () => setStatus("offline");
-    ws.onmessage = (ev) => {
-      let m: {
-        t: string;
-        si?: string;
-        el?: SlideElement;
-        elId?: string;
-        els?: SlideElement[];
-        ids?: string[];
-        elements?: SlideElement[];
-        slides?: Slide[];
-        deck?: DeckDoc;
-        p?: Peer;
-      };
-      try {
-        m = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      if (isVersionRestoredMsg(m)) {
-        // A collaborator restored a version: reload so this tab's stale deck
-        // can't autosave over it.
-        window.clearTimeout(saveTimer.current);
-        window.location.reload();
-        return;
-      }
-      if (m.t === "slides" && m.slides) {
-        const next = m.slides;
-        setDoc((d) => ({ ...(d ?? {}), slides: next }));
-      } else if (m.t !== "presence" && m.t !== "slides") {
-        setDoc((d) => (d ? applyCollabOp(d, m) : d));
-      } else if (m.t === "presence" && m.p) {
-        const p = m.p;
-        setPeers((cur) => ({ ...cur, [p.userId]: { ...p, ts: Date.now() } }));
-      }
-    };
-    return () => {
-      ws.close();
-      wsRef.current = null;
-    };
-  }, [id]);
-
   // Presence heartbeat + prune.
   useEffect(() => {
     const send = () =>
-      broadcast({ t: "presence", p: { ...me, slideIdx: cur } });
+      broadcast({
+        t: "presence",
+        p: { ...me, slideIdx: cur, slideId: slide?.id, sel: selIds, editingText },
+      });
     send();
     const hb = window.setInterval(send, 4000);
     const prune = window.setInterval(() => {
@@ -662,7 +620,7 @@ export function DeckEditor({ user }: { user: User }) {
       window.clearInterval(hb);
       window.clearInterval(prune);
     };
-  }, [broadcast, cur]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [broadcast, cur, selIds.join(","), editingText]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- keyboard ----
   useEffect(() => {
@@ -1740,24 +1698,66 @@ export function DeckEditor({ user }: { user: User }) {
     insertEls(duplicateElements(clip.current));
   }
 
+  // Undo/redo only your own changes; collaborators' edits made since stay
+  // (collabSync.OwnHistory). Only the reverted changes are sent.
   function undo() {
-    const r = undoHistory(hist.current, docRef.current);
-    if (!r) return;
-    hist.current = r.history;
-    const d = r.doc;
+    const d = collab.undo();
+    if (!d) return;
     setDoc(d);
-    broadcast({ t: "deck", deck: d });
     scheduleSave();
     setCur((c) => Math.min(c, d.slides.length - 1));
   }
   function redo() {
-    const r = redoHistory(hist.current, docRef.current);
-    if (!r) return;
-    hist.current = r.history;
-    const d = r.doc;
+    const d = collab.redo();
+    if (!d) return;
     setDoc(d);
-    broadcast({ t: "deck", deck: d });
     scheduleSave();
+    setCur((c) => Math.min(c, d.slides.length - 1));
+  }
+
+  // ---- comments (M10) ----
+  function commentOp(op: CommentOp) {
+    setDoc((d) => (d ? applyCommentOp(d, op) : d));
+    broadcast(op);
+    scheduleSave();
+  }
+  function openCommentDraft() {
+    setCommentsOpen(true);
+    setCommentDraft((n) => n + 1);
+  }
+  // Ctrl+Alt+M: new comment. ?comment=<id> (a mention notification): open it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === "KeyM") {
+        e.preventDefault();
+        openCommentDraft();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (deepLinked.current || !doc) return;
+    deepLinked.current = true;
+    const cid = new URLSearchParams(window.location.search).get("comment");
+    const c = cid && doc.comments?.find((x) => x.id === cid);
+    if (!c) return;
+    setCommentsOpen(true);
+    setActiveComment(c.id);
+    const i = doc.slides.findIndex((s) => s.id === c.slideId);
+    if (i >= 0) setCur(i);
+  }, [doc]);
+  function mentionCandidates(): MentionCandidate[] {
+    if (!mentionPool.current) {
+      mentionPool.current = [];
+      searchDirectory("")
+        .then((ms) => {
+          mentionPool.current = ms.filter((m) => m.id !== user.id).map((m) => ({ id: m.id, name: m.name || m.email, email: m.email }));
+        })
+        .catch(() => {});
+    }
+    return mentionPool.current;
   }
 
   async function commitTitle() {
@@ -1795,6 +1795,8 @@ export function DeckEditor({ user }: { user: User }) {
     },
     share: () => setShareOpen(true),
     versionHistory: () => setHistoryOpen(true),
+    comment: openCommentDraft,
+    showComments: () => setCommentsOpen((v) => !v),
     download: async (fmt) => {
       try {
         if (docRef.current) await downloadDeck(docRef.current, title, fmt, cur);
@@ -2509,6 +2511,7 @@ export function DeckEditor({ user }: { user: User }) {
               {announce}
             </Box>
             {slide && (
+              <Box sx={{ position: "relative", flexShrink: 0 }}>
               <SlideCanvas
                 slide={slide}
                 a11yLabel={`Slide ${cur + 1} of ${slides.length}, editing canvas`}
@@ -2561,6 +2564,18 @@ export function DeckEditor({ user }: { user: User }) {
                     : null
                 }
               />
+              <CanvasOverlay
+                slide={slide}
+                width={canvasW}
+                peers={peerList}
+                comments={commentsFor(doc, "open", slide.id)}
+                activeComment={activeComment}
+                onMarker={(cid) => {
+                  setCommentsOpen(true);
+                  setActiveComment(cid);
+                }}
+              />
+              </Box>
             )}
           </Box>
 
@@ -2637,6 +2652,27 @@ export function DeckEditor({ user }: { user: User }) {
             </Box>
           )}
         </Box>
+        {commentsOpen && (
+          <CommentsPanel
+            doc={doc}
+            slide={slide}
+            selected={selIds.length === 1 ? selected : undefined}
+            me={{ id: user.id, name: me.username }}
+            canEdit
+            active={activeComment}
+            onActive={setActiveComment}
+            onOp={commentOp}
+            onGoto={(c) => {
+              const i = slides.findIndex((s) => s.id === c.slideId);
+              if (i >= 0) setCur(i);
+              setSel(c.elId && i >= 0 && slides[i].elements.some((e) => e.id === c.elId) ? [c.elId] : []);
+            }}
+            draftNonce={commentDraft}
+            candidates={mentionCandidates}
+            onMentions={(ids, c, text) => void notifyMentions(id, ids, c.id, text).catch(() => {})}
+            onClose={() => setCommentsOpen(false)}
+          />
+        )}
         {motionOpen && slide && (
           <MotionPanel
             slide={slide}

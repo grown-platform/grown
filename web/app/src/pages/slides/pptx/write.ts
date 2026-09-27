@@ -5,6 +5,7 @@
 // patch helpers work on XML strings so each one is unit-testable.
 
 import JSZip from "jszip";
+import { addCommentParts } from "./commentsXml";
 import type PptxGenJSType from "pptxgenjs";
 import {
   CANVAS_W,
@@ -399,6 +400,8 @@ export async function patchPptx(
     zip.file(path, out);
   }
   if (charts.length) await addChartParts(zip, charts, theme);
+  // Comment threads (M10).
+  await addCommentParts(zip, deck, SLIDE_W_IN);
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 }
 

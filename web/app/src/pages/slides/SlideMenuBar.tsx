@@ -29,6 +29,10 @@ export interface SlideActions {
   print: () => void;
   /** File ▸ Version history (opens the version history panel). */
   versionHistory?: () => void;
+  /** Insert ▸ Comment (M10). */
+  comment?: () => void;
+  /** View ▸ Comments: toggle the comments panel (M10). */
+  showComments?: () => void;
   undo: () => void;
   redo: () => void;
   insert: (type: ElementType) => void;
@@ -238,7 +242,9 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem disabled>Slides recordings</MenuItem>
           <MenuItem onClick={actions.openMotion}>Motion</MenuItem>
           <MenuItem onClick={actions.editTheme}>Theme builder</MenuItem>
-          <MenuItem disabled>Comments{arrow}</MenuItem>
+          <MenuItem disabled={!actions.showComments} onClick={actions.showComments}>
+            Comments
+          </MenuItem>
           <MenuItem disabled>Guides{arrow}</MenuItem>
           {section("Snap to")}
           <MenuItem sx={sub} onClick={actions.toggleSnapGuides}>
@@ -340,7 +346,9 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem onClick={actions.text.specialChars}>Special characters…</MenuItem>
           <MenuItem onClick={actions.openAnimations}>Animation</MenuItem>
           <MenuItem onClick={actions.setLink}>Link…{kbd("Ctrl+K")}</MenuItem>
-          <MenuItem disabled>Comment{kbd("Ctrl+Alt+M")}</MenuItem>
+          <MenuItem disabled={!actions.comment} onClick={actions.comment}>
+            Comment{kbd("Ctrl+Alt+M")}
+          </MenuItem>
           <ListDivider />
           <MenuItem onClick={actions.newSlide}>
             New slide{kbd("Ctrl+M")}
