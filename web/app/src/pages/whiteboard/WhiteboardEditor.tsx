@@ -34,6 +34,8 @@ import {
   collabURL,
 } from "./api";
 import { ShareDialog } from "./ShareDialog";
+import { BoardVersionHistory } from "../../components/versions/BoardVersionPreview";
+import { VERSION_RESTORED_MSG, isVersionRestoredMsg } from "../../components/versions/api";
 import {
   importVsdx,
   exportScene,
@@ -76,6 +78,7 @@ export function WhiteboardEditor({ user }: { user: User }) {
   );
   const [peers, setPeers] = useState<Record<string, Peer>>({});
   const [shareOpen, setShareOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const apiRef = useRef<any>(null);
   const [apiReady, setApiReady] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -130,6 +133,13 @@ export function WhiteboardEditor({ user }: { user: User }) {
       try {
         m = JSON.parse(ev.data);
       } catch {
+        return;
+      }
+      if (isVersionRestoredMsg(m)) {
+        // A collaborator restored a version: reload so this tab's stale scene
+        // can't autosave over it.
+        window.clearTimeout(saveTimer.current);
+        window.location.reload();
         return;
       }
       if (m.type === "scene" && apiRef.current) {
@@ -320,6 +330,10 @@ export function WhiteboardEditor({ user }: { user: User }) {
               <MenuItem onClick={() => runExport("excalidraw")}>
                 Download .excalidraw
               </MenuItem>
+              <ListDivider />
+              <MenuItem onClick={() => setHistoryOpen(true)}>
+                Version history
+              </MenuItem>
             </Menu>
           </Dropdown>
           <input
@@ -383,6 +397,26 @@ export function WhiteboardEditor({ user }: { user: User }) {
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         boardId={id}
+      />
+      <BoardVersionHistory
+        open={historyOpen}
+        docId={id}
+        onClose={() => setHistoryOpen(false)}
+        prepare={async () => {
+          window.clearTimeout(saveTimer.current);
+          const api = apiRef.current;
+          if (api)
+            await saveWhiteboard(
+              id,
+              JSON.stringify({ elements: api.getSceneElementsIncludingDeleted(), files: api.getFiles() }),
+            );
+        }}
+        onRestored={() => {
+          window.clearTimeout(saveTimer.current);
+          const ws = wsRef.current;
+          if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(VERSION_RESTORED_MSG));
+          window.location.reload();
+        }}
       />
     </Box>
   );

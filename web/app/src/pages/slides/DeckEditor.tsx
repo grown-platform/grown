@@ -103,6 +103,8 @@ import { SlideCanvas } from "./SlideCanvas";
 import { SlideMenuBar, type SlideActions } from "./SlideMenuBar";
 import { downloadDeck } from "./export";
 import { ShareDialog } from "./ShareDialog";
+import { DeckVersionHistory } from "../../components/versions/DeckVersionPreview";
+import { VERSION_RESTORED_MSG, isVersionRestoredMsg } from "../../components/versions/api";
 import { PPTX_ACCEPT, readPptxSlides } from "./pptx/importDeck";
 import {
   addNextSlide,
@@ -284,6 +286,7 @@ export function DeckEditor({ user }: { user: User }) {
   const [transitionOpen, setTransitionOpen] = useState(false);
   const [animationsOpen, setAnimationsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [presenter, setPresenter] = useState(false); // presenter view (notes) during Present mode
   const clip = useRef<SlideElement[] | null>(null);
   // Set by Ctrl+C / Ctrl+V keydowns so the copy/paste events that follow
@@ -515,6 +518,13 @@ export function DeckEditor({ user }: { user: User }) {
       try {
         m = JSON.parse(ev.data);
       } catch {
+        return;
+      }
+      if (isVersionRestoredMsg(m)) {
+        // A collaborator restored a version: reload so this tab's stale deck
+        // can't autosave over it.
+        window.clearTimeout(saveTimer.current);
+        window.location.reload();
         return;
       }
       if (m.t === "slides" && m.slides) {
@@ -1460,6 +1470,7 @@ export function DeckEditor({ user }: { user: User }) {
       navigate("/slides");
     },
     share: () => setShareOpen(true),
+    versionHistory: () => setHistoryOpen(true),
     download: async (fmt) => {
       try {
         if (docRef.current) await downloadDeck(docRef.current, title, fmt, cur);
@@ -2471,6 +2482,20 @@ export function DeckEditor({ user }: { user: User }) {
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         deckId={id}
+      />
+      <DeckVersionHistory
+        open={historyOpen}
+        docId={id}
+        onClose={() => setHistoryOpen(false)}
+        prepare={async () => {
+          window.clearTimeout(saveTimer.current);
+          if (docRef.current) await saveDeck(id, JSON.stringify(docRef.current));
+        }}
+        onRestored={() => {
+          window.clearTimeout(saveTimer.current);
+          broadcast(VERSION_RESTORED_MSG);
+          window.location.reload();
+        }}
       />
       <Snackbar
         open={importMsg !== null}

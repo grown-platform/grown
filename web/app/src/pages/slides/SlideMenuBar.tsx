@@ -27,6 +27,8 @@ export interface SlideActions {
   share: () => void;
   download: (fmt: DeckFormat) => void | Promise<void>;
   print: () => void;
+  /** File ▸ Version history (opens the version history panel). */
+  versionHistory?: () => void;
   undo: () => void;
   redo: () => void;
   insert: (type: ElementType) => void;
@@ -747,7 +749,15 @@ function FileMenu({ actions }: { actions: SlideActions }) {
         <MenuItem color="danger" onClick={actions.trash}>
           Move to trash
         </MenuItem>
-        <MenuItem disabled>Version history{arrow}</MenuItem>
+        <MenuItem
+          disabled={!actions.versionHistory}
+          onClick={() => {
+            close();
+            actions.versionHistory?.();
+          }}
+        >
+          Version history
+        </MenuItem>
         <MenuItem disabled>Make available offline</MenuItem>
         <ListDivider />
         <MenuItem disabled>Details</MenuItem>
