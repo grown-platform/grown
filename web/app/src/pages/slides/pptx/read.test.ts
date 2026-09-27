@@ -858,14 +858,15 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
         ],
       }),
     );
-    expect(r.deck.slides.map((s) => s.transition)).toEqual([
-      "fade",
-      "slide-left",
-      "slide-up",
-      "slide-right",
-      "fade",
-      undefined,
-      undefined,
+    expect(r.deck.slides.map((s) => [s.transition, s.transitionDir])).toEqual([
+      ["fade", undefined],
+      ["push", "l"],
+      ["cover", "u"],
+      ["push", "r"],
+      ["fade", undefined],
+      [undefined, undefined],
+      [undefined, undefined],
     ]);
+    expect(r.deck.slides[5]).not.toHaveProperty("transitionDur");
   });
 });

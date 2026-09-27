@@ -41,6 +41,13 @@ export interface SlideActions {
   duplicateSlide: () => void;
   deleteSlide: () => void;
   present: () => void;
+  /** Slideshow from the first slide / with the presenter window (M9). */
+  presentFromStart: () => void;
+  presenterView: () => void;
+  showLoop: boolean;
+  toggleLoop: () => void;
+  /** View ▸ Motion: the transition + animation panel (M8). */
+  openMotion: () => void;
   toggle: (attr: "bold" | "italic" | "underline" | "strike") => void;
   setList: (v: "bullet" | "number" | null) => void;
   setLineSpacing: (v: number) => void;
@@ -200,8 +207,13 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem onClick={actions.present}>
             Slideshow{kbd("Ctrl+F5")}
           </MenuItem>
+          <MenuItem onClick={actions.presentFromStart}>
+            Slideshow from beginning{kbd("F5")}
+          </MenuItem>
+          <MenuItem onClick={actions.presenterView}>Presenter view</MenuItem>
+          <MenuItem onClick={actions.toggleLoop}>{check(actions.showLoop)}Loop slideshow until Esc</MenuItem>
           <MenuItem disabled>Slides recordings</MenuItem>
-          <MenuItem disabled>Motion</MenuItem>
+          <MenuItem onClick={actions.openMotion}>Motion</MenuItem>
           <MenuItem onClick={actions.editTheme}>Theme builder</MenuItem>
           <MenuItem disabled>Comments{arrow}</MenuItem>
           <MenuItem disabled>Guides{arrow}</MenuItem>

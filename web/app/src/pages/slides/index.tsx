@@ -1,7 +1,8 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useParams } from "react-router-dom";
 import type { User } from "../../api/types";
 import { DeckList } from "./DeckList";
 import { DeckEditor } from "./DeckEditor";
+import { PresenterWindow } from "./SlideShow";
 
 interface SlidesAppProps {
   user: User;
@@ -14,6 +15,12 @@ export default function SlidesApp({ user }: SlidesAppProps) {
     <Routes>
       <Route path="/" element={<DeckList user={user} />} />
       <Route path="/d/:id" element={<DeckEditor user={user} />} />
+      <Route path="/d/:id/presenter" element={<PresenterRoute />} />
     </Routes>
   );
+}
+
+function PresenterRoute() {
+  const { id } = useParams();
+  return id ? <PresenterWindow deckId={id} /> : null;
 }

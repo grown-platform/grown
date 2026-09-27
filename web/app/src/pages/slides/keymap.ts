@@ -114,22 +114,76 @@ export function editorKeyAction(
   return null;
 }
 
-export type PresentKeyAction = "next" | "prev" | "togglePresenter" | "exit";
+export type PresentKeyAction =
+  | "next"
+  | "prev"
+  | "first"
+  | "last"
+  | "enter"
+  | "black"
+  | "white"
+  | "togglePresenter"
+  | "laser"
+  | "pen"
+  | "erase"
+  | "exit"
+  | { digit: string };
 
-/** presentKeyAction maps a key press during a slideshow to a navigation action. */
+/** presentKeyAction maps a key press during a slideshow to an action
+ *  (PowerPoint/OnlyOffice set): N, Right, Down, Space, PgDn → next; P,
+ *  Left, Up, PgUp, Backspace → previous; Home/End; digits then Enter → go
+ *  to slide; B or . → black screen; W or , → white screen; S → presenter
+ *  view; Ctrl+L laser pointer; Ctrl+P pen; E erases ink; Esc ends. */
 export function presentKeyAction(e: KeyInput): PresentKeyAction | null {
-  if (e.key === "ArrowRight" || e.key === " " || e.key === "ArrowDown")
-    return "next";
-  if (e.key === "ArrowLeft" || e.key === "ArrowUp") return "prev";
-  if (e.key.toLowerCase() === "s") return "togglePresenter";
-  if (e.key === "Escape") return "exit";
+  const mod = e.ctrlKey || e.metaKey;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (mod) {
+    if (e.altKey || e.shiftKey) return null;
+    if (k === "l") return "laser";
+    if (k === "p") return "pen";
+    return null;
+  }
+  if (e.altKey) return null;
+  switch (k) {
+    case "ArrowRight":
+    case "ArrowDown":
+    case " ":
+    case "PageDown":
+    case "n":
+      return "next";
+    case "ArrowLeft":
+    case "ArrowUp":
+    case "PageUp":
+    case "Backspace":
+    case "p":
+      return "prev";
+    case "Home":
+      return "first";
+    case "End":
+      return "last";
+    case "Enter":
+      return "enter";
+    case "b":
+    case ".":
+      return "black";
+    case "w":
+    case ",":
+      return "white";
+    case "s":
+      return "togglePresenter";
+    case "e":
+      return "erase";
+    case "Escape":
+      return "exit";
+  }
+  if (/^\d$/.test(k)) return { digit: k };
   return null;
 }
 
 /** presentKeyPreventsDefault reports whether the slideshow swallows the key
- *  (navigation keys would otherwise scroll the page). */
+ *  (navigation keys would otherwise scroll the page; Ctrl+P would print). */
 export function presentKeyPreventsDefault(a: PresentKeyAction | null): boolean {
-  return a === "next" || a === "prev";
+  return a !== null && a !== "exit";
 }
 
 // ---- text formatting (inside a text box, or on selected text boxes) ----
