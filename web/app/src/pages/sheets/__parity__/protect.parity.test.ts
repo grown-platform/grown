@@ -223,10 +223,10 @@ describe("sheets parity: protection", () => {
     // Nothing below may reach the history.
     const points = h.length;
     const rowsOfSelection: [number, number] = [3, MAX_ROWS - 1]; // E4:E1048576
-    for (const [i, axis] of ([["colWidth", "col"], ["showCols", "col"], ["hideCols", "col"], ["groupCols", "col"]] as const).entries()) {
+    for (const [i, [, axis]] of ([["colWidth", "col"], ["showCols", "col"], ["hideCols", "col"], ["groupCols", "col"]] as const).entries()) {
       expect(canChangeRowsCols(h.state, axis, 4, 4, ctx), `history_test_${i + 1}`).toBe(false);
     }
-    for (const [i, axis] of ([["rowHeight", "row"], ["showRows", "row"], ["hideRows", "row"], ["groupRows", "row"]] as const).entries()) {
+    for (const [i, [, axis]] of ([["rowHeight", "row"], ["showRows", "row"], ["hideRows", "row"], ["groupRows", "row"]] as const).entries()) {
       expect(canChangeRowsCols(h.state, axis, rowsOfSelection[0], rowsOfSelection[1], ctx), `history_test_${i + 5}`).toBe(false);
     }
     // Clear outline touches every row and column.

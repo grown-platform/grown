@@ -822,6 +822,55 @@ func shiftNamedRangeList(v interface{}, wb FsWorkbook, op StructureOp) interface
 	return out
 }
 
+// shiftRectList shifts a JSON list of rects, dropping deleted ones.
+func shiftRectList(v interface{}, op StructureOp) []interface{} {
+	list, _ := v.([]interface{})
+	out := []interface{}{}
+	for _, x := range list {
+		m, ok := x.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if r, ok := ShiftRect(rectFromMap(m), op); ok {
+			out = append(out, rectToMap(r))
+		}
+	}
+	return out
+}
+
+// shiftProtectionModel moves protected ranges and a protected sheet's
+// editable ranges with the cells (protection.ts shiftProtection).
+func shiftProtectionModel(v interface{}, op StructureOp) interface{} {
+	p, ok := v.(map[string]interface{})
+	if !ok {
+		return v
+	}
+	next := copyMap(p)
+	if sp, ok := p["sheet"].(map[string]interface{}); ok {
+		ns := copyMap(sp)
+		ns["except"] = shiftRectList(sp["except"], op)
+		next["sheet"] = ns
+	}
+	if ranges, ok := p["ranges"].([]interface{}); ok {
+		kept := []interface{}{}
+		for _, x := range ranges {
+			pr, ok := x.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			rects := shiftRectList(pr["ranges"], op)
+			if len(rects) == 0 {
+				continue
+			}
+			np := copyMap(pr)
+			np["ranges"] = rects
+			kept = append(kept, np)
+		}
+		next["ranges"] = kept
+	}
+	return next
+}
+
 func extraValue(sh *FsSheet, key string) (interface{}, bool) {
 	raw, ok := sh.Extra[key]
 	if !ok {
@@ -1182,6 +1231,9 @@ func ApplyStructureOp(wb FsWorkbook, op StructureOp) error {
 		}
 		if v, ok := extraValue(sh, "grownFilter"); ok {
 			setExtra(sh, "grownFilter", shiftFilterState(v, op))
+		}
+		if v, ok := extraValue(sh, "grownProtection"); ok {
+			setExtra(sh, "grownProtection", shiftProtectionModel(v, op))
 		}
 		var merges []mergeRect
 		if v, ok := extraValue(sh, "config"); ok {

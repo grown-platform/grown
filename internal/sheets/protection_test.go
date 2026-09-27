@@ -318,3 +318,21 @@ func TestSaveSheetEnforcesProtection(t *testing.T) {
 		t.Errorf("owner edit of B2 = %v, want 1", v)
 	}
 }
+
+func TestStructureOpShiftsProtection(t *testing.T) {
+	out, err := ApplyStructureOpJSON(protWorkbook, StructureOp{Kind: "insert", Axis: "row", Sheet: "Sheet1", Index: 0, Count: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := WorkbookProtection(out, "Sheet1")
+	if len(p.Ranges) != 1 || p.Ranges[0].Ranges[0] != (ProtRect{R1: 3, C1: 1, R2: 4, C2: 1}) {
+		t.Errorf("protected range after inserting two rows = %+v", p.Ranges)
+	}
+	out, err = ApplyStructureOpJSON(protWorkbook, StructureOp{Kind: "delete", Axis: "col", Sheet: "Sheet1", Index: 1, Count: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := WorkbookProtection(out, "Sheet1"); len(p.Ranges) != 0 {
+		t.Errorf("a range whose column was deleted survived: %+v", p.Ranges)
+	}
+}
