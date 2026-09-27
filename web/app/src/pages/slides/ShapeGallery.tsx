@@ -2,7 +2,7 @@ import { Box, Typography } from "@mui/joy";
 import { PRESET_GALLERY } from "./presetDefs";
 import { toolFromGalleryId } from "./drawTool";
 import { shapeLayersMarkup } from "./shapeRender";
-import type { SlideElement } from "./model";
+import { presetDefaultSize, type SlideElement } from "./model";
 
 const TW = 26;
 const TH = 20;
@@ -14,21 +14,26 @@ function thumb(id: string): string {
   if (hit) return hit;
   const t = toolFromGalleryId(id);
   const line = t.kind === "connector";
+  // Keep the preset's default proportions inside the thumbnail cell.
+  const d = presetDefaultSize(t.preset);
+  const k = line ? 1 : Math.min(TW / d.w, TH / d.h);
+  const w = line ? TW : d.w * k;
+  const h = line ? TH : d.h * k;
   const el: SlideElement = {
     id,
     type: line ? "connector" : "shape",
     preset: t.preset,
     x: 0,
     y: 0,
-    w: TW,
-    h: TH,
+    w,
+    h,
     fill: "#e8f0fe",
     stroke: "#5f6368",
     strokeWidth: line ? 1.2 : 1,
     ...(t.headEnd ? { headEnd: t.headEnd } : {}),
     ...(t.tailEnd ? { tailEnd: t.tailEnd } : {}),
   };
-  const markup = shapeLayersMarkup(el);
+  const markup = `<g transform="translate(${(TW - w) / 2} ${(TH - h) / 2})">${shapeLayersMarkup(el)}</g>`;
   thumbCache.set(id, markup);
   return markup;
 }
