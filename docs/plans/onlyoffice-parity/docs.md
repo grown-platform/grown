@@ -1714,6 +1714,159 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   hyphenation of caps (no CSS switch), line-number suppression per
   paragraph, page borders on one side / art borders.
 
+### 6.15 M12 status (compare, combine, version diff, mail merge)
+
+* **Diff engine** (`docs/diff/`, pure ProseMirror): a document is flattened
+  into one token stream (`stream.ts`) — inline tokens (a word, a run of
+  spaces, a punctuation mark or an inline object; or single characters),
+  a paragraph-mark token after every textblock (carrying its type and
+  attributes) and block tokens for leaf blocks — each paragraph and block
+  remembering its container path (lists, items, tables, rows, cells,
+  quotes). `align.ts` aligns paragraphs first (Myers over paragraph hashes:
+  text plus container shape), then diffs each run of changed paragraphs as
+  one stream, so splits and merges come out as paragraph-mark changes. At
+  character level the region is aligned word by word first and only a
+  replaced run of words sharing at least half its characters is refined by
+  character ("Hello" → "Hlo" is "el" deleted; a rewritten phrase stays one
+  replacement). `myers.ts` is Myers' O(ND) diff (prefix/suffix trimmed, a
+  `maxD` cap that falls back to replace-all) plus clean-ups: single edits
+  slide over identical text to join their neighbours
+  (diff-match-patch's merge pass), and an equality shorter than the edits on
+  both sides folds into them (never across a paragraph mark or block).
+  `build.ts` turns the merged script into a document with Track changes v2
+  records (§6.11): `insertion` / `deletion` marks, `formatChange` with the
+  old formatting for text whose marks differ, `paraChange` for paragraph
+  marks on one side only and `propsChange` for a changed type or
+  properties; a run of edits by one author is one change id (a replace).
+  Containers are rebuilt from the paths; a deleted paragraph's containers
+  are mapped onto the new document's (via the equal paragraphs they share),
+  so a removed list item stays inside its list and a removed table row
+  inside its table. A paragraph mark added or removed at the very end of
+  the document is recorded on the mark before it (Word), so accept / reject
+  give back exactly the two texts.
+  * `compareDocs(original, revised, {author, date, granularity})`: the
+    revised document with the differences tracked (rejecting everything
+    gives the original). Tracked changes in either input are accepted first,
+    as Word does (`keepExisting` keeps them).
+  * `combineDocs(original, revA, revB?, {authorA, authorB})`: each copy is
+    aligned with the original; per original token, deleted by either copy →
+    deleted (A's author first), else equal with the formatting / paragraph
+    properties of whichever copy changed them; insertions at each gap from
+    A then B, an identical insertion in both once. Revisions the copies
+    already carry are kept with their own authors (OnlyOffice / Word
+    combine).
+  * `diffVersions(older, newer, {show: "changes" | "deleted"})`: character
+    level; "deleted" shows only the recovered deletions (inserted text plain,
+    no formatting records), OnlyOffice's deleted-text recovery.
+* **Compare / Combine UI** (`CompareDialog.tsx`, Tools ▸ Compare
+  documents… / Combine documents…, command palette): the other side is a
+  Grown doc (read live: a short-lived y-websocket connection to its room,
+  `yXmlFragmentToProseMirrorRootNode`; access is the hub's), a saved
+  version of this doc (HTML snapshot) or an uploaded .docx (M6 reader,
+  author from `docProps/core.xml`). Compare: "this document is the original
+  / revised document", word or character level, author label (default: the
+  other doc's latest version author, the .docx's last-modified-by, or you).
+  Combine: this doc is the original, one required and one optional revised
+  copy, one author per copy. The result opens as a new Grown doc through
+  the docx seed channel (`diff/sources.ts:createDocFrom`, styles and lists
+  of this doc plus an uploaded .docx's), where the review panel, popover,
+  accept / reject, display modes and the DOCX writer treat the changes like
+  typed suggestions. `DocEditor` now takes a docx seed only into an empty
+  editor (an in-app navigation first ran the effect with the previous
+  document's editor and dropped the seed).
+* **Version history** (`VersionHistory.tsx`): on a selected version a
+  "Highlight changes" switch shows the preview as a diff — since the
+  previous version (by that version's author and date) or up to the current
+  document — with "All changes" or "Deleted text only", a summary
+  (insertions / deletions / formatting) and "Open as document" (the diff as
+  a new doc with real tracked changes).
+* **Mail merge** (`mailmerge.ts` pure, `MailMergePanel.tsx`, Tools ▸ Mail
+  merge…): a non-modal panel with Word's four steps.
+  1. Data source: a Grown Sheet (sheet, tab, optional A1 range, default the
+     used range; FortuneSheet `celldata` or `data`, display text `m`, rich
+     text runs) or a CSV upload (comma / semicolon / tab by the header,
+     quoted fields via Sheets' `parseDelimited`). The first row names the
+     fields (blank / repeated names become "Column N"); empty rows are
+     skipped. The source is remembered in the doc's `mailMerge` Yjs map
+     (sheet id / tab / range, or up to 2,000 CSV rows).
+  2. Merge fields: M8 `field` nodes with `MERGEFIELD Name` /
+     `MERGEFIELD "First name"` and the «Name» placeholder as their result;
+     names match case-insensitively and `\* Upper|Lower|Caps|FirstCap`
+     apply. MERGEFIELD joined the DOCX reader's kept fields, so merge
+     fields survive a .docx round trip (Word's own templates open with
+     working fields). Fields missing from the data are listed.
+  3. Preview: a switch and ‹ n of N › write the record's values into the
+     fields' results (not undoable, like F9) and the placeholders back when
+     the panel closes.
+  4. Finish: All / Current / From–to; merge to a new Grown doc (one copy per
+     record, a page break between — the section break arrives with M9), to
+     .docx (direct writer, this doc's styles, header and footer) or to PDF
+     (the pandoc convert endpoint), or to e-mail: a To field (guessed from an
+     "email" column or all-address values), a subject with «Field»
+     placeholders, a plain-text body (the merged document's paragraphs), a
+     confirmation step naming the count and first recipients, at most
+     `MAIL_MERGE_LIMIT` (50) messages per run, sent one by one through
+     `POST /api/v1/mail/messages` as the signed-in user; a 401/403 from
+     the mail service stops the run and says so; failures are listed.
+* **Tests**: `oo/combine-documents.test.ts` — mergeDocuments.js' two
+  QUnit cases ("Test word document combine", "Test symbol document
+  combine") re-expressed with Grown-authored fixtures (11 word-level
+  cases: empty documents, replaced words, a copy's own insertions and
+  partial-word revisions kept, merging at the start, different origins,
+  text with different reviews, letter-level deletions; 4 symbol-level
+  cases: CJK run, digits, letters added at a word's end, an insertion with
+  formatting; plus a formatting-only difference), each also checking that
+  accepting everything gives the copy's text. `oo/version-diff.test.ts` —
+  10 of deleted-text-recovery.js' 17 cases as version diffs (the editor
+  edits the document the way the upstream case does, then the earlier
+  state is diffed against the current one): one letter, a selected block,
+  a backspaced block, blocks left→right and right→left, a deleted
+  paragraph, Complex 1 and 2 (with "undo recovered text" as accepting the
+  recovered deletions), Split run (the bold run split around the recovered
+  text) and "not shown within one revision". The five "Going back and
+  forth through history" cases and Complex 3 / 4 step through
+  per-keystroke history points, which snapshot versions don't have: n/a.
+  Grown-native: `diff.test.ts` (19: Myers and clean-ups, word replace with
+  author/date and change grouping, paragraph add / remove / split / merge
+  with accept and reject round trips, formatting and paragraph-property
+  changes, lists, tables, existing changes accepted, identical documents,
+  rewrites as one replacement, 3-way combine, duplicate insertions, kept
+  revisions, deleted-only and full version diffs, word-first character
+  refinement), `mail-merge.test.ts` (7: sheet used range / range / 2D data
+  / rich text, CSV, instructions and case switches, insert + preview +
+  merge + page breaks + plain text, field formatting, DOCX round trip).
+  Playwright `web/e2e/docs-compare.spec.ts`: compare two Grown docs from
+  Tools ▸ Compare (result doc with "quick" deleted, "slow", " jumps" and an
+  added paragraph inserted by the chosen author, the review panel, accept
+  all gives the revised text); mail merge from a Grown Sheet (fields,
+  typing between them, preview record 1 and 2, merge to a new doc with two
+  letters, one page break and no fields left); version history
+  "Highlight changes" between two saved versions. All 24 docs e2e pass on
+  :8095.
+* **Not yet**: a URL source for Compare; compare settings beyond the level
+  (Word's "compare formatting / case / whitespace / tables / headers"
+  toggles), headers / footers and footnote bodies in diffs (only the body
+  is compared), comments and bookmarks carried into combine results
+  (OnlyOffice merges them; Grown drops comment marks from recovered text),
+  deleted block objects (images, page breaks — M5 doesn't track them, so a
+  compare shows them only on the revised side), tracked table structure
+  (a removed row comes back as a row of deleted text), moves (a move is a
+  deletion plus an insertion), a merge-field "rules" set (IF / NEXT /
+  SKIP), HTML e-mail bodies and attachments (the mail API sends plain
+  text; a .docx/.pdf attachment per record would need uploads first), and
+  one section per record (page breaks until M9's sections).
+* **Semantic differences**:
+
+| Case | OnlyOffice / Word | Grown | Status |
+|---|---|---|---|
+| mergeDocuments: order of a replaced word | Insertion before deletion | Deletion before insertion (Word's compare order) | grown-variant |
+| mergeDocuments: formatting differences | Applied from the copy untracked | Tracked formatting changes by the combining author | grown-variant |
+| mergeDocuments: symbol-level "hello" → "hellok k" | Word-shaped: "hellok k" added, "hello" removed | "k k" added (character diff after the shared word) | grown-variant |
+| mergeDocuments: bookmarks and comments | Merged into the result | Not carried (comment threads live on the server) | Not yet |
+| deleted-text recovery: Split run | " how" (what was selected) | "how " — a snapshot diff can't tell the two apart; like diff-match-patch the later one | grown-variant |
+| deleted-text recovery: history navigation | Per-keystroke history points | Saved versions only | n/a |
+| Compare with tracked changes in the inputs | Word warns and treats them as accepted | Accepted first (combine keeps them) | Note only |
+
 ### Known flaky e2e (as of 2026-09-26)
 
 - ~~`web/e2e/docs/oo-shortcuts.spec.ts` "Check sending event to interface"

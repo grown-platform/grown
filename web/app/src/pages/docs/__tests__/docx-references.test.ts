@@ -115,9 +115,10 @@ describe("docx references: reader", () => {
   });
 
   it("keeps unknown fields as text and header fields as their result", async () => {
-    const { editor } = await importBody(`<w:p>${r("Merge: ")}${fld('MERGEFIELD Name \\* MERGEFORMAT', "«Name»")}</w:p>`);
+    // (MERGEFIELD was the example here; since M12 mail merge keeps it.)
+    const { editor } = await importBody(`<w:p>${r("Company: ")}${fld('DOCPROPERTY Company \\* MERGEFORMAT', "Acme")}</w:p>`);
     expect(nodesOf(editor.getJSON(), "field")).toEqual([]);
-    expect(paragraphTexts(editor)).toEqual(["Merge: «Name»"]);
+    expect(paragraphTexts(editor)).toEqual(["Company: Acme"]);
   });
 
   it("keeps locked fields locked (w:fldLock) both ways", async () => {

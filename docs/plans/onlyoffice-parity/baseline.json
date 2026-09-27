@@ -58,7 +58,7 @@
       "passing": null
     },
     "docs/compare-merge": {
-      "ported": 0,
+      "ported": 2,
       "passing": null
     },
     "docs/content-controls": {
@@ -94,7 +94,7 @@
       "passing": null
     },
     "docs/history-internals": {
-      "ported": 0,
+      "ported": 10,
       "passing": null
     },
     "docs/hyphenation": {
@@ -114,7 +114,7 @@
       "passing": null
     },
     "docs/pagination": {
-      "ported": 6,
+      "ported": 0,
       "passing": null
     },
     "docs/paragraph": {
@@ -134,7 +134,7 @@
       "passing": null
     },
     "docs/sections": {
-      "ported": 1,
+      "ported": 0,
       "passing": null
     },
     "docs/shortcuts": {
@@ -186,7 +186,7 @@
       "passing": null
     },
     "sheets/editing": {
-      "ported": 68,
+      "ported": 85,
       "passing": null
     },
     "sheets/engine-internal": {
@@ -198,7 +198,7 @@
       "passing": null
     },
     "sheets/formulas": {
-      "ported": 533,
+      "ported": 633,
       "passing": null
     },
     "sheets/harness": {
@@ -222,7 +222,7 @@
       "passing": null
     },
     "sheets/shortcuts": {
-      "ported": 0,
+      "ported": 23,
       "passing": null
     },
     "sheets/sort-filter": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2049,
+    "ported": 2194,
     "passing": null
   }
 }
