@@ -38,7 +38,10 @@ async function fill(page: Page, id: string, nth: number, text: string) {
   await saved;
 }
 
-test("oo:slide/shortcuts/shortcuts.js#Check actions for objects with placeholder (theme, layout, skip slide, reload)", async ({ page }) => {
+// The same OnlyOffice case as layouts.test.ts (one tag, so the parity
+// count isn't inflated); this e2e also covers theme, layout, skip slide and
+// reload.
+test("oo:slide/shortcuts/shortcuts.js#Check actions for objects with placeholder", async ({ page }) => {
   const id = await createDeck(page.request, "e2e slides theme");
   try {
     await page.goto(`${BASE_URL}/slides/d/${id}`);
