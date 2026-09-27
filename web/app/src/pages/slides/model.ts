@@ -9,6 +9,8 @@
 // helpers keep one signature; importers of a pptx and the pptx writer read
 // the size from the deck itself.
 
+import type { AxisConfig, ChartType, SeriesConfig } from "../sheets/chartData";
+
 export const CANVAS_W = 960;
 /** Default logical slide height (16:9). */
 export const DEFAULT_CANVAS_H = 540;
@@ -36,7 +38,11 @@ export type ElementType =
   | "shape"
   /** A line/connector preset between two points (the box corners, with
    *  flipH/flipV choosing the diagonal), with optional arrowheads. */
-  | "connector";
+  | "connector"
+  /** A chart drawn from its own small data sheet (`chart`, M11). */
+  | "chart"
+  /** A video or audio clip (`media`, M11). */
+  | "media";
 
 /** pptx `a:prstDash` values Grown can write (pptxgenjs `dashType`). */
 export type DashStyle =
@@ -337,6 +343,78 @@ export interface ImageCrop {
   b: number;
 }
 
+/**
+ * A chart on a slide (M11): the Sheets chart options (see
+ * pages/sheets/chartData.ts `ChartConfig`, minus the workbook range/anchor)
+ * plus its own data sheet. `data[0]` holds the series names (`data[0][0]` is
+ * unused), column 0 the category labels; cells are strings as typed.
+ * Series colours default to the deck theme's accents.
+ */
+export interface SlideChart {
+  type: ChartType;
+  title: string;
+  data: string[][];
+  /** Series run across rows (row 0 = categories, column 0 = series names). */
+  seriesInRows?: boolean;
+  stacking?: "none" | "stacked" | "percent";
+  legend?: "right" | "left" | "top" | "bottom" | "none";
+  dataLabels?: boolean;
+  scatterLines?: boolean;
+  holeSize?: number;
+  /** Per-series options (colour, combo type, secondary axis, trendline). */
+  series?: SeriesConfig[];
+  xAxis?: AxisConfig;
+  yAxis?: AxisConfig;
+  y2Axis?: AxisConfig;
+  totals?: number[];
+}
+
+/**
+ * A video or audio clip (M11). `src` is a deck asset URL (uploaded), a
+ * direct media URL, or — with `embed` — a YouTube/Vimeo page whose player
+ * is framed in the slideshow.
+ */
+export interface SlideMedia {
+  kind: "video" | "audio";
+  src: string;
+  /** Online player: the provider and its video id. */
+  embed?: { provider: "youtube" | "vimeo"; id: string };
+  /** Poster frame (an image URL): thumbnails, the editor and exports. */
+  poster?: string;
+  /** MIME type of an uploaded or direct file. */
+  mime?: string;
+  /** Start when the slide appears (else on click). */
+  autoplay?: boolean;
+  loop?: boolean;
+  /** Start muted (videos). */
+  muted?: boolean;
+}
+
+/** Text warp presets drawn with an SVG textPath (pptx `a:prstTxWarp`). */
+export type TextWarp = "textArchUp" | "textArchDown" | "textCircle" | "textWave1" | "textSlantUp" | "textSlantDown";
+
+/** Word art text effects on a text box (M11; pptx run `a:ln`, `a:gradFill`,
+ *  `a:effectLst`, and `a:bodyPr/a:prstTxWarp`). */
+export interface WordArt {
+  /** Text outline. */
+  outline?: { color: string; width: number };
+  /** Gradient text fill: two stops and a linear angle (0 = left→right). */
+  gradient?: { from: string; to: string; angle: number };
+  /** Drop shadow behind the letters. */
+  shadow?: { color: string; blur: number; dist: number; dir: number };
+  /** Soft glow around the letters. */
+  glow?: { color: string; radius: number };
+  warp?: TextWarp;
+}
+
+/** SmartArt-lite (M11): the layout and outline a diagram group was built
+ *  from, so the outline panel can rebuild it. */
+export interface DiagramSpec {
+  layout: "list" | "process" | "cycle" | "hierarchy" | "pyramid" | "venn";
+  /** One item per line; leading tabs/2-space indents give the level. */
+  outline: string;
+}
+
 /** Default text inset (px) on every side when `insets` is absent. */
 export const DEFAULT_INSET = 4;
 /** One list/indent level: 0.4375 in (11.1125 mm, OnlyOffice/PowerPoint). */
@@ -406,6 +484,14 @@ export interface SlideElement {
   alt?: string;
   // table
   table?: TableData;
+  /** Chart (type "chart", M11). */
+  chart?: SlideChart;
+  /** Video/audio (type "media", M11). */
+  media?: SlideMedia;
+  /** Word art effects (text boxes, M11). */
+  wordArt?: WordArt;
+  /** A SmartArt-lite diagram (on the group that draws it, M11). */
+  diagram?: DiagramSpec;
   /** Hyperlink target; clickable in present mode and exports. */
   url?: string;
   /** Clockwise rotation in degrees (absent/0 = upright). */
@@ -725,6 +811,28 @@ export function newElement(type: ElementType, src?: string): SlideElement {
       return newShape("rect");
     case "connector":
       return newConnector("straightConnector1");
+    case "chart":
+      return {
+        ...base,
+        type,
+        x: 240,
+        y: 120,
+        w: 480,
+        h: 300,
+        chart: {
+          type: "column",
+          title: "",
+          data: [
+            ["", "Series 1", "Series 2", "Series 3"],
+            ["Category 1", "4.3", "2.4", "2"],
+            ["Category 2", "2.5", "4.4", "2"],
+            ["Category 3", "3.5", "1.8", "3"],
+            ["Category 4", "4.5", "2.8", "5"],
+          ],
+        },
+      };
+    case "media":
+      return { ...base, type, x: 240, y: 110, w: 480, h: 270, media: { kind: "video", src: src || "" } };
   }
 }
 

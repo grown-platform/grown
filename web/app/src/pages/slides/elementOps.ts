@@ -18,6 +18,8 @@ const TYPE_LABEL: Record<ElementType, string> = {
   group: "Group",
   shape: "Shape",
   connector: "Connector",
+  chart: "Chart",
+  media: "Media",
 };
 
 /** allElements lists every element on the slide, group members included. */
