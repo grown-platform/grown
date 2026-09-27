@@ -357,7 +357,7 @@
       {"input": "1 999/12", "expect": {"format": "# ??/??", "value": 84.25}},
       {"input": "1 999/134", "expect": {"format": "# ??/??", "value": 8.455223880597014}}
     ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=General", "checks": [
+    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat (one run per cell format)", "checks": [
       {"input": "1234.56", "cellFormat": "General", "expect": {"format": "General", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "General", "expect": {"format": "General", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "General", "expect": {"format": "#,##0", "value": 1234}},
@@ -387,9 +387,7 @@
       {"input": "0 1/100", "cellFormat": "General", "expect": {"format": "# ??/??", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "General", "expect": {"format": "# ??/??", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "General", "expect": {"format": "m/d/yyyy", "value": 38357}},
-      {"input": "text", "cellFormat": "General", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=0.00", "checks": [
+      {"input": "text", "cellFormat": "General", "expect": null},
       {"input": "1234.56", "cellFormat": "0.00", "expect": {"format": "0.00", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "0.00", "expect": {"format": "0.00", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "0.00", "expect": {"format": "0.00", "value": 1234}},
@@ -419,9 +417,7 @@
       {"input": "0 1/100", "cellFormat": "0.00", "expect": {"format": "0.00", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "0.00", "expect": {"format": "0.00", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "0.00", "expect": {"format": "0.00", "value": 38357}},
-      {"input": "text", "cellFormat": "0.00", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=0.0000", "checks": [
+      {"input": "text", "cellFormat": "0.00", "expect": null},
       {"input": "1234.56", "cellFormat": "0.0000", "expect": {"format": "0.0000", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "0.0000", "expect": {"format": "0.0000", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "0.0000", "expect": {"format": "0.0000", "value": 1234}},
@@ -451,9 +447,7 @@
       {"input": "0 1/100", "cellFormat": "0.0000", "expect": {"format": "0.0000", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "0.0000", "expect": {"format": "0.0000", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "0.0000", "expect": {"format": "0.0000", "value": 38357}},
-      {"input": "text", "cellFormat": "0.0000", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=0.00E+00", "checks": [
+      {"input": "text", "cellFormat": "0.0000", "expect": null},
       {"input": "1234.56", "cellFormat": "0.00E+00", "expect": {"format": "0.00E+00", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "0.00E+00", "expect": {"format": "0.00E+00", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "0.00E+00", "expect": {"format": "0.00E+00", "value": 1234}},
@@ -483,9 +477,7 @@
       {"input": "0 1/100", "cellFormat": "0.00E+00", "expect": {"format": "# ??/??", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "0.00E+00", "expect": {"format": "# ??/??", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "0.00E+00", "expect": {"format": "m/d/yyyy", "value": 38357}},
-      {"input": "text", "cellFormat": "0.00E+00", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=0.0000E+00", "checks": [
+      {"input": "text", "cellFormat": "0.00E+00", "expect": null},
       {"input": "1234.56", "cellFormat": "0.0000E+00", "expect": {"format": "0.0000E+00", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "0.0000E+00", "expect": {"format": "0.0000E+00", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "0.0000E+00", "expect": {"format": "0.0000E+00", "value": 1234}},
@@ -515,9 +507,7 @@
       {"input": "0 1/100", "cellFormat": "0.0000E+00", "expect": {"format": "0.0000E+00", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "0.0000E+00", "expect": {"format": "0.0000E+00", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "0.0000E+00", "expect": {"format": "0.0000E+00", "value": 38357}},
-      {"input": "text", "cellFormat": "0.0000E+00", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=$#,##0.00", "checks": [
+      {"input": "text", "cellFormat": "0.0000E+00", "expect": null},
       {"input": "1234.56", "cellFormat": "$#,##0.00", "expect": {"format": "$#,##0.00", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "$#,##0.00", "expect": {"format": "$#,##0.00", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "$#,##0.00", "expect": {"format": "$#,##0.00", "value": 1234}},
@@ -547,9 +537,7 @@
       {"input": "0 1/100", "cellFormat": "$#,##0.00", "expect": {"format": "$#,##0.00", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "$#,##0.00", "expect": {"format": "$#,##0.00", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "$#,##0.00", "expect": {"format": "$#,##0.00", "value": 38357}},
-      {"input": "text", "cellFormat": "$#,##0.00", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=$#,##0.0000", "checks": [
+      {"input": "text", "cellFormat": "$#,##0.00", "expect": null},
       {"input": "1234.56", "cellFormat": "$#,##0.0000", "expect": {"format": "$#,##0.0000", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "$#,##0.0000", "expect": {"format": "$#,##0.0000", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "$#,##0.0000", "expect": {"format": "$#,##0.0000", "value": 1234}},
@@ -579,9 +567,7 @@
       {"input": "0 1/100", "cellFormat": "$#,##0.0000", "expect": {"format": "$#,##0.0000", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "$#,##0.0000", "expect": {"format": "$#,##0.0000", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "$#,##0.0000", "expect": {"format": "$#,##0.0000", "value": 38357}},
-      {"input": "text", "cellFormat": "$#,##0.0000", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "checks": [
+      {"input": "text", "cellFormat": "$#,##0.0000", "expect": null},
       {"input": "1234.56", "cellFormat": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "expect": {"format": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "expect": {"format": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "expect": {"format": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "value": 1234}},
@@ -611,9 +597,7 @@
       {"input": "0 1/100", "cellFormat": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "expect": {"format": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "expect": {"format": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "expect": {"format": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "value": 38357}},
-      {"input": "text", "cellFormat": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "checks": [
+      {"input": "text", "cellFormat": "_($ #,##0.00_);_($ (#,##0.00);_($ \"-\"??_);_(@_)", "expect": null},
       {"input": "1234.56", "cellFormat": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "expect": {"format": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "expect": {"format": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "expect": {"format": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "value": 1234}},
@@ -643,9 +627,7 @@
       {"input": "0 1/100", "cellFormat": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "expect": {"format": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "expect": {"format": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "expect": {"format": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "value": 38357}},
-      {"input": "text", "cellFormat": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=m/d/yyyy", "checks": [
+      {"input": "text", "cellFormat": "_($ #,##0.0000_);_($ (#,##0.0000);_($ \"-\"????_);_(@_)", "expect": null},
       {"input": "1234.56", "cellFormat": "m/d/yyyy", "expect": {"format": "m/d/yyyy", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "m/d/yyyy", "expect": {"format": "m/d/yyyy", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "m/d/yyyy", "expect": {"format": "m/d/yyyy", "value": 1234}},
@@ -675,9 +657,7 @@
       {"input": "0 1/100", "cellFormat": "m/d/yyyy", "expect": {"format": "# ??/??", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "m/d/yyyy", "expect": {"format": "# ??/??", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "m/d/yyyy", "expect": {"format": "m/d/yyyy", "value": 38357}},
-      {"input": "text", "cellFormat": "m/d/yyyy", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=[$-F800]dddd, mmmm dd, yyyy", "checks": [
+      {"input": "text", "cellFormat": "m/d/yyyy", "expect": null},
       {"input": "1234.56", "cellFormat": "[$-F800]dddd, mmmm dd, yyyy", "expect": {"format": "[$-F800]dddd, mmmm dd, yyyy", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "[$-F800]dddd, mmmm dd, yyyy", "expect": {"format": "[$-F800]dddd, mmmm dd, yyyy", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "[$-F800]dddd, mmmm dd, yyyy", "expect": {"format": "[$-F800]dddd, mmmm dd, yyyy", "value": 1234}},
@@ -707,9 +687,7 @@
       {"input": "0 1/100", "cellFormat": "[$-F800]dddd, mmmm dd, yyyy", "expect": {"format": "[$-F800]dddd, mmmm dd, yyyy", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "[$-F800]dddd, mmmm dd, yyyy", "expect": {"format": "[$-F800]dddd, mmmm dd, yyyy", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "[$-F800]dddd, mmmm dd, yyyy", "expect": {"format": "[$-F800]dddd, mmmm dd, yyyy", "value": 38357}},
-      {"input": "text", "cellFormat": "[$-F800]dddd, mmmm dd, yyyy", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=d-mmm", "checks": [
+      {"input": "text", "cellFormat": "[$-F800]dddd, mmmm dd, yyyy", "expect": null},
       {"input": "1234.56", "cellFormat": "d-mmm", "expect": {"format": "d-mmm", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "d-mmm", "expect": {"format": "d-mmm", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "d-mmm", "expect": {"format": "d-mmm", "value": 1234}},
@@ -739,9 +717,7 @@
       {"input": "0 1/100", "cellFormat": "d-mmm", "expect": {"format": "# ??/??", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "d-mmm", "expect": {"format": "# ??/??", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "d-mmm", "expect": {"format": "d-mmm", "value": 38357}},
-      {"input": "text", "cellFormat": "d-mmm", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=[$-F400]h:mm:ss AM/PM", "checks": [
+      {"input": "text", "cellFormat": "d-mmm", "expect": null},
       {"input": "1234.56", "cellFormat": "[$-F400]h:mm:ss AM/PM", "expect": {"format": "[$-F400]h:mm:ss AM/PM", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "[$-F400]h:mm:ss AM/PM", "expect": {"format": "[$-F400]h:mm:ss AM/PM", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "[$-F400]h:mm:ss AM/PM", "expect": {"format": "[$-F400]h:mm:ss AM/PM", "value": 1234}},
@@ -771,9 +747,7 @@
       {"input": "0 1/100", "cellFormat": "[$-F400]h:mm:ss AM/PM", "expect": {"format": "[$-F400]h:mm:ss AM/PM", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "[$-F400]h:mm:ss AM/PM", "expect": {"format": "[$-F400]h:mm:ss AM/PM", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "[$-F400]h:mm:ss AM/PM", "expect": {"format": "[$-F400]h:mm:ss AM/PM", "value": 38357}},
-      {"input": "text", "cellFormat": "[$-F400]h:mm:ss AM/PM", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=h:mm:ss", "checks": [
+      {"input": "text", "cellFormat": "[$-F400]h:mm:ss AM/PM", "expect": null},
       {"input": "1234.56", "cellFormat": "h:mm:ss", "expect": {"format": "h:mm:ss", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "h:mm:ss", "expect": {"format": "h:mm:ss", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "h:mm:ss", "expect": {"format": "h:mm:ss", "value": 1234}},
@@ -803,9 +777,7 @@
       {"input": "0 1/100", "cellFormat": "h:mm:ss", "expect": {"format": "# ??/??", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "h:mm:ss", "expect": {"format": "# ??/??", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "h:mm:ss", "expect": {"format": "m/d/yyyy", "value": 38357}},
-      {"input": "text", "cellFormat": "h:mm:ss", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=[hh]:mm", "checks": [
+      {"input": "text", "cellFormat": "h:mm:ss", "expect": null},
       {"input": "1234.56", "cellFormat": "[hh]:mm", "expect": {"format": "[hh]:mm", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "[hh]:mm", "expect": {"format": "[hh]:mm", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "[hh]:mm", "expect": {"format": "[hh]:mm", "value": 1234}},
@@ -835,9 +807,7 @@
       {"input": "0 1/100", "cellFormat": "[hh]:mm", "expect": {"format": "[hh]:mm", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "[hh]:mm", "expect": {"format": "[hh]:mm", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "[hh]:mm", "expect": {"format": "[hh]:mm", "value": 38357}},
-      {"input": "text", "cellFormat": "[hh]:mm", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=0.00%", "checks": [
+      {"input": "text", "cellFormat": "[hh]:mm", "expect": null},
       {"input": "1234.56", "cellFormat": "0.00%", "expect": {"format": "0.00%", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "0.00%", "expect": {"format": "0.00%", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "0.00%", "expect": {"format": "0.00%", "value": 1234}},
@@ -867,9 +837,7 @@
       {"input": "0 1/100", "cellFormat": "0.00%", "expect": {"format": "# ??/??", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "0.00%", "expect": {"format": "# ??/??", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "0.00%", "expect": {"format": "m/d/yyyy", "value": 38357}},
-      {"input": "text", "cellFormat": "0.00%", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=0.0000%", "checks": [
+      {"input": "text", "cellFormat": "0.00%", "expect": null},
       {"input": "1234.56", "cellFormat": "0.0000%", "expect": {"format": "0.0000%", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "0.0000%", "expect": {"format": "0.0000%", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "0.0000%", "expect": {"format": "0.0000%", "value": 1234}},
@@ -899,9 +867,7 @@
       {"input": "0 1/100", "cellFormat": "0.0000%", "expect": {"format": "0.0000%", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "0.0000%", "expect": {"format": "0.0000%", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "0.0000%", "expect": {"format": "0.0000%", "value": 38357}},
-      {"input": "text", "cellFormat": "0.0000%", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=# ?/?", "checks": [
+      {"input": "text", "cellFormat": "0.0000%", "expect": null},
       {"input": "1234.56", "cellFormat": "# ?/?", "expect": {"format": "# ?/?", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "# ?/?", "expect": {"format": "# ?/?", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "# ?/?", "expect": {"format": "# ?/?", "value": 1234}},
@@ -931,9 +897,7 @@
       {"input": "0 1/100", "cellFormat": "# ?/?", "expect": {"format": "# ?/?", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "# ?/?", "expect": {"format": "# ?/?", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "# ?/?", "expect": {"format": "m/d/yyyy", "value": 38357}},
-      {"input": "text", "cellFormat": "# ?/?", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=# ??/??", "checks": [
+      {"input": "text", "cellFormat": "# ?/?", "expect": null},
       {"input": "1234.56", "cellFormat": "# ??/??", "expect": {"format": "# ??/??", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "# ??/??", "expect": {"format": "# ??/??", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "# ??/??", "expect": {"format": "# ??/??", "value": 1234}},
@@ -963,9 +927,7 @@
       {"input": "0 1/100", "cellFormat": "# ??/??", "expect": {"format": "# ??/??", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "# ??/??", "expect": {"format": "# ??/??", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "# ??/??", "expect": {"format": "m/d/yyyy", "value": 38357}},
-      {"input": "text", "cellFormat": "# ??/??", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=# ?/2", "checks": [
+      {"input": "text", "cellFormat": "# ??/??", "expect": null},
       {"input": "1234.56", "cellFormat": "# ?/2", "expect": {"format": "# ?/2", "value": 1234.56}},
       {"input": "1234.5678", "cellFormat": "# ?/2", "expect": {"format": "# ?/2", "value": 1234.5678}},
       {"input": "1,234", "cellFormat": "# ?/2", "expect": {"format": "# ?/2", "value": 1234}},
@@ -995,9 +957,7 @@
       {"input": "0 1/100", "cellFormat": "# ?/2", "expect": {"format": "# ?/2", "value": 0.01}},
       {"input": "1 150/200", "cellFormat": "# ?/2", "expect": {"format": "# ?/2", "value": 1.75}},
       {"input": "1/5/5", "cellFormat": "# ?/2", "expect": {"format": "# ?/2", "value": 38357}},
-      {"input": "text", "cellFormat": "# ?/2", "expect": null}
-    ]},
-    {"id": "oo:cell/spreadsheet-calculation/NumFormatParse.js#formatRecognition: cellFormat=@", "checks": [
+      {"input": "text", "cellFormat": "# ?/2", "expect": null},
       {"input": "1234.56", "cellFormat": "@", "expect": null},
       {"input": "1234.5678", "cellFormat": "@", "expect": null},
       {"input": "1,234", "cellFormat": "@", "expect": null},
