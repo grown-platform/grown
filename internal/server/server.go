@@ -206,6 +206,9 @@ type Config struct {
 	// read-only org-scoped COUNT/SUM queries. When nil analytics returns 503.
 	Pool *pgxpool.Pool
 
+	// SlidesBlobs stores deck image assets (shared with Drive). Nil keeps
+	// Slides on inline data: URLs.
+	SlidesBlobs *drive.Blobs
 	// AvatarRepo / AvatarBlobs back per-user avatar upload + serving.
 	AvatarRepo  *useravatar.Repository
 	AvatarBlobs *drive.Blobs
@@ -438,6 +441,7 @@ func New(cfg Config) *Server {
 
 	var slidesSvc *slides.Service
 	var slidesHub *slides.Hub
+	var slidesAssets *slides.Assets
 	if cfg.SlidesRepo != nil {
 		slidesSvc = slides.NewService(cfg.SlidesRepo)
 		if cfg.SharingRepo != nil {
@@ -445,6 +449,12 @@ func New(cfg Config) *Server {
 			slidesSvc = slidesSvc.WithSharing(cfg.SharingRepo)
 		}
 		slidesHub = slides.NewHub()
+		if cfg.SlidesBlobs != nil {
+			repo, grants := cfg.SlidesRepo, cfg.SharingRepo
+			slidesAssets = slides.NewAssets(cfg.SlidesBlobs, func(r *http.Request, id string) (bool, bool) {
+				return slidesDeckAccess(r, id, repo, grants)
+			})
+		}
 		grownv1.RegisterSlidesServiceServer(grpcSrv, slidesSvc)
 	}
 
@@ -902,6 +912,10 @@ func New(cfg Config) *Server {
 			if slidesHub != nil {
 				if id, ok := slidesConnectID(r.URL.Path); ok {
 					serveSlidesWS(w, r, id, cfg.SlidesRepo, cfg.SharingRepo, slidesHub)
+					return
+				}
+				if _, _, ok := slides.AssetPath(r.URL.Path); ok && slidesAssets != nil {
+					slidesAssets.ServeHTTP(w, r)
 					return
 				}
 			}
@@ -2677,33 +2691,40 @@ func slidesConnectID(path string) (string, bool) {
 // deck (full edit), or (2) a per-user grantee (object_grants), whose role
 // determines read/write (cross-org). Viewers/commenters connect read-only.
 func serveSlidesWS(w http.ResponseWriter, r *http.Request, id string, repo *slides.Repository, grants *sharing.Repository, hub *slides.Hub) {
-	ctx := r.Context()
-	u, ok := auth.UserFromContext(ctx)
-	if !ok {
+	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	authorized, canWrite := false, false
-	if org, ok := auth.OrgFromContext(ctx); ok {
-		if _, err := repo.Get(ctx, org.ID, id); err == nil {
-			authorized, canWrite = true, true
-		}
-	}
-	// Per-user grant path: a non-org-member with a grant may connect; only an
-	// editor grant gets write.
-	if !authorized && grants != nil {
-		if role, ok, err := grants.RoleFor(ctx, u.ID, sharing.TypeSlidesDeck, id); err == nil && ok {
-			if _, derr := repo.GetByID(ctx, id); derr == nil {
-				authorized = true
-				canWrite = sharing.CanWrite(role)
-			}
-		}
-	}
+	authorized, canWrite := slidesDeckAccess(r, id, repo, grants)
 	if !authorized {
 		http.Error(w, "deck not found", http.StatusNotFound)
 		return
 	}
 	hub.Serve(w, r, id, canWrite)
+}
+
+// slidesDeckAccess reports read/write access to a deck: an org member whose
+// org owns it (read+write), or a per-user grantee (write only with an
+// editor grant). Shared by the collab WebSocket and the deck assets.
+func slidesDeckAccess(r *http.Request, id string, repo *slides.Repository, grants *sharing.Repository) (read, write bool) {
+	ctx := r.Context()
+	u, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return false, false
+	}
+	if org, ok := auth.OrgFromContext(ctx); ok {
+		if _, err := repo.Get(ctx, org.ID, id); err == nil {
+			return true, true
+		}
+	}
+	if grants != nil {
+		if role, ok, err := grants.RoleFor(ctx, u.ID, sharing.TypeSlidesDeck, id); err == nil && ok {
+			if _, derr := repo.GetByID(ctx, id); derr == nil {
+				return true, sharing.CanWrite(role)
+			}
+		}
+	}
+	return false, false
 }
 
 // whiteboardsConnectID returns the board id from /api/v1/whiteboards/d/{id}/connect.
