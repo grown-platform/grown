@@ -10,7 +10,7 @@
       "passing": null
     },
     "common/common-charts": {
-      "ported": 0,
+      "ported": 6,
       "passing": null
     },
     "common/common-color": {
@@ -26,11 +26,11 @@
       "passing": null
     },
     "common/conversion": {
-      "ported": 59,
+      "ported": 65,
       "passing": null
     },
     "common/forms": {
-      "ported": 18,
+      "ported": 19,
       "passing": null
     },
     "common/pdf": {
@@ -94,7 +94,7 @@
       "passing": null
     },
     "docs/history-internals": {
-      "ported": 10,
+      "ported": 17,
       "passing": null
     },
     "docs/hyphenation": {
@@ -170,7 +170,7 @@
       "passing": null
     },
     "sheets/charts": {
-      "ported": 16,
+      "ported": 22,
       "passing": null
     },
     "sheets/conditional formatting": {
@@ -238,7 +238,7 @@
       "passing": null
     },
     "slides/chartex": {
-      "ported": 0,
+      "ported": 6,
       "passing": null
     },
     "slides/clipboard paste callback for plain text": {
@@ -294,7 +294,7 @@
       "passing": null
     },
     "slides/shapes": {
-      "ported": 9,
+      "ported": 10,
       "passing": null
     },
     "slides/shortcuts": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2253,
+    "ported": 2274,
     "passing": null
   }
 }
