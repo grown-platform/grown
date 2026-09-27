@@ -150,6 +150,57 @@ export interface ElementAnimation {
   order: number;
 }
 
+/** Character formatting that a text run can override (absent = inherit the
+ *  element-level value). */
+export interface RunStyle {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  /** Superscript / subscript (pptx `a:rPr@baseline`). */
+  baseline?: "super" | "sub";
+  fontSize?: number;
+  fontFamily?: string;
+  color?: string;
+  /** Hyperlink: an http/mailto URL, or a slide target (`#slide:first`,
+   *  `#slide:last`, `#slide:next`, `#slide:prev`, `#slide:<slideId>`). */
+  url?: string;
+}
+
+/**
+ * A run of text with one formatting (Flagged exception F1). `text` may hold
+ * "\n" (paragraph break) and "\v" (line break inside a paragraph, Shift+Enter);
+ * the runs of an element concatenate to exactly `SlideElement.text`.
+ */
+export interface TextRun extends RunStyle {
+  text: string;
+}
+
+export type TextAlign = "left" | "center" | "right" | "justify";
+
+/** Per-paragraph properties, indexed by paragraph (text split on "\n"). */
+export interface ParaProps {
+  /** List / outline level 0–8 (pptx `a:pPr@lvl`); indents by INDENT_STEP. */
+  level?: number;
+  /** Paragraph alignment overriding the element's `align`. */
+  align?: TextAlign;
+}
+
+/** Text insets (padding) in logical px; pptx `a:bodyPr` l/t/r/bIns. */
+export interface TextInsets {
+  l: number;
+  t: number;
+  r: number;
+  b: number;
+}
+
+/** Default text inset (px) on every side when `insets` is absent. */
+export const DEFAULT_INSET = 4;
+/** One list/indent level: 0.4375 in (11.1125 mm, OnlyOffice/PowerPoint). */
+export const INDENT_STEP = 42;
+/** Maximum paragraph level (pptx allows lvl 0–8). */
+export const MAX_LEVEL = 8;
+
 export interface SlideElement {
   id: string;
   type: ElementType;
@@ -165,12 +216,33 @@ export interface SlideElement {
   italic?: boolean;
   underline?: boolean;
   strike?: boolean;
+  /** Superscript / subscript for the whole element (runs may override). */
+  baseline?: "super" | "sub";
   /** Bullet / numbered list rendering for a multi-line text element. */
   list?: "bullet" | "number";
+  /** Bullet character (list "bullet", default by level) or pptx `buAutoNum`
+   *  scheme (list "number", e.g. "alphaLcPeriod"). */
+  bulletStyle?: string;
+  /** Mixed formatting inside the box (F1). When present, the runs'
+   *  texts concatenate to `text`, which stays the plain-text mirror. */
+  runs?: TextRun[];
+  /** Per-paragraph level/alignment (index = paragraph of `text`). */
+  paras?: ParaProps[];
+  /** Space before / after each paragraph, in logical px. */
+  spaceBefore?: number;
+  spaceAfter?: number;
+  /** Text insets (px); absent = DEFAULT_INSET on every side. */
+  insets?: TextInsets;
+  /** Shrink text on overflow (pptx `a:normAutofit`). */
+  autofit?: "shrink";
+  /** Right-to-left paragraphs (pptx `a:pPr@rtl`). */
+  rtl?: boolean;
+  /** Vertical text: rotated 90° (`vert`) or 270° (`vert270`), pptx `bodyPr@vert`. */
+  vert?: "vert" | "vert270";
   /** Line height multiplier for text (default 1.2). */
   lineSpacing?: number;
   color?: string;
-  align?: "left" | "center" | "right";
+  align?: TextAlign;
   valign?: "top" | "middle" | "bottom";
   // shape
   fill?: string;

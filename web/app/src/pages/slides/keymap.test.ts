@@ -7,6 +7,8 @@ import {
   nudgeDelta,
   presentKeyAction,
   presentKeyPreventsDefault,
+  textKeyAction,
+  type KeyInput,
 } from "./keymap";
 
 const sel = { hasSelection: true };
@@ -125,17 +127,69 @@ describe("editorKeyAction: Ctrl/Cmd shortcuts", () => {
 });
 
 describe("OnlyOffice parity", () => {
-  // SKIP: Ctrl+B/I/U/5 and Ctrl+./Ctrl+, are not bound (Bold/Italic/Underline
-  // are toolbar/menu toggles on the whole element), there is no super/subscript,
-  // and no Ctrl+]/Ctrl+[ font-size ladder (font size is a free number input).
-  it.skip("oo:slide/shortcuts/shortcuts.js#Check text property change", () => {
-    expect(editorKeyAction({ key: "b", ctrlKey: true }, sel)).not.toBeNull();
+  // Ctrl+B/I/U/5/./, and Ctrl+] / Ctrl+[ map to text actions, inside a text
+  // box and on selected text boxes (textOps.test checks what they do).
+  it("oo:slide/shortcuts/shortcuts.js#Check text property change", () => {
+    for (const editing of [true, false]) {
+      const t = (key: string, extra: Partial<KeyInput> = {}) => textKeyAction({ key, ctrlKey: true, ...extra }, { editing });
+      expect(t("b")).toEqual({ type: "toggle", key: "bold" });
+      expect(t("i")).toEqual({ type: "toggle", key: "italic" });
+      expect(t("u")).toEqual({ type: "toggle", key: "underline" });
+      expect(t("5")).toEqual({ type: "toggle", key: "strike" });
+      expect(t(".")).toEqual({ type: "toggle", key: "super" });
+      expect(t(",")).toEqual({ type: "toggle", key: "sub" });
+      expect(t("]")).toEqual({ type: "fontStep", dir: 1 });
+      expect(t("[")).toEqual({ type: "fontStep", dir: -1 });
+      expect(t(">", { shiftKey: true, code: "Period" })).toEqual({ type: "fontStep", dir: 1 });
+      expect(t("<", { shiftKey: true, code: "Comma" })).toEqual({ type: "fontStep", dir: -1 });
+    }
+    expect(textKeyAction({ key: "%", altKey: true, shiftKey: true, code: "Digit5" }, { editing: false })).toEqual({
+      type: "toggle",
+      key: "strike",
+    });
   });
 
-  // SKIP: no justify alignment, no Ctrl+E/J/L/R bindings, no indent levels and
-  // no Ctrl+Shift+L bullet shortcut (bullets are a menu toggle).
-  it.skip("oo:slide/shortcuts/shortcuts.js#Check paragraph property change", () => {
-    expect(editorKeyAction({ key: "e", ctrlKey: true }, sel)).not.toBeNull();
+  // Ctrl+E/J/L/R align; Ctrl+Shift+L bullets; Tab / Shift+Tab indent (the
+  // editor indents list paragraphs, see TextEditor).
+  it("oo:slide/shortcuts/shortcuts.js#Check paragraph property change", () => {
+    const t = (key: string, extra: Partial<KeyInput> = {}) => textKeyAction({ key, ctrlKey: true, ...extra }, { editing: true });
+    expect(t("e")).toEqual({ type: "align", align: "center" });
+    expect(t("j")).toEqual({ type: "align", align: "justify" });
+    expect(t("l")).toEqual({ type: "align", align: "left" });
+    expect(t("r")).toEqual({ type: "align", align: "right" });
+    expect(t("L", { shiftKey: true, code: "KeyL" })).toEqual({ type: "list", list: "bullet" });
+    expect(t("*", { shiftKey: true, code: "Digit8" })).toEqual({ type: "list", list: "bullet" });
+    expect(t("&", { shiftKey: true, code: "Digit7" })).toEqual({ type: "list", list: "number" });
+    expect(textKeyAction({ key: "Tab" }, { editing: true })).toEqual({ type: "tab", dir: 1 });
+    expect(textKeyAction({ key: "Tab", shiftKey: true }, { editing: true })).toEqual({ type: "tab", dir: -1 });
+    // Outside a text box Tab still cycles the selection.
+    expect(textKeyAction({ key: "Tab" }, { editing: false })).toBeNull();
+  });
+
+  // Ctrl+Shift+Space → NBSP, Ctrl+Alt+E → €, Ctrl+Alt+- → en dash (while
+  // editing text; a plain Space types itself). e2e: slides-text.spec.ts.
+  it("oo:slide/shortcuts/shortcuts.js#Check add various characters", () => {
+    const e = { editing: true };
+    expect(textKeyAction({ key: " ", code: "Space", ctrlKey: true, shiftKey: true }, e)).toEqual({ type: "insert", text: "\u00a0" });
+    expect(textKeyAction({ key: "€", code: "KeyE", ctrlKey: true, altKey: true }, e)).toEqual({ type: "insert", text: "\u20ac" });
+    expect(textKeyAction({ key: "-", code: "Minus", ctrlKey: true, altKey: true }, e)).toEqual({ type: "insert", text: "\u2013" });
+    expect(textKeyAction({ key: " ", code: "Space" }, e)).toBeNull();
+    // Not while a box is merely selected.
+    expect(textKeyAction({ key: "-", code: "Minus", ctrlKey: true, altKey: true }, { editing: false })).toBeNull();
+  });
+
+  it("text actions: paint format, clear, link, Esc", () => {
+    const t = (key: string, extra: Partial<KeyInput> = {}, hasFormat = false) =>
+      textKeyAction({ key, ctrlKey: true, ...extra }, { editing: false, hasFormat });
+    expect(t("C", { shiftKey: true, code: "KeyC" })).toEqual({ type: "copyFormat" });
+    expect(t("V", { shiftKey: true, code: "KeyV" })).toBeNull();
+    expect(t("V", { shiftKey: true, code: "KeyV" }, true)).toEqual({ type: "pasteFormat" });
+    expect(t(" ")).toEqual({ type: "clearFormat" });
+    expect(t("\\")).toEqual({ type: "clearFormat" });
+    expect(t("k")).toEqual({ type: "link" });
+    expect(t("c")).toBeNull();
+    expect(textKeyAction({ key: "Escape" }, { editing: true })).toEqual({ type: "exitEdit" });
+    expect(textKeyAction({ key: "Escape" }, { editing: false })).toBeNull();
   });
 
   // Ctrl/Cmd+S flushes the debounced autosave immediately; the editor checks

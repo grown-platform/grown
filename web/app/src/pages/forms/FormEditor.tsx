@@ -48,6 +48,15 @@ import {
   SUBMIT_TARGET,
 } from "./types";
 import { blankQuestion, blankSection, FORMS_ACCENT } from "./helpers";
+import {
+  AfterSectionBar,
+  GridEditor,
+  RatingEditor,
+  TextFormatEditor,
+  ValidationEditor,
+  defaultValidation,
+  validationKinds,
+} from "./EditorParts";
 
 interface Props {
   user: User;
@@ -261,23 +270,55 @@ export default function FormEditor({ user }: Props) {
           type === "multiple_choice" ||
           type === "checkboxes" ||
           type === "dropdown";
+        const isGrid =
+          type === "multiple_choice_grid" || type === "checkbox_grid";
+        const wasGrid =
+          q.type === "multiple_choice_grid" || q.type === "checkbox_grid";
         return {
           ...q,
           type,
           options: needsOptions
-            ? q.options.length
+            ? q.options.length && !wasGrid
               ? q.options
               : ["Option 1"]
-            : [],
-          scale_min: type === "linear_scale" ? q.scale_min || 1 : q.scale_min,
-          scale_max: type === "linear_scale" ? q.scale_max || 5 : q.scale_max,
+            : isGrid
+              ? wasGrid && q.options.length
+                ? q.options
+                : ["Column 1", "Column 2"]
+              : [],
+          rows: isGrid ? (q.rows?.length ? q.rows : ["Row 1", "Row 2"]) : [],
+          scale_min:
+            type === "linear_scale" || type === "rating"
+              ? q.scale_min || 1
+              : q.scale_min,
+          scale_max:
+            type === "linear_scale" || type === "rating"
+              ? type === "rating" && (q.scale_max < 3 || q.scale_max > 10)
+                ? 5
+                : q.scale_max || 5
+              : q.scale_max,
+          rating_icon:
+            type === "rating" ? (q.rating_icon ?? "star") : q.rating_icon,
+          // Validation / input format only apply to some types.
+          validation:
+            q.validation?.kind &&
+            validationKinds(type).includes(
+              q.validation.kind as ReturnType<typeof validationKinds>[number],
+            )
+              ? q.validation
+              : null,
+          text_format: type === "short_answer" ? q.text_format : "",
           // Clear branching if type no longer supports it.
           go_to_section:
             type === "multiple_choice" || type === "dropdown"
               ? q.go_to_section
               : {},
-          // Clear correct answers if type no longer gradable.
-          correct_answers: isGradableType(type) ? q.correct_answers : [],
+          // Clear correct answers if type no longer gradable (or grid-ness
+          // changed: grid keys are row/column pairs).
+          correct_answers:
+            isGradableType(type) && isGrid === wasGrid
+              ? q.correct_answers
+              : [],
         };
       }),
     }));
@@ -509,8 +550,8 @@ export default function FormEditor({ user }: Props) {
                 </Sheet>
               )}
 
-              {form.questions.map((q, i) =>
-                q.is_section ? (
+              {form.questions.map((q, i) => {
+                const card = q.is_section ? (
                   <SectionCard
                     key={q.id}
                     q={q}
@@ -543,7 +584,43 @@ export default function FormEditor({ user }: Props) {
                       setShowAnswerKey((cur) => (cur === q.id ? null : q.id))
                     }
                   />
-                ),
+                );
+                if (!q.is_section) return card;
+                // The section that ends here: the implicit first one, or the
+                // previous divider's.
+                const k = sections.findIndex((s) => s.id === q.id);
+                const prev = k > 0 ? sections[k - 1] : null;
+                return (
+                  <Box key={q.id}>
+                    <AfterSectionBar
+                      number={k + 1}
+                      sections={sections}
+                      value={
+                        (prev
+                          ? prev.after_section
+                          : form.settings.after_first_section) ?? ""
+                      }
+                      onChange={(v) =>
+                        prev
+                          ? patchQuestion(prev.id, { after_section: v })
+                          : patchSettings({ after_first_section: v })
+                      }
+                    />
+                    {card}
+                  </Box>
+                );
+              })}
+              {sections.length > 0 && (
+                <AfterSectionBar
+                  number={sections.length + 1}
+                  sections={sections}
+                  value={sections[sections.length - 1].after_section ?? ""}
+                  onChange={(v) =>
+                    patchQuestion(sections[sections.length - 1].id, {
+                      after_section: v,
+                    })
+                  }
+                />
               )}
 
               <Box
@@ -724,7 +801,9 @@ function isGradableType(type: QuestionType): boolean {
     type === "multiple_choice" ||
     type === "checkboxes" ||
     type === "dropdown" ||
-    type === "short_answer"
+    type === "short_answer" ||
+    type === "multiple_choice_grid" ||
+    type === "checkbox_grid"
   );
 }
 
@@ -828,7 +907,7 @@ function QuestionCard({
     { value: "", label: "(no jump)" },
     ...sections.map((s, i) => ({
       value: s.id,
-      label: `Section ${i + 1}: ${s.title || "Untitled"}`,
+      label: `Section ${i + 2}: ${s.title || "Untitled"}`,
     })),
     { value: SUBMIT_TARGET, label: "Submit form" },
   ];
@@ -899,13 +978,24 @@ function QuestionCard({
 
       {/* Type-specific body */}
       {q.type === "short_answer" && (
-        <Input
-          variant="plain"
-          disabled
-          placeholder="Short-answer text"
-          sx={{ maxWidth: 320, opacity: 0.6 }}
+        <>
+          <Input
+            variant="plain"
+            disabled
+            placeholder="Short-answer text"
+            sx={{ maxWidth: 320, opacity: 0.6 }}
+          />
+          {active && <TextFormatEditor q={q} onChange={onChange} />}
+        </>
+      )}
+      {(q.type === "multiple_choice_grid" || q.type === "checkbox_grid") && (
+        <GridEditor
+          q={q}
+          onChange={onChange}
+          showAnswerKey={isQuiz && showAnswerKey}
         />
       )}
+      {q.type === "rating" && <RatingEditor q={q} onChange={onChange} />}
       {q.type === "paragraph" && (
         <Textarea
           variant="plain"
@@ -1073,7 +1163,11 @@ function QuestionCard({
                     value={q.go_to_section?.[opt] ?? ""}
                     onChange={(_, v) => setBranchTarget(opt, v ?? "")}
                     sx={{ maxWidth: 280 }}
-                    aria-label={`Go to section for option ${opt}`}
+                    slotProps={{
+                      button: {
+                        "aria-label": `Go to section for option ${opt}`,
+                      },
+                    }}
                   >
                     {sectionOptions.map((so) => (
                       <Option key={so.value} value={so.value}>
@@ -1097,6 +1191,8 @@ function QuestionCard({
           </Button>
         </Box>
       )}
+
+      <ValidationEditor q={q} onChange={onChange} />
 
       {/* Answer key / quiz panel for short_answer */}
       {isQuiz && canGrade && showAnswerKey && q.type === "short_answer" && (
@@ -1228,7 +1324,9 @@ function QuestionCard({
         )}
         <Divider orientation="vertical" sx={{ mx: 1 }} />
         <Typography level="body-sm" sx={{ mr: 1 }}>
-          Required
+          {q.type === "multiple_choice_grid" || q.type === "checkbox_grid"
+            ? "Require a response in each row"
+            : "Required"}
         </Typography>
         <Switch
           checked={q.required}
@@ -1259,6 +1357,19 @@ function QuestionCard({
             {canBranch && (
               <MenuItem onClick={onActivate}>
                 Go to section based on answer
+              </MenuItem>
+            )}
+            {validationKinds(q.type).length > 0 && (
+              <MenuItem
+                onClick={() =>
+                  onChange({
+                    validation: q.validation?.kind
+                      ? null
+                      : defaultValidation(q.type),
+                  })
+                }
+              >
+                {q.validation?.kind ? "✓ " : ""}Response validation
               </MenuItem>
             )}
           </Menu>

@@ -11,7 +11,9 @@ import {
 } from "@mui/joy";
 import ArrowRightIcon from "@mui/icons-material/ArrowRight";
 import { DECK_DOWNLOAD_FORMATS, type DeckFormat } from "./export";
-import type { ElementType } from "./model";
+import type { ElementType, TextAlign } from "./model";
+import type { TextCommands } from "./TextFormatControls";
+import { CASE_MODES } from "../../lib/textCase";
 
 export interface SlideActions {
   newDeck: () => void;
@@ -38,7 +40,9 @@ export interface SlideActions {
   toggle: (attr: "bold" | "italic" | "underline" | "strike") => void;
   setList: (v: "bullet" | "number" | null) => void;
   setLineSpacing: (v: number) => void;
-  setAlign: (a: "left" | "center" | "right") => void;
+  setAlign: (a: TextAlign) => void;
+  /** Text formatting (M4). */
+  text: TextCommands;
   arrange: (dir: "front" | "back" | "forward" | "backward") => void;
   rotate: (op: "cw" | "ccw" | "flipH" | "flipV") => void;
   setLink: () => void;
@@ -160,7 +164,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem onClick={actions.duplicateSelected}>
             Duplicate{kbd("Ctrl+D")}
           </MenuItem>
-          <MenuItem disabled>Find and replace{kbd("Ctrl+H")}</MenuItem>
+          <MenuItem onClick={actions.text.findReplace}>Find and replace{kbd("Ctrl+H")}</MenuItem>
         </>,
       )}
 
@@ -243,7 +247,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem disabled>Word art</MenuItem>
           <MenuItem disabled>Video</MenuItem>
           <MenuItem disabled>Audio</MenuItem>
-          <MenuItem disabled>Special characters</MenuItem>
+          <MenuItem onClick={actions.text.specialChars}>Special characters…</MenuItem>
           <MenuItem onClick={actions.openAnimations}>Animation</MenuItem>
           <MenuItem onClick={actions.setLink}>Link…{kbd("Ctrl+K")}</MenuItem>
           <MenuItem disabled>Comment{kbd("Ctrl+Alt+M")}</MenuItem>
@@ -270,25 +274,66 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
             Underline{kbd("Ctrl+U")}
           </MenuItem>
           <MenuItem sx={sub} onClick={() => actions.toggle("strike")}>
-            Strikethrough
+            Strikethrough{kbd("Alt+Shift+5")}
           </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.toggle("super")}>
+            Superscript{kbd("Ctrl+.")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.toggle("sub")}>
+            Subscript{kbd("Ctrl+,")}
+          </MenuItem>
+          {section("Size")}
+          <MenuItem sx={sub} onClick={() => actions.text.fontStep(1)}>
+            Increase font size{kbd("Ctrl+]")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.fontStep(-1)}>
+            Decrease font size{kbd("Ctrl+[")}
+          </MenuItem>
+          {section("Capitalization")}
+          {CASE_MODES.map((m) => (
+            <MenuItem key={m.mode} sx={sub} onClick={() => actions.text.changeCase(m.mode)}>
+              {m.label}
+            </MenuItem>
+          ))}
           {section("Align")}
           <MenuItem sx={sub} onClick={() => actions.setAlign("left")}>
-            Left
+            Left{kbd("Ctrl+L")}
           </MenuItem>
           <MenuItem sx={sub} onClick={() => actions.setAlign("center")}>
-            Center
+            Center{kbd("Ctrl+E")}
           </MenuItem>
           <MenuItem sx={sub} onClick={() => actions.setAlign("right")}>
-            Right
+            Right{kbd("Ctrl+R")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.setAlign("justify")}>
+            Justified{kbd("Ctrl+J")}
+          </MenuItem>
+          {section("Indentation")}
+          <MenuItem sx={sub} onClick={() => actions.text.indent(1)}>
+            Increase indent{kbd("Tab")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.indent(-1)}>
+            Decrease indent{kbd("Shift+Tab")}
           </MenuItem>
           <ListDivider />
           {section("Bullets & numbering")}
           <MenuItem sx={sub} onClick={() => actions.setList("bullet")}>
-            Bulleted list
+            Bulleted list{kbd("Ctrl+Shift+L")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.list("bullet", "➢")}>
+            Arrow bullets ➢
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.list("bullet", "✓")}>
+            Check bullets ✓
           </MenuItem>
           <MenuItem sx={sub} onClick={() => actions.setList("number")}>
-            Numbered list
+            Numbered list{kbd("Ctrl+Shift+7")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.list("number", "alphaUcPeriod")}>
+            Lettered list A. B. C.
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.list("number", "romanUcPeriod")}>
+            Roman list I. II. III.
           </MenuItem>
           <MenuItem sx={sub} onClick={() => actions.setList(null)}>
             No list
@@ -303,12 +348,33 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem sx={sub} onClick={() => actions.setLineSpacing(2)}>
             Double
           </MenuItem>
+          {section("Text fitting")}
+          <MenuItem sx={sub} onClick={() => actions.text.setAutofit(false)}>
+            Do not autofit
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.setAutofit(true)}>
+            Shrink text on overflow
+          </MenuItem>
+          {section("Text direction")}
+          <MenuItem sx={sub} onClick={() => actions.text.setDirection("ltr")}>
+            Left to right
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.setDirection("rtl")}>
+            Right to left
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.setDirection("vert")}>
+            Rotate text 90°
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.text.setDirection("vert270")}>
+            Rotate text 270°
+          </MenuItem>
           <ListDivider />
           <MenuItem disabled>Table{arrow}</MenuItem>
           <MenuItem disabled>Image{arrow}</MenuItem>
           <MenuItem disabled>Borders &amp; lines{arrow}</MenuItem>
-          <MenuItem disabled>Format options{kbd("Ctrl+\\")}</MenuItem>
-          <MenuItem disabled>Clear formatting</MenuItem>
+          <MenuItem onClick={actions.text.textOptions}>Text options…</MenuItem>
+          <MenuItem onClick={actions.text.paintFormat}>Paint format{kbd("Ctrl+Shift+C")}</MenuItem>
+          <MenuItem onClick={actions.text.clearFormat}>Clear formatting{kbd("Ctrl+Space")}</MenuItem>
         </>,
       )}
 
@@ -489,7 +555,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem
             onClick={() =>
               window.alert(
-                "Keyboard shortcuts\n\nBold Ctrl+B · Italic Ctrl+I · Underline Ctrl+U\nNew slide Ctrl+M · Slideshow Ctrl+F5\nUndo Ctrl+Z · Redo Ctrl+Y · Duplicate Ctrl+D",
+                "Keyboard shortcuts\n\nBold Ctrl+B · Italic Ctrl+I · Underline Ctrl+U · Strikethrough Ctrl+5\nSuperscript Ctrl+. · Subscript Ctrl+, · Font size Ctrl+] / Ctrl+[\nAlign Ctrl+L/E/R/J · Bullets Ctrl+Shift+L · Indent Tab / Shift+Tab\nCopy/paste format Ctrl+Shift+C / Ctrl+Shift+V · Clear formatting Ctrl+Space\nLink Ctrl+K · Find and replace Ctrl+H · Line break Shift+Enter\nNo-break space Ctrl+Shift+Space · € Ctrl+Alt+E · En dash Ctrl+Alt+-\nNew slide Ctrl+M · Slideshow Ctrl+F5\nUndo Ctrl+Z · Redo Ctrl+Y · Duplicate Ctrl+D",
               )
             }
           >

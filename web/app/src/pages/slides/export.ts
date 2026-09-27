@@ -6,9 +6,13 @@ import {
   type DeckDoc,
   type Slide,
   type SlideElement,
+  type TextRun,
 } from "./model";
 import { flattenGroups } from "./groupOps";
 import { shapeLayersMarkup, shapeSvgGroup } from "./shapeRender";
+import { isRich, textBodyHtml } from "./textLayout";
+import { effective, insetsOf, listMarkers, paragraphs } from "./textOps";
+import { resolveSlideLink } from "./links";
 
 export type DeckFormat =
   | "pptx"
@@ -45,28 +49,28 @@ function esc(s: string): string {
 }
 
 // Serialize one element to an absolutely-positioned HTML string (for print/HTML export).
-function elementHTML(el: SlideElement): string {
+function elementHTML(el: SlideElement, slideHref?: (url: string) => string | null): string {
   const tf = elementTransform(el);
   const xform = tf ? `transform:${tf};transform-origin:center;` : "";
   const box = `position:absolute;left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px;${xform}`;
   if (el.type === "text") {
+    const ins = insetsOf(el);
     const style =
       box +
       `font-size:${el.fontSize}px;font-family:${el.fontFamily || "Arial"};color:${el.color || "#000"};` +
       `font-weight:${el.bold ? 700 : 400};font-style:${el.italic ? "italic" : "normal"};` +
-      `text-decoration:${[el.underline ? "underline" : "", el.strike ? "line-through" : ""].filter(Boolean).join(" ") || "none"};text-align:${el.align || "left"};` +
+      `text-decoration:${isRich(el) ? "none" : [el.underline ? "underline" : "", el.strike ? "line-through" : ""].filter(Boolean).join(" ") || "none"};text-align:${el.align || "left"};` +
       `display:flex;flex-direction:column;justify-content:${el.valign === "middle" ? "center" : el.valign === "bottom" ? "flex-end" : "flex-start"};` +
-      `white-space:pre-wrap;word-break:break-word;line-height:${el.lineSpacing || 1.2};padding:4px;overflow:hidden;box-sizing:border-box;`;
-    const body = el.list
-      ? (el.text || "")
-          .split("\n")
-          .map(
-            (ln, i) =>
-              `<div>${el.list === "number" ? `${i + 1}. ` : "• "}${esc(ln)}</div>`,
-          )
-          .join("")
+      `white-space:pre-wrap;word-break:break-word;line-height:${el.lineSpacing || 1.2};padding:${ins.t}px ${ins.r}px ${ins.b}px ${ins.l}px;overflow:hidden;box-sizing:border-box;` +
+      (el.rtl ? "direction:rtl;" : "") +
+      (el.vert ? "writing-mode:vertical-rl;" : "");
+    const body = isRich(el)
+      ? textBodyHtml(el, (url) => {
+          const i = slideHref ? slideHref(url) : null;
+          return i ?? (url.startsWith("#") ? null : url);
+        })
       : esc(el.text || "").replace(/\n/g, "<br/>");
-    return `<div style="${style}">${body}</div>`;
+    return `<div style="${style}">${el.vert === "vert270" ? `<div style="transform:rotate(180deg)">${body}</div>` : body}</div>`;
   }
   const bd =
     el.stroke && el.stroke !== "none"
@@ -117,13 +121,20 @@ function elementHTML(el: SlideElement): string {
   return "";
 }
 
-function slideHTML(slide: Slide): string {
-  const inner = flattenGroups(slide.elements).map(elementHTML).join("");
-  return `<div class="slide" style="position:relative;width:${CANVAS_W}px;height:${CANVAS_H}px;background:${slide.background};overflow:hidden;">${inner}</div>`;
+function slideHTML(slide: Slide, idx: number, slides: readonly Slide[]): string {
+  // Slide links jump to the slide's anchor in the exported page.
+  const slideHref = (url: string) => {
+    const i = resolveSlideLink(url, slides, idx);
+    return i === null ? null : `#slide-${i + 1}`;
+  };
+  const inner = flattenGroups(slide.elements)
+    .map((e) => elementHTML(e, slideHref))
+    .join("");
+  return `<div class="slide" id="slide-${idx + 1}" style="position:relative;width:${CANVAS_W}px;height:${CANVAS_H}px;background:${slide.background};overflow:hidden;">${inner}</div>`;
 }
 
 function fullHTML(deck: DeckDoc, title: string): string {
-  const slides = deck.slides.map(slideHTML).join("\n");
+  const slides = deck.slides.map((s, i) => slideHTML(s, i, deck.slides)).join("\n");
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>@page{size:${CANVAS_W}px ${CANVAS_H}px;margin:0}body{margin:0}.slide{page-break-after:always}</style>
 </head><body>${slides}</body></html>`;
@@ -221,8 +232,25 @@ function slideToSVG(slide: Slide): string {
             ? el.x + el.w
             : el.x + 4;
       const size = el.fontSize || 18;
-      const lines = (el.text || "").split("\n");
-      const lineH = size * 1.2;
+      // Visual lines (paragraphs split at "\v"), each a list of styled runs.
+      const marks = listMarkers(el);
+      const lines: { runs: TextRun[]; marker: string }[] = [];
+      paragraphs(el).forEach((p, pi) => {
+        let cur: TextRun[] = [];
+        let first = true;
+        const flush = () => {
+          lines.push({ runs: cur, marker: first ? marks[pi] : "" });
+          first = false;
+          cur = [];
+        };
+        for (const r of p.runs)
+          r.text.split("\v").forEach((t, j) => {
+            if (j > 0) flush();
+            if (t) cur.push({ ...r, text: t });
+          });
+        flush();
+      });
+      const lineH = size * (el.lineSpacing || 1.2);
       const blockH = lines.length * lineH;
       const startY =
         el.valign === "middle"
@@ -231,13 +259,25 @@ function slideToSVG(slide: Slide): string {
             ? el.y + el.h - blockH + size
             : el.y + size;
       const tspans = lines
-        .map(
-          (ln, i) =>
-            `<tspan x="${tx}" y="${startY + i * lineH}">${esc(ln)}</tspan>`,
-        )
+        .map((ln, i) => {
+          const segs = ln.runs
+            .map((r) => {
+              const deco = [effective(el, r, "underline") || r.url ? "underline" : "", effective(el, r, "strike") ? "line-through" : ""]
+                .filter(Boolean)
+                .join(" ");
+              const bl = effective(el, r, "baseline");
+              const fs = (effective(el, r, "fontSize") as number) * (bl ? 0.65 : 1);
+              const fam = effective(el, r, "fontFamily") as string | undefined;
+              const fill = r.color ?? el.color ?? "#000";
+              return `<tspan font-size="${fs}"${fam ? ` font-family="${esc(fam)}"` : ""} fill="${fill}" font-weight="${effective(el, r, "bold") ? "bold" : "normal"}" font-style="${effective(el, r, "italic") ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}${bl ? ` baseline-shift="${bl}"` : ""}>${esc(r.text)}</tspan>`;
+            })
+            .join("");
+          const mark = ln.marker ? `${esc(ln.marker)} ` : "";
+          return `<tspan x="${tx}" y="${startY + i * lineH}">${mark}${segs}</tspan>`;
+        })
         .join("");
       parts.push(
-        `<text font-family="${el.fontFamily || "Arial"}" font-size="${size}" fill="${el.color || "#000"}" text-anchor="${anchor}"${el.bold ? ` font-weight="bold"` : ""}${el.italic ? ` font-style="italic"` : ""}${el.underline ? ` text-decoration="underline"` : ""}>${tspans}</text>`,
+        `<text font-family="${el.fontFamily || "Arial"}" font-size="${size}" fill="${el.color || "#000"}" text-anchor="${anchor}" xml:space="preserve">${tspans}</text>`,
       );
     }
   }
@@ -317,7 +357,7 @@ export async function downloadDeck(
       .map((s, i) => {
         const body = flattenGroups(s.elements)
           .filter((e) => e.type === "text" && e.text)
-          .map((e) => e.text)
+          .map((e) => (e.text || "").replace(/\v/g, "\n"))
           .join("\n");
         const notes =
           s.notes && s.notes.trim()
