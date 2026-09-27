@@ -7,6 +7,10 @@ import { isInTable } from "@tiptap/pm/tables";
 import { distributeColumns, distributeRows } from "./tables";
 import { openTableSettings } from "./TableUI";
 import { EquationMenuItems, mathAt } from "./math/EquationMenu";
+import { NodeSelection } from "@tiptap/pm/state";
+import { followAt, updateFields, updateTocAt } from "./references";
+import { followLink } from "./bookmarks";
+import { openReferenceDialog } from "./ReferenceDialogs";
 
 interface MenuPos {
   x: number;
@@ -42,6 +46,8 @@ export function EditorContextMenu({
   const [mathPos, setMathPos] = useState<number | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
   const [inTable, setInTable] = useState(false);
+  // Field / table of contents / link under the pointer (M8).
+  const [refAt, setRefAt] = useState<{ field: number | null; toc: number | null; href: string | null }>({ field: null, toc: null, href: null });
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,6 +59,37 @@ export function EditorContextMenu({
       setHasSelection(from !== to);
       setInTable(isInTable(editor.state));
       setMathPos(mathAt(editor, e.target as HTMLElement));
+      const t = e.target as HTMLElement;
+      const at = (sel: string) => {
+        const el = t.closest?.(sel);
+        if (!el || !editor.view.dom.contains(el)) return null;
+        try {
+          const p = editor.view.posAtDOM(el, 0);
+          return p > 0 ? p - (sel === ".doc-toc" ? 1 : 0) : p;
+        } catch {
+          return null;
+        }
+      };
+      const fieldEl = t.closest?.(".doc-field");
+      let field: number | null = null;
+      if (fieldEl) {
+        try {
+          const p = editor.view.posAtDOM(fieldEl, 0);
+          field = editor.state.doc.nodeAt(p)?.type.name === "field" ? p : editor.state.doc.nodeAt(p - 1)?.type.name === "field" ? p - 1 : null;
+        } catch {
+          field = null;
+        }
+      }
+      let toc: number | null = null;
+      if (t.closest?.(".doc-toc")) {
+        const { from } = editor.state.selection;
+        editor.state.doc.descendants((n, p) => {
+          if (n.type.name === "tableOfContents" && p <= from && from <= p + n.nodeSize) toc = p;
+          return toc == null && !n.isTextblock;
+        });
+        if (toc == null) toc = at(".doc-toc");
+      }
+      setRefAt({ field, toc, href: t.closest?.("a[href]")?.getAttribute("href") ?? null });
       setPos({ x: e.clientX, y: e.clientY });
     };
     el.addEventListener("contextmenu", onContextMenu);
@@ -172,6 +209,44 @@ export function EditorContextMenu({
         >
           Insert link{kbd("Ctrl+K")}
         </ListItemButton>
+        {refAt.href && (
+          <>
+            <ListItemButton onClick={run(() => followLink(editor, refAt.href!))} role="menuitem">
+              Open link{kbd("Ctrl+click")}
+            </ListItemButton>
+            <ListItemButton onClick={run(() => openReferenceDialog("hyperlink"))} role="menuitem">
+              Link settings…
+            </ListItemButton>
+          </>
+        )}
+        {refAt.field != null && (
+          <>
+            <ListItemButton
+              onClick={run(() => {
+                const p = refAt.field!;
+                editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, p)));
+                updateFields(editor, "selection");
+              })}
+              role="menuitem"
+              data-testid="ctx-update-field"
+            >
+              Update field{kbd("F9")}
+            </ListItemButton>
+            <ListItemButton onClick={run(() => void followAt(editor, refAt.field!))} role="menuitem">
+              Go to reference
+            </ListItemButton>
+          </>
+        )}
+        {refAt.toc != null && (
+          <>
+            <ListItemButton onClick={run(() => void updateTocAt(editor, refAt.toc!))} role="menuitem" data-testid="ctx-update-toc">
+              Update table{kbd("F9")}
+            </ListItemButton>
+            <ListItemButton onClick={run(() => openReferenceDialog("toc"))} role="menuitem">
+              Table settings…
+            </ListItemButton>
+          </>
+        )}
         <ListDivider />
         <ListItemButton
           disabled={!hasSelection}

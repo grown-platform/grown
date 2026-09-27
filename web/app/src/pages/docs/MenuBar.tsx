@@ -20,6 +20,10 @@ import { applyStyle, continueNumbering, currentStyle, restartNumbering } from ".
 import { openParagraphDialog } from "./ParagraphDialogs";
 import { promptLink } from "./links";
 import { TableSizePicker, insertPickedTable, openConvertTextDialog, openTableSettings } from "./TableUI";
+import { openReferenceDialog } from "./ReferenceDialogs";
+import { insertTableOfContents, toggleFieldCodes, updateFields } from "./references";
+import { setTocLevel, tocLevelAtSelection } from "./toc";
+import { getDocModel } from "./docModel";
 import { autofitTable, distributeColumns, distributeRows, setCellProps, splitTable, tableToText, toggleRepeatHeader } from "./tables";
 
 const menuButtonSx = {
@@ -190,6 +194,8 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
   // Insert is controlled so the table size picker (not a MenuItem) can
   // close it after a pick.
   const [insertOpen, setInsertOpen] = useState(false);
+  // References is controlled so the Add text level row can close it.
+  const [refOpen, setRefOpen] = useState(false);
   // Dropdowns open left-aligned (bottom-start) under their menu title.
   const top = (
     label: string,
@@ -358,6 +364,21 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           </MenuItem>
           <MenuItem onClick={actions.insertFootnote}>Footnote</MenuItem>
           <MenuItem onClick={actions.insertEndnote}>Endnote</MenuItem>
+          <MenuItem onClick={run((e) => void e.chain().focus().insertField("PAGE").run())} data-testid="insert-page-number">
+            Page number{kbd("Alt+Shift+P")}
+          </MenuItem>
+          <MenuItem onClick={() => openReferenceDialog("bookmarks")} data-testid="insert-bookmark">
+            Bookmark…
+          </MenuItem>
+          <MenuItem onClick={() => openReferenceDialog("caption")} data-testid="insert-caption">
+            Caption…
+          </MenuItem>
+          <MenuItem onClick={() => openReferenceDialog("crossref")} data-testid="insert-crossref">
+            Cross-reference…
+          </MenuItem>
+          <MenuItem onClick={run((e) => void insertTableOfContents(e))} data-testid="insert-toc">
+            Table of contents
+          </MenuItem>
           <MenuItem onClick={actions.toggleHeaderFooter}>
             Headers &amp; footers
           </MenuItem>
@@ -663,6 +684,87 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Clear formatting{kbd("Ctrl+\\")}
           </MenuItem>
         </>,
+      )}
+
+      {top(
+        "References",
+        <>
+          <MenuItem onClick={run((e) => void insertTableOfContents(e))} data-testid="ref-insert-toc">
+            Insert table of contents
+          </MenuItem>
+          <MenuItem onClick={() => openReferenceDialog("toc")} data-testid="ref-toc-settings">
+            Table of contents settings…
+          </MenuItem>
+          <MenuItem onClick={() => openReferenceDialog("tof")} data-testid="ref-insert-tof">
+            Insert table of figures…
+          </MenuItem>
+          <MenuItem onClick={run((e) => void updateFields(e, "selection"))} data-testid="ref-update">
+            Update table / fields{kbd("F9")}
+          </MenuItem>
+          <MenuItem onClick={run((e) => void updateFields(e, "all"))} data-testid="ref-update-all">
+            Update all fields{kbd("Ctrl+F9")}
+          </MenuItem>
+          <Typography level="body-xs" sx={{ px: 1.5, pt: 0.5, opacity: 0.6 }}>
+            Add text (level in the table of contents)
+          </Typography>
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, px: 1.5, pb: 0.75, maxWidth: 260 }} data-testid="ref-add-text">
+            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((l) => {
+              const cur = editor ? tocLevelAtSelection(editor, getDocModel(editor)?.sheet) : -1;
+              return (
+                <Box
+                  key={l}
+                  component="button"
+                  type="button"
+                  title={l ? `Level ${l}` : "Do not show in table of contents"}
+                  data-testid={`ref-add-text-${l}`}
+                  onMouseDown={(ev: React.MouseEvent) => ev.preventDefault()}
+                  onClick={() => {
+                    setRefOpen(false);
+                    if (editor) {
+                      setTocLevel(editor, l, getDocModel(editor)?.sheet);
+                      editor.commands.focus();
+                    }
+                  }}
+                  sx={{
+                    minWidth: l ? 24 : 44,
+                    height: 24,
+                    fontSize: 12,
+                    borderRadius: "4px",
+                    border: "1px solid",
+                    borderColor: cur === l ? "primary.solidBg" : "neutral.outlinedBorder",
+                    bgcolor: cur === l ? "primary.softBg" : "background.surface",
+                    cursor: "pointer",
+                  }}
+                >
+                  {l ? l : "None"}
+                </Box>
+              );
+            })}
+          </Box>
+          <ListDivider />
+          <MenuItem onClick={() => openReferenceDialog("caption")} data-testid="ref-caption">
+            Insert caption…
+          </MenuItem>
+          <MenuItem onClick={() => openReferenceDialog("crossref")} data-testid="ref-crossref">
+            Cross-reference…
+          </MenuItem>
+          <MenuItem onClick={() => openReferenceDialog("bookmarks")} data-testid="ref-bookmarks">
+            Bookmarks…
+          </MenuItem>
+          <MenuItem onClick={() => openReferenceDialog("hyperlink")} data-testid="ref-hyperlink">
+            Link settings…
+          </MenuItem>
+          <ListDivider />
+          <MenuItem onClick={run((e) => void e.chain().focus().insertField("PAGE").run())}>
+            Page number{kbd("Alt+Shift+P")}
+          </MenuItem>
+          <MenuItem onClick={run((e) => void e.chain().focus().insertField("NUMPAGES").run())}>Page count</MenuItem>
+          <MenuItem onClick={() => openReferenceDialog("field")} data-testid="ref-field">
+            Date, time and other fields…
+          </MenuItem>
+          <MenuItem onClick={run((e) => void toggleFieldCodes(e))}>Show field codes{kbd("Alt+F9")}</MenuItem>
+        </>,
+        { open: refOpen, setOpen: setRefOpen },
       )}
 
       {top(
