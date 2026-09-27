@@ -363,6 +363,29 @@ ${inner}${sp({ x: 60, y: 60, w: 40, h: 40, prst: "rect", fill: solid(`<a:srgbClr
     expect(mapPreset("star5")).toBeNull();
   });
 
+  it("reads supported presets as preset shapes with their adjust values", async () => {
+    const r = await readPptx(
+      await pkg({
+        slides: [
+          {
+            xml: SLIDE(
+              sp({ x: 0, y: 0, w: 10, h: 10, prst: "star5", fill: solid(`<a:srgbClr val="FFFF00"/>`) }).replace(
+                "<a:avLst/>",
+                `<a:avLst><a:gd name="adj" fmla="val 30000"/></a:avLst>`,
+              ) +
+                // default-adjust legacy presets keep their legacy Grown type
+                sp({ x: 0, y: 0, w: 10, h: 10, prst: "triangle", fill: solid(`<a:srgbClr val="FFFF00"/>`) }),
+            ),
+          },
+        ],
+      }),
+    );
+    const [star, tri] = r.deck.slides[0].elements;
+    expect(star).toMatchObject({ type: "shape", preset: "star5", adj: { adj: 30000 }, fill: "#ffff00" });
+    expect(tri.type).toBe("triangle");
+    expect(r.warnings).toEqual([]);
+  });
+
   it("draws unsupported presets as rectangles and says so", async () => {
     const r = await readPptx(
       await pkg({
@@ -374,7 +397,7 @@ ${inner}${sp({ x: 60, y: 60, w: 40, h: 40, prst: "rect", fill: solid(`<a:srgbClr
                 y: 0,
                 w: 10,
                 h: 10,
-                prst: "star5",
+                prst: "cloud",
                 fill: solid(`<a:srgbClr val="FFFF00"/>`),
               }),
             ),
@@ -383,7 +406,36 @@ ${inner}${sp({ x: 60, y: 60, w: 40, h: 40, prst: "rect", fill: solid(`<a:srgbClr
       }),
     );
     expect(r.deck.slides[0].elements[0].type).toBe("rect");
-    expect(r.warnings.join()).toMatch(/star5/);
+    expect(r.warnings.join()).toMatch(/cloud/);
+  });
+
+  it("reads connectors with arrowheads, dash and glue to shape ids", async () => {
+    const ln = `<a:ln w="12700">${solid(`<a:srgbClr val="112233"/>`)}<a:prstDash val="dot"/><a:headEnd type="none"/><a:tailEnd type="stealth"/></a:ln>`;
+    const cxn = `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="4" name="c"/><p:cNvCxnSpPr><a:stCxn id="9" idx="3"/><a:endCxn id="77" idx="1"/></p:cNvCxnSpPr><p:nvPr/></p:nvCxnSpPr><p:spPr><a:xfrm flipV="1"><a:off x="${px(100)}" y="${px(100)}"/><a:ext cx="${px(200)}" cy="${px(50)}"/></a:xfrm><a:prstGeom prst="bentConnector3"><a:avLst><a:gd name="adj1" fmla="val 25000"/></a:avLst></a:prstGeom>${ln}</p:spPr></p:cxnSp>`;
+    const r = await readPptx(
+      await pkg({
+        slides: [{ xml: SLIDE(sp({ x: 0, y: 0, w: 10, h: 10, fill: solid(`<a:srgbClr val="FF0000"/>`) }) + cxn) }],
+      }),
+    );
+    const [box, c] = r.deck.slides[0].elements;
+    expect(c).toMatchObject({
+      type: "connector",
+      preset: "bentConnector3",
+      adj: { adj1: 25000 },
+      x: 100,
+      y: 100,
+      w: 200,
+      h: 50,
+      flipV: true,
+      dash: "sysDot",
+      tailEnd: "stealth",
+      stroke: "#112233",
+      strokeWidth: 1,
+    });
+    expect(c.headEnd).toBeUndefined();
+    // id 9 is the rectangle (sp() writes cNvPr id 9); id 77 does not exist.
+    expect(c.stCxn).toEqual({ id: box.id, idx: 3 });
+    expect(c.endCxn).toBeUndefined();
   });
 });
 
