@@ -5,7 +5,6 @@ import {
   parseVsdx,
   layoutVsdxPages,
   visioColor,
-  recenterText,
   PX_PER_INCH,
   type VsdxSkeleton,
 } from "./vsdx";
@@ -328,8 +327,11 @@ describe("vsdx reader", () => {
     expect(texts.map((t) => t.text)).toEqual(["Tri", "Just text"]);
     // Centred on the text block (shape centre).
     const t = texts[1];
-    const approxCx = t.x + ("Just text".length * 16 * 0.55) / 2;
-    close(approxCx, 6 * PX, 1);
+    // Centre-aligned text is anchored at the block's midpoint.
+    close(t.x, 6 * PX);
+    close(t.y, 5 * PX);
+    expect(t.textAlign).toBe("center");
+    expect(t.verticalAlign).toBe("middle");
   });
 
   it("binds connectors to the shapes they are glued to", async () => {
@@ -604,23 +606,3 @@ describe.skipIf(CORPUS.length === 0)(
     });
   },
 );
-
-describe("recenterText", () => {
-  it("centres measured free text on the estimated anchor", () => {
-    const e = {
-      x: 0,
-      y: 0,
-      width: 20,
-      height: 10,
-      customData: { vsdxHalfSize: [30, 10] },
-    };
-    recenterText([e]);
-    expect(e).toEqual({
-      x: 20,
-      y: 5,
-      width: 20,
-      height: 10,
-      customData: undefined,
-    });
-  });
-});

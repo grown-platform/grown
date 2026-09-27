@@ -130,6 +130,12 @@ test("whiteboard: import .vsdx from home, then export SVG/PNG/.excalidraw", asyn
   expect(rect.backgroundColor).toBe("#cfe2ff");
   expect(arrow.startBinding?.elementId).toBe(rect.id);
   expect(arrow.endBinding?.elementId).toBe(ellipse.id);
+  // Free text is centred under the triangle's apex (the box centre).
+  const tri = els.find((e) => e.type === "line");
+  const triText = els.find((e) => e.type === "text" && e.text === "Triangle");
+  expect(
+    Math.abs(triText.x + triText.width / 2 - (tri.x + tri.width / 2)),
+  ).toBeLessThan(2);
   expect(els.filter((e) => e.type === "frame").map((f) => f.name)).toEqual([
     "Flow",
     "Decision",

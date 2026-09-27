@@ -1095,7 +1095,10 @@ function emitShape(
   }
 }
 
-/** freeText centres a text element (estimated size) on c. */
+/** freeText anchors a text element on c. Excalidraw's converter treats x/y
+ *  as the anchor for the element's textAlign/verticalAlign ("center" x and
+ *  "middle" y are the midpoint), so only left/right alignment needs a width
+ *  estimate. */
 function freeText(
   id: string,
   text: string,
@@ -1104,13 +1107,19 @@ function freeText(
   groupIds: string[],
 ): VsdxSkeleton {
   const lines = text.split("\n");
-  const estW = Math.max(...lines.map((l) => l.length)) * ts.fontSize * 0.55;
-  const estH = lines.length * ts.fontSize * 1.25;
+  const halfW =
+    (Math.max(...lines.map((l) => l.length)) * ts.fontSize * 0.55) / 2;
+  const x =
+    ts.textAlign === "left"
+      ? c[0] - halfW
+      : ts.textAlign === "right"
+        ? c[0] + halfW
+        : c[0];
   return {
     type: "text",
     id,
-    x: c[0] - estW / 2,
-    y: c[1] - estH / 2,
+    x,
+    y: c[1],
     text,
     fontSize: ts.fontSize,
     fontFamily: ts.fontFamily,
@@ -1119,31 +1128,7 @@ function freeText(
     verticalAlign: "middle",
     roughness: 0,
     groupIds,
-    // The estimate is corrected once Excalidraw has measured the text.
-    customData: { vsdxHalfSize: [estW / 2, estH / 2] },
   };
-}
-
-/** recenterText re-centres free text on its anchor using measured sizes
- *  (call after convertToExcalidrawElements; mutates fresh elements). */
-export function recenterText(
-  elements: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    customData?: Record<string, unknown>;
-  }[],
-): void {
-  for (const e of elements) {
-    const half = e.customData?.vsdxHalfSize as [number, number] | undefined;
-    if (!half) continue;
-    e.x = e.x + half[0] - e.width / 2;
-    e.y = e.y + half[1] - e.height / 2;
-    const rest = { ...e.customData };
-    delete rest.vsdxHalfSize;
-    e.customData = Object.keys(rest).length ? rest : undefined;
-  }
 }
 
 /** Excalidraw angle (clockwise, radians, [0, 2π)) from a Y-up matrix. */

@@ -10,7 +10,7 @@ import {
   getCommonBounds,
   CaptureUpdateAction,
 } from "@excalidraw/excalidraw";
-import { parseVsdx, layoutVsdxPages, recenterText } from "./vsdx";
+import { parseVsdx, layoutVsdxPages } from "./vsdx";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Excalidraw API types are loose here. */
 
@@ -44,7 +44,6 @@ export async function importVsdx(api: any, file: Blob): Promise<ImportResult> {
   const created = convertToExcalidrawElements(skeletons as any, {
     regenerateIds: true,
   });
-  recenterText(created as any);
   const files = Object.values(doc.files);
   if (files.length) api.addFiles(files);
   api.updateScene({
