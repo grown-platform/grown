@@ -214,7 +214,9 @@ type envelope struct {
 	Els       []idOnly `json:"els"`
 	IDs       []string `json:"ids"`
 	C         *idOnly  `json:"c"`
+	R         *idOnly  `json:"r"`
 	CommentID string   `json:"commentId"`
+	ReplyID   string   `json:"replyId"`
 	// hello / saved
 	Cid   string `json:"cid"`
 	Since uint64 `json:"since"`
@@ -229,7 +231,8 @@ func parseEnvelope(msg []byte) (envelope, error) {
 }
 
 // keys names what an op changes: "e:<slide>:<element>", "s:<slide>" (the
-// slide's element list), "p:<slide>" (slide properties), "c:<comment>", or
+// slide's element list), "p:<slide>" (slide properties), "c:<comment>" (a
+// thread head), "r:<comment>:<reply>" (one reply), or
 // "*" (the whole deck, and anything the hub does not recognise).
 func (e envelope) keys() []string {
 	el := func(ids ...string) []string {
@@ -272,8 +275,14 @@ func (e envelope) keys() []string {
 		if e.C != nil {
 			return []string{"c:" + e.C.ID}
 		}
-	case "commentRemove":
+	case "commentRemove", "commentResolve":
 		return []string{"c:" + e.CommentID}
+	case "commentReply":
+		if e.R != nil {
+			return []string{"r:" + e.CommentID + ":" + e.R.ID}
+		}
+	case "commentReplyRemove":
+		return []string{"r:" + e.CommentID + ":" + e.ReplyID}
 	}
 	return []string{"*"}
 }

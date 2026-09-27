@@ -21,6 +21,9 @@ func TestOpKeys(t *testing.T) {
 		{`{"t":"slideProps","si":"s","patch":{}}`, []string{"p:s"}},
 		{`{"t":"comment","c":{"id":"c1"}}`, []string{"c:c1"}},
 		{`{"t":"commentRemove","cid":"x","commentId":"c1"}`, []string{"c:c1"}},
+		{`{"t":"commentResolve","commentId":"c1","resolved":true}`, []string{"c:c1"}},
+		{`{"t":"commentReply","commentId":"c1","r":{"id":"r1"}}`, []string{"r:c1:r1"}},
+		{`{"t":"commentReplyRemove","commentId":"c1","replyId":"r1"}`, []string{"r:c1:r1"}},
 		{`{"t":"slides","slides":[]}`, []string{"*"}},
 		{`{"t":"deck","deck":{}}`, []string{"*"}},
 		{`{"t":"mystery"}`, []string{"*"}},
@@ -53,6 +56,8 @@ func TestKeysOverlap(t *testing.T) {
 		{"p:s", "e:s:a", false},
 		{"p:s", "p:s", true},
 		{"c:1", "c:2", false},
+		{"c:1", "r:1:a", false},
+		{"r:1:a", "r:1:b", false},
 	}
 	for _, tc := range cases {
 		if got := keyOverlap(tc.a, tc.b); got != tc.want {

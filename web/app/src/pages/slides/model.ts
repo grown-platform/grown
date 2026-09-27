@@ -10,6 +10,7 @@
 // the size from the deck itself.
 
 import type { AxisConfig, ChartType, SeriesConfig } from "../sheets/chartData";
+import type { SlideComment } from "./comments";
 
 export const CANVAS_W = 960;
 /** Default logical slide height (16:9). */
@@ -691,6 +692,8 @@ export interface DeckDoc {
   hf?: DeckHF;
   /** Slide show settings (M9). */
   show?: { loop?: boolean };
+  /** Comment threads (M10, comments.ts). */
+  comments?: SlideComment[];
 }
 
 export const FONT_FAMILIES = [
