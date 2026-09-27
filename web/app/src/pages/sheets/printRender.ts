@@ -10,6 +10,7 @@
 import { colToLetters } from "./cellValue";
 import { PAPER, pageSizePx, paginate, sheetGeometry, type PrintPage, type PrintSettings } from "./printSettings";
 import { cellViewText } from "./sheetView";
+import { cssAlign, defaultHorizontalAlign } from "./cellAlign";
 import { flattenBorders, type BorderSide, type CellBorder } from "./xlsx/xlsxStyles";
 
 function esc(s: string): string {
@@ -150,8 +151,9 @@ function renderPage(sheet: any, s: PrintSettings, page: PrintPage, total: number
         if (cs > 1) span += ` colspan="${cs}"`;
       }
       const shown = mc && !mc.rs ? { text: "", align: null } : cellViewText(cell, { showFormulas });
-      const numeric = typeof cell?.v === "number" && !showFormulas;
-      const align = shown.align ?? (numeric ? "right" : null);
+      // No explicit alignment: the value type's (numbers right, booleans and errors centred).
+      const byType = cell && !showFormulas ? defaultHorizontalAlign(cell) : "1";
+      const align = shown.align ?? (byType === "1" ? null : cssAlign(byType));
       const css = cellCss(cell, borders.get(key), align);
       html += `<td${span}${css ? ` style="${esc(css)}"` : ""}>${esc(shown.text)}</td>`;
     }

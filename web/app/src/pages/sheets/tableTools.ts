@@ -15,6 +15,7 @@ import { cellDisplay } from "./cellValue";
 import { applyWholeSheetOp, writeCells } from "./editActions";
 import { applyFilter, currentSheet, patchSheet, sheetById, sheetFilter } from "./sheetDataTools";
 import { sheetViewOptions } from "./sheetView";
+import { effectiveHorizontalAlign } from "./cellAlign";
 import { normalizeStructuredRefs, structuredRefsValid, structuredTokens, tableSelectionString } from "./structuredRefs";
 import {
   autoExpand,
@@ -502,7 +503,7 @@ function paintCell(cell: any, look: CellLook, info: CellInfo, ctx: CanvasRenderi
     // FortuneSheet's default face is the first of its font list (Times New Roman).
     const ff = typeof cell?.ff === "string" && cell.ff && !/^\d+$/.test(cell.ff) ? `"${cell.ff.replace(/"/g, "")}"` : '"Times New Roman"';
     ctx.font = `${cell?.it ? "italic " : ""}${look.bold || cell?.bl ? "bold " : ""}${size}px ${ff}, "Helvetica Neue", Helvetica, Arial, sans-serif`;
-    const ht = String(cell?.ht ?? "1");
+    const ht = effectiveHorizontalAlign(cell);
     ctx.textAlign = ht === "0" ? "center" : ht === "2" ? "right" : "left";
     ctx.textBaseline = "middle";
     const x = ht === "0" ? info.startX + w / 2 : ht === "2" ? info.endX - 3 * zoom : info.startX + 3 * zoom;
