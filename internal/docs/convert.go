@@ -185,8 +185,9 @@ func ConvertHTML(ctx context.Context, html []byte, to string) ([]byte, ConvertFo
 
 // ImportToHTML converts an external document to HTML via pandoc, returning the
 // HTML bytes. Binary readers (docx/odt/epub) require a real input file, so we
-// always route through a temp file. Images are embedded as data URIs so they
-// survive the import once the source file is discarded.
+// always route through a temp file. Pictures packed in the file are embedded
+// as data URIs (by the sanitize filter) so they survive the import once the
+// source file is discarded.
 func ImportToHTML(ctx context.Context, data []byte, from string) ([]byte, error) {
 	f, ok := importFormats[from]
 	if !ok {
@@ -223,13 +224,9 @@ func ImportToHTML(ctx context.Context, data []byte, from string) ([]byte, error)
 		return nil, fmt.Errorf("close filter: %w", err)
 	}
 
-	// Prefer --embed-resources (inline images as data URIs). Older pandoc builds
-	// lack the flag, so fall back to a plain conversion if the first run fails.
-	html, err := runPandocImport(ctx, f.Pandoc, inPath, filterPath, true)
+	html, err := runPandocImport(ctx, f.Pandoc, inPath, filterPath)
 	if err != nil {
-		if html, err = runPandocImport(ctx, f.Pandoc, inPath, filterPath, false); err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	return html, nil
 }
@@ -243,17 +240,15 @@ func ImportToHTML(ctx context.Context, data []byte, from string) ([]byte, error)
 var importSanitizeFilter []byte
 
 // runPandocImport runs pandoc to read inPath as `reader` and write HTML to
-// stdout, optionally embedding external resources as data URIs.
-func runPandocImport(ctx context.Context, reader, inPath, filterPath string, embed bool) ([]byte, error) {
-	// --sandbox confines pandoc's IO to inPath: with --embed-resources an
-	// uploaded html/md file could otherwise inline arbitrary server files
-	// (<img src="/etc/passwd">) or fetch internal URLs (SSRF). Media packed
-	// inside docx/odt/epub/rtf still embed, as they come from the input file.
-	args := []string{"--sandbox", "-f", reader, "-t", "html", "--lua-filter", filterPath}
-	if embed {
-		args = append(args, "--embed-resources")
-	}
-	args = append(args, inPath)
+// stdout. Pictures packed in the file are inlined as data URIs by the
+// sanitize filter, not by --embed-resources: pandoc 3.1.13 (Alpine, the
+// production image) applies --embed-resources outside --sandbox, so an
+// uploaded html/md file could inline arbitrary server files
+// (<img src="/etc/passwd">) or fetch internal URLs (SSRF).
+func runPandocImport(ctx context.Context, reader, inPath, filterPath string) ([]byte, error) {
+	// --sandbox confines pandoc's own IO to inPath.
+	// --wrap=none keeps tags and long lines unbroken.
+	args := []string{"--sandbox", "-f", reader, "-t", "html", "--wrap=none", "--lua-filter", filterPath, inPath}
 	cmd := exec.CommandContext(ctx, "pandoc", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
