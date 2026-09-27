@@ -57,6 +57,27 @@ export function rectUnion(a: CellRect, b: CellRect): CellRect {
 }
 
 /**
+ * The part of `a` not covered by `b`, as up to four disjoint rectangles
+ * (a full-width band above, one below, then the left and right pieces).
+ */
+export function rectSubtract(a: CellRect, b: CellRect): CellRect[] {
+  const x = normalizeRect(a);
+  const cut = rectIntersection(x, b);
+  if (!cut) return [x];
+  const out: CellRect[] = [];
+  if (cut.r1 > x.r1) out.push({ c1: x.c1, r1: x.r1, c2: x.c2, r2: cut.r1 - 1 });
+  if (cut.r2 < x.r2) out.push({ c1: x.c1, r1: cut.r2 + 1, c2: x.c2, r2: x.r2 });
+  if (cut.c1 > x.c1) out.push({ c1: x.c1, r1: cut.r1, c2: cut.c1 - 1, r2: cut.r2 });
+  if (cut.c2 < x.c2) out.push({ c1: cut.c2 + 1, r1: cut.r1, c2: x.c2, r2: cut.r2 });
+  return out;
+}
+
+/** Subtracts `b` from every rectangle of a list. */
+export function rectsSubtract(list: CellRect[], b: CellRect): CellRect[] {
+  return list.flatMap((a) => rectSubtract(a, b));
+}
+
+/**
  * Rounds to the nearest integer (halves go up, like Math.round) after
  * discarding binary floating-point noise, so 0.6+0.7+0.7 (1.9999999999999998)
  * rounds as 2 and 0.1+0.2-0.3 as 0. Used for pixel/coordinate maths.
