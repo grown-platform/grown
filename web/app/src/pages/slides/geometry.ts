@@ -455,3 +455,14 @@ export function fitCanvasWidth(stageW: number, stageH: number): number {
 export function fitPresentWidth(viewW: number, viewH: number): number {
   return Math.min(viewW, viewH * (CANVAS_W / CANVAS_H));
 }
+
+/** Editor zoom stops (View ▸ Zoom, Ctrl+=/-). */
+export const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.25, 1.5, 2, 3, 4];
+
+/** zoomStep returns the next zoom stop above (dir 1) or below (dir -1) the
+ *  current scale (a fitted canvas starts from its fitted scale). */
+export function zoomStep(current: number, dir: 1 | -1): number {
+  const eps = 1e-3;
+  if (dir > 0) return ZOOM_STEPS.find((z) => z > current + eps) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  return [...ZOOM_STEPS].reverse().find((z) => z < current - eps) ?? ZOOM_STEPS[0];
+}

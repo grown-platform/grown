@@ -7,41 +7,50 @@ import {
   type Slide,
   type CellBorder,
   type SlideElement,
-  type TextRun,
 } from "./model";
 import { flattenGroups } from "./groupOps";
 import { shapeLayersMarkup, shapeSvgGroup } from "./shapeRender";
-import { isRich, textBodyHtml } from "./textLayout";
-import { effective, insetsOf, listMarkers, paragraphs } from "./textOps";
+import { isRich, LINK_COLOR, textBodyHtml } from "./textLayout";
+import { effective, insetsOf } from "./textOps";
 import { resolveSlideLink } from "./links";
 import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
 import { inlineImages } from "./assets";
 import { objectsToPictures } from "./exportObjects";
 import { wordArtCssText, wordArtSvgAttrs } from "./wordArt";
+import { canvasMeasure, layoutTextLines, type Measure } from "./svgText";
 import { backgroundCss } from "./slideProps";
 import { withFooters } from "./layouts";
 import { CELL_PAD, cellFormat, cellTextEl, colWidths, isCovered, offsets, rowHeights, spanOf } from "./tableOps";
 
 export type DeckFormat =
   | "pptx"
+  | "odp"
   | "pdf"
   | "txt"
   | "html"
   | "jpg"
   | "png"
-  | "svg";
+  | "svg"
+  | "png-zip"
+  | "jpg-zip"
+  | "svg-zip";
 
 // Mirrors Google Slides' File → Download menu. jpg/png/svg export the current
-// slide (like Google); pptx/pdf/txt/html cover the whole deck. (ODP needs a
-// dedicated writer lib and is omitted rather than shipped broken.)
+// slide (like Google); the -zip variants every slide; pptx/odp/pdf/txt/html
+// cover the whole deck. The PDF is built in the browser (pdfWriter.ts);
+// File ▸ Print offers handouts, notes pages and the outline.
 export const DECK_DOWNLOAD_FORMATS: { fmt: DeckFormat; label: string }[] = [
   { fmt: "pptx", label: "Microsoft PowerPoint (.pptx)" },
+  { fmt: "odp", label: "ODP Document (.odp)" },
   { fmt: "pdf", label: "PDF Document (.pdf)" },
   { fmt: "txt", label: "Plain Text (.txt)" },
   { fmt: "html", label: "Web Page (.html)" },
   { fmt: "jpg", label: "JPEG image (.jpg, current slide)" },
   { fmt: "png", label: "PNG image (.png, current slide)" },
   { fmt: "svg", label: "Scalable Vector Graphics (.svg, current slide)" },
+  { fmt: "png-zip", label: "PNG images, all slides (.zip)" },
+  { fmt: "jpg-zip", label: "JPEG images, all slides (.zip)" },
+  { fmt: "svg-zip", label: "SVG images, all slides (.zip)" },
 ];
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -196,7 +205,7 @@ function tableHTML(el: SlideElement, box: string, slideHref?: (url: string) => s
 }
 
 /** A table as SVG: cell fills, border lines and cell text. */
-function tableSVG(el: SlideElement): string {
+function tableSVG(el: SlideElement, measure: Measure): string {
   const t = el.table!;
   const xs = offsets(colWidths(el));
   const ys = offsets(rowHeights(el));
@@ -220,13 +229,32 @@ function tableSVG(el: SlideElement): string {
       seg(f.borders.b, [x0, y1], [x1, y1]);
       seg(f.borders.l, [x0, y0], [x0, y1]);
       seg(f.borders.r, [x1, y0], [x1, y1]);
-      const te = cellTextEl(el, r, c);
-      if (te.text) texts.push(textSVG({ ...te, x: x0 + CELL_PAD, y: y0 + CELL_PAD, w: x1 - x0 - 2 * CELL_PAD, h: y1 - y0 - 2 * CELL_PAD }));
     }
+  for (const te of tableCellTexts(el)) texts.push(textSVG(te, measure));
   return fills.join("") + lines.join("") + texts.join("");
 }
 
-function slideHTML(slide: Slide, idx: number, slides: readonly Slide[]): string {
+/** Each non-empty table cell's text as a text element in slide
+ *  coordinates (the SVG export and the PDF text layer). */
+export function tableCellTexts(el: SlideElement): SlideElement[] {
+  const t = el.table!;
+  const xs = offsets(colWidths(el));
+  const ys = offsets(rowHeights(el));
+  const out: SlideElement[] = [];
+  for (let r = 0; r < t.rows; r++)
+    for (let c = 0; c < t.cols; c++) {
+      if (isCovered(t, r, c)) continue;
+      const { rs, cs } = spanOf(t, r, c);
+      const te = cellTextEl(el, r, c);
+      if (!te.text) continue;
+      const x0 = el.x + xs[c];
+      const y0 = el.y + ys[r];
+      out.push({ ...te, x: x0 + CELL_PAD, y: y0 + CELL_PAD, w: el.x + xs[c + cs] - x0 - 2 * CELL_PAD, h: el.y + ys[r + rs] - y0 - 2 * CELL_PAD, insets: { l: 0, t: 0, r: 0, b: 0 } });
+    }
+  return out;
+}
+
+export function slideHTML(slide: Slide, idx: number, slides: readonly Slide[]): string {
   // Slide links jump to the slide's anchor in the exported page.
   const slideHref = (url: string) => {
     const i = resolveSlideLink(url, slides, idx);
@@ -279,73 +307,52 @@ function clipPathPoints(type: SlideElement["type"]): [number, number][] {
   }
 }
 
-/** A text element as SVG <text> (one tspan per visual line). */
-function textSVG(el: SlideElement): string {
-  const anchor =
-    el.align === "center"
-      ? "middle"
-      : el.align === "right"
-        ? "end"
-        : "start";
-  const tx =
-    el.align === "center"
-      ? el.x + el.w / 2
-      : el.align === "right"
-        ? el.x + el.w
-        : el.x + 4;
-  const size = el.fontSize || 18;
-  // Visual lines (paragraphs split at "\v"), each a list of styled runs.
-  const marks = listMarkers(el);
-  const lines: { runs: TextRun[]; marker: string }[] = [];
-  paragraphs(el).forEach((p, pi) => {
-    let cur: TextRun[] = [];
-    let first = true;
-    const flush = () => {
-      lines.push({ runs: cur, marker: first ? marks[pi] : "" });
-      first = false;
-      cur = [];
-    };
-    for (const r of p.runs)
-      r.text.split("\v").forEach((t, j) => {
-        if (j > 0) flush();
-        if (t) cur.push({ ...r, text: t });
-      });
-    flush();
-  });
-  const lineH = size * (el.lineSpacing || 1.2);
-  const blockH = lines.length * lineH;
-  const startY =
-    el.valign === "middle"
-      ? el.y + (el.h - blockH) / 2 + size
-      : el.valign === "bottom"
-        ? el.y + el.h - blockH + size
-        : el.y + size;
-  const tspans = lines
-    .map((ln, i) => {
-      const segs = ln.runs
-        .map((r) => {
+/** A text element as SVG <text>: one <text> per visual line, wrapped at the
+ *  box width like the HTML renderer (see svgText.ts). */
+export function textSVG(el: SlideElement, measure: Measure = canvasMeasure): string {
+  const lines = layoutTextLines(el, measure);
+  // Word art (M11): gradient fill, outline and shadow/glow on the whole text.
+  const art = wordArtSvgAttrs(el, `wa-${el.id}`);
+  const gradient = !!art.defs;
+  const body = lines
+    .map((ln) => {
+      const mark = ln.marker
+        ? `<tspan x="${r2(ln.marker.x)}" font-size="${ln.marker.size}"${gradient ? "" : ` fill="${esc(ln.marker.color || el.color || "#000")}"`}>${esc(ln.marker.text)}</tspan>`
+        : "";
+      const segs = ln.segs
+        .map((sg, i) => {
+          const r = sg.run;
           const deco = [effective(el, r, "underline") || r.url ? "underline" : "", effective(el, r, "strike") ? "line-through" : ""]
             .filter(Boolean)
             .join(" ");
           const bl = effective(el, r, "baseline");
-          const fs = (effective(el, r, "fontSize") as number) * (bl ? 0.65 : 1);
           const fam = effective(el, r, "fontFamily") as string | undefined;
-          const fill = r.color ?? el.color ?? "#000";
-          return `<tspan font-size="${fs}"${fam ? ` font-family="${esc(fam)}"` : ""} fill="${fill}" font-weight="${effective(el, r, "bold") ? "bold" : "normal"}" font-style="${effective(el, r, "italic") ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}${bl ? ` baseline-shift="${bl}"` : ""}>${esc(r.text)}</tspan>`;
+          const fill = gradient ? "" : ` fill="${esc(r.color ?? (r.url ? LINK_COLOR : el.color) ?? "#000")}"`;
+          return `<tspan${i === 0 || ln.marker ? ` x="${r2(sg.x)}"` : ""} font-size="${r2(sg.size)}"${fam ? ` font-family="${esc(fam)}"` : ""}${fill} font-weight="${effective(el, r, "bold") ? "bold" : "normal"}" font-style="${effective(el, r, "italic") ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}${bl ? ` baseline-shift="${bl}"` : ""}>${esc(sg.text)}</tspan>`;
         })
         .join("");
-      const mark = ln.marker ? `${esc(ln.marker)} ` : "";
-      return `<tspan x="${tx}" y="${startY + i * lineH}">${mark}${segs}</tspan>`;
+      return `<text y="${r2(ln.y)}">${mark}${segs}</text>`;
     })
     .join("");
-  // Word art (M11): gradient fill, outline and shadow/glow on the whole text.
-  const art = wordArtSvgAttrs(el, `wa-${el.id}`);
-  const fillAttr = art.attrs.includes(' fill="') ? "" : ` fill="${el.color || "#000"}"`;
-  const body = art.defs ? tspans.replace(/ fill="[^"]*"/g, "") : tspans;
+  const fillAttr = art.attrs.includes(' fill="') ? "" : ` fill="${esc(el.color || "#000")}"`;
   return (
     (art.defs ? `<defs>${art.defs}</defs>` : "") +
-    `<text font-family="${el.fontFamily || "Arial"}" font-size="${size}"${fillAttr}${art.attrs} text-anchor="${anchor}" xml:space="preserve">${body}</text>`
+    `<g font-family="${esc(el.fontFamily || "Arial")}" font-size="${el.fontSize || 18}"${fillAttr}${art.attrs} xml:space="preserve">${body}</g>`
   );
+}
+
+const r2 = (v: number) => Math.round(v * 100) / 100;
+
+/** The rotate/flip transform of a box element about its centre (SVG). */
+function boxTransform(el: SlideElement): string {
+  if (!el.rotation && !el.flipH && !el.flipV) return "";
+  const cx = r2(el.x + el.w / 2);
+  const cy = r2(el.y + el.h / 2);
+  const parts = [`translate(${cx} ${cy})`];
+  if (el.rotation) parts.push(`rotate(${el.rotation})`);
+  if (el.flipH || el.flipV) parts.push(`scale(${el.flipH ? -1 : 1} ${el.flipV ? -1 : 1})`);
+  parts.push(`translate(${-cx} ${-cy})`);
+  return parts.join(" ");
 }
 
 /** SVG for a gradient/picture background (M7), drawn over the colour. */
@@ -368,12 +375,13 @@ export function backgroundSVG(slide: Pick<Slide, "bgFill">): string {
 }
 
 // Render one slide to a standalone SVG string (matches the canvas model).
-function slideToSVG(slide: Slide): string {
+export function slideToSVG(slide: Slide, measure: Measure = canvasMeasure): string {
   const parts: string[] = [
     `<rect x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" fill="${slide.background || "#ffffff"}"/>`,
     backgroundSVG(slide),
   ];
   for (const el of flattenGroups(slide.elements)) {
+    const before = parts.length;
     const strokeAttr =
       el.stroke && el.stroke !== "none"
         ? ` stroke="${el.stroke}" stroke-width="${el.strokeWidth || 1}"`
@@ -412,18 +420,28 @@ function slideToSVG(slide: Slide): string {
     } else if (el.type === "image" && el.src) {
       parts.push(imageSVG(el));
     } else if (el.type === "text") {
-      parts.push(textSVG(el));
+      parts.push(textSVG(el, measure));
     } else if (el.type === "table" && el.table) {
-      parts.push(tableSVG(el));
+      parts.push(tableSVG(el, measure));
     }
+    // Rotation/flip of everything but presets (those carry their own).
+    const tf = el.type === "shape" || el.type === "connector" ? "" : boxTransform(el);
+    if (tf && parts.length > before) parts.splice(before, parts.length - before, `<g transform="${tf}">${parts.slice(before).join("")}</g>`);
+    // Alt text as an SVG title (screen readers, tooltips).
+    if (el.alt && parts.length > before) parts.splice(before, parts.length - before, `<g><title>${esc(el.alt)}</title>${parts.slice(before).join("")}</g>`);
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}" viewBox="0 0 ${CANVAS_W} ${CANVAS_H}">${parts.join("")}</svg>`;
 }
 
+/** Pixels per logical unit of the PNG/JPEG exports (1920 px wide). */
+export const IMAGE_SCALE = 2;
+
 // Rasterize an SVG string to a PNG/JPEG blob via an offscreen canvas.
-function svgToImage(
+export function svgToImage(
   svg: string,
   type: "image/png" | "image/jpeg",
+  size: { w: number; h: number } = { w: CANVAS_W * IMAGE_SCALE, h: CANVAS_H * IMAGE_SCALE },
+  quality = 0.92,
 ): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -431,22 +449,20 @@ function svgToImage(
       "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = CANVAS_W;
-      canvas.height = CANVAS_H;
+      canvas.width = Math.round(size.w);
+      canvas.height = Math.round(size.h);
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         reject(new Error("no 2d context"));
         return;
       }
-      if (type === "image/jpeg") {
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-      }
-      ctx.drawImage(img, 0, 0);
+      ctx.fillStyle = "#fff";
+      if (type === "image/jpeg") ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
         type,
-        0.92,
+        quality,
       );
     };
     img.onerror = () => reject(new Error("SVG render failed"));
@@ -454,10 +470,38 @@ function svgToImage(
   });
 }
 
+/** safeName makes a deck title usable as a file name. */
+export function safeName(title: string): string {
+  return (title || "presentation").replace(/[/\\?%*:|"<>]/g, "-");
+}
+
 /**
- * downloadDeck exports the presentation. pptx is built by pptx/write.ts; pdf is
- * produced via a faithful print window (Save as PDF); html/txt are written
- * client-side.
+ * prepareDeck turns a deck into what the picture-based exports draw:
+ * charts, clips and warps as pictures, the asset pictures inlined (an SVG
+ * drawn to a canvas can't fetch), and header/footer placeholders applied.
+ */
+export async function prepareDeck(deck: DeckDoc): Promise<DeckDoc> {
+  const d = await inlineImages(await objectsToPictures(deck));
+  return { ...d, slides: d.slides.map((_, i) => withFooters(d, i)) };
+}
+
+/** A zip of every slide as PNG/JPEG/SVG (slide-01.png, …). */
+async function imagesZip(deck: DeckDoc, kind: "png" | "jpg" | "svg"): Promise<Blob> {
+  const { default: JSZip } = await import("jszip");
+  const zip = new JSZip();
+  const pad = String(deck.slides.length).length;
+  for (let i = 0; i < deck.slides.length; i++) {
+    const svg = slideToSVG(deck.slides[i]);
+    const name = `slide-${String(i + 1).padStart(Math.max(2, pad), "0")}.${kind}`;
+    if (kind === "svg") zip.file(name, svg);
+    else zip.file(name, await svgToImage(svg, kind === "png" ? "image/png" : "image/jpeg"));
+  }
+  return zip.generateAsync({ type: "blob", mimeType: "application/zip" });
+}
+
+/**
+ * downloadDeck exports the presentation. pptx is built by pptx/write.ts, odp
+ * by odp/write.ts, the PDF by pdfExport.ts; the rest are written here.
  */
 export async function downloadDeck(
   deck: DeckDoc,
@@ -465,11 +509,23 @@ export async function downloadDeck(
   fmt: DeckFormat,
   slideIndex = 0,
 ): Promise<void> {
-  const name = (title || "presentation").replace(/[/\\?%*:|"<>]/g, "-");
+  const name = safeName(title);
+  if (fmt === "pdf") {
+    const { deckToPdf } = await import("./pdfExport");
+    const bytes = await deckToPdf(deck, title, { layout: "slides", includeHidden: true });
+    triggerDownload(new Blob([bytes as BlobPart], { type: "application/pdf" }), `${name}.pdf`);
+    return;
+  }
   // Charts, clips and warped word art export as pictures (not to pptx).
   if (fmt !== "pptx" && fmt !== "txt") deck = await objectsToPictures(deck);
   // Files that leave the browser carry their pictures inline.
-  if (fmt !== "pdf" && fmt !== "txt") deck = await inlineImages(deck);
+  if (fmt !== "txt") deck = await inlineImages(deck);
+
+  if (fmt === "png-zip" || fmt === "jpg-zip" || fmt === "svg-zip") {
+    const withHF = { ...deck, slides: deck.slides.map((_, i) => withFooters(deck, i)) };
+    triggerDownload(await imagesZip(withHF, fmt.slice(0, 3) as "png" | "jpg" | "svg"), `${name}.zip`);
+    return;
+  }
 
   // Current-slide image exports (Google parity: jpg/png/svg).
   if (fmt === "svg" || fmt === "png" || fmt === "jpg") {
@@ -516,19 +572,10 @@ export async function downloadDeck(
     return;
   }
 
-  if (fmt === "pdf") {
-    // Open a print window with each slide as a page; the user saves as PDF.
-    const win = window.open("", "_blank");
-    if (!win) {
-      window.alert("Allow pop-ups to export as PDF.");
-      return;
-    }
-    win.document.write(fullHTML(deck, name));
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-    }, 300);
+  if (fmt === "odp") {
+    const { deckToOdp } = await import("./odp/write");
+    const bytes = await deckToOdp(deck, title || "Presentation");
+    triggerDownload(new Blob([bytes as BlobPart], { type: "application/vnd.oasis.opendocument.presentation" }), `${name}.odp`);
     return;
   }
 
@@ -543,3 +590,5 @@ export async function downloadDeck(
     `${name}.pptx`,
   );
 }
+
+export { triggerDownload };

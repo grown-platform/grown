@@ -62,7 +62,7 @@ import {
   imageNaturalSize,
   uploadDeckAsset,
 } from "./api";
-import { externalizeImages } from "./assets";
+import { externalizeImages, rehomeAssets } from "./assets";
 import { AltTextDialog, ImageControls, type ImageCommands } from "./ImageControls";
 import { useObjects } from "./useObjects";
 import { refitDiagram } from "./diagrams";
@@ -114,6 +114,10 @@ import { BackgroundDialog, HeaderFooterDialog, LayoutGrid, PageSetupDialog, Them
 import { SlideCanvas } from "./SlideCanvas";
 import { SlideMenuBar, type SlideActions } from "./SlideMenuBar";
 import { downloadDeck } from "./export";
+import { PrintDialog } from "./PrintDialog";
+import { OutlineDialog, ShortcutsDialog } from "./A11yDialogs";
+import { selectionAnnouncement, slideLabel } from "./a11y";
+import { deleteSlides, moveSlides, railAt, railClamp, railClick, railGo, railSelectAll, railTarget, type RailSel } from "./railOps";
 import { ShareDialog } from "./ShareDialog";
 import { DeckVersionHistory } from "../../components/versions/DeckVersionPreview";
 import { VERSION_RESTORED_MSG, isVersionRestoredMsg } from "../../components/versions/api";
@@ -158,11 +162,17 @@ import {
 import {
   editorKeyAction,
   isSaveKey,
+  isPrintKey,
+  zoomKey,
+  paneKey,
+  preventsDefaultKey,
+  railKeyAction,
   textKeyAction,
   type TextKeyAction,
   type TextToggle,
 } from "./keymap";
-import { GRID_SIZE, fitCanvasWidth } from "./geometry";
+import { GRID_SIZE, fitCanvasWidth, zoomStep } from "./geometry";
+import { CANVAS_W } from "./model";
 import {
   primaryId,
   selectAll,
@@ -172,7 +182,9 @@ import {
 import { groupElements, ungroupMany } from "./groupOps";
 import {
   CLIP_MIME,
+  clipboardHtml,
   clipboardText,
+  internalFromHtml,
   decodeClipboard,
   encodeClipboard,
   pasteElements,
@@ -258,6 +270,19 @@ interface Peer {
   ts: number;
 }
 
+/** Off-screen but read by screen readers. */
+const VISUALLY_HIDDEN = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  p: 0,
+  m: "-1px",
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  whiteSpace: "nowrap",
+  border: 0,
+} as const;
+
 export function DeckEditor({ user }: { user: User }) {
   const { id = "" } = useParams();
   const navigate = useNavigate();
@@ -289,6 +314,15 @@ export function DeckEditor({ user }: { user: User }) {
   const [motionOpen, setMotionOpen] = useState(false);
   const [selEffect, setSelEffect] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  // Slide rail selection (M13): several slides, a range anchor, the focus.
+  const [railSel, setRailSel] = useState<RailSel>(() => railAt(0));
+  // Editor zoom: null fits the stage.
+  const [zoom, setZoom] = useState<number | null>(null);
+  const [showMarks, setShowMarks] = useState(false);
+  const railRef = useRef<HTMLDivElement | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [presenterWin, setPresenterWin] = useState(false); // open the presenter window with the show
   const clip = useRef<SlideElement[] | null>(null);
@@ -379,6 +413,24 @@ export function DeckEditor({ user }: { user: User }) {
   const selIds = sel.filter((i) => live.has(i)); // click order, last = primary
   const selId = primaryId(selIds);
   const selected: SlideElement | undefined = selectedElement(slide, selId);
+
+  // The rail follows the current slide unless the rail itself moved it.
+  useEffect(() => {
+    setRailSel((r) => {
+      const c = railClamp(r, slides.length);
+      return c.cur === cur && c.sel.includes(cur) ? c : railAt(cur);
+    });
+  }, [cur, slides.length]);
+  const focusThumb = (i: number) =>
+    window.requestAnimationFrame(() => railRef.current?.querySelector<HTMLElement>(`[data-index="${i}"]`)?.focus());
+  // Screen-reader announcements of the canvas selection.
+  const announce = slide && selectedEls.length ? selectionAnnouncement(selectedEls) : "";
+  // Leaving a text box (Esc) hands keyboard focus back to the canvas.
+  useEffect(() => {
+    if (editingText) return;
+    const a = document.activeElement;
+    if (!a || a === document.body) document.querySelector<HTMLElement>('[data-testid="slide-canvas"]')?.focus({ preventScroll: true });
+  }, [editingText]);
 
   // The cell selection belongs to the selected table.
   const selTable = selected?.type === "table" && selected.table && selIds.length === 1 ? selected : undefined;
@@ -617,6 +669,26 @@ export function DeckEditor({ user }: { user: User }) {
     const onKey = (e: KeyboardEvent) => {
       // The slideshow handles its own keys (SlideShow).
       if (present) return;
+      // NumLock/ScrollLock do nothing; Ctrl+=/-/0 zoom the editor, not the page.
+      if (preventsDefaultKey(e)) {
+        e.preventDefault();
+        const z = zoomKey(e);
+        if (z !== null) doZoom(z === 1 ? "in" : z === -1 ? "out" : "fit");
+        return;
+      }
+      // F6 / Shift+F6: next / previous pane (slides, canvas, notes).
+      const pane = paneKey(e);
+      if (pane) {
+        e.preventDefault();
+        cyclePane(pane);
+        return;
+      }
+      // Ctrl+/: the keyboard shortcut list.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "/" || e.code === "Slash")) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
       // F5 / Ctrl+Shift+F5: slideshow from the beginning; Shift+F5 /
       // Ctrl+F5: from the current slide (PowerPoint / Google Slides).
       if (e.key === "F5" && !e.altKey) {
@@ -630,6 +702,12 @@ export function DeckEditor({ user }: { user: User }) {
       if (isSaveKey(e)) {
         e.preventDefault();
         saveNow();
+        return;
+      }
+      // Ctrl/Cmd+P opens the print dialog (never the browser's page print).
+      if (isPrintKey(e)) {
+        e.preventDefault();
+        setPrintOpen(true);
         return;
       }
       // Ctrl/Cmd+H opens find and replace (also from inside a text box).
@@ -735,14 +813,24 @@ export function DeckEditor({ user }: { user: User }) {
         e.preventDefault();
         setSel(selectAll(slide));
       } else if (act.type === "cycle") {
-        // Only when nothing focusable has focus, so Tab still moves between
-        // toolbar controls.
-        if (e.target !== document.body || !slide?.elements.length) return;
+        // Only on the canvas (or with nothing focused), so Tab still moves
+        // between toolbar controls; F6 leaves the canvas.
+        const tt = e.target as HTMLElement;
+        if ((tt !== document.body && tt.dataset?.testid !== "slide-canvas") || !slide?.elements.length) return;
         e.preventDefault();
         const next = cycleSelection(slide.elements, selIds, act.dir);
         if (next) setSel([next]);
       } else if (act.type === "deselect") {
         setSel([]);
+      } else if (act.type === "editText") {
+        // Enter / F2: edit the selected text box, caret at the start.
+        if (selected && selIds.length === 1 && selected.type === "text" && !selected.locked) {
+          e.preventDefault();
+          setEditRequest({ id: selected.id, sel: [0, 0], nonce: Date.now() });
+        }
+      } else if (act.type === "toggleMarks") {
+        e.preventDefault();
+        setShowMarks((v) => !v);
       } else if (act.type === "group") {
         e.preventDefault();
         doGroup();
@@ -781,13 +869,23 @@ export function DeckEditor({ user }: { user: User }) {
         !!t?.isContentEditable;
       if (inField) return;
       const data = e.clipboardData;
-      const internal = data?.getData(CLIP_MIME);
+      const html = data?.getData("text/html") ?? "";
+      const internal = data?.getData(CLIP_MIME) || internalFromHtml(html);
       const text = data?.getData("text/plain") ?? "";
-      // Elements copied in Grown (this tab or another).
+      // Elements copied in Grown (this tab, another tab or another deck).
       if (decodeClipboard(internal)) {
         pastePending.current = false;
         e.preventDefault();
-        insertEls(pasteElements({ internal }));
+        const els = pasteElements({ internal });
+        insertEls(els);
+        // Pictures from another deck's asset store are copied into this one.
+        void rehomeAssets(els, id, async (u) => {
+          const r = await fetch(u, { credentials: "same-origin" });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return uploadDeckAsset(id, await r.blob());
+        }).then((moved) => {
+          if (moved !== els) upsertMany(moved);
+        });
         return;
       }
       // The in-app clipboard, if the OS clipboard still holds what we copied.
@@ -802,7 +900,7 @@ export function DeckEditor({ user }: { user: User }) {
         return;
       }
       // Text or HTML from elsewhere becomes a new text box.
-      const els = pasteElements({ html: data?.getData("text/html"), text });
+      const els = pasteElements({ html, text });
       if (els.length) {
         pastePending.current = false;
         e.preventDefault();
@@ -814,6 +912,8 @@ export function DeckEditor({ user }: { user: User }) {
       copyPending.current = false;
       if (!e.clipboardData || !clip.current) return;
       e.clipboardData.setData("text/plain", clipboardText(clip.current));
+      // Rich HTML for Docs and other editors (it also carries the payload).
+      e.clipboardData.setData("text/html", clipboardHtml(clip.current));
       e.clipboardData.setData(CLIP_MIME, encodeClipboard(clip.current));
       e.preventDefault();
     };
@@ -826,6 +926,66 @@ export function DeckEditor({ user }: { user: User }) {
       window.removeEventListener("cut", onCopy);
     };
   }); // re-bind each render so upsertElement closes over the current slide
+
+  // ---- focus, zoom, rail (M13) ----
+  function doZoom(how: "in" | "out" | "fit" | number) {
+    if (how === "fit") setZoom(null);
+    else if (typeof how === "number") setZoom(how);
+    else setZoom(zoomStep(zoom ?? canvasW / CANVAS_W, how === "in" ? 1 : -1));
+  }
+  function cyclePane(dir: 1 | -1) {
+    const rail = railRef.current?.querySelector<HTMLElement>(`[data-index="${cur}"]`) ?? null;
+    const canvas = document.querySelector<HTMLElement>('[data-testid="slide-canvas"]');
+    const notes = document.querySelector<HTMLElement>('textarea[aria-label="Speaker notes for this slide"]');
+    const panes = [rail, canvas, notes].filter((p): p is HTMLElement => !!p);
+    if (!panes.length) return;
+    const a = document.activeElement;
+    const i = panes.findIndex((p) => p === a || p.contains(a) || (p === rail && !!railRef.current?.contains(a)));
+    const next = i < 0 ? (dir > 0 ? 0 : panes.length - 1) : (i + dir + panes.length) % panes.length;
+    panes[next].focus();
+  }
+  function railSelect(s: RailSel) {
+    setRailSel(s);
+    if (s.cur !== cur) {
+      setCur(s.cur);
+      setSelId(null);
+    }
+  }
+  function onRailKey(e: React.KeyboardEvent) {
+    const a = railKeyAction(e);
+    if (!a) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (a.type === "go") {
+      const to = railTarget(railSel.cur, a.to, slides.length);
+      railSelect(railGo(railSel, to, a.extend));
+      focusThumb(to);
+    } else if (a.type === "move") {
+      const r = moveSlides(slides, railSel, a.how);
+      if (!r) return;
+      setSlides(r.slides);
+      setRailSel(r.sel);
+      setCur(r.sel.cur);
+      focusThumb(r.sel.cur);
+    } else if (a.type === "delete") {
+      const r = deleteSlides(slides, railSel);
+      setSlides(r.slides);
+      setRailSel(r.sel);
+      setCur(r.sel.cur);
+      setSelId(null);
+      focusThumb(r.sel.cur);
+    } else if (a.type === "selectAll") {
+      setRailSel(railSelectAll(slides.length, cur));
+    } else if (a.type === "newSlide") {
+      doNewSlide();
+      focusThumb(cur + 1);
+    } else if (a.type === "duplicate") {
+      duplicateSlide();
+      focusThumb(cur + 1);
+    } else if (a.type === "hide") {
+      setSlides(toggleHidden(slides, railSel.sel.map((i) => slides[i]?.id).filter(Boolean) as string[]));
+    }
+  }
 
   // ---- slide ops ----
   function applySlidesResult(r: SlidesResult | null, clearSel = true) {
@@ -1642,7 +1802,7 @@ export function DeckEditor({ user }: { user: User }) {
         window.alert(`Download failed: ${(e as Error).message}`);
       }
     },
-    print: () => actions.download("pdf"),
+    print: () => setPrintOpen(true),
     undo,
     redo,
     insert,
@@ -1710,6 +1870,12 @@ export function DeckEditor({ user }: { user: User }) {
     image: imageCmd,
     altText: () => selIds.length && setAltFor(selIds),
     objects,
+    zoom: doZoom,
+    zoomPct: zoom === null ? null : Math.round(zoom * 100),
+    showMarks,
+    toggleMarks: () => setShowMarks((v) => !v),
+    openOutline: () => setOutlineOpen(true),
+    openShortcuts: () => setShortcutsOpen(true),
   };
 
   if (doc === null) {
@@ -2135,15 +2301,31 @@ export function DeckEditor({ user }: { user: User }) {
             height: { xs: "100vh", md: "auto" },
           }}
         >
+          <Box
+            ref={railRef}
+            role="listbox"
+            aria-label="Slides"
+            aria-multiselectable="true"
+            aria-orientation="vertical"
+            data-testid="slide-rail"
+            onKeyDown={onRailKey}
+          >
           {slides.map((s, i) => {
             const here = peerList.filter((p) => p.slideIdx === i);
+            const picked = railSel.sel.includes(i);
             return (
               <Box
                 key={s.id}
                 data-testid="slide-thumb"
-                onClick={() => {
-                  setCur(i);
-                  setSelId(null);
+                data-index={i}
+                role="option"
+                id={`slide-option-${i}`}
+                aria-selected={picked}
+                aria-current={i === cur ? "true" : undefined}
+                aria-label={slideLabel(s, i, slides.length)}
+                tabIndex={i === cur ? 0 : -1}
+                onClick={(e) => {
+                  railSelect(railClick(railSel, i, { shift: e.shiftKey, toggle: e.ctrlKey || e.metaKey }));
                 }}
                 sx={{
                   display: "flex",
@@ -2151,22 +2333,29 @@ export function DeckEditor({ user }: { user: User }) {
                   mb: 1,
                   cursor: "pointer",
                   alignItems: "flex-start",
+                  borderRadius: 6,
+                  outline: "none",
+                  "&:focus-visible": { outline: "2px solid", outlineColor: "focusVisible", outlineOffset: 2 },
                 }}
               >
                 <Typography
                   level="body-xs"
+                  aria-hidden
                   sx={{ width: 16, textAlign: "right", opacity: 0.6, pt: 0.5 }}
                 >
                   {i + 1}
                 </Typography>
                 <Box
+                  aria-hidden
+                  data-picked={picked ? "true" : undefined}
                   sx={{
                     position: "relative",
                     border: "2px solid",
-                    borderColor: i === cur ? "primary.500" : "transparent",
+                    borderColor: i === cur ? "primary.500" : picked ? "primary.300" : "transparent",
                     borderRadius: 4,
                     overflow: "hidden",
                     flexShrink: 0,
+                    "@media (forced-colors: active)": { borderColor: i === cur || picked ? "Highlight" : "Canvas" },
                   }}
                 >
                   <Box sx={{ opacity: s.hidden ? 0.45 : 1, lineHeight: 0 }}>
@@ -2219,6 +2408,7 @@ export function DeckEditor({ user }: { user: User }) {
               </Box>
             );
           })}
+          </Box>
           <Box sx={{ display: "flex", gap: 0.25, mt: 0.5 }}>
             <Button
               size="sm"
@@ -2301,17 +2491,30 @@ export function DeckEditor({ user }: { user: User }) {
               minHeight: 0,
               minWidth: 0,
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              alignItems: "safe center",
+              justifyContent: "safe center",
               bgcolor: "#e9eaed",
               p: 3,
               overflow: "auto",
             }}
           >
+            <Box
+              component="span"
+              id="slide-canvas-help"
+              sx={VISUALLY_HIDDEN}
+            >
+              Tab selects the next object, Enter edits text, arrow keys move, Escape deselects, F6 moves to the next pane.
+            </Box>
+            <Box component="span" role="status" aria-live="polite" data-testid="canvas-announce" sx={VISUALLY_HIDDEN}>
+              {announce}
+            </Box>
             {slide && (
               <SlideCanvas
                 slide={slide}
-                width={canvasW}
+                a11yLabel={`Slide ${cur + 1} of ${slides.length}, editing canvas`}
+                describedBy="slide-canvas-help"
+                showMarks={showMarks}
+                width={zoom ? Math.round(CANVAS_W * zoom) : canvasW}
                 selectedIds={selIds}
                 onSelect={(ids) => {
                   savedTextSel.current = null;
@@ -2709,6 +2912,24 @@ export function DeckEditor({ user }: { user: User }) {
           }}
         />
       )}
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <OutlineDialog
+        open={outlineOpen}
+        onClose={() => setOutlineOpen(false)}
+        slides={slides}
+        onGoto={(i) => {
+          setOutlineOpen(false);
+          setCur(i);
+          setSelId(null);
+        }}
+        onAltText={(i, el) => {
+          setOutlineOpen(false);
+          setCur(i);
+          setSel([el.id]);
+          setAltFor([el.id]);
+        }}
+      />
+      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} deck={printOpen ? doc : null} title={title} cur={cur} />
       <ShareDialog
         open={shareOpen}
         onClose={() => setShareOpen(false)}

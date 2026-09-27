@@ -106,6 +106,16 @@ export interface SlideActions {
   altText: () => void;
   /** Charts, diagrams, media and word art (M11). */
   objects: ObjectActions;
+  /** Editor zoom (M13): in/out/fit or a factor; `zoomPct` null = fit. */
+  zoom: (how: "in" | "out" | "fit" | number) => void;
+  zoomPct: number | null;
+  /** View ▸ Show paragraph marks. */
+  showMarks: boolean;
+  toggleMarks: () => void;
+  /** View ▸ Outline: the screen-reader friendly outline + alt text check. */
+  openOutline: () => void;
+  /** Help ▸ Keyboard shortcuts (Ctrl+/). */
+  openShortcuts: () => void;
 }
 
 export interface ObjectActions {
@@ -238,9 +248,28 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
             {check(actions.snapGrid)}Grid
           </MenuItem>
           <MenuItem disabled>Live pointers{arrow}</MenuItem>
-          <MenuItem disabled>Zoom{arrow}</MenuItem>
+          {section(`Zoom${actions.zoomPct ? ` (${actions.zoomPct}%)` : " (fit)"}`)}
+          <MenuItem sx={sub} onClick={() => actions.zoom("in")}>
+            Zoom in{kbd("Ctrl+=")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.zoom("out")}>
+            Zoom out{kbd("Ctrl+-")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.zoom("fit")}>
+            {check(actions.zoomPct === null)}Fit{kbd("Ctrl+0")}
+          </MenuItem>
+          {[50, 100, 200].map((z) => (
+            <MenuItem key={z} sx={sub} onClick={() => actions.zoom(z / 100)}>
+              {check(actions.zoomPct === z)}
+              {z}%
+            </MenuItem>
+          ))}
           <ListDivider />
           <MenuItem onClick={actions.toggleNotes}>Show speaker notes</MenuItem>
+          <MenuItem onClick={actions.toggleMarks}>
+            {check(actions.showMarks)}Show paragraph marks{kbd("Ctrl+Shift+8")}
+          </MenuItem>
+          <MenuItem onClick={actions.openOutline}>Outline and accessibility…</MenuItem>
           <MenuItem
             onClick={() => document.documentElement.requestFullscreen?.()}
           >
@@ -670,7 +699,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem disabled>Q&amp;A history</MenuItem>
           <MenuItem disabled>Notification settings</MenuItem>
           <MenuItem disabled>Preferences</MenuItem>
-          <MenuItem disabled>Accessibility</MenuItem>
+          <MenuItem onClick={actions.openOutline}>Accessibility check…</MenuItem>
           <MenuItem disabled>Activity dashboard</MenuItem>
         </>,
       )}
@@ -693,13 +722,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem disabled>Training</MenuItem>
           <MenuItem disabled>Updates</MenuItem>
           <MenuItem disabled>Help Slides improve</MenuItem>
-          <MenuItem
-            onClick={() =>
-              window.alert(
-                "Keyboard shortcuts\n\nBold Ctrl+B · Italic Ctrl+I · Underline Ctrl+U · Strikethrough Ctrl+5\nSuperscript Ctrl+. · Subscript Ctrl+, · Font size Ctrl+] / Ctrl+[\nAlign Ctrl+L/E/R/J · Bullets Ctrl+Shift+L · Indent Tab / Shift+Tab\nCopy/paste format Ctrl+Shift+C / Ctrl+Shift+V · Clear formatting Ctrl+Space\nLink Ctrl+K · Find and replace Ctrl+H · Line break Shift+Enter\nNo-break space Ctrl+Shift+Space · € Ctrl+Alt+E · En dash Ctrl+Alt+-\nNew slide Ctrl+M · Slideshow Ctrl+F5\nUndo Ctrl+Z · Redo Ctrl+Y · Duplicate Ctrl+D",
-              )
-            }
-          >
+          <MenuItem onClick={actions.openShortcuts}>
             Keyboard shortcuts{kbd("Ctrl+/")}
           </MenuItem>
         </>,

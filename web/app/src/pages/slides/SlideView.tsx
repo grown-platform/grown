@@ -440,28 +440,31 @@ export function renderSlideText(
   el: SlideElement,
   links?: TextLinkOpts,
   fx?: ReadonlyMap<string, SlideFx>,
+  opts?: { marks?: boolean },
 ): React.ReactNode {
   // Word art (M11): a warp draws the text along a path; other effects wrap
   // the body so they don't reach the element's handles or outline.
   if (el.wordArt?.warp) return <WarpedText el={el} />;
   if (el.wordArt) {
-    const body = renderTextBody(el, links, fx);
+    const body = renderTextBody(el, links, fx, opts);
     return (
       <div data-wordart="" style={{ width: "100%", ...(wordArtCss(el.wordArt) as React.CSSProperties) }}>
         {body}
       </div>
     );
   }
-  return renderTextBody(el, links, fx);
+  return renderTextBody(el, links, fx, opts);
 }
 
 function renderTextBody(
   el: SlideElement,
   links?: TextLinkOpts,
   fx?: ReadonlyMap<string, SlideFx>,
+  opts?: { marks?: boolean },
 ): React.ReactNode {
   const paraFx = (i: number) => fx?.get(`${el.id}:p${i}`);
-  const byPara = !!fx && (el.text ?? "").split("\n").some((_, i) => paraFx(i));
+  // Paragraph marks (View ▸ Show paragraph marks) need one block per paragraph.
+  const byPara = !!opts?.marks || (!!fx && (el.text ?? "").split("\n").some((_, i) => paraFx(i)));
   if (!isRich(el)) {
     if (!byPara) return el.text;
     // By-paragraph animation of plain text: one block per paragraph.

@@ -23,6 +23,7 @@ import {
   type ShowMessage,
 } from "./presentOps";
 import { presentKeyAction, presentKeyPreventsDefault } from "./keymap";
+import { prefersReducedMotion } from "./a11y";
 import { resolveSlideLink } from "./links";
 import { fitPresentWidth } from "./geometry";
 
@@ -88,6 +89,9 @@ export function SlideShow({ deckId, slides, start, loop, presenterWindow, onExit
 
   const slide = slides[state.cur];
   const timeline = useMemo(() => buildTimeline(slide), [slide]);
+  // Reduced motion (OS setting): no transitions, effects show their end
+  // state at once (timings and auto-advance are kept).
+  const [reduced] = useState(prefersReducedMotion);
 
   useEffect(() => {
     const r = () => setView({ w: window.innerWidth, h: window.innerHeight });
@@ -103,7 +107,7 @@ export function SlideShow({ deckId, slides, start, loop, presenterWindow, onExit
       slideStart.current = Date.now();
       const forward = state.animate && (state.cur === p.cur + 1 || (state.cur === 0 && p.cur === slides.length - 1));
       const from = slides[p.cur];
-      if (forward && transitionFx(slide).total > 0 && from)
+      if (forward && !reduced && transitionFx(slide).total > 0 && from)
         setTransit((t) => ({ from, fromFx: fxFor(from, buildTimeline(from), p.step, false), n: (t?.n ?? 0) + 1 }));
       else setTransit(null);
     }
@@ -220,7 +224,7 @@ export function SlideShow({ deckId, slides, start, loop, presenterWindow, onExit
   if (!slide) return null;
 
   const pending = !!transit;
-  const fx = fxFor(slide, timeline, state.step, state.animate, pending);
+  const fx = fxFor(slide, timeline, state.step, state.animate && !reduced, pending);
   const tr = slideTransition(slide);
   let fromFx = transit?.fromFx;
   if (transit && tr.type === "morph") {

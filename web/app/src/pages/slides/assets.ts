@@ -145,3 +145,51 @@ export async function externalizeImages<S extends { elements: SlideElement[]; bg
     };
   });
 }
+
+/** The deck an asset URL belongs to (`…/slides/d/<id>/assets/…`), if any. */
+export function assetDeck(src: string | undefined): string | null {
+  const m = src ? /\/slides\/d\/([^/]+)\/assets\//.exec(src) : null;
+  return m ? m[1] : null;
+}
+
+/**
+ * rehomeAssets copies pictures and clips that live in another deck's asset
+ * store (elements pasted from another deck) into this deck's store, so
+ * people who can open only this deck still see them. `copy` fetches and
+ * re-uploads one URL; failures keep the old URL.
+ */
+export async function rehomeAssets(els: SlideElement[], deckId: string, copy: (url: string) => Promise<string>): Promise<SlideElement[]> {
+  const foreign = new Set<string>();
+  const isForeign = (u: string | undefined) => {
+    const d = assetDeck(u);
+    return !!d && d !== deckId;
+  };
+  const collect = (list: readonly SlideElement[]) => {
+    for (const e of list) {
+      if (e.type === "image" && isForeign(e.src)) foreign.add(e.src!);
+      if (e.media) {
+        if (isForeign(e.media.src)) foreign.add(e.media.src);
+        if (isForeign(e.media.poster)) foreign.add(e.media.poster!);
+      }
+      if (e.children) collect(e.children);
+    }
+  };
+  collect(els);
+  if (!foreign.size) return els;
+  const map = new Map<string, string>();
+  for (const u of foreign) {
+    try {
+      map.set(u, await copy(u));
+    } catch {
+      /* keep the old URL */
+    }
+  }
+  const swap = (list: SlideElement[]): SlideElement[] =>
+    list.map((e) => ({
+      ...e,
+      ...(e.type === "image" && e.src && map.has(e.src) ? { src: map.get(e.src)! } : {}),
+      ...(e.media ? { media: swapMedia(e.media, map) } : {}),
+      ...(e.children ? { children: swap(e.children) } : {}),
+    }));
+  return swap(els);
+}

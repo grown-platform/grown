@@ -435,9 +435,9 @@ OnlyOffice: conversion is server-side C++ (`core/X2tConverter`, `core/OOXML`,
 | Feature | Grown | Where |
 | --- | --- | --- |
 | Export pptx | Have (M1). Animations are not exported | `pptx/write.ts` |
-| Export pdf | Partial (browser print dialog) | `export.ts` |
-| Export txt / html / jpg / png / svg | Have | `export.ts` |
-| Export odp | Missing | comment in `export.ts` |
+| Export pdf | Have (M12): a PDF file built in the browser, plus File ▸ Print | `pdfExport.ts`, `pdfWriter.ts` |
+| Export txt / html / jpg / png / svg | Have; every slide as a zip since M12 | `export.ts` |
+| Export odp | Have (M12) | `odp/write.ts` |
 | Import pptx / Import slides | Have (M1). All slides are appended; there is no slide picker | `pptx/read.ts`, File ▸ Import slides, Slides home ▸ Upload .pptx |
 | Open from Drive (`/slides/:id`) | Partial (M1). "Open in Slides" makes an editable copy of a .pptx | `EditorPlaceholder.tsx` |
 
@@ -446,7 +446,7 @@ OnlyOffice: conversion is server-side C++ (`core/X2tConverter`, `core/OOXML`,
 | Feature | Grown | Where |
 | --- | --- | --- |
 | Print (via pdf path) | Have | `actions.print` |
-| Print preview / handouts (N per page) / notes pages | Missing | OO `PrintWithPreview` (28 strings) |
+| Print preview / handouts (N per page) / notes pages | Have (M12): full slides, notes pages, handouts 1/2/3/4/6/9, outline | `PrintDialog.tsx`, `printLayout.ts` |
 
 ### 2.19 Shortcuts
 
@@ -460,7 +460,7 @@ UI `Shortcuts` (256 strings, `ShortcutsEditDialog` customisation).
 | Delete/Backspace, Ctrl+M, arrows nudge, Esc (present) | Have | `DeckEditor.tsx` onKey |
 | Ctrl+B/I/U, Ctrl+Z/Y, Ctrl+D, Ctrl+K, Ctrl+P, Ctrl+F5 | Missing as keys (menu labels only) | `SlideMenuBar.tsx kbd()` |
 | Ctrl+A, Ctrl+X/C/V system clipboard, Ctrl+G group, Tab cycle, Ctrl+Enter next placeholder, Ctrl+Shift+C/V paint, Ctrl+Space clear, Ctrl+Shift+>/< size, Page Up/Down, Home/End slides | Missing | — |
-| Keyboard-shortcuts dialog | Partial (`window.alert` list) | Help menu |
+| Keyboard-shortcuts dialog | Have (M13): Ctrl+/, searchable, generated from `shortcuts.ts` | `A11yDialogs.tsx` |
 
 ---
 
@@ -2049,4 +2049,281 @@ line per warp, effects apply to the whole box (runs can't differ), the
 glow/shadow of a gradient text in the SVG export uses a CSS filter that
 some SVG viewers ignore, and the in-place text editor shows plain text
 while editing.
+
+### 6.16 M12 status (Wave 7): export and print
+
+**One page model, three outputs.** `printLayout.ts` (pure, in points)
+decides which slides print (all, the current one, or a custom range such
+as "1-3, 5, 8-"; hidden slides only when asked, though the current slide
+always prints) and where they go:
+
+- **Full slides:** one 720 pt page per slide, at the deck's aspect.
+- **Notes pages:** portrait paper, with the slide on top and the notes below.
+- **Handouts:** 1, 2, 3, 4, 6 or 9 slides per page, in horizontal or
+  vertical order. With 3 per page, each slide gets 7 ruled lines for notes.
+- **Outline:** titles and body text with list levels, tables row by row,
+  and alt text. It is paginated by estimated height.
+
+Handouts and outline pages carry the deck title in a header. Every paper
+page is numbered. Paper is Letter or A4. The frame, include-hidden and
+grayscale options apply to every layout.
+
+`printRender.ts` draws each page as one SVG. Slides are nested with their
+ids prefixed, so several slides can share a page, and grayscale is an SVG
+colour-matrix filter. The page SVG serves three outputs:
+
+- **Print preview:** the Print dialog.
+- **Print window:** inline SVG, so the browser prints vectors ("Save as
+  PDF" gives a vector PDF).
+- **PDF file:** `pdfExport.deckToPdf` rasterizes each page at 144 dpi
+  (JPEG) and `pdfWriter.ts` writes it. `pdfWriter.ts` is a small PDF 1.4
+  writer written from ISO 32000; it adds no dependency, because pdf-lib
+  lives only in `pdf/`. Each page gets an invisible Helvetica text layer
+  (text boxes, table cells, notes, outline and headers, WinAnsi-encoded),
+  so the PDF is searchable and copyable. It also gets URI link
+  annotations for web and mail links (on a shape, or on a text run),
+  and a UTF-16 title.
+
+File ▸ Download ▸ PDF now downloads that file (all slides, hidden ones
+included) instead of opening the print dialog. File ▸ Print and Ctrl+P
+open the Print dialog, which has a live preview with page navigation,
+Print and Download PDF.
+
+**SVG export fidelity (also PNG/JPEG/PDF).** SVG text used to be one
+`<tspan>` per paragraph with no wrapping. `svgText.layoutTextLines` now
+breaks lines as the HTML renderer does:
+
+- word wrap at the box width, breaking a single over-long word between
+  characters, and `\v` line breaks;
+- insets, paragraph indents and list markers in the hanging indent;
+- alignment, line spacing, space before/after and vertical anchoring.
+
+Widths come from canvas `measureText`, with an estimate outside the
+browser. Rotation and flips now apply to text, pictures, tables and the
+legacy shapes; presets already carried their own. Alt text becomes an
+SVG `<title>`. Links without a colour use the link colour. PNG/JPEG
+export at 1920 px wide (it was 960).
+
+**More formats.** PNG, JPEG or SVG of every slide as a zip
+(`slide-01.png`…). ODP is written by `odp/write.ts` with jszip (ODF 1.3,
+`mimetype` stored first) and supports:
+
+- text with runs, alignment, insets and links;
+- every preset, as the renderer's own path, with fill/stroke/dash/shadow,
+  plus lines and connectors with arrowheads;
+- rotation about the centre, and flattened groups;
+- `Pictures/` (SVG included) with alt text;
+- tables with merges, fills and borders;
+- notes, hidden slides, colour/gradient/picture backgrounds, footers and
+  the loop setting.
+
+Charts, clips and warped word art arrive as pictures (through
+`objectsToPictures`, like the other picture exports). The output opens
+in LibreOffice Impress, checked by converting to PDF with `soffice`.
+
+**Each export path was checked against M1–M11.** `exportPaths.test.ts`
+builds a deck with every feature: runs, bullets, a table, a rotated
+preset, a group, a picture with alt text, a chart, a video, gradient and
+warped word art, a SmartArt-lite diagram and a gradient background. It
+checks that each one reaches:
+
+- the SVG (and so PNG/JPEG and the PDF picture);
+- the HTML export;
+- the print pages, including the text layer and link areas.
+
+pptx has its round-trip suite (M1–M11) and ODP its writer tests.
+
+**Tests.**
+
+- `printLayout.test.ts` (19): range parsing, hidden/current/custom
+  selection, every layout's page count and geometry (the 1–9 grids with
+  no overlaps and all boxes on the page, order, A4), outline pagination
+  and extraction.
+- `svgText.test.ts` (7).
+- `pdfWriter.test.ts` (4). This includes opening the file with pdf.js:
+  page count, MediaBoxes, the text layer, only safe links, and the title.
+- `exportPaths.test.ts` (5).
+- `odp/write.test.ts` (20).
+- e2e `slides-export.spec.ts`:
+  - A feature-rich deck downloads as a PDF: 3 pages, 720×405 pt, the
+    title and table text in the text layer, and every page picture
+    non-blank.
+  - It downloads as a PNG (1920×1080, non-blank), as a zip of 3 PNGs,
+    and as ODP.
+  - Ctrl+P opens the Print dialog: the page count without the hidden
+    slide, then 3-per-page handouts with the hidden slide (one portrait
+    page, 3 slides, ruled lines), a bad and a good custom range, and a
+    notes-pages PDF (2 Letter pages holding each slide's notes).
+  - `GROWN_SLIDES_M12_SHOT=<prefix>` saves the handouts preview, the
+    PDF, its first page picture and the ODP.
+
+**Gaps.**
+
+- The downloaded PDF is a picture per page under a text layer, not
+  vector. The vector route is Print ▸ "Save as PDF".
+- The PDF text layer uses standard Helvetica and WinAnsi, so text in
+  other scripts is left out of it (it is still in the picture).
+- SVG text uses system fonts: web fonts don't load inside an SVG image.
+  Vertical text is laid out horizontally in the SVG/PDF path.
+- ODP gaps:
+  - list markers are literal text, not `text:list`;
+  - gradients keep only two stops;
+  - crop and word-art effects are dropped;
+  - there is no ODP import.
+- The print window prints what the preview shows. Browser print settings
+  (margins, scale) can still shrink it.
+- "Convert to video" is out of scope (declined in the plan).
+
+### 6.17 M13 status (Wave 7): shortcuts, accessibility, polish
+
+**Shortcut suite: 23/23 tagged.** `#Check actions with slides` (#1) is no
+longer skipped. The slide rail is now a keyboard-operable multi-select
+list: pure `railOps.ts` handles selection moves, ranges and Ctrl/Shift
+clicks, moves a non-contiguous selection ±1 or to the start/end, and
+deletes it (one blank slide is kept). `keymap.railKeyAction` maps:
+
+| Keys | Action |
+| --- | --- |
+| Up/Down, Left/Right, PgUp/PgDn, Home/End | Move |
+| Shift + any of those | Extend the selection |
+| Ctrl+Up/Down | Move the selected slides one place |
+| Ctrl+Shift+Up/Down | Move them to the start/end |
+| Delete/Backspace | Delete them |
+| Ctrl+A | Select all slides |
+| Enter or Ctrl+M | New slide |
+| Ctrl+D | Duplicate |
+| Ctrl+Shift+H | Hide/unhide |
+
+The OnlyOffice sequence is replayed in `railOps.test.ts`.
+
+The last two cases are new:
+
+- `#Check prevent default` (#9): NumLock, ScrollLock and Ctrl+= are
+  swallowed. Ctrl+=/-/0 now drive a real editor zoom (0.25–4×, also View
+  ▸ Zoom, fit by default, the stage scrolls), so the page zoom doesn't
+  scale the toolbars.
+- `#Check show paragraph marks (grown-variant)` (#16): Ctrl+Shift+8
+  toggles ¶ marks when no text is selected, and View ▸ Show paragraph
+  marks does the same. Grown keeps Google's Ctrl+Shift+8 = bulleted list
+  when text boxes are selected or being edited.
+
+**Shortcut list.** `shortcuts.ts` holds 52 rows in 5 groups (general,
+slides, objects, text, slideshow). It is our own table; `events.js` was
+read only for coverage. 46 rows carry a probe key press, and
+`shortcuts.test.ts` checks each probe against `keymap.ts`, so the list
+can't drift from the key maps. Help ▸ Keyboard shortcuts and Ctrl+/
+open a searchable dialog of real `<table>`s with row headers. On macOS
+it shows ⌘/⌥/⇧. It replaces the `window.alert`.
+
+**Keyboard-only operation.**
+
+- F6 and Shift+F6 move between the slide rail, the canvas and the
+  speaker notes.
+- The canvas is focusable: clicking it gives it focus. Tab and Shift+Tab
+  cycle through its objects, and still move between toolbar controls
+  elsewhere.
+- Enter or F2 edits the selected text box, with the caret at the start.
+- Esc leaves the text box, the object stays selected and focus returns to
+  the canvas. A second Esc deselects.
+- The arrow keys nudge.
+- The rail keeps a roving tabindex: the current slide is the tab stop,
+  and the other slides are reached with the arrow keys.
+
+**ARIA and names.** Pure `a11y.ts` builds the accessible names:
+`elementKind`/`elementLabel` ("Title: …", "Picture: <alt>", "Shape:
+Star", "Chart: pie", "Table, 2 rows by 3 columns", "Group of 3 objects"),
+`slideLabel` ("Slide 3 of 10: Title, hidden") and
+`selectionAnnouncement`.
+
+- The rail is a `listbox` (`aria-multiselectable`). Its items are
+  `option`s with `aria-selected` and `aria-current`.
+- The canvas is a `region` (`aria-roledescription="slide"`, named "Slide
+  N of M, editing canvas") with a hidden usage hint.
+- Non-text objects are `img` (groups: `group`) named by their alt text.
+- A polite live region announces selection changes.
+- The print, shortcut and outline dialogs are labelled.
+
+**Outline view** (View ▸ Outline and accessibility…, Tools ▸
+Accessibility check…):
+
+- Each slide is an `h3` with a "Go to slide" button. Its body text is in
+  properly nested lists, followed by its notes.
+- An accessibility check lists pictures, charts and clips without alt
+  text (`missingAltText`, group members included). Each links to the Alt
+  text dialog.
+- It shares `slideOutline` with the printed outline.
+
+**High contrast and focus.** Rail items and the canvas have
+`:focus-visible` rings in Joy's focus colour. Under `forced-colors:
+active` the current or selected thumbnail and the selected objects
+outline in `Highlight`.
+
+**Reduced motion.** With `prefers-reduced-motion: reduce` the slideshow
+skips slide transitions, and effects show their end state at once.
+Timings, auto-advance and click steps are unchanged.
+
+**Clipboard (the `copypaste` suite, extended).**
+
+- Copy now also writes `text/html`: text boxes as `<p>` or nested
+  `<ul>`/`<ol>` with `<strong>/<em>/<u>/<s>/<sup>/<sub>/<a>` and colour,
+  tables as `<table>`, and pictures as `<img alt>`. Docs (and other
+  editors) paste rich text.
+- The HTML root carries the internal payload (`data-grown-slides`), so a
+  browser that drops custom clipboard types still pastes real elements.
+- Pasting HTML from Docs, Google Docs or the web (`htmlToElements`,
+  DOMParser):
+  - a lone table becomes a table, and lone pictures become pictures;
+  - anything else becomes one text box with runs (bold, italic,
+    underline, strike, super/sub, colour, safe links);
+  - when every paragraph is a list item it becomes a list, with levels.
+- Elements pasted from another deck bring their pictures and clip
+  posters into this deck's asset store (`assets.rehomeAssets`), so
+  people who can open only this deck still see them.
+
+**Tests.**
+
+| File | Tests | Covers |
+| --- | ---: | --- |
+| `railOps.test.ts` | 5 | #1 |
+| `keymap.test.ts` | 23 | #9, #16, Enter/F2, F6, zoom and rail keys |
+| `shortcuts.test.ts` | 48 | Every probed row (46), plus table and formatting checks |
+| `a11y.test.ts` | 5 | Accessible names |
+| `clipboard.test.ts` | 13 | 6 new |
+| `assets.test.ts` | 3 | `rehomeAssets` |
+| `geometry.test.ts` | +1 | `zoomStep` |
+
+e2e `slides-keyboard.spec.ts` covers:
+
+- Rail roles and names, then Down, Shift+Down, Ctrl+Up and
+  Ctrl+Shift+Down reorders, all persisted, and End + Delete.
+- F6 to the canvas region, Tab through the objects with the live
+  announcements and the picture's alt-text name, and arrow and
+  Shift+arrow nudges.
+- Shift+Tab, Enter to edit and type, Esc back to the canvas, and Esc to
+  deselect.
+- F6 to the notes and round to the rail.
+- Ctrl+= zoom and Ctrl+0 fit, and Ctrl+Shift+8 paragraph marks (the ¶
+  pseudo-element).
+- The Ctrl+/ dialog and its search.
+- The outline dialog: headings, missing alt text and notes, then going
+  to a slide.
+- A second test copies a formatted text box between two decks through
+  the system clipboard, pastes it into a Grown doc (bold kept) and
+  pastes the doc's paragraph back into a deck (bold run kept).
+
+axe-core is not installed in `web/e2e`, so the accessibility checks are
+targeted role and name assertions rather than an axe scan.
+
+**Gaps.**
+
+- There is no Alt+/ menu search in Slides yet (Docs has one).
+- No full audit of the toolbar was run. Menus are Joy's, with their own
+  roles.
+- There is no in-group selection by keyboard (Tab stops at the group).
+- There is no keyboard resize or rotate: use Format ▸ Size & rotation.
+- The outline view is read-only: it is not an editable outline pane.
+- Copying slides between decks from the rail is not implemented yet.
+  Objects paste; whole slides do not.
+- The MotionPanel preview ignores reduced motion. Only the slideshow
+  honours it.
 
