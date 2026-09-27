@@ -898,6 +898,10 @@ func New(cfg Config) *Server {
 					serveSheetsRecalc(w, r, id, cfg.SheetsRepo, cfg.SharingRepo)
 					return
 				}
+				if id, ok := sheetsStructureID(r.URL.Path); ok {
+					serveSheetsStructure(w, r, id, cfg.SheetsRepo, cfg.SharingRepo)
+					return
+				}
 			}
 			if slidesHub != nil {
 				if id, ok := slidesConnectID(r.URL.Path); ok {

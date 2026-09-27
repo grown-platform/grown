@@ -1,0 +1,190 @@
+{
+  "about": "Formula reference shifting for sheet structure ops (M7). Run by internal/sheets/structure_test.go and web/app/src/pages/sheets/formulaShift.test.ts. Hand-written by Grown.",
+  "shift": [
+    { "id": "insert row before range start moves it", "formula": "=SUM(A100:A104)", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 99, "count": 1 }, "expect": "=SUM(A101:A105)" },
+    { "id": "insert row inside range grows it", "formula": "=SUM(A100:A104)", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 101, "count": 1 }, "expect": "=SUM(A100:A105)" },
+    { "id": "insert row before range end grows it", "formula": "=SUM(A100:A104)", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 103, "count": 1 }, "expect": "=SUM(A100:A105)" },
+    { "id": "insert row after range leaves it", "formula": "=SUM(A100:A104)", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 104, "count": 1 }, "expect": "=SUM(A100:A104)" },
+    { "id": "insert three rows before range", "formula": "=SUM(A100:A104)", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 99, "count": 3 }, "expect": "=SUM(A103:A107)" },
+    { "id": "insert two rows after range", "formula": "=SUM(A100:A104)", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 104, "count": 2 }, "expect": "=SUM(A100:A104)" },
+    { "id": "delete row of a single-cell ref", "formula": "=A1+A2", "host": "Sheet1", "op": { "kind": "delete", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=#REF!+A1" },
+    { "id": "delete rows inside range shrinks it", "formula": "=SUM(A1:A5)", "host": "Sheet1", "op": { "kind": "delete", "axis": "row", "sheet": "Sheet1", "index": 1, "count": 2 }, "expect": "=SUM(A1:A3)" },
+    { "id": "delete rows covering range", "formula": "=SUM(A2:A3)", "host": "Sheet1", "op": { "kind": "delete", "axis": "row", "sheet": "Sheet1", "index": 1, "count": 3 }, "expect": "=SUM(#REF!)" },
+    { "id": "delete rows covering range top", "formula": "=SUM(A3:A6)", "host": "Sheet1", "op": { "kind": "delete", "axis": "row", "sheet": "Sheet1", "index": 1, "count": 3 }, "expect": "=SUM(A2:A3)" },
+    { "id": "delete columns inside range", "formula": "=SUM(A1:D1)", "host": "Sheet1", "op": { "kind": "delete", "axis": "col", "sheet": "Sheet1", "index": 1, "count": 2 }, "expect": "=SUM(A1:B1)" },
+    { "id": "absolute refs shift too", "formula": "=$B$5*2", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 2 }, "expect": "=$B$7*2" },
+    { "id": "mixed refs keep their markers", "formula": "=B$5+$C6", "host": "Sheet1", "op": { "kind": "insert", "axis": "col", "sheet": "Sheet1", "index": 1, "count": 1 }, "expect": "=C$5+$D6" },
+    { "id": "qualified ref to target from another sheet", "formula": "=Sheet1!A5+A5", "host": "Sheet2", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=Sheet1!A6+A5" },
+    { "id": "quoted sheet name", "formula": "='My sheet'!A1:B2", "host": "Sheet1", "op": { "kind": "insert", "axis": "col", "sheet": "My sheet", "index": 0, "count": 1 }, "expect": "='My sheet'!B1:C2" },
+    { "id": "sheet names compare case-insensitively", "formula": "=sheet1!a1", "host": "Other", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=sheet1!A2" },
+    { "id": "op on another sheet leaves unqualified refs", "formula": "=A1+Sheet1!A1", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet2", "index": 0, "count": 1 }, "expect": "=A1+Sheet1!A1" },
+    { "id": "string literals are not refs", "formula": "=\"A1\"&A1", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=\"A1\"&A2" },
+    { "id": "function names that look like cells", "formula": "=LOG10(A1)+ATAN2(1,2)+DEC2BIN(3)", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=LOG10(A2)+ATAN2(1,2)+DEC2BIN(3)" },
+    { "id": "whole column ignores row insert", "formula": "=SUM(B:B)", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=SUM(B:B)" },
+    { "id": "whole column follows column insert", "formula": "=SUM(B:C)", "host": "Sheet1", "op": { "kind": "insert", "axis": "col", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=SUM(C:D)" },
+    { "id": "whole column deleted", "formula": "=SUM(B:B)", "host": "Sheet1", "op": { "kind": "delete", "axis": "col", "sheet": "Sheet1", "index": 1, "count": 1 }, "expect": "=SUM(#REF!)" },
+    { "id": "whole rows follow row insert", "formula": "=SUM(2:3)", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=SUM(3:4)" },
+    { "id": "whole rows ignore column delete", "formula": "=SUM($2:$3)", "host": "Sheet1", "op": { "kind": "delete", "axis": "col", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=SUM($2:$3)" },
+    { "id": "move row down", "formula": "=A2+A3+A5", "host": "Sheet1", "op": { "kind": "move", "axis": "row", "sheet": "Sheet1", "index": 1, "count": 1, "to": 4 }, "expect": "=A4+A2+A5" },
+    { "id": "move row up", "formula": "=A5+A2+A1", "host": "Sheet1", "op": { "kind": "move", "axis": "row", "sheet": "Sheet1", "index": 4, "count": 1, "to": 1 }, "expect": "=A2+A3+A1" },
+    { "id": "move columns", "formula": "=B1+C1+D1+E1", "host": "Sheet1", "op": { "kind": "move", "axis": "col", "sheet": "Sheet1", "index": 1, "count": 1, "to": 4 }, "expect": "=D1+B1+C1+E1" },
+    { "id": "move inside own block is a no-op", "formula": "=B1", "host": "Sheet1", "op": { "kind": "move", "axis": "col", "sheet": "Sheet1", "index": 1, "count": 2, "to": 2 }, "expect": "=B1" },
+    { "id": "insert cells down inside the band", "formula": "=SUM(A100:A104)", "host": "Sheet1", "op": { "kind": "insertCells", "sheet": "Sheet1", "rect": { "c1": 0, "r1": 99, "c2": 0, "r2": 99 }, "shift": "down" }, "expect": "=SUM(A101:A105)" },
+    { "id": "insert cells down outside the band", "formula": "=SUM(A1:A5)+SUM(A1:B5)", "host": "Sheet1", "op": { "kind": "insertCells", "sheet": "Sheet1", "rect": { "c1": 1, "r1": 0, "c2": 1, "r2": 0 }, "shift": "down" }, "expect": "=SUM(A1:A5)+SUM(A1:B5)" },
+    { "id": "delete cells up", "formula": "=A5+A2+B5", "host": "Sheet1", "op": { "kind": "deleteCells", "sheet": "Sheet1", "rect": { "c1": 0, "r1": 1, "c2": 0, "r2": 2 }, "shift": "up" }, "expect": "=A3+#REF!+B5" },
+    { "id": "insert cells right", "formula": "=D2+D3", "host": "Sheet1", "op": { "kind": "insertCells", "sheet": "Sheet1", "rect": { "c1": 1, "r1": 1, "c2": 2, "r2": 1 }, "shift": "right" }, "expect": "=F2+D3" },
+    { "id": "delete cells left", "formula": "=C2", "host": "Sheet1", "op": { "kind": "deleteCells", "sheet": "Sheet1", "rect": { "c1": 1, "r1": 1, "c2": 1, "r2": 1 }, "shift": "left" }, "expect": "=B2" },
+    { "id": "structured refs are left alone", "formula": "=SUM(Table1[A1])+A1", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=SUM(Table1[A1])+A2" },
+    { "id": "insert pushing past the last row", "formula": "=A1048576", "host": "Sheet1", "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 0, "count": 1 }, "expect": "=#REF!" }
+  ],
+  "translate": [
+    { "id": "paste two down two right", "formula": "=SIN(A2)", "dr": 1, "dc": 2, "expect": "=SIN(C3)" },
+    { "id": "absolute parts stay", "formula": "=$A$1+A$1+$A1+A1", "dr": 2, "dc": 2, "expect": "=$A$1+C$1+$A3+C3" },
+    { "id": "pushed off the top", "formula": "=A1+B2", "dr": -1, "dc": 0, "expect": "=#REF!+B1" },
+    { "id": "whole column moves sideways only", "formula": "=SUM(A:A)", "dr": 5, "dc": 1, "expect": "=SUM(B:B)" },
+    { "id": "whole rows move down only", "formula": "=SUM(1:2)", "dr": 1, "dc": 3, "expect": "=SUM(2:3)" },
+    { "id": "qualified refs translate", "formula": "=Sheet2!B2*'x y'!C3", "dr": 1, "dc": 0, "expect": "=Sheet2!B3*'x y'!C4" },
+    { "id": "strings untouched", "formula": "=\"B2\"&B2", "dr": 1, "dc": 0, "expect": "=\"B2\"&B3" },
+    { "id": "unary pluses kept 1", "formula": "+++1", "dr": 1, "dc": 0, "expect": "+++1" },
+    { "id": "unary pluses kept 2", "formula": "++++\"STR\"", "dr": 1, "dc": 0, "expect": "++++\"STR\"" },
+    { "id": "unary pluses kept 3", "formula": "++++FALSE", "dr": 1, "dc": 0, "expect": "++++FALSE" },
+    { "id": "unary pluses kept 4", "formula": "+SUM(+++1)+++1", "dr": 1, "dc": 0, "expect": "+SUM(+++1)+++1" },
+    { "id": "unary pluses kept 5", "formula": "+++-SIN(+-+1-+-+1)+-+1+-+1", "dr": 1, "dc": 0, "expect": "+++-SIN(+-+1-+-+1)+-+1+-+1" },
+    { "id": "no-op offset", "formula": "=a1", "dr": 0, "dc": 0, "expect": "=a1" }
+  ],
+  "apply": [
+    {
+      "id": "insert row moves cells, formulas, sizes and names",
+      "sheets": [
+        {
+          "name": "Sheet1", "id": "s1",
+          "celldata": [
+            { "r": 99, "c": 0, "v": { "v": 1, "m": "1" } },
+            { "r": 100, "c": 0, "v": { "v": 2, "m": "2" } },
+            { "r": 101, "c": 0, "v": { "v": 3, "m": "3" } },
+            { "r": 102, "c": 0, "v": { "v": 4, "m": "4" } },
+            { "r": 103, "c": 0, "v": { "v": 5, "m": "5" } },
+            { "r": 104, "c": 0, "v": { "f": "=SUM(A100:A104)", "v": 15, "m": "15" } }
+          ],
+          "config": { "rowlen": { "99": 30, "104": 40 } },
+          "_namedRanges": [{ "name": "nums", "range": "Sheet1!$A$100:$A$104", "sheetId": "s1", "sheetName": "Sheet1" }]
+        },
+        { "name": "Sheet2", "id": "s2", "celldata": [{ "r": 0, "c": 0, "v": { "f": "=SUM(Sheet1!A100:A104)" } }] }
+      ],
+      "op": { "kind": "insert", "axis": "row", "sheet": "Sheet1", "index": 99, "count": 1 },
+      "expect": {
+        "0": {
+          "celldata": [
+            { "r": 100, "c": 0, "v": { "v": 1, "m": "1" } },
+            { "r": 101, "c": 0, "v": { "v": 2, "m": "2" } },
+            { "r": 102, "c": 0, "v": { "v": 3, "m": "3" } },
+            { "r": 103, "c": 0, "v": { "v": 4, "m": "4" } },
+            { "r": 104, "c": 0, "v": { "v": 5, "m": "5" } },
+            { "r": 105, "c": 0, "v": { "f": "=SUM(A101:A105)", "v": 15, "m": "15" } }
+          ],
+          "config": { "rowlen": { "100": 30, "105": 40 } },
+          "_namedRanges": [{ "name": "nums", "range": "Sheet1!$A$101:$A$105", "sheetId": "s1", "sheetName": "Sheet1" }]
+        },
+        "1": { "celldata": [{ "r": 0, "c": 0, "v": { "f": "=SUM(Sheet1!A101:A105)" } }] }
+      }
+    },
+    {
+      "id": "insert column grows merge and shifts CF, DV, filter",
+      "sheets": [
+        {
+          "name": "Sheet1", "id": "s1",
+          "celldata": [
+            { "r": 1, "c": 1, "v": { "v": "x", "mc": { "r": 1, "c": 1, "rs": 2, "cs": 2 } } },
+            { "r": 1, "c": 2, "v": { "mc": { "r": 1, "c": 1 } } },
+            { "r": 2, "c": 1, "v": { "mc": { "r": 1, "c": 1 } } },
+            { "r": 2, "c": 2, "v": { "mc": { "r": 1, "c": 1 } } }
+          ],
+          "config": {
+            "merge": { "1_1": { "r": 1, "c": 1, "rs": 2, "cs": 2 } },
+            "columnlen": { "2": 50, "5": 60 },
+            "colhidden": { "4": 0 }
+          },
+          "grownCF": [{ "id": "cf1", "type": "expression", "ranges": [{ "c1": 3, "r1": 0, "c2": 4, "r2": 9 }], "priority": 1, "formula1": "=$D1>0" }],
+          "grownDV": [{ "id": "dv1", "type": "custom", "ranges": [{ "c1": 0, "r1": 0, "c2": 0, "r2": 4 }], "formula1": "=C1", "formula2": "" }],
+          "grownFilter": { "range": { "r1": 0, "c1": 0, "r2": 10, "c2": 4 }, "columns": { "0": { "a": 1 }, "3": { "b": 2 } }, "sort": { "colId": 3, "desc": true } }
+        }
+      ],
+      "op": { "kind": "insert", "axis": "col", "sheet": "s1", "index": 2, "count": 1 },
+      "expect": {
+        "0": {
+          "celldata": [
+            { "r": 1, "c": 1, "v": { "v": "x", "mc": { "r": 1, "c": 1, "rs": 2, "cs": 3 } } },
+            { "r": 1, "c": 2, "v": { "mc": { "r": 1, "c": 1 } } },
+            { "r": 1, "c": 3, "v": { "mc": { "r": 1, "c": 1 } } },
+            { "r": 2, "c": 1, "v": { "mc": { "r": 1, "c": 1 } } },
+            { "r": 2, "c": 2, "v": { "mc": { "r": 1, "c": 1 } } },
+            { "r": 2, "c": 3, "v": { "mc": { "r": 1, "c": 1 } } }
+          ],
+          "config": {
+            "merge": { "1_1": { "r": 1, "c": 1, "rs": 2, "cs": 3 } },
+            "columnlen": { "3": 50, "6": 60 },
+            "colhidden": { "5": 0 }
+          },
+          "grownCF": [{ "id": "cf1", "type": "expression", "ranges": [{ "c1": 4, "r1": 0, "c2": 5, "r2": 9 }], "priority": 1, "formula1": "=$E1>0" }],
+          "grownDV": [{ "id": "dv1", "type": "custom", "ranges": [{ "c1": 0, "r1": 0, "c2": 0, "r2": 4 }], "formula1": "=D1", "formula2": "" }],
+          "grownFilter": { "range": { "r1": 0, "c1": 0, "r2": 10, "c2": 5 }, "columns": { "0": { "a": 1 }, "4": { "b": 2 } }, "sort": { "colId": 4, "desc": true } }
+        }
+      }
+    },
+    {
+      "id": "move a column right with shift",
+      "sheets": [
+        {
+          "name": "Sheet1", "id": "s1",
+          "celldata": [
+            { "r": 1, "c": 0, "v": { "v": "a" } },
+            { "r": 1, "c": 1, "v": { "v": "b" } },
+            { "r": 1, "c": 2, "v": { "v": "c" } },
+            { "r": 1, "c": 3, "v": { "v": "d" } },
+            { "r": 1, "c": 4, "v": { "v": "e" } },
+            { "r": 0, "c": 6, "v": { "f": "=B2&C2" } }
+          ]
+        }
+      ],
+      "op": { "kind": "move", "axis": "col", "sheet": "Sheet1", "index": 1, "count": 1, "to": 4 },
+      "expect": {
+        "0": {
+          "celldata": [
+            { "r": 0, "c": 6, "v": { "f": "=D2&B2" } },
+            { "r": 1, "c": 0, "v": { "v": "a" } },
+            { "r": 1, "c": 1, "v": { "v": "c" } },
+            { "r": 1, "c": 2, "v": { "v": "d" } },
+            { "r": 1, "c": 3, "v": { "v": "b" } },
+            { "r": 1, "c": 4, "v": { "v": "e" } }
+          ]
+        }
+      }
+    },
+    {
+      "id": "delete cells shifting up",
+      "sheets": [
+        {
+          "name": "Sheet1", "id": "s1",
+          "celldata": [
+            { "r": 0, "c": 0, "v": { "f": "=A3+B3+A4" } },
+            { "r": 2, "c": 0, "v": { "v": 3 } },
+            { "r": 3, "c": 0, "v": { "v": 4 } },
+            { "r": 2, "c": 1, "v": { "v": 9 } }
+          ],
+          "config": { "rowlen": { "3": 25 } }
+        }
+      ],
+      "op": { "kind": "deleteCells", "sheet": "Sheet1", "rect": { "c1": 0, "r1": 1, "c2": 0, "r2": 2 }, "shift": "up" },
+      "expect": {
+        "0": {
+          "celldata": [
+            { "r": 0, "c": 0, "v": { "f": "=#REF!+B3+A2" } },
+            { "r": 1, "c": 0, "v": { "v": 4 } },
+            { "r": 2, "c": 1, "v": { "v": 9 } }
+          ],
+          "config": { "rowlen": { "3": 25 } }
+        }
+      }
+    }
+  ]
+}
