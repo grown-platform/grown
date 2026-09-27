@@ -114,6 +114,7 @@ import { BackgroundDialog, HeaderFooterDialog, LayoutGrid, PageSetupDialog, Them
 import { SlideCanvas } from "./SlideCanvas";
 import { SlideMenuBar, type SlideActions } from "./SlideMenuBar";
 import { downloadDeck } from "./export";
+import { PrintDialog } from "./PrintDialog";
 import { ShareDialog } from "./ShareDialog";
 import { DeckVersionHistory } from "../../components/versions/DeckVersionPreview";
 import { VERSION_RESTORED_MSG, isVersionRestoredMsg } from "../../components/versions/api";
@@ -158,6 +159,7 @@ import {
 import {
   editorKeyAction,
   isSaveKey,
+  isPrintKey,
   textKeyAction,
   type TextKeyAction,
   type TextToggle,
@@ -289,6 +291,7 @@ export function DeckEditor({ user }: { user: User }) {
   const [motionOpen, setMotionOpen] = useState(false);
   const [selEffect, setSelEffect] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [presenterWin, setPresenterWin] = useState(false); // open the presenter window with the show
   const clip = useRef<SlideElement[] | null>(null);
@@ -630,6 +633,12 @@ export function DeckEditor({ user }: { user: User }) {
       if (isSaveKey(e)) {
         e.preventDefault();
         saveNow();
+        return;
+      }
+      // Ctrl/Cmd+P opens the print dialog (never the browser's page print).
+      if (isPrintKey(e)) {
+        e.preventDefault();
+        setPrintOpen(true);
         return;
       }
       // Ctrl/Cmd+H opens find and replace (also from inside a text box).
@@ -1642,7 +1651,7 @@ export function DeckEditor({ user }: { user: User }) {
         window.alert(`Download failed: ${(e as Error).message}`);
       }
     },
-    print: () => actions.download("pdf"),
+    print: () => setPrintOpen(true),
     undo,
     redo,
     insert,
@@ -2709,6 +2718,7 @@ export function DeckEditor({ user }: { user: User }) {
           }}
         />
       )}
+      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} deck={printOpen ? doc : null} title={title} cur={cur} />
       <ShareDialog
         open={shareOpen}
         onClose={() => setShareOpen(false)}

@@ -42,6 +42,12 @@ export function isSaveKey(e: KeyInput): boolean {
   return (!!e.ctrlKey || !!e.metaKey) && !e.altKey && e.key.toLowerCase() === "s";
 }
 
+/** isPrintKey reports Ctrl/Cmd+P: the editor opens its own print dialog
+ *  (also while a text box is being edited) instead of printing the page. */
+export function isPrintKey(e: KeyInput): boolean {
+  return (!!e.ctrlKey || !!e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "p";
+}
+
 /** nudgeDelta maps an arrow key to a (dx, dy) move, or null for other keys. */
 export function nudgeDelta(
   key: string,
