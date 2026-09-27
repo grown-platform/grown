@@ -177,3 +177,36 @@ func TestDocAssetsRejects(t *testing.T) {
 		t.Fatalf("DELETE: %d", rec.Code)
 	}
 }
+
+// TestDocAssetsExportLoader: the export loader reads a picture only for a
+// document the caller can read, asking the access check once per document.
+func TestDocAssetsExportLoader(t *testing.T) {
+	blobs := newMemBlobs()
+	checks := 0
+	a := docs.NewAssets(blobs, func(_ *http.Request, id string) (bool, bool) {
+		checks++
+		return id == "d1", false
+	})
+	_ = blobs.Put(context.Background(), "docs/d1/"+strings.Repeat("a", 64), "image/png", int64(len(png1)), bytes.NewReader(png1))
+	_ = blobs.Put(context.Background(), "docs/d2/"+strings.Repeat("a", 64), "image/png", int64(len(png1)), bytes.NewReader(png1))
+	load := a.Loader(httptest.NewRequest(http.MethodPost, "/api/v1/docs/convert", nil))
+	ctx := context.Background()
+	if b, err := load(ctx, "d1", strings.Repeat("a", 64)); err != nil || !bytes.Equal(b, png1) {
+		t.Fatalf("readable doc: %v", err)
+	}
+	if _, err := load(ctx, "d1", strings.Repeat("b", 64)); err == nil {
+		t.Fatal("missing asset loaded")
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := load(ctx, "d2", strings.Repeat("a", 64)); err == nil {
+			t.Fatal("unreadable doc's asset loaded")
+		}
+	}
+	if checks != 2 {
+		t.Fatalf("access checked %d times, want 2 (once per document)", checks)
+	}
+	var nilAssets *docs.Assets
+	if nilAssets.Loader(nil) != nil {
+		t.Fatal("nil Assets must give a nil loader")
+	}
+}

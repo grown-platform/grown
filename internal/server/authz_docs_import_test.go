@@ -1,7 +1,12 @@
 package server
 
 import (
+	"archive/zip"
 	"bytes"
+	"context"
+	"encoding/base64"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -74,12 +79,12 @@ func TestDocsImportRejectsBadInput(t *testing.T) {
 // converting a truncated document.
 func TestDocsConvertRejectsOversize(t *testing.T) {
 	w := httptest.NewRecorder()
-	serveDocsConvert(w, convertReq("/api/v1/docs/convert?to=md", bytes.Repeat([]byte("a"), docs.MaxConvertBytes+1), true))
+	serveDocsConvert(w, convertReq("/api/v1/docs/convert?to=md", bytes.Repeat([]byte("a"), docs.MaxConvertBytes+1), true), nil)
 	if w.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status %d, want 413", w.Code)
 	}
 	w = httptest.NewRecorder()
-	serveDocsConvert(w, convertReq("/api/v1/docs/convert?to=md", []byte("<p>x</p>"), false))
+	serveDocsConvert(w, convertReq("/api/v1/docs/convert?to=md", []byte("<p>x</p>"), false), nil)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous: status %d, want 401", w.Code)
 	}
@@ -93,7 +98,7 @@ func TestDocsConvertPDFWithoutEngine(t *testing.T) {
 		t.Skip("a PDF engine is installed")
 	}
 	w := httptest.NewRecorder()
-	serveDocsConvert(w, convertReq("/api/v1/docs/convert?to=pdf", []byte("<p>x</p>"), true))
+	serveDocsConvert(w, convertReq("/api/v1/docs/convert?to=pdf", []byte("<p>x</p>"), true), nil)
 	if w.Code != http.StatusNotImplemented && w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d (%s), want 501/503", w.Code, w.Body.String())
 	}
@@ -112,5 +117,49 @@ func TestDocsConvertPDFWithoutEngine(t *testing.T) {
 	serveDocsConvertCapabilities(w, r)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"pdf":false`) {
 		t.Errorf("capabilities: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// exportBlobs is a one-picture blob store for TestDocsConvertResolvesAssets.
+type exportBlobs map[string][]byte
+
+func (b exportBlobs) Put(context.Context, string, string, int64, io.Reader) error { return nil }
+func (b exportBlobs) Get(_ context.Context, key string) (io.ReadCloser, string, int64, error) {
+	d, ok := b[key]
+	if !ok {
+		return nil, "", 0, errors.New("not found")
+	}
+	return io.NopCloser(bytes.NewReader(d)), "image/png", int64(len(d)), nil
+}
+
+// TestDocsConvertResolvesAssets: stored pictures of a readable document are
+// embedded in a pandoc export; another document's are left out.
+func TestDocsConvertResolvesAssets(t *testing.T) {
+	if _, err := exec.LookPath("pandoc"); err != nil {
+		t.Skip("pandoc not installed")
+	}
+	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC")
+	sha := strings.Repeat("c", 64)
+	assets := docs.NewAssets(exportBlobs{"docs/mine/" + sha: png, "docs/theirs/" + sha: png},
+		func(_ *http.Request, id string) (bool, bool) { return id == "mine", true })
+	for doc, want := range map[string]bool{"mine": true, "theirs": false} {
+		w := httptest.NewRecorder()
+		body := []byte(`<p>x <img src="` + docs.AssetURL(doc, sha) + `"></p>`)
+		serveDocsConvert(w, convertReq("/api/v1/docs/convert?to=odt", body, true), assets)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status %d %s", doc, w.Code, w.Body.String())
+		}
+		out := w.Body.Bytes()
+		zr, err := zip.NewReader(bytes.NewReader(out), int64(len(out)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := false
+		for _, f := range zr.File {
+			got = got || strings.HasPrefix(f.Name, "Pictures/")
+		}
+		if got != want {
+			t.Errorf("%s: picture exported = %v, want %v", doc, got, want)
+		}
 	}
 }

@@ -930,7 +930,7 @@ func New(cfg Config) *Server {
 					return
 				}
 				if r.URL.Path == "/api/v1/docs/convert" && r.Method == http.MethodPost {
-					serveDocsConvert(w, r)
+					serveDocsConvert(w, r, docsAssets)
 					return
 				}
 				if r.URL.Path == "/api/v1/docs/convert/capabilities" && r.Method == http.MethodGet {
@@ -2855,7 +2855,9 @@ func serveWhiteboardsWS(w http.ResponseWriter, r *http.Request, id string, repo 
 // serveDocsConvert converts client-rendered HTML to a downloadable format via
 // pandoc. The document content lives client-side as a Yjs CRDT, so the client
 // posts its rendered HTML here; ?to= selects the format and ?name= the filename.
-func serveDocsConvert(w http.ResponseWriter, r *http.Request) {
+// Stored pictures (asset URLs) are read from the docs asset store for the
+// documents the caller can read (assets may be nil: no blob store).
+func serveDocsConvert(w http.ResponseWriter, r *http.Request, assets *docs.Assets) {
 	if _, ok := auth.UserFromContext(r.Context()); !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -2869,7 +2871,7 @@ func serveDocsConvert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data, f, err := docs.ConvertHTML(r.Context(), html, to)
+	data, f, err := docs.ConvertHTMLWith(r.Context(), html, to, docs.ExportOptions{Assets: assets.Loader(r)})
 	switch {
 	case errors.Is(err, docs.ErrPDFUnavailable):
 		// A missing engine is a server configuration, not a failure: 501 so
