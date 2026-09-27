@@ -29,6 +29,10 @@ type RecalcCell struct {
 	// no formula of its own). The client stores M under the grownSpill key so
 	// the next save knows the cell is spill output, not user data.
 	Spill bool `json:"spill,omitempty"`
+	// SpillRows/SpillCols give the size of the dynamic array a formula cell
+	// spills (anchor included); both are 0 for a single value or #SPILL!.
+	SpillRows int `json:"spillRows,omitempty"`
+	SpillCols int `json:"spillCols,omitempty"`
 }
 
 // ErrNotWorkbook is returned when the posted data is not a workbook array.
@@ -56,10 +60,14 @@ func RecalcWorkbook(data string) ([]RecalcCell, error) {
 			if !isFormula && !spilled {
 				continue
 			}
-			out = append(out, RecalcCell{
+			rc := RecalcCell{
 				SheetID: wb[i].ID, SheetIndex: i, R: cd.R, C: cd.C,
 				F: cd.V.F, V: cd.V.V, M: cd.V.M, Spill: spilled && !isFormula,
-			})
+			}
+			if ar, ok := st.spillAreas[a]; ok && isFormula {
+				rc.SpillRows, rc.SpillCols = ar.rows(), ar.cols()
+			}
+			out = append(out, rc)
 		}
 	}
 	return out, nil

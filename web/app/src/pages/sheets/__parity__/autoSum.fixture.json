@@ -1,0 +1,1476 @@
+{
+"_doc": "SheetStructureTests autoCompleteFormula as an op list (recorded facts): set/clean/fmt cells, select a range, run AutoSum, expect a cell formula (\"\" = none) or the selection afterwards.",
+"ops": [
+{
+"op": "clean",
+"ref": "A1:Z100"
+},
+{
+"op": "set",
+"ref": "A1",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "A2",
+"v": "Test"
+},
+{
+"op": "set",
+"ref": "A3",
+"v": "Test1"
+},
+{
+"op": "set",
+"ref": "A4",
+"v": "01/01/2000"
+},
+{
+"op": "select",
+"ref": "A1:A4"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A5",
+"f": "=SUM(A1:A4)"
+},
+{
+"op": "expectSelection",
+"ref": "A1:A5"
+},
+{
+"op": "set",
+"ref": "B1",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "B2",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "B1:B2"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "B3",
+"f": ""
+},
+{
+"op": "expectSelection",
+"ref": "B1:B2"
+},
+{
+"op": "set",
+"ref": "C1",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "C2",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "C3",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "C1:C3"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "C4",
+"f": "=SUM(C2:C3)"
+},
+{
+"op": "expectSelection",
+"ref": "C2:C4"
+},
+{
+"op": "set",
+"ref": "D2",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "D4",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "D1:D4"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D5",
+"f": "=SUM(D1:D4)"
+},
+{
+"op": "expectSelection",
+"ref": "D1:D5"
+},
+{
+"op": "set",
+"ref": "E1",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "E3",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "E4",
+"v": ""
+},
+{
+"op": "select",
+"ref": "E1:E4"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "E4",
+"f": "=SUM(E3)"
+},
+{
+"op": "expectSelection",
+"ref": "E3:E4"
+},
+{
+"op": "set",
+"ref": "F1",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "F3",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "F4",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "F1:F4"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "F5",
+"f": "=SUM(F3:F4)"
+},
+{
+"op": "expectSelection",
+"ref": "F3:F5"
+},
+{
+"op": "set",
+"ref": "G2",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "G4",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "G5",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "G1:G5"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "G6",
+"f": "=SUM(G1:G5)"
+},
+{
+"op": "expectSelection",
+"ref": "G1:G6"
+},
+{
+"op": "set",
+"ref": "A10",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "B10",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "C10",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "A10:C10"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D10",
+"f": "=SUM(B10:C10)"
+},
+{
+"op": "expectSelection",
+"ref": "B10:D10"
+},
+{
+"op": "set",
+"ref": "A11",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "B11",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "A11:C11"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "C11",
+"f": "=SUM(B11)"
+},
+{
+"op": "expectSelection",
+"ref": "B11:C11"
+},
+{
+"op": "set",
+"ref": "B12",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "D12",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "E12",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "A12:E12"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "F12",
+"f": "=SUM(A12:E12)"
+},
+{
+"op": "expectSelection",
+"ref": "A12:F12"
+},
+{
+"op": "set",
+"ref": "A20",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "A21",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "A22",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "B20",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "B21",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "B23",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "A20:B23"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A24",
+"f": "=SUM(A21:A23)"
+},
+{
+"op": "expectSelection",
+"ref": "A21:B24"
+},
+{
+"op": "expectFormula",
+"ref": "B24",
+"f": "=SUM(B21:B23)"
+},
+{
+"op": "expectSelection",
+"ref": "A21:B24"
+},
+{
+"op": "set",
+"ref": "K1",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "L1",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "K3",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "K1:L3"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "L3",
+"f": "=SUM(K3)"
+},
+{
+"op": "expectSelection",
+"ref": "K3:L3"
+},
+{
+"op": "clean",
+"ref": "K5:L10"
+},
+{
+"op": "set",
+"ref": "K6",
+"v": "ds"
+},
+{
+"op": "set",
+"ref": "K8",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "K5:L9"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "L8",
+"f": "=SUM(K8)"
+},
+{
+"op": "expectSelection",
+"ref": "K8:L9"
+},
+{
+"op": "expectFormula",
+"ref": "K9",
+"f": "=SUM(K8)"
+},
+{
+"op": "expectSelection",
+"ref": "K8:L9"
+},
+{
+"op": "expectFormula",
+"ref": "L9",
+"f": "=SUM(K9)"
+},
+{
+"op": "expectSelection",
+"ref": "K8:L9"
+},
+{
+"op": "clean",
+"ref": "A12:M14"
+},
+{
+"op": "set",
+"ref": "K13",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "L13",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "A12:M14"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "M13",
+"f": "=SUM(A13:L13)"
+},
+{
+"op": "expectSelection",
+"ref": "A13:M14"
+},
+{
+"op": "expectFormula",
+"ref": "M14",
+"f": "=SUM(A14:L14)"
+},
+{
+"op": "expectSelection",
+"ref": "A13:M14"
+},
+{
+"op": "expectFormula",
+"ref": "K14",
+"f": "=SUM(K13)"
+},
+{
+"op": "expectSelection",
+"ref": "A13:M14"
+},
+{
+"op": "expectFormula",
+"ref": "L14",
+"f": "=SUM(L13)"
+},
+{
+"op": "expectSelection",
+"ref": "A13:M14"
+},
+{
+"op": "clean",
+"ref": "B10:B14"
+},
+{
+"op": "set",
+"ref": "B11",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "B12",
+"v": "ds"
+},
+{
+"op": "select",
+"ref": "B11:B12"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "B13",
+"f": "=SUM(B11:B12)"
+},
+{
+"op": "expectSelection",
+"ref": "B11:B13"
+},
+{
+"op": "clean",
+"ref": "B13:B14"
+},
+{
+"op": "select",
+"ref": "B11:B13"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "B13",
+"f": "=SUM(B11:B12)"
+},
+{
+"op": "expectSelection",
+"ref": "B11:B13"
+},
+{
+"op": "clean",
+"ref": "B13:B14"
+},
+{
+"op": "select",
+"ref": "B10:B12"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "B13",
+"f": "=SUM(B10:B12)"
+},
+{
+"op": "expectSelection",
+"ref": "B10:B13"
+},
+{
+"op": "clean",
+"ref": "B13:B14"
+},
+{
+"op": "select",
+"ref": "B10:B13"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "B13",
+"f": "=SUM(B10:B12)"
+},
+{
+"op": "expectSelection",
+"ref": "B10:B13"
+},
+{
+"op": "clean",
+"ref": "B20:F20"
+},
+{
+"op": "set",
+"ref": "C20",
+"v": "1"
+},
+{
+"op": "set",
+"ref": "D20",
+"v": "ds"
+},
+{
+"op": "clean",
+"ref": "E20:F20"
+},
+{
+"op": "select",
+"ref": "C20:D20"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "E20",
+"f": "=SUM(C20:D20)"
+},
+{
+"op": "expectSelection",
+"ref": "C20:E20"
+},
+{
+"op": "clean",
+"ref": "E20:F20"
+},
+{
+"op": "select",
+"ref": "C20:E20"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "E20",
+"f": "=SUM(C20:D20)"
+},
+{
+"op": "expectSelection",
+"ref": "C20:E20"
+},
+{
+"op": "clean",
+"ref": "E20:F20"
+},
+{
+"op": "select",
+"ref": "B20:D20"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "E20",
+"f": "=SUM(B20:D20)"
+},
+{
+"op": "expectSelection",
+"ref": "B20:E20"
+},
+{
+"op": "clean",
+"ref": "E20:F20"
+},
+{
+"op": "select",
+"ref": "B20:E20"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "E20",
+"f": "=SUM(B20:D20)"
+},
+{
+"op": "expectSelection",
+"ref": "B20:E20"
+},
+{
+"op": "clean",
+"ref": "A20:A22"
+},
+{
+"op": "set",
+"ref": "A20:A22",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "A20:A22"
+},
+{
+"op": "fmt",
+"ref": "A20:A22",
+"fmt": "m/d/yyyy"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A23",
+"f": ""
+},
+{
+"op": "expectSelection",
+"ref": "A20:A22"
+},
+{
+"op": "clean",
+"ref": "A20:A23"
+},
+{
+"op": "select",
+"ref": "A20:A22"
+},
+{
+"op": "set",
+"ref": "A20:A22",
+"v": "1"
+},
+{
+"op": "fmt",
+"ref": "A20:A22",
+"fmt": "0.00"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A23",
+"f": "=SUM(A20:A22)"
+},
+{
+"op": "expectSelection",
+"ref": "A20:A23"
+},
+{
+"op": "select",
+"ref": "A20:A22"
+},
+{
+"op": "fmt",
+"ref": "A20:A22",
+"fmt": "# ?/?"
+},
+{
+"op": "clean",
+"ref": "A23"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A23",
+"f": "=SUM(A20:A22)"
+},
+{
+"op": "expectSelection",
+"ref": "A20:A23"
+},
+{
+"op": "select",
+"ref": "A20:A22"
+},
+{
+"op": "fmt",
+"ref": "A20:A22",
+"fmt": "0.00E+00"
+},
+{
+"op": "clean",
+"ref": "A23"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A23",
+"f": "=SUM(A20:A22)"
+},
+{
+"op": "expectSelection",
+"ref": "A20:A23"
+},
+{
+"op": "select",
+"ref": "A20:A22"
+},
+{
+"op": "fmt",
+"ref": "A20:A22",
+"fmt": "_([$$-409]* #,##0.00_);_([$$-409]* \\(#,##0.00\\);_([$$-409]* \"-\"??_);_(@_)"
+},
+{
+"op": "clean",
+"ref": "A23"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A23",
+"f": "=SUM(A20:A22)"
+},
+{
+"op": "expectSelection",
+"ref": "A20:A23"
+},
+{
+"op": "select",
+"ref": "A20:A22"
+},
+{
+"op": "fmt",
+"ref": "A20:A22",
+"fmt": "0.00%"
+},
+{
+"op": "clean",
+"ref": "A23"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A23",
+"f": "=SUM(A20:A22)"
+},
+{
+"op": "expectSelection",
+"ref": "A20:A23"
+},
+{
+"op": "select",
+"ref": "A20:A22"
+},
+{
+"op": "fmt",
+"ref": "A20:A22",
+"fmt": "[$-F800]dddd, mmmm d, yyyy"
+},
+{
+"op": "clean",
+"ref": "A23"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A23",
+"f": ""
+},
+{
+"op": "expectSelection",
+"ref": "A20:A22"
+},
+{
+"op": "select",
+"ref": "A20:A22"
+},
+{
+"op": "fmt",
+"ref": "A20:A22",
+"fmt": "@"
+},
+{
+"op": "clean",
+"ref": "A23"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A23",
+"f": ""
+},
+{
+"op": "expectSelection",
+"ref": "A20:A22"
+},
+{
+"op": "clean",
+"ref": "A1:Z100"
+},
+{
+"op": "set",
+"ref": "B10",
+"v": "111"
+},
+{
+"op": "set",
+"ref": "B20:B22",
+"v": "ds"
+},
+{
+"op": "select",
+"ref": "B20:B22"
+},
+{
+"op": "fmt",
+"ref": "B20:B22",
+"fmt": "@"
+},
+{
+"op": "autosum"
+},
+{
+"op": "clean",
+"ref": "B10"
+},
+{
+"op": "set",
+"ref": "A20:A21",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "B20:B22"
+},
+{
+"op": "autosum"
+},
+{
+"op": "set",
+"ref": "A22",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "B20:B22"
+},
+{
+"op": "autosum"
+},
+{
+"op": "set",
+"ref": "A30:B31",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "A30:D31"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "C30",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "C31",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "D30",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "D31",
+"f": ""
+},
+{
+"op": "expectSelection",
+"ref": "A30:D31"
+},
+{
+"op": "set",
+"ref": "A40:B41",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "A40:D41"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "C40",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "C41",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "D40",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "D41",
+"f": ""
+},
+{
+"op": "expectSelection",
+"ref": "A40:D41"
+},
+{
+"op": "set",
+"ref": "A50:A51",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "A50:A53"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A52",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "A52",
+"f": ""
+},
+{
+"op": "expectSelection",
+"ref": "A50:A53"
+},
+{
+"op": "set",
+"ref": "A60:B61",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "A60:D62"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A62",
+"f": "=SUM(A60:A61)"
+},
+{
+"op": "expectFormula",
+"ref": "B62",
+"f": "=SUM(B60:B61)"
+},
+{
+"op": "expectFormula",
+"ref": "C62",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "D62",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "D60",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "D61",
+"f": "=SUM(A61:C61)"
+},
+{
+"op": "expectSelection",
+"ref": "A60:D62"
+},
+{
+"op": "clean",
+"ref": "A1:D70"
+},
+{
+"op": "set",
+"ref": "A70:B70",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "D70"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "C70",
+"f": ""
+},
+{
+"op": "set",
+"ref": "A80:B82",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "D82"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "C80",
+"f": ""
+},
+{
+"op": "set",
+"ref": "A90:B91",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "D94"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A92",
+"f": ""
+},
+{
+"op": "set",
+"ref": "A110:C111",
+"v": "111"
+},
+{
+"op": "set",
+"ref": "C112",
+"v": "111"
+},
+{
+"op": "select",
+"ref": "C113"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "A92",
+"f": ""
+},
+{
+"op": "clean",
+"ref": "A1:Z20"
+},
+{
+"op": "set",
+"ref": "A1:A3",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "B1"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "B1",
+"f": ""
+},
+{
+"op": "select",
+"ref": "D1"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D1",
+"f": ""
+},
+{
+"op": "select",
+"ref": "B1:B3"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "B1",
+"f": "=SUM(A1)"
+},
+{
+"op": "expectFormula",
+"ref": "B2",
+"f": "=SUM(A2)"
+},
+{
+"op": "expectFormula",
+"ref": "B3",
+"f": "=SUM(A3)"
+},
+{
+"op": "clean",
+"ref": "B1:B3"
+},
+{
+"op": "select",
+"ref": "D1:D3"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D1",
+"f": "=SUM(A1:C1)"
+},
+{
+"op": "expectFormula",
+"ref": "D2",
+"f": "=SUM(A2:C2)"
+},
+{
+"op": "expectFormula",
+"ref": "D3",
+"f": "=SUM(A3:C3)"
+},
+{
+"op": "clean",
+"ref": "D1:D3"
+},
+{
+"op": "select",
+"ref": "B1:D1"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "B1",
+"f": "=SUM(A1)"
+},
+{
+"op": "expectFormula",
+"ref": "C1",
+"f": "=SUM(B1)"
+},
+{
+"op": "expectFormula",
+"ref": "D1",
+"f": "=SUM(C1)"
+},
+{
+"op": "clean",
+"ref": "B1:D1"
+},
+{
+"op": "select",
+"ref": "D1:F1"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D1",
+"f": "=SUM(A1:C1)"
+},
+{
+"op": "expectFormula",
+"ref": "E1",
+"f": "=SUM(B1:D1)"
+},
+{
+"op": "expectFormula",
+"ref": "F1",
+"f": "=SUM(C1:E1)"
+},
+{
+"op": "clean",
+"ref": "D1:F1"
+},
+{
+"op": "select",
+"ref": "B2:C3"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "B2",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "C3",
+"f": ""
+},
+{
+"op": "set",
+"ref": "A1:D1",
+"v": "1"
+},
+{
+"op": "select",
+"ref": "D2"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D2",
+"f": ""
+},
+{
+"op": "select",
+"ref": "D6"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D6",
+"f": ""
+},
+{
+"op": "select",
+"ref": "D2:D3"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D2",
+"f": "=SUM(D1)"
+},
+{
+"op": "expectFormula",
+"ref": "D3",
+"f": "=SUM(D2)"
+},
+{
+"op": "clean",
+"ref": "D2:D3"
+},
+{
+"op": "select",
+"ref": "D6:D8"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D6",
+"f": "=SUM(D1:D5)"
+},
+{
+"op": "expectFormula",
+"ref": "D7",
+"f": "=SUM(D2:D6)"
+},
+{
+"op": "expectFormula",
+"ref": "D8",
+"f": "=SUM(D3:D7)"
+},
+{
+"op": "clean",
+"ref": "D6:D8"
+},
+{
+"op": "select",
+"ref": "D2:F2"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D2",
+"f": "=SUM(D1)"
+},
+{
+"op": "expectFormula",
+"ref": "E2",
+"f": "=SUM(E1)"
+},
+{
+"op": "expectFormula",
+"ref": "F2",
+"f": "=SUM(F1)"
+},
+{
+"op": "clean",
+"ref": "D2:F2"
+},
+{
+"op": "select",
+"ref": "D5:F5"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D5",
+"f": "=SUM(D1:D4)"
+},
+{
+"op": "expectFormula",
+"ref": "E5",
+"f": "=SUM(E1:E4)"
+},
+{
+"op": "expectFormula",
+"ref": "F5",
+"f": "=SUM(F1:F4)"
+},
+{
+"op": "clean",
+"ref": "D5:F5"
+},
+{
+"op": "select",
+"ref": "D3:E4"
+},
+{
+"op": "autosum"
+},
+{
+"op": "expectFormula",
+"ref": "D3",
+"f": ""
+},
+{
+"op": "expectFormula",
+"ref": "E4",
+"f": ""
+},
+{
+"op": "clean",
+"ref": "D3:E4"
+},
+{
+"op": "clean",
+"ref": "A1:Z200"
+}
+]
+}

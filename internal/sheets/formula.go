@@ -135,6 +135,48 @@ type FsCell struct {
 type FsCellType struct {
 	FA string `json:"fa,omitempty"`
 	T  string `json:"t,omitempty"`
+	// Extra keeps the other fields, notably `s`, the runs of a rich-text
+	// (inlineStr) cell such as a multi-line one: dropping it lost the text.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// MarshalJSON writes fa/t plus the preserved extra fields.
+func (t FsCellType) MarshalJSON() ([]byte, error) {
+	m := make(map[string]interface{}, 2+len(t.Extra))
+	for k, v := range t.Extra {
+		m[k] = v
+	}
+	if t.FA != "" {
+		m["fa"] = t.FA
+	}
+	if t.T != "" {
+		m["t"] = t.T
+	}
+	return json.Marshal(m)
+}
+
+// UnmarshalJSON reads fa/t and keeps every other field.
+func (t *FsCellType) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if v, ok := raw["fa"]; ok {
+		if err := json.Unmarshal(v, &t.FA); err != nil {
+			return err
+		}
+		delete(raw, "fa")
+	}
+	if v, ok := raw["t"]; ok {
+		if err := json.Unmarshal(v, &t.T); err != nil {
+			return err
+		}
+		delete(raw, "t")
+	}
+	if len(raw) > 0 {
+		t.Extra = raw
+	}
+	return nil
 }
 
 // MarshalJSON serialises FsCell, merging Extra fields at the top level.
@@ -239,6 +281,19 @@ var blankVal = value{kind: kindNum, blank: true}
 type spillArray struct {
 	rows, cols int
 	cells      [][]value // row-major, cells[r][c]
+	// edge is set when the array stands for a reference that runs to the
+	// sheet's last row or column (A:A, 2:2, A5:A1048576), of which only the
+	// populated part was read; see spillEdge.
+	edge *spillEdge
+}
+
+// spillEdge records how far a whole-row/column array really reaches: it
+// ends on the sheet's last row (rows) or column (cols), having started at
+// row fromRow / column fromCol. Spilling it anywhere lower (or further
+// right) than where it started would run off the sheet, which is #SPILL!.
+type spillEdge struct {
+	rows, cols       bool
+	fromRow, fromCol int
 }
 
 // arrayValue wraps a 2D result. A 1×1 array collapses to its scalar; an empty
@@ -493,6 +548,13 @@ func (ev *Evaluator) cellValue(addr cellAddr) value {
 	if v, ok := ev.results[addr]; ok {
 		v.ref = nil
 		return v
+	}
+	// A cell a dynamic array spilled into reads as the array's element (the
+	// grid copy is only its JSON form: booleans as numbers, errors as text).
+	if wb := ev.wb; wb != nil && ev.cur >= 0 && ev.cur < len(wb.sheets) {
+		if v, ok := wb.sheets[ev.cur].spillCells[addr]; ok {
+			return v
+		}
 	}
 	cell := ev.grid.get(addr)
 	if cell == nil {
@@ -1576,6 +1638,11 @@ func (p *parser) callFunc(name string, args []interface{}) value {
 	// Inside ARRAYFORMULA, scalar functions map element-wise over array args.
 	if p.arrayMode && arrayBroadcastFuncs[name] {
 		return p.broadcastCall(name, args)
+	}
+	// An array reaching a value parameter evaluates the function per element
+	// (formula_lift.go).
+	if v, ok := p.liftCall(name, args); ok {
+		return v
 	}
 	return p.dispatch(name, args)
 }

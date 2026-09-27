@@ -10,16 +10,16 @@ tests/cell/spreadsheet-calculation/formula-tests/mathematicTests.js,92,formulas/
 tests/cell/spreadsheet-calculation/formula-tests/statisticalTests.js,155,formulas/statistical,go,internal/sheets/testdata/parity/formula-statistical.json,M3
 tests/cell/spreadsheet-calculation/formula-tests/engineeringTests.js,54,formulas/engineering,go,internal/sheets/testdata/parity/formula-engineering.json,M4
 tests/cell/spreadsheet-calculation/formula-tests/financialTests.js,55,formulas/financial,go,internal/sheets/testdata/parity/formula-financial.json,M4
-tests/cell/spreadsheet-calculation/DynamicArraysTests.js,80,formulas/dynamic arrays + spill + undo/paste collisions,go (62) + playwright (18),internal/sheets/testdata/parity/dynamic-arrays.json; web/e2e/parity/sheets-structure.spec.ts,M5 (62) + M7 (18)
-tests/cell/spreadsheet-calculation/SheetStructureTests.js,65,editing/autofill sequences; sort; merge; move/shift; text-to-formula; deps,vitest (45 autofill+sort+text) + go (8 calc/deps) + playwright (12 structure),web/app/src/pages/sheets/__parity__/autofill.parity.test.ts; internal/sheets/testdata/parity/formula-semantics.json; web/e2e/parity/sheets-structure.spec.ts,M7 (57) + M1 (8)
+tests/cell/spreadsheet-calculation/DynamicArraysTests.js,80,formulas/dynamic arrays + spill + undo/paste collisions,go (62) + playwright (18),internal/sheets/testdata/dynarray/dynamic-arrays.json; web/e2e/sheets-dynarray.spec.ts,M5
+tests/cell/spreadsheet-calculation/SheetStructureTests.js,65,editing/autofill sequences; sort; merge; move/shift; text-to-formula; deps,vitest (45 autofill+sort+text) + go (8 calc/deps) + playwright (12 structure),web/app/src/pages/sheets/__parity__/autofill.parity.test.ts; web/app/src/pages/sheets/__parity__/autoSum.parity.test.ts; web/app/src/pages/sheets/__parity__/textFormula.parity.test.ts; internal/sheets/text_formula_test.go; web/e2e/sheets-analysis.spec.ts,M7 (51) + M12 (14)
 tests/cell/spreadsheet-calculation/SerialTests.js,19,editing/fill series (linear/growth/date/trend),vitest,web/app/src/pages/sheets/__parity__/autofill.parity.test.ts,M7
 tests/cell/spreadsheet-calculation/autoFilterTests.js,39,sort-filter/autofilter model + hidden rows,vitest (30) + playwright (9),web/app/src/pages/sheets/__parity__/filter.parity.test.ts; web/e2e/parity/sheets-data.spec.ts,M8
 tests/cell/spreadsheet-calculation/NumFormatParse.js,40,formatting/number-format parsing + rendering,vitest,web/app/src/pages/sheets/__parity__/numberFormat.parity.test.ts,M6
 tests/cell/spreadsheet-calculation/testsForFWB.html.js,13,formatting/number-format rendering,vitest,web/app/src/pages/sheets/__parity__/numberFormat.parity.test.ts,M6
 tests/cell/spreadsheet-calculation/CellFormatTests.js,4,formatting/number-format parse+format,vitest,web/app/src/pages/sheets/__parity__/numberFormat.parity.test.ts,M6
-tests/cell/spreadsheet-calculation/whatIfAnalysisTests.js,16,formulas/goal seek (10) + solver (6),go (10) + n/a (6 solver),internal/sheets/testdata/parity/goal-seek.json,M5
-tests/cell/spreadsheet-calculation/FormulaTrace.js,16,formulas/precedents-dependents,go (12) + n/a (4 perf/interface/tables),internal/sheets/parity_test.go (deps API cases),M1 (6) + M5 (6)
-tests/cell/spreadsheet-calculation/DependencyGraph.js,11,formulas/dependency graph broadcast,go (7 semantics) + n/a (4 internals),internal/sheets/parity_test.go,M1 (4) + M5 (3)
+tests/cell/spreadsheet-calculation/whatIfAnalysisTests.js,16,formulas/goal seek (10) + solver (6),go (10) + n/a (6 solver),internal/sheets/testdata/goalseek/goal-seek.json; internal/sheets/goalseek_test.go,M5
+tests/cell/spreadsheet-calculation/FormulaTrace.js,16,formulas/precedents-dependents,go (12) + n/a (4 perf/interface/tables),internal/sheets/formula_trace_test.go; internal/sheets/formula_trace_m5_test.go,M1 (6) + M5 (7)
+tests/cell/spreadsheet-calculation/DependencyGraph.js,11,formulas/dependency graph broadcast,go (7 semantics) + n/a (4 internals),internal/sheets/formula_trace_test.go; internal/sheets/formula_trace_m5_test.go,M1 (4) + M5 (2)
 tests/cell/spreadsheet-calculation/ExternalReference.js,8,formulas/external refs + IMPORTRANGE,n/a (flagged optional),-,-
 tests/cell/spreadsheet-calculation/copy-paste-tests.js,9,editing/paste values-formulas-comments-tables; CSV parseText,vitest (1 CSV) + playwright (8),web/app/src/pages/sheets/__parity__/csv.parity.test.ts; web/e2e/parity/sheets-structure.spec.ts,M7
 tests/cell/spreadsheet-calculation/PivotTests.js,23,pivot/layout-subtotals-filters-showas,vitest,web/app/src/pages/sheets/__parity__/pivot.parity.test.ts,M9
@@ -44,7 +44,7 @@ tests/cell/js-api/api-auto-filter.js,16,sort-filter/filter model (values custom 
 tests/cell/js-api/api-drawing.js,10,drawing/shape API,n/a,-,-
 tests/cell/js-api/api-worksheet.js,3,drawing/worksheet shape lookup,n/a,-,-
 tests/cell/js-api/common.js,0,harness,helper,-,-
-tests/cell/shortcuts/shortcuts.js,38,shortcuts/cell editor + table hotkeys (24); graphic objects (14),playwright (24) + n/a (14),web/e2e/parity/sheets-shortcuts.spec.ts,M12
+tests/cell/shortcuts/shortcuts.js,38,shortcuts/cell editor + table hotkeys (24); graphic objects (14),playwright (24) + n/a (14),web/e2e/sheets-shortcuts.spec.ts; web/app/src/pages/sheets/sheetShortcuts.test.ts,M12
 tests/cell/shortcuts/constants.js,0,harness,helper,-,-
 tests/cell/shortcuts/events.js,0,harness,helper,-,-
 tests/cell/shortcuts/measurer.js,0,harness,helper,-,-

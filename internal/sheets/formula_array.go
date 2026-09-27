@@ -315,11 +315,33 @@ func arrFilter(c *callCtx) value {
 	if !ok {
 		return errNA
 	}
+	// The include flags: numbers (non-zero), logicals, and the text TRUE or
+	// FALSE; any other text is #VALUE!, an error is passed on.
+	flags := make([][]bool, inc.rows)
+	for r := range inc.cells {
+		flags[r] = make([]bool, inc.cols)
+		for cc, v := range inc.cells[r] {
+			switch {
+			case v.isErr():
+				return v
+			case v.kind == kindStr && !v.blank:
+				switch strings.ToUpper(v.str) {
+				case "TRUE":
+					flags[r][cc] = true
+				case "FALSE", "":
+				default:
+					return errValue
+				}
+			default:
+				flags[r][cc] = v.isTruthy()
+			}
+		}
+	}
 	var kept [][]value
 	switch {
 	case inc.rows == rv.rows && inc.cols == 1:
 		for r := 0; r < rv.rows; r++ {
-			if inc.cells[r][0].isTruthy() {
+			if flags[r][0] {
 				kept = append(kept, rv.cells[r])
 			}
 		}
@@ -327,7 +349,7 @@ func arrFilter(c *callCtx) value {
 		// Column filter: build kept columns then re-orient.
 		var keepCols []int
 		for cc := 0; cc < rv.cols; cc++ {
-			if inc.cells[0][cc].isTruthy() {
+			if flags[0][cc] {
 				keepCols = append(keepCols, cc)
 			}
 		}

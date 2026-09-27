@@ -945,6 +945,38 @@ func setExtra(sh *FsSheet, key string, v interface{}) {
 
 var rcKeyRe = regexp.MustCompile(`^(\d+)_(\d+)$`)
 
+// shiftCommentThreads moves cell comment threads ({r, c, …}) with their
+// cells; a thread on a deleted cell is dropped (cellComments.ts is the twin).
+func shiftCommentThreads(v interface{}, op StructureOp) interface{} {
+	list, ok := v.([]interface{})
+	if !ok {
+		return v
+	}
+	out := []interface{}{}
+	for _, x := range list {
+		t, ok := x.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		r, rok := t["r"].(float64)
+		c, cok := t["c"].(float64)
+		if !rok || !cok {
+			continue
+		}
+		nr, nc, keep := structMapCell(int(r), int(c), op)
+		if !keep {
+			continue
+		}
+		cp := make(map[string]interface{}, len(t))
+		for k, val := range t {
+			cp[k] = val
+		}
+		cp["r"], cp["c"] = float64(nr), float64(nc)
+		out = append(out, cp)
+	}
+	return out
+}
+
 func remapRCMap(v interface{}, op StructureOp) interface{} {
 	m, ok := v.(map[string]interface{})
 	if !ok {
@@ -1311,6 +1343,9 @@ func ApplyStructureOp(wb FsWorkbook, op StructureOp) error {
 			if v, ok := extraValue(sh, k); ok {
 				setExtra(sh, k, remapRCMap(v, op))
 			}
+		}
+		if v, ok := extraValue(sh, "grownComments"); ok {
+			setExtra(sh, "grownComments", shiftCommentThreads(v, op))
 		}
 		if v, ok := extraValue(sh, "luckysheet_conditionformat_save"); ok {
 			if list, ok := v.([]interface{}); ok {

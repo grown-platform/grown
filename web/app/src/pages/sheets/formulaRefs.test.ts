@@ -93,4 +93,26 @@ describe("recalcWrites", () => {
       { sheetId: "s1", r: 4, c: 0, value: { v: 4, m: "4", grownSpill: "4" } },
     ]);
   });
+
+  it("clears earlier spill output no array covers any more, but never typed data", () => {
+    const grid = [
+      {
+        id: "s1",
+        data: [
+          [{ f: "=SEQUENCE(2)", v: 1, m: "1" }, { v: 5, m: "5", grownSpill: "5" }],
+          [{ v: 2, m: "2", grownSpill: "2" }, { v: "mine", m: "mine", grownSpill: "5" }],
+          [{ v: 3, m: "3", grownSpill: "3", bg: "#ff0" }, null],
+        ],
+      },
+    ];
+    // The array now spills A1:A2 only; B1 (old output) and A3 (old output, formatted) are cleared.
+    const writes = recalcWrites(grid, [
+      { sheetId: "s1", sheetIndex: 0, r: 0, c: 0, f: "=SEQUENCE(2)", v: 1, m: "1" },
+      { sheetId: "s1", sheetIndex: 0, r: 1, c: 0, v: 2, m: "2", spill: true },
+    ]);
+    expect(writes).toEqual([
+      { sheetId: "s1", r: 0, c: 1, value: null },
+      { sheetId: "s1", r: 2, c: 0, value: null },
+    ]);
+  });
 });

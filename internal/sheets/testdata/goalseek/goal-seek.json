@@ -1,0 +1,2479 @@
+{
+ "suite": "cell/spreadsheet-calculation/whatIfAnalysisTests.js",
+ "cases": [
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#PMT formula",
+   "cells": {
+    "B1": 180,
+    "C1": 100000,
+    "A2": 0.072,
+    "B2": 1,
+    "C2": 100000,
+    "A3": 0.072,
+    "B3": 180,
+    "C3": 0,
+    "A4": 0.01,
+    "B4": 180,
+    "C4": 100000,
+    "A5": 0.072,
+    "B5": 10,
+    "C5": 100000,
+    "A6": 0.072,
+    "B6": 180,
+    "C6": 100,
+    "A7": -0.1,
+    "B7": 180,
+    "C7": 100000,
+    "A8": 0.072,
+    "B8": -10,
+    "C8": 100000,
+    "A9": 0.072,
+    "B9": 180,
+    "C9": -100,
+    "A10": 1,
+    "B10": 180,
+    "C10": 100000,
+    "A11": 0.072,
+    "B11": 200,
+    "C11": 100000,
+    "A12": 0.072,
+    "B12": 180,
+    "C12": 200000
+   },
+   "seeks": [
+    {
+     "changing": "A1",
+     "formula": "PMT(A1/12,B1,C1)",
+     "cell": "D1",
+     "target": -900,
+     "checks": [
+      {
+       "of": "result",
+       "value": -900,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 0.0702,
+       "fixed": 4
+      }
+     ]
+    },
+    {
+     "changing": "B2",
+     "formula": "PMT(A2/12,B2,C2)",
+     "cell": "D2",
+     "target": -910.05,
+     "checks": [
+      {
+       "of": "result",
+       "value": -910.05,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 180,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C3",
+     "formula": "PMT(A3/12,B3,C3)",
+     "cell": "D3",
+     "target": -910.05,
+     "checks": [
+      {
+       "of": "result",
+       "value": -910.05,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 100000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A4",
+     "formula": "PMT(A4/12,B4,C4)",
+     "cell": "D4",
+     "target": -900,
+     "checks": [
+      {
+       "of": "result",
+       "value": -900,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 0.0702,
+       "fixed": 4
+      }
+     ]
+    },
+    {
+     "changing": "B5",
+     "formula": "PMT(A5/12,B5,C5)",
+     "cell": "D5",
+     "target": -910.05,
+     "checks": [
+      {
+       "of": "result",
+       "value": -910.05,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 180,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C6",
+     "formula": "PMT(A6/12,B6,C6)",
+     "cell": "D6",
+     "target": -910.05,
+     "checks": [
+      {
+       "of": "result",
+       "value": -910.05,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 100000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A7",
+     "formula": "PMT(A7/12,B7,C7)",
+     "cell": "D7",
+     "target": -900,
+     "checks": [
+      {
+       "of": "result",
+       "value": -900,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 0.0702,
+       "fixed": 4
+      }
+     ]
+    },
+    {
+     "changing": "B8",
+     "formula": "PMT(A8/12,B8,C8)",
+     "cell": "D8",
+     "target": -910.05,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0,
+       "pending": "oo-diff/finds-root: OnlyOffice gives up from a negative term; PMT(7.2%/12, 180, 100000) = -910.05 is reachable and Grown finds it"
+      }
+     ]
+    },
+    {
+     "changing": "C9",
+     "formula": "PMT(A9/12,B9,C9)",
+     "cell": "D9",
+     "target": -910.05,
+     "checks": [
+      {
+       "of": "result",
+       "value": -910.05,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 100000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A10",
+     "formula": "PMT(A10/12,B10,C10)",
+     "cell": "D10",
+     "target": -900,
+     "checks": [
+      {
+       "of": "result",
+       "value": -900,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 0.0702,
+       "fixed": 4
+      }
+     ]
+    },
+    {
+     "changing": "B11",
+     "formula": "PMT(A11/12,B11,C11)",
+     "cell": "D11",
+     "target": -910.05,
+     "checks": [
+      {
+       "of": "result",
+       "value": -910.05,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 180,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C12",
+     "formula": "PMT(A12/12,B12,C12)",
+     "cell": "D12",
+     "target": -910.05,
+     "checks": [
+      {
+       "of": "result",
+       "value": -910.05,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 100000,
+       "fixed": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#Custom formula. S = v * t",
+   "cells": {
+    "B1": 5,
+    "A2": 2000,
+    "A3": 5,
+    "B3": 5,
+    "A4": 2000,
+    "B4": -1,
+    "A5": 3000,
+    "B5": 5,
+    "A6": 2000,
+    "B6": 10
+   },
+   "seeks": [
+    {
+     "changing": "A1",
+     "formula": "A1*B1",
+     "cell": "D1",
+     "target": 10000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10000
+      },
+      {
+       "of": "changing",
+       "value": 2000
+      }
+     ]
+    },
+    {
+     "changing": "B2",
+     "formula": "A2*B2",
+     "cell": "D2",
+     "target": 10000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10000
+      },
+      {
+       "of": "changing",
+       "value": 5
+      }
+     ]
+    },
+    {
+     "changing": "A3",
+     "formula": "A3*B3",
+     "cell": "D3",
+     "target": 10000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 2000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B4",
+     "formula": "A4*B4",
+     "cell": "D4",
+     "target": 10000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10000
+      },
+      {
+       "of": "changing",
+       "value": 5
+      }
+     ]
+    },
+    {
+     "changing": "A5",
+     "formula": "A5*B5",
+     "cell": "D5",
+     "target": 10000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 2000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B6",
+     "formula": "A6*B6",
+     "cell": "D6",
+     "target": 10000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10000
+      },
+      {
+       "of": "changing",
+       "value": 5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#Custom formula. Arithmetical operations",
+   "cells": {
+    "B1": 5,
+    "A2": 5,
+    "B3": 2,
+    "C3": 4,
+    "A4": 1,
+    "C4": 4,
+    "A5": 1,
+    "B5": 2,
+    "B6": 10,
+    "A7": 2,
+    "B8": 2,
+    "A9": -10,
+    "B10": 25,
+    "C10": 5,
+    "A11": 8,
+    "C11": 5,
+    "A13": 0,
+    "C13": 123,
+    "D13": 1,
+    "E13": -1233,
+    "A14": 2,
+    "B16": 5,
+    "A17": 3,
+    "B18": 8,
+    "A19": 4,
+    "B20": 9,
+    "A21": 5,
+    "B22": 4,
+    "A23": 6,
+    "A24": 5,
+    "B24": 5,
+    "A25": 7,
+    "B25": 5,
+    "B26": 2,
+    "A27": 8,
+    "B28": 7,
+    "A29": 9,
+    "B29": -1,
+    "A30": 1,
+    "B30": 1,
+    "A31": 10,
+    "B31": 5,
+    "B32": 3,
+    "A33": 5,
+    "B33": 5,
+    "A34": 5,
+    "B34": -3,
+    "A35": 9,
+    "B35": 2,
+    "C35": 4,
+    "A36": 1,
+    "B36": -2,
+    "C36": 4,
+    "A37": 1,
+    "B37": 2,
+    "C37": 0.1,
+    "A38": 1,
+    "B38": 2,
+    "A39": -10,
+    "B39": -2,
+    "A40": 8,
+    "B40": 25,
+    "C40": 1,
+    "A41": 8,
+    "B41": 25,
+    "C41": 12,
+    "A42": 8,
+    "B42": 25,
+    "C42": -2,
+    "A43": 0,
+    "B43": 2,
+    "C43": 123,
+    "D43": 1,
+    "E43": -1233,
+    "A44": 0,
+    "B44": -10,
+    "C44": 123,
+    "D44": 1,
+    "E44": -1233,
+    "A45": 0,
+    "B45": 200000,
+    "C45": 123,
+    "D45": 1,
+    "E45": -1233,
+    "A46": 1,
+    "B46": 2
+   },
+   "seeks": [
+    {
+     "changing": "A1",
+     "formula": "A1+B1",
+     "cell": "D1",
+     "target": 10,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B2",
+     "formula": "A2+B2",
+     "cell": "D2",
+     "target": 10,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A3",
+     "formula": "(A3+B3)*C3+3",
+     "cell": "D3",
+     "target": 15,
+     "checks": [
+      {
+       "of": "result",
+       "value": 15,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 1,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B4",
+     "formula": "(A4+B4)*C4+3",
+     "cell": "D4",
+     "target": 15,
+     "checks": [
+      {
+       "of": "result",
+       "value": 15,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 2,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C5",
+     "formula": "(A5+B5)*C5+3",
+     "cell": "D5",
+     "target": 15,
+     "checks": [
+      {
+       "of": "result",
+       "value": 15,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 4,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A6",
+     "formula": "A6^B6",
+     "cell": "D6",
+     "target": 1024,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1024,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 2,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B7",
+     "formula": "A7^B7",
+     "cell": "D7",
+     "target": 1024,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1024,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 10,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A8",
+     "formula": "A8*B8",
+     "cell": "D8",
+     "target": -20,
+     "checks": [
+      {
+       "of": "result",
+       "value": -20,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": -10,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B9",
+     "formula": "A9*B9",
+     "cell": "D9",
+     "target": -20,
+     "checks": [
+      {
+       "of": "result",
+       "value": -20,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 2,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A10",
+     "formula": "A10+B10/C10",
+     "cell": "D10",
+     "target": 13,
+     "checks": [
+      {
+       "of": "result",
+       "value": 13,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 8,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B11",
+     "formula": "A11+B11/C11",
+     "cell": "D11",
+     "target": 13,
+     "checks": [
+      {
+       "of": "result",
+       "value": 13,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 25,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A12",
+     "formula": "A12+0",
+     "cell": "D12",
+     "target": 100000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 100000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 100000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B13",
+     "formula": "A13+B13-C13+D13+E13",
+     "cell": "F13",
+     "target": 100000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 100000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 101355,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A14",
+     "formula": "20*A14-20/A14",
+     "cell": "D14",
+     "target": 25,
+     "checks": [
+      {
+       "of": "result",
+       "value": 25,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 1.8,
+       "fixed": 2
+      }
+     ]
+    },
+    {
+     "changing": "A15",
+     "formula": "SQRT(SQRT(A15) + SQRT(A15))",
+     "cell": "D15",
+     "target": 12,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5184,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A16",
+     "formula": "A16^B16",
+     "cell": "D16",
+     "target": 243,
+     "checks": [
+      {
+       "of": "result",
+       "value": 243,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 3,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B17",
+     "formula": "A17^B17",
+     "cell": "D17",
+     "target": 243,
+     "checks": [
+      {
+       "of": "result",
+       "value": 243,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A18",
+     "formula": "A18^B18",
+     "cell": "D18",
+     "target": 65536,
+     "checks": [
+      {
+       "of": "result",
+       "value": 65536,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 4,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B19",
+     "formula": "A19^B19",
+     "cell": "D19",
+     "target": 65536,
+     "checks": [
+      {
+       "of": "result",
+       "value": 65536,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 8,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A20",
+     "formula": "A20^B20",
+     "cell": "D20",
+     "target": 1953125,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1953125,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B21",
+     "formula": "A21^B21",
+     "cell": "D21",
+     "target": 1953125,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1953125,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 9,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A22",
+     "formula": "A22^B22",
+     "cell": "D22",
+     "target": 1296,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1296,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 6,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B23",
+     "formula": "A23^B23",
+     "cell": "D23",
+     "target": 1296,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1296,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 4,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A24",
+     "formula": "A24^B24",
+     "cell": "D24",
+     "target": 16807,
+     "checks": [
+      {
+       "of": "result",
+       "value": 16807,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 7,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B25",
+     "formula": "A25^B25",
+     "cell": "D25",
+     "target": 16807,
+     "checks": [
+      {
+       "of": "result",
+       "value": 16807,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A26",
+     "formula": "A26^B26",
+     "cell": "D26",
+     "target": 64,
+     "checks": [
+      {
+       "of": "result",
+       "value": 64,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 8,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B27",
+     "formula": "A27^B27",
+     "cell": "D27",
+     "target": 64,
+     "checks": [
+      {
+       "of": "result",
+       "value": 64,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 2,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A28",
+     "formula": "A28^B28",
+     "cell": "D28",
+     "target": 4782969,
+     "checks": [
+      {
+       "of": "result",
+       "value": 4782969,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 9,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B29",
+     "formula": "A29^B29",
+     "cell": "D29",
+     "target": 4782969,
+     "checks": [
+      {
+       "of": "result",
+       "value": 4782969,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 7,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A30",
+     "formula": "A30^B30",
+     "cell": "D30",
+     "target": 10,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 10,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B31",
+     "formula": "A31^B31",
+     "cell": "D31",
+     "target": 10,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 1,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A32",
+     "formula": "A32^B32",
+     "cell": "D32",
+     "target": 1073741824,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1073741824,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 1024,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A33",
+     "formula": "A33+B33",
+     "cell": "D33",
+     "target": 10,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B34",
+     "formula": "A34+B34",
+     "cell": "D34",
+     "target": 10,
+     "checks": [
+      {
+       "of": "result",
+       "value": 10,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A35",
+     "formula": "(A35+B35)*C35+3",
+     "cell": "D35",
+     "target": 15,
+     "checks": [
+      {
+       "of": "result",
+       "value": 15,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 1,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B36",
+     "formula": "(A36+B36)*C36+3",
+     "cell": "D36",
+     "target": 15,
+     "checks": [
+      {
+       "of": "result",
+       "value": 15,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 2,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C37",
+     "formula": "(A37+B37)*C37+3",
+     "cell": "D37",
+     "target": 15,
+     "checks": [
+      {
+       "of": "result",
+       "value": 15,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 4,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A38",
+     "formula": "A38*B38",
+     "cell": "D38",
+     "target": -20,
+     "checks": [
+      {
+       "of": "result",
+       "value": -20,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": -10,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B39",
+     "formula": "A39*B39",
+     "cell": "D39",
+     "target": -20,
+     "checks": [
+      {
+       "of": "result",
+       "value": -20,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 2,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C40",
+     "formula": "A40+B40/C40",
+     "cell": "D40",
+     "target": 13,
+     "checks": [
+      {
+       "of": "result",
+       "value": 13,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C41",
+     "formula": "A41+B41/C41",
+     "cell": "D41",
+     "target": 13,
+     "checks": [
+      {
+       "of": "result",
+       "value": 13,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 5,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C42",
+     "formula": "A42+B42/C42",
+     "cell": "D42",
+     "target": 13,
+     "checks": [
+      {
+       "of": "result",
+       "value": 8,
+       "fixed": 0,
+       "pending": "oo-diff/finds-root: OnlyOffice drifts towards c → ∞ (result 8); Grown steps over the pole at c = 0 and finds c = 5 (8 + 25/5 = 13)"
+      }
+     ]
+    },
+    {
+     "changing": "B43",
+     "formula": "A43+B43-C43+D43+E43",
+     "cell": "F43",
+     "target": 100000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 100000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 101355,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B44",
+     "formula": "A44+B44-C44+D44+E44",
+     "cell": "F44",
+     "target": 100000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 100000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 101355,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B45",
+     "formula": "A45+B45-C45+D45+E45",
+     "cell": "F45",
+     "target": 100000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 100000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 101355,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A46",
+     "formula": "A46*B46",
+     "cell": "D46",
+     "target": 5.5,
+     "checks": [
+      {
+       "of": "result",
+       "value": 5.5
+      },
+      {
+       "of": "changing",
+       "value": 2.75
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#Financials calculation",
+   "cells": {
+    "B1": 10,
+    "C1": 0.1,
+    "D1": 2.59374246,
+    "B2": 0.1,
+    "A3": 10,
+    "B4": 41,
+    "C4": 228,
+    "A5": 1000,
+    "B5": 0,
+    "C5": 228,
+    "A6": 1000,
+    "B6": 41,
+    "C6": 1,
+    "A7": 5,
+    "B7": 10,
+    "C7": 0.1,
+    "D7": 2.59374246,
+    "A8": -3,
+    "B8": 0.1,
+    "A9": 10,
+    "B9": 1,
+    "A10": 1,
+    "B10": 41,
+    "C10": 228,
+    "A11": 1000,
+    "B11": 1,
+    "C11": 228,
+    "A12": 1000,
+    "B12": 41,
+    "C12": 2,
+    "A13": -2,
+    "B13": 41,
+    "C13": 228,
+    "A14": 1000,
+    "B14": -2,
+    "C14": 228,
+    "A15": 1000,
+    "B15": 41,
+    "C15": 50,
+    "A16": 2000,
+    "B16": 41,
+    "C16": 228,
+    "A17": 1000,
+    "B17": 100,
+    "C17": 228,
+    "A18": 1000,
+    "B18": 41,
+    "C18": 320
+   },
+   "seeks": [
+    {
+     "changing": "A1",
+     "formula": "A1*D1",
+     "cell": "E1",
+     "target": 500000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 500000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 192771.6,
+       "fixed": 1
+      }
+     ]
+    },
+    {
+     "changing": "A2",
+     "formula": "(1+B2)^A2",
+     "cell": "E2",
+     "target": 2.59,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2.59,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 10,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B3",
+     "formula": "(1+B3)^A3",
+     "cell": "E3",
+     "target": 2.59,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2.59,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 0.1,
+       "fixed": 2
+      }
+     ]
+    },
+    {
+     "changing": "A4",
+     "formula": "(((A4*12)*(60-B4))*2)/C4",
+     "cell": "E4",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 1000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B5",
+     "formula": "(((A5*12)*(60-B5))*2)/C5",
+     "cell": "E5",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 41,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C6",
+     "formula": "(((A6*12)*(60-B6))*2)/C6",
+     "cell": "E6",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 228,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A7",
+     "formula": "A7*D7",
+     "cell": "E7",
+     "target": 500000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 500000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 192771.6,
+       "fixed": 1
+      }
+     ]
+    },
+    {
+     "changing": "A8",
+     "formula": "(1+B8)^A8",
+     "cell": "E8",
+     "target": 2.59,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2.59,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 10,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B9",
+     "formula": "(1+B9)^A9",
+     "cell": "E9",
+     "target": 2.59,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2.59,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 0.1,
+       "fixed": 2
+      }
+     ]
+    },
+    {
+     "changing": "A10",
+     "formula": "(((A10*12)*(60-B10))*2)/C10",
+     "cell": "E10",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 1000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B11",
+     "formula": "(((A11*12)*(60-B11))*2)/C11",
+     "cell": "E11",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 41,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C12",
+     "formula": "(((A12*12)*(60-B12))*2)/C12",
+     "cell": "E12",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 228,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A13",
+     "formula": "(((A13*12)*(60-B13))*2)/C13",
+     "cell": "E13",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 1000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B14",
+     "formula": "(((A14*12)*(60-B14))*2)/C14",
+     "cell": "E14",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 41,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C15",
+     "formula": "(((A15*12)*(60-B15))*2)/C15",
+     "cell": "E15",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 228,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A16",
+     "formula": "(((A16*12)*(60-B16))*2)/C16",
+     "cell": "E16",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 1000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "B17",
+     "formula": "(((A17*12)*(60-B17))*2)/C17",
+     "cell": "E17",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 41,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C18",
+     "formula": "(((A18*12)*(60-B18))*2)/C18",
+     "cell": "E18",
+     "target": 2000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 2000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 228,
+       "fixed": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#FV Formula",
+   "cells": {
+    "B1": 12,
+    "C1": -1000,
+    "A2": 0.123,
+    "B2": 0,
+    "C2": -1000,
+    "A3": 0.123,
+    "B3": 12,
+    "A4": 0.1,
+    "B4": 12,
+    "C4": -1000,
+    "A5": 0.123,
+    "B5": 0.5,
+    "C5": -1000,
+    "A6": 0.123,
+    "B6": 12,
+    "C6": 1,
+    "A7": -1,
+    "B7": 12,
+    "C7": -1000,
+    "A8": 0.123,
+    "B8": -1,
+    "C8": -1000,
+    "A9": 0.123,
+    "B9": 12,
+    "C9": -1,
+    "A10": 1,
+    "B10": 12,
+    "C10": -1000,
+    "A11": 0.123,
+    "B11": 15,
+    "C11": -1000,
+    "A12": 0.123,
+    "B12": 12,
+    "C12": -2000
+   },
+   "seeks": [
+    {
+     "changing": "A1",
+     "formula": "FV(A1/12,B1,C1)",
+     "cell": "D1",
+     "target": 12700,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 0.123,
+       "fixed": 4
+      }
+     ]
+    },
+    {
+     "changing": "B2",
+     "formula": "FV(A2/12,B2,C2)",
+     "cell": "D2",
+     "target": 12700.16,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700.16,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 12,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C3",
+     "formula": "FV(A3/12,B3,C3)",
+     "cell": "D3",
+     "target": 12700.16,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700.16,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": -1000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A4",
+     "formula": "FV(A4/12,B4,C4)",
+     "cell": "D4",
+     "target": 12700,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 0.123,
+       "fixed": 4
+      }
+     ]
+    },
+    {
+     "changing": "B5",
+     "formula": "FV(A5/12,B5,C5)",
+     "cell": "D5",
+     "target": 12700.16,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700.16,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 12,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C6",
+     "formula": "FV(A6/12,B6,C6)",
+     "cell": "D6",
+     "target": 12700.16,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700.16,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": -1000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A7",
+     "formula": "FV(A7/12,B7,C7)",
+     "cell": "D7",
+     "target": 12700,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 0.123,
+       "fixed": 4
+      }
+     ]
+    },
+    {
+     "changing": "B8",
+     "formula": "FV(A8/12,B8,C8)",
+     "cell": "D8",
+     "target": 12700.16,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700.16,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 12,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C9",
+     "formula": "FV(A9/12,B9,C9)",
+     "cell": "D9",
+     "target": 12700.16,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700.16,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": -1000,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A10",
+     "formula": "FV(A10/12,B10,C10)",
+     "cell": "D10",
+     "target": 12700,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 0.123,
+       "fixed": 4
+      }
+     ]
+    },
+    {
+     "changing": "B11",
+     "formula": "FV(A11/12,B11,C11)",
+     "cell": "D11",
+     "target": 12700.16,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700.16,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": 12,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "C12",
+     "formula": "FV(A12/12,B12,C12)",
+     "cell": "D12",
+     "target": 12700.16,
+     "checks": [
+      {
+       "of": "result",
+       "value": 12700.16,
+       "fixed": 2
+      },
+      {
+       "of": "changing",
+       "value": -1000,
+       "fixed": 0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#LOOKUP Formula",
+   "cells": {
+    "A1": 0,
+    "B1": 1,
+    "C1": 2,
+    "D1": 3,
+    "E1": 4,
+    "F1": 5,
+    "G1": 6,
+    "A2": 1,
+    "B2": 1,
+    "C2": 2,
+    "D2": 3,
+    "E2": 4,
+    "F2": 5,
+    "G2": 6,
+    "A3": 5,
+    "B3": 1,
+    "C3": 2,
+    "D3": 3,
+    "E3": 4,
+    "F3": 5,
+    "G3": 6,
+    "A4": -1,
+    "B4": 1,
+    "C4": 2,
+    "D4": 3,
+    "E4": 4,
+    "F4": 5,
+    "G4": 6
+   },
+   "seeks": [
+    {
+     "changing": "A1",
+     "formula": "LOOKUP(A1,B1:G1)",
+     "cell": "H1",
+     "target": 3,
+     "checks": [
+      {
+       "of": "result",
+       "falsy": true,
+       "pending": "oo-diff/finds-root: LOOKUP is a step function; OnlyOffice's slope is 0 so it gives up, Grown's widening search finds an input that returns 3"
+      },
+      {
+       "of": "changing",
+       "value": 0,
+       "pending": "oo-diff/finds-root: LOOKUP is a step function; OnlyOffice's slope is 0 so it gives up, Grown's widening search finds an input that returns 3"
+      }
+     ]
+    },
+    {
+     "changing": "A2",
+     "formula": "LOOKUP(A2,B2:G2)",
+     "cell": "H2",
+     "target": 3,
+     "checks": [
+      {
+       "of": "result",
+       "falsy": true,
+       "pending": "oo-diff/finds-root: LOOKUP is a step function; OnlyOffice's slope is 0 so it gives up, Grown's widening search finds an input that returns 3"
+      },
+      {
+       "of": "changing",
+       "value": 0.99,
+       "pending": "oo-diff/finds-root: LOOKUP is a step function; OnlyOffice's slope is 0 so it gives up, Grown's widening search finds an input that returns 3"
+      }
+     ]
+    },
+    {
+     "changing": "A3",
+     "formula": "LOOKUP(A3,B3:G3)",
+     "cell": "H3",
+     "target": 3,
+     "checks": [
+      {
+       "of": "result",
+       "value": 3
+      },
+      {
+       "of": "changing",
+       "value": 3.45,
+       "pending": "oo-diff/step-function: every input in [3, 4) returns 3; OnlyOffice stops at 3.45, Grown at 3.75"
+      }
+     ]
+    },
+    {
+     "changing": "A4",
+     "formula": "LOOKUP(A4,B4:G4)",
+     "cell": "H4",
+     "target": 3,
+     "checks": [
+      {
+       "of": "result",
+       "falsy": true,
+       "pending": "oo-diff/finds-root: LOOKUP is a step function; OnlyOffice's slope is 0 so it gives up, Grown's widening search finds an input that returns 3"
+      },
+      {
+       "of": "changing",
+       "value": -1,
+       "pending": "oo-diff/finds-root: LOOKUP is a step function; OnlyOffice's slope is 0 so it gives up, Grown's widening search finds an input that returns 3"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#Math formulas",
+   "cells": {
+    "A2": -0.1,
+    "A3": 1,
+    "A4": 2,
+    "A6": -0.1,
+    "A7": 1,
+    "A8": 2,
+    "A10": -0.1,
+    "A11": 1,
+    "A12": 2
+   },
+   "seeks": [
+    {
+     "changing": "A1",
+     "formula": "COS(A1)",
+     "cell": "B1",
+     "target": 0.5,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.5,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 1.047,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A2",
+     "formula": "COS(A2)",
+     "cell": "B2",
+     "target": 0.5,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.5,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": -1.047,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A3",
+     "formula": "COS(A3)",
+     "cell": "B3",
+     "target": 0.5,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.5,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 1.047,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A4",
+     "formula": "COS(A4)",
+     "cell": "B4",
+     "target": 0.5,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.5,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 1.047,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A5",
+     "formula": "SIN(A5)",
+     "cell": "B5",
+     "target": 0.5,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.5,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 0.524,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A6",
+     "formula": "SIN(A6)",
+     "cell": "B6",
+     "target": 0.5,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.5,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 0.524,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A7",
+     "formula": "SIN(A7)",
+     "cell": "B7",
+     "target": 0.5,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.5,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 0.524,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A8",
+     "formula": "SIN(A8)",
+     "cell": "B8",
+     "target": 0.5,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.5,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 2.618,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A9",
+     "formula": "TAN(A9)",
+     "cell": "B9",
+     "target": 1,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 0.785,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A10",
+     "formula": "TAN(A10)",
+     "cell": "B10",
+     "target": 1,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 0.785,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A11",
+     "formula": "TAN(A11)",
+     "cell": "B11",
+     "target": 1,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 0.785,
+       "fixed": 3
+      }
+     ]
+    },
+    {
+     "changing": "A12",
+     "formula": "TAN(A12)",
+     "cell": "B12",
+     "target": 1,
+     "checks": [
+      {
+       "of": "result",
+       "value": 1,
+       "fixed": 1
+      },
+      {
+       "of": "changing",
+       "value": 3.927,
+       "fixed": 3
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#DEVSQ formula",
+   "cells": {
+    "B1": 5,
+    "C1": 8,
+    "D1": 7,
+    "E1": 11,
+    "F1": 4,
+    "G1": 3,
+    "A2": 1,
+    "B2": 5,
+    "C2": 8,
+    "D2": 7,
+    "E2": 11,
+    "F2": 4,
+    "G2": 3,
+    "A3": -1,
+    "B3": 5,
+    "C3": 8,
+    "D3": 7,
+    "E3": 11,
+    "F3": 4,
+    "G3": 3,
+    "A4": 9,
+    "B4": 5,
+    "C4": 8,
+    "D4": 7,
+    "E4": 11,
+    "F4": 4,
+    "G4": 3
+   },
+   "seeks": [
+    {
+     "changing": "A1",
+     "formula": "DEVSQ(A1:G1)",
+     "cell": "H1",
+     "target": 48,
+     "checks": [
+      {
+       "of": "result",
+       "value": 48,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 4,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A2",
+     "formula": "DEVSQ(A2:G2)",
+     "cell": "H2",
+     "target": 48,
+     "checks": [
+      {
+       "of": "result",
+       "value": 48,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 4,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A3",
+     "formula": "DEVSQ(A3:G3)",
+     "cell": "H3",
+     "target": 48,
+     "checks": [
+      {
+       "of": "result",
+       "value": 48,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 4,
+       "fixed": 0
+      }
+     ]
+    },
+    {
+     "changing": "A4",
+     "formula": "DEVSQ(A4:G4)",
+     "cell": "H4",
+     "target": 48,
+     "checks": [
+      {
+       "of": "result",
+       "value": 48,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 8.666667,
+       "fixed": 6
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#BESSEL formula",
+   "cells": {
+    "B1": 1,
+    "A2": 1,
+    "B2": 1,
+    "A3": 3,
+    "B3": 1
+   },
+   "seeks": [
+    {
+     "changing": "A1",
+     "formula": "BESSELI(A1,B1)",
+     "cell": "D1",
+     "target": 0.981,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.981,
+       "fixed": 3
+      },
+      {
+       "of": "changing",
+       "value": 1.5,
+       "fixed": 1
+      }
+     ]
+    },
+    {
+     "changing": "A2",
+     "formula": "BESSELI(A2,B2)",
+     "cell": "D2",
+     "target": 0.981,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.981,
+       "fixed": 3
+      },
+      {
+       "of": "changing",
+       "value": 1.5,
+       "fixed": 1
+      }
+     ]
+    },
+    {
+     "changing": "A3",
+     "formula": "BESSELI(A3,B3)",
+     "cell": "D3",
+     "target": 0.981,
+     "checks": [
+      {
+       "of": "result",
+       "value": 0.981,
+       "fixed": 3
+      },
+      {
+       "of": "changing",
+       "value": 1.5,
+       "fixed": 1
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "oo:cell/spreadsheet-calculation/whatIfAnalysisTests.js#Test: Financial formula. Bug #65864",
+   "cells": {
+    "A1": "Q.1",
+    "B1": 200000,
+    "C1": 0.12,
+    "D1": "=B1*C1",
+    "A2": "Q.2",
+    "B2": 300000,
+    "C2": 0.13,
+    "D2": "=B2*C2",
+    "A3": "Q.3",
+    "B3": 100000,
+    "C3": 0.11,
+    "D3": "=B3*C3",
+    "A4": "Q.4",
+    "B4": 0,
+    "C4": 0.14,
+    "D4": "=B4*C4",
+    "A5": "Total",
+    "D5": "=SUM(D1:D4)"
+   },
+   "seeks": [
+    {
+     "changing": "B4",
+     "formula": "SUM(D1:D4)",
+     "cell": "D5",
+     "target": 100000,
+     "checks": [
+      {
+       "of": "result",
+       "value": 100000,
+       "fixed": 0
+      },
+      {
+       "of": "changing",
+       "value": 185714,
+       "fixed": 0
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

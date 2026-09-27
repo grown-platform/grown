@@ -110,6 +110,10 @@ type sheetState struct {
 	// usedRows/usedCols bound the populated part of the sheet (counts), used to
 	// clip whole-column and whole-row references.
 	usedRows, usedCols int
+	// rowCount/colCount are the grid's size (FsSheet row/column; 0 unknown).
+	rowCount, colCount int
+	// spillAreas records, per anchor, the area its dynamic array covers.
+	spillAreas map[cellAddr]area
 }
 
 func newSheetState(name string, data []FsCellData) *sheetState {
@@ -120,6 +124,7 @@ func newSheetState(name string, data []FsCellData) *sheetState {
 		occupied:   make(map[cellAddr]bool),
 		isFormula:  make(map[cellAddr]bool),
 		spillCells: make(map[cellAddr]value),
+		spillAreas: make(map[cellAddr]area),
 	}
 	st.index(data)
 	return st
@@ -347,7 +352,14 @@ func (ev *Evaluator) materialize(r *refInfo) value {
 				cells[rr] = row
 			}
 		})
-		return value{kind: kindArray, arr: &spillArray{rows: a.rows(), cols: a.cols(), cells: cells}, ref: r}
+		arr := &spillArray{rows: a.rows(), cols: a.cols(), cells: cells}
+		if full := r.areas[0]; full.r2 == maxSheetRows-1 && full.rows() > 1 || full.c2 == maxSheetCols-1 && full.cols() > 1 {
+			arr.edge = &spillEdge{
+				rows: full.r2 == maxSheetRows-1 && full.rows() > 1, fromRow: full.r1,
+				cols: full.c2 == maxSheetCols-1 && full.cols() > 1, fromCol: full.c1,
+			}
+		}
+		return value{kind: kindArray, arr: arr, ref: r}
 	}
 	var flat []value
 	ev.onSheet(r.sheet, func() {
@@ -374,10 +386,12 @@ func (ev *Evaluator) clipArea(st *sheetState, a area) area {
 	if a.rows()*a.cols() <= clipThreshold {
 		return a
 	}
-	if last := st.usedRows - 1; a.r2 > last {
+	// The grid's size (FortuneSheet's row/column counts) when larger than
+	// the used range, so =SIN(A:A) covers the rows the sheet shows.
+	if last := max(st.usedRows, st.rowCount) - 1; a.r2 > last {
 		a.r2 = max(last, a.r1)
 	}
-	if last := st.usedCols - 1; a.c2 > last {
+	if last := max(st.usedCols, st.colCount) - 1; a.c2 > last {
 		a.c2 = max(last, a.c1)
 	}
 	return a
@@ -572,7 +586,9 @@ func newWorkbookEvaluator(wb FsWorkbook, now time.Time) *Evaluator {
 		nameStack:  map[string]bool{},
 	}
 	for i := range wb {
-		view.sheets = append(view.sheets, newSheetState(wb[i].Name, wb[i].CellData))
+		st := newSheetState(wb[i].Name, wb[i].CellData)
+		st.rowCount, st.colCount = wb[i].Row, wb[i].Column
+		view.sheets = append(view.sheets, st)
 	}
 	if len(view.sheets) == 0 {
 		view.sheets = append(view.sheets, newSheetState("Sheet1", nil))
@@ -680,6 +696,12 @@ func (ev *Evaluator) spill(addr cellAddr, arr *spillArray) value {
 		return errVal("#CALC!")
 	}
 	st := ev.sheet(ev.cur)
+	if e := arr.edge; e != nil && (e.rows && addr.row > e.fromRow || e.cols && addr.col > e.fromCol) {
+		return errSpill // the array would run past the sheet's last row/column
+	}
+	if addr.row+arr.rows > maxSheetRows || addr.col+arr.cols > maxSheetCols {
+		return errSpill
+	}
 	for r := 0; r < arr.rows; r++ {
 		for c := 0; c < arr.cols; c++ {
 			if r == 0 && c == 0 {
@@ -702,12 +724,16 @@ func (ev *Evaluator) spill(addr cellAddr, arr *spillArray) value {
 			t := cellAddr{row: addr.row + r, col: addr.col + c}
 			cv := arr.cells[r][c]
 			cv.ref = nil
+			cv.blank = false // an empty source cell shows as 0 in a spill
 			st.spillCells[t] = cv
 			st.grid.set(t, &FsCell{V: cv.asInterface(), M: cv.toStr()})
 			st.grow(t)
 		}
 	}
-	return arr.cells[0][0]
+	st.spillAreas[addr] = area{r1: addr.row, c1: addr.col, r2: addr.row + arr.rows - 1, c2: addr.col + arr.cols - 1}
+	top := arr.cells[0][0]
+	top.blank = false
+	return top
 }
 
 // RecomputeWorkbook takes the JSON workbook string, evaluates all formula cells

@@ -102,6 +102,20 @@ interface SheetMenuBarProps {
   onPageBreak?: (action: "insert" | "remove" | "reset") => void;
   /** Opens Data ▸ Protect sheets and ranges. */
   onProtect?: () => void;
+  /** Insert ▸ Function… (the function wizard). */
+  onInsertFunction?: () => void;
+  /** Insert ▸ Link (Ctrl+K). */
+  onInsertLink?: () => void;
+  /** Insert ▸ Comment (Ctrl+Alt+M). */
+  onInsertComment?: () => void;
+  /** View ▸ Comments (the side panel). */
+  onShowComments?: () => void;
+  /** Data ▸ What-if analysis ▸ Goal seek… */
+  onGoalSeek?: () => void;
+  /** Tools ▸ Trace precedents / dependents / Remove arrows. */
+  onTrace?: (kind: "precedents" | "dependents" | "clear") => void;
+  /** Help ▸ Keyboard shortcuts (Ctrl+/). */
+  onShortcuts?: () => void;
 }
 
 const TEXT_CASES: [TextCase, string][] = [
@@ -186,6 +200,13 @@ export function SheetMenuBar({
   onView,
   onPageBreak,
   onProtect,
+  onInsertFunction,
+  onInsertLink,
+  onInsertComment,
+  onShowComments,
+  onGoalSeek,
+  onTrace,
+  onShortcuts,
 }: SheetMenuBarProps) {
   const check = (on: boolean | undefined) => (
     <Typography component="span" sx={{ width: 18, display: "inline-block", opacity: on ? 1 : 0 }} aria-hidden>
@@ -419,7 +440,9 @@ export function SheetMenuBar({
           </MenuItem>
           <ListDivider />
           <MenuItem disabled>Group{arrow}</MenuItem>
-          <MenuItem disabled>Comments{arrow}</MenuItem>
+          <MenuItem disabled={!onShowComments} onClick={onShowComments}>
+            Comments
+          </MenuItem>
           <MenuItem disabled>Hidden sheets{arrow}</MenuItem>
           {section("Zoom")}
           {[0.5, 0.75, 0.9, 1, 1.25, 1.5, 2].map((z) => (
@@ -484,13 +507,19 @@ export function SheetMenuBar({
           </MenuItem>
           <MenuItem disabled>Image{arrow}</MenuItem>
           <MenuItem disabled>Drawing</MenuItem>
-          <MenuItem disabled>Function{arrow}</MenuItem>
-          <MenuItem disabled>Link{kbd("Ctrl+K")}</MenuItem>
+          <MenuItem disabled={!onInsertFunction} onClick={onInsertFunction}>
+            Function…{kbd("Shift+F3")}
+          </MenuItem>
+          <MenuItem disabled={!onInsertLink} onClick={onInsertLink}>
+            Link{kbd("Ctrl+K")}
+          </MenuItem>
           <MenuItem disabled>Checkbox</MenuItem>
           <MenuItem disabled>Dropdown{arrow}</MenuItem>
           <MenuItem disabled>Emoji</MenuItem>
           <MenuItem disabled>Smart chips{arrow}</MenuItem>
-          <MenuItem disabled>Comment{kbd("Ctrl+Alt+M")}</MenuItem>
+          <MenuItem disabled={!onInsertComment} onClick={onInsertComment}>
+            Comment{kbd("Ctrl+Alt+M")}
+          </MenuItem>
           <MenuItem disabled>Note{kbd("Shift+F2")}</MenuItem>
         </>,
       )}
@@ -529,6 +558,12 @@ export function SheetMenuBar({
           </MenuItem>
           <MenuItem sx={sub} onClick={fmt("cl", 1)}>
             Strikethrough{kbd("Alt+Shift+5")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={fmt("va", 1)}>
+            Superscript{kbd("Ctrl+.")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={fmt("va", 2)}>
+            Subscript{kbd("Ctrl+,")}
           </MenuItem>
           {section("Change case")}
           {TEXT_CASES.map(([mode, label]) => (
@@ -658,6 +693,10 @@ export function SheetMenuBar({
             Split text to columns
           </MenuItem>
           <MenuItem disabled>Data extraction</MenuItem>
+          {section("What-if analysis")}
+          <MenuItem sx={sub} disabled={!onGoalSeek} onClick={onGoalSeek}>
+            Goal seek…
+          </MenuItem>
           <ListDivider />
           <MenuItem disabled>Data connectors{arrow}</MenuItem>
         </>,
@@ -667,6 +706,17 @@ export function SheetMenuBar({
       {top(
         "Tools",
         <>
+          {section("Formula auditing")}
+          <MenuItem sx={sub} disabled={!onTrace} onClick={() => onTrace?.("precedents")}>
+            Trace precedents
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!onTrace} onClick={() => onTrace?.("dependents")}>
+            Trace dependents
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!onTrace} onClick={() => onTrace?.("clear")}>
+            Remove arrows
+          </MenuItem>
+          <ListDivider />
           <MenuItem disabled>Create a new form</MenuItem>
           <MenuItem disabled>Spelling{arrow}</MenuItem>
           <MenuItem disabled>Suggestion controls{arrow}</MenuItem>
@@ -699,14 +749,10 @@ export function SheetMenuBar({
           <MenuItem disabled>Training</MenuItem>
           <MenuItem disabled>Updates</MenuItem>
           <MenuItem disabled>Help Sheets improve</MenuItem>
-          <MenuItem disabled>Function list</MenuItem>
-          <MenuItem
-            onClick={() =>
-              window.alert(
-                "Keyboard shortcuts\n\nBold Ctrl+B · Italic Ctrl+I · Underline Ctrl+U\nUndo Ctrl+Z · Redo Ctrl+Y · Find/replace Ctrl+H",
-              )
-            }
-          >
+          <MenuItem disabled={!onInsertFunction} onClick={onInsertFunction}>
+            Function list
+          </MenuItem>
+          <MenuItem disabled={!onShortcuts} onClick={onShortcuts}>
             Keyboard shortcuts{kbd("Ctrl+/")}
           </MenuItem>
         </>,

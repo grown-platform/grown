@@ -30,6 +30,9 @@ import {
   saveSheet,
   recalcSheet,
   collabURL,
+  traceDeps,
+  goalSeek,
+  type GoalSeekResult,
 } from "./api";
 import {
   recalcWrites,
@@ -114,6 +117,22 @@ import type { CellRect } from "./cellRange";
 import { FillSeriesDialog } from "./FillSeriesDialog";
 import { SortDialog } from "./SortDialog";
 import { PasteSpecialDialog } from "./PasteSpecialDialog";
+import { findShortcut, arrayFormulaText, a1, serialOf, stepFontSize, toggleReference, SHORTCUT_NUMBER_FORMATS, DATE_SHORTCUT_FORMAT, TIME_SHORTCUT_FORMAT } from "./sheetShortcuts";
+import { SheetShortcutsDialog } from "./SheetShortcutsDialog";
+import { FunctionWizard } from "./FunctionWizard";
+import { GoalSeekDialog } from "./GoalSeekDialog";
+import { LinkDialog, type LinkValue } from "./LinkDialog";
+import { TraceOverlay, type TraceState } from "./TraceOverlay";
+import { CellCommentsLayer, activeCellStore, refreshPaintThreads, threadsForPaint, type CellCommentsHandle } from "./CellCommentsLayer";
+import { paintCommentMarker } from "./cellComments";
+import { paintScriptCell, toggleScript, VA_SUB, VA_SUPER } from "./cellScript";
+import { applyNumberFormat } from "./numberFormatActions";
+import { formatKind, formatValue } from "./numberFormat";
+import { parseA1Range } from "./cellValue";
+import { gridGeometry } from "./chartAnchor";
+import { translateFormula } from "./formulaShift";
+import { selectAllTarget } from "./selectAll";
+import { autoSumSelection, proposeSum, type CellKind } from "./autoSum";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -144,6 +163,77 @@ const WORKBOOK_HOOKS = {
     return true;
   },
 };
+
+// FortuneSheet shows its cell editor (the input box) above the grid while a
+// cell is being edited.
+function isEditingCell(): boolean {
+  const box = document.querySelector<HTMLElement>(".luckysheet-input-box");
+  if (box && box.style.zIndex === "19") return true;
+  const a = document.activeElement as HTMLElement | null;
+  return !!a?.closest?.(".fortune-fx-input") && a.isContentEditable;
+}
+
+// Caret / selection offsets inside a contenteditable, as plain-text offsets.
+function textOffsets(el: HTMLElement): [number, number] {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return [el.innerText.length, el.innerText.length];
+  const r = sel.getRangeAt(0);
+  const pre = document.createRange();
+  pre.selectNodeContents(el);
+  pre.setEnd(r.startContainer, r.startOffset);
+  const start = pre.toString().length;
+  pre.setEnd(r.endContainer, r.endOffset);
+  return [start, pre.toString().length];
+}
+function setTextSelection(el: HTMLElement, start: number, end: number) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let pos = 0;
+  let sNode: Node | null = null;
+  let sOff = 0;
+  let eNode: Node | null = null;
+  let eOff = 0;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const len = n.textContent?.length ?? 0;
+    if (!sNode && start <= pos + len) {
+      sNode = n;
+      sOff = start - pos;
+    }
+    if (!eNode && end <= pos + len) {
+      eNode = n;
+      eOff = end - pos;
+      break;
+    }
+    pos += len;
+  }
+  const range = document.createRange();
+  if (sNode && eNode) {
+    range.setStart(sNode, sOff);
+    range.setEnd(eNode, eOff);
+  } else {
+    range.selectNodeContents(el);
+    range.collapse(false);
+  }
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
+// Replaces a cell editor's text (FortuneSheet reads innerText when it
+// commits). A keydown + input pair with a character key code makes
+// FortuneSheet re-render a formula into its coloured reference spans (so its
+// own caret bookkeeping works for the next typed key); the caret is then put
+// back where it belongs.
+function setEditorText(el: HTMLElement, text: string, start: number, end = start) {
+  el.textContent = text;
+  setTextSelection(el, start, end);
+  el.dispatchEvent(new KeyboardEvent("keydown", { key: "a", code: "KeyA", keyCode: 65, which: 65, bubbles: true } as KeyboardEventInit));
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  const restore = () => {
+    if (el.innerText.replace(/\n$/, "") === text) setTextSelection(el, start, end);
+  };
+  restore();
+  window.setTimeout(restore, 0);
+  window.setTimeout(restore, 40);
+}
 
 const COLORS = [
   "#3D5A80",
@@ -198,6 +288,16 @@ export function SheetEditor({ user }: SheetEditorProps) {
   // Bumped to remount the grid after an import replaced the workbook.
   const [wbKey, setWbKey] = useState(0);
   const [view, setView] = useState<ViewState>(() => sheetViewOptions({}));
+  // M12: shortcuts dialog, function wizard, link, comments; M5: goal seek, trace arrows.
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [wizardFor, setWizardFor] = useState<{ formula: string; sheetId: string; r: number; c: number } | null>(null);
+  const [goalSeekCell, setGoalSeekCell] = useState<string | null>(null);
+  const [linkFor, setLinkFor] = useState<{ sheetId: string; r: number; c: number; text: string; address: string } | null>(null);
+  const [trace, setTrace] = useState<TraceState | null>(null);
+  const traceRef = useRef<TraceState | null>(null);
+  traceRef.current = trace;
+  const [commentsPanel, setCommentsPanel] = useState(false);
+  const commentsRef = useRef<CellCommentsHandle | null>(null);
   // A new generateSheetId identity makes FortuneSheet re-read gridlines/zoom from the sheet.
   const [viewGen, setViewGen] = useState(0);
   const generateSheetId = useMemo(() => {
@@ -238,14 +338,31 @@ export function SheetEditor({ user }: SheetEditorProps) {
       beforePaste: (selection: any) => viewHooks.beforePaste(selection),
       beforeRenderCellArea: (cells: any, ctx: CanvasRenderingContext2D) => {
         viewHooks.beforeRenderCellArea();
+        refreshPaintThreads(ref.current);
         return dataToolHooks.beforeRenderCellArea(cells, ctx);
       },
-      // Formulas shown (View ▸ Show ▸ Formulas) are painted by viewTools.
-      beforeRenderCell: (cell: any, info: any, ctx: CanvasRenderingContext2D) =>
-        viewHooks.beforeRenderCell(cell, info, ctx) !== false && dataToolHooks.beforeRenderCell(cell, info, ctx),
+      // Formulas shown (View ▸ Show ▸ Formulas) are painted by viewTools;
+      // superscript/subscript cells by cellScript.
+      beforeRenderCell: (cell: any, info: any, ctx: CanvasRenderingContext2D) => {
+        if (viewHooks.beforeRenderCell(cell, info, ctx) === false) return false;
+        if (dataToolHooks.beforeRenderCell(cell, info, ctx) === false) return false;
+        try {
+          const v = sheetViewOptions(currentSheet(ref.current));
+          if (paintScriptCell(cell, info, ctx, { zoom: v.zoom, gridlines: v.showGridLines })) return false;
+        } catch {
+          /* FortuneSheet paints it */
+        }
+        return true;
+      },
       afterRenderCell: (cell: any, info: any, ctx: CanvasRenderingContext2D) => {
         dataToolHooks.afterRenderCell(cell, info, ctx);
         viewHooks.afterRenderCell(cell, info, ctx);
+        paintCommentMarker(threadsForPaint(), info, ctx);
+      },
+      afterSelectionChange: (sheetId: string, sel: any) => {
+        const r = sel?.row_focus ?? sel?.row?.[0];
+        const c = sel?.column_focus ?? sel?.column?.[0];
+        if (typeof r === "number" && typeof c === "number") activeCellStore.set({ sheetId: String(sheetId), r, c });
       },
       beforeRenderRowHeaderCell: viewHooks.beforeRenderRowHeaderCell,
       beforeRenderColumnHeaderCell: viewHooks.beforeRenderColumnHeaderCell,
@@ -456,56 +573,39 @@ export function SheetEditor({ user }: SheetEditorProps) {
     };
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ctrl/Cmd+H opens Find & replace (mirrors Google Sheets). FortuneSheet doesn't
-  // bind this key itself, so we capture it at the document level.
+  // Keyboard shortcuts (sheetShortcuts.ts is the binding table; Help ▸
+  // Keyboard shortcuts lists the same table). One capture-phase handler for
+  // the grid and the cell editor; FortuneSheet's own bindings (native in the
+  // table) pass through. Commands read the live selection when they run.
+  // Ctrl+C / Ctrl+X also remember the block for Paste special. After a
+  // fill-handle drag, Grown's autofill replaces FortuneSheet's
+  // (see editActions.afterDragFill).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === "h" || e.key === "H")) {
-        e.preventDefault();
-        setFindOpen(true);
-      }
-      // Ctrl+` shows formulas; Ctrl+P opens print settings (Google Sheets).
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "`" || e.code === "Backquote")) {
-        e.preventDefault();
-        viewActionRef.current({ showFormulas: !sheetViewOptions(currentSheet(ref.current)).showFormulas });
-      }
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "p" || e.key === "P")) {
-        e.preventDefault();
-        printActionRef.current();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Grid shortcuts FortuneSheet lacks: Ctrl+D / Ctrl+R fill down / right,
-  // Ctrl+Shift+V paste values only; Ctrl+C / Ctrl+X also remember the block
-  // for Paste special. Only while the grid (not a cell editor or dialog) has
-  // the keyboard. After a fill-handle drag, Grown's autofill replaces
-  // FortuneSheet's (see editActions.afterDragFill).
-  useEffect(() => {
-    const inGrid = (e: Event) => {
       const t = e.target as HTMLElement | null;
-      if (!t?.closest?.('[data-testid="sheet-editor"]')) return false;
-      const box = document.querySelector<HTMLElement>(".luckysheet-input-box");
-      const editing = box ? box.style.zIndex === "19" : false;
-      return !editing;
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || !inGrid(e)) return;
+      if (!t?.closest?.('[data-testid="sheet-editor"]')) {
+        // Outside the grid only the app-level bindings apply (not while typing in a dialog).
+        if (t?.closest?.('[role="dialog"]') || t?.closest?.("input,textarea,[contenteditable=true]")) return;
+      }
       const wb = ref.current;
       if (!wb) return;
-      const k = e.key.toLowerCase();
-      if (!e.shiftKey && (k === "d" || k === "r")) {
-        e.preventDefault();
+      const editing = isEditingCell();
+      // Ctrl/⌘+arrows while typing move the caret by word / to the line end
+      // (FortuneSheet would move the grid selection instead).
+      if (editing && (e.ctrlKey || e.metaKey) && e.key.startsWith("Arrow")) {
         e.stopPropagation();
-        fillSelection(wb, k === "d" ? "down" : "right");
-      } else if (e.shiftKey && k === "v") {
-        e.preventDefault();
-        e.stopPropagation();
-        pasteSpecialHere(wb, { what: "values" });
-      } else if (!e.shiftKey && (k === "c" || k === "x")) {
-        rememberCopy(wb);
+        return;
+      }
+      if (!editing && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.code === "KeyC" || e.code === "KeyX")) rememberCopy(wb);
+      const def = findShortcut(e, editing ? "editor" : "grid");
+      if (!def) return;
+      if (!t?.closest?.('[data-testid="sheet-editor"]') && !["shortcuts", "print", "find", "showFormulas"].includes(def.id)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        shortcutActionRef.current(def.id, editing);
+      } catch (err) {
+        console.warn("shortcut failed", def.id, err);
       }
     };
     const onMouseUp = () =>
@@ -612,9 +712,455 @@ export function SheetEditor({ user }: SheetEditorProps) {
     // it; headings repaint with the grid.
     if (patch.showGridLines !== undefined || patch.zoom !== undefined || patch.showHeadings !== undefined) setViewGen((g) => g + 1);
   }
-  const viewActionRef = useRef(applyView);
-  viewActionRef.current = applyView;
   refreshViewRef.current = () => setView(sheetViewOptions(currentSheet(ref.current)));
+
+  // ---- M12 keyboard shortcuts and M5 analysis tools ----------------------
+
+  function activeCell(): { sheetId: string; r: number; c: number } | null {
+    const wb = ref.current;
+    try {
+      const s = wb?.getSelection?.();
+      const sel = Array.isArray(s) ? s[s.length - 1] : s;
+      const sheetId = String(wb?.getSheet?.()?.id ?? "");
+      // getSelection() has no focus cell; the afterSelectionChange hook does.
+      const f = activeCellStore.get();
+      if (
+        f &&
+        f.sheetId === sheetId &&
+        sel?.row &&
+        f.r >= Math.min(sel.row[0], sel.row[1]) &&
+        f.r <= Math.max(sel.row[0], sel.row[1]) &&
+        f.c >= Math.min(sel.column[0], sel.column[1]) &&
+        f.c <= Math.max(sel.column[0], sel.column[1])
+      )
+        return f;
+      const r = sel?.row_focus ?? sel?.row?.[0];
+      const c = sel?.column_focus ?? sel?.column?.[0];
+      if (!sheetId || typeof r !== "number" || typeof c !== "number") return null;
+      return { sheetId, r, c };
+    } catch {
+      return null;
+    }
+  }
+  function cellAt(sheetId: string, r: number, c: number): any {
+    try {
+      const sh = (ref.current?.getAllSheets?.() ?? []).find((x: any) => String(x?.id) === sheetId);
+      return sh?.data?.[r]?.[c] ?? null;
+    } catch {
+      return null;
+    }
+  }
+  function liveJson(): string {
+    const all = ref.current?.getAllSheets?.() ?? dataRef.current ?? [];
+    return JSON.stringify(withExtras(all));
+  }
+  // Toggles a 0/1 style attribute over the selection, from the active cell's state.
+  function toggleAttr(attr: string, on?: any) {
+    const wb = ref.current;
+    const a = activeCell();
+    if (!wb || !a) return;
+    const cur = cellAt(a.sheetId, a.r, a.c)?.[attr];
+    const next = on !== undefined ? on : cur ? 0 : 1;
+    for (const range of selectionRanges(wb)) wb.setCellFormatByRange(attr, next, range);
+  }
+  function setScript(which: typeof VA_SUPER | typeof VA_SUB) {
+    const a = activeCell();
+    if (!a) return;
+    toggleAttr("va", toggleScript(cellAt(a.sheetId, a.r, a.c)?.va, which));
+  }
+  function stepFont(dir: 1 | -1) {
+    const wb = ref.current;
+    const a = activeCell();
+    if (!wb || !a) return;
+    const cur = Number(cellAt(a.sheetId, a.r, a.c)?.fs) || 10;
+    const next = stepFontSize(cur, dir);
+    for (const range of selectionRanges(wb)) wb.setCellFormatByRange("fs", next, range);
+  }
+  function clearFormatting() {
+    const wb = ref.current;
+    if (!wb) return;
+    for (const range of selectionRanges(wb)) {
+      for (const attr of ["bl", "it", "un", "cl", "va", "fc", "bg", "fs", "ff", "ht", "vt"]) wb.setCellFormatByRange(attr, undefined, range);
+      wb.setCellFormatByRange("ct", { fa: "General", t: "g" }, range);
+    }
+  }
+  // Ctrl+; / Ctrl+Shift+;: a date or time value in the grid, its text in the editor.
+  function insertNow(kind: "date" | "time", editing: boolean) {
+    const now = new Date();
+    const serial = serialOf(now);
+    const fa = kind === "date" ? DATE_SHORTCUT_FORMAT : TIME_SHORTCUT_FORMAT;
+    const v = kind === "date" ? Math.floor(serial) : serial;
+    const text = formatValue(v, fa);
+    if (editing) {
+      document.execCommand("insertText", false, text);
+      return;
+    }
+    const a = activeCell();
+    if (!a) return;
+    ref.current?.setCellValue(a.r, a.c, { v, m: text, ct: { fa, t: "d" } }, { id: a.sheetId });
+  }
+  // Opens FortuneSheet's editor on the active cell (as F2 does) with `text`.
+  function editActiveCell(text: string, selStart: number, selEnd = selStart) {
+    const input = document.querySelector<HTMLElement>(".luckysheet-cell-input");
+    if (!input) return;
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", code: "F2", bubbles: true, cancelable: true }));
+    window.setTimeout(() => {
+      input.focus();
+      setEditorText(input, text, selStart, selEnd);
+    }, 30);
+  }
+  // Alt+=: one cell opens the editor with the proposed =SUM(…); a selection
+  // gets its totals written (autoSum.ts), as one undo step.
+  function autoSum() {
+    const wb = ref.current;
+    const a = activeCell();
+    const sheet = currentSheet(wb);
+    const sel = selectionRect(wb);
+    if (!wb || !a || !sheet || !sel) return;
+    const data: any[][] = Array.isArray(sheet.data) ? sheet.data : [];
+    const kind = (r: number, c: number): CellKind => {
+      const cell = data[r]?.[c];
+      if (!cell) return "empty";
+      if (typeof cell.f === "string" && /^=\s*SUM\s*\(/i.test(cell.f)) return "sum";
+      const v = cell.v;
+      if (v === undefined || v === null || v === "") return cell.ct?.s ? "text" : "empty";
+      const fa = cell.ct?.fa;
+      if (fa === "@" || typeof v === "string" || typeof v === "boolean") return "text";
+      const fk = formatKind(fa);
+      return fk === "date" || fk === "time" ? "date" : "num";
+    };
+    if (sel.r1 !== sel.r2 || sel.c1 !== sel.c2) {
+      const res = autoSumSelection(kind, sel);
+      if (!res) return;
+      wb.batchCallApis(res.writes.map((w) => ({ name: "setCellValue", args: [w.r, w.c, w.f, { id: a.sheetId }] })));
+      const t = res.selection;
+      window.setTimeout(() => wb.setSelection([{ row: [t.r1, t.r2], column: [t.c1, t.c2] }], { id: a.sheetId }), 0);
+      return;
+    }
+    const range = proposeSum(kind, a.r, a.c);
+    const text = `=SUM(${range})`;
+    editActiveCell(text, 5, 5 + range.length);
+  }
+  function toggleRefInEditor() {
+    const el = document.activeElement as HTMLElement | null;
+    if (!el?.isContentEditable) return;
+    const text = el.innerText.replace(/\n$/, "");
+    if (!text.startsWith("=")) return;
+    const [start, end] = textOffsets(el);
+    const next = toggleReference(text, start, end);
+    if (next.text !== text) setEditorText(el, next.text, next.caret, next.selEnd);
+  }
+  function switchSheet(dir: 1 | -1) {
+    const wb = ref.current;
+    if (!wb) return;
+    const sheets = (wb.getAllSheets?.() ?? []).filter((x: any) => !x?.hide).sort((x: any, y: any) => (x.order ?? 0) - (y.order ?? 0));
+    const cur = String(wb.getSheet?.()?.id ?? "");
+    const i = sheets.findIndex((x: any) => String(x.id) === cur);
+    const next = sheets[i + dir];
+    if (next) wb.activateSheet({ id: next.id });
+  }
+  // Shift+Enter / Tab / Shift+Tab while editing: commit (FortuneSheet's Enter)
+  // and move up / right / left instead of down.
+  function commitAndMove(action: string) {
+    const a = activeCell();
+    const input = document.querySelector<HTMLElement>(".luckysheet-cell-input");
+    if (!a || !input) return;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true } as KeyboardEventInit));
+    const r = action === "saveUp" ? Math.max(0, a.r - 1) : a.r;
+    const c = action === "saveRight" ? a.c + 1 : action === "saveLeft" ? Math.max(0, a.c - 1) : a.c;
+    window.setTimeout(() => {
+      try {
+        ref.current?.setSelection([{ row: [r, r], column: [c, c] }], { id: a.sheetId });
+      } catch {
+        /* FortuneSheet's own move stays */
+      }
+    }, 0);
+  }
+  // Ctrl+Enter: the text being typed goes into every selected cell, formulas
+  // with their relative references moved (A1:B1 with =A2:B2 → B1 =B2:C2).
+  function fillEntry() {
+    const wb = ref.current;
+    const a = activeCell();
+    const input = document.querySelector<HTMLElement>(".luckysheet-cell-input");
+    if (!wb || !a || !input) return;
+    const text = input.innerText.replace(/\n$/, "");
+    const rects = selectionRanges(wb).map((rg: any) => ({
+      r1: Math.min(rg.row[0], rg.row[1]),
+      r2: Math.max(rg.row[0], rg.row[1]),
+      c1: Math.min(rg.column[0], rg.column[1]),
+      c2: Math.max(rg.column[0], rg.column[1]),
+    }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true } as KeyboardEventInit));
+    window.setTimeout(() => {
+      const calls: { name: string; args: any[] }[] = [];
+      for (const rc of rects) {
+        for (let r = rc.r1; r <= rc.r2; r++) {
+          for (let c = rc.c1; c <= rc.c2; c++) {
+            if (r === a.r && c === a.c) continue;
+            const v = text.startsWith("=") ? translateFormula(text, r - a.r, c - a.c) : text;
+            calls.push({ name: "setCellValue", args: [r, c, v, { id: a.sheetId }] });
+          }
+        }
+      }
+      try {
+        if (calls.length) wb.batchCallApis(calls);
+        wb.setSelection(rects.map((rc) => ({ row: [rc.r1, rc.r2], column: [rc.c1, rc.c2] })), { id: a.sheetId });
+      } catch {
+        /* the active cell keeps its entry */
+      }
+    }, 0);
+  }
+  // Ctrl+Shift+Enter: enter the formula as an array formula.
+  function arrayEntry() {
+    const input = document.querySelector<HTMLElement>(".luckysheet-cell-input");
+    if (!input) return;
+    const text = input.innerText.replace(/\n$/, "");
+    const next = arrayFormulaText(text);
+    if (next !== text) setEditorText(input, next, next.length);
+    window.setTimeout(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true } as KeyboardEventInit));
+    }, 50);
+  }
+  // Ctrl+A: the data around the active cell (or a table's rows, then the
+  // table), then the whole sheet (selectAll.ts).
+  function selectAllStep() {
+    const wb = ref.current;
+    const a = activeCell();
+    const sheet = currentSheet(wb);
+    const sel = selectionRect(wb);
+    if (!wb || !a || !sheet || !sel) return;
+    const data: any[][] = Array.isArray(sheet.data) ? sheet.data : [];
+    const filled = (r: number, c: number) => {
+      const v = data[r]?.[c];
+      return !!v && ((v.v != null && v.v !== "") || !!v.f || !!v.ct?.s);
+    };
+    const tables = Array.isArray(sheet.grownTables) ? sheet.grownTables : [];
+    const t = selectAllTarget(filled, sel, a.r, a.c, tables);
+    const rows = Math.max(data.length, Number(sheet.row) || 0) - 1;
+    const cols = Math.max(data[0]?.length ?? 0, Number(sheet.column) || 0) - 1;
+    const range = t ? { row: [t.r1, t.r2], column: [t.c1, t.c2] } : { row: [0, Math.max(0, rows)], column: [0, Math.max(0, cols)] };
+    wb.setSelection([range], { id: a.sheetId });
+  }
+  function recalcNow() {
+    const wb = ref.current;
+    if (!wb) return;
+    try {
+      wb.calculateFormula?.();
+    } catch {
+      /* the server values below still arrive */
+    }
+    recalcSheet(id, liveJson())
+      .then(applyServerValues)
+      .catch(() => {});
+  }
+  function openLink() {
+    const a = activeCell();
+    if (!a) return;
+    let address = "";
+    try {
+      const sh = (ref.current?.getAllSheets?.() ?? []).find((x: any) => String(x?.id) === a.sheetId);
+      address = sh?.hyperlink?.[`${a.r}_${a.c}`]?.linkAddress ?? "";
+    } catch {
+      /* none */
+    }
+    const cell = cellAt(a.sheetId, a.r, a.c);
+    setLinkFor({ ...a, text: cell?.m != null ? String(cell.m) : cell?.v != null ? String(cell.v) : "", address });
+  }
+  function applyLink(v: LinkValue) {
+    const wb = ref.current;
+    const t = linkFor;
+    if (!wb || !t) return;
+    const sh = (wb.getAllSheets?.() ?? []).find((x: any) => String(x?.id) === t.sheetId);
+    const hyperlink = { ...(sh?.hyperlink ?? {}), [`${t.r}_${t.c}`]: { linkType: v.type, linkAddress: v.address } };
+    patchSheet(wb, t.sheetId, { hyperlink });
+    const old = cellAt(t.sheetId, t.r, t.c) ?? {};
+    wb.setCellValue(t.r, t.c, { ...old, v: v.text, m: v.text, f: undefined, fc: "rgb(0, 0, 255)", un: 1, hl: { r: t.r, c: t.c, id: t.sheetId } }, { id: t.sheetId });
+  }
+  function removeLink() {
+    const wb = ref.current;
+    const t = linkFor;
+    if (!wb || !t) return;
+    const sh = (wb.getAllSheets?.() ?? []).find((x: any) => String(x?.id) === t.sheetId);
+    const hyperlink = { ...(sh?.hyperlink ?? {}) };
+    delete hyperlink[`${t.r}_${t.c}`];
+    patchSheet(wb, t.sheetId, { hyperlink });
+    const old = cellAt(t.sheetId, t.r, t.c);
+    if (old) wb.setCellValue(t.r, t.c, { ...old, fc: undefined, un: undefined, hl: undefined }, { id: t.sheetId });
+  }
+  function openWizard() {
+    const a = activeCell();
+    if (!a) return;
+    const f = cellAt(a.sheetId, a.r, a.c)?.f;
+    setWizardFor({ ...a, formula: typeof f === "string" ? f : "" });
+  }
+  // The wizard's live result: the formula evaluated by the server engine in
+  // the cell it will go into (so relative references mean what they will).
+  async function evaluateInCell(formula: string): Promise<string> {
+    const t = wizardFor;
+    if (!t) return "";
+    const all = JSON.parse(liveJson());
+    const sh = all.find((x: any) => String(x?.id) === t.sheetId);
+    if (!sh) return "";
+    sh.celldata = (sh.celldata ?? []).filter((cd: any) => !(cd.r === t.r && cd.c === t.c));
+    sh.celldata.push({ r: t.r, c: t.c, v: { f: formula } });
+    const cells = await recalcSheet(id, JSON.stringify(all));
+    const hit = cells.find((x) => x.sheetId === t.sheetId && x.r === t.r && x.c === t.c);
+    if (!hit) return "";
+    return String(hit.m ?? hit.v ?? "");
+  }
+  function insertFormula(formula: string) {
+    const t = wizardFor;
+    if (!t) return;
+    ref.current?.setCellValue(t.r, t.c, formula, { id: t.sheetId });
+  }
+  async function runTrace(kind: "precedents" | "dependents" | "clear") {
+    if (kind === "clear") {
+      setTrace(null);
+      return;
+    }
+    const a = activeCell();
+    if (!a) return;
+    const cur = traceRef.current;
+    const same = cur && cur.sheetId === a.sheetId && cur.r === a.r && cur.c === a.c;
+    const next: TraceState = {
+      sheetId: a.sheetId,
+      r: a.r,
+      c: a.c,
+      precedents: (same ? cur!.precedents : 0) + (kind === "precedents" ? 1 : 0),
+      dependents: (same ? cur!.dependents : 0) + (kind === "dependents" ? 1 : 0),
+      result: same ? cur!.result : null,
+    };
+    await refreshTrace(next);
+  }
+  async function refreshTrace(t: TraceState) {
+    try {
+      const res = await traceDeps(id, liveJson(), t.sheetId, a1(t.r, t.c), Math.max(1, t.precedents), Math.max(1, t.dependents));
+      if (!t.precedents) res.precedents = [];
+      if (!t.dependents) res.dependents = [];
+      setTrace({ ...t, result: res });
+    } catch {
+      setTrace(t);
+    }
+  }
+  function openGoalSeek() {
+    const a = activeCell();
+    setGoalSeekCell(a ? a1(a.r, a.c) : "");
+  }
+  function applyGoalSeek(res: GoalSeekResult) {
+    const rect = parseA1Range(res.changingCell);
+    if (!rect) return;
+    ref.current?.setCellValue(rect.r1, rect.c1, res.value, { id: res.sheetId });
+  }
+
+  function runShortcut(action: string, editing: boolean) {
+    const wb = ref.current;
+    if (!wb) return;
+    const fa = SHORTCUT_NUMBER_FORMATS[action];
+    if (fa) {
+      applyNumberFormat(wb, fa);
+      return;
+    }
+    switch (action) {
+      case "bold":
+        return toggleAttr("bl");
+      case "italic":
+        return toggleAttr("it");
+      case "underline":
+        return toggleAttr("un");
+      case "strikethrough":
+        return toggleAttr("cl");
+      case "superscript":
+        return setScript(VA_SUPER);
+      case "subscript":
+        return setScript(VA_SUB);
+      case "fontBigger":
+        return stepFont(1);
+      case "fontSmaller":
+        return stepFont(-1);
+      case "clearFormat":
+        return clearFormatting();
+      case "insertDate":
+        return insertNow("date", editing);
+      case "insertTime":
+        return insertNow("time", editing);
+      case "fillDown":
+        return fillSelection(wb, "down");
+      case "fillRight":
+        return fillSelection(wb, "right");
+      case "pasteValues":
+        return pasteSpecialHere(wb, { what: "values" });
+      case "find":
+        return setFindOpen(true);
+      case "autoSum":
+        return autoSum();
+      case "toggleRef":
+        return toggleRefInEditor();
+      case "showFormulas":
+        return applyView({ showFormulas: !sheetViewOptions(currentSheet(wb)).showFormulas });
+      case "recalcAll":
+      case "recalcSheet":
+        return recalcNow();
+      case "insertFunction":
+        return openWizard();
+      case "nextSheet":
+        return switchSheet(1);
+      case "prevSheet":
+        return switchSheet(-1);
+      case "link":
+        return openLink();
+      case "comment":
+        return commentsRef.current?.compose();
+      case "newSheet":
+        return wb.addSheet();
+      case "refreshPivot":
+        return pivotToolsRef.current?.changed();
+      case "dropdown": {
+        // A list-validated cell shows FortuneSheet's dropdown button.
+        const btn = document.getElementById("luckysheet-dataVerification-dropdown-btn");
+        if (btn && btn.style.display !== "none") btn.click();
+        return;
+      }
+      case "clearActive": {
+        // Backspace clears only the active cell (Delete clears the selection)
+        // and leaves it in edit mode, as in Excel.
+        const a = activeCell();
+        if (!a) return;
+        wb.clearCell(a.r, a.c, { id: a.sheetId });
+        editActiveCell("", 0);
+        return;
+      }
+      case "contextMenu": {
+        // The grid's context menu at the active cell (Shift+F10 / the menu key).
+        const a = activeCell();
+        const area = editorEl?.querySelector<HTMLElement>(".fortune-cell-area");
+        const sheet = currentSheet(wb);
+        if (!a || !area || !sheet) return;
+        const g = gridGeometry(sheet);
+        const rect = area.getBoundingClientRect();
+        const x = rect.left + g.colLeft(a.c) - area.scrollLeft + 10;
+        const y = rect.top + g.rowTop(a.r) - area.scrollTop + 8;
+        area.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 }));
+        return;
+      }
+      case "fillEntry":
+        return fillEntry();
+      case "arrayEntry":
+        return arrayEntry();
+      case "selectAll":
+        return selectAllStep();
+      case "saveUp":
+      case "saveRight":
+      case "saveLeft":
+        return commitAndMove(action);
+      case "print":
+        return openPrint();
+      case "shortcuts":
+        return setShortcutsOpen(true);
+    }
+  }
+  const shortcutActionRef = useRef(runShortcut);
+  shortcutActionRef.current = runShortcut;
 
   function openPrint() {
     const sheet = currentSheet(ref.current);
@@ -622,8 +1168,6 @@ export function SheetEditor({ user }: SheetEditorProps) {
     const sel = selectionRect(ref.current);
     setPrintFor({ sheet: JSON.parse(JSON.stringify(sheet)), selection: sel });
   }
-  const printActionRef = useRef(openPrint);
-  printActionRef.current = openPrint;
 
   function savePrint(ps: PrintSettings) {
     const sheet = currentSheet(ref.current);
@@ -738,6 +1282,8 @@ export function SheetEditor({ user }: SheetEditorProps) {
           .then(applyServerValues)
           .catch(() => {});
       }
+      // Trace arrows follow the edit (a removed reference drops its arrow).
+      if (traceRef.current) void refreshTrace(traceRef.current);
     }, 1500);
   }
   // applyServerValues writes the server engine's results into the grid where
@@ -754,15 +1300,29 @@ export function SheetEditor({ user }: SheetEditorProps) {
       return;
     }
     if (!writes.length) return;
+    // Computed values are not user edits: applyOp keeps them out of the undo
+    // history (setCellValue would record them, so Ctrl+Z would first undo a
+    // spill instead of the user's own change).
+    const ops = writes.map((w) => {
+      const sheet = (wb.getAllSheets?.() ?? []).find((sh: any) => sh?.id === w.sheetId);
+      const old = sheet?.data?.[w.r]?.[w.c] ?? null;
+      let value: any = null;
+      if (w.value) value = { ...(old ?? {}), ...w.value };
+      else if (old) {
+        // Keep the cell's formatting, drop the spilled value.
+        const { v: _v, m: _m, grownSpill: _g, ...rest } = old;
+        void _v;
+        void _m;
+        void _g;
+        value = Object.keys(rest).length ? rest : null;
+      }
+      return { op: "replace", id: w.sheetId, path: ["data", w.r, w.c], value };
+    });
     applyingRemote.current = true;
     try {
-      for (const w of writes) {
-        try {
-          wb.setCellValue(w.r, w.c, w.value, { id: w.sheetId });
-        } catch {
-          /* ignore */
-        }
-      }
+      wb.applyOp(ops);
+    } catch {
+      /* ignore */
     } finally {
       applyingRemote.current = false;
     }
@@ -989,6 +1549,13 @@ export function SheetEditor({ user }: SheetEditorProps) {
                 setNumFmtRanges(selectionRanges(ref.current));
                 setNumFmtOpen(true);
               }}
+              onInsertFunction={openWizard}
+              onInsertLink={openLink}
+              onInsertComment={() => commentsRef.current?.compose()}
+              onShowComments={() => setCommentsPanel((o) => !o)}
+              onGoalSeek={openGoalSeek}
+              onTrace={(k) => void runTrace(k)}
+              onShortcuts={() => setShortcutsOpen(true)}
             />
           </Box>
           <Box sx={{ flex: 1 }} />
@@ -1041,22 +1608,32 @@ export function SheetEditor({ user }: SheetEditorProps) {
         </Box>
       </JoySheet>
       <Divider />
-      <Box
-        sx={{ flex: 1, minHeight: 0, overflow: "auto" }}
-        data-testid="sheet-editor"
-        ref={setEditorEl}
-      >
-        <Box sx={{ minWidth: { xs: 600, md: "100%" }, height: "100%" }}>
-          <Workbook
-            key={wbKey}
-            ref={ref}
-            data={data}
-            onChange={stableOnChange}
-            onOp={stableOnOp}
-            hooks={hooks.current}
-            generateSheetId={generateSheetId}
-          />
+      <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
+        <Box
+          sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "auto" }}
+          data-testid="sheet-editor"
+          ref={setEditorEl}
+        >
+          <Box sx={{ minWidth: { xs: 600, md: "100%" }, height: "100%" }}>
+            <Workbook
+              key={wbKey}
+              ref={ref}
+              data={data}
+              onChange={stableOnChange}
+              onOp={stableOnOp}
+              hooks={hooks.current}
+              generateSheetId={generateSheetId}
+            />
+          </Box>
         </Box>
+        <CellCommentsLayer
+          ref={commentsRef}
+          getWb={getWbRef.current}
+          container={editorEl}
+          author={{ id: user.id, name: user.display_name || user.email }}
+          panelOpen={commentsPanel}
+          onPanelClose={() => setCommentsPanel(false)}
+        />
       </Box>
       <FindReplaceDialog
         open={findOpen}
@@ -1169,6 +1746,30 @@ export function SheetEditor({ user }: SheetEditorProps) {
         onDelete={(cid) => persistCharts(chartsRef.current.filter((c) => c.id !== cid))}
       />
       <SparklineDialog open={sparkOpen} onClose={() => setSparkOpen(false)} getWb={getWbRef.current} />
+      <TraceOverlay getWb={getWbRef.current} container={editorEl} trace={trace} />
+      <SheetShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <FunctionWizard
+        open={wizardFor !== null}
+        onClose={() => setWizardFor(null)}
+        initialFormula={wizardFor?.formula}
+        evaluate={evaluateInCell}
+        onInsert={insertFormula}
+      />
+      <GoalSeekDialog
+        open={goalSeekCell !== null}
+        onClose={() => setGoalSeekCell(null)}
+        initialCell={goalSeekCell ?? ""}
+        run={(req) => goalSeek(id, { data: liveJson(), sheet: String(ref.current?.getSheet?.()?.id ?? ""), ...req })}
+        apply={applyGoalSeek}
+      />
+      <LinkDialog
+        open={linkFor !== null}
+        onClose={() => setLinkFor(null)}
+        initialText={linkFor?.text ?? ""}
+        initialAddress={linkFor?.address ?? ""}
+        onApply={applyLink}
+        onRemove={removeLink}
+      />
     </Box>
   );
 }

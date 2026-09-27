@@ -917,6 +917,14 @@ func New(cfg Config) *Server {
 					serveSheetsStructure(w, r, id, cfg.SheetsRepo, cfg.SharingRepo)
 					return
 				}
+				if id, ok := sheetsActionID(r.URL.Path, "deps"); ok {
+					serveSheetsDeps(w, r, id, cfg.SheetsRepo, cfg.SharingRepo)
+					return
+				}
+				if id, ok := sheetsActionID(r.URL.Path, "goalseek"); ok {
+					serveSheetsGoalSeek(w, r, id, cfg.SheetsRepo, cfg.SharingRepo)
+					return
+				}
 			}
 			if slidesHub != nil {
 				if id, ok := slidesConnectID(r.URL.Path); ok {

@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Sheets
 
-Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done. Wave 4: M7 (autofill, series, sort, paste special, sheet structure; §13) is done. Wave 5: M9 (pivot tables; §15) is done.
+Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done. Wave 4: M7 (autofill, series, sort, paste special, sheet structure; §13) is done. Wave 5: M9 (pivot tables; §15) is done. Wave 6: M10 (charts; §16) is done. Wave 7: M5 (dynamic arrays, tracing, goal seek; §17) and M12 (shortcuts, function wizard, comments; §18) are done.
 Companion: `sheets-tests.csv` (one row per OnlyOffice test file).
 Inventory baseline: **`origin/main` @ `c90064e`**. (The worktree used for reading was `96ca7c0`,
 55 commits behind; for Sheets the only difference is `internal/sheets/formula_more{,2,3}.go`
@@ -274,6 +274,8 @@ Legend: **Have** = works end-to-end in Grown · **Partial** = exists but materia
 
 Have (fortune-sheet or Grown): Ctrl+Z/Y, Ctrl+B/I/U, Ctrl+X/C/V, Ctrl+H (Grown), arrows/Tab/Enter/Shift-select, F2 edit, Delete, Ctrl+A.
 Missing: Ctrl+Shift+1…6 number formats, Ctrl+; / Ctrl+Shift+; date/time, Alt+= autosum, Ctrl+` show formulas, Ctrl+PgUp/PgDn sheet switch, F4 reference cycling, F9/Shift+F9 recalc, Ctrl+Shift+F/P font dialogs, Alt+Shift+5 strikethrough (menu shows it but nothing binds it), Ctrl+D / Ctrl+R fill, Ctrl+K link, Ctrl+Alt+M comment, Shift+F11 new sheet (label only), Ctrl+/ shortcut help (menu label only), sub/superscript.
+
+*Update (M12, §18):* all of the above except Ctrl+Shift+F/P are bound, from one table (`sheetShortcuts.ts`) that Help ▸ Keyboard shortcuts also lists.
 
 ---
 
@@ -1291,3 +1293,121 @@ second test lays out four chart types for a screenshot.
   draw pixel sparklines (that needs a cell-render hook).
 - Moving or resizing a chart is saved like other chart edits (not a
   FortuneSheet undo step).
+
+## 17. M5 results (Wave 7, 2026-09-27)
+
+M5 is done: scalar functions lift over arrays and ranges, spills resize,
+block and unblock correctly in the engine and in the editor (undo, paste and
+fill included), cells can be traced with arrows, and Goal Seek runs on the
+server engine. All 80 DynamicArraysTests tags, 13 of the 16 FormulaTrace tags,
+2 more DependencyGraph tags and the 11 goal-seek tags are ported.
+
+### 17.1 What landed
+
+| Piece | Where |
+|---|---|
+| Lifting: an array or multi-cell range passed where a function takes one value runs the function per element and spills (math, trig, text, date, IS*, statistical transforms, the SUMIF/COUNTIF(S) criteria). Different sizes pad with #N/A. IF/IFERROR/IFNA lift only on an array condition. Analysis ToolPak functions take arrays, but a range meets the formula's row or column. `A:A` covers the sheet's rows, so `=SIN(A:A)` fills the column; a whole-column array anchored below row 1 is #SPILL!. FILTER checks its include flags (text TRUE/FALSE counts, other text is #VALUE!, errors pass through). Spilled cells keep booleans and errors. | `formula_lift.go`, `formula.go`, `formula_arrayformula.go`, `formula_logical.go`, `formula_array.go`, `formula_refs.go` |
+| Spill state across saves: an array that grows, shrinks, is blocked or unblocked leaves the right cells (the `grownSpill` marker); `/recalc` reports each anchor's `spillRows`/`spillCols` | `formula_refs.go`, `recalc.go`, `spill_persist_test.go` |
+| xlsx formula text: `@` ↔ `_xlfn.SINGLE()` (except a range in a one-value argument) and `_xlfn.` prefixes for newer functions | `formula_storage.go` |
+| Editor: server values are applied with `applyOp`, so they are not undo steps (Ctrl+Z undoes the user's own edit, not a spill); spill output no array covers any more (deleted, shrunk or blocked) is cleared; the recalc also runs when only stale spill output is left. The typed-input reading is written the same way, so a typed value is one undo step. | `SheetEditor.tsx` (`applyServerValues`), `formulaRefs.ts` (`recalcWrites`), `numberFormatActions.ts`, `sheetDataTools.ts` (`writeCellsQuietly`) |
+| Tracing: `traceSession` levels over the dependency graph, now with argument kinds: a multi-cell range passed alone where a function takes one value is drawn to the cell implicit intersection reads (unless the formula spills); whole columns/rows are labelled `A:A` / `3:3`. `GET /api/v1/sheets/d/{id}/deps?cell=B2&levels=N` (stored workbook) and `POST …/deps` (the editor's live workbook) return the arrows per level. | `formula_trace.go`, `internal/server/sheets_whatif.go` |
+| Trace UI: Tools ▸ Trace precedents / Trace dependents (each click one more level from the active cell) / Remove arrows. Blue arrows with a dot at the source, a box around a source range, a dashed arrow to a sheet icon for another sheet; drawn in FortuneSheet's cell area like the charts, redrawn after edits. | `TraceOverlay.tsx`, `SheetEditor.tsx`, `SheetMenuBar.tsx` |
+| Goal seek: Newton steps on a numeric slope (halved while they make things worse), falling back to an outward search from the start value until the target is bracketed, then safeguarded Newton/bisection; brackets that close on a jump (1/x at 0) are dropped and the search goes on; a found value is shortened to the fewest significant digits that are no worse (2000, not 1999.9999999998). Paused/stepped one attempt at a time for the suite. `POST /api/v1/sheets/d/{id}/goalseek` evaluates copies of the posted workbook (only what the formula needs); nothing is saved. | `goalseek.go`, `internal/server/sheets_whatif.go` |
+| Goal seek UI: Data ▸ What-if analysis ▸ Goal seek… (set cell = active cell, to value, by changing cell); the status step shows the result, OK writes the value as an ordinary edit, Cancel leaves the sheet alone. Errors (a formula in the changing cell, a value in the set cell) are shown in the dialog. | `GoalSeekDialog.tsx` |
+| Rich text kept: `ct.s` (the runs of a multi-line or rich-text cell) was dropped by every server save; the cell type keeps unknown fields now | `formula.go` (`FsCellType`) |
+
+### 17.2 Ports
+
+| OnlyOffice file | Tags | Where |
+|---|---|---|
+| `DynamicArraysTests.js` | 62 engine cases, all passing (1,270 of 1,290 checks; 20 pending: `bare-ref-info`, `single-element-array`, `self-ref-spill`) | `dynarray_parity_test.go`, `testdata/dynarray/dynamic-arrays.json` |
+| `DynamicArraysTests.js` | the 18 edit / undo-redo / paste / fill / copy-sheet / array-entry cases, through the grid | `web/e2e/sheets-dynarray.spec.ts` |
+| `FormulaTrace.js` | +7: Base dependents, Dependents, External dependencies, Base precedents, Precedents, Shared tests, Formulas tests (13 of 16; Tables and the two performance tests are n/a) | `formula_trace_m5_test.go` |
+| `DependencyGraph.js` | +2: DependencyGraph generated (every pair of 3×3 listening boxes against every pair of changed boxes), BroadcastHelper generated (coverage sums through dependents queries) | `formula_trace_m5_test.go` |
+| `whatIfAnalysisTests.js` | 11 goal-seek tags (PMT, S = v·t, arithmetic, financials, FV, LOOKUP, math, DEVSQ, BESSEL, Bug #65864, pause/resume/step); 234 checks, 9 pending | `goalseek_test.go`, `testdata/goalseek/goal-seek.json` |
+
+Notes and differences (`oo-diff` in the fixtures and tests):
+
+- The DynamicArraysTests UI cases also assert OnlyOffice's xlsx rich-value
+  metadata (vm/cm indexes) for each state. Grown keeps no such metadata in the
+  workbook; the ports check the states it encodes (expanded, #SPILL!,
+  deleted). Paste uses the grid's own Ctrl+C / Ctrl+V; OnlyOffice's autofill
+  is Ctrl+D (fill down) here; its three "clean" options are one clear here.
+- "Array formula display with undo/redo": Ctrl+Shift+Enter enters
+  `=ARRAYFORMULA(…)` (Google Sheets), not the legacy `{=…}` braces.
+- FormulaTrace "Formulas tests": `=SIN(A:A)` spills in Grown, so its arrow
+  goes to the column (OnlyOffice draws an implicit-intersection arrow);
+  `=@SIN(A:A)` and `NPV(A:A;1)` draw to the same-row cell as OnlyOffice does.
+- Goal seek finds a root in five cases where OnlyOffice gives up (PMT from a
+  negative term, `a+b/c` across the pole, and LOOKUP's step function, where
+  any input in [3, 4) works: Grown stops at 3.75, OnlyOffice at 3.45).
+- The M0 extraction harness was not needed for the goal-seek and trace facts;
+  a small local script read the goal-seek inputs and expected numbers.
+
+### 17.3 Not done / follow-ups
+
+- Rich-value metadata in xlsx: a dynamic array exported to xlsx is written as
+  a normal formula (Excel opens it as an implicit-intersection formula).
+- Solver (the other five whatIfAnalysis tests) stays a flagged exception.
+- A trace follows edits by re-querying the server after each autosave; arrows
+  are not drawn in frozen panes' fixed area and go only one sheet deep in the
+  picture (other sheets show as an icon with the address in its tooltip).
+- Legacy multi-cell CSE arrays (a selection filled by one array formula) are
+  entered as one spilling `ARRAYFORMULA`.
+
+## 18. M12 results (Wave 7, 2026-09-27)
+
+M12 is done: the tested shortcut types are bound from one table, Help ▸
+Keyboard shortcuts is generated from it, Insert ▸ Function opens a wizard with
+categories, search, argument help and a live result, and cells carry threaded
+comments. 23 shortcuts tags and 8 more SheetStructureTests tags are ported
+(3 more are counted now that their tags are fixed).
+
+### 18.1 What landed
+
+| Piece | Where |
+|---|---|
+| Binding table (id, group, label, combos, grid/editor context) and matcher (physical keys, so Ctrl+Shift+1 matches; Ctrl = ⌘); one capture-phase handler in the editor that reads the live selection when a command runs (the focus cell comes from FortuneSheet's `afterSelectionChange`, since `getSelection()` has none). Ctrl/⌘+arrows while typing move the caret instead of FortuneSheet's grid selection. | `sheetShortcuts.ts`, `SheetEditor.tsx` |
+| Bindings: Ctrl+Shift+1…6 and Ctrl+Shift+\` number formats; Ctrl+B/I/U (I and U were not bound), Ctrl+5 / Alt+Shift+5 strikethrough, Ctrl+. / Ctrl+, super/subscript, Ctrl+] / Ctrl+[ font size steps, Ctrl+\\ clear formatting; Ctrl+; / Ctrl+Shift+; date and time (a value in the grid, text in the editor); Alt+= AutoSum; F4 reference cycling in the formula editor; Ctrl+\` show formulas; F9 / Shift+F9 recalculate (server round trip); Shift+F3 insert function; Ctrl+PgUp/PgDn (and Ctrl+Shift+) sheets; Ctrl+K link; Ctrl+Alt+M comment; Shift+F11 sheet; Alt+F5 refresh pivots; Ctrl+/ shortcuts; Alt+↓ the cell's dropdown list; Shift+F10 the context menu; Backspace clears the active cell and edits it (Delete clears the selection); Shift+Enter / Tab / Shift+Tab save and move up / right / left; Ctrl+Enter enters into every selected cell (formulas moved relatively); Ctrl+Shift+Enter array entry; Ctrl+A the data region first, then the sheet (tables: rows, table, sheet). | `sheetShortcuts.ts`, `SheetEditor.tsx`, `selectAll.ts`, `cellScript.ts` (sub/superscript cells are painted from `beforeRenderCell`; FortuneSheet has no vertical alignment), `LinkDialog.tsx` |
+| AutoSum: one cell opens the editor with `=SUM(<proposal>)` (the numbers above, else to the left, blanks between included, a SUM cell ends the run); a selection gets totals: a leading header is left out, an empty last cell/row/column takes the totals (with a corner total), otherwise the row below; a selection of empty cells copies its first proposal along; dates and numbers stored as text are not summed | `autoSum.ts` |
+| Typed input: `+5+5`, `-A1`, `+SIN({1,2}` become formulas (a unary + before a number is dropped, open parentheses are closed); text with spaces stays text | `textFormula.ts`, `numberFormatActions.ts` |
+| Help ▸ Keyboard shortcuts: grouped, searchable, ⌘/⌥/⇧ on a Mac, generated from the table | `SheetShortcutsDialog.tsx` |
+| Insert ▸ Function (Shift+F3, also Help ▸ Function list): 509 functions (every name the Go engine registers, checked by a test) with category, signature, description and argument help in Grown's own words; category and search; one field per argument (repeating groups grow); live result evaluated by the server engine in the target cell; opened on a formula cell it shows that call's arguments | `functionCatalog.ts`, `functionArgs.ts`, `FunctionWizard.tsx` |
+| Threaded comments: `grownComments` per sheet (threads with replies, edit/delete own comments, resolve/reopen); the red corner triangle; the thread card beside the selected cell; View ▸ Comments panel (by sheet, open/resolved, jump to cell); threads move with row/column inserts, deletes and moves (client and server); xlsx export writes a thread as the cell's note and import turns notes into threads. The model mirrors the Docs comment shape (author, body, replies, resolved), stored in the workbook rather than the Docs comments table. | `cellComments.ts`, `SheetComments.tsx`, `CellCommentsLayer.tsx`, `formulaShift.ts`, `internal/sheets/structure.go`, `xlsx/xlsxWrite.ts`, `xlsx/xlsxRead.ts` |
+
+### 18.2 Ports
+
+| OnlyOffice file | Tags ported / passing | Where |
+|---|---|---|
+| `shortcuts/shortcuts.js` | 23 / 23 (cell editor 10, table hotkeys 13); n/a: the 13 graphic-object tests, Opera's NumLock/ScrollLock, table (ListObject) info | `web/e2e/sheets-shortcuts.spec.ts`, `sheetShortcuts.test.ts` (F4) |
+| `SheetStructureTests.js` | +8: Array of arguments check after calling the wizard for the function, autoCompleteFormula (127 checks, 8 pending), Text to formula tests, Unar operator removing tests, Assemble formulas test, Formulas calc test, All selection test, Array formula; the three move/shift tags now carry their inner titles (the scoreboard ends a tag at a quote, so they counted as one) | `__parity__/functionWizard.parity.test.ts`, `__parity__/autoSum.parity.test.ts`, `__parity__/textFormula.parity.test.ts` + `text_formula_test.go`, `__parity__/selectAll.parity.test.ts`, `web/e2e/sheets-analysis.spec.ts` |
+
+Not ported (n/a): SheetStructureTests "Selection in formulas test"
+(Ctrl-click range picking while a formula is edited is FortuneSheet's),
+"Workbook dependencies tests" and the four "Table …" tests (structured table
+references). Differences: Ctrl+Shift+1 is `#,##0.00` (Excel/Google) where
+OnlyOffice uses `0.00`; font sizes step from FortuneSheet's default 10;
+OnlyOffice's `-{1,2}` → `=-{-1,-2}` rewrite is not reproduced; AutoSum writes
+totals in three places OnlyOffice leaves empty (see the fixture's PENDING).
+The same copy-paste and change-case tags also had the quote problem and were
+renamed.
+
+E2e: `sheets-shortcuts.spec.ts` (24 tests), `sheets-dynarray.spec.ts` (18),
+`sheets-analysis.spec.ts` (trace arrows with the deps API, goal seek, the
+function wizard, a comment thread, links, Ctrl+A, typed formulas, array entry,
+AutoSum over a selection). Screenshots: `sheets-m5-trace-arrows.png`,
+`sheets-m12-function-wizard.png`, `sheets-m12-comment-thread.png`,
+`sheets-m5-goal-seek.png` (written to `GROWN_SHOT_DIR`).
+
+### 18.3 Not done / follow-ups
+
+- Ctrl+Shift+F / Ctrl+Shift+P (font dialogs) are not bound; Grown has no
+  font dialog.
+- Superscript/subscript apply to the whole cell (FortuneSheet's editor has
+  no per-run vertical alignment) and are not written to xlsx.
+- Comments reach other open editors through the relayed op but are not
+  mentioned in notifications; there are no @-mentions.
+- The function catalog's descriptions are English only.
+- Ctrl+Z inside the cell editor is the browser's own text undo (it groups a
+  typing burst), not a per-character undo.
+
