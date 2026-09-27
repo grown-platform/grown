@@ -1163,7 +1163,11 @@ function QuestionCard({
                     value={q.go_to_section?.[opt] ?? ""}
                     onChange={(_, v) => setBranchTarget(opt, v ?? "")}
                     sx={{ maxWidth: 280 }}
-                    aria-label={`Go to section for option ${opt}`}
+                    slotProps={{
+                      button: {
+                        "aria-label": `Go to section for option ${opt}`,
+                      },
+                    }}
                   >
                     {sectionOptions.map((so) => (
                       <Option key={so.value} value={so.value}>
