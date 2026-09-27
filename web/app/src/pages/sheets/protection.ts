@@ -14,6 +14,7 @@
 
 import type { CellRect } from "./cellRange";
 import { normalizeRect, rectIntersection } from "./cellRange";
+import { colToLetters } from "./cellValue";
 import { MAX_COLS, MAX_ROWS, shiftRect, type StructureOp } from "./formulaShift";
 
 export interface SheetProtection {
@@ -81,6 +82,18 @@ function newId(): string {
  */
 export function validRangeName(name: string): boolean {
   return /^[\p{L}_][\p{L}\p{N}_. ]*$/u.test(name) && name.trim() !== "";
+}
+
+/** The range as a formula reference, e.g. "=Sheet1!$B$2:$B$5". */
+export function protectedRangeRef(sheetName: string, pr: Pick<ProtectedRange, "ranges">): string {
+  const q = /^[A-Za-z_][\w.]*$/.test(sheetName) ? sheetName : `'${sheetName.replace(/'/g, "''")}'`;
+  const abs = (r: CellRect) => {
+    const n = normalizeRect(r);
+    const a = `$${colToLetters(n.c1)}$${n.r1 + 1}`;
+    const b = `$${colToLetters(n.c2)}$${n.r2 + 1}`;
+    return a === b ? a : `${a}:${b}`;
+  };
+  return "=" + pr.ranges.map((r) => `${q}!${abs(r)}`).join(",");
 }
 
 // ---- CRUD ------------------------------------------------------------------------------

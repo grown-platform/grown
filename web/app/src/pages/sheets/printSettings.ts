@@ -262,10 +262,11 @@ export function paginate(geo: SheetGeometry, s: PrintSettings): Pagination {
     if (s.fitToHeight > 0 && totalH > 0) fit = Math.min(fit, (avail.h * s.fitToHeight) / (totalH + titleH * s.fitToHeight));
     scale = clampScale(fit * 100) / 100;
   }
-  // When fitting, automatic breaks come from the scaled content; manual breaks
-  // still apply (Excel ignores them only with a 1×1 fit, which cannot hold them anyway).
-  const colBands = bands(range.c1, range.c2, avail.w - titleW * scale, geo.colWidth, scale, s.colBreaks, geo.colHidden);
-  const rowBands = bands(range.r1, range.r2, avail.h - titleH * scale, geo.rowHeight, scale, s.rowBreaks, geo.rowHidden);
+  // Fit-to-page scaling ignores manual breaks, as in Excel.
+  const colBreaks = s.fitToPage ? [] : s.colBreaks;
+  const rowBreaks = s.fitToPage ? [] : s.rowBreaks;
+  const colBands = bands(range.c1, range.c2, avail.w - titleW * scale, geo.colWidth, scale, colBreaks, geo.colHidden);
+  const rowBands = bands(range.r1, range.r2, avail.h - titleH * scale, geo.rowHeight, scale, rowBreaks, geo.rowHidden);
   const pages: PrintPage[] = [];
   const push = (rb: [number, number], cb: [number, number]) =>
     pages.push({
