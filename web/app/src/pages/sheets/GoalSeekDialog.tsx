@@ -62,7 +62,7 @@ export function GoalSeekDialog({
     }
   }
 
-  const fmt = (v: number | string) => (typeof v === "number" ? String(Number(v.toPrecision(12))) : v);
+  const fmt = (v: number | string) => (typeof v === "number" ? String(Number(v.toPrecision(10))) : v);
 
   return (
     <Modal open={open} onClose={onClose}>
