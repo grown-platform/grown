@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Sheets
 
-Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done.
+Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done. Wave 4: M7 (autofill, series, sort, paste special, sheet structure; §13) is done.
 Companion: `sheets-tests.csv` (one row per OnlyOffice test file).
 Inventory baseline: **`origin/main` @ `c90064e`**. (The worktree used for reading was `96ca7c0`,
 55 commits behind; for Sheets the only difference is `internal/sheets/formula_more{,2,3}.go`
@@ -951,3 +951,67 @@ still listed.
   data" (the typed text is a formula, not its result).
 - The selection jump to A1 (§11.4) also affects these dialogs; they take the
   range from an editable "Apply to range" field, and the e2e waits for it.
+
+
+## 13. M7 results (Wave 4, 2026-09-26)
+
+M7 is done: fill (drag handle, Ctrl+D/R, Fill ▸ Series), a multi-key sort
+dialog, paste special and row/column/cell structure changes, each a pure
+module with the OnlyOffice cases ported, wired into the editor and checked
+end to end. 111 tags are ported and 104 pass.
+
+### 13.1 What landed
+
+| Piece | Where |
+|---|---|
+| Autofill: weekday and month names (full and short, case kept, trailing `.` or spaces), even/odd and reverse steps, "Item 1" counters, numbers (copy one, extend the trend of several), dates by day or the detected month/year step, formulas moved with their offset. Fill ▸ Series: rows/columns, linear, growth, date (day, weekday, month with month-end clamping, year), AutoFill, step, stop value (also below the start or with negative steps), trend (least squares / exponential fit). Fill edge for Ctrl+D/R and Fill up/left. | `autofill.ts` |
+| Sort: stable, several keys, top-to-bottom or left-to-right, header row/column, case-sensitive option, Excel order (numbers, text, booleans, errors, blanks last), fill/font-colour keys, header detection. Formulas in moved rows keep their relative references. The OnlyOffice `SetSort` API semantics (key cells, defined names, out-of-range keys) are modelled for the API suite. | `sortOps.ts` |
+| Paste special: all / formulas / values / formats, operations add/subtract/multiply/divide (a formula on either side becomes `=(a)+(b)`, text is left alone, `#DIV/0!`), skip blanks, transpose, and the block repeats over a selection that is a whole multiple of it. Formulas move by the paste offset. | `pasteSpecial.ts` |
+| Formula references: `translateFormula` (relative parts move, `$` parts stay, off-sheet → `#REF!`); `shiftFormula` for insert/delete/move of rows and columns and insert/delete of cells with a shift (qualified refs only on their sheet, absolute refs shift too, deleted refs → `#REF!`, ranges shrink or grow); `applyStructureOp` for a whole workbook: cells, `config.merge`, row/column sizes and hidden flags, `grownCF`/`grownDV`/`grownFilter` ranges and their formulas, `_namedRanges`. | `formulaShift.ts` |
+| Server side: the same in Go, sharing `testdata/structure/shift.json` with vitest, and `POST /api/v1/sheets/d/{id}/structure {"op": …}` (edit rights; applies the op, recomputes and saves, returns the workbook) | `internal/sheets/structure.go`, `internal/server/sheets_structure.go` |
+| Delimited text parsing (qualifiers, doubled quotes, line breaks in fields, `\r\n`/`\r`), change case (lower, upper, toggle, capitalize words, sentence) across rich-text runs | `csvText.ts`, `textCase.ts` |
+| Editor: Edit ▸ Paste special (values only Ctrl+Shift+V, format only, formula only, transposed, dialog), Edit ▸ Fill (down Ctrl+D, right Ctrl+R, up, left, Series… dialog), Edit ▸ Move (row up/down, column left/right), Edit ▸ Delete (rows/columns of the selection, cells shift up/left), Insert ▸ Cells (shift right/down), Format ▸ Change case, Data ▸ Advanced range sorting options… (multi-key dialog); Sort range/sheet A→Z/Z→A use the new sort. After a fill-handle drag Grown's autofill replaces FortuneSheet's (read from its `dropCellCache`). Row/column inserts and deletes, from the menus or FortuneSheet's own header menus (`insertRowCol`/`deleteRowCol` ops), rewrite every formula in the workbook from its pre-op text and shift the rule models and named ranges; move and cell shifts rewrite the affected sheets in one `updateSheet`. Each action is one undo step (`batchCallApis`). | `editActions.ts`, `FillSeriesDialog.tsx`, `SortDialog.tsx`, `PasteSpecialDialog.tsx`, `SheetMenuBar.tsx`, `SheetEditor.tsx`, `dataActions.ts` |
+
+### 13.2 Ports
+
+| OnlyOffice file | Tags ported / passing | Where |
+|---|---|---|
+| `SerialTests.js` | 19 / 18 | `__parity__/autofill.parity.test.ts` |
+| `SheetStructureTests.js` (46 autofill, sortRangeTest, move/shift ×3, merge) | 51 / 49 | `__parity__/autofill.parity.test.ts`, `sort.parity.test.ts`, `structure.parity.test.ts` |
+| `js-api/api-range.js` | 31 / 31 | `__parity__/sort.parity.test.ts` |
+| `copy-paste-tests.js` | 9 / 5 | `__parity__/paste.parity.test.ts`, `csv.parity.test.ts` |
+| `CellSettingsTests.js` | 1 / 1 | `__parity__/textCase.parity.test.ts` |
+
+Skipped (ported, pending): SerialTests "Series with merged cells" (merges live
+in the sheet config the pure functions don't see); SheetStructureTests
+"Autofill - format Date, Date & Time and Time." (asserts OnlyOffice's own
+floating-point time steps) and "Cells merge test" (merge value rules, not
+structure); copy-paste "tables" (Grown has no Excel tables) and the three
+`asc_PasteData` callback tests (OnlyOffice API plumbing; FortuneSheet owns the
+clipboard paste). The "Shift/move cells after create a table" case is
+modelled as a header cell inserted with a downward shift.
+
+E2e: `web/e2e/sheets-structure.spec.ts` drags the fill handle over A1:D2
+(weekdays by two, months, 1/3 → odd numbers, "Item n"), fills a formula down
+with Ctrl+D, runs a growth series with a stop value from the dialog, sorts a
+table by Group then Score descending with its formula column following, and
+pastes values transposed and with Ctrl+Shift+V; a second test inserts and
+deletes a row and checks formulas on both sheets, the named range and the CF
+range; a third calls the structure API.
+
+### 13.3 Not done / follow-ups
+
+- The 18 DynamicArraysTests undo/redo and paste-collision cases need the M5
+  spill work first; they are not ported here.
+- A fill-handle drag is two undo steps (FortuneSheet's fill, then Grown's).
+  FortuneSheet's post-drag fill-options menu still offers its own choices.
+- Paste special uses the block last copied in this editor (Ctrl+C/Ctrl+X),
+  not the system clipboard; pasting leaves the selection where it was
+  (FortuneSheet's `setSelection` mutates its argument, which breaks when React
+  replays the update on frozen state).
+- Chart and pivot source ranges are not shifted by structure changes; partly
+  overlapping CF/DV ranges and merges are left alone by cell shifts.
+- The structure endpoint does not notify open editors (they see the change on
+  reload); the editor itself applies structure changes locally and relays
+  them as ordinary ops.
+- CSV import (File ▸ Import) is M11; the parser is ready for it.
