@@ -99,11 +99,17 @@ export function StatusBar({
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(sel);
     };
+    // Content set without an "update" event (imports, collab replay) still
+    // recounts words.
+    const onTr = ({ transaction }: { transaction: { docChanged: boolean } }) => {
+      if (transaction.docChanged) upd();
+      onScroll();
+    };
     upd();
     sel();
     editor.on("update", upd);
     editor.on("selectionUpdate", onScroll);
-    editor.on("transaction", onScroll);
+    editor.on("transaction", onTr);
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onScroll);
     return () => {
@@ -111,7 +117,7 @@ export function StatusBar({
       cancelAnimationFrame(raf);
       editor.off("update", upd);
       editor.off("selectionUpdate", onScroll);
-      editor.off("transaction", onScroll);
+      editor.off("transaction", onTr);
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onScroll);
     };
