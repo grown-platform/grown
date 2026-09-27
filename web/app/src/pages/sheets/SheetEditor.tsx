@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { extendSheetFonts, loadSheetFonts } from "./fontBundle";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -133,6 +134,9 @@ import { gridGeometry } from "./chartAnchor";
 import { translateFormula } from "./formulaShift";
 import { selectAllTarget } from "./selectAll";
 import { autoSumSelection, proposeSum, type CellKind } from "./autoSum";
+
+// Shared font list in the font menu (CC7).
+extendSheetFonts();
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -410,6 +414,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
     setView(sheetViewOptions(first));
     invalidateView();
     setData(parsed);
+    void loadSheetFonts(parsed);
     if (remount) setWbKey((k) => k + 1);
     if (loadedPivots.some((p) => p.anchor)) setTimeout(() => pivotToolsRef.current?.changed(), 800);
     if (iconSetsRef.current.length) {

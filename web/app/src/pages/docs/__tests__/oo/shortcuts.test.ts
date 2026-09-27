@@ -15,6 +15,8 @@ import type { Editor } from "@tiptap/core";
 import { SYMBOLS } from "../../shortcuts";
 import { insertTableOfContents } from "../../references";
 import { layoutOf, pagedEditor } from "../pagination-harness";
+import { isNonPrinting } from "../../viewModes";
+import { hfNavKey, hfNavigate, type HfNavAction, type HfSlot } from "../../hfNav";
 import {
   blockPaths,
   makeEditor,
@@ -382,9 +384,17 @@ describe("OnlyOffice shortcuts: later milestones", () => {
     expect(first.attrs.instr).toBe("PAGE");
     expect(paragraphText(e)).toBe("1");
   });
-  it.skip("oo:word/shortcuts/shortcuts.js#Check show/hide non printing symbols", () => {
-    // TODO(M13): non-printing characters view. OnlyOffice's Ctrl+Shift+8
-    // is Grown's bulleted list; the toggle will need another chord.
+  it("oo:word/shortcuts/shortcuts.js#Check show/hide non printing symbols", () => {
+    // grown-variant chord: Ctrl+Alt+Shift+8 (M13). OnlyOffice's and Word's
+    // Ctrl+Shift+8 is Grown's (Google Docs') bulleted list.
+    const e = makeEditor("<p>Hello world</p>");
+    expect(pressKey(e, "Mod-Alt-Shift-8")).toBe(true);
+    expect(isNonPrinting(e)).toBe(true);
+    expect(e.view.dom.querySelector(".np-para")).not.toBeNull();
+    expect(e.view.dom.querySelectorAll(".np-space").length).toBe(1);
+    expect(pressKey(e, "Mod-Alt-Shift-8")).toBe(true);
+    expect(isNonPrinting(e)).toBe(false);
+    expect(e.view.dom.querySelector(".np-para")).toBeNull();
   });
   it("oo:word/shortcuts/shortcuts.js#Check update fields", () => {
     // Three Heading 1 paragraphs, a table of contents at the start, a
@@ -404,10 +414,36 @@ describe("OnlyOffice shortcuts: later milestones", () => {
   it.skip("oo:word/shortcuts/shortcuts.js#Check actions with shapes", () => {
     // TODO(M7): arrow-key nudging, Tab between objects, Enter into a shape.
   });
-  it.skip("oo:word/shortcuts/shortcuts.js#Check actions with headers/footers", () => {
-    // TODO(M13): per-page headers/footers exist since M9 (double-click one
-    // to edit it); OnlyOffice's previous/next header-footer hotkeys are not
-    // bound yet.
+  it("oo:word/shortcuts/shortcuts.js#Check actions with headers/footers", () => {
+    // The key bindings live in the page layer (PageLayer.tsx): inside a
+    // header or footer PageUp / PageDown go to the previous / next one in
+    // reading order, Alt+PageUp / Alt+PageDown to the same part of the
+    // previous / next page, Escape back to the body (browser check in
+    // web/e2e/docs-spell.spec.ts). Same walk as OnlyOffice's case, pages
+    // 0-based, starting in page 2's header.
+    const key = (k: string, alt = false) => hfNavKey({ key: k, altKey: alt, ctrlKey: false, metaKey: false, shiftKey: false })!;
+    const go = (cur: HfSlot, k: string, alt = false) => hfNavigate(cur, key(k, alt) as HfNavAction, 3)!;
+    let cur: HfSlot = { page: 2, which: "header" };
+    cur = go(cur, "PageUp");
+    expect(cur).toEqual({ page: 1, which: "footer" });
+    cur = go(cur, "PageUp");
+    expect(cur).toEqual({ page: 1, which: "header" });
+    cur = go(cur, "PageDown");
+    expect(cur).toEqual({ page: 1, which: "footer" });
+    cur = go(cur, "PageDown");
+    expect(cur).toEqual({ page: 2, which: "header" });
+    cur = go(cur, "PageUp", true);
+    expect(cur).toEqual({ page: 1, which: "header" });
+    cur = go(cur, "PageUp", true);
+    expect(cur).toEqual({ page: 0, which: "header" });
+    cur = go(cur, "PageDown", true);
+    expect(cur).toEqual({ page: 1, which: "header" });
+    cur = go(cur, "PageDown", true);
+    expect(cur).toEqual({ page: 2, which: "header" });
+    expect(key("Escape")).toBe("exit");
+    // Past either end there is nowhere to go.
+    expect(hfNavigate({ page: 0, which: "header" }, "prev", 3)).toBeNull();
+    expect(hfNavigate({ page: 2, which: "footer" }, "next", 3)).toBeNull();
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check reset actions shortcut", () => {
     // TODO(M7): Escape cancels shape insertion / sticky format painter.

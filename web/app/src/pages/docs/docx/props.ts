@@ -8,6 +8,7 @@
 // DirectParaProps (paragraphProps.ts) for paragraphs and styles.ts's RunPr
 // plus a few mark-only fields for runs, so an imported document is the
 // same model a user could have built in the editor.
+import { resolveImportedFont } from "../../../lib/fonts";
 import type { JSONContent } from "@tiptap/core";
 import type { ParaPr, RunPr } from "../styles";
 import type { Align, BorderSide, BorderSpec, Borders, LineRule, TabStop } from "../paragraphProps";
@@ -212,13 +213,14 @@ export function paragraphAttrs(p: ParaPr): Record<string, unknown> {
 /** writePPr serialises paragraph props in CT_PPrBase element order. */
 export function writePPr(
   p: ParaPr,
-  opts: { styleId?: string | null; numId?: string | null; numLvl?: number | null; extra?: string; rPr?: string } = {},
+  opts: { styleId?: string | null; numId?: string | null; numLvl?: number | null; extra?: string; rPr?: string; framePr?: string } = {},
 ): string {
   const parts: string[] = [];
   if (opts.styleId) parts.push(el("w:pStyle", { "w:val": opts.styleId }));
   if (p.keepNext) parts.push(el("w:keepNext"));
   if (p.keepLines) parts.push(el("w:keepLines"));
   if (p.pageBreakBefore) parts.push(el("w:pageBreakBefore"));
+  if (opts.framePr) parts.push(opts.framePr);
   if (p.widowControl === false) parts.push(el("w:widowControl", { "w:val": "0" }));
   const numId = opts.numId !== undefined ? opts.numId : p.numId;
   const numLvl = opts.numLvl !== undefined ? opts.numLvl : p.numLvl;
@@ -289,6 +291,9 @@ export interface RunProps extends RunPr {
   rStyle?: string;
   vertAlign?: "sub" | "super";
   hidden?: boolean;
+  /** Proofing language (w:lang w:val, BCP 47) and w:noProof (M13). */
+  lang?: string;
+  noProof?: boolean;
 }
 
 /** readRPr maps a <w:rPr> to run props. Theme fonts resolve through
@@ -303,7 +308,8 @@ export function readRPr(rPr: Element | null | undefined, theme: ThemeFonts = {})
     const face = attr(fonts, "w:ascii") ?? attr(fonts, "w:hAnsi");
     const themed = attr(fonts, "w:asciiTheme") ?? attr(fonts, "w:hAnsiTheme");
     const font = face ?? (themed ? (/^major/.test(themed) ? theme.major : theme.minor) : undefined);
-    if (font) r.fontFamily = font;
+    // Keep the name; Calibri & co. render with the bundled fallback (CC7).
+    if (font) r.fontFamily = resolveImportedFont(font) || font;
   }
   const flag = (name: string, key: "bold" | "italic" | "allCaps" | "smallCaps") => {
     const v = onOff(kid(rPr, name));
@@ -332,6 +338,9 @@ export function readRPr(rPr: Element | null | undefined, theme: ThemeFonts = {})
   if (va === "superscript") r.vertAlign = "super";
   else if (va === "subscript") r.vertAlign = "sub";
   if (onOff(kid(rPr, "vanish")) || onOff(kid(rPr, "webHidden"))) r.hidden = true;
+  const lang = attr(kid(rPr, "lang"), "w:val");
+  if (lang) r.lang = lang;
+  if (onOff(kid(rPr, "noProof"))) r.noProof = true;
   return r;
 }
 
@@ -362,6 +371,7 @@ export function runMarks(r: RunProps, charStyle?: string | null): Mark[] {
   if (Object.keys(ts).length) m.push({ type: "textStyle", attrs: ts });
   if (r.highlight) m.push({ type: "highlight", attrs: { color: r.highlight } });
   if (charStyle) m.push({ type: "charStyle", attrs: { styleId: charStyle } });
+  if (r.lang || r.noProof) m.push({ type: "lang", attrs: { lang: r.lang ?? null, noProof: !!r.noProof } });
   return m;
 }
 
@@ -389,6 +399,10 @@ export function marksRunProps(marks: readonly { type: { name: string } | string;
     else if (name === "code") r.fontFamily = "Courier New";
     else if (name === "highlight") r.highlight = (a.color as string) || "#ffff00";
     else if (name === "charStyle" && a.styleId) r.charStyle = String(a.styleId);
+    else if (name === "lang") {
+      if (a.lang) r.lang = String(a.lang);
+      if (a.noProof) r.noProof = true;
+    }
     else if (name === "textStyle") {
       if (a.color) r.color = String(a.color);
       if (a.fontFamily) r.fontFamily = String(a.fontFamily).split(",")[0].trim().replace(/^["']|["']$/g, "");
@@ -411,6 +425,7 @@ export function writeRPr(r: RunProps & { charStyle?: string }, extra = ""): stri
   if (r.allCaps) p.push(el("w:caps"));
   if (r.smallCaps) p.push(el("w:smallCaps"));
   if (r.strike !== undefined) p.push(r.strike ? el("w:strike") : el("w:strike", { "w:val": "0" }));
+  if (r.noProof) p.push(el("w:noProof"));
   const color = toHex(r.color);
   if (color) p.push(el("w:color", { "w:val": color }));
   if (r.fontSize) {
@@ -427,6 +442,7 @@ export function writeRPr(r: RunProps & { charStyle?: string }, extra = ""): stri
   if (r.underline !== undefined) p.push(el("w:u", { "w:val": r.underline ? "single" : "none" }));
   if (shd) p.push(shd);
   if (r.vertAlign) p.push(el("w:vertAlign", { "w:val": r.vertAlign === "super" ? "superscript" : "subscript" }));
+  if (r.lang) p.push(el("w:lang", { "w:val": r.lang }));
   if (extra) p.push(extra);
   return p.length ? el("w:rPr", {}, p.join("")) : "";
 }

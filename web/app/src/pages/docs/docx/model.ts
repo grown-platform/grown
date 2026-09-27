@@ -45,6 +45,8 @@ export interface DocxImport {
   /** The final section's setup and the document settings (M9). */
   section?: SectionProps;
   settings?: Partial<DocSettings>;
+  /** Document proofing language (styles.xml docDefaults w:lang, M13). */
+  lang?: string;
   comments: DocxComment[];
   page: PageSetup | null;
   /** Things the reader dropped because Grown has no model for them yet. */

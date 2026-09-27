@@ -867,6 +867,11 @@ class Reader {
     const markDel = kid(markRPr, "del");
     const markRev = markDel ?? markIns;
     if (markRev) attrs.paraChange = JSON.stringify({ type: markDel ? "delete" : "insert", ...revInfo(markRev) });
+    // A drop cap frame (M13): merged into the next paragraph afterwards.
+    const frame = kid(pPrEl, "framePr");
+    const dropKind = attr(frame, "w:dropCap");
+    if (!ctx.margin && (dropKind === "drop" || dropKind === "margin"))
+      attrs.dropCapFrame = JSON.stringify({ kind: dropKind, lines: Number(attr(frame, "w:lines")) || 3, distance: Math.round((Number(attr(frame, "w:hSpace")) || 0) / 20) });
     const pch = kid(pPrEl, "pPrChange");
     if (pch) {
       const old = this.paraTypeAttrs(readPPr(kid(pch, "pPr")), ctx);
@@ -1621,5 +1626,50 @@ export async function readDocx(data: ArrayBuffer | Uint8Array | Blob): Promise<D
   out.styles = r.buildStyles();
   out.numbering = r.buildNumbering();
   out.warnings = [...r.warnings].sort();
+  // Proofing language (M13): the default comes from docDefaults; run
+  // languages equal to it are Word's redundant w:lang and are dropped.
+  const docLang = r.docDefaults.rPr.lang;
+  if (docLang) out.lang = docLang;
+  stripDefaultLang(out.doc, docLang);
+  mergeDropCaps(out.doc);
+  for (const m of Object.values(margins)) stripDefaultLang(m, docLang);
   return out;
+}
+
+/** mergeDropCaps folds each Word drop-cap frame paragraph into the
+ *  paragraph after it as the dropCap attributes (M13). */
+function mergeDropCaps(json: JSONContent) {
+  const kids = json.content;
+  if (!kids) return;
+  for (let i = 0; i < kids.length; i++) {
+    const n = kids[i];
+    const frame = n.attrs?.dropCapFrame as string | undefined;
+    if (frame) {
+      delete n.attrs!.dropCapFrame;
+      const next = kids[i + 1];
+      if (next && next.type === "paragraph") {
+        const f = JSON.parse(frame) as { kind: string; lines: number; distance: number };
+        const letterFont = (n.content ?? []).flatMap((c) => c.marks ?? []).find((m) => m.type === "textStyle" && m.attrs?.fontFamily)?.attrs?.fontFamily as string | undefined;
+        // The letter keeps its run marks except the frame's big font size.
+        const letter = (n.content ?? []).map((c) =>
+          c.type === "text" && c.marks ? { ...c, marks: c.marks.map((m) => (m.type === "textStyle" ? { ...m, attrs: { ...m.attrs, fontSize: null, fontFamily: null } } : m)).filter((m) => m.type !== "textStyle" || Object.values(m.attrs ?? {}).some((v) => v != null)) } : c,
+        );
+        next.content = [...letter, ...(next.content ?? [])];
+        next.attrs = { ...next.attrs, dropCap: f.kind, dropCapLines: f.lines, dropCapDistance: f.distance, dropCapFont: letterFont ?? null };
+        kids.splice(i, 1);
+        i--;
+        continue;
+      }
+    }
+    mergeDropCaps(n);
+  }
+}
+
+function stripDefaultLang(json: JSONContent | null | undefined, lang: string | undefined) {
+  if (!json) return;
+  if (json.marks) {
+    json.marks = json.marks.filter((m) => m.type !== "lang" || !!m.attrs?.noProof || (!!m.attrs?.lang && m.attrs.lang !== (lang ?? "en-US")));
+    if (!json.marks.length) delete json.marks;
+  }
+  for (const c of json.content ?? []) stripDefaultLang(c, lang);
 }

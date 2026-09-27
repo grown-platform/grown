@@ -44,6 +44,7 @@ import FormatIndentIncreaseIcon from "@mui/icons-material/FormatIndentIncrease";
 import FormatClearIcon from "@mui/icons-material/FormatClear";
 import RemoveIcon from "@mui/icons-material/Remove";
 import AddIcon from "@mui/icons-material/Add";
+import { PICKER_FONTS, fontStack } from "../../lib/fonts";
 import type { Editor } from "@tiptap/react";
 import { promptLink } from "./links";
 import GridOnIcon from "@mui/icons-material/GridOn";
@@ -60,15 +61,7 @@ interface ToolbarProps {
   onModeChange: (m: EditorMode) => void;
 }
 
-const FONTS = [
-  "Arial",
-  "Georgia",
-  "Courier New",
-  "Times New Roman",
-  "Verdana",
-  "Trebuchet MS",
-  "Roboto",
-];
+// The shared font list (lib/fonts, CC7) plus the current font.
 const TEXT_COLORS = [
   "#000000",
   "#434343",
@@ -233,8 +226,8 @@ export function Toolbar({
         aria-label="Font"
         onChange={(_, v) => v && editor.chain().focus().setFontFamily(v).run()}
       >
-        {FONTS.map((f) => (
-          <Option key={f} value={f} sx={{ fontFamily: f }}>
+        {[...new Set([...PICKER_FONTS, fontValue])].map((f) => (
+          <Option key={f} value={f} sx={{ fontFamily: fontStack(f) }}>
             {f}
           </Option>
         ))}

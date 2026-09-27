@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12. M8 (references and fields) has landed; see §6.13. M9 (page layout, sections, pagination) has landed; see §6.14.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12. M8 (references and fields) has landed; see §6.13. M9 (page layout, sections, pagination) has landed; see §6.14. M13 (spell check, language, plugins, misc) has landed; see §6.16.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -159,7 +159,7 @@ Grown paths are relative to the repo root; `docs/` below means
 |---|---|---|---|
 | Bold, italic, underline, strikethrough | Toolbar | Have | `docs/Toolbar.tsx`, `MenuBar.tsx` |
 | Subscript / superscript | Toolbar | Have | StarterKit + `extension-subscript/superscript` |
-| Font family | Toolbar `tipFontName` (system + theme fonts) | Partial | 7 hard-coded fonts `docs/Toolbar.tsx:681` |
+| Font family | Toolbar `tipFontName` (system + theme fonts) | Have (M13 / CC7) | one list for Docs, Sheets and Slides (`lib/fonts.ts` `PICKER_FONTS`); bundled open fonts with Calibri/Cambria/Arial/Times fallbacks |
 | Font size (numeric, inc/dec) | Toolbar | Have | `FontSize` ext `docs/extensions.ts:265` |
 | Font color, highlight | Toolbar | Have | Color + Highlight |
 | Paragraph shading / run background | Toolbar `tipPrColor`, `api-run SetShd` | Partial (M1) | paragraph `shading` attr + highlight (`docs/paragraphFormat.ts`, `textOps.ts`); no toolbar control yet |
@@ -169,9 +169,9 @@ Grown paths are relative to the repo root; `docs/` below means
 | Clear formatting / reset char | Toolbar `tipClearStyle`, shortcut `ResetChar` | Have | Ctrl+\ clears formatting; Ctrl+Space resets character formatting (M1) |
 | Copy / paste format (format painter) | Toolbar `tipCopyStyle`, shortcuts `CopyFormat/PasteFormat` | Partial (M1) | Ctrl+Alt+C / Ctrl+Alt+V; no toolbar painter / sticky mode |
 | Text direction LTR/RTL | Toolbar `textDirLtr/Rtl` | Missing | — |
-| Language of text / document | Statusbar `tipSetLang`, ReviewChanges `txtDocLang` | Missing | — |
-| Drop cap | DropcapSettingsAdvanced | Missing | — |
-| Symbol table (font, range, hex, recent) | Common SymbolTableDialog | Partial | fixed 50-char grid `docs/dialogs.tsx:133` |
+| Language of text / document | Statusbar `tipSetLang`, ReviewChanges `txtDocLang` | Have (M13) | `lang` mark + document language (`docs/language.ts`), Tools ▸ Language, status bar; DOCX w:lang / w:noProof |
+| Drop cap | DropcapSettingsAdvanced | Have (M13) | `docs/dropCap.ts` (dropped / in margin, lines, font, distance); DOCX w:framePr frame |
+| Symbol table (font, range, hex, recent) | Common SymbolTableDialog | Have (M13) | Insert ▸ Symbol (`docs/InsertDialogs.tsx`) |
 | Hyperlink dialog (display text, tooltip, internal targets) | HyperlinkSettingsDialog | Partial | `window.prompt` URL only `docs/Toolbar.tsx:801` |
 
 ### 2.2 Paragraph formatting
@@ -188,7 +188,7 @@ Grown paths are relative to the repo root; `docs/` below means
 | Keep with next / keep lines / widow-orphan / page break before | ParagraphSettingsAdvanced, `keep-next.js` | Partial (M3) | attributes + CSS `break-*` / `widows` (print); on-screen pagination is M9 |
 | Paragraph borders & fill | ParagraphSettingsAdvanced `strBorders` | Have (M3) | `borders` attribute per side; shading (M1) |
 | Outline level | ParagraphSettingsAdvanced | Have (M3) | `outlineLevel` attribute; Outline pane lists such paragraphs |
-| Non-printing characters | Toolbar `mniHiddenChars`, shortcut `ShowAll` | Missing | menu item disabled `docs/MenuBar.tsx:270` |
+| Non-printing characters | Toolbar `mniHiddenChars`, shortcut `ShowAll` | Have (M13) | View menu, Ctrl+Alt+Shift+8 (`docs/viewModes.ts`) |
 | Hyphenation (auto, caps, limit, zone) | HyphenationDialog, `text-hyphenator.js` | Missing | — |
 | Line numbers | LineNumbersDialog | Missing | menu item disabled |
 
@@ -381,7 +381,7 @@ Grown paths are relative to the repo root; `docs/` below means
 | Case sensitive, whole words, regex | SearchPanel | Have (M2) | `docs/search.ts` |
 | Replace one / replace all | SearchPanel | Have (M2) | `docs/search.ts`; matches may span runs |
 | Replace preserving run formatting ("smart") | `js-api/api/replace-text-smart.js` | Have (M2) | `smartReplace` / `replaceTextSmart` in `docs/search.ts` |
-| Spell check (as you type, dictionary, language) | ReviewChanges `txtSpelling`, `Editor/SpellChecker` | Missing | menu item disabled |
+| Spell check (as you type, dictionary, language) | ReviewChanges `txtSpelling`, `Editor/SpellChecker` | Have (M13) | Hunspell-compatible worker (`lib/spell/`), `docs/spellcheck.ts`, context menu, Spelling dialog (F7) |
 
 ### 2.18 Keyboard shortcuts
 
@@ -401,7 +401,7 @@ OnlyOffice defines 107 shortcut actions (`sdkjs/word/apiDefines.js:223`,
 | Insert hyperlink (Ctrl+K), visit hyperlink | 65-66 | Partial | Ctrl+K opens prompt; visit via click |
 | Insert footnote/endnote now, equation, page number | InsertFootnoteNow etc. | Partial | Ctrl+Alt+F / Ctrl+Alt+D notes (M1); equation M11, page number M9 |
 | Copy/paste format (Ctrl+Alt+C/V) | 59-60 | Have (M1) | Ctrl+Shift+C stays Google's word count |
-| Show non-printing (Ctrl+Shift+Num8), update fields (F9), save, print | 103, 18, 7-8 | Partial | print only |
+| Show non-printing (Ctrl+Shift+Num8), update fields (F9), save, print | 103, 18, 7-8 | Have | non-printing is Ctrl+Alt+Shift+8 (grown-variant, M13); F9 (M8); Ctrl+S swallowed (M1) |
 | Navigation/selection by word/line/page/document, header/footer | 19-41, 68-81 | Have (browser) | native contenteditable |
 | Reset char (Ctrl+Space) | 92 | Have (M1) | keeps links, comments and suggestions |
 | Search menus (Alt+/), shortcuts (Ctrl+/), comment (Ctrl+Alt+M), history | Google style | Have | `docs/DocEditor.tsx:395` |
@@ -433,11 +433,11 @@ MD, PDF, PDF/A, DJVU, XPS.
 | Highlight deleted / detailed changes between versions | History `textHighlightDeleted` | Missing | — |
 | Sharing / access rights | Header `tipAccessRights` | Have | `docs/ShareDialog.tsx` |
 | Chat | Common Chat | n/a | separate Grown Chat app |
-| Word count / statistics (pages, words, chars, paragraphs) | Statusbar | Partial | words only (alert) |
-| Status bar (page x of y, zoom, language) | Statusbar | Missing | — |
-| Dark document, interface theme | ViewTab | Missing | — |
-| Text from file, date & time insert | Toolbar, DateTimeDialog | Missing | — |
-| Plugins, macros (record, VBA convert) | Plugins, MacrosDialog, `plugins/pluginsApi.js` | Missing | — |
+| Word count / statistics (pages, words, chars, paragraphs) | Statusbar | Have (M13) | Tools ▸ Document statistics / Word count (`docs/docStats.ts`) |
+| Status bar (page x of y, zoom, language) | Statusbar | Have (M9, M13) | page in view, words, language, spelling, zoom |
+| Dark document, interface theme | ViewTab | Have (M13) | View ▸ Dark document (per user) |
+| Text from file, date & time insert | Toolbar, DateTimeDialog | Have (M13) | Insert ▸ Text from file, Insert ▸ Date and time |
+| Plugins, macros (record, VBA convert) | Plugins, MacrosDialog, `plugins/pluginsApi.js` | Partial (M13) | `docs/api/` behind the `docs-api` flag: JSON macros and sandboxed-iframe plugins over a method table; no recording, no VBA |
 | Templates gallery | (Google) | Have | `docs/TemplateGallery.tsx` |
 | Command palette | (Google) | Have | `docs/CommandPalette.tsx` |
 
@@ -498,7 +498,7 @@ Grown equivalent and would not be built additively.
 | forms/complexForm.js | 6 | 90 | complex form cursor/typing, fixed<->inline conversion, subforms, mouse clicks, all-required-filled, form-to-JSON | mixed: 2 vitest (required check, JSON), 4 playwright | `oo/forms-complex.test.ts`, `web/e2e/docs/oo-forms.spec.ts` | M10 |
 | forms/forms.js | 7 | 95 | text-form formats (symbols/digits/letters/mask/regex), GetAllForms, remove/delete, format inside form, required filling, mask correction, GetAllFormsData/SetAllFormsData | vitest | `oo/forms.test.ts` | M10 |
 | image-smartart-placeholder/smartartImagePlaceholders.js | 2 | 2 | SmartArt image placeholders | n/a | — | none |
-| js-api/api-color.js | 3 | 34 | ApiColor class/auto/theme, RGB/hex, JSON | n/a (builder API) | — | M13 |
+| js-api/api-color.js | 3 | 34 | ApiColor class/auto/theme, RGB/hex, JSON | vitest (docs/api ApiColor) | `oo/plugins-api.test.ts` | M13 |
 | js-api/api-document-content.js | 1 | 2 | GetText of document content | vitest | `oo/api-text-ops.test.ts` | M1 |
 | js-api/api-drawing.js | 11 | 31 | flipH/V, stroke, relative width/height, horizontal/vertical position, name, select/unselect | vitest | `oo/drawing-attrs.test.ts` | M7 |
 | js-api/api-inline-level-sdt.js | 2 | 6 | control border/background color | vitest | `oo/sdt-appearance.test.ts` | M10 |
@@ -518,7 +518,7 @@ Grown equivalent and would not be built additively.
 | numbering/numberingApplicator.js | 4 | 15 | numbering through style; numbered headings; apply by selection vs cursor; paragraphs with left indent | vitest | `oo/numbering-apply.test.ts` | M3 |
 | numbering/numberingAutocorrect.js | 3 | 6 | `* `, `- `, `> `, `1. ` .. 9 levels, `1) `, `a. `, `a) `, `A. `, `A) ` -> list; non-triggers; continue previous numbering | vitest | `oo/numbering-autocorrect.test.ts` | M3 |
 | numbering/numberingCalculation.js | 2 | 26 | numbering text from style; numbering collection | vitest | `oo/numbering-calc.test.ts` | M3 |
-| plugins/pluginsApi.js | 5 | 53 | addin fields (body, header/footer), RemoveFieldWrapper, SetEditingRestrictions, current word/sentence | mixed: 1 vitest (current word/sentence, M2), 4 n/a | `oo/text-selection-units.test.ts` | M13 |
+| plugins/pluginsApi.js | 5 | 53 | addin fields (body, header/footer), RemoveFieldWrapper, SetEditingRestrictions, current word/sentence | vitest (current word/sentence in M2; 4 through docs/api in M13) | `oo/text-selection-units.test.ts`, `oo/plugins-api.test.ts` | M13 |
 | revisions/document-content.js | 5 | 16 | new paragraph under tracking; replace text in block sdt; accept-all when sdt content deleted; accept/reject when whole document deleted/added | vitest (3 in M5, 2 after M10) | `oo/revisions-document.test.ts` | M5 |
 | revisions/paragraph.js | 2 | 11 | select+type / delete+type / backspace+type in one run and across runs -> review runs | vitest | `oo/revisions-paragraph.test.ts` | M5 |
 | shortcuts/events.js | 0 | 0 | key event helpers | n/a (write own) | `docs/__tests__/keys.ts` | M0 |
@@ -1706,7 +1706,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | Style-based right indent in a narrower section | Kept | A block moved to another column/section width loses a style's right indent (direct ones are kept) | Known gap |
 | Line numbers | In the margin by the text | Drawn by the page layer; table rows and atoms not counted | Note only |
 | Watermark in DOCX | A VML/DrawingML shape in the header | Kept in the document settings; not written to or read from .docx | Known gap |
-| Header/footer navigation hotkeys (shortcuts.js) | Previous/next header-footer | Double-click a page's header/footer; hotkeys not bound (skipped, M13) | Not yet |
+| Header/footer navigation hotkeys (shortcuts.js) | Previous/next header-footer | PageUp/PageDown, Alt+PageUp/PageDown, Escape inside a header/footer (M13) | Done (M13) |
 
 * **Not yet**: vertical page alignment, text direction per section,
   paper source, footnotes at the bottom of each page (the notes panel sits
@@ -1866,6 +1866,161 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | deleted-text recovery: Split run | " how" (what was selected) | "how " — a snapshot diff can't tell the two apart; like diff-match-patch the later one | grown-variant |
 | deleted-text recovery: history navigation | Per-keystroke history points | Saved versions only | n/a |
 | Compare with tracked changes in the inputs | Word warns and treats them as accepted | Accepted first (combine keeps them) | Note only |
+
+### 6.16 M13 status (spell check, language, plugins, misc)
+
+* **Spell checker** (`web/app/src/lib/spell/`, shared with Sheets and
+  Slides): a Grown-written, MIT, Hunspell-compatible engine
+  (`hunspell.ts`) — `.aff` SET / FLAG (char, UTF-8, long, num) / TRY /
+  KEY / REP / ICONV / WORDCHARS, PFX / SFX with conditions, cross
+  products and continuation classes (twofold suffixes), NOSUGGEST,
+  FORBIDDENWORD, KEEPCASE, NEEDAFFIX, ONLYINCOMPOUND, COMPOUNDRULE (the
+  English ordinals) and COMPOUNDFLAG / BEGIN / MIDDLE / END;
+  capitalisation rules (THE ⊃ The ⊃ the). Suggestions: case fixes, the
+  REP table, single edits weighted by QWERTY adjacency, word splits
+  ("alot" → "a lot"), then Hunspell-style n-gram search over the stems
+  and their affixed forms; the input's case is kept. Not supported: AF/AM
+  aliases, CIRCUMFIX, MAP, PHONE, CHECKCOMPOUND* (documented in the file).
+  nspell wasn't used so no dependency (and no Nix npm hash) changes.
+  The engine runs in a module Web Worker (`spell.worker.ts`, 15 kB) that
+  starts on the first check; dictionaries load on demand from
+  `/dict/<name>.aff` + `.dic.gz` (gzip, `DecompressionStream`): en-US and
+  en-GB from SCOWL (MIT-like SCOWL/Ispell licence, redistributable;
+  `public/dict/README.md`, `THIRD_PARTY_NOTICES.md`), 190 kB each.
+  `service.ts` caches answers per dictionary and word; `prefs.ts` keeps
+  the per-user on/off switch and personal dictionary in localStorage and
+  in the server-side user preferences (`/api/v1/me/preferences`, the
+  existing `extra` JSON bag, key `spell`), so "Add to dictionary" follows
+  the user. `languages.ts` lists 19 proofing languages; ones without a
+  bundled dictionary are skipped, as Word does without proofing tools.
+* **Docs** (`docs/spellcheck.ts`): the words of every textblock go to the
+  service with the language of their run; code, tracked deletions, URLs,
+  e-mail addresses, words with digits and ALL-CAPS words are skipped
+  (Word's defaults), and so is the word being typed until the caret
+  leaves it. Misspellings are red wavy-underline decorations, recomputed
+  (debounced) after edits; the browser's own checker is turned off on the
+  editor. Right-click a squiggle: up to five suggestions, Ignore (this
+  occurrence, mapped through edits), Ignore all (per document, the
+  `spellIgnored` key of the docSettings Yjs map), Add to dictionary.
+  Tools ▸ Spelling and grammar (F7) walks the misspellings (Change /
+  Ignore / Ignore all / Add, "Check spelling as you type"); Tools ▸
+  Check spelling as you type toggles; the status bar shows the language
+  and the error count.
+* **Language**: a `lang` mark (`lang`, `noProof`) set from Tools ▸
+  Language for the selection, or the paragraph with an empty selection;
+  "Do not check spelling" is `zxx` → noProof. The document language is
+  the docSettings `lang` key (en-US by default) and becomes the editor's
+  `lang` attribute (also what CSS hyphenation uses). DOCX: run
+  `w:lang` / `w:noProof` both ways (in CT_RPr order), the document
+  language from and to `styles.xml` docDefaults; run languages equal to
+  the default (Word writes them everywhere) are dropped on import.
+  Slides text boxes follow the same per-user switch with the browser's
+  checker; Sheets' cell editor is unchanged.
+* **Misc**:
+  * Insert ▸ Symbol: font (the shared list), 26 Unicode blocks
+    (unassigned code points skipped), hex character code (jumps to the
+    block), preview, 20 recently used symbols (localStorage); the symbol
+    takes the chosen font.
+  * Insert ▸ Date and time: Word's 17 formats; plain text, or with
+    "Update automatically" a `DATE \@ "…"` / `TIME` field (M8).
+  * Insert ▸ Drop cap: dropped or in margin, lines (1–10), font, distance
+    (`docs/dropCap.ts`, paragraph attributes rendered with CSS
+    `initial-letter`, float fallback). DOCX writes Word's framed
+    paragraph (`w:framePr w:dropCap w:lines`) holding the letter and
+    reads it back into the paragraph after it.
+  * Insert ▸ Text from file: .docx through the direct reader (missing
+    styles are added), .txt as paragraphs, .odt/.rtf/.md/.html/.epub
+    through the importer.
+  * View ▸ Show non-printing characters (Ctrl+Alt+Shift+8, grown-variant
+    because Ctrl+Shift+8 is the bulleted list): ¶, · (space), °
+    (no-break space), → (tab), ↵ (line break) as zero-width decorations
+    that never change layout; incremental per edited block.
+  * View ▸ Dark document (per user): the page is inverted with a hue
+    rotation, pictures are inverted back.
+  * Tools ▸ Document statistics (also Word count / Ctrl+Shift+C): pages
+    and lines from the M9 layout, words, characters with and without
+    spaces, paragraphs, for the document and the selection, optionally
+    with footnote/endnote text (`docs/docStats.ts`).
+  * Header/footer navigation: inside a header or footer, PageUp /
+    PageDown go to the previous / next header or footer in reading order,
+    Alt+PageUp / Alt+PageDown to the same part of the previous / next
+    page, Escape back to the body (`docs/hfNav.ts`, `PageLayer.tsx`).
+  * Status bar: "Page X of Y" is now the **page in view** (the page sheet
+    covering most of the viewport, updated on scroll), as Word's status
+    bar does, with a tooltip saying so; pageless falls back to the
+    caret's page. Before, it was the caret's page, so it read "Page 1 of
+    7" while page 3 was on screen.
+* **Scripting API** (`docs/api/`, behind the `docs-api` flag:
+  `localStorage["grown.flags"]="docs-api"`, `?flags=docs-api` or
+  `VITE_DOCS_API=1`). Design, chosen so nothing ever evaluates a string:
+  * `createDocApi(host)` is a fixed table of named methods over the live
+    editor (`API_METHODS`): text (GetText, GetSelectedText, AddText,
+    SetTextColor, current word/sentence get/replace), colours
+    (`ApiColor`: RGB, RGBA, HexColor, ThemeColor with Word's default
+    theme, AutoColor, ToJSON/FromJSON), fields (GetAllFields, add-in
+    fields: GetAllAddinFields, AddAddinField, UpdateAddinFields,
+    SelectAddinField, RemoveAddinField, RemoveFieldWrapper) and
+    SetEditingRestrictions / CanEdit (none / readOnly; M10 owns full
+    document protection). Names follow OnlyOffice's plugin and builder
+    APIs so their tests port directly. Field ids are runtime-only
+    (position → id per editor, mapped through transactions), like
+    OnlyOffice's; add-in fields are Word `ADDIN` fields and are found in
+    open headers/footers too.
+  * `callApi` accepts only whitelisted method names and plain-JSON
+    arguments (no functions, class instances or cycles) and returns JSON.
+  * Macros are data: a JSON array of `{ method, args }` steps run through
+    `callApi` (`runMacro`), so a stored macro can do no more than the menu.
+  * Plugins are web pages in a sandboxed iframe (`sandbox="allow-scripts"`
+    without `allow-same-origin`: an opaque origin with no access to the
+    app's cookies, storage or DOM) that call the API by `postMessage`
+    (`{ grownApi: 1, id, method, args }` → `{ id, result | error }`,
+    `api/host.ts`; only messages from that frame are answered).
+  * Tools ▸ Macros and plugins (only with the flag) runs a macro or loads
+    a plugin URL.
+  Not done: macro recording, VBA conversion, a plugin catalogue, plugin
+  UI panels / toolbar buttons, and the Sheets/Slides equivalents.
+* **Tests**: ported (all passing) `oo/plugins-api.test.ts` —
+  pluginsApi.js "Test work with addin fields", "Test addin fields in
+  header/footer", "Test RemoveFieldWrapper", "Test SetEditingRestrictions"
+  (the fifth, current word/sentence, was M2) and api-color.js's three
+  cases; un-skipped `oo/shortcuts.test.ts` "Check show/hide non printing
+  symbols" and "Check actions with headers/footers" (the walk of the
+  upstream case over `hfNavigate`; the keys themselves in Playwright).
+  docs-tests.csv M13 rows: 7/7 (pluginsApi 5/5 with M2, api-color 3/3).
+  Grown-native: `lib/spell/hunspell.test.ts` (engine features on a
+  hand-written dictionary, the real en-US dictionary: common text,
+  ordinals, suggestions "teh"→"the", "recieve"→"receive", "alot"→"a lot",
+  speed), `lib/fonts.test.ts`, `__tests__/spellcheck.test.ts`
+  (squiggles, skips, suggestions keeping formatting, ignore once / all,
+  personal words, per-run and document languages, on/off, DOCX w:lang
+  round trip), `__tests__/m13.test.ts` (statistics, drop cap + DOCX both
+  ways incl. a Word margin drop cap, symbols, text from .txt / .docx,
+  non-printing decorations following edits, the API's method whitelist /
+  JSON-only arguments / plugin replies / flag, page in view). Playwright
+  `web/e2e/docs-spell.spec.ts` (4): squiggles and the suggestions menu,
+  add to dictionary surviving a reload, ignore all, a French paragraph not
+  checked, the on/off switch; symbol table, date and time, drop cap,
+  statistics, non-printing characters; header/footer PageUp / PageDown /
+  Alt+PageUp / Escape and the status bar following scrolling; an imported
+  Calibri .docx keeping its font name while rendering with Carlito's
+  metrics. All 30 docs e2e pass on :8095. The status bar's word count
+  now also follows content set without an editor "update" event (DOCX
+  import, collab replay), which used to leave it at 0.
+* **Bundle**: the Docs chunk grew 33 kB (11 kB gzip), the app entry
+  4.6 kB (the font table); the spell worker is a separate 15 kB chunk
+  loaded on the first check. Dictionaries (2 × 190 kB) and fonts (2.4 MB
+  in all, per face on use) are static files fetched on demand.
+* **Semantic differences**:
+
+| Case | OnlyOffice / Word | Grown | Status |
+|---|---|---|---|
+| shortcuts: show/hide non-printing | Ctrl+Shift+Num8 | Ctrl+Alt+Shift+8 (Ctrl+Shift+8 is the bulleted list) | grown-variant |
+| shortcuts: header/footer navigation | Keys drive the logic document | Same keys in the page layer; the order is tested on `hfNavigate`, the keys in Playwright | grown-variant |
+| pluginsApi: SelectAddinField + GetSelectedText | The field's result is ordinary text | A field is an atom; the API's GetSelectedText reads a selected field as its result | Note only |
+| pluginsApi: SetEditingRestrictions | readOnly / comments / forms / trackChanges / none | readOnly and none (M10 has document protection) | Partial |
+| api-color: ThemeColor | The document theme | Word's default theme (Grown documents have no theme part yet) | Note only |
+| Spell check languages | Any installed Hunspell dictionary | en-US, en-GB bundled; other languages are set but not checked | Known gap |
+| Grammar | Grammar checking (LanguageTool plugin) | Spelling only | Not planned |
 
 ### Known flaky e2e (as of 2026-09-26)
 

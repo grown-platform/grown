@@ -11,6 +11,8 @@ import { NodeSelection } from "@tiptap/pm/state";
 import { followAt, updateFields, updateTocAt } from "./references";
 import { followLink } from "./bookmarks";
 import { openReferenceDialog } from "./ReferenceDialogs";
+import { SpellMenuItems, spellingAtEvent } from "./SpellMenu";
+import type { SpellWord } from "./spellcheck";
 
 interface MenuPos {
   x: number;
@@ -48,6 +50,8 @@ export function EditorContextMenu({
   const [inTable, setInTable] = useState(false);
   // Field / table of contents / link under the pointer (M8).
   const [refAt, setRefAt] = useState<{ field: number | null; toc: number | null; href: string | null }>({ field: null, toc: null, href: null });
+  // The misspelled word under the pointer (M13).
+  const [spell, setSpell] = useState<SpellWord | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -90,6 +94,7 @@ export function EditorContextMenu({
         if (toc == null) toc = at(".doc-toc");
       }
       setRefAt({ field, toc, href: t.closest?.("a[href]")?.getAttribute("href") ?? null });
+      setSpell(t.closest?.(".spell-error") ? spellingAtEvent(editor, e) : null);
       setPos({ x: e.clientX, y: e.clientY });
     };
     el.addEventListener("contextmenu", onContextMenu);
@@ -160,6 +165,7 @@ export function EditorContextMenu({
           px: 0.5,
         }}
       >
+        {spell && <SpellMenuItems editor={editor} m={spell} run={run} />}
         {mathPos != null && (
           <EquationMenuItems editor={editor} pos={mathPos} run={run} onEdit={() => onEditEquation?.(mathPos)} />
         )}

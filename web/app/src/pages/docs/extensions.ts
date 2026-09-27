@@ -32,6 +32,7 @@ import { TableOfContents, TocEntry } from "./toc";
 import type * as Y from "yjs";
 import { ColumnBreak, SectionBreak } from "./pageLayout";
 import { Pagination } from "./paginationPlugin";
+import { M13_EXTENSIONS } from "./m13Extensions";
 import type { WebsocketProvider } from "y-websocket";
 
 // TipTap has no official font-size extension, so add a textStyle attribute that
@@ -623,6 +624,8 @@ export function buildExtensions(opts: BuildOpts) {
     SectionBreak,
     ColumnBreak,
     Pagination,
+    // Spell check, language, view toggles, drop cap (M13).
+    ...M13_EXTENSIONS,
     ...collabExts,
   ];
 }

@@ -38,7 +38,7 @@
       "passing": null
     },
     "common/plugins": {
-      "ported": 1,
+      "ported": 5,
       "passing": null
     },
     "common/visio": {
@@ -122,7 +122,7 @@
       "passing": null
     },
     "docs/plugins": {
-      "ported": 1,
+      "ported": 5,
       "passing": null
     },
     "docs/references": {
@@ -130,7 +130,7 @@
       "passing": null
     },
     "docs/scripting-api": {
-      "ported": 0,
+      "ported": 3,
       "passing": null
     },
     "docs/sections": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2203,
+    "ported": 2210,
     "passing": null
   }
 }
