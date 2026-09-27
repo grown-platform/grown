@@ -265,8 +265,8 @@ describe("geometry", () => {
     });
   });
 
-  it("scales a 4:3 deck to fit the canvas height and centres it", async () => {
-    // 10in × 7.5in: 540/6858000 px per EMU; content is 720 px wide, offset 120.
+  it("keeps a 4:3 deck's size: 960 px wide, 720 high (M7; was pillar-boxed)", async () => {
+    // 10in × 7.5in: 960/9144000 px per EMU.
     const r = await readPptx(
       await pkg({
         size: [9144000, 6858000],
@@ -280,12 +280,13 @@ describe("geometry", () => {
       }),
     );
     expect(r.deck.slides[0].elements[0]).toMatchObject({
-      x: 120,
+      x: 0,
       y: 0,
-      w: 720,
-      h: 540,
+      w: 960,
+      h: 720,
     });
-    expect(r.warnings.join()).toMatch(/16:9/);
+    expect(r.deck.size).toEqual({ w: 960, h: 720 });
+    expect(r.warnings.join()).not.toMatch(/16:9/);
   });
 
   it("reads group shapes as Grown groups, mapping members through the child space", async () => {
@@ -587,8 +588,12 @@ describe("text", () => {
     const r = await readPptx(
       await pkg({ slides: [{ xml: SLIDE(title + sub + empty) }] }),
     );
-    const [t, s] = r.deck.slides[0].elements;
-    expect(r.deck.slides[0].elements).toHaveLength(2); // the empty placeholder isn't drawn
+    const [t, s, e] = r.deck.slides[0].elements;
+    // The empty placeholder is kept (M7): it shows its prompt in the editor.
+    expect(r.deck.slides[0].elements).toHaveLength(3);
+    expect(e).toMatchObject({ type: "text", text: "", placeholder: { type: "body", idx: 2 } });
+    expect(t.placeholder).toEqual({ type: "ctrTitle" });
+    expect(s.placeholder).toEqual({ type: "subTitle", idx: 1 });
     // Title: geometry from the master, 44 pt, tx2 colour, major font, centred.
     expect(t).toMatchObject({
       x: 48,
@@ -765,7 +770,7 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
     ]);
   });
 
-  it("turns a picture background into a full-slide image under the content", async () => {
+  it("reads a picture background as the slide's picture fill (M7)", async () => {
     const bg = `<p:bg><p:bgPr><a:blipFill><a:blip r:embed="rB"/><a:stretch><a:fillRect/></a:stretch></a:blipFill></p:bgPr></p:bg>`;
     const r = await readPptx(
       await pkg({
@@ -788,9 +793,10 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
         media: { "ppt/media/bg.png": PNG_B64 },
       }),
     );
-    const els = r.deck.slides[0].elements;
-    expect(els[0]).toMatchObject({ type: "image", x: 0, y: 0, w: 960, h: 540 });
-    expect(els[1].type).toBe("rect");
+    const s0 = r.deck.slides[0];
+    expect(s0.bgFill?.kind).toBe("image");
+    expect(s0.bgFill && s0.bgFill.kind === "image" && s0.bgFill.src).toMatch(/^data:image\/png;base64,/);
+    expect(s0.elements.map((e) => e.type)).toEqual(["rect"]);
   });
 
   it("includes master/layout decorations unless showMasterSp=0", async () => {
