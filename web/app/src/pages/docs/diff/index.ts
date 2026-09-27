@@ -80,7 +80,7 @@ export function compareDocs(original: PMNode, revised: PMNode, opts: CompareOpts
   const newDoc = opts.keepExisting ? revised : acceptAll(revised);
   const a = flatten(oldDoc, gran, "o");
   const b = flatten(newDoc, gran, "n");
-  const ops = align(a, b);
+  const ops = align(a, b, gran);
   const author: Author = { name: opts.author, date: opts.date ?? nowIso() };
   const map = pathMap(ops.filter((o) => o.kind === "eq").map((o) => [a[o.a], b[o.b]] as [Tok, Tok]));
   const items: Item[] = ops.map((op) =>
@@ -132,7 +132,7 @@ export function combineDocs(original: PMNode, revA: PMNode, revB: PMNode | null,
   const B: Author = { name: opts.authorB ?? opts.authorA, date: opts.dateB ?? opts.dateA ?? nowIso() };
   const sides = [revA, revB].filter((d): d is PMNode => !!d).map((d, i) => {
     const toks = flatten(prep(d), gran, i ? "b" : "a");
-    const ops = align(o, toks);
+    const ops = align(o, toks, gran);
     const match = new Array<number>(o.length).fill(-1);
     const ins = new Map<number, number[]>();
     let gap = 0;

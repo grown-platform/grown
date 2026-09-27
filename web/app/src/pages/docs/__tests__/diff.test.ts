@@ -212,6 +212,12 @@ describe("diffVersions", () => {
     const r = diffVersions(doc("<p>abc</p>"), doc("<p>ab</p>"), { author: "V", show: "deleted" });
     expect(runs(r)).toEqual([[["common", "ab"], ["remove", "c"]]]);
   });
+  it("refines only similar words at character level", () => {
+    const r = diffVersions(doc("<p>Alpha beta gamma.</p>"), doc("<p>Alpha gamma delta.</p>"), { author: "V" });
+    expect(runs(r)).toEqual([[["common", "Alpha "], ["remove", "beta "], ["common", "gamma"], ["add", " delta"], ["common", "."]]]);
+    const r2 = diffVersions(doc("<p>Hello World</p>"), doc("<p>Hlo Wld</p>"), { author: "V" });
+    expect(runs(r2)).toEqual([[["common", "H"], ["remove", "el"], ["common", "lo W"], ["remove", "or"], ["common", "ld"]]]);
+  });
   it("highlights insertions too", () => {
     const r = diffVersions(doc("<p>abc</p>"), doc("<p>abXc</p>"), { author: "V" });
     expect(runs(r)).toEqual([[["common", "ab"], ["add", "X"], ["common", "c"]]]);

@@ -221,7 +221,7 @@ function slide(segs: Seg[], ka: readonly string[], kb: readonly string[]): { seg
   return { segs: normalize(segs), changed };
 }
 
-/** fold turns equalities no longer than the edits on both sides into a
+/** fold turns equalities shorter than the edits on both sides into a
  *  deletion plus an insertion (diff-match-patch's semantic clean-up). */
 function fold(segs: Seg[], o: Required<Pick<CleanupOpts, "weight" | "barrier">>): { segs: Seg[]; changed: boolean } {
   let changed = false;
@@ -242,7 +242,7 @@ function fold(segs: Seg[], o: Required<Pick<CleanupOpts, "weight" | "barrier">>)
     if (segs[i - 1].kind === "eq" || segs[i + 1].kind === "eq") continue;
     if (s.a.some((ai) => o.barrier("a", ai)) || s.b.some((bi) => o.barrier("b", bi))) continue;
     const len = wA(s);
-    if (len <= around(i - 1, -1) && len <= around(i + 1, 1)) {
+    if (len < around(i - 1, -1) && len < around(i + 1, 1)) {
       segs.splice(i, 1, { kind: "del", a: s.a, b: [] }, { kind: "ins", a: [], b: s.b });
       changed = true;
       i++;

@@ -59,7 +59,7 @@ const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hang
 const WORD = /[\p{L}\p{N}\p{M}_'’]/u;
 const SPACE = /\s/u;
 
-function charClass(ch: string): "w" | "s" | "p" {
+export function charClass(ch: string): "w" | "s" | "p" {
   if (CJK.test(ch)) return "p";
   if (WORD.test(ch)) return "w";
   if (SPACE.test(ch)) return "s";
