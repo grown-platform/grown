@@ -46,9 +46,10 @@ import AddIcon from "@mui/icons-material/Add";
 import type { Editor } from "@tiptap/react";
 import { promptLink } from "./links";
 import GridOnIcon from "@mui/icons-material/GridOn";
+import RateReviewIcon from "@mui/icons-material/RateReview";
 import { TableSizePicker, insertPickedTable } from "./TableUI";
 
-export type EditorMode = "editing" | "viewing";
+export type EditorMode = "editing" | "suggesting" | "viewing";
 
 interface ToolbarProps {
   editor: Editor | null;
@@ -495,13 +496,14 @@ export function Toolbar({
             slotProps={{
               root: {
                 variant: "soft",
-                color: mode === "editing" ? "primary" : "neutral",
+                color: mode === "editing" ? "primary" : mode === "suggesting" ? "success" : "neutral",
                 startDecorator:
-                  mode === "editing" ? <EditNoteIcon /> : <VisibilityIcon />,
+                  mode === "editing" ? <EditNoteIcon /> : mode === "suggesting" ? <RateReviewIcon /> : <VisibilityIcon />,
               },
             }}
+            data-testid="mode-menu"
           >
-            {mode === "editing" ? "Editing" : "Viewing"}
+            {mode === "editing" ? "Editing" : mode === "suggesting" ? "Suggesting" : "Viewing"}
           </MenuButton>
         </Tooltip>
         <Menu size="sm">
@@ -510,6 +512,12 @@ export function Toolbar({
             onClick={() => onModeChange("editing")}
           >
             <EditNoteIcon /> Editing
+          </MenuItem>
+          <MenuItem
+            selected={mode === "suggesting"}
+            onClick={() => onModeChange("suggesting")}
+          >
+            <RateReviewIcon /> Suggesting
           </MenuItem>
           <MenuItem
             selected={mode === "viewing"}

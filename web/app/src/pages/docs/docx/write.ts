@@ -17,6 +17,7 @@ import { TableMap } from "@tiptap/pm/tables";
 import { NORMAL, paragraphStyleId, type ParaPr, type StyleDef, type StyleSheet } from "../styles";
 import { MAX_LEVELS, type LvlDef, type NumberingStore } from "../numbering";
 import { directProps } from "../paragraphProps";
+import { parseParaChange, parsePropsChange } from "../changes";
 import type { DocxComment, PageSetup } from "./model";
 import { WORD_STYLE_NAMES } from "./read";
 import { marksRunProps, writePPr, writeRPr } from "./props";
@@ -514,9 +515,43 @@ class Writer {
       numId = this.docxNumId(node.attrs.numId as string);
       numLvl = numId && numId !== "0" ? ((node.attrs.numLvl as number | null) ?? 0) : null;
     }
-    const pPr = writePPr(direct, { styleId, numId, numLvl });
+    const pPr = writePPr(direct, { styleId, numId, numLvl, rPr: this.paraMarkRPr(node), extra: this.pPrChange(node) });
     const runs = await this.inline(node, ctx, prefix);
     return `<w:p>${pPr}${runs}</w:p>`;
+  }
+
+  /** Revision attributes (w:id, w:author, w:date) of a change record. */
+  revAttrs(info: { author?: unknown; date?: unknown }): Record<string, string | number> {
+    const d = typeof info.date === "string" && /^\d{4}-\d\d-\d\dT/.test(info.date) ? info.date.replace(/\.\d+Z$/, "Z") : this.date;
+    return { "w:id": this.revId++, "w:author": (info.author as string) || "Unknown", "w:date": d };
+  }
+
+  /** The paragraph mark's run properties: w:ins / w:del when the mark was
+   *  inserted or deleted with tracking on. */
+  paraMarkRPr(node: PMNode): string {
+    const pc = parseParaChange(node.attrs.paraChange);
+    if (!pc) return "";
+    return el("w:rPr", {}, el(pc.type === "insert" ? "w:ins" : "w:del", this.revAttrs(pc)));
+  }
+
+  /** w:pPrChange with the paragraph's properties before a tracked change. */
+  pPrChange(node: PMNode): string {
+    const pc = parsePropsChange(node.attrs.propsChange);
+    if (!pc) return "";
+    let old: PMNode;
+    try {
+      const type = node.type.schema.nodes[pc.type] ?? node.type;
+      old = type.create({ ...pc.attrs, paraChange: null, propsChange: null });
+    } catch {
+      return "";
+    }
+    const { sheet } = this.input;
+    const sid = old.type.name === "paragraph" || old.type.name === "heading" ? paragraphStyleId(sheet, old) : NORMAL;
+    if (sid !== NORMAL) this.useStyle(sid);
+    const numId = old.attrs.numId != null ? this.docxNumId(old.attrs.numId as string) : null;
+    const numLvl = numId && numId !== "0" ? ((old.attrs.numLvl as number | null) ?? 0) : null;
+    const inner = writePPr(directProps(old), { styleId: sid !== NORMAL ? sid : null, numId, numLvl }) || "<w:pPr/>";
+    return el("w:pPrChange", this.revAttrs(pc), inner);
   }
 
   // --- runs ----------------------------------------------------------------------------------
@@ -551,15 +586,16 @@ class Writer {
       const href = (link?.attrs.href as string | undefined) || null;
       if (ctx.body) for (const [id, first] of this.commentFirst) if (first === idx)
         for (const n of this.threadIds(id)) items.push({ href, xml: el("w:commentRangeStart", { "w:id": n }) });
-      const rPr = writeRPr(marksRunProps(c.marks));
+      const fc = c.marks.find((m) => m.type.name === "formatChange");
+      const rPr = writeRPr(marksRunProps(c.marks), fc ? this.rPrChange(fc) : "");
       let run = "";
-      if (c.isText) run = `<w:r>${rPr}${this.textXml(c.text ?? "", ctx.body && c.marks.some((m) => m.type.name === "deletion"))}</w:r>`;
+      if (c.isText) run = `<w:r>${rPr}${this.textXml(c.text ?? "", c.marks.some((m) => m.type.name === "deletion"))}</w:r>`;
       else if (c.type.name === "hardBreak") run = `<w:r>${rPr}<w:br/></w:r>`;
       else if (c.type.name === "footnote" || c.type.name === "endnote") {
         if (ctx.body) run = this.noteRef(c, writeRPr({ ...marksRunProps(c.marks), vertAlign: "super" }));
       } else if (c.type.name === "image") run = (await this.imageRun(c, ctx)) ?? "";
       else if (c.textContent) run = `<w:r>${rPr}${this.textXml(c.textContent, false)}</w:r>`;
-      if (run) items.push({ href, xml: ctx.body ? this.tracked(c.marks, run) : run });
+      if (run) items.push({ href, xml: this.tracked(c.marks, run) });
       if (ctx.body) for (const [id, last] of this.commentLast) if (last === idx)
         for (const n of this.threadIds(id))
           items.push({
@@ -591,11 +627,21 @@ class Writer {
   tracked(marks: readonly PMMark[], run: string): string {
     const ins = marks.find((m) => m.type.name === "insertion");
     const del = marks.find((m) => m.type.name === "deletion");
-    const wrap = (tag: string, m: PMMark, body: string) =>
-      el(tag, { "w:id": this.revId++, "w:author": (m.attrs.author as string) || "Unknown", "w:date": this.date }, body);
+    const wrap = (tag: string, m: PMMark, body: string) => el(tag, this.revAttrs(m.attrs), body);
     if (del) run = wrap("w:del", del, run);
     if (ins) run = wrap("w:ins", ins, run);
     return run;
+  }
+
+  /** w:rPrChange with the run's formatting before a tracked change. */
+  rPrChange(m: PMMark): string {
+    let old: { type: string; attrs?: Record<string, unknown> }[] = [];
+    try {
+      old = JSON.parse(String(m.attrs.old ?? "[]"));
+    } catch {
+      old = [];
+    }
+    return el("w:rPrChange", this.revAttrs(m.attrs), writeRPr(marksRunProps(old)) || "<w:rPr/>");
   }
 
   noteRef(n: PMNode, rPr: string): string {

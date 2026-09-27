@@ -43,6 +43,7 @@ import {
 } from "./props";
 import { correctBadTable, encodeTableBorders, normalizeTable, parseTableBorders, resolveFixedGrid, type RawCell, type RawRow } from "../tableModel";
 import { readTblPr, readTcPr, readTrPr, type TableStyles } from "./tables";
+import { canonicalMarks, propsAttrs } from "../changes";
 import { attr, descendants, EMU_PER_PX, kid, kids, nameOf, num, onOff, parseXml, path, TWIPS_PER_PX, twipsToPt } from "./xml";
 
 type Mark = NonNullable<JSONContent["marks"]>[number];
@@ -647,8 +648,8 @@ class Reader {
     else this.openComments.delete(id);
   }
 
-  paragraph(p: Element, ctx: Ctx): JSONContent[] {
-    const pPr = readPPr(kid(p, "pPr"));
+  /** paraTypeAttrs maps paragraph props to a node type and attributes. */
+  paraTypeAttrs(pPr: ReturnType<typeof readPPr>, ctx: Ctx): { type: string; attrs: Record<string, unknown> } {
     const rawStyle = pPr.pStyle && this.raw.get(pPr.pStyle)?.type === "paragraph" ? pPr.pStyle : this.defaultParaStyle;
     if (rawStyle && !ctx.margin) this.useStyle(rawStyle);
     const gid = rawStyle ? this.gid.get(rawStyle) ?? null : null;
@@ -673,6 +674,24 @@ class Reader {
       attrs.level = level;
       if (!ctx.margin && gid && gid !== `Heading${level}`) attrs.styleId = gid;
     } else if (!ctx.margin && gid && gid !== "Normal") attrs.styleId = gid;
+    return { type, attrs };
+  }
+
+  paragraph(p: Element, ctx: Ctx): JSONContent[] {
+    const pPrEl = kid(p, "pPr");
+    const pPr = readPPr(pPrEl);
+    const { type, attrs } = this.paraTypeAttrs(pPr, ctx);
+    // Tracked paragraph mark (w:pPr/w:rPr/w:ins|w:del) and property change.
+    const markRPr = kid(pPrEl, "rPr");
+    const markIns = kid(markRPr, "ins");
+    const markDel = kid(markRPr, "del");
+    const markRev = markDel ?? markIns;
+    if (markRev) attrs.paraChange = JSON.stringify({ type: markDel ? "delete" : "insert", ...revInfo(markRev) });
+    const pch = kid(pPrEl, "pPrChange");
+    if (pch) {
+      const old = this.paraTypeAttrs(readPPr(kid(pch, "pPr")), ctx);
+      attrs.propsChange = JSON.stringify({ ...revInfo(pch), type: old.type, attrs: propsAttrs(old.attrs) });
+    }
 
     const items: Inline[] = [];
     this.inline(p, ctx, items);
@@ -686,6 +705,10 @@ class Reader {
       cur = [];
       emitted = true;
     };
+    // The paragraph mark belongs to the last part of a split paragraph.
+    const markAttrs = { paraChange: attrs.paraChange, propsChange: attrs.propsChange };
+    delete attrs.paraChange;
+    delete attrs.propsChange;
     for (const it of items) {
       if (it.kind === "block") {
         flush(false);
@@ -699,6 +722,8 @@ class Reader {
       }
     }
     flush(!emitted);
+    const last = [...out].reverse().find((b) => b.type === type);
+    if (last) for (const [k, v] of Object.entries(markAttrs)) if (v != null) last.attrs = { ...last.attrs, [k]: v };
     if (pPr.sectionBreak && /Page$/.test(pPr.sectionBreak) && !ctx.margin) out.push({ type: "pageBreak" });
     return out;
   }
@@ -794,7 +819,7 @@ class Reader {
     }
     if (rPr.allCaps || rPr.smallCaps) this.warn("caps / small caps as direct formatting");
     let marks = runMarks(rPr, ctx.margin ? null : cs);
-    if (ctx.margin) marks = marks.filter((m) => ["bold", "italic", "underline", "strike"].includes(m.type as string));
+    if (ctx.margin) marks = marks.filter((m) => MARGIN_MARKS.has(m.type as string));
     const href = this.fieldHref();
     const all = [...ctx.marks, ...marks];
     if (href && !all.some((m) => m.type === "link")) all.push({ type: "link", attrs: { href } });
@@ -802,7 +827,20 @@ class Reader {
       for (const id of this.openComments)
         // Replies share their parent's range; the thread has one mark.
         if (!this.comments.get(id)?.parentId) all.push({ type: "commentMark", attrs: { commentId: importedCommentId(id) } });
-    return ctx.margin ? all.filter((m) => ["bold", "italic", "underline", "strike"].includes(m.type as string)) : all;
+    return ctx.margin ? all.filter((m) => MARGIN_MARKS.has(m.type as string)) : all;
+  }
+
+  /** A formatChange mark from w:rPrChange: the old run formatting. */
+  formatChangeMark(rch: Element, ctx: Ctx): Mark {
+    const old = readRPr(kid(rch, "rPr"), this.theme);
+    let cs: string | null = null;
+    if (!ctx.margin && old.rStyle && old.rStyle !== this.defaultCharStyle && this.raw.get(old.rStyle)?.type === "character") {
+      this.useStyle(old.rStyle);
+      cs = this.gid.get(old.rStyle) ?? null;
+    }
+    let marks = runMarks(old, cs);
+    if (ctx.margin) marks = marks.filter((m) => MARGIN_MARKS.has(m.type as string));
+    return { type: "formatChange", attrs: { ...revInfo(rch), old: JSON.stringify(canonicalMarks(marks)) } };
   }
 
   pushText(text: string, ctx: Ctx, out: Inline[], rPr: RunProps = {}) {
@@ -810,8 +848,11 @@ class Reader {
     out.push({ kind: "text", text, marks: this.runMarksFor(rPr, ctx) });
   }
 
-  run(r: Element, ctx: Ctx, out: Inline[]) {
-    const rPr = readRPr(kid(r, "rPr"), this.theme);
+  run(r: Element, ctx0: Ctx, out: Inline[]) {
+    const rPrEl = kid(r, "rPr");
+    const rPr = readRPr(rPrEl, this.theme);
+    const rch = kid(rPrEl, "rPrChange");
+    const ctx = rch ? { ...ctx0, marks: [...ctx0.marks, this.formatChangeMark(rch, ctx0)] } : ctx0;
     for (const c of kids(r)) {
       const n = nameOf(c);
       if (n === "fldChar") {
@@ -1042,9 +1083,89 @@ class Reader {
   }
 }
 
+/** Marks the header/footer schema has. */
+const MARGIN_MARKS = new Set(["bold", "italic", "underline", "strike", "insertion", "deletion", "formatChange"]);
+
+/** Author, date and (raw) id of a revision element. Ids are renumbered per
+ *  logical change by groupRevisions. */
+function revInfo(e: Element): { id: string; author: string; date: string } {
+  return { id: `w${attr(e, "w:id") ?? ""}`, author: attr(e, "w:author") ?? "", date: attr(e, "w:date") ?? "" };
+}
+
 function changeMark(type: "insertion" | "deletion", e: Element): Mark {
-  const author = attr(e, "w:author");
-  return author ? { type, attrs: { author } } : { type };
+  return { type, attrs: revInfo(e) };
+}
+
+/** groupRevisions gives each logical change one id: consecutive insertions
+ *  and deletions (and a paragraph mark right after them) by the same author
+ *  at the same time are one change, as are consecutive formatting changes,
+ *  since Word gives every run its own revision id. Ids are numbered in
+ *  document order, so an export and re-import keeps them. */
+export function groupRevisions(docs: (JSONContent | null | undefined)[]): void {
+  let n = 0;
+  const next = () => `docx-r${++n}`;
+  type Open = { key: string; id: string } | null;
+  let text: Open = null;
+  let fmt: Open = null;
+  const keyOf = (a: Record<string, unknown>) => `${a.author ?? ""}\u0000${a.date ?? ""}`;
+  const reJSON = (v: unknown, f: (o: Record<string, unknown>) => void): string | unknown => {
+    try {
+      const o = JSON.parse(String(v)) as Record<string, unknown>;
+      f(o);
+      return JSON.stringify(o);
+    } catch {
+      return v;
+    }
+  };
+  const walk = (node: JSONContent) => {
+    const tb = node.type === "paragraph" || node.type === "heading";
+    if (tb && node.attrs?.propsChange)
+      node.attrs.propsChange = reJSON(node.attrs.propsChange, (o) => (o.id = next()));
+    if (!tb && node.type !== "doc" && node.content && !node.text) {
+      // Structure (tables, lists) breaks runs.
+      text = null;
+      fmt = null;
+    }
+    if (node.type === "text" || (node.marks && !node.content)) {
+      let sawText = false;
+      let sawFmt = false;
+      for (const m of node.marks ?? []) {
+        if (m.type !== "insertion" && m.type !== "deletion" && m.type !== "formatChange") continue;
+        const a = (m.attrs ??= {});
+        if (m.type === "insertion" || m.type === "deletion") {
+          const k = keyOf(a);
+          if (!text || text.key !== k) text = { key: k, id: next() };
+          a.id = text.id;
+          sawText = true;
+        } else if (m.type === "formatChange") {
+          const k = keyOf(a);
+          if (!fmt || fmt.key !== k) fmt = { key: k, id: next() };
+          a.id = fmt.id;
+          sawFmt = true;
+        }
+      }
+      if (!sawText) text = null;
+      if (!sawFmt) fmt = null;
+      return;
+    }
+    for (const c of node.content ?? []) walk(c);
+    if (tb) {
+      fmt = null;
+      const pc = node.attrs?.paraChange;
+      if (pc) {
+        node.attrs!.paraChange = reJSON(pc, (o) => {
+          const k = keyOf(o);
+          if (!text || text.key !== k) text = { key: k, id: next() };
+          o.id = text.id;
+        });
+      } else text = null;
+    }
+  };
+  for (const d of docs) if (d) {
+    text = null;
+    fmt = null;
+    walk(d);
+  }
 }
 
 /** plainText is a note or comment body as text: paragraphs joined by
@@ -1098,6 +1219,7 @@ function marginContent(blocks: JSONContent[]): JSONContent[] {
       const attrs: Record<string, unknown> = {};
       if (b.type === "heading") attrs.level = b.attrs?.level;
       if (b.attrs?.textAlign) attrs.textAlign = b.attrs.textAlign;
+      if (b.attrs?.paraChange) attrs.paraChange = b.attrs.paraChange;
       out.push({ ...b, attrs, content: b.content?.filter((n) => n.type === "text" || n.type === "hardBreak") });
     }
   }
@@ -1186,6 +1308,7 @@ export async function readDocx(data: ArrayBuffer | Uint8Array | Blob): Promise<D
   };
   const header = await margin("header");
   const footer = await margin("footer");
+  groupRevisions([header, { type: "doc", content }, footer]);
 
   const out: DocxImport = {
     doc: { type: "doc", content },

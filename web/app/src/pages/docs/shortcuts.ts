@@ -47,7 +47,7 @@ export function stepFontSize(editor: Editor, dir: 1 | -1): boolean {
 
 /** Marks that are content or review state rather than character formatting;
  *  "reset character formatting" keeps them. */
-const NON_FORMAT_MARKS = new Set(["link", "commentMark", "insertion", "deletion"]);
+const NON_FORMAT_MARKS = new Set(["link", "commentMark", "insertion", "deletion", "formatChange"]);
 const isFormatMark = (m: Mark) => !NON_FORMAT_MARKS.has(m.type.name);
 
 /** resetCharFormatting removes character formatting (bold, italic, font,

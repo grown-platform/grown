@@ -366,3 +366,33 @@ export function selectBlocks(editor: Editor, first: number, last: number): void 
   const blocks = textblocks(editor);
   selectRange(editor, blocks[first].pos, blocks[last].pos + blocks[last].node.content.size);
 }
+
+// --- track changes (M5) ------------------------------------------------------------------
+export { reviewRuns, paragraphReviewType, type ReviewType } from "../changes";
+import { reviewRuns, paragraphReviewType, type ReviewType } from "../changes";
+
+/** reviewText reads textblock `index` as [review type, text] runs:
+ *  "add" (insertion), "remove" (deletion) or "common". */
+export function reviewText(editor: Editor, index = 0): [ReviewType, string][] {
+  const b = textblocks(editor)[index];
+  if (!b) throw new Error(`no textblock ${index}`);
+  return reviewRuns(b.node);
+}
+
+/** paragraphReviewTypes lists each textblock's paragraph-mark review type. */
+export function paragraphReviewTypes(editor: Editor): ReviewType[] {
+  return textblocks(editor).map((b) => paragraphReviewType(b.node));
+}
+
+/** reviewHtml builds inline HTML for runs with review types (the default
+ *  author is the harness user, "Test user"). */
+export function reviewHtml(runs: { text: string; type?: ReviewType; author?: string; tag?: "strong" | "em" }[]): string {
+  return runs
+    .map(({ text, type, author = "Test user", tag }) => {
+      let h = tag ? `<${tag}>${text}</${tag}>` : text;
+      if (type === "add") h = `<span data-suggestion="insert" data-author="${author}">${h}</span>`;
+      if (type === "remove") h = `<span data-suggestion="delete" data-author="${author}">${h}</span>`;
+      return h;
+    })
+    .join("");
+}

@@ -157,6 +157,15 @@ export interface DocActions {
   insertEndnote: () => void;
   toggleHeaderFooter: () => void;
   toggleSuggesting: () => void;
+  reviewPanel?: () => void;
+  trackForEveryone?: (on: boolean) => void;
+  setDisplayMode?: (m: "markup" | "simple" | "final" | "original") => void;
+  nextChange?: () => void;
+  previousChange?: () => void;
+  acceptCurrentChange?: () => void;
+  rejectCurrentChange?: () => void;
+  acceptAllChanges?: () => void;
+  rejectAllChanges?: () => void;
   insertDrawing: () => void;
   customSpacing: () => void;
 }
@@ -267,6 +276,18 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           </MenuItem>
           <MenuItem disabled>Show ruler</MenuItem>
           <MenuItem disabled>Show non-printing characters</MenuItem>
+          {actions.setDisplayMode && (
+            <>
+              <ListDivider />
+              <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
+                Changes
+              </Typography>
+              <MenuItem onClick={() => actions.setDisplayMode!("markup")}>Markup</MenuItem>
+              <MenuItem onClick={() => actions.setDisplayMode!("simple")}>Simple markup</MenuItem>
+              <MenuItem onClick={() => actions.setDisplayMode!("final")}>Final</MenuItem>
+              <MenuItem onClick={() => actions.setDisplayMode!("original")}>Original</MenuItem>
+            </>
+          )}
           <ListDivider />
           <MenuItem
             onClick={() => document.documentElement.requestFullscreen?.()}
@@ -649,6 +670,24 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           </MenuItem>
           <MenuItem disabled>Citations</MenuItem>
           <MenuItem disabled>Line numbers</MenuItem>
+          <ListDivider />
+          <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
+            Review
+          </Typography>
+          <MenuItem onClick={actions.toggleSuggesting}>Track changes (for me)</MenuItem>
+          {actions.trackForEveryone && (
+            <MenuItem onClick={() => actions.trackForEveryone!(true)}>Track changes for everyone</MenuItem>
+          )}
+          {actions.trackForEveryone && (
+            <MenuItem onClick={() => actions.trackForEveryone!(false)}>Stop tracking for everyone</MenuItem>
+          )}
+          {actions.reviewPanel && <MenuItem onClick={actions.reviewPanel}>Review changes…</MenuItem>}
+          {actions.previousChange && <MenuItem onClick={actions.previousChange}>Previous change</MenuItem>}
+          {actions.nextChange && <MenuItem onClick={actions.nextChange}>Next change</MenuItem>}
+          {actions.acceptCurrentChange && <MenuItem onClick={actions.acceptCurrentChange}>Accept current change</MenuItem>}
+          {actions.rejectCurrentChange && <MenuItem onClick={actions.rejectCurrentChange}>Reject current change</MenuItem>}
+          {actions.acceptAllChanges && <MenuItem onClick={actions.acceptAllChanges}>Accept all changes</MenuItem>}
+          {actions.rejectAllChanges && <MenuItem onClick={actions.rejectAllChanges}>Reject all changes</MenuItem>}
           <ListDivider />
           <MenuItem disabled>Translate document</MenuItem>
           <MenuItem disabled>Voice typing (soon){kbd("Ctrl+Shift+S")}</MenuItem>
