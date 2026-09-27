@@ -332,12 +332,14 @@ advance-after-N-s, apply-to-all, preview (`Transitions` view: 75 strings).
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| 5 transitions (none/fade/from R/L/B) | Have | `TRANSITIONS`, `TRANSITION_CSS` |
-| Push/wipe/split/cover/uncover/zoom/box/cut/dissolve… with directions | Missing | — |
-| Duration / delay / auto-advance | Missing (fixed 350 ms) | `transitionAnimation` |
-| Apply to all slides | Missing | — |
-| Preview in editor | Missing | — |
-| Morph / 3-D GL transitions | Missing | — see F7 |
+| Fade (smooth / through black), cut, dissolve | Have (M8) | `transitions.ts` |
+| Push/wipe/cover/uncover ×4, split ×4, reveal, zoom in/out | Have (M8) | `TRANSITION_DEFS`, `transitionFx` |
+| Clock/blinds/checker/comb/circle/diamond/plus/random bars | Missing (import as fade) | — |
+| Duration / advance on click / auto-advance after N s | Have (M8) | Motion panel, `autoAdvanceDelay` |
+| Apply to all slides | Have (M8) | Motion panel |
+| Preview in editor | Have (M8) | `MotionPreview` |
+| Morph | Partial (M8): crossfade + matched-element tween | `morphPairs` — see F7 |
+| 3-D GL transitions | Missing | — see F7 |
 
 ### 2.10 Animations
 
@@ -349,13 +351,13 @@ repeat, rewind, trigger "On click of", move earlier/later, animation pane.
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| 4 entrance types with click order | Have | `ANIMATION_TYPES`, Animations modal, `revealedIds` |
-| Exit / emphasis effects | Missing | — |
-| Start with/after previous, duration, delay | Missing | fixed durations in `ELEMENT_ANIM_CSS` |
-| Directions (from top/left/right…) | Partial (bottom/left only) | — |
-| Animation pane (reorder, preview) | Partial (order number input) | Animations modal |
-| Motion paths | Missing | — see F8 |
-| Text-by-paragraph animation | Missing | — |
+| Entrance effects (appear, fade, fly, float, wipe, zoom) | Have (M8) | `animOps.ANIM_CATALOG` |
+| Exit / emphasis effects (pulse, colour pulse, teeter, spin, grow/shrink) | Have (M8) | `animOps` |
+| Start with/after previous, duration, delay | Have (M8) | `buildTimeline` |
+| Directions (from top/bottom/left/right) | Have (M8) | effect editor |
+| Animation pane (reorder, preview, remove) | Have (M8) | Motion panel |
+| Motion paths, triggers, repeat/rewind | Missing | — see F8 |
+| Text-by-paragraph animation | Have (M8) | `expandParagraphs` |
 
 ### 2.11 Slideshow / presenter view
 
@@ -368,15 +370,15 @@ firstslide|lastslide|nextslide|previousslide`.
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| Start slideshow (current slide) | Have | `present()` |
-| Start from beginning | Missing | always current `cur` |
-| Next/prev/Esc, click to advance | Have | `PresentView` |
-| Home/End, number+Enter go-to | Missing | — |
-| Loop, blackout (B), pointer/laser | Missing | — |
-| Pen / highlighter annotations | Missing | — |
-| Presenter view (notes, next, timer) | Have | `PresentView presenter` |
-| Separate audience window | Missing | presenter view replaces the stage |
-| Hidden (skipped) slides excluded | Missing | — |
+| Start slideshow (current slide) | Have | `startPresent` |
+| Start from beginning | Have (M9) | Present ▾, F5 |
+| Next/prev/Esc, click to advance | Have | `SlideShow`, `presentReduce` |
+| Home/End, number+Enter go-to | Have (M9) | `presentReduce` |
+| Loop, blackout (B/W), laser pointer | Have (M9) | `DeckDoc.show.loop`, Ctrl+L |
+| Pen annotations (transient) | Have (M9): pen + erase, not saved | Ctrl+P, E |
+| Presenter view (notes, next, timer, clock) | Have | `PresenterView` |
+| Separate presenter window | Have (M9): `window.open` + BroadcastChannel | `PresenterWindow` |
+| Hidden (skipped) slides excluded | Have (M7) | `showSlides` |
 | Internal slide links (first/last/next/prev/slide N) | Missing (URL only) | `url` |
 
 ### 2.12 Speaker notes
@@ -1053,8 +1055,8 @@ which creates a new deck. A .pptx opened from Drive (`/slides/:id`) gets
 
 **Known gaps.** These don't round-trip or import yet:
 
-- Element animations (`p:timing`) are neither written nor read, so
-  M8 is needed.
+- ~~Element animations (`p:timing`) are neither written nor read, so
+  M8 is needed.~~ (resolved in M8, see §6.12)
 - ~~Per-run formatting is lost~~ (resolved in M4, see §6.8).
 - Underline on a hyperlinked run is dropped on import, because it can't be
   told apart from the hyperlink style.
@@ -1713,3 +1715,177 @@ placeholder` (#12), in `layouts.test.ts` (reducer) and
   (two stops only; imported multi-stop gradients are kept).
 - Hidden slides are still exported to HTML/PDF and numbered (as in
   PowerPoint).
+
+### 6.12 M8 status (Wave 6): transitions and animations
+
+**Model (additive).** `Slide` gains `transitionDir` (the pptx `dir`
+value, or `black`, `vert-out`, `in`/`out`… per type), `transitionDur`
+(ms), `advanceOnClick` (false = clicks don't advance) and `advanceAfter`
+(ms), and `anims: AnimEffect[]` — the slide's effect list in play order
+(`{id, el, cls: entr|emph|exit, kind, start: click|with|after, delay,
+dur, dir, byPara, scale, color, angle}`). `TransitionType` keeps the
+pre-M8 `slide-left/right/up` names (read as push from right/left/bottom).
+The pre-M8 per-element `animation {type, order}` is still read:
+`animOps.effectsOf` turns it into click effects (equal orders play
+together); the first edit in the animation pane writes `anims` and drops
+the old fields. Duplicating a slide copies its effects onto the new ids.
+
+**Modules.**
+
+- `transitions.ts`: the catalogue — fade (smooth / through black), push,
+  wipe, cover (×4 directions), uncover (×4), split (vertical/horizontal,
+  in/out), reveal (left/right), zoom (in/out), dissolve, cut, morph —
+  with default durations; `transitionFx` maps a slide to CSS animations
+  for an incoming and an outgoing layer (and which is on top);
+  `morphPairs`/`morphStyle` are morph-lite (F7): matched elements (same
+  name, else same id, else same text/picture/shape+fill) tween from the
+  old box with `translate`/`scale`, the rest crossfade.
+- `animOps.ts`: the effect catalogue (entrance/exit: appear, fade, fly,
+  float, wipe, zoom; emphasis: pulse, colour pulse, teeter, spin,
+  grow/shrink), pane edits (add to the selection — first on click, the
+  rest with it — update, move earlier/later, remove, remap), the timeline
+  (`buildTimeline`: group 0 plays when the slide appears, each "on
+  click" opens a group, "with previous" starts with the previous effect,
+  "after previous" when everything so far in the group has ended, then
+  each effect's delay; by-paragraph text becomes one step per non-empty
+  paragraph), and `framesAt` (per element or paragraph at a step: hidden
+  until an entrance plays, hidden after an exit, a finished grow keeps its
+  scale; the triggered group carries CSS animations whose delays are the
+  begin times). Keyframes use the individual `translate`/`scale`/`rotate`
+  properties, so they compose with the element's own rotation, and wipes
+  use a mask so a shape's clip path is untouched. Exits play the entrance
+  keyframes in reverse.
+
+**Editor.** A **Motion** side panel (Slide ▸ Transition…, Insert ▸
+Animation, View ▸ Motion): transition type, option, duration, "On mouse
+click", "After N s", Apply to all slides, Preview (plays in the panel's
+preview from the previous slide); Add animation (Entrance / Emphasis /
+Exit menu, enabled with a selection); the animation pane lists effects
+with their click number, class colour, target and start marker, with
+move earlier/later and remove, and a Play button that runs the slide's
+steps back to back. Selecting an effect selects its element and opens its
+editor: class, effect, direction, start, duration, delay, by paragraph
+(text), size (grow/shrink), colour (colour pulse), Preview effect. With
+an effect selected, Delete removes the effect and not the shape (#10).
+
+**pptx** (`pptx/motionXml.ts`). The writer emits `p:transition` for every
+type (`p:pull` for uncover, `p:split orient dir`, `p:zoom dir`,
+`thruBlk`), `advClick="0"`/`advTm`, and — for a custom duration, reveal
+and morph — `mc:AlternateContent` with a `p14:dur` / `p14:reveal` /
+`p159:morph` Choice and a classic Fallback. Slides with effects are
+marked so `patchElements` reports each element's `cNvPr@id`, and
+`p:timing` is written after the transition: the main sequence with one
+`par` per click group (group 0 starts `onBegin`), one sub-`par` per
+click/after chain, and per effect a `cTn` with PowerPoint's
+`presetID`/`presetClass`/`presetSubtype`/`nodeType`/delay and the
+behaviours PowerPoint writes (`set style.visibility`, `animEffect`
+fade/wipe filters, `anim ppt_x/ppt_y/ppt_w/ppt_h`, `animScale`,
+`animRot`, `animClr`), `p:txEl/p:pRg` for paragraphs and `p:bldP`
+(`build="p"`). The reader picks a known `mc:Choice` (else the
+Fallback), maps spd to a duration when it isn't the type's default, maps
+presets back (duration = the behaviours' span, doubled for auto-reverse),
+turns a shape read as two elements into two effects (the second "with"),
+merges consecutive paragraph effects into a by-paragraph effect, and
+approximates other presets (checkerboard, bounce, …) as fade/pulse and
+skips motion paths and trigger sequences with a warning.
+
+**Tests.** `transitions.test.ts` (6: legacy names, defaults, every
+type/option → existing keyframes, directions and layering, morph
+matching and tween maths), `animOps.test.ts` (14: legacy read, add/
+update/move/remove, remap, labels, with/after chains with delays, group 0
+auto effects, default durations, by-paragraph, frames before/while/after
+each step, CSS for every catalogue entry), `pptx/motion.test.ts` (9:
+every transition type/option written and read, p14:dur + fallback +
+advance, speeds and extension effects, transition/timing placement,
+every catalogue effect with starts/delays/durations/options through
+deckToPptx → readPptx and a double round trip, the timing tree shape
+and spids, legacy element animations exported, a hand-written foreign
+timing with a motion path and paragraph builds); `pptx/read.test.ts`
+and `pptx/roundtrip.test.ts` now expect the M8 form (push + direction).
+
+**Ported (now passing):** `shortcuts.js#Check remove graphic objects
+(animation effect)` in `animOps.test.ts` (an effect is removed and its
+shape stays).
+
+**Gaps.** Motion paths (F8) and 3-D/GL transitions (F7) are not
+offered; morph is the crossfade + matched-element tween above (no shape
+or text morphing). The other OnlyOffice/PowerPoint effects (blinds,
+checkerboard, bounce, wheel…; transitions such as clock, shape, random
+bars) import as the nearest supported one. No triggers ("on click of
+shape"), repeat/rewind, sound, or "after animation" dimming. Effects on
+group members are not offered, and effects on groups are not written to
+pptx. Transition and effect durations are exact in pptx only through
+p14:dur and the effect's `cTn@dur` (odd auto-reverse durations round to
+2 ms). The editor canvas does not animate: previews play in the Motion
+panel's preview box.
+
+### 6.13 M9 status (Wave 6): slideshow and presenter
+
+**Show (`SlideShow.tsx`, `presentOps.ts`).** Present (current slide), a
+▾ menu with Present from beginning / from current slide / Presenter view /
+Loop until Esc, View ▸ Slideshow, Slideshow from beginning, Presenter
+view and Loop; F5 / Ctrl+Shift+F5 from the beginning, Shift+F5 / Ctrl+F5
+from the current slide. Hidden slides are skipped (M7's `showSlides`).
+`presentReduce`: next plays the slide's remaining click steps, then moves
+on; past the last slide it loops (`DeckDoc.show.loop`) or shows "End of
+slide show" (a further next exits); prev undoes the last step (shown
+settled), else goes to the previous slide fully built; Home/End; digits
+then Enter go to that slide, Enter alone is next; B or . / W or , toggle
+a black/white screen that the next navigation clears. Keys
+(`keymap.presentKeyAction`): N, →, ↓, Space, PgDn, Enter / P, ←, ↑,
+PgUp, Backspace / Home / End / digits / B . W , / S (in-page presenter
+view) / Ctrl+L laser pointer / Ctrl+P pen / E erase ink / Esc (leaves a
+tool first, then the show); everything but Esc is preventDefault-ed (so
+Ctrl+P doesn't print). A click advances unless the slide turns "On
+mouse click" off or the pen is on; `autoAdvanceDelay` advances "after
+N s" measured from the slide start but never before the playing step has
+ended (remaining click steps then play back to back). Transitions play
+when moving forward (next or a loop), with group-0 effects held until
+the transition ends. Pen ink is an SVG overlay per slide for the show's
+lifetime (not saved). A hover toolbar has previous/next, laser, pen,
+Presenter window and Presenter view (S).
+
+**Presenter view.** `PresenterView` shows the current slide at its
+current step, the next slide, speaker notes, elapsed time, the clock and
+"Slide n / N" (plus the step and a black/white screen chip), with
+Previous / Next (step) / Black. "Presenter window" (and Present ▾ ▸
+Presenter view) opens `/slides/d/:id/presenter` with `window.open`: the
+new window posts `hello` on a `BroadcastChannel`
+(`grown-slides-show:<deck>`), the audience window answers with the show's
+slides (hidden ones removed, footers drawn in) and slide height, then
+sends its state on every change; the presenter window sends navigation
+commands and `exit`, and closes when the show ends. When the pop-up is
+blocked, the in-page presenter view (the pre-M9 single-window mode, S)
+is used instead.
+
+**Tests.** `presentOps.test.ts` (17: steps per slide, step playing,
+prev rebuild, end screen and exit, loop both ways, number + Enter, black/
+white, goto clamps, with/after chains as one click, hidden slides,
+auto-advance timing, click switch, elapsed format, channel message
+validation), `keymap.test.ts` (the show key table and preventDefault);
+e2e `web/e2e/slides-show.spec.ts` sets a push transition (applied to
+all) and three effects in the Motion panel (fade on click, fly in from
+left after previous, spin on the next click), reorders in the pane,
+checks the saved model, presents from the beginning (3 of 4 slides: one
+hidden), checks entrances hidden before the click and the after-previous
+delay, steps with →/N/Space, B, End/Home, 2 + Enter and P, draws and
+erases pen ink, shows the laser, opens the presenter window (counter,
+notes, timer, next slide; Next and ←/→ there drive the show), ends with
+Esc (the window closes) and checks the single-window presenter view.
+`GROWN_SLIDES_M8_SHOT=<prefix>` saves the animation pane, a transition,
+ink and the presenter window.
+
+**Ported (now passing):** `shortcuts.js#Check actions with catch events`
+(was `it.skip`): the slideshow half through the key map and the reducer
+on 12 slides — Right/Down/Space/Enter/PgDn, Left/Up/PgUp, Home, End,
+5/8/1 0 + Enter, Enter alone, Esc. The editor half (Ctrl+P print,
+Shift+F10 context menu) stays M13; Ctrl+K is covered since M4.
+
+**Gaps.** Internal slide links in the show were already honoured (M4);
+there is no "Set up slide show" dialog (kiosk mode, show a range,
+custom shows), no rehearse timings/recording, no highlighter or
+per-colour pens, ink is not kept, and the presenter window has no
+thumbnails strip or zoom. The presenter window shows the next *slide*,
+not the next animation step. BroadcastChannel needs both windows on the
+same origin and browser profile.
+
