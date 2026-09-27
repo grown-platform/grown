@@ -14,6 +14,7 @@ import {
   Button,
   Input,
   Stack,
+  LinearProgress,
 } from "@mui/joy";
 import RadioIcon from "@mui/icons-material/Radio";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
@@ -22,27 +23,31 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import AlbumIcon from "@mui/icons-material/Album";
 import AddIcon from "@mui/icons-material/Add";
 import {
-  listStations,
+  listRadio,
   playStation,
   setStationRetention,
   createStation,
 } from "./api";
-import type { Station, RetentionMode } from "./types";
+import type { Station, RetentionMode, RadioCache } from "./types";
 import { usePlayer } from "./player";
+import {
+  retentionLabel,
+  cacheUsageLabel,
+  cacheUsageHint,
+  cacheUsageFraction,
+} from "./radioCache";
 
-/** retentionLabel renders a station's retention policy as a short phrase. */
-function retentionLabel(s: Station): string {
-  if (s.retention_mode === "days") return `Erase after ${s.retention_days}d`;
-  return "Keep forever";
-}
-
-const RETENTION_OPTIONS: { label: string; mode: RetentionMode; days: number }[] =
-  [
-    { label: "Keep forever", mode: "keep", days: 0 },
-    { label: "Erase after 7 days", mode: "days", days: 7 },
-    { label: "Erase after 30 days", mode: "days", days: 30 },
-    { label: "Erase after 90 days", mode: "days", days: 90 },
-  ];
+const RETENTION_OPTIONS: {
+  label: string;
+  mode: RetentionMode;
+  days: number;
+}[] = [
+  { label: "Keep until cache is full", mode: "keep", days: 0 },
+  { label: "Erase after 7 days", mode: "days", days: 7 },
+  { label: "Erase after 14 days", mode: "days", days: 14 },
+  { label: "Erase after 30 days", mode: "days", days: 30 },
+  { label: "Erase after 90 days", mode: "days", days: 90 },
+];
 
 interface RadioStationsProps {
   query: string;
@@ -52,6 +57,7 @@ export function RadioStations({ query }: RadioStationsProps) {
   const player = usePlayer();
   const [stations, setStations] = useState<Station[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cache, setCache] = useState<RadioCache | null>(null);
 
   // Add-station form.
   const [showAdd, setShowAdd] = useState(false);
@@ -62,7 +68,9 @@ export function RadioStations({ query }: RadioStationsProps) {
 
   async function reload() {
     try {
-      setStations(await listStations());
+      const r = await listRadio();
+      setStations(r.stations);
+      setCache(r.cache);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -240,6 +248,26 @@ export function RadioStations({ query }: RadioStationsProps) {
         Tune in to a station — songs are cached to the station's album in your
         library as they play.
       </Typography>
+      {cache && (
+        <Tooltip title={cacheUsageHint(cache)} placement="bottom-start">
+          <Box data-testid="radio-cache-usage" sx={{ mb: 1, maxWidth: 360 }}>
+            <Typography level="body-xs" sx={{ opacity: 0.8 }}>
+              {cacheUsageLabel(cache)}
+            </Typography>
+            {cacheUsageFraction(cache) !== null && (
+              <LinearProgress
+                determinate
+                size="sm"
+                value={(cacheUsageFraction(cache) ?? 0) * 100}
+                color={
+                  (cacheUsageFraction(cache) ?? 0) > 0.9 ? "warning" : "primary"
+                }
+                sx={{ mt: 0.5 }}
+              />
+            )}
+          </Box>
+        </Tooltip>
+      )}
       <Sheet variant="outlined" sx={{ borderRadius: "md", p: 0.5 }}>
         {shown.map((s) => {
           const active = player.radioStation?.id === s.id;
