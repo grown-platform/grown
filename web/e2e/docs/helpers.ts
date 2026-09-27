@@ -22,8 +22,14 @@ export async function runCommand(page: Page, label: string) {
 export async function openDoc(page: Page, id: string) {
   await page.goto(`${BASE_URL}/docs/d/${id}`);
   await expect(page.locator(".ProseMirror")).toBeVisible();
-  // Give the collab provider a moment to connect before editing.
-  await page.waitForTimeout(1500);
+  // Wait for the collab socket, then let the hub's history replay land before
+  // editing. (The Grown hub replays updates rather than answering the y-protocol
+  // sync handshake, so the provider's `synced` flag never flips; "connected"
+  // plus a short settle is the reliable signal.)
+  await expect(page.getByTestId("collab-status")).toHaveText("connected", {
+    timeout: 15_000,
+  });
+  await page.waitForTimeout(750);
 }
 
 /** typeInto clicks into the document body and types text at the caret. */

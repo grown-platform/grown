@@ -54,7 +54,7 @@ export function Presence({ provider }: PresenceProps) {
 
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-      <Chip size="sm" variant="soft" color={color}>
+      <Chip size="sm" variant="soft" color={color} data-testid="collab-status">
         {status}
       </Chip>
       <AvatarGroup size="sm">

@@ -979,3 +979,15 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | api-paragraph: SetShd / SetColor theme colours | Theme colours | No document theme | n/a |
 | api-paragraph: ParaId | `w14:paraId` | No equivalent identity | n/a |
 
+
+### Known flaky e2e (as of 2026-09-26)
+
+- `web/e2e/docs/oo-shortcuts.spec.ts` "Check sending event to interface" fails
+  about 1 run in 3 on a production build: after Ctrl+K and accepting the prompt,
+  the selected text has no link. Possible causes are a race between the collab
+  replay and the link mark, or prompt/keypress timing. Needs a look before the
+  link work in M8.
+- Related: Grown's docs collab hub replays updates but never answers the
+  y-protocol sync handshake, so `WebsocketProvider.synced` never becomes true.
+  Nothing in the app reads it today. e2e waits for "connected" plus a short
+  settle instead.
