@@ -383,7 +383,7 @@ export function renderSlideText(el: SlideElement, links?: TextLinkOpts): React.R
   const body = laid.map((p, i) => {
     const last = p.runs[p.runs.length - 1];
     return (
-      <div key={i} data-para="" style={paraCss(el, p.props, i === 0, !!p.marker) as React.CSSProperties}>
+      <div key={i} data-para="" style={paraCss(el, p.props, !!p.marker) as React.CSSProperties}>
         {p.marker && (
           <span data-marker="" style={markerCss(el, p) as React.CSSProperties}>
             {p.marker}

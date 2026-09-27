@@ -21,6 +21,12 @@ import {
   type Slide,
   type SlideElement,
   type TransitionType,
+  type ParaProps,
+  type RunStyle,
+  type TextAlign,
+  type TextInsets,
+  type TextRun,
+  DEFAULT_INSET,
 } from "../model";
 import {
   readColorMods,
@@ -29,6 +35,8 @@ import {
   type ColorSpec,
 } from "../../../lib/colorMods";
 import { getUrlType } from "../../../lib/urlType";
+import { withRuns } from "../textOps";
+import { fromPpAction } from "../links";
 import { hasPreset } from "../presetGeometry";
 import { isConnectorPreset } from "../presetDefs";
 
@@ -497,6 +505,8 @@ interface PartCtx {
   pkg: Pkg;
   part: string;
   color: ColorCtx;
+  /** Slide part path → Grown slide id (slide-jump hyperlinks). */
+  slideIds?: Map<string, string>;
 }
 
 /** The inheritance chain used to resolve text/paragraph properties. */
@@ -528,18 +538,20 @@ function firstKid(els: (Element | null)[], name: string): Element | null {
   return null;
 }
 
-function paraText(p: Element): string {
+/** A paragraph's text; `a:br` becomes `br` ("\n" for notes and table
+ *  cells, "\v" — a line break inside the paragraph — for text boxes). */
+function paraText(p: Element, br = "\n"): string {
   let s = "";
   for (const c of Array.from(p.children)) {
     if (c.localName === "r" || c.localName === "fld")
       s += kid(c, "t")?.textContent ?? "";
-    else if (c.localName === "br") s += "\n";
+    else if (c.localName === "br") s += br;
   }
   return s;
 }
 
 function txBodyText(txBody: Element | null): string {
-  return kids(txBody, "p").map(paraText).join("\n");
+  return kids(txBody, "p").map((p) => paraText(p)).join("\n");
 }
 
 /**
@@ -560,8 +572,37 @@ async function linkFor(
   return t === "http" || t === "email" ? rel.target : undefined;
 }
 
+/**
+ * A text hyperlink (`a:hlinkClick`): an external web/mail target, or a
+ * slide jump (`ppaction://hlinkshowjump?jump=…`, or `hlinksldjump` to the
+ * slide its relationship names) as a Grown `#slide:` link.
+ */
+async function hlinkFor(h: Element | null, pc: PartCtx): Promise<string | undefined> {
+  if (!h) return undefined;
+  const action = h.getAttribute("action");
+  if (action && /^ppaction:/i.test(action)) {
+    let target: string | undefined;
+    if (/hlinksldjump/i.test(action)) {
+      const rel = (await pc.pkg.relsOf(pc.part)).get(rid(h, "id") || "");
+      if (rel && !rel.external) target = pc.slideIds?.get(rel.target);
+    }
+    return fromPpAction(action, target) ?? undefined;
+  }
+  return linkFor(rid(h, "id"), pc);
+}
+
 interface TextProps {
   text: string;
+  runs?: TextRun[];
+  paras?: ParaProps[];
+  baseline?: "super" | "sub";
+  bulletStyle?: string;
+  spaceBefore?: number;
+  spaceAfter?: number;
+  insets?: TextInsets;
+  autofit?: "shrink";
+  rtl?: boolean;
+  vert?: "vert" | "vert270";
   fontSize: number;
   fontFamily?: string;
   bold?: boolean;
@@ -569,12 +610,14 @@ interface TextProps {
   underline?: boolean;
   strike?: boolean;
   color?: string;
-  align?: "left" | "center" | "right";
+  align?: TextAlign;
   valign?: "top" | "middle" | "bottom";
   list?: "bullet" | "number";
   lineSpacing?: number;
   url?: string;
 }
+
+const ALGN: Record<string, TextAlign> = { ctr: "center", r: "right", just: "justify", dist: "justify" };
 
 async function readText(
   txBody: Element,
@@ -583,82 +626,188 @@ async function readText(
   scale: number,
 ): Promise<TextProps | null> {
   const paras = kids(txBody, "p");
-  const text = paras.map(paraText).join("\n");
-  if (!text.trim()) return null;
-  // Element-wide style comes from the first paragraph with text, and its first run.
-  const p = paras.find((q) => paraText(q).trim()) ?? paras[0];
-  const pPr = kid(p, "pPr");
-  const lvl = (num(pPr, "lvl") ?? 0) + 1;
+  const text = paras.map((q) => paraText(q, "\v")).join("\n");
+  if (!text.replace(/\v/g, "").trim()) return null;
   const shapeList = kid(txBody, "lstStyle");
-  const lvlPPrs = [
-    pPr,
-    ...[shapeList, ...chain.lists].map((l) => lvlPPr(l, lvl)),
-  ];
-  const run = Array.from(p.children).find(
-    (c) =>
-      (c.localName === "r" || c.localName === "fld") &&
-      (kid(c, "t")?.textContent ?? "") !== "",
-  );
-  const rPrs = [kid(run, "rPr"), ...lvlPPrs.map((e) => kid(e, "defRPr"))];
-
-  const sz = Number(firstAttr(rPrs, "sz") ?? 1800);
   const fontScale =
     (num(path(txBody, "bodyPr", "normAutofit"), "fontScale") ?? 100000) /
     100000;
-  const fontSize = r2((sz / 100) * EMU_PER_PT * scale * fontScale);
 
-  let fontFamily =
-    firstKid(rPrs, "latin")?.getAttribute("typeface") || undefined;
-  if (fontFamily === "+mj-lt") fontFamily = pc.color.theme.majorFont;
-  else if (fontFamily === "+mn-lt") fontFamily = pc.color.theme.minorFont;
+  /** The pPr chain of a paragraph (its own, then the list styles at its level). */
+  const pPrChain = (p: Element) => {
+    const pPr = kid(p, "pPr");
+    const lvl = (num(pPr, "lvl") ?? 0) + 1;
+    return [pPr, ...[shapeList, ...chain.lists].map((l) => lvlPPr(l, lvl))];
+  };
+  /** Full effective character style of a run (or `a:br`/endParaRPr). */
+  const runStyle = async (run: Element | null, lvlPPrs: (Element | null)[]): Promise<RunStyle> => {
+    const rPr = kid(run, "rPr") ?? (run?.localName === "endParaRPr" ? run : null);
+    const rPrs = [rPr, ...lvlPPrs.map((e) => kid(e, "defRPr"))];
+    const sz = Number(firstAttr(rPrs, "sz") ?? 1800);
+    let fontFamily = firstKid(rPrs, "latin")?.getAttribute("typeface") || undefined;
+    if (fontFamily === "+mj-lt") fontFamily = pc.color.theme.majorFont;
+    else if (fontFamily === "+mn-lt") fontFamily = pc.color.theme.minorFont;
+    const url = await hlinkFor(kid(rPr, "hlinkClick"), pc);
+    const u = firstAttr(rPrs, "u");
+    const strike = firstAttr(rPrs, "strike");
+    const bl = Number(firstAttr(rPrs, "baseline") ?? 0);
+    // Run → paragraph → shape → layout/master placeholder, then the shape
+    // style's fontRef, then the master text styles and presentation defaults.
+    const colorFill = firstKid(rPrs.slice(0, 5), "solidFill");
+    const fallbackFill = firstKid(rPrs.slice(5), "solidFill");
+    const b = firstAttr(rPrs, "b");
+    const i = firstAttr(rPrs, "i");
+    const st: RunStyle = {
+      fontSize: r2((sz / 100) * EMU_PER_PT * scale * fontScale),
+      bold: b === "1" || b === "true",
+      italic: i === "1" || i === "true",
+      // A linked run is underlined by PowerPoint's hyperlink style; don't bake that in.
+      underline: !url && !!u && u !== "none",
+      strike: !!strike && strike !== "noStrike",
+      color:
+        readColor(colorFill, pc.color) ??
+        readColor(chain.fontRef, pc.color) ??
+        readColor(fallbackFill, pc.color) ??
+        "#000000",
+    };
+    if (fontFamily) st.fontFamily = fontFamily;
+    if (bl > 0) st.baseline = "super";
+    else if (bl < 0) st.baseline = "sub";
+    if (url) st.url = url;
+    return st;
+  };
 
-  const rPr = kid(run, "rPr");
-  const hlink = kid(rPr, "hlinkClick");
-  const url = await linkFor(rid(hlink, "id"), pc);
-
-  const u = firstAttr(rPrs, "u");
-  const strike = firstAttr(rPrs, "strike");
-  // Run → paragraph → shape → layout/master placeholder, then the shape
-  // style's fontRef, then the master text styles and presentation defaults.
-  const colorFill = firstKid(rPrs.slice(0, 5), "solidFill");
-  const fallbackFill = firstKid(rPrs.slice(5), "solidFill");
+  // Element-wide style comes from the first paragraph with text, and its first run.
+  const p0 = paras.find((q) => paraText(q).trim()) ?? paras[0];
+  const lvlPPrs = pPrChain(p0);
+  const run0 =
+    Array.from(p0.children).find(
+      (c) =>
+        (c.localName === "r" || c.localName === "fld") &&
+        (kid(c, "t")?.textContent ?? "") !== "",
+    ) ?? null;
+  const base = await runStyle(run0, lvlPPrs);
   const algn = firstAttr(lvlPPrs, "algn");
+  const align: TextAlign = ALGN[algn ?? ""] ?? "left";
   const anchor = firstAttr(chain.bodyPrs, "anchor");
   const lnSpcPct = num(path(firstKid(lvlPPrs, "lnSpc"), "spcPct"), "val");
+  const spc = (name: string) => {
+    const pts = num(path(firstKid(lvlPPrs, name), "spcPts"), "val");
+    return pts ? r2((pts / 100) * EMU_PER_PT * scale) : undefined;
+  };
 
   // Bullets: the first level in the chain that says anything about them decides.
   let list: TextProps["list"];
+  let bulletStyle: string | undefined;
   for (const e of lvlPPrs) {
     if (!e) continue;
     if (kid(e, "buNone")) break;
-    if (kid(e, "buAutoNum")) {
+    const auto = kid(e, "buAutoNum");
+    if (auto) {
       list = "number";
+      const t = auto.getAttribute("type") || "arabicPeriod";
+      if (t !== "arabicPeriod") bulletStyle = t;
       break;
     }
-    if (kid(e, "buChar") || kid(e, "buBlip")) {
+    const ch = kid(e, "buChar");
+    if (ch || kid(e, "buBlip")) {
       list = "bullet";
+      const c = ch?.getAttribute("char");
+      if (c && c !== "•") bulletStyle = c;
       break;
     }
   }
 
+  // Runs and paragraphs (F1): every run's effective style, normalised
+  // against the element style by withRuns.
+  const runs: TextRun[] = [];
+  const paraProps: ParaProps[] = [];
+  for (let pi = 0; pi < paras.length; pi++) {
+    const p = paras[pi];
+    const chainP = pPrChain(p);
+    const pPr = kid(p, "pPr");
+    const props: ParaProps = {};
+    const lvl = num(pPr, "lvl") ?? 0;
+    if (lvl) props.level = Math.min(8, lvl);
+    const pa = ALGN[firstAttr(chainP, "algn") ?? ""] ?? "left";
+    if (pa !== align) props.align = pa;
+    paraProps.push(props);
+    let last: RunStyle = base;
+    for (const c of Array.from(p.children)) {
+      if (c.localName === "r" || c.localName === "fld") {
+        const t = kid(c, "t")?.textContent ?? "";
+        if (!t) continue;
+        last = await runStyle(c, chainP);
+        runs.push({ ...last, text: t });
+      } else if (c.localName === "br") runs.push({ ...last, text: "\v" });
+    }
+    if (pi < paras.length - 1) runs.push({ ...last, text: "\n" });
+  }
+
+  // Body: insets (spec defaults 0.1 in / 0.05 in), autofit, vertical text.
+  const bodyPr = chain.bodyPrs;
+  const ins = (a: string, def: number) => r2((num(bodyPr.find((b) => b?.hasAttribute(a)) ?? null, a) ?? def) * scale);
+  const insets: TextInsets = { l: ins("lIns", 91440), t: ins("tIns", 45720), r: ins("rIns", 91440), b: ins("bIns", 45720) };
+  const vertAttr = firstAttr(bodyPr, "vert");
+  const vert = vertAttr === "vert" || vertAttr === "eaVert" ? "vert" : vertAttr === "vert270" ? "vert270" : undefined;
+  const autofit = bodyPr.some((b) => kid(b, "normAutofit")) && !kid(bodyPr[0], "noAutofit") ? "shrink" : undefined;
+
+  const shaped = withRuns(
+    {
+      id: "",
+      type: "text",
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+      text,
+      fontSize: base.fontSize,
+      ...(base.fontFamily ? { fontFamily: base.fontFamily } : {}),
+      ...(base.bold ? { bold: true } : {}),
+      ...(base.italic ? { italic: true } : {}),
+      ...(base.underline ? { underline: true } : {}),
+      ...(base.strike ? { strike: true } : {}),
+      ...(base.baseline ? { baseline: base.baseline } : {}),
+      ...(base.color ? { color: base.color } : {}),
+    },
+    runs,
+    paraProps,
+  );
+  // One link over the whole text is the element's link.
+  let url: string | undefined;
+  let outRuns = shaped.runs;
+  const linked = outRuns?.filter((r) => r.text.replace(/[\n\v]/g, ""));
+  if (outRuns && linked?.length && linked.every((r) => r.url && r.url === linked[0].url)) {
+    url = linked[0].url;
+    const reshaped = withRuns({ ...shaped, runs: undefined }, outRuns.map((r) => ({ ...r, url: undefined })), shaped.paras);
+    outRuns = reshaped.runs;
+    Object.assign(shaped, reshaped);
+  }
+
   const out: TextProps = {
-    text,
-    fontSize,
-    fontFamily,
-    bold: firstAttr(rPrs, "b") === "1" || firstAttr(rPrs, "b") === "true",
-    italic: firstAttr(rPrs, "i") === "1" || firstAttr(rPrs, "i") === "true",
-    // A linked run is underlined by PowerPoint's hyperlink style; don't bake that in.
-    underline: !url && !!u && u !== "none",
-    strike: !!strike && strike !== "noStrike",
-    color:
-      readColor(colorFill, pc.color) ??
-      readColor(chain.fontRef, pc.color) ??
-      readColor(fallbackFill, pc.color),
-    align: algn === "ctr" ? "center" : algn === "r" ? "right" : "left",
+    text: shaped.text || "",
+    fontSize: shaped.fontSize ?? base.fontSize!,
+    fontFamily: shaped.fontFamily,
+    bold: shaped.bold,
+    italic: shaped.italic,
+    underline: shaped.underline,
+    strike: shaped.strike,
+    baseline: shaped.baseline,
+    color: shaped.color,
+    align,
     valign: anchor === "ctr" ? "middle" : anchor === "b" ? "bottom" : "top",
     list,
+    bulletStyle,
     lineSpacing: lnSpcPct !== undefined ? r2(lnSpcPct / 100000) : undefined,
+    spaceBefore: spc("spcBef"),
+    spaceAfter: spc("spcAft"),
     url,
+    runs: outRuns,
+    paras: shaped.paras,
+    insets: Object.values(insets).every((v) => Math.abs(v - DEFAULT_INSET) < 0.01) ? undefined : insets,
+    autofit,
+    rtl: firstAttr(lvlPPrs, "rtl") === "1" || undefined,
+    vert,
   };
   return out;
 }
@@ -1017,11 +1166,21 @@ async function readSp(
     ...(t.italic ? { italic: true } : {}),
     ...(t.underline ? { underline: true } : {}),
     ...(t.strike ? { strike: true } : {}),
+    ...(t.baseline ? { baseline: t.baseline } : {}),
     color: t.color ?? "#000000",
     align: t.align,
     valign: t.valign,
     ...(t.list ? { list: t.list } : {}),
+    ...(t.bulletStyle ? { bulletStyle: t.bulletStyle } : {}),
     ...(t.lineSpacing !== undefined ? { lineSpacing: t.lineSpacing } : {}),
+    ...(t.spaceBefore ? { spaceBefore: t.spaceBefore } : {}),
+    ...(t.spaceAfter ? { spaceAfter: t.spaceAfter } : {}),
+    ...(t.runs ? { runs: t.runs } : {}),
+    ...(t.paras ? { paras: t.paras } : {}),
+    ...(t.insets ? { insets: t.insets } : {}),
+    ...(t.autofit ? { autofit: t.autofit } : {}),
+    ...(t.rtl ? { rtl: true } : {}),
+    ...(t.vert ? { vert: t.vert } : {}),
     ...((t.url ?? (visible ? undefined : shapeUrl))
       ? { url: t.url ?? shapeUrl }
       : {}),
@@ -1318,6 +1477,8 @@ export async function readPptx(
     .map((s) => presRels.get(rid(s, "id") || "")?.target)
     .filter((p): p is string => !!p);
 
+  // Ids up front, so slide-jump links can name slides not yet read.
+  const slideIds = new Map(slidePaths.map((p) => [p, uid()]));
   const slides: Slide[] = [];
   for (const slidePath of slidePaths) {
     const sld = await pkg.xml(slidePath);
@@ -1344,9 +1505,9 @@ export async function readPptx(
     const slideCSld = kid(sld.documentElement, "cSld");
     const layoutCSld = layout ? kid(layout.documentElement, "cSld") : null;
     const masterCSld = master ? kid(master.documentElement, "cSld") : null;
-    const pcSlide: PartCtx = { pkg, part: slidePath, color };
-    const pcLayout: PartCtx = { pkg, part: layoutPath || "", color };
-    const pcMaster: PartCtx = { pkg, part: masterPath || "", color };
+    const pcSlide: PartCtx = { pkg, part: slidePath, color, slideIds };
+    const pcLayout: PartCtx = { pkg, part: layoutPath || "", color, slideIds };
+    const pcMaster: PartCtx = { pkg, part: masterPath || "", color, slideIds };
     const sc: SlideCtx = {
       pc: pcSlide,
       scale,
@@ -1390,7 +1551,7 @@ export async function readPptx(
 
     const transition = mapTransition(findTransition(sld.documentElement));
     const slide: Slide = {
-      id: uid(),
+      id: slideIds.get(slidePath) ?? uid(),
       background: bg.color ?? "#ffffff",
       elements,
       ...(notes ? { notes } : {}),

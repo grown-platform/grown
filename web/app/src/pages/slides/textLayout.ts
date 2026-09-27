@@ -43,13 +43,13 @@ export function runCss(el: SlideElement, r: TextRun): Css {
 }
 
 /** CSS for a paragraph block. */
-export function paraCss(el: SlideElement, p: ParaProps, first: boolean, marker: boolean): Css {
+export function paraCss(el: SlideElement, p: ParaProps, marker: boolean): Css {
   const css: Css = {
     textAlign: p.align ?? el.align ?? "left",
     paddingInlineStart: paraIndent(el, p),
   };
   if (marker) css.textIndent = -INDENT_STEP;
-  if (el.spaceBefore && !first) css.marginTop = el.spaceBefore;
+  if (el.spaceBefore) css.marginTop = el.spaceBefore;
   if (el.spaceAfter) css.marginBottom = el.spaceAfter;
   return css;
 }
@@ -90,7 +90,7 @@ function esc(s: string): string {
 export function textBodyHtml(el: SlideElement, slideHref?: (url: string) => string | null): string {
   const laid = layoutParagraphs(el);
   return laid
-    .map((p, i) => {
+    .map((p) => {
       const inner = p.runs
         .map((r) => {
           const t = r.text.split("\v").map(esc).join("<br/>");
@@ -102,7 +102,7 @@ export function textBodyHtml(el: SlideElement, slideHref?: (url: string) => stri
         .join("");
       const trail = !p.runs.length || /\v$/.test(p.runs[p.runs.length - 1].text) ? "<br/>" : "";
       const marker = p.marker ? `<span style="${cssText(markerCss(el, p))}">${esc(p.marker)}</span>` : "";
-      return `<div style="${cssText(paraCss(el, p.props, i === 0, !!p.marker))}">${marker}${inner}${trail}</div>`;
+      return `<div style="${cssText(paraCss(el, p.props, !!p.marker))}">${marker}${inner}${trail}</div>`;
     })
     .join("");
 }

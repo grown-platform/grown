@@ -38,13 +38,13 @@ export function buildEditorDom(root: HTMLElement, el: SlideElement): void {
   const doc = root.ownerDocument;
   while (root.firstChild) root.removeChild(root.firstChild);
   const laid = layoutParagraphs(el);
-  laid.forEach((p, i) => {
+  laid.forEach((p) => {
     const div = doc.createElement("div");
     div.setAttribute("data-para", "");
     if (p.props.level) div.setAttribute("data-level", String(p.props.level));
     if (p.props.align) div.setAttribute("data-align", p.props.align);
     if (p.marker) div.setAttribute("data-marker", p.marker);
-    applyCss(div, paraCss(el, p.props, i === 0, !!p.marker));
+    applyCss(div, paraCss(el, p.props, !!p.marker));
     for (const r of p.runs) {
       const span = doc.createElement("span");
       span.setAttribute("data-run", "");
