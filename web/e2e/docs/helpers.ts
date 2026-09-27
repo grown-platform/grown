@@ -23,9 +23,8 @@ export async function openDoc(page: Page, id: string) {
   await page.goto(`${BASE_URL}/docs/d/${id}`);
   await expect(page.locator(".ProseMirror")).toBeVisible();
   // Wait for the collab socket, then let the hub's history replay land before
-  // editing. (The Grown hub replays updates rather than answering the y-protocol
-  // sync handshake, so the provider's `synced` flag never flips; "connected"
-  // plus a short settle is the reliable signal.)
+  // editing. (The app does not surface the provider's `synced` flag, so
+  // "connected" plus a short settle is the signal.)
   await expect(page.getByTestId("collab-status")).toHaveText("connected", {
     timeout: 15_000,
   });

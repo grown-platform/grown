@@ -132,6 +132,33 @@ func (p *peer) enqueue(msg []byte) {
 	}
 }
 
+// syncDone is a syncStep2 carrying an empty Yjs update (no structs, empty
+// delete set): the hub's answer to a client's syncStep1. The client already has
+// everything the hub knows (replay precedes it on the socket), and receiving a
+// syncStep2 is what flips y-websocket's provider.synced.
+var syncDone = []byte{messageSync, syncStep2, 2, 0, 0}
+
+// reply returns the messages the hub itself sends back to the sender of msg:
+//   - syncDone for a syncStep1;
+//   - the sender's own awareness update, echoed as the reference y-websocket
+//     server does. A lone client otherwise receives nothing after the replay,
+//     and y-websocket drops and reopens any socket silent for 30 s.
+func reply(msg []byte) []byte {
+	mt, n := binary.Uvarint(msg)
+	if n <= 0 {
+		return nil
+	}
+	switch mt {
+	case messageAwareness:
+		return msg
+	case messageSync:
+		if st, n2 := binary.Uvarint(msg[n:]); n2 > 0 && st == syncStep1 {
+			return syncDone
+		}
+	}
+	return nil
+}
+
 // route relays a single inbound message from `from` to the rest of the room and
 // persists it if it carries document data.
 func (h *Hub) route(ctx context.Context, docID string, r *room, from *peer, msg []byte) {
@@ -144,14 +171,18 @@ func (h *Hub) route(ctx context.Context, docID string, r *room, from *peer, msg 
 }
 
 // replay sends the document's stored data updates to a freshly joined peer so it
-// converges even when no other peer is connected.
-func (h *Hub) replay(ctx context.Context, docID string, p *peer) error {
+// converges even when no other peer is connected. It writes through send
+// (the socket) rather than the peer's bounded outbound queue: the log holds
+// one entry per edit, far more than the queue, and enqueue drops on overflow.
+func (h *Hub) replay(ctx context.Context, docID string, send func([]byte) error) error {
 	updates, err := h.store.Updates(ctx, docID)
 	if err != nil {
 		return err
 	}
 	for _, u := range updates {
-		p.enqueue(u)
+		if err := send(u); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -186,13 +217,29 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, docID string, canWri
 	defer c.CloseNow()
 	c.SetReadLimit(readLimit)
 
-	ctx := r.Context()
+	// The request context of a hijacked connection is not cancelled when the
+	// client goes away, only when this handler returns, so the writer stops on
+	// this derived context, cancelled once the reader sees the socket close.
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
 	self := &peer{out: make(chan []byte, 256)}
 	room := h.addPeer(docID, self)
 	defer h.removePeer(docID, room, self)
 
-	if err := h.replay(ctx, docID, self); err != nil {
+	write := func(msg []byte) error {
+		wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		return c.Write(wctx, websocket.MessageBinary, msg)
+	}
+
+	// Replay before the writer starts. Messages relayed from other peers in
+	// the meantime queue on self.out and follow (Yjs updates commute).
+	if err := h.replay(ctx, docID, write); err != nil {
 		slog.Error("docs: replay", "doc", docID, "err", err)
+		// A partial replay would leave the client with a silently incomplete
+		// document; close so y-websocket reconnects and replays again.
+		c.Close(websocket.StatusInternalError, "replay failed")
+		return
 	}
 
 	// Writer: drain the outbound queue to the socket.
@@ -204,10 +251,7 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, docID string, canWri
 			case <-ctx.Done():
 				return
 			case msg := <-self.out:
-				wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-				err := c.Write(wctx, websocket.MessageBinary, msg)
-				cancel()
-				if err != nil {
+				if write(msg) != nil {
 					return
 				}
 			}
@@ -229,6 +273,10 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, docID string, canWri
 			continue
 		}
 		h.route(ctx, docID, room, self, data)
+		if back := reply(data); back != nil {
+			self.enqueue(back)
+		}
 	}
+	cancel()
 	<-writerDone
 }

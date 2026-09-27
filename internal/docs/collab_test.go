@@ -146,11 +146,11 @@ func TestReplay_SendsStoredUpdatesToNewPeer(t *testing.T) {
 	_ = store.AppendUpdate(ctx, "doc1", syncMsg(syncUpdate, []byte{0x02}))
 	h := NewHub(store)
 
-	p := &peer{out: make(chan []byte, 8)}
-	if err := h.replay(ctx, "doc1", p); err != nil {
+	var got [][]byte
+	send := func(m []byte) error { got = append(got, m); return nil }
+	if err := h.replay(ctx, "doc1", send); err != nil {
 		t.Fatalf("replay: %v", err)
 	}
-	got := drain(p)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 replayed updates, got %d", len(got))
 	}
