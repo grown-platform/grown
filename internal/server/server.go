@@ -77,6 +77,7 @@ import (
 	"code.pick.haus/grown/grown/internal/tickets"
 	"code.pick.haus/grown/grown/internal/useravatar"
 	"code.pick.haus/grown/grown/internal/users"
+	"code.pick.haus/grown/grown/internal/versions"
 	"code.pick.haus/grown/grown/internal/video"
 	"code.pick.haus/grown/grown/internal/visits"
 	"code.pick.haus/grown/grown/internal/vpn"
@@ -427,6 +428,9 @@ func New(cfg Config) *Server {
 		grownv1.RegisterDocsServiceServer(grpcSrv, docsSvc)
 	}
 
+	// Version history for Sheets/Slides/Whiteboards (nil without a pool).
+	versionsW := newVersionsWiring(cfg)
+
 	var sheetsSvc *sheets.Service
 	var sheetsHub *sheets.Hub
 	if cfg.SheetsRepo != nil {
@@ -436,7 +440,7 @@ func New(cfg Config) *Server {
 			sheetsSvc = sheetsSvc.WithSharing(cfg.SharingRepo)
 		}
 		sheetsHub = sheets.NewHub()
-		grownv1.RegisterSheetsServiceServer(grpcSrv, sheetsSvc)
+		grownv1.RegisterSheetsServiceServer(grpcSrv, versionsW.sheetsServer(sheetsSvc))
 	}
 
 	var slidesSvc *slides.Service
@@ -455,7 +459,7 @@ func New(cfg Config) *Server {
 				return slidesDeckAccess(r, id, repo, grants)
 			})
 		}
-		grownv1.RegisterSlidesServiceServer(grpcSrv, slidesSvc)
+		grownv1.RegisterSlidesServiceServer(grpcSrv, versionsW.slidesServer(slidesSvc))
 	}
 
 	var contactsSvc *contacts.Service
@@ -473,7 +477,7 @@ func New(cfg Config) *Server {
 			whiteboardsSvc = whiteboardsSvc.WithSharing(cfg.SharingRepo)
 		}
 		whiteboardsHub = whiteboards.NewHub()
-		grownv1.RegisterWhiteboardsServiceServer(grpcSrv, whiteboardsSvc)
+		grownv1.RegisterWhiteboardsServiceServer(grpcSrv, versionsW.whiteboardsServer(whiteboardsSvc))
 	}
 
 	var calendarSvc *calendar.Service
@@ -802,16 +806,16 @@ func New(cfg Config) *Server {
 		_ = grownv1.RegisterDocsServiceHandlerServer(context.Background(), mux, docsSvc)
 	}
 	if sheetsSvc != nil {
-		_ = grownv1.RegisterSheetsServiceHandlerServer(context.Background(), mux, sheetsSvc)
+		_ = grownv1.RegisterSheetsServiceHandlerServer(context.Background(), mux, versionsW.sheetsServer(sheetsSvc))
 	}
 	if slidesSvc != nil {
-		_ = grownv1.RegisterSlidesServiceHandlerServer(context.Background(), mux, slidesSvc)
+		_ = grownv1.RegisterSlidesServiceHandlerServer(context.Background(), mux, versionsW.slidesServer(slidesSvc))
 	}
 	if contactsSvc != nil {
 		_ = grownv1.RegisterContactsServiceHandlerServer(context.Background(), mux, contactsSvc)
 	}
 	if whiteboardsSvc != nil {
-		_ = grownv1.RegisterWhiteboardsServiceHandlerServer(context.Background(), mux, whiteboardsSvc)
+		_ = grownv1.RegisterWhiteboardsServiceHandlerServer(context.Background(), mux, versionsW.whiteboardsServer(whiteboardsSvc))
 	}
 	if calendarSvc != nil {
 		_ = grownv1.RegisterCalendarServiceHandlerServer(context.Background(), mux, calendarSvc)
@@ -902,6 +906,7 @@ func New(cfg Config) *Server {
 			if sheetsHub != nil {
 				if id, ok := sheetsConnectID(r.URL.Path); ok {
 					serveSheetsWS(w, r, id, cfg.SheetsRepo, cfg.SharingRepo, sheetsHub)
+					versionsW.sessionEnded(r, versionsSheets, id)
 					return
 				}
 				if id, ok := sheetsRecalcID(r.URL.Path); ok {
@@ -916,6 +921,7 @@ func New(cfg Config) *Server {
 			if slidesHub != nil {
 				if id, ok := slidesConnectID(r.URL.Path); ok {
 					serveSlidesWS(w, r, id, cfg.SlidesRepo, cfg.SharingRepo, slidesHub)
+					versionsW.sessionEnded(r, versionsSlides, id)
 					return
 				}
 				if _, _, ok := slides.AssetPath(r.URL.Path); ok && slidesAssets != nil {
@@ -926,8 +932,13 @@ func New(cfg Config) *Server {
 			if whiteboardsHub != nil {
 				if id, ok := whiteboardsConnectID(r.URL.Path); ok {
 					serveWhiteboardsWS(w, r, id, cfg.WhiteboardsRepo, cfg.SharingRepo, whiteboardsHub)
+					versionsW.sessionEnded(r, versionsWhiteboards, id)
 					return
 				}
+			}
+			if versionsW != nil && versions.Match(r.URL.Path) {
+				versionsW.handler.ServeHTTP(w, r)
+				return
 			}
 			if chatHub != nil {
 				if id, ok := chatConnectID(r.URL.Path); ok {
