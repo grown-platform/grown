@@ -32,6 +32,7 @@ import { TableOfContents, TocEntry } from "./toc";
 import type * as Y from "yjs";
 import { ColumnBreak, SectionBreak } from "./pageLayout";
 import { Pagination } from "./paginationPlugin";
+import { M13_EXTENSIONS } from "./m13Extensions";
 import type { WebsocketProvider } from "y-websocket";
 import { ContentControls, SdtBlock, SdtInline } from "./sdt";
 import { DocProtection } from "./protection";
@@ -626,6 +627,8 @@ export function buildExtensions(opts: BuildOpts) {
     SectionBreak,
     ColumnBreak,
     Pagination,
+    // Spell check, language, view toggles, drop cap (M13).
+    ...M13_EXTENSIONS,
     // Content controls, forms and protection (M10).
     SdtInline,
     SdtBlock,

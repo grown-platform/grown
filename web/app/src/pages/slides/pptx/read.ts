@@ -16,6 +16,7 @@
 // fonts are kept as `themeRefs`, hidden slides stay hidden, and the
 // date/footer/slide-number placeholders become header & footer settings.
 
+import { resolveImportedFont } from "../../../lib/fonts";
 import { findTransitionEl, readTiming, readTransitionEl } from "./motionXml";
 import JSZip from "jszip";
 import { anchorImported, readCommentParts } from "./commentsXml";
@@ -730,6 +731,8 @@ async function readText(
     let fontFamily = firstKid(rPrs, "latin")?.getAttribute("typeface") || undefined;
     if (fontFamily === "+mj-lt") fontFamily = pc.color.theme.majorFont;
     else if (fontFamily === "+mn-lt") fontFamily = pc.color.theme.minorFont;
+    // Keep the name; Calibri & co. render with the bundled fallback (CC7).
+    if (fontFamily) fontFamily = resolveImportedFont(fontFamily) || undefined;
     const url = await hlinkFor(kid(rPr, "hlinkClick"), pc);
     const u = firstAttr(rPrs, "u");
     const strike = firstAttr(rPrs, "strike");

@@ -9,6 +9,7 @@
 // helpers keep one signature; importers of a pptx and the pptx writer read
 // the size from the deck itself.
 
+import { PICKER_FONTS } from "../../lib/fonts";
 import type { AxisConfig, ChartType, SeriesConfig } from "../sheets/chartData";
 import type { SlideComment } from "./comments";
 
@@ -696,15 +697,8 @@ export interface DeckDoc {
   comments?: SlideComment[];
 }
 
-export const FONT_FAMILIES = [
-  "Arial",
-  "Georgia",
-  "Times New Roman",
-  "Courier New",
-  "Verdana",
-  "Roboto",
-  "Inter",
-];
+/** The shared font list (lib/fonts, CC7). */
+export const FONT_FAMILIES = PICKER_FONTS;
 
 // uid generates a short unique id for slides/elements (browser-side; crypto when available).
 export function uid(): string {

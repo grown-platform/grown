@@ -34,7 +34,7 @@ research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/document-calculation/textShape
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/forms/complexForm.js,6,forms,mixed (2 vitest / 4 playwright),web/app/src/pages/docs/__tests__/oo/forms-complex.test.ts; web/e2e/docs/oo-forms.spec.ts,M10
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/forms/forms.js,7,forms,vitest,web/app/src/pages/docs/__tests__/oo/forms.test.ts,M10
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/image-smartart-placeholder/smartartImagePlaceholders.js,2,smartart,n/a (SmartArt engine-internal),,none
-research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-color.js,3,scripting-api,n/a (builder API; revisit with plugins),,M13
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-color.js,3,scripting-api,vitest (docs/api ApiColor),web/app/src/pages/docs/__tests__/oo/plugins-api.test.ts,M13
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-document-content.js,1,text-ops,vitest,web/app/src/pages/docs/__tests__/oo/api-text-ops.test.ts,M1
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-drawing.js,11,images,vitest,web/app/src/pages/docs/__tests__/oo/drawing-attrs.test.ts,M7
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/js-api/api-inline-level-sdt.js,2,content-controls,vitest,web/app/src/pages/docs/__tests__/oo/sdt-appearance.test.ts,M10
@@ -55,7 +55,7 @@ research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/merge-documents/mergeDocuments
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/numbering/numberingApplicator.js,4,numbering,vitest,web/app/src/pages/docs/__tests__/oo/numbering-apply.test.ts,M3
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/numbering/numberingAutocorrect.js,3,numbering,vitest,web/app/src/pages/docs/__tests__/oo/numbering-autocorrect.test.ts,M3
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/numbering/numberingCalculation.js,2,numbering,vitest,web/app/src/pages/docs/__tests__/oo/numbering-calc.test.ts,M3
-research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/plugins/pluginsApi.js,5,plugins,mixed (1 vitest current word/sentence in M2 / 4 n/a),web/app/src/pages/docs/__tests__/oo/text-selection-units.test.ts,M13
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/plugins/pluginsApi.js,5,plugins,vitest (current word/sentence in M2; add-in fields / field wrapper / restrictions via docs/api in M13),web/app/src/pages/docs/__tests__/oo/plugins-api.test.ts,M13
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/revisions/document-content.js,5,track-changes,vitest (3 in M5 / 2 need sdt from M10),web/app/src/pages/docs/__tests__/oo/revisions-document.test.ts,M5
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/revisions/paragraph.js,2,track-changes,vitest,web/app/src/pages/docs/__tests__/oo/revisions-paragraph.test.ts,M5
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/shortcuts/events.js,0,harness,n/a (key event helpers; write own),web/app/src/pages/docs/__tests__/keys.ts,M0

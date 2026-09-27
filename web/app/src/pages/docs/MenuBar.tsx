@@ -31,6 +31,11 @@ import { LayoutMenu } from "./LayoutMenu";
 import { FormsMenu } from "./FormsUI";
 import { openLayoutDialog } from "./LayoutDialogs";
 import { setDocSettings } from "./pageLayout";
+import { openInsertDialog, pickTextFromFile } from "./InsertDialogs";
+import { openProofingDialog } from "./SpellMenu";
+import { spellService } from "../../lib/spell/service";
+import { isNonPrinting, loadDarkDocument, toggleDarkDocument } from "./viewModes";
+import { openApiConsole, scriptingEnabled } from "./api/flag";
 
 const menuButtonSx = {
   fontWeight: 400,
@@ -303,7 +308,12 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             </MenuItem>
           )}
           <MenuItem disabled>Show ruler</MenuItem>
-          <MenuItem disabled>Show non-printing characters</MenuItem>
+          <MenuItem onClick={run((e) => e.chain().focus().toggleNonPrinting().run())} data-testid="view-nonprinting">
+            {editor && isNonPrinting(editor) ? "✓ " : ""}Show non-printing characters{kbd("Ctrl+Alt+Shift+8")}
+          </MenuItem>
+          <MenuItem onClick={() => toggleDarkDocument()} data-testid="view-dark-document">
+            {loadDarkDocument() ? "✓ " : ""}Dark document
+          </MenuItem>
           {actions.setDisplayMode && (
             <>
               <ListDivider />
@@ -368,6 +378,18 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem onClick={actions.emoji}>Emoji…</MenuItem>
           <MenuItem onClick={actions.specialChars}>
             Special characters…
+          </MenuItem>
+          <MenuItem onClick={() => openInsertDialog("symbol")} data-testid="insert-symbol">
+            Symbol…
+          </MenuItem>
+          <MenuItem onClick={() => openInsertDialog("datetime")} data-testid="insert-datetime">
+            Date and time…
+          </MenuItem>
+          <MenuItem onClick={() => openInsertDialog("dropcap")} data-testid="insert-dropcap">
+            Drop cap…
+          </MenuItem>
+          <MenuItem onClick={run((e) => pickTextFromFile(e))} data-testid="insert-text-from-file">
+            Text from file…
           </MenuItem>
           <MenuItem
             onClick={run((e) => e.chain().focus().setHorizontalRule().run())}
@@ -802,9 +824,20 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
       {top(
         "Tools",
         <>
-          <MenuItem disabled>Spelling and grammar</MenuItem>
+          <MenuItem onClick={() => openProofingDialog("spelling")} data-testid="tools-spelling">
+            Spelling and grammar{kbd("F7")}
+          </MenuItem>
+          <MenuItem onClick={run((e) => e.commands.setSpellcheck(!spellService().enabled))} data-testid="tools-spellcheck-toggle">
+            {spellService().enabled ? "✓ " : ""}Check spelling as you type
+          </MenuItem>
+          <MenuItem onClick={() => openProofingDialog("language")} data-testid="tools-language">
+            Language…
+          </MenuItem>
           <MenuItem onClick={actions.wordCount}>
             Word count{kbd("Ctrl+Shift+C")}
+          </MenuItem>
+          <MenuItem onClick={() => openInsertDialog("stats")} data-testid="tools-stats">
+            Document statistics…
           </MenuItem>
           <MenuItem disabled>Citations</MenuItem>
           <MenuItem onClick={() => openLayoutDialog("linenumbers")}>Line numbers…</MenuItem>
@@ -834,6 +867,11 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem disabled>Translate document</MenuItem>
           <MenuItem disabled>Voice typing (soon){kbd("Ctrl+Shift+S")}</MenuItem>
           <ListDivider />
+          {scriptingEnabled() && (
+            <MenuItem onClick={() => openApiConsole()} data-testid="tools-macros">
+              Macros and plugins…
+            </MenuItem>
+          )}
           <MenuItem disabled>Preferences</MenuItem>
           {actions.autoCorrect && (
             <MenuItem onClick={actions.autoCorrect}>AutoCorrect options…</MenuItem>
