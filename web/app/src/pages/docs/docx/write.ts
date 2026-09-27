@@ -47,6 +47,8 @@ export interface DocxWriteInput {
   margins?: Record<string, PMNode>;
   /** Final section and document settings (M9). */
   settings?: DocSettings;
+  /** Document proofing language (docDefaults w:lang, M13). */
+  lang?: string;
   comments?: DocxComment[];
   title?: string;
   page?: PageSetup | null;
@@ -377,7 +379,7 @@ class Writer {
       el("w:rFonts", { "w:ascii": "Arial", "w:hAnsi": "Arial", "w:cs": "Arial", "w:eastAsia": "Arial" }) +
       el("w:sz", { "w:val": 24 }) +
       el("w:szCs", { "w:val": 24 }) +
-      el("w:lang", { "w:val": "en-US" }) +
+      el("w:lang", { "w:val": this.input.lang || "en-US" }) +
       "</w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults>";
     return `${XML_DECL}<w:styles ${ROOT_NS}>${defaults}${body}${tableStyles}${this.tocStylesXml()}</w:styles>`;
   }

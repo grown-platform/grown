@@ -39,6 +39,7 @@ export function applyDocxImport(editor: Editor, imp: DocxImport): void {
       }
     }
     if (imp.section || imp.settings) settingsStore(editor).set({ ...(imp.settings ?? {}), ...(imp.section ? { section: imp.section } : {}) });
+    if (imp.lang) settingsStore(editor).map.set("lang", imp.lang);
   };
   if (ydoc) ydoc.transact(write);
   else write();
@@ -201,6 +202,7 @@ export function collectDocxInput(
     footer: margin("footer"),
     margins,
     settings,
+    lang: (settingsStore(editor).map.get("lang") as string | undefined) || undefined,
     comments: serverComments(threads),
     title: opts.title,
   };

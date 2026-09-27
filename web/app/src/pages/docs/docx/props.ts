@@ -289,6 +289,9 @@ export interface RunProps extends RunPr {
   rStyle?: string;
   vertAlign?: "sub" | "super";
   hidden?: boolean;
+  /** Proofing language (w:lang w:val, BCP 47) and w:noProof (M13). */
+  lang?: string;
+  noProof?: boolean;
 }
 
 /** readRPr maps a <w:rPr> to run props. Theme fonts resolve through
@@ -332,6 +335,9 @@ export function readRPr(rPr: Element | null | undefined, theme: ThemeFonts = {})
   if (va === "superscript") r.vertAlign = "super";
   else if (va === "subscript") r.vertAlign = "sub";
   if (onOff(kid(rPr, "vanish")) || onOff(kid(rPr, "webHidden"))) r.hidden = true;
+  const lang = attr(kid(rPr, "lang"), "w:val");
+  if (lang) r.lang = lang;
+  if (onOff(kid(rPr, "noProof"))) r.noProof = true;
   return r;
 }
 
@@ -362,6 +368,7 @@ export function runMarks(r: RunProps, charStyle?: string | null): Mark[] {
   if (Object.keys(ts).length) m.push({ type: "textStyle", attrs: ts });
   if (r.highlight) m.push({ type: "highlight", attrs: { color: r.highlight } });
   if (charStyle) m.push({ type: "charStyle", attrs: { styleId: charStyle } });
+  if (r.lang || r.noProof) m.push({ type: "lang", attrs: { lang: r.lang ?? null, noProof: !!r.noProof } });
   return m;
 }
 
@@ -389,6 +396,10 @@ export function marksRunProps(marks: readonly { type: { name: string } | string;
     else if (name === "code") r.fontFamily = "Courier New";
     else if (name === "highlight") r.highlight = (a.color as string) || "#ffff00";
     else if (name === "charStyle" && a.styleId) r.charStyle = String(a.styleId);
+    else if (name === "lang") {
+      if (a.lang) r.lang = String(a.lang);
+      if (a.noProof) r.noProof = true;
+    }
     else if (name === "textStyle") {
       if (a.color) r.color = String(a.color);
       if (a.fontFamily) r.fontFamily = String(a.fontFamily).split(",")[0].trim().replace(/^["']|["']$/g, "");
@@ -411,6 +422,7 @@ export function writeRPr(r: RunProps & { charStyle?: string }, extra = ""): stri
   if (r.allCaps) p.push(el("w:caps"));
   if (r.smallCaps) p.push(el("w:smallCaps"));
   if (r.strike !== undefined) p.push(r.strike ? el("w:strike") : el("w:strike", { "w:val": "0" }));
+  if (r.noProof) p.push(el("w:noProof"));
   const color = toHex(r.color);
   if (color) p.push(el("w:color", { "w:val": color }));
   if (r.fontSize) {
@@ -427,6 +439,7 @@ export function writeRPr(r: RunProps & { charStyle?: string }, extra = ""): stri
   if (r.underline !== undefined) p.push(el("w:u", { "w:val": r.underline ? "single" : "none" }));
   if (shd) p.push(shd);
   if (r.vertAlign) p.push(el("w:vertAlign", { "w:val": r.vertAlign === "super" ? "superscript" : "subscript" }));
+  if (r.lang) p.push(el("w:lang", { "w:val": r.lang }));
   if (extra) p.push(extra);
   return p.length ? el("w:rPr", {}, p.join("")) : "";
 }

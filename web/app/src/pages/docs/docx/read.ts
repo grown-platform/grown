@@ -1621,5 +1621,20 @@ export async function readDocx(data: ArrayBuffer | Uint8Array | Blob): Promise<D
   out.styles = r.buildStyles();
   out.numbering = r.buildNumbering();
   out.warnings = [...r.warnings].sort();
+  // Proofing language (M13): the default comes from docDefaults; run
+  // languages equal to it are Word's redundant w:lang and are dropped.
+  const docLang = r.docDefaults.rPr.lang;
+  if (docLang) out.lang = docLang;
+  stripDefaultLang(out.doc, docLang);
+  for (const m of Object.values(margins)) stripDefaultLang(m, docLang);
   return out;
+}
+
+function stripDefaultLang(json: JSONContent | null | undefined, lang: string | undefined) {
+  if (!json) return;
+  if (json.marks) {
+    json.marks = json.marks.filter((m) => m.type !== "lang" || !!m.attrs?.noProof || (!!m.attrs?.lang && m.attrs.lang !== (lang ?? "en-US")));
+    if (!json.marks.length) delete json.marks;
+  }
+  for (const c of json.content ?? []) stripDefaultLang(c, lang);
 }
