@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import * as path from "node:path";
 import { createSheet, trashSheet, saveSheet, getSheetData } from "./helpers";
-import { book, num, txt, fx, openSheet, menu, goTo, typeAt, expectGrid, select, cellOf, savedMatches } from "./sheetsGrid";
+import { book, num, txt, fx, openSheet, menu, goTo, typeAt, expectGrid, select, cellOf, savedMatches, editorText } from "./sheetsGrid";
 
 // Sheets M5 + M12 in the editor: trace arrows, goal seek, the function
 // wizard, cell comments, links, Ctrl+A, text typed as a formula and array
@@ -226,5 +226,32 @@ test("AutoSum over a selection writes the totals", async ({ page, request }) => 
       expect(cellOf(w[0], "B4")?.v).toBe(30);
     });
     await expect(page.locator(".fortune-name-box")).toHaveText("A2:B4");
+  });
+});
+
+// Pointing at cells while a formula is typed: Ctrl/⌘+click adds another
+// reference, a plain click replaces the last one (OnlyOffice's selection
+// ranges A1 → A1,A1 → A1,A1,A1, then one range again).
+test("oo:cell/spreadsheet-calculation/SheetStructureTests.js#Selection in formulas test", async ({ page, request }) => {
+  await withSheet(page, book({ A1: num(1), A2: num(2), B1: num(3), B2: num(4), C2: num(5) }), async (id) => {
+    const mod = process.platform === "darwin" ? "Meta" : "Control";
+    const area = page.locator(".fortune-cell-area");
+    const at = (c: number, r: number) => ({ x: c * 74 + 30, y: r * 20 + 10 });
+    await goTo(page, "E5");
+    await page.keyboard.type("=SUM(");
+    await area.click({ position: at(0, 0) });
+    await expect.poll(() => editorText(page)).toBe("=SUM(A1");
+    await area.click({ position: at(1, 0), modifiers: [mod] });
+    await expect.poll(() => editorText(page)).toBe("=SUM(A1,B1");
+    await area.click({ position: at(2, 1), modifiers: [mod] });
+    await expect.poll(() => editorText(page)).toBe("=SUM(A1,B1,C2");
+    await area.click({ position: at(0, 1) });
+    await expect.poll(() => editorText(page)).toBe("=SUM(A1,B1,A2");
+    await page.keyboard.type(")");
+    await page.keyboard.press("Enter");
+    await savedMatches(request, id, (w) => {
+      expect(cellOf(w[0], "E5")?.f).toBe("=SUM(A1,B1,A2)");
+      expect(cellOf(w[0], "E5")?.v).toBe(6);
+    });
   });
 });

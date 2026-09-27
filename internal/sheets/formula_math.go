@@ -211,20 +211,24 @@ func mthSumproduct(c *callCtx) value {
 // ---- products, powers, roots ------------------------------------------------
 
 func init() {
+	// PRODUCT reads its arguments like SUM (formula_stat_args.go rules); an
+	// empty argument is skipped rather than multiplied as 0.
 	registerFunc("PRODUCT", func(c *callCtx) value {
 		prod := 1.0
 		found := false
-		for _, v := range c.flat() {
+		var vals []value
+		for i := 0; i < c.nargs(); i++ {
+			if c.omitted(i) {
+				continue
+			}
+			vals = sttAppendArg(vals, c.raw(i), false)
+		}
+		for _, v := range vals {
 			if v.isErr() {
 				return v
 			}
-			if v.kind == kindStr {
-				continue
-			}
-			if n, ok := v.toNum(); ok {
-				prod *= n
-				found = true
-			}
+			prod *= v.num
+			found = true
 		}
 		if !found {
 			return numVal(0)
@@ -278,9 +282,10 @@ func init() {
 		return numVal(math.Sqrt(n * math.Pi))
 	})
 
+	// SUMSQ reads its arguments like SUM (formula_stat_args.go rules).
 	registerFunc("SUMSQ", func(c *callCtx) value {
 		sum := 0.0
-		for _, v := range c.flat() {
+		for _, v := range sttFlat(c, false) {
 			if v.isErr() {
 				return v
 			}

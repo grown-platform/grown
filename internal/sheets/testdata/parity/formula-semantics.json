@@ -331,7 +331,7 @@
         {"formula":"=1     +    (    A7   +A8   )   *   2","expect":7},
         {"formula":"=sum                    A1:A5","expect":{"error":"#VALUE!"}},
         {"formula":"=sum(   A1:A5    ,        B1:B5     )     ","expect":0},
-        {"formula":"=sum(   A1:A5    ,        B1:B5  , \"    3 , 14 15 92 6 \"   )     ","expect":{"error":"#VALUE!"},"pending":"oo-diff/sum-text-arg: SUM rejects a text argument that is not a reference"}
+        {"formula":"=sum(   A1:A5    ,        B1:B5  , \"    3 , 14 15 92 6 \"   )     ","expect":{"error":"#VALUE!"}}
       ]
     },
     {

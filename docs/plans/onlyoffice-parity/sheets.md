@@ -1411,3 +1411,86 @@ AutoSum over a selection). Screenshots: `sheets-m5-trace-arrows.png`,
 - Ctrl+Z inside the cell editor is the browser's own text undo (it groups a
   typing burst), not a per-character undo.
 
+
+## 19. Parity sweep (Wave 10, 2026-09-27)
+
+A sweep over the Sheets rows whose Portable count was above their Ported
+count, plus the cheapest real-behaviour gaps among the pending formula
+checks. Scoreboard (`npm run parity`), before → after:
+
+| Area | Portable | Ported |
+|---|---|---|
+| `sheets/sort-filter` | 86 → 86 | 55 → **86** |
+| `sheets/editing` | 93 → 92 | 85 → **88** |
+| `sheets/formulas` | 667 → 635 | 633 → **634** |
+| `sheets/shortcuts` | 38 → 24 | 23 → 23 |
+| `sheets/utils` | 11 → 4 | 4 → 4 |
+
+### 19.1 Tags that were ported but not counted
+
+- `api-range.js` (31 SetSort cases) and SheetStructureTests `sortRangeTest`
+  were ported in M7 but built their tags at runtime (`API + "…"`), which the
+  scoreboard cannot see. They are literal now.
+- The two SheetStructureTests "Days of week and months with spaces and ".""
+  autofill tags ended at the quote and counted as one; they say `dot` now.
+- textAndDataTests `T(123)` is ported (`T` of a number is empty text).
+
+### 19.2 Behaviour fixed
+
+| Gap | Fix | Where |
+|---|---|---|
+| Ctrl/⌘+click while pointing at cells in a formula replaced the last reference | It adds another one (`=SUM(A1,B1)`), as in Excel; a plain click still replaces. Ports SheetStructureTests "Selection in formulas test" (e2e). | `SheetEditor.tsx`, `sheetShortcuts.ts` (`addsReferenceOnCtrlClick`), `web/e2e/sheets-analysis.spec.ts` |
+| AND/OR/XOR/NOT coerced any text | Text and blanks in references/arrays are skipped; typed `"TRUE"`/`"FALSE"` count, other typed text is `#VALUE!`; no logical value at all is `#VALUE!` | `formula_logical.go` (`lgLogicals`) |
+| SWITCH matched across types (`TRUE` = 1, 1 = `"1"`) | Typed equality; an empty cell equals 0, `""` and FALSE | `formula_logical.go` (`lgEqual`) |
+| SUM/SUMSQ/PRODUCT counted booleans from ranges and arrays, ignored bad typed text | They read arguments like AVERAGE (formula_stat_args.go); PRODUCT skips an empty argument | `formula.go`, `formula_math.go` |
+| An error typed as a scalar argument became `#VALUE!` (CHOOSE, DROP, TAKE, EXPAND, INDEX, SORTBY, FILTER, BASE, DECIMAL, ARABIC, MDETERM, MUNIT, SEQUENCE, RANDARRAY, SERIESSUM, NPV, XNPV, XIRR, MIRR, FVSCHEDULE, D* field/criteria) | The error is the result | `formula_validate.go` (`guardErrorArgs`) |
+| XLOOKUP/XMATCH: `,,` for if_not_found answered 0; TRUE matched 1; errors in the lookup array were returned; bad modes, 2-D lookup arrays and short return arrays were accepted; a multi-column return array gave one cell | One finder (`xlFind`) with Excel's rules; XLOOKUP returns the whole row/column | `formula_lookup.go` |
+| Empty optional arguments read as 0 | INDEX row/column (whole column/row of an array), ADDRESS sheet name, TAKE/DROP/EXPAND counts, the pad of EXPAND/WRAPROWS/WRAPCOLS/TEXTSPLIT take their defaults | `formula_lookup.go`, `formula_array_shape.go` |
+
+290 pending checks in `testdata/parity/*.json` now pass and lost their
+markers (`error-args`, `logical-text`, `switch-types`, `direct-text-args`,
+`sum-of-text-result`, `bool-in-array`, `omitted-arg`, most XLOOKUP/XMATCH
+`lookup-approx`): 2,063 → 1,780 pending. Seven checks became pending, each a
+documented OnlyOffice-vs-Excel difference:
+
+- `oo-diff/xor-range` (2): OnlyOffice's XOR over `A101:A103` (5, 6, text) is
+  TRUE; Excel's odd-count rule gives FALSE (two TRUE values, text skipped).
+- `oo-diff/binary-unsorted` (5): XMATCH search_mode ±2 over unsorted data
+  holding an error. Excel leaves a binary search over unsorted data
+  undefined; Grown searches linearly in the same direction, OnlyOffice's
+  bisection finds nothing. They passed before only because Grown returned
+  the error cell.
+
+Left alone as documented choices: MODE ties (Grown = Excel's first mode),
+legacy PERCENTRANK interpolation, `FIXED` decimals, `SQRT()` argument count
+(`#N/A`, not a parse error), OnlyOffice's boolean passthrough in text
+functions, the 1900 date quirk.
+
+### 19.3 Rows reclassified (not applicable)
+
+A portable row can now declare its not-applicable cases in the portability
+note (`go (27) + n/a (20 …)`); the scoreboard leaves them out of Portable
+(README "Manifest CSVs"). The notes were corrected to the real counts:
+
+| File | n/a cases | Why |
+|---|---|---|
+| `FormulaTests.js` | 20 (was 19) | 14 custom-function + 3 custom async-function tests (plugin API) and 3 async-formula tests |
+| `whatIfAnalysisTests.js` | 5 (was 6) | Solver (flagged exception); the file has 16 live tests, 11 goal seek |
+| `FormulaTrace.js` | 2 (was 4) | the two performance timings; "Tables tests" stays portable (it needs Excel tables) |
+| `DependencyGraph.js` | 5 (was 4) | BroadcastHelper simple/sparse/Insert Delete/curElems/curElems next: the sweep-line helper's internal state |
+| `SheetStructureTests.js` | 1 | "Workbook dependencies tests": listener counts of the dependency graph |
+| `shortcuts.js` | 14 | 12 graphic-object tests, slicer, Opera NumLock/ScrollLock (unchanged; now counted) |
+| `tests.js` | 7 | `Asc` typeOf/lastIndexOf/search/floor/ceil, HandlersList, startListeningRange (unchanged; now counted) |
+
+The docs `shortcuts.js` note lost its stale `6 n/a` (those cases were
+ported later).
+
+### 19.4 What is left
+
+Every remaining portable Sheets gap needs Excel tables (ListObjects with
+structured references), which Grown only round-trips through xlsx
+(`xlsxTables.ts`, no UI, no `Table1[Col]` in the engine):
+SheetStructureTests "Table selection for formula", "Table values/values
+for edit tests", "Table special characters tests", "Table column names
+changes tests"; FormulaTrace "Tables tests"; shortcuts "Change format table
+info". That is a feature of its own, not a sweep item.

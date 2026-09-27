@@ -10,9 +10,6 @@ import { describe, expect, it } from "vitest";
 import { apiSetSort, sortGrid, type ApiSortCall, type SortCell } from "../sortOps";
 import { cellDisplay, parseA1Range, typedCell } from "../cellValue";
 
-const API = "oo:cell/js-api/api-range.js#";
-const STRUCT = "oo:cell/spreadsheet-calculation/SheetStructureTests.js#";
-
 // Defined names the API suite registers before its cases run.
 const NAMES: Record<string, string> = {
   super: "Sheet1!$A$1:$F$4",
@@ -114,13 +111,13 @@ function fhSheet(): Sheet {
 }
 
 describe("api-range.js SetSort", () => {
-  it(API + "SetSort: single cell, header yes, orientation column, ascending order", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: single cell, header yes, orientation column, ascending order", () => {
     const s = new Sheet().set({ A1: "Header" });
     s.sort("A1:A1", "A1", "xlAscending", null, null, null, null, "xlYes", "xlSortColumns");
     expect(s.get("A1")).toBe("Header");
   });
 
-  it(API + "Multi-key sorting by A then C (A asc, C desc) with key2=null (row)", () => {
+  it("oo:cell/js-api/api-range.js#Multi-key sorting by A then C (A asc, C desc) with key2=null (row)", () => {
     // Values laid out across columns; rows 1-3 act as the keys.
     const s = table([
       ["2", "1", "2", "1", "2", "1"],
@@ -135,31 +132,31 @@ describe("api-range.js SetSort", () => {
     ]);
   });
 
-  it(API + "SetSort: handles empty cells (row)", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles empty cells (row)", () => {
     const s = table([["", "2", "", "1"]]);
     s.sort("A1:D1", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortRows");
     expect(s.read("A1:D1")).toEqual([["1", "2", "", ""]]);
   });
 
-  it(API + "SetSort: handles duplicate values (row)", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles duplicate values (row)", () => {
     const s = table([["2", "2", "1", "1"]]);
     s.sort("A1:D1", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortRows");
     expect(s.read("A1:D1")).toEqual([["1", "1", "2", "2"]]);
   });
 
-  it(API + "SetSort: handles mixed types (row)", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles mixed types (row)", () => {
     const s = table([["2", "apple", "1", "banana"]]);
     s.sort("A1:D1", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortRows");
     expect(s.read("A1:D1")).toEqual([["1", "2", "apple", "banana"]]);
   });
 
-  it(API + "SetSort: handles single column (row)", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles single column (row)", () => {
     const s = new Sheet().set({ A1: "5" });
     s.sort("A1:A1", "A1", "xlDescending", null, null, null, null, "xlNo", "xlSortRows");
     expect(s.get("A1")).toBe("5");
   });
 
-  it(API + "SetSort: handles all identical values (row)", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles all identical values (row)", () => {
     const s = table([["x", "x", "x", "x"]]);
     const before = s.grid[0].slice();
     s.sort("A1:D1", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortRows");
@@ -168,67 +165,67 @@ describe("api-range.js SetSort", () => {
     expect(s.grid[0]).toEqual(before);
   });
 
-  it(API + "SetSort: non-existent key row", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: non-existent key row", () => {
     const s = table([["1", "2", "3"]]);
     s.sort("A1:C1", "A5", "xlAscending", null, null, null, null, "xlNo", "xlSortRows");
     expect(s.read("A1:C1")).toEqual([["1", "2", "3"]]);
   });
 
-  it(API + "SetSort: with header column (row)", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: with header column (row)", () => {
     const s = table([["Header", "3", "1", "2"]]);
     s.sort("A1:D1", "B1", "xlAscending", null, null, null, null, "xlYes", "xlSortRows");
     expect(s.read("A1:D1")).toEqual([["Header", "1", "2", "3"]]);
   });
 
-  it(API + "SetSort: handles empty cells", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles empty cells", () => {
     const s = new Sheet().set(column("A", ["", "2", "", "1"]));
     s.sort("A1:A4", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.read("A1:A4").flat()).toEqual(["1", "2", "", ""]);
   });
 
-  it(API + "SetSort: handles duplicate values", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles duplicate values", () => {
     const s = new Sheet().set(column("A", ["2", "2", "1", "1"]));
     s.sort("A1:A4", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.read("A1:A4").flat()).toEqual(["1", "1", "2", "2"]);
   });
 
-  it(API + "SetSort: handles mixed types", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles mixed types", () => {
     const s = new Sheet().set(column("A", ["2", "apple", "1", "banana"]));
     s.sort("A1:A4", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.read("A1:A4").flat()).toEqual(["1", "2", "apple", "banana"]);
   });
 
-  it(API + "SetSort: handles single row", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles single row", () => {
     const s = new Sheet().set({ A1: "5" });
     s.sort("A1:A1", "A1", "xlDescending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.get("A1")).toBe("5");
   });
 
-  it(API + "SetSort: handles all identical values", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: handles all identical values", () => {
     const s = new Sheet().set(column("A", ["x", "x", "x", "x"]));
     s.sort("A1:A4", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.read("A1:A4").flat()).toEqual(["x", "x", "x", "x"]);
   });
 
-  it(API + "SetSort: non-existent key column", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: non-existent key column", () => {
     const s = new Sheet().set(column("A", ["1", "2", "3"]));
     s.sort("A1:A3", "Z1", "xlAscending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.read("A1:A3").flat()).toEqual(["1", "2", "3"]);
   });
 
-  it(API + "SetSort: with header row", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: with header row", () => {
     const s = new Sheet().set(column("A", ["Header", "3", "1", "2"]));
     s.sort("A1:A4", "A2", "xlAscending", null, null, null, null, "xlYes", "xlSortColumns");
     expect(s.read("A1:A4").flat()).toEqual(["Header", "1", "2", "3"]);
   });
 
-  it(API + "SetSort: orientation row (sort by row)", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: orientation row (sort by row)", () => {
     const s = table([["1", "3", "2"]]);
     s.sort("A1:C1", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortRows");
     expect(s.read("A1:C1")).toEqual([["1", "2", "3"]]);
   });
 
-  it(API + "Test asc_sortRanges", () => {
+  it("oo:cell/js-api/api-range.js#Test asc_sortRanges", () => {
     const s = table([
       ["1", "4", "3"],
       ["2", "3", "4"],
@@ -244,7 +241,7 @@ describe("api-range.js SetSort", () => {
     ]);
   });
 
-  it(API + "One column range sorting (A1:A5) asc/desc", () => {
+  it("oo:cell/js-api/api-range.js#One column range sorting (A1:A5) asc/desc", () => {
     const s = new Sheet().set(column("A", ["5", "3", "4", "1", "2"]));
     s.sort("A1:A5", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.read("A1:A5").flat()).toEqual(["1", "2", "3", "4", "5"]);
@@ -255,7 +252,7 @@ describe("api-range.js SetSort", () => {
     expect(s.read("A1:A5").flat()).toEqual(["5", "4", "3", "2", "1"]);
   });
 
-  it(API + "Two-column range sorting by first key (A)", () => {
+  it("oo:cell/js-api/api-range.js#Two-column range sorting by first key (A)", () => {
     const s = table([
       ["3", "a"],
       ["1", "c"],
@@ -271,7 +268,7 @@ describe("api-range.js SetSort", () => {
     ]);
   });
 
-  it(API + "Two-column range sorting by second key (B)", () => {
+  it("oo:cell/js-api/api-range.js#Two-column range sorting by second key (B)", () => {
     const s = table([
       ["3", "a"],
       ["1", "c"],
@@ -287,13 +284,13 @@ describe("api-range.js SetSort", () => {
     ]);
   });
 
-  it(API + "Invalid sort range (single cell) is a no-op", () => {
+  it("oo:cell/js-api/api-range.js#Invalid sort range (single cell) is a no-op", () => {
     const s = new Sheet().set({ A1: "42" });
     s.sort("A1:A1", "A1", "xlAscending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.get("A1")).toBe("42");
   });
 
-  it(API + "No sort when key does not intersect sort range", () => {
+  it("oo:cell/js-api/api-range.js#No sort when key does not intersect sort range", () => {
     const s = table([
       ["5", "w", "10"],
       ["3", "y", "20"],
@@ -305,7 +302,7 @@ describe("api-range.js SetSort", () => {
     expect(s.read("A1:C4")).toEqual(before);
   });
 
-  it(API + "Multi-key sorting by A then B (A asc, B desc)", () => {
+  it("oo:cell/js-api/api-range.js#Multi-key sorting by A then B (A asc, B desc)", () => {
     const s = table([
       ["2", "b"],
       ["1", "d"],
@@ -323,7 +320,7 @@ describe("api-range.js SetSort", () => {
     ]);
   });
 
-  it(API + "Multi-key sorting by A then B then C (A asc, B asc, C desc)", () => {
+  it("oo:cell/js-api/api-range.js#Multi-key sorting by A then B then C (A asc, B asc, C desc)", () => {
     const s = table([
       ["2", "b", "3"],
       ["1", "d", "1"],
@@ -347,7 +344,7 @@ describe("api-range.js SetSort", () => {
     ]);
   });
 
-  it(API + "Multi-key sorting by A then C (A asc, C desc) with key2=null", () => {
+  it("oo:cell/js-api/api-range.js#Multi-key sorting by A then C (A asc, C desc) with key2=null", () => {
     const s = table([
       ["2", "b", "3"],
       ["1", "d", "1"],
@@ -367,7 +364,7 @@ describe("api-range.js SetSort", () => {
     ]);
   });
 
-  it(API + "SetSort: A1:C4, sort by 'super' defined name, headers no, orientation column, should sort by A", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: A1:C4, sort by super defined name, headers no, orientation column, should sort by A", () => {
     const s = table([
       ["1", "4", "3"],
       ["2", "3", "4"],
@@ -384,28 +381,28 @@ describe("api-range.js SetSort", () => {
     ]);
   });
 
-  it(API + "SetSort: negativeIndexColumn", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: negativeIndexColumn", () => {
     // Key column F lies left of the G:H range.
     const s = fhSheet();
     s.sort("G8:H11", "negativeIndexColumn", "xlDescending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.read("F8:H11")).toEqual(FH_BLOCK);
   });
 
-  it(API + "SetSort: negativeIndexRow", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: negativeIndexRow", () => {
     // Key row 8 lies above the 9:11 range.
     const s = fhSheet();
     s.sort("F9:H11", "negativeIndexRow", "xlDescending", null, null, null, null, "xlNo", "xlSortRows");
     expect(s.read("F8:H11")).toEqual(FH_BLOCK);
   });
 
-  it(API + "SetSort: outOfRangeColumn", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: outOfRangeColumn", () => {
     // Key column H lies right of the F:G range.
     const s = fhSheet();
     s.sort("F8:G11", "outOfRangeColumn", "xlDescending", null, null, null, null, "xlNo", "xlSortColumns");
     expect(s.read("F8:H11")).toEqual(FH_BLOCK);
   });
 
-  it(API + "SetSort: outOfRangeRow", () => {
+  it("oo:cell/js-api/api-range.js#SetSort: outOfRangeRow", () => {
     // Key row 11 lies below the 8:10 range.
     const s = fhSheet();
     s.sort("F8:H10", "outOfRangeRow", "xlDescending", null, null, null, null, "xlNo", "xlSortRows");
@@ -426,7 +423,7 @@ describe("SheetStructureTests.js sortRangeTest", () => {
     return [asc, sortColumn(asc, false)];
   }
 
-  it(STRUCT + "sortRangeTest", () => {
+  it("oo:cell/spreadsheet-calculation/SheetStructureTests.js#sortRangeTest", () => {
     // Accented Latin letters sit right after their base letter.
     const accents = ["a", "h", "f", "é", "e", "d", "c", "b", "á", "g"];
     expect(sortColumn(accents, true)).toEqual(["a", "á", "b", "c", "d", "e", "é", "f", "g", "h"]);
