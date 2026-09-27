@@ -12,6 +12,8 @@ import type { DocxComment, DocxImport } from "./model";
 import type { DocxWriteInput } from "./write";
 import type { JSONContent } from "@tiptap/core";
 import { settingsStore } from "../pageLayout";
+import { getProtection, setProtection } from "../protection";
+import { customXmlParts, putCustomXml } from "../customXml";
 
 /** The Yjs document behind the editor's styles/numbering maps. */
 export function modelDoc(editor: Editor): Y.Doc | null {
@@ -43,6 +45,9 @@ export function applyDocxImport(editor: Editor, imp: DocxImport): void {
   if (ydoc) ydoc.transact(write);
   else write();
   editor.commands.setContent(imp.doc);
+  // Custom XML parts, then protection last (it may lock the editor).
+  for (const p of imp.customXml ?? []) putCustomXml(editor, p);
+  if (imp.protection) setProtection(editor, imp.protection);
 }
 
 /** Comment marks on the body: comment id -> [from, to]. */
@@ -193,7 +198,10 @@ export function collectDocxInput(
       if (n) margins[name] = n;
     }
   const settings = settingsStore(editor).get();
+  const protection = getProtection(editor);
   return {
+    protection: protection.mode === "none" ? null : protection,
+    customXml: customXmlParts(editor),
     doc,
     sheet,
     numbering,

@@ -28,6 +28,10 @@ import { defaultSection, ownFragment, ownsPart, sectionsOf, type DocSettings, ty
 import { backgroundXml, settingsXml, writeSectPr, type HfRef } from "./sections";
 import { contentFromAttr } from "../math/model";
 import { EMU_PER_PX, el, esc, ptToTwips, ROOT_NS, toHex, TWIPS_PER_PX, XML_DECL, NS } from "./xml";
+import { CUSTOM_XML_REL, documentProtectionXml, sdtPrXml, writeCustomXml } from "./sdt";
+import { prOf } from "../sdtModel";
+import type { Protection } from "../protection";
+import type { CustomXmlPart } from "../customXml";
 
 export interface RasterImage {
   data: Uint8Array;
@@ -54,6 +58,9 @@ export interface DocxWriteInput {
   rasterize?: (src: string) => Promise<RasterImage | null>;
   /** Fixed timestamp for revisions and core properties (tests). */
   now?: Date;
+  /** Document protection and custom XML parts (M10). */
+  protection?: Protection | null;
+  customXml?: CustomXmlPart[];
 }
 
 const REL_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -289,6 +296,10 @@ class Writer {
     let i = 0;
     this.input.doc.descendants((n) => {
       if (!n.isInline) return true;
+      if (n.type.name === "sdtInline") {
+        i++;
+        return true;
+      }
       for (const m of n.marks) {
         if (m.type.name !== "commentMark") continue;
         const id = m.attrs.commentId as string;
@@ -316,6 +327,10 @@ class Writer {
     };
     this.input.doc.descendants((n) => {
       if (!n.isInline) return true;
+      if (n.type.name === "sdtInline") {
+        i++;
+        return true;
+      }
       if (n.type.name === "bookmarkPoint" && n.attrs.name) id(String(n.attrs.name));
       for (const m of n.marks) {
         if (m.type.name !== "bookmark" || !m.attrs.name) continue;
@@ -565,6 +580,11 @@ class Writer {
         return this.table(node, ctx);
       case "tableOfContents":
         return this.tableOfContents(node, ctx);
+      case "sdtBlock": {
+        const inner = await this.blocks(node, ctx, list, extraInd);
+        if (!ctx.body) return inner;
+        return `<w:sdt>${sdtPrXml(prOf(node), !!node.attrs.plc, this.sdtId(node))}<w:sdtContent>${inner}</w:sdtContent></w:sdt>`;
+      }
       default:
         // Unknown blocks: keep their text.
         if (node.isTextblock) return this.paragraph(node, ctx, list, extraInd);
@@ -677,7 +697,17 @@ class Writer {
       } else if (c.type.name === "image") run = (await this.imageRun(c, ctx)) ?? "";
       else if (c.type.name === "math") run = writeOMML(contentFromAttr(c.attrs.data), !!c.attrs.display);
       else if (c.type.name === "field") run = fieldRuns(String(c.attrs.instr ?? ""), String(c.attrs.result ?? ""), rPr, !!c.attrs.locked, (t) => this.textXml(t, false));
-      else if (c.type.name === "bookmarkPoint") {
+      else if (c.type.name === "sdtInline") {
+        const pr = prOf(c);
+        let inner = await this.inline(c, ctx, "");
+        if (pr.type === "picture" && pr.picture?.src) {
+          const img = c.type.schema.nodes.image.create({ src: pr.picture.src, width: pr.picture.width ?? null, height: pr.picture.height ?? null });
+          inner = (await this.imageRun(img, ctx)) ?? "";
+        }
+        run = ctx.body ? `<w:sdt>${sdtPrXml(pr, !!c.attrs.plc, this.sdtId(c))}<w:sdtContent>${inner}</w:sdtContent></w:sdt>` : inner;
+        items.push({ href, title, xml: run });
+        run = "";
+      } else if (c.type.name === "bookmarkPoint") {
         const id = ctx.body ? this.bookmarkIds.get(String(c.attrs.name)) : undefined;
         if (id != null) run = el("w:bookmarkStart", { "w:id": id, "w:name": String(c.attrs.name) }) + el("w:bookmarkEnd", { "w:id": id });
       }
@@ -733,6 +763,18 @@ class Writer {
       old = [];
     }
     return el("w:rPrChange", this.revAttrs(m.attrs), writeRPr(marksRunProps(old)) || "<w:rPr/>");
+  }
+
+  /** A unique w:id per control (the node's own when it is numeric). */
+  sdtIds = new Set<number>();
+  sdtId(n: PMNode): number {
+    let id = Number(n.attrs.sdtId);
+    if (!Number.isInteger(id) || id <= 0 || id > 2147483647 || this.sdtIds.has(id)) {
+      id = 1000;
+      while (this.sdtIds.has(id)) id++;
+    }
+    this.sdtIds.add(id);
+    return id;
   }
 
   noteRef(n: PMNode, rPr: string): string {
@@ -1047,12 +1089,14 @@ class Writer {
     }
     this.zip.file(
       "word/settings.xml",
-      `${XML_DECL}<w:settings ${ROOT_NS}>${settingsXml(input.settings ?? {})[0]}${el("w:defaultTabStop", { "w:val": 720 })}${settingsXml(input.settings ?? {})[1]}${notePr}` +
+      `${XML_DECL}<w:settings ${ROOT_NS}>${settingsXml(input.settings ?? {})[0]}${documentProtectionXml(input.protection)}${el("w:defaultTabStop", { "w:val": 720 })}${settingsXml(input.settings ?? {})[1]}${notePr}` +
         `<w:compat>${el("w:compatSetting", { "w:name": "compatibilityMode", "w:uri": "http://schemas.microsoft.com/office/word", "w:val": 15 })}</w:compat></w:settings>`,
     );
     this.override("word/settings.xml", `${CT_BASE}.settings+xml`);
     this.rels.add("settings", "settings.xml");
 
+    if (input.customXml?.length)
+      for (const target of writeCustomXml(this.zip, input.customXml, (p, t) => this.override(p, t))) this.rels.add(CUSTOM_XML_REL, target);
     for (const m of this.media) this.zip.file(`word/media/${m.name}`, m.data);
     this.zip.file("word/_rels/document.xml.rels", this.rels.xml());
 

@@ -3,6 +3,8 @@ import type { JSONContent } from "@tiptap/core";
 import type { AbstractNum, NumInstance } from "../numbering";
 import type { StyleDef } from "../styles";
 import type { DocSettings, SectionProps } from "../sections";
+import type { Protection } from "../protection";
+import type { CustomXmlPart } from "../customXml";
 
 /** A comment thread entry, as read from comments.xml or written to it. */
 export interface DocxComment {
@@ -47,6 +49,9 @@ export interface DocxImport {
   settings?: Partial<DocSettings>;
   comments: DocxComment[];
   page: PageSetup | null;
+  /** Document protection and custom XML parts (M10). */
+  protection?: Protection;
+  customXml?: CustomXmlPart[];
   /** Things the reader dropped because Grown has no model for them yet. */
   warnings: string[];
 }

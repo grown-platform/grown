@@ -54,6 +54,8 @@ import { fieldType, KEPT_FIELDS } from "../fields";
 import { PAGE_FIELDS } from "../margin";
 import { readSectPr, readSettings } from "./sections";
 import { encodeSection } from "../sections";
+import { readCustomXml, readDocProtection, readSdtPr } from "./sdt";
+import { encodePr } from "../sdtModel";
 import { attr, descendants, EMU_PER_PX, kid, kids, nameOf, num, onOff, parseXml, path, TWIPS_PER_PX, twipsToPt } from "./xml";
 
 type Mark = NonNullable<JSONContent["marks"]>[number];
@@ -214,6 +216,27 @@ const MIME: Record<string, string> = {
   webp: "image/webp",
   ico: "image/x-icon",
 };
+
+/** Plain text of TipTap JSON. */
+function jsonText(n: JSONContent): string {
+  if (n.type === "text") return n.text ?? "";
+  return (n.content ?? []).map(jsonText).join("");
+}
+
+/** Inline items as TipTap content (adjacent text with equal marks merged). */
+function itemsToContent(items: Inline[]): JSONContent[] {
+  const cur: JSONContent[] = [];
+  for (const it of items) {
+    if (it.kind === "block") continue;
+    if (it.kind === "node") cur.push(it.node);
+    else {
+      const last = cur[cur.length - 1];
+      if (last?.type === "text" && JSON.stringify(last.marks ?? []) === JSON.stringify(it.marks)) last.text += it.text;
+      else cur.push(it.marks.length ? { type: "text", text: it.text, marks: it.marks } : { type: "text", text: it.text });
+    }
+  }
+  return cur;
+}
 
 // --- the reader ----------------------------------------------------------------------------
 
@@ -640,9 +663,23 @@ class Reader {
           if (t) out.push(t);
           break;
         }
-        case "sdt":
-          out.push(...this.blocks(kid(c, "sdtContent") ?? c, ctx));
+        case "sdt": {
+          // Block content controls (M10); building blocks (TOC) and header /
+          // footer controls are unwrapped.
+          const inner = kid(c, "sdtContent") ?? c;
+          const info = ctx.margin ? null : readSdtPr(kid(c, "sdtPr"));
+          if (!info || info.unwrap) {
+            out.push(...this.blocks(inner, ctx));
+            break;
+          }
+          const content = this.blocks(inner, ctx).flatMap((b) => (b.type === "__flatten" ? b.content ?? [] : [b]));
+          if (info.plc && !info.placeholderKnown) {
+            const t = content.map(jsonText).join("\n");
+            if (t) info.pr.placeholder = t;
+          }
+          out.push({ type: "sdtBlock", attrs: { sdtId: info.id, pr: encodePr(info.pr), plc: info.plc }, content: content.length ? content : [{ type: "paragraph" }] });
           break;
+        }
         case "customXml":
         case "ins":
         case "moveTo":
@@ -975,9 +1012,37 @@ class Reader {
           this.inline(c, { ...ctx, marks }, out);
           break;
         }
-        case "sdt":
-          this.inline(kid(c, "sdtContent") ?? c, ctx, out);
+        case "sdt": {
+          const inner = kid(c, "sdtContent") ?? c;
+          const info = ctx.margin ? null : readSdtPr(kid(c, "sdtPr"));
+          if (!info || info.unwrap) {
+            this.inline(inner, ctx, out);
+            break;
+          }
+          const items: Inline[] = [];
+          this.inline(inner, ctx, items);
+          const rest: Inline[] = [];
+          const kept: Inline[] = [];
+          for (const it of items) {
+            if (it.kind !== "text" && it.node.type === "image" && info.pr.type === "picture") {
+              const a = it.node.attrs ?? {};
+              const ext = info.pr.picture;
+              info.pr.picture =
+                ext && (ext.width || ext.height)
+                  ? { ...ext, src: String(a.src ?? "") }
+                  : { src: String(a.src ?? ""), ...(a.width ? { width: Number(a.width) } : {}), ...(a.height ? { height: Number(a.height) } : {}) };
+            } else if (it.kind === "block") rest.push(it);
+            else kept.push(it);
+          }
+          const content = itemsToContent(info.pr.type === "picture" ? [] : kept);
+          if (info.plc && !info.placeholderKnown) {
+            const t = content.map(jsonText).join("");
+            if (t) info.pr.placeholder = t;
+          }
+          out.push({ kind: "node", node: { type: "sdtInline", attrs: { sdtId: info.id, pr: encodePr(info.pr), plc: info.plc }, ...(content.length ? { content } : {}) } });
+          out.push(...rest);
           break;
+        }
         case "smartTag":
         case "customXml":
         case "dir":
@@ -1603,7 +1668,14 @@ export async function readDocx(data: ArrayBuffer | Uint8Array | Blob): Promise<D
   const settings = readSettings(settingsPart?.doc ?? null, main.doc.documentElement);
   const final = secs[secs.length - 1].props;
 
+  // Custom XML parts and document protection (M10).
+  const cxTargets = [...main.rels.values()].filter((x) => !x.external && /\/customXml$/.test(x.type)).map((x) => x.target);
+  const customXml = await readCustomXml(zip, cxTargets);
+  const protection = readDocProtection(settingsPart?.doc ?? null);
+
   const out: DocxImport = {
+    ...(customXml.length ? { customXml } : {}),
+    ...(protection ? { protection } : {}),
     doc: { type: "doc", content },
     styles: {},
     numbering: {},
