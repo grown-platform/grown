@@ -438,11 +438,7 @@ func New(cfg Config) *Server {
 		docsHub = docs.NewHub(cfg.DocsRepo)
 		grownv1.RegisterDocsServiceServer(grpcSrv, docsSvc)
 		if cfg.DocsBlobs != nil {
-			repo, grants := cfg.DocsRepo, cfg.SharingRepo
-			docsAssets = docs.NewAssets(cfg.DocsBlobs, func(r *http.Request, id string) (bool, bool) {
-				acc := docsAccessFor(r, id, repo, docsGrantLookup(grants))
-				return acc.Read, acc.Write
-			})
+			docsAssets = newDocsAssets(cfg.DocsBlobs, cfg.DocsRepo, cfg.SharingRepo)
 		}
 	}
 
@@ -473,10 +469,7 @@ func New(cfg Config) *Server {
 		}
 		slidesHub = slides.NewHub()
 		if cfg.SlidesBlobs != nil {
-			repo, grants := cfg.SlidesRepo, cfg.SharingRepo
-			slidesAssets = slides.NewAssets(cfg.SlidesBlobs, func(r *http.Request, id string) (bool, bool) {
-				return slidesDeckAccess(r, id, repo, grants)
-			})
+			slidesAssets = newSlidesAssets(cfg.SlidesBlobs, cfg.SlidesRepo, cfg.SharingRepo)
 		}
 		if cfg.NotificationsRepo != nil && cfg.UsersRepo != nil {
 			slidesMentions = newSlidesMentions(cfg.SlidesRepo, cfg.SharingRepo, cfg.UsersRepo, cfg.NotificationsRepo)
