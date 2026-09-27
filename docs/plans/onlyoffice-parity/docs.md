@@ -2151,7 +2151,8 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   filled from a second view (text outside fields refused, Tab order,
   phone mask, check box, radio, list, date, picture), JSON export and
   submit, the first view seeing the values, and a .docx download /
-  re-import keeping fields, values and protection.
+  re-import keeping fields, values and protection. All 32 docs e2e (with
+  M13 merged) pass on :8093.
 * **Semantic differences**:
 
 | Case | OnlyOffice | Grown | Status |
