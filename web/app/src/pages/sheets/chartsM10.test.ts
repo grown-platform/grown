@@ -3,6 +3,8 @@ import { axisFraction, axisScale, formatTick, niceStep } from "./chartAxis";
 import { fitTrendline, movingAveragePoints, r2Label, trendlineEquation, trendlineName } from "./trendlines";
 import { autoBinWidth, binLabel, binValues } from "./histogram";
 import { layoutSeries, parseRangeText, pieShares, themeSeriesColor, waterfallBars } from "./chartData";
+import { anchorAt, anchorRect, gridGeometry } from "./chartAnchor";
+import { applyStructureOp, structureModelPatches } from "./formulaShift";
 
 describe("axisScale", () => {
   it("starts at zero for positive data and keeps headroom", () => {
@@ -110,5 +112,46 @@ describe("chart layout", () => {
     expect(parseRangeText("$B$2:D10")).toEqual({ r0: 1, r1: 9, c0: 1, c1: 3 });
     expect(parseRangeText("Sheet1!A1")).toEqual({ r0: 0, r1: 0, c0: 0, c1: 0 });
     expect(parseRangeText("nope")).toBeNull();
+  });
+});
+
+describe("charts on the grid", () => {
+  const sheets = () => [
+    {
+      id: "s1",
+      name: "Data",
+      celldata: [],
+      grownCharts: [
+        { id: "a", range: { r0: 0, r1: 4, c0: 0, c1: 2 }, anchor: { r: 2, c: 5, dx: 3, dy: 4, w: 400, h: 300 } },
+        { id: "b", sheetId: "s2", range: { r0: 0, r1: 4, c0: 0, c1: 2 }, anchor: { r: 0, c: 0, dx: 0, dy: 0, w: 400, h: 300 } },
+      ],
+    },
+    { id: "s2", name: "Other", celldata: [] },
+  ];
+
+  it("row inserts move the anchor and the range; other sheets' charts stay", () => {
+    const next = applyStructureOp(sheets(), { kind: "insert", axis: "row", sheet: "Data", index: 1, count: 2 });
+    const [a, b] = next[0].grownCharts;
+    expect(a.range).toEqual({ r0: 0, r1: 6, c0: 0, c1: 2 });
+    expect(a.anchor).toMatchObject({ r: 4, c: 5, dx: 3, dy: 4 });
+    expect(b.range).toEqual({ r0: 0, r1: 4, c0: 0, c1: 2 });
+  });
+
+  it("column deletes under the anchor park it at the deletion", () => {
+    const next = applyStructureOp(sheets(), { kind: "delete", axis: "col", sheet: "Data", index: 4, count: 3 });
+    expect(next[0].grownCharts[0].anchor).toMatchObject({ c: 4, dx: 0 });
+    expect(structureModelPatches(sheets(), { kind: "insert", axis: "col", sheet: "Data", index: 0, count: 1 })[0].fields.grownCharts).toBeDefined();
+  });
+
+  it("anchor ↔ pixels follow FortuneSheet's grid", () => {
+    const g = gridGeometry({ config: { columnlen: { 1: 100 }, rowhidden: { 0: 0 } } });
+    expect(g.colLeft(2)).toBe(74 + 101);
+    expect(g.rowTop(2)).toBe(20);
+    const a = { r: 2, c: 2, dx: 5, dy: 6, w: 300, h: 200 };
+    const box = anchorRect(a, g);
+    expect(box).toEqual({ left: 180, top: 26, width: 300, height: 200 });
+    expect(anchorAt(box.left, box.top, 300, 200, g)).toEqual(a);
+    const z = gridGeometry({}, 2);
+    expect(anchorRect(a, z).width).toBe(600);
   });
 });
