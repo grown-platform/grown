@@ -44,7 +44,7 @@ function sumBlock(): Cells {
 }
 
 describe("SheetStructureTests.js", () => {
-  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Test: "Move rows/cols"', () => {
+  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Move rows/cols', () => {
     // A 9×6 block of "rowNcolM" labels. Only the shift-drag variants are
     // structure moves (the dragged block is cut out and inserted before the
     // drop target); plain and Ctrl drags are cut/copy-paste over the target,
@@ -78,7 +78,7 @@ describe("SheetStructureTests.js", () => {
     expect(column(back, "B", 1, 9)).toEqual(column(book(cells), "B", 1, 9));
   });
 
-  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Test: "Shift and insert cells/row"', () => {
+  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Shift and insert cells/row', () => {
     // Values 1..5 in A100:A104 with =SUM(A100:A104) in A105; insert rows at
     // different places and check both the cells and the rewritten formula.
     const cases: { index: number; count: number; values: string[]; formulaAt: string; formula: string }[] = [
@@ -97,7 +97,7 @@ describe("SheetStructureTests.js", () => {
     }
   });
 
-  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Test: "Shift/move cells after create a table"', () => {
+  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Shift/move cells after create a table', () => {
     // Grown has no Excel tables. What this case checks on the grid is that
     // formatting a range as a table without a header row inserts one header
     // cell above the range, shifting the column down, and that formulas

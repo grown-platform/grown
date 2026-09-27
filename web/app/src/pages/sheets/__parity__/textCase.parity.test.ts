@@ -13,7 +13,7 @@ const joined = (parts: string[], mode: TextCase) =>
     .join("");
 
 describe("sheets parity: change case", () => {
-  it('oo:cell/spreadsheet-calculation/CellSettingsTests.js#Test: "changeTextCase"', () => {
+  it('oo:cell/spreadsheet-calculation/CellSettingsTests.js#changeTextCase', () => {
     const one = ["te", "st TES", "T", " t", "Es", "t  Te", "st\nt", "Est te", "s", "t   Tee", "est ", "tesT", "\n", "TEST te", "st Test"];
     expect(one.join("")).toBe("test TEST tEst  Test\ntEst test   Teeest tesT\nTEST test Test");
     expect(joined(one, "lower")).toBe("test test test  test\ntest test   teeest test\ntest test test");

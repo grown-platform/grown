@@ -9,7 +9,7 @@ package sheets
 //
 // Fixture: testdata/dynarray/dynamic-arrays.json
 //
-//	{"cases": [{"id": "oo:…#title", "pending": "reason", "steps": [
+//	{"cases": [{"id": "<tag>", "pending": "reason", "steps": [
 //	  {"set": {"A1": "1", "B1": "", "C1": "=A1*2"}},  // typed input; "" clears
 //	  {"enter": "=SIN(A1:A3)", "at": "D1"},           // a formula typed into a cell
 //	  {"clear": "A1:Z30"},

@@ -60,7 +60,7 @@ const set = (sheet: Sheet, a1: string, cell: Cell) => {
 };
 
 describe("sheets parity: copy and paste", () => {
-  it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#Test: "simple tests"', () => {
+  it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#simple tests', () => {
     const sheet: Sheet = new Map();
     set(sheet, "A1", { v: -4, m: "-4", ct: { fa: "General", t: "n" } });
     const block = copy(sheet, "A1");
@@ -70,7 +70,7 @@ describe("sheets parity: copy and paste", () => {
     for (const a of ["A6", "B6", "B7", "B8", "B9"]) expect(value(sheet, a)).toBe(-4);
   });
 
-  it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#Test: "formula tests"', () => {
+  it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#formula tests', () => {
     const sheet: Sheet = new Map();
     set(sheet, "A1", { f: "=SIN(1)", v: 0.841, ct: { fa: "General", t: "n" } });
     let block = copy(sheet, "A1");
@@ -89,7 +89,7 @@ describe("sheets parity: copy and paste", () => {
     for (let r = 6; r <= 7; r++) expect(edit(sheet, `E${r}`)).toBe(`=SIN(E${r + 1})`);
   });
 
-  it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#Test: "comment tests"', () => {
+  it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#comment tests', () => {
     // FortuneSheet keeps a cell's note in `ps`; a paste carries it along.
     const sheet: Sheet = new Map();
     set(sheet, "E10", { v: -4, m: "-4", ps: { value: "test" } });
@@ -107,9 +107,9 @@ describe("sheets parity: copy and paste", () => {
   });
 
   // Grown has no Excel tables (ListObjects) to copy.
-  it.skip('oo:cell/spreadsheet-calculation/copy-paste-tests.js#Test: "tables"', () => {});
+  it.skip('oo:cell/spreadsheet-calculation/copy-paste-tests.js#tables', () => {});
 
-  it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#Test: "formulas with unar operators"', () => {
+  it('oo:cell/spreadsheet-calculation/copy-paste-tests.js#formulas with unar operators', () => {
     for (const f of ["=+++1", '=++++"STR"', "=++++FALSE", "=+SUM(+++1)+++1", "=+++-SIN(+-+1-+-+1)+-+1+-+1"]) {
       const sheet: Sheet = new Map();
       set(sheet, "A1", { f, v: 1 });
@@ -119,7 +119,7 @@ describe("sheets parity: copy and paste", () => {
   });
 
   // OnlyOffice's asc_PasteData completion callbacks; the clipboard paste itself belongs to FortuneSheet.
-  it.skip('oo:cell/spreadsheet-calculation/copy-paste-tests.js#Test: "callback tests paste text"', () => {});
-  it.skip('oo:cell/spreadsheet-calculation/copy-paste-tests.js#Test: "callback tests paste HTML"', () => {});
-  it.skip('oo:cell/spreadsheet-calculation/copy-paste-tests.js#Test: "callback tests paste Binary"', () => {});
+  it.skip('oo:cell/spreadsheet-calculation/copy-paste-tests.js#callback tests paste text', () => {});
+  it.skip('oo:cell/spreadsheet-calculation/copy-paste-tests.js#callback tests paste HTML', () => {});
+  it.skip('oo:cell/spreadsheet-calculation/copy-paste-tests.js#callback tests paste Binary', () => {});
 });
