@@ -223,7 +223,7 @@ func sttConfidenceNorm(c *callCtx) value {
 
 // sttSkew computes sample skewness (pop=false) or population skewness (pop=true).
 func sttSkew(c *callCtx, pop bool) value {
-	nums, err := sttNums(c.flat())
+	nums, err := sttNums(sttFlat(c, false))
 	if err != nil {
 		return *err
 	}
@@ -268,7 +268,7 @@ func sttSkew(c *callCtx, pop bool) value {
 
 // sttKurt computes the sample excess kurtosis (Excel KURT).
 func sttKurt(c *callCtx) value {
-	nums, err := sttNums(c.flat())
+	nums, err := sttNums(sttFlat(c, false))
 	if err != nil {
 		return *err
 	}
@@ -307,13 +307,13 @@ func sttPercentrankExc(c *callCtx) value {
 	if err != nil {
 		return *err
 	}
-	x, ok := c.num(1)
+	x, ev, ok := sdArg(c, 1)
 	if !ok {
-		return errNum
+		return ev
 	}
 	n := len(nums)
 	if n == 0 {
-		return errNum
+		return errNA
 	}
 	sort.Float64s(nums)
 	if x < nums[0] || x > nums[n-1] {
@@ -321,9 +321,9 @@ func sttPercentrankExc(c *callCtx) value {
 	}
 	sig := 3
 	if c.nargs() >= 3 {
-		s, ok2 := c.num(2)
+		s, ev, ok2 := sdArg(c, 2)
 		if !ok2 {
-			return errNum
+			return ev
 		}
 		sig = int(math.Trunc(s))
 		if sig < 1 {
@@ -367,7 +367,7 @@ func sttPercentRankExcOf(sorted []float64, x float64) (float64, bool) {
 // sttModeMult returns every value tied for the highest frequency (>1) as a
 // vertical spilling array, ordered by first appearance.
 func sttModeMult(c *callCtx) value {
-	nums, err := sttNums(c.flat())
+	nums, err := sttNums(sttFlat(c, false))
 	if err != nil {
 		return *err
 	}
@@ -409,21 +409,41 @@ func sttFrequency(c *callCtx) value {
 	if c.nargs() < 2 {
 		return errNA
 	}
-	data, err := sttNumsArg(c, 0)
-	if err != nil {
-		return *err
-	}
-	binsRV, ok := c.rangeArg(1)
-	if !ok {
-		return errNA
+	var data []float64
+	if v, ok := c.raw(0).(value); ok && v.kind == kindStr && v.ref == nil {
+		// Typed text: a number if it reads as one, otherwise no data.
+		if x, _, ok := mthNum(v); ok {
+			data = []float64{x}
+		}
+	} else {
+		var err *value
+		if data, err = sttNumsArg(c, 0); err != nil {
+			return *err
+		}
 	}
 	var bins []float64
-	for _, v := range binsRV.flat() {
+	if v, ok := c.raw(1).(value); ok && v.kind != kindArray && v.ref == nil {
+		// A single typed bin: non-numeric text or a boolean acts as 0.
 		if v.isErr() {
 			return v
 		}
-		if v.kind == kindNum {
-			bins = append(bins, v.num)
+		x, _, ok := mthNum(v)
+		if !ok || v.kind == kindBool {
+			x = 0
+		}
+		bins = []float64{x}
+	} else {
+		binsRV, ok := c.rangeArg(1)
+		if !ok {
+			return errNA
+		}
+		for _, v := range binsRV.flat() {
+			if v.isErr() {
+				return v
+			}
+			if v.kind == kindNum && !v.blank {
+				bins = append(bins, v.num)
+			}
 		}
 	}
 	sort.Float64s(bins)

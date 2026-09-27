@@ -1581,11 +1581,6 @@ func (p *parser) dispatch(name string, args []interface{}) value {
 // Register the core built-ins. Additional categories live in formula_*.go.
 func init() {
 	registerFunc("SUM", func(c *callCtx) value { return fnSum(c.flat()) })
-	registerFunc("AVERAGE", func(c *callCtx) value { return fnAverage(c.flat()) })
-	registerFunc("MIN", func(c *callCtx) value { return fnMin(c.flat()) })
-	registerFunc("MAX", func(c *callCtx) value { return fnMax(c.flat()) })
-	registerFunc("COUNT", func(c *callCtx) value { return fnCount(c.flat()) })
-	registerFunc("COUNTA", func(c *callCtx) value { return fnCountA(c.flat()) })
 	registerFunc("IF", func(c *callCtx) value { return fnIf(c.p, c.args) })
 	registerFunc("AND", func(c *callCtx) value { return fnAnd(c.flat()) })
 	registerFunc("OR", func(c *callCtx) value { return fnOr(c.flat()) })
@@ -1621,99 +1616,8 @@ func fnSum(vals []value) value {
 	return numVal(sum)
 }
 
-func fnAverage(vals []value) value {
-	sum := 0.0
-	count := 0
-	for _, v := range vals {
-		if v.isErr() {
-			return v
-		}
-		if v.kind == kindStr {
-			continue
-		}
-		n, ok := v.toNum()
-		if !ok {
-			continue
-		}
-		sum += n
-		count++
-	}
-	if count == 0 {
-		return errDiv0
-	}
-	return numVal(sum / float64(count))
-}
-
-func fnMin(vals []value) value {
-	min := math.Inf(1)
-	found := false
-	for _, v := range vals {
-		if v.isErr() {
-			return v
-		}
-		n, ok := v.toNum()
-		if !ok {
-			continue
-		}
-		if n < min {
-			min = n
-			found = true
-		}
-	}
-	if !found {
-		return numVal(0)
-	}
-	return numVal(min)
-}
-
-func fnMax(vals []value) value {
-	max := math.Inf(-1)
-	found := false
-	for _, v := range vals {
-		if v.isErr() {
-			return v
-		}
-		n, ok := v.toNum()
-		if !ok {
-			continue
-		}
-		if n > max {
-			max = n
-			found = true
-		}
-	}
-	if !found {
-		return numVal(0)
-	}
-	return numVal(max)
-}
-
-func fnCount(vals []value) value {
-	count := 0
-	for _, v := range vals {
-		if v.isErr() {
-			continue
-		}
-		if _, ok := v.toNum(); ok {
-			count++
-		}
-	}
-	return numVal(float64(count))
-}
-
-func fnCountA(vals []value) value {
-	count := 0
-	for _, v := range vals {
-		if v.isErr() {
-			continue
-		}
-		if v.kind == kindStr && v.str == "" {
-			continue
-		}
-		count++
-	}
-	return numVal(float64(count))
-}
+// AVERAGE, MIN, MAX, COUNT and COUNTA live in formula_stat_args.go: their
+// counting rules depend on whether a value was typed or referenced.
 
 // fnIf handles IF(condition, true_val, [false_val]).
 // We pass raw args to avoid evaluating branches eagerly (short-circuit).
