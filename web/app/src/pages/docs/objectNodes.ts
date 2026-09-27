@@ -53,6 +53,8 @@ import type { SlideChart, SlideElement } from "../slides/model";
 
 const OBJ_CSS = `
 .ProseMirror .doc-obj { position: relative; box-sizing: border-box; line-height: normal; text-indent: 0; }
+.ProseMirror .doc-obj-frame, .ProseMirror .doc-obj-handles { user-select: none; -webkit-user-select: none; }
+.ProseMirror .doc-shape-text { user-select: text; -webkit-user-select: text; }
 .ProseMirror .doc-obj-block { display: block; }
 .ProseMirror .doc-obj-frame { position: relative; display: block; width: 100%; height: 100%; }
 .ProseMirror .doc-obj-crop { position: absolute; inset: 0; overflow: hidden; display: block; }
@@ -62,6 +64,7 @@ const OBJ_CSS = `
 .ProseMirror .doc-obj.doc-obj-natural img.doc-obj-img { position: static; max-width: 100%; }
 .ProseMirror .doc-obj-svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .ProseMirror .doc-shape-text { position: absolute; display: flex; flex-direction: column; overflow: hidden; padding: 4px 7px; box-sizing: border-box; white-space: pre-wrap; word-break: break-word; cursor: text; }
+.ProseMirror .doc-obj[data-type="shape"] .doc-shape-text { text-align: center; }
 .ProseMirror .doc-shape-text[data-anchor="t"] { justify-content: flex-start; }
 .ProseMirror .doc-shape-text[data-anchor="ctr"] { justify-content: center; }
 .ProseMirror .doc-shape-text[data-anchor="b"] { justify-content: flex-end; }
@@ -230,6 +233,11 @@ class ObjectView implements NodeView {
       el.className = "doc-obj-h";
       el.setAttribute("data-h", h);
       el.addEventListener("pointerdown", (e) => this.startDrag(e, h));
+      // No text selection or ProseMirror click handling from a handle.
+      el.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
       this.handles.appendChild(el);
     }
     this.frame.appendChild(this.handles);
@@ -348,6 +356,11 @@ class ObjectView implements NodeView {
     const lock = this.node.attrs.lockAspect !== false;
     let next: Record<string, unknown> = {};
     this.dragging = true;
+    try {
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    } catch {
+      /* synthetic events have no active pointer */
+    }
     const move = (ev: PointerEvent) => {
       if (handle === "rot") {
         const rot = angleFrom(cx, cy, ev.clientX, ev.clientY, ev.shiftKey);
