@@ -12,6 +12,8 @@ import FontFamily from "@tiptap/extension-font-family";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Image from "@tiptap/extension-image";
+import { OBJECT_NODES, insertPictureFile, objectNodeView } from "./objectNodes";
+import { objectAttributeSpecs } from "./objects";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
 import Collaboration from "@tiptap/extension-collaboration";
@@ -181,8 +183,8 @@ export const PageBreak = Node.create({
 });
 
 // ImagePaste lets users paste or drop image files into the document — TipTap's
-// Image extension doesn't handle this. Files are embedded as data URLs (MVP;
-// uploading to Drive is a follow-up).
+// Image extension doesn't handle this. Since M7 files are uploaded to the
+// document's asset store (docAssets.ts), falling back to data URLs.
 function imageFilesFrom(dt: DataTransfer | null): File[] {
   if (!dt) return [];
   const out: File[] = [];
@@ -200,6 +202,13 @@ function imageFilesFrom(dt: DataTransfer | null): File[] {
 }
 
 function insertImage(view: EditorView, file: File) {
+  // Docs M7: the picture goes to the document's asset store (a data: URL
+  // when that isn't available) and lands inline at the caret.
+  const editor = (view.dom as HTMLElement & { editor?: import("@tiptap/core").Editor }).editor;
+  if (editor) {
+    void insertPictureFile(editor, file);
+    return;
+  }
   const reader = new FileReader();
   reader.onload = () => {
     const node = view.state.schema.nodes.image?.create({ src: reader.result });
@@ -494,9 +503,15 @@ export const Endnote = Node.create({
 // their Word size; the writer uses it for the drawing extent (Docs M6).
 // Only the width renders, so the browser keeps the aspect ratio.
 export const SizedImage = Image.extend({
+  draggable: true,
+  addNodeView() {
+    // Docs M7: wrapping, crop, rotation and resize handles (objectNodes.ts).
+    return objectNodeView(this.editor) as never;
+  },
   addAttributes() {
     return {
       ...(this.parent?.() || {}),
+      ...objectAttributeSpecs(),
       width: {
         default: null,
         parseHTML: (el) => {
@@ -590,6 +605,8 @@ export function buildExtensions(opts: BuildOpts) {
     // Data-URL images (pasted, imported) must survive HTML parsing.
     SizedImage.configure({ allowBase64: true }),
     ImagePaste,
+    // Pictures, shapes, text boxes and charts in the text (M7).
+    ...OBJECT_NODES,
     Subscript,
     Superscript,
     GrownTable.configure({ resizable: true, View: GrownTableView }),
