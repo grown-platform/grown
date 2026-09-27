@@ -372,3 +372,40 @@ export const TEXTBOX_DEFAULTS = { fill: "#ffffff", stroke: "#000000", strokeWidt
 
 /** Vertical text anchoring in a shape (a:bodyPr anchor). */
 export const TEXT_ANCHORS = ["t", "ctr", "b"] as const;
+
+// --- position / size patches (OnlyOffice api-drawing SetHorPosition, …) -------------
+
+/** A position change: `value` is EMUs, or a percentage with `percent`. */
+export function positionPatch(axis: "h" | "v", rel: string, value: number, percent = false): Record<string, unknown> {
+  const k = axis === "h" ? "h" : "v";
+  return percent
+    ? { [`${k}Rel`]: rel, [`${k}Pct`]: value, [`${k}Align`]: null, [`${k}Offset`]: 0 }
+    : { [`${k}Rel`]: rel, [`${k}Offset`]: Math.round((value / 9525) * 100) / 100, [`${k}Pct`]: null, [`${k}Align`]: null };
+}
+
+/** A relative size change (wp14:sizeRelH / sizeRelV): `pct` % of `rel`. */
+export function relSizePatch(axis: "w" | "h", rel: string, pct: number): Record<string, unknown> {
+  return axis === "w" ? { relW: pct, relWFrom: rel } : { relH: pct, relHFrom: rel };
+}
+
+/** The drawing's anchor properties in DrawingML terms (positions in EMUs,
+ *  percentages as given), as OnlyOffice's ToJSON reports them. */
+export function drawingJson(a: Partial<ObjectAttrs>): Record<string, unknown> {
+  const pos = (rel: unknown, align: unknown, off: unknown, pct: unknown) =>
+    pct != null
+      ? { relativeFrom: rel, posOffset: Number(pct), percent: true }
+      : align
+        ? { relativeFrom: rel, align }
+        : { relativeFrom: rel, posOffset: Math.round((Number(off) || 0) * 9525), percent: false };
+  const out: Record<string, unknown> = {
+    name: a.name ?? null,
+    wrap: a.wrap ?? "inline",
+    positionH: pos(a.hRel ?? "column", a.hAlign, a.hOffset, a.hPct),
+    positionV: pos(a.vRel ?? "paragraph", a.vAlign, a.vOffset, a.vPct),
+    flipH: !!a.flipH,
+    flipV: !!a.flipV,
+  };
+  if (a.relW != null) out.sizeRelH = { relativeFrom: a.relWFrom ?? "page", "wp14:pctWidth": a.relW };
+  if (a.relH != null) out.sizeRelV = { relativeFrom: a.relHFrom ?? "page", "wp14:pctHeight": a.relH };
+  return out;
+}

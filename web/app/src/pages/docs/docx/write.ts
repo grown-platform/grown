@@ -929,7 +929,7 @@ class Writer {
       cy: Math.round(h * EMU_PER_PX),
       id,
       name: String(node.attrs.name || `Chart ${id}`),
-      descr: String(node.attrs.alt ?? chart.title ?? ""),
+      descr: String(node.attrs.alt ?? ""),
       graphic: chartGraphicXml(rid),
     });
     return `<w:r><w:drawing>${box}</w:drawing></w:r>`;

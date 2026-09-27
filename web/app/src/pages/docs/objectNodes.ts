@@ -506,6 +506,7 @@ function shapeNode(name: "shape" | "textBox") {
         tailEnd: str("tailEnd", null),
         textAnchor: str("textAnchor", name === "textBox" ? "t" : "ctr"),
         textColor: str("textColor", d.textColor || null),
+      alt: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute("data-alt"), renderHTML: (a: Record<string, unknown>) => (a.alt ? { "data-alt": String(a.alt) } : {}) },
         ...sizeAttrs,
         ...objectAttributeSpecs(),
         wrap: { ...objectAttributeSpecs().wrap, default: "square" },
@@ -544,6 +545,7 @@ export const ChartNode = Node.create({
         parseHTML: (el) => el.getAttribute("data-chart") ?? "",
         renderHTML: (a) => (a.chart ? { "data-chart": String(a.chart) } : {}),
       },
+      alt: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute("data-alt"), renderHTML: (a: Record<string, unknown>) => (a.alt ? { "data-alt": String(a.alt) } : {}) },
       ...sizeAttrs,
       ...objectAttributeSpecs(),
     };
@@ -647,7 +649,10 @@ export function insertObject(editor: Editor, type: string, attrs: Record<string,
   const name = validName(attrs.name) ? attrs.name : defaultName(type, takenNames(state.doc));
   const node = nt.create({ ...attrs, name }, content ?? null);
   let tr = state.tr;
-  const sel = state.selection;
+  // A selected object isn't replaced: the new one goes right after it.
+  if (state.selection instanceof NodeSelection && isObjectType(state.selection.node.type.name))
+    tr.setSelection(TextSelection.create(state.doc, state.selection.to));
+  const sel = tr.selection;
   let pos: number;
   if (sel.$from.parent.inlineContent && sel.$from.parent.type.contentMatch.matchType(nt) !== null && sel.$from.parent.canReplaceWith(sel.$from.index(), sel.$to.index(), nt)) {
     tr = tr.replaceSelectionWith(node, false);

@@ -287,6 +287,7 @@ class Reader {
   /** Point bookmarks that ended between paragraphs, for the next one. */
   pendingPoints: string[] = [];
   media = new Map<string, string>();
+  vmlBoxes = 0;
   /** Chart parts by `<part>#<rid>` (M7). */
   charts = new Map<string, Document>();
   warnings = new Set<string>();
@@ -1360,7 +1361,8 @@ class Reader {
     if (!img && tb && !ctx.margin && !descendants(tb, "tbl").length) {
       const shape = kids(v).find((k) => nameOf(k) !== "textbox") ?? tbEl!.parentElement;
       const content = this.textBoxInline(tb, ctx);
-      const attrs: Record<string, unknown> = { wrap: "inline", ...readVmlStyle(attr(shape, "style")) };
+      this.vmlBoxes++;
+      const attrs: Record<string, unknown> = { wrap: "inline", name: `Text Box ${this.vmlBoxes}`, ...readVmlStyle(attr(shape, "style")) };
       const fill = attr(shape, "fillcolor");
       const stroke = attr(shape, "strokecolor");
       if (fill && /^#[0-9a-f]{6}$/i.test(fill)) attrs.fill = fill.toLowerCase();
@@ -1806,11 +1808,12 @@ export async function readDocx(data: ArrayBuffer | Uint8Array | Blob): Promise<D
 function rankZ(json: JSONContent) {
   const objs: JSONContent[] = [];
   const walk = (n: JSONContent) => {
-    if (n.attrs && typeof n.attrs.z === "number" && ["inlineImage", "shape", "textBox", "chart"].includes(n.type ?? "")) objs.push(n);
+    if (n.attrs && n.attrs.wrap && n.attrs.wrap !== "inline" && ["inlineImage", "shape", "textBox", "chart"].includes(n.type ?? "")) objs.push(n);
     n.content?.forEach(walk);
   };
   walk(json);
-  const ranked = [...objs].sort((a, b) => (a.attrs!.z as number) - (b.attrs!.z as number));
+  // Stable sort: ties (and objects without a relativeHeight) keep document order.
+  const ranked = [...objs].sort((a, b) => (Number(a.attrs!.z) || 0) - (Number(b.attrs!.z) || 0));
   ranked.forEach((n, i) => (n.attrs = { ...n.attrs, z: i + 1 }));
 }
 
