@@ -44,7 +44,7 @@ native game ports compiled to WebAssembly).
 
 ## Install / self-host
 
-One all-in-one Helm chart brings up the whole platform (app + Postgres + MinIO +
+One all-in-one Helm chart brings up the whole platform (app + Postgres + rustfs +
 Zitadel SSO, no required operators) on any cluster — a laptop (kind), a Raspberry
 Pi 5 cluster, or a homelab:
 

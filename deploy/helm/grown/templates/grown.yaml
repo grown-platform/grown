@@ -136,16 +136,16 @@ spec:
               value: {{ include "grown.zitadelInternalURL" . | quote }}
               {{- end }}
             {{- end }}
-            # --- object storage (S3 / rustfs-compatible) ---
+            # --- object storage (S3: bundled rustfs, or external) ---
             - name: GROWN_RUSTFS_ENDPOINT
               valueFrom:
                 secretKeyRef: { name: {{ .Release.Name }}-s3, key: endpoint }
             - name: GROWN_RUSTFS_ACCESS_KEY
               valueFrom:
-                secretKeyRef: { name: {{ .Release.Name }}-s3, key: access_key }
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: access_key }
             - name: GROWN_RUSTFS_SECRET_KEY
               valueFrom:
-                secretKeyRef: { name: {{ .Release.Name }}-s3, key: secret_key }
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: secret_key }
             - name: GROWN_RUSTFS_BUCKET
               valueFrom:
                 secretKeyRef: { name: {{ .Release.Name }}-s3, key: bucket }
@@ -164,10 +164,10 @@ spec:
               value: {{ .Values.pdf.region | quote }}
             - name: PDF_STORAGE_ACCESS_KEY
               valueFrom:
-                secretKeyRef: { name: {{ .Release.Name }}-s3, key: access_key }
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: access_key }
             - name: PDF_STORAGE_SECRET_KEY
               valueFrom:
-                secretKeyRef: { name: {{ .Release.Name }}-s3, key: secret_key }
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: secret_key }
             - name: PDF_CRYPTO_KEY_ENCRYPTION_KEY
               value: {{ .Values.pdf.kek | quote }}
             {{- end }}

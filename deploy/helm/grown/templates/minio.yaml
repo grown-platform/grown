@@ -1,6 +1,18 @@
 {{- if .Values.minio.enabled }}
-# Bundled MinIO (S3-compatible object storage). grown's GROWN_RUSTFS_* point at
-# the MinIO Service. A bucket-init Job (post-install hook) creates the buckets.
+# LEGACY bundled MinIO (chart <= 0.1.x). Chart 0.2.0 serves object storage from
+# rustfs (templates/rustfs.yaml); grown no longer talks to MinIO. This is kept
+# ONLY so an upgraded install can keep its old MinIO running while the
+# migrate-from-minio Job copies the data across (minio.enabled=true).
+#
+# Upstream no longer publishes pullable MinIO images, so the pod can only run on
+# a node that still has the image cached. To avoid an upgrade-triggered restart
+# (and a reschedule onto a node without the image) the pod template below is
+# kept byte-identical to chart 0.1.8, including its frozen chart label.
+#
+# Set minio.enabled=false to remove the StatefulSet/Service/Secret. Its data PVC
+# (data-<release>-minio-0) is a volumeClaimTemplate PVC, which neither Helm nor
+# the StatefulSet controller deletes: remove it by hand once you've verified the
+# migration (see README "Upgrading from 0.1.x").
 apiVersion: v1
 kind: Secret
 metadata:
@@ -51,7 +63,11 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "grown.labels" . | nindent 8 }}
+        # Frozen to the 0.1.8 pod template (see header) — do not templatize.
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        helm.sh/chart: grown-0.1.8
         app.kubernetes.io/component: minio
     spec:
       securityContext:
@@ -92,58 +108,9 @@ spec:
         resources:
           requests:
             storage: {{ .Values.minio.persistence.size }}
----
-# Bucket-init Job: waits for MinIO, then creates the grown bucket (+ pdf bucket).
-# Run as a Helm hook so chart upgrades RECREATE it instead of patching it — a
-# Job's pod template is immutable, so a plain upgrade that touches the Job (even
-# just its chart-version label) fails with "field is immutable". The hook +
-# before-hook-creation delete policy sidesteps that. It is idempotent (mc mb
-# --ignore-existing), so re-running each upgrade is safe.
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: {{ .Release.Name }}-minio-init
-  labels:
-    {{- include "grown.labels" . | nindent 4 }}
-    app.kubernetes.io/component: minio-init
-  annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation
-spec:
-  backoffLimit: 10
-  template:
-    metadata:
-      labels:
-        {{- include "grown.labels" . | nindent 8 }}
-        app.kubernetes.io/component: minio-init
-    spec:
-      restartPolicy: OnFailure
-      containers:
-        - name: s3init
-          image: {{ .Values.minio.mcImage }}
-          command:
-            - sh
-            - -c
-            - |
-              export AWS_ACCESS_KEY_ID="$ACCESS" AWS_SECRET_ACCESS_KEY="$SECRET" AWS_DEFAULT_REGION=us-east-1
-              ep=http://{{ .Release.Name }}-minio:{{ .Values.minio.apiPort }}
-              echo "waiting for minio S3 auth..."
-              until aws --endpoint-url "$ep" s3api list-buckets >/dev/null 2>&1; do sleep 3; done
-              mkbucket() {
-                aws --endpoint-url "$ep" s3api head-bucket --bucket "$1" 2>/dev/null ||
-                  aws --endpoint-url "$ep" s3api create-bucket --bucket "$1" >/dev/null
-                echo "bucket $1 ready"
-              }
-              mkbucket {{ .Values.minio.bucket }}
-              {{- if .Values.pdf.enabled }}
-              mkbucket {{ .Values.pdf.bucket }}
-              {{- end }}
-          env:
-            - name: ACCESS
-              valueFrom:
-                secretKeyRef: { name: {{ .Release.Name }}-minio, key: MINIO_ROOT_USER }
-            - name: SECRET
-              valueFrom:
-                secretKeyRef: { name: {{ .Release.Name }}-minio, key: MINIO_ROOT_PASSWORD }
+{{- end }}
+{{- if and (not .Values.minio.enabled) (not .Values.minio.allowRemoval) .Release.IsUpgrade }}
+{{- if lookup "apps/v1" "StatefulSet" .Release.Namespace (include "grown.minioName" .) }}
+{{- fail (printf "chart 0.2.0 replaced MinIO with rustfs, and StatefulSet %s is still running. Keep it during migration with minio.enabled=true (+ migrateFromMinio.enabled=true), or, once your data is safely in rustfs, set minio.allowRemoval=true. See the chart README: Upgrading from 0.1.x." (include "grown.minioName" .)) }}
+{{- end }}
 {{- end }}

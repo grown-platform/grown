@@ -1,0 +1,188 @@
+{{- if .Values.rustfs.enabled }}
+{{- $name := include "grown.rustfsName" . }}
+{{- if not .Values.rustfs.existingSecret }}
+{{- /*
+  Root credentials, generated ONCE. On upgrade the live Secret is looked up and
+  its keys reused, so the password never rotates underneath the running app.
+  (`helm template` / --dry-run has no cluster access, so it shows fresh random
+  values; that is expected.) Explicit rustfs.accessKey/secretKey win.
+*/}}
+{{- $existing := (lookup "v1" "Secret" .Release.Namespace $name) | default dict }}
+{{- $data := (get $existing "data") | default dict }}
+{{- $access := .Values.rustfs.accessKey | default ((get $data "access_key") | default "" | b64dec) | default (printf "grown-%s" (randAlphaNum 12 | lower)) }}
+{{- $secret := .Values.rustfs.secretKey | default ((get $data "secret_key") | default "" | b64dec) | default (randAlphaNum 40) }}
+# rustfs root credentials (also what grown + the pdf app authenticate with).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs
+  annotations:
+    # Survive `helm uninstall` so a reinstall on the retained PVC keeps working.
+    "helm.sh/resource-policy": keep
+type: Opaque
+data:
+  access_key: {{ $access | b64enc | quote }}
+  secret_key: {{ $secret | b64enc | quote }}
+---
+{{- end }}
+# Bundled rustfs (S3-compatible object storage; replaces MinIO in chart 0.2.0).
+# Mirrors the proven pick.haus manifest: RUSTFS_VOLUMES=/data, S3 API on :9100,
+# console disabled, logs to stdout.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs
+spec:
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: rustfs
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: s3
+      port: {{ .Values.rustfs.port }}
+      targetPort: s3
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: rustfs
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "grown.labels" . | nindent 8 }}
+        app.kubernetes.io/component: rustfs
+    spec:
+      {{- with .Values.rustfs.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: rustfs
+          image: "{{ .Values.rustfs.image.repository }}:{{ .Values.rustfs.image.tag }}"
+          imagePullPolicy: {{ .Values.rustfs.image.pullPolicy }}
+          {{- with .Values.rustfs.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: RUSTFS_VOLUMES
+              value: /data
+            - name: RUSTFS_ADDRESS
+              value: ":9100"
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "false"
+            # "" => logs to stdout (the image default /logs is not a volume).
+            - name: RUSTFS_OBS_LOG_DIRECTORY
+              value: ""
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: access_key }
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: secret_key }
+            {{- with .Values.rustfs.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - { name: s3, containerPort: 9100 }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet: { path: /health, port: s3 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health, port: s3 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.rustfs.resources | nindent 12 }}
+  # volumeClaimTemplates PVCs (data-<release>-rustfs-0) are never deleted by
+  # `helm uninstall`/upgrade — Kubernetes leaves them in place by design.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with (include "grown.rustfsStorageClass" .) }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ include "grown.rustfsSize" . }}
+---
+# Bucket-init: waits for rustfs to accept S3 auth, then creates the grown bucket
+# (+ the pdf bucket). A post-install/post-upgrade hook so upgrades RECREATE it
+# (a Job's pod template is immutable) and it runs after rustfs is up. Idempotent
+# (head-bucket || create-bucket), so re-running on every upgrade is safe.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-init
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "grown.labels" . | nindent 8 }}
+        app.kubernetes.io/component: rustfs-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: s3init
+          image: {{ .Values.rustfs.initImage }}
+          command:
+            - sh
+            - -c
+            - |
+              export AWS_ACCESS_KEY_ID="$ACCESS" AWS_SECRET_ACCESS_KEY="$SECRET" AWS_DEFAULT_REGION=us-east-1
+              ep={{ include "grown.s3Endpoint" . }}
+              echo "waiting for rustfs S3 auth at $ep..."
+              until aws --endpoint-url "$ep" s3api list-buckets >/dev/null 2>&1; do sleep 3; done
+              mkbucket() {
+                aws --endpoint-url "$ep" s3api head-bucket --bucket "$1" 2>/dev/null ||
+                  aws --endpoint-url "$ep" s3api create-bucket --bucket "$1" >/dev/null
+                echo "bucket $1 ready"
+              }
+              mkbucket {{ include "grown.bucket" . }}
+              {{- if .Values.pdf.enabled }}
+              mkbucket {{ .Values.pdf.bucket }}
+              {{- end }}
+          env:
+            - name: ACCESS
+              valueFrom:
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: access_key }
+            - name: SECRET
+              valueFrom:
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: secret_key }
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { memory: 256Mi }
+{{- end }}
