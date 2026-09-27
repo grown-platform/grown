@@ -167,6 +167,7 @@ export interface DocActions {
   acceptAllChanges?: () => void;
   rejectAllChanges?: () => void;
   insertDrawing: () => void;
+  insertEquation?: () => void;
   customSpacing: () => void;
 }
 
@@ -332,6 +333,9 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Link…{kbd("Ctrl+K")}
           </MenuItem>
           <MenuItem onClick={actions.insertDrawing}>Drawing</MenuItem>
+          <MenuItem onClick={actions.insertEquation} data-testid="insert-equation">
+            Equation{kbd("Ctrl+Alt+=")}
+          </MenuItem>
           <MenuItem disabled>Chart</MenuItem>
           <ListDivider />
           <MenuItem onClick={actions.emoji}>Emoji…</MenuItem>

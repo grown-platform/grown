@@ -215,8 +215,9 @@ describe("OnlyOffice api", () => {
   });
 
   it.skip("Get text/selected text: selection inside an equation", () => {
-    // TODO(M11): the second half of the OnlyOffice case selects part of an
-    // equation ("abcd" -> "bc"), which needs the math node.
+    // n/a since M11: the second half selects part of an equation ("abcd" ->
+    // "bc"). Grown equations are atoms in the text (edited in the equation
+    // panel), so a text selection covers a whole equation or none of it.
   });
 });
 

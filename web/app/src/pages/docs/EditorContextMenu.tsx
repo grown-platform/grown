@@ -6,6 +6,7 @@ import { promptLink } from "./links";
 import { isInTable } from "@tiptap/pm/tables";
 import { distributeColumns, distributeRows } from "./tables";
 import { openTableSettings } from "./TableUI";
+import { EquationMenuItems, mathAt } from "./math/EquationMenu";
 
 interface MenuPos {
   x: number;
@@ -16,6 +17,8 @@ interface EditorContextMenuProps {
   editor: Editor | null;
   /** onComment opens the comments panel anchored to the current selection. */
   onComment: () => void;
+  /** onEditEquation opens the equation panel for the math node at pos. */
+  onEditEquation?: (pos: number) => void;
 }
 
 function kbd(s: string) {
@@ -32,8 +35,11 @@ function kbd(s: string) {
 export function EditorContextMenu({
   editor,
   onComment,
+  onEditEquation,
 }: EditorContextMenuProps) {
   const [pos, setPos] = useState<MenuPos | null>(null);
+  // The equation under the pointer (M11), as a document position.
+  const [mathPos, setMathPos] = useState<number | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
   const [inTable, setInTable] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -46,6 +52,7 @@ export function EditorContextMenu({
       const { from, to } = editor.state.selection;
       setHasSelection(from !== to);
       setInTable(isInTable(editor.state));
+      setMathPos(mathAt(editor, e.target as HTMLElement));
       setPos({ x: e.clientX, y: e.clientY });
     };
     el.addEventListener("contextmenu", onContextMenu);
@@ -116,6 +123,9 @@ export function EditorContextMenu({
           px: 0.5,
         }}
       >
+        {mathPos != null && (
+          <EquationMenuItems editor={editor} pos={mathPos} run={run} onEdit={() => onEditEquation?.(mathPos)} />
+        )}
         <ListItemButton
           disabled={!hasSelection}
           onClick={run(() => cutSelection())}

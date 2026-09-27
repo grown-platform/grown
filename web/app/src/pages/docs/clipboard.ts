@@ -19,6 +19,8 @@
 // extension wires these into ProseMirror (transformPastedHTML,
 // clipboardTextSerializer, clipboardSerializer). Paste as plain text is
 // ProseMirror's shift-paste (Ctrl+Shift+V) or pastePlainText().
+import { readOMathPara, readOMML } from "./math/omml";
+import { serializeContent } from "./math/model";
 import { Extension, type Editor } from "@tiptap/core";
 import { DOMSerializer, type Fragment, type Node as PMNode, type Schema, type Slice } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -167,13 +169,44 @@ function removeComments(root: Node) {
 }
 
 /** normalizePastedHTML cleans clipboard HTML (see the file comment). */
+/** Word's pasted OMML becomes math nodes (span[data-math]). */
+function convertWordEquations(body: HTMLElement, doc: Document) {
+  body.querySelectorAll("span[data-word-omml]").forEach((holder) => {
+    const out: Element[] = [];
+    const visit = (el: Element) => {
+      const name = el.localName.replace(/^.*:/, "").toLowerCase();
+      if (name === "omathpara" || name === "omath") {
+        const eqs = name === "omath" ? [readOMML(el)] : readOMathPara(el);
+        for (const eq of eqs) {
+          const span = doc.createElement("span");
+          span.setAttribute("data-math", serializeContent(eq));
+          if (name === "omathpara") span.setAttribute("data-display", "block");
+          out.push(span);
+        }
+        return;
+      }
+      Array.from(el.children).forEach(visit);
+    };
+    Array.from(holder.children).forEach(visit);
+    holder.replaceWith(...out);
+  });
+  // the picture Word pastes for readers without equations
+  body.querySelectorAll("img").forEach((img) => {
+    if (/msohtmlclip|clip_image/i.test(img.getAttribute("src") || "")) img.remove();
+  });
+}
+
 export function normalizePastedHTML(html: string): string {
   if (typeof DOMParser === "undefined") return html;
   // Word/Excel wrap the fragment in <!--StartFragment--> … <!--EndFragment-->
   // inside a full document; the parser copes with either.
+  // Word keeps an equation's OMML in an "msEquation" conditional comment
+  // (next to a picture fallback); lift it out before comments go.
+  html = html.replace(/<!--\[if gte msEquation 12\]>([\s\S]*?)<!\[endif\]-->/gi, "<span data-word-omml>$1</span>");
   const doc = new DOMParser().parseFromString(html, "text/html");
   const body = doc.body;
   if (!body) return html;
+  convertWordEquations(body, doc);
   removeComments(body);
   body.querySelectorAll("*").forEach((el) => {
     if (!el.isConnected) return;

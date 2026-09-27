@@ -91,6 +91,22 @@ export function editorPageSx(
     "& .ProseMirror img.doc-drawing:hover": {
       border: "1px solid #c7d2fe",
     },
+    // Equations (M11): KaTeX inside a clickable atom; display equations on
+    // their own centred line.
+    "& .ProseMirror .doc-math": {
+      cursor: "pointer",
+      borderRadius: "3px",
+      padding: "0 1px",
+    },
+    "& .ProseMirror .doc-math:hover": { background: "rgba(26,115,232,0.08)" },
+    "& .ProseMirror .doc-math.ProseMirror-selectednode": { outline: "2px solid #8ab4f8" },
+    "& .ProseMirror .doc-math-display": { display: "block", textAlign: "center", margin: "0.5em 0" },
+    "& .ProseMirror .doc-math-empty": {
+      color: "#80868b",
+      border: "1px dashed #bdc1c6",
+      padding: "0 4px",
+      fontStyle: "italic",
+    },
     // Page break: dashed divider on screen, real page break when printed.
     "& .ProseMirror .page-break": {
       borderTop: "2px dashed #c7d2fe",

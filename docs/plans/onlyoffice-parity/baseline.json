@@ -42,7 +42,7 @@
       "passing": null
     },
     "common/visio": {
-      "ported": 10,
+      "ported": 0,
       "passing": null
     },
     "docs/autocorrect": {
@@ -74,7 +74,7 @@
       "passing": null
     },
     "docs/equations": {
-      "ported": 0,
+      "ported": 924,
       "passing": null
     },
     "docs/find-replace": {
@@ -186,7 +186,7 @@
       "passing": null
     },
     "sheets/editing": {
-      "ported": 68,
+      "ported": 0,
       "passing": null
     },
     "sheets/engine-internal": {
@@ -194,7 +194,7 @@
       "passing": null
     },
     "sheets/formatting": {
-      "ported": 58,
+      "ported": 57,
       "passing": null
     },
     "sheets/formulas": {
@@ -298,7 +298,7 @@
       "passing": null
     },
     "slides/shortcuts": {
-      "ported": 21,
+      "ported": 19,
       "passing": null
     },
     "slides/shortcuts fixture": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 1012,
+    "ported": 1855,
     "passing": null
   }
 }
