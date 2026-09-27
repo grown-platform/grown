@@ -121,11 +121,11 @@ func TestProtectionCanEditCell(t *testing.T) {
 func TestEnforceProtectionRevertsBlockedCells(t *testing.T) {
 	bob := Editor{User: "bob", Owner: "olga"}
 	next := edit(t, protWorkbook, "s1", 1, 1, map[string]interface{}{"v": 99, "m": "99"}) // protected
-	next = edit(t, next, "s1", 0, 0, map[string]interface{}{"v": 5, "m": "5"})             // free
-	next = edit(t, next, "s1", 2, 1, nil)                                                   // protected delete
-	next = edit(t, next, "s2", 0, 0, map[string]interface{}{"v": "hacked"})                 // locked sheet
-	next = edit(t, next, "s2", 1, 0, map[string]interface{}{"v": "ok"})                     // except range
-	next = edit(t, next, "s2", 0, 2, map[string]interface{}{"v": "also ok", "lo": 0})       // unlocked cell
+	next = edit(t, next, "s1", 0, 0, map[string]interface{}{"v": 5, "m": "5"})            // free
+	next = edit(t, next, "s1", 2, 1, nil)                                                 // protected delete
+	next = edit(t, next, "s2", 0, 0, map[string]interface{}{"v": "hacked"})               // locked sheet
+	next = edit(t, next, "s2", 1, 0, map[string]interface{}{"v": "ok"})                   // except range
+	next = edit(t, next, "s2", 0, 2, map[string]interface{}{"v": "also ok", "lo": 0})     // unlocked cell
 	out, n := EnforceProtection(protWorkbook, next, bob)
 	if n != 3 {
 		t.Errorf("reverted %d changes, want 3", n)
@@ -201,7 +201,7 @@ func TestEnforceProtectionRestoresDeletedSheetAndConfig(t *testing.T) {
 	bob := Editor{User: "bob", Owner: "olga"}
 	wb := mustSheets(t, protWorkbook)
 	wb[0]["config"] = json.RawMessage(`{"columnlen":{"0":300}}`) // Sheet1 isn't sheet-locked: allowed
-	only := []map[string]json.RawMessage{wb[0]}                   // Locked deleted
+	only := []map[string]json.RawMessage{wb[0]}                  // Locked deleted
 	b, _ := json.Marshal(only)
 	out, n := EnforceProtection(protWorkbook, string(b), bob)
 	got := mustSheets(t, out)
