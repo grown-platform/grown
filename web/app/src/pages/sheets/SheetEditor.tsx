@@ -712,8 +712,6 @@ export function SheetEditor({ user }: SheetEditorProps) {
     // it; headings repaint with the grid.
     if (patch.showGridLines !== undefined || patch.zoom !== undefined || patch.showHeadings !== undefined) setViewGen((g) => g + 1);
   }
-  const viewActionRef = useRef(applyView);
-  viewActionRef.current = applyView;
   refreshViewRef.current = () => setView(sheetViewOptions(currentSheet(ref.current)));
 
   // ---- M12 keyboard shortcuts and M5 analysis tools ----------------------
@@ -1170,8 +1168,6 @@ export function SheetEditor({ user }: SheetEditorProps) {
     const sel = selectionRect(ref.current);
     setPrintFor({ sheet: JSON.parse(JSON.stringify(sheet)), selection: sel });
   }
-  const printActionRef = useRef(openPrint);
-  printActionRef.current = openPrint;
 
   function savePrint(ps: PrintSettings) {
     const sheet = currentSheet(ref.current);
