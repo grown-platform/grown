@@ -111,7 +111,7 @@ export function mapSlide(
   slideId: string,
   fn: (s: Slide) => Slide,
 ): DeckDoc {
-  return { slides: doc.slides.map((s) => (s.id === slideId ? fn(s) : s)) };
+  return { ...doc, slides: doc.slides.map((s) => (s.id === slideId ? fn(s) : s)) };
 }
 
 // ---- element ops within a slide ----
@@ -444,6 +444,7 @@ export function applyCollabOp(
     ids?: string[];
     elements?: SlideElement[];
     slides?: Slide[];
+    deck?: DeckDoc;
   },
 ): DeckDoc {
   if (m.t === "upsert" && m.si && m.el) {
@@ -470,6 +471,10 @@ export function applyCollabOp(
     const elements = m.elements;
     return mapSlide(doc, m.si, (s) => ({ ...s, elements }));
   }
-  if (m.t === "slides" && m.slides) return { slides: m.slides };
+  // The slide list; deck-level props (theme, layouts, size, header &
+  // footer) are kept.
+  if (m.t === "slides" && m.slides) return { ...doc, slides: m.slides };
+  // The whole deck (theme/size changes, undo): M7.
+  if (m.t === "deck" && m.deck && Array.isArray(m.deck.slides)) return m.deck;
   return doc;
 }

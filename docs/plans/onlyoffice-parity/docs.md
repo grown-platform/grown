@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -356,11 +356,11 @@ Grown paths are relative to the repo root; `docs/` below means
 
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
-| Insert equation (gallery, toolbar) | Toolbar `capBtnInsEquation` | Missing | — |
-| Unicode / LaTeX linear input with autocorrect | `math-autocorrection.js` (878 cases), `Editor/Math.js` | Missing | — |
-| Equation context menu (fractions, brackets, limits, scripts, matrix, ...) | DocumentHolder `txt*` (approx. 60 items) | Missing | — |
-| MathML import | `math-ml.js` | Missing | — |
-| Change case inside math | `change-case.js` Math module | Missing | — |
+| Insert equation (gallery, toolbar) | Toolbar `capBtnInsEquation` | Done (M11) | Insert ▸ Equation, toolbar Σ, Ctrl+Alt+=, equation panel templates (§6.12) |
+| Unicode / LaTeX linear input with autocorrect | `math-autocorrection.js` (878 cases), `Editor/Math.js` | Done (M11) | `math/linear.ts`, `math/autocorrect.ts`, `math/latex.ts` |
+| Equation context menu (fractions, brackets, limits, scripts, matrix, ...) | DocumentHolder `txt*` (approx. 60 items) | Partial (M11) | `math/EquationMenu.tsx`: linear/professional, display/inline, fraction kind, limit position, brackets, matrix rows/columns |
+| MathML import | `math-ml.js` | Done (M11) | `math/mathml.ts` (also MathML export) |
+| Change case inside math | `change-case.js` Math module | Done (M11) | equations are left unchanged |
 
 ### 2.16 Autocorrect
 
@@ -787,7 +787,7 @@ Google Docs binding or model and the ported test asserts Grown's behaviour.
 |---|---|---|---|
 | change-case: Sentence case, Toggle case (4 cases) | Five change-case modes | Five modes, `changeCase()` in `textCase.ts` | Done (M1) |
 | change-case (Grown regression tests) | Case change keeps each run's formatting and the paragraph boundaries | Text nodes are rewritten in place with their own marks; words and sentences are judged with the paragraph's text as context | Done (M1) |
-| change-case math (5 cases) | Equation text is left unchanged | No equation node | M11 |
+| change-case math (5 cases) | Equation text is left unchanged | Equation text is left unchanged (math nodes are atoms) | Done (M11) |
 | shortcuts: Check text property change | Increase/decrease font size step through 10, 11, 12, 14, 16 | Ctrl+Shift+. / Ctrl+Shift+, step through 8…28, 36, 48, 72. OnlyOffice's own chords (Ctrl+] / Ctrl+[) stay Google Docs indent | Done (M1), grown-variant chord |
 | shortcuts: Check paragraph property change | Alignment shortcuts toggle back; Ctrl+M / Ctrl+Shift+M indent by 12.5 mm; Alt+1-3 headings | Center/right/justify toggle back to left. Ctrl+M / Ctrl+Shift+M (and Ctrl+] / Ctrl+[) indent by 36pt (0.5in) steps via a paragraph `indent` attribute, or nest list items. Headings stay Ctrl+Alt+1-6. Ctrl+Shift+L is align left and does not toggle to the previous alignment | Done (M1); grown-variant: headings chord, indent step, left-align toggle |
 | shortcuts: Check toggle bullet list | Ctrl+Shift+L | Ctrl+Shift+8 (Google Docs / TipTap); Ctrl+Shift+L stays align left | grown-variant, listed in ShortcutsDialog |
@@ -798,7 +798,7 @@ Google Docs binding or model and the ported test asserts Grown's behaviour.
 | shortcuts: Check copy/paste format | Format painter data | Ctrl+Alt+C / Ctrl+Alt+V copy and apply character formatting (no sticky painter mode yet) | Done (M1); sticky mode with M7's "reset actions" |
 | api.js: Test AddText/RemoveSelection | `AddTextWithPr` with the wrap-with-spaces option | `addText(editor, text, { wrapWithSpaces })` in `textOps.ts` | Done (M1) |
 | api.js: Test add/remove space before/after paragraph | Numeric space before/after, a "has space" state, style-aware | Numeric points per side; unset sides follow the block type's default (Normal 0/9pt, headings their margins). Headings stand in for OnlyOffice's paragraph style until M3 styles | Done (M1) |
-| api.js: Get text/selected text | Includes a selection that ends inside an equation | Plain-text half passes; equation half skipped | M11 |
+| api.js: Get text/selected text | Includes a selection that ends inside an equation | Plain-text half passes; equation half n/a (equations are atoms; partial selection happens in the equation panel) | n/a (M11) |
 | api.js: Change numbering level | Enter in an empty list item ends the list at level 1 and outdents at deeper levels | Same behaviour (passes) | — |
 | api-run / api-range: SetColor, SetShd | RGB, hex, theme and auto colours; range shading on a whole paragraph shades the paragraph | RGB/hex and auto (= none) pass. Grown has no document theme, so theme colours are n/a. Whole-paragraph ranges set a paragraph `shading` attribute, partial ranges a highlight | Done (M1); theme colours n/a |
 | textInput.js: TextSpeaker, complex script, in-shape | Screen-reader hook, script runs, shape text | No equivalents (browser shapes text; no shapes until M7) | n/a |
@@ -1305,6 +1305,130 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | document-content: block-level sdt | The "entire document" cases include a block content control | A middle paragraph stands in until M10; the sdt-only cases are skipped | Until M10 |
 | Rejecting an inserted paragraph mark | The merged paragraph's properties follow Word's mark rules | The first paragraph keeps its type and attributes and takes the next paragraph's mark state (so a heading split by Enter stays a heading) | Note only |
 | Review colours | Per-user colours for all change types | Insertions take the author's colour; deletions are red, formatting purple | Note only |
+
+### 6.12 M11 status (equations)
+
+* **Model** (`math/model.ts`): OMML-shaped JSON — a content is a list of
+  runs (`sty` p/b/i/bi, `nor`, colour, highlight) and objects (`f` with
+  bar/skw/lin/noBar, `sSup`, `sSub`, `sSubSup`, `sPre`, `rad`, `nary` with
+  `limLoc` and hidden limits as `null`, `d` with begin/end/separator,
+  `func`, `limLow`, `limUpp`, `acc`, `bar`, `box`, `borderBox`,
+  `groupChr`, `m`, `eqArr`, `phant`); `normalize` keeps Word's shape (runs
+  at both ends and between objects). The `math` node (`math/MathNode.ts`)
+  is an inline atom with the model as a JSON string attribute `data` and a
+  `display` flag (own centred line = Word's `m:oMathPara`), so it rides
+  y-prosemirror and the update log like any attribute. It renders with
+  KaTeX (MIT, now a direct dependency; already in the tree via mermaid);
+  `getHTML()` writes `span[data-math]` with MathML inside and an `alttext`
+  of the linear form; `renderText` is the linear form.
+* **Linear format** (`math/linear.ts`): a UnicodeMath reader over *cells*
+  (characters or built objects) with precedence sequence → fraction
+  (right-associative) → ┴/┬ → scripts (same-kind chains right-associative,
+  ^ after _ = sub-superscript) → prefix operators (√ ∛ ∜ □ ▭ ▁ ¯ ⏞ ⏟ ■ █
+  n-ary) → atoms (letter/digit runs, bracket groups with Word's `|`
+  pairing and `├…┤`, functions with U+2061, accents, primes, pre-scripts);
+  `( )` used as an operand is grouping. The writer reproduces Word's /
+  OnlyOffice's linear text (argument bracketing rules, 〖〗 for mixed n-ary
+  and function arguments, spacing between adjacent objects).
+* **Autocorrect** (`math/autocorrect.ts`, `MathInput`): `\word` + space
+  (or + a closing character) → symbol (Word's math autocorrect list plus
+  `\doubleX` / `\frakturX` / `\scriptX`), `->` `<=` … → → ≤ …; two spaces
+  never convert; function name + space → function with the caret in its
+  argument; name + ^/_ gets U+2061; a closing bracket builds up its
+  content; `/` builds up the operand before it (so `1/2/3` is
+  `((1/2)/3)`); an operator builds up since the last unmatched opening
+  bracket; a space builds up around the last structure character (infix:
+  the operand before and everything after; prefix: to the end; postfix
+  accent: with its base; after ▒: the n-ary operand, else the whole
+  n-ary); a bracket pair + space becomes a delimiter. The caret lands in
+  an empty n-ary base or function argument. Each conversion is its own
+  undo step; arrow keys move in and out of arguments.
+* **LaTeX** (`math/latex.ts`): reader (fractions, binomials, roots,
+  accents, braces/brackets incl. bare pairs, `\left…\middle…\right`,
+  scripts and pre-scripts, `\below` / `\above`, n-ary with limits,
+  functions incl. `\operatorname`, `\text`, `\mathrm` and the math
+  alphabets, `matrix` / `pmatrix` / `bmatrix` / `cases` / `array` /
+  `aligned`), the LaTeX linear view in Word's compact form, and a KaTeX
+  writer (standard LaTeX; every fixture equation is checked to be valid
+  KaTeX input).
+* **MathML** (`math/mathml.ts`): Presentation MathML importer (token
+  styles, mathvariant, colours, `mfrac` incl. bevelled / linethickness 0,
+  roots, scripts, `munder`/`mover`/`munderover` → n-ary (movablelimits),
+  group characters or limits, `mfenced`, `menclose`, `mphantom`,
+  `mtable` with nested `mtr`/`mtd` normalised, `semantics`, function
+  application) used for pasted HTML (`<math>`), and an exporter.
+* **DOCX** (`math/omml.ts`, `docx/read.ts`, `docx/write.ts`): `m:oMath`
+  → inline math node, `m:oMathPara` → display math node(s), and back
+  (`xmlns:m` on every part root). Header/footer equations keep their
+  linear text (the margin schema has no math node). Pasting from Word
+  reads the OMML in its `msEquation` conditional comment and drops the
+  picture fallback.
+* **UI**: Insert ▸ Equation, the toolbar Σ button, the command palette and
+  Ctrl+Alt+= (listed in the shortcuts dialog) insert an equation and open
+  the **equation panel** (`math/EquationEditor.tsx`): linear input with
+  autocorrect at the caret (editing elsewhere switches to free editing of
+  the linear text; `\words` are corrected on Done), a LaTeX mode, template
+  menus (fraction, script, radical, integral, large operator, bracket,
+  function, accent, limit and log, matrix), display toggle, live KaTeX
+  preview, Enter = Done (builds up the whole equation), Escape = Cancel
+  (an empty new equation is removed). Clicking an equation reopens it.
+  The context menu on an equation (`math/EquationMenu.tsx`) offers edit,
+  linear / professional format, display / inline, stacked / skewed /
+  linear fractions, limits under-over / as scripts, add / remove
+  brackets, matrix rows and columns, delete.
+* **Change case** leaves equations unchanged (they are atoms).
+* **Tests**: `oo/math-autocorrect.test.ts` 878 tagged cases — the 846 cases
+  OnlyOffice's `Test()` helper generates are data in
+  `__tests__/fixtures/math-autocorrection.json` (input, mode, expected
+  top-level elements; one literal tag per case, numbered in file order,
+  extracted by a local script under `research/`), plus the 32 hand-written
+  QUnit tests: **876 pass, 2 skipped**. `oo/mathml-import.test.ts` 46
+  tagged (the 46 live QUnit tests of math-ml.js; the CSV's 53 counts 7
+  commented-out ones): **44 pass, 2 skipped**. `oo/change-case.test.ts`:
+  the 5 math cases now pass. `oo/shortcuts.test.ts` "Check insert
+  equation" now passes. Grown-native `math.test.ts` (18: OMML read /
+  write / .docx round trip / header fallback, Ctrl+Alt+=, HTML ⇄ MathML,
+  pasted MathML and Word OMML, KaTeX, Yjs sync, KaTeX validity of every
+  fixture equation, LaTeX round trip, templates, equation commands, free
+  text words, undo, MathML round trip). Playwright
+  `web/e2e/docs-math.spec.ts`: four equations typed in linear format
+  (Ctrl+Alt+= and Insert ▸ Equation; fraction with a radical, a bracketed
+  matrix, a display sum with limits, an integral made display from the
+  context menu), rendering checks, reload, reopen, .docx download and
+  re-import.
+* **Skipped, by cause**:
+  * n/a — per-character review info inside an equation
+    (math-autocorrection "Check review info convert math; bug #67505"):
+    tracked changes apply to the equation node as a whole.
+  * Not modelled — equation line breaks and alignment (`m:brk`,
+    `m:alnAt`): math-autocorrection "Save manual break"; shortcuts "Check
+    handle tab in math".
+  * In-place caret editing of equations in the document (Grown edits them
+    in the equation panel): shortcuts "Check add new paragraph math" and
+    "Test add new line to math".
+  * Upstream test is broken: math-ml "mathvariant" asserts an undefined
+    variable.
+  * grown-variant: math-ml "Add mphantom" — the phantom imports as a
+    phantom object, but its linear form is UnicodeMath's ⟡, not
+    `\mphantom`.
+  * copy-paste "Paste Newton's binom formula from word" stays skipped: it
+    is commented out upstream and compares OnlyOffice's own copy HTML;
+    Word equations do paste since M11. "Paste footnote formula" waits for
+    rich footnote bodies (F1).
+* **Not yet**: caret editing inside a rendered equation in the page (the
+  panel shows the linear text), equation numbering and `#` labels, line
+  breaks / alignment points, per-run styles beyond sty / nor / colour,
+  equations in headers/footers and footnotes, a gallery of saved
+  equations, ODT/RTF math (those exports go through pandoc, which reads
+  the MathML).
+* **Semantic differences**:
+
+| Case | OnlyOffice / Word | Grown | Status |
+|---|---|---|---|
+| Where equations are edited | In place in the page | In the equation panel under the equation; the page shows KaTeX | grown-variant |
+| Done / leaving the equation | Keeps partly built-up text | Done builds up the whole equation (Word's "Professional") | grown-variant |
+| Phantom linear form | `\mphantom` | ⟡ (UnicodeMath) | grown-variant |
+| Insert equation chord | Alt+= | Ctrl+Alt+= (Alt+= types ≠ on macOS) | grown-variant |
 
 ### Known flaky e2e (as of 2026-09-26)
 

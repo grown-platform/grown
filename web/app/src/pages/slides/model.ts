@@ -1,10 +1,24 @@
 // The slides document model. A deck is an ordered list of slides; each slide
 // has a background and a list of absolutely-positioned elements. Coordinates
-// are in a fixed logical canvas of CANVAS_W × CANVAS_H (16:9); the editor and
-// thumbnails scale this to whatever pixel size they render at.
+// are in a logical canvas CANVAS_W (always 960) wide and CANVAS_H high; the
+// editor and thumbnails scale this to whatever pixel size they render at.
+//
+// CANVAS_H follows the open deck's slide size (M7, `DeckDoc.size`): 540 for
+// 16:9 (the default), 720 for 4:3. It is a live binding set by
+// `setCanvasSize` when a deck is opened or resized, so the pure geometry
+// helpers keep one signature; importers of a pptx and the pptx writer read
+// the size from the deck itself.
 
 export const CANVAS_W = 960;
-export const CANVAS_H = 540;
+/** Default logical slide height (16:9). */
+export const DEFAULT_CANVAS_H = 540;
+export let CANVAS_H = DEFAULT_CANVAS_H;
+
+/** setCanvasSize sets the logical height of the open deck's slides. */
+export function setCanvasSize(size: { w: number; h: number } | undefined): void {
+  const h = size && size.w > 0 && size.h > 0 ? Math.round((CANVAS_W * size.h) / size.w) : DEFAULT_CANVAS_H;
+  CANVAS_H = Math.max(60, Math.min(4 * CANVAS_W, h));
+}
 
 export type ElementType =
   | "text"
@@ -352,6 +366,14 @@ export interface SlideElement {
   endCxn?: CxnRef;
   /** Object name (Selection pane / pptx `cNvPr@name`); optional. */
   name?: string;
+  /** Layout placeholder this element fills (M7): its type and index. */
+  placeholder?: Placeholder;
+  /** Theme references (M7): colour slots (`accent1`, `tx1`, …, optionally
+   *  with DrawingML modifiers, see theme.ts) and font roles
+   *  (`major`/`minor`) that `fill`/`stroke`/`color`/`fontFamily` were
+   *  taken from. Changing the theme re-resolves them; a property without a
+   *  reference is an explicit value and is kept. */
+  themeRefs?: ThemeRefs;
   /** Position lock: a locked element can be selected but not moved/resized. */
   locked?: boolean;
   /**
@@ -373,6 +395,52 @@ export function elementTransform(el: SlideElement): string | undefined {
   return parts.length ? parts.join(" ") : undefined;
 }
 
+/** Placeholder kinds (pptx `p:ph@type`; `obj` = a content placeholder). */
+export type PlaceholderType =
+  | "title"
+  | "ctrTitle"
+  | "subTitle"
+  | "body"
+  | "obj"
+  | "pic"
+  | "dt"
+  | "ftr"
+  | "sldNum";
+
+export interface Placeholder {
+  type: PlaceholderType;
+  /** Index among the layout's placeholders (pptx `p:ph@idx`). */
+  idx?: number;
+}
+
+export interface ThemeRefs {
+  fill?: string;
+  stroke?: string;
+  color?: string;
+  font?: "major" | "minor";
+}
+
+/** A gradient or picture slide background (M7). `Slide.background` stays
+ *  the plain colour (the first gradient stop, or white under a picture) so
+ *  older clients still draw something sensible. */
+export type SlideFill =
+  | {
+      kind: "gradient";
+      /** Stops, 0–1 positions, in order. */
+      stops: { pos: number; color: string }[];
+      /** Linear angle in degrees (0 = left→right, 90 = top→bottom), or radial. */
+      angle?: number;
+      radial?: boolean;
+    }
+  | { kind: "image"; src: string };
+
+/** Per-slide header/footer switches; absent = the deck setting. */
+export interface SlideHF {
+  sldNum?: boolean;
+  dt?: boolean;
+  ftr?: boolean;
+}
+
 export interface Slide {
   id: string;
   background: string;
@@ -381,10 +449,86 @@ export interface Slide {
   notes?: string;
   /** Transition played when this slide is shown during a slideshow. */
   transition?: TransitionType;
+  /** Layout the slide was made from (`DeckDoc.layouts[].id`). */
+  layout?: string;
+  /** Gradient/picture background over `background`. */
+  bgFill?: SlideFill;
+  /** Theme slot of the background colour (e.g. "bg1"). */
+  bgRef?: string;
+  /** Skipped in the slideshow (pptx `p:sld@show="0"`). */
+  hidden?: boolean;
+  /** Header/footer overrides for this slide. */
+  hf?: SlideHF;
+}
+
+/** DrawingML colour scheme slots (ECMA-376 §20.1.4.1.10 `a:clrScheme`). */
+export interface ThemeColors {
+  dk1: string;
+  lt1: string;
+  dk2: string;
+  lt2: string;
+  accent1: string;
+  accent2: string;
+  accent3: string;
+  accent4: string;
+  accent5: string;
+  accent6: string;
+  hlink: string;
+  folHlink: string;
+}
+
+/** A deck theme: colour scheme + font scheme (M7). */
+export interface DeckTheme {
+  /** Built-in theme id, or "custom"/"imported". */
+  id: string;
+  name: string;
+  colors: ThemeColors;
+  fonts: { major: string; minor: string };
+  /** Dark variant: bg1/bg2 map to dk1/dk2 and tx1/tx2 to lt1/lt2 (the
+   *  master `p:clrMap`); otherwise the standard mapping. */
+  dark?: boolean;
+}
+
+/** A slide layout (M7): a template slide whose elements carry
+ *  `placeholder` (title, body, pic, dt/ftr/sldNum, …) plus decorations.
+ *  Slides copy it; nothing inherits from it at render time (flagged
+ *  exception F3), except the date/footer/number placeholders, which are
+ *  drawn from the layout when switched on. */
+export interface SlideLayout {
+  id: string;
+  name: string;
+  /** pptx `p:sldLayout@type` (title, obj, twoObj, secHead, titleOnly, blank, …). */
+  type?: string;
+  elements: SlideElement[];
+  background?: string;
+  bgRef?: string;
+  bgFill?: SlideFill;
+}
+
+/** Deck-wide header & footer (Insert ▸ Header & footer). */
+export interface DeckHF {
+  sldNum?: boolean;
+  ftr?: boolean;
+  footerText?: string;
+  dt?: boolean;
+  /** Fixed date text; absent = today's date, updated automatically. */
+  dateText?: string;
+  /** Don't show on title slides (layout type "title"). */
+  notOnTitle?: boolean;
+  /** Number of the first slide (default 1). */
+  startAt?: number;
 }
 
 export interface DeckDoc {
   slides: Slide[];
+  /** Theme; absent = the default Office theme (M7). */
+  theme?: DeckTheme;
+  /** Slide layouts; absent = the built-in set for the theme. */
+  layouts?: SlideLayout[];
+  /** Slide size in logical units ({w: 960, h}); absent = 16:9 (960×540). */
+  size?: { w: number; h: number };
+  /** Header & footer settings. */
+  hf?: DeckHF;
 }
 
 export const FONT_FAMILIES = [

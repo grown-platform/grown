@@ -29,6 +29,7 @@ import FormatColorTextIcon from "@mui/icons-material/FormatColorText";
 import BorderColorIcon from "@mui/icons-material/BorderColor";
 import LinkIcon from "@mui/icons-material/Link";
 import ImageIcon from "@mui/icons-material/Image";
+import FunctionsIcon from "@mui/icons-material/Functions";
 import FormatAlignLeftIcon from "@mui/icons-material/FormatAlignLeft";
 import FormatAlignCenterIcon from "@mui/icons-material/FormatAlignCenter";
 import FormatAlignRightIcon from "@mui/icons-material/FormatAlignRight";
@@ -54,6 +55,7 @@ export type EditorMode = "editing" | "suggesting" | "viewing";
 interface ToolbarProps {
   editor: Editor | null;
   onOpenMenus: () => void;
+  onInsertEquation?: () => void;
   mode: EditorMode;
   onModeChange: (m: EditorMode) => void;
 }
@@ -108,6 +110,7 @@ const LINE_SPACINGS = ["1", "1.15", "1.5", "2", "2.5", "3"];
 export function Toolbar({
   editor,
   onOpenMenus,
+  onInsertEquation,
   mode,
   onModeChange,
 }: ToolbarProps) {
@@ -366,6 +369,7 @@ export function Toolbar({
         <LinkIcon />,
       )}
       {iconBtn(false, promptImage, "Insert image", <ImageIcon />)}
+      {onInsertEquation && iconBtn(false, onInsertEquation, "Insert equation (Ctrl+Alt+=)", <FunctionsIcon />)}
       <Dropdown open={tableOpen} onOpenChange={(_, o) => setTableOpen(o)}>
         <Tooltip title="Insert table" size="sm">
           <MenuButton

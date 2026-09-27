@@ -23,6 +23,8 @@ import { WORD_STYLE_NAMES } from "./read";
 import { marksRunProps, writePPr, writeRPr } from "./props";
 import { findTemplate } from "../tableModel";
 import { tableStyleXml, tcBordersXml, tcMarXml, vAlignXml, writeTblPr, writeTrPr } from "./tables";
+import { writeOMML } from "../math/omml";
+import { contentFromAttr } from "../math/model";
 import { EMU_PER_PX, el, esc, ptToTwips, ROOT_NS, toHex, TWIPS_PER_PX, XML_DECL, NS } from "./xml";
 
 export interface RasterImage {
@@ -594,6 +596,7 @@ class Writer {
       else if (c.type.name === "footnote" || c.type.name === "endnote") {
         if (ctx.body) run = this.noteRef(c, writeRPr({ ...marksRunProps(c.marks), vertAlign: "super" }));
       } else if (c.type.name === "image") run = (await this.imageRun(c, ctx)) ?? "";
+      else if (c.type.name === "math") run = writeOMML(contentFromAttr(c.attrs.data), !!c.attrs.display);
       else if (c.textContent) run = `<w:r>${rPr}${this.textXml(c.textContent, false)}</w:r>`;
       if (run) items.push({ href, xml: this.tracked(c.marks, run) });
       if (ctx.body) for (const [id, last] of this.commentLast) if (last === idx)

@@ -19,6 +19,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import { InsertionMark, DeletionMark, FormatChangeMark, TrackParagraphs, Suggesting } from "./suggesting";
 import { Drawing } from "./drawing";
+import { MathNode } from "./math/MathNode";
 import { ParagraphSpacing, ParagraphIndent, ParagraphShading } from "./paragraphFormat";
 import { DocShortcuts, TabCharacter } from "./shortcuts";
 import { ParagraphProps } from "./paragraphProps";
@@ -596,6 +597,7 @@ export function buildExtensions(opts: BuildOpts) {
     FormatChangeMark,
     TrackParagraphs,
     Drawing,
+    MathNode,
     Suggesting.configure({ user: { name: userName, color: userColor } }),
     ClipboardHandling,
     Search,

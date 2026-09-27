@@ -171,16 +171,24 @@ func (s *Service) RenameSheet(ctx context.Context, req *grownv1.RenameSheetReque
 }
 
 func (s *Service) SaveSheet(ctx context.Context, req *grownv1.SaveSheetRequest) (*grownv1.SaveSheetResponse, error) {
-	orgID, err := callerOrg(ctx)
+	orgID, userID, err := callerOrgUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	incoming := req.GetData()
+	// Protected sheets and ranges: edits the caller may not make are undone
+	// against the stored workbook before anything is recomputed or saved.
+	if stored, gerr := s.repo.Get(ctx, orgID, req.GetId()); gerr == nil {
+		incoming, _ = EnforceProtection(stored.Data, incoming, Editor{User: userID, Owner: stored.OwnerID})
+	} else if !errors.Is(gerr, ErrNotFound) {
+		return nil, status.Errorf(codes.Internal, "get sheet: %v", gerr)
 	}
 	// Recompute formula cells server-side so that persisted data carries computed
 	// display values. Clients reopening the sheet see results immediately, and
 	// headless consumers (exports, integrations) read correct values without
 	// needing a browser-side formula engine. If recompute fails for any reason we
 	// fall back to storing the raw data unchanged.
-	data := RecomputeWorkbook(req.GetData())
+	data := RecomputeWorkbook(incoming)
 	err = s.repo.Save(ctx, orgID, req.GetId(), data)
 	if errors.Is(err, ErrNotFound) {
 		return nil, status.Error(codes.NotFound, "sheet not found")

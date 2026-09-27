@@ -18,7 +18,7 @@
 // commentsExtended), tracked insertions/deletions/moves, hyperlinks
 // (external and bookmark anchors), fields (result text; HYPERLINK fields
 // become links), content controls and smart tags (unwrapped), page and
-// section breaks, equations (flattened to text).
+// section breaks, equations (as math nodes since M11).
 //
 // Dropped (no Grown model yet, reported in `warnings`): bookmarks (M8),
 // conditional formatting of table styles Grown doesn't know (their
@@ -44,6 +44,9 @@ import {
 import { correctBadTable, encodeTableBorders, normalizeTable, parseTableBorders, resolveFixedGrid, type RawCell, type RawRow } from "../tableModel";
 import { readTblPr, readTcPr, readTrPr, type TableStyles } from "./tables";
 import { canonicalMarks, propsAttrs } from "../changes";
+import { readOMathPara, readOMML } from "../math/omml";
+import { toLinear } from "../math/linear";
+import { serializeContent } from "../math/model";
 import { attr, descendants, EMU_PER_PX, kid, kids, nameOf, num, onOff, parseXml, path, TWIPS_PER_PX, twipsToPt } from "./xml";
 
 type Mark = NonNullable<JSONContent["marks"]>[number];
@@ -781,10 +784,17 @@ class Reader {
           if (attr(c, "w:name") !== "_GoBack") this.warn("bookmarks");
           break;
         case "oMath":
-        case "oMathPara":
-          this.warn("equations (kept as text)");
-          this.pushText(descendants(c, "t").map((t) => t.textContent ?? "").join(""), ctx, out);
+        case "oMathPara": {
+          // Equations become math nodes (M11); header/footer text keeps the
+          // linear form, since the margin schema has no math node.
+          const eqs = nameOf(c) === "oMath" ? [readOMML(c)] : readOMathPara(c);
+          const display = nameOf(c) === "oMathPara";
+          for (const eq of eqs) {
+            if (ctx.margin) this.pushText(toLinear(eq), ctx, out);
+            else if (this.inResult) out.push({ kind: "node", node: { type: "math", attrs: { data: serializeContent(eq), display } } });
+          }
           break;
+        }
         case "AlternateContent": {
           const choice = kid(c, "Choice") ?? kid(c, "Fallback");
           if (choice) this.inline(choice, ctx, out);

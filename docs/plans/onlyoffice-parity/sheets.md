@@ -410,7 +410,7 @@ Cumulative portable target: **≈ 1,020 of 1,117** OnlyOffice cases (the rest ar
 2. **External references / IMPORTRANGE to other workbooks** (`ExternalReference.js`, 8) — needs a cross-document data-fetch + cache layer and permission model. Optional later as `IMPORTRANGE(sheetId, range)` over Grown sheets only.
 3. **OnlyOffice plugin/custom-function and async-formula tests** (FormulaTests 19, api-drawing 10, api-worksheet 3) — test an API Grown does not expose. N/A.
 4. **Collaborative editing fidelity** — `collab.go` is a relay; OnlyOffice's lock/OT tests and "undo/redo under co-editing" cases cannot be ported without a CRDT (e.g. Yjs, already used by Docs). Out of scope here; note that Docs' Yjs stack exists if it is ever wanted.
-5. **xlsx fidelity ceiling with SheetJS Community Edition** — charts, CF, DV and pivot definitions are not written by SheetJS CE; M11 covers what CE can, and `chartEx-serialize` stays n/a unless Grown writes OOXML directly.
+5. **xlsx fidelity ceiling with SheetJS Community Edition** — charts, CF, DV and pivot definitions are not written by SheetJS CE; M11 covers what CE can, and `chartEx-serialize` stays n/a unless Grown writes OOXML directly. *Resolved differently in M11 (§14): Grown reads and writes the xlsx parts itself with JSZip, so CF, DV, styles, panes, print setup and protection round-trip; charts and pivots are still not written.*
 6. **Solver** (simplex, 6 tests) — sizable optimisation library; goal seek is planned, solver is not.
 7. **Two formula engines** (client fortune-sheet vs server Go) — divergence is mitigated, not removed, by the M1 recalc round-trip. Replacing fortune-sheet's evaluator would be a rewrite of its core; not planned.
 
@@ -1015,3 +1015,131 @@ range; a third calls the structure API.
   reload); the editor itself applies structure changes locally and relays
   them as ordinary ops.
 - CSV import (File ▸ Import) is M11; the parser is ready for it.
+
+
+## 14. M11 results (Wave 5, 2026-09-26)
+
+M11 is done: xlsx import and export with formats, rules, print setup and
+protection; ods/xls/csv import and ods/csv export; a print settings model
+rendered with CSS paged media plus a page-break preview on the grid; protected
+sheets and ranges enforced in the editor and on the server; View ▸ Show
+formulas/gridlines/headings, zoom and page breaks. All 11 OnlyOffice tags
+listed for M11 are ported and pass, and the local corpus round-trips 36/36
+files.
+
+### 14.1 Library choice
+
+The repo already had SheetJS CE 0.18.5 (Apache-2.0, the last npm release;
+newer builds only ship from cdn.sheetjs.com) and JSZip 3.10 (MIT/GPLv3 dual,
+used under MIT). SheetJS CE drops styles, conditional formats, validation,
+panes, print setup and protection when it writes, and reads few of them. So
+the .xlsx path is Grown's own reader and writer over JSZip + DOMParser, written
+from ECMA-376 Part 1 §18 (about 2,700 lines). ExcelJS (MIT) was considered: it
+covers most of this, but it adds roughly 1 MB (minified) to the bundle, has its own model to
+map anyway, and can't express the Grown-specific parts (per-user protected
+ranges, the cfOps rule set). SheetJS stays for the formats it reads well
+(.ods, .xls, .xlsb, where it keeps values, formulas, number formats, merges,
+sizes and names) and for .ods export.
+
+### 14.2 What landed
+
+| Piece | Where |
+|---|---|
+| OOXML helpers: escaping, DOM access by local name, A1/sqref, ARGB/theme+tint/indexed colours, width↔px and pt↔px, part paths and relationships | `xlsx/ooxml.ts` |
+| Styles: built-in number formats 0–49, fonts/fills/borders/alignment/rotation/wrap/locking both ways, dxfs, `borderInfo` flattening (cell entries and border-all/outside/inside/horizontal/vertical/side/none ranges) | `xlsx/xlsxStyles.ts` |
+| Rules: every cfOps rule type ↔ `conditionalFormatting` (cellIs, text rules with Excel's formulas, time periods, blanks/errors, duplicate/unique, top10, above average with std dev, expression, colour scales, data bars, 20 icon sets with gte/reverse/showValue); validationOps ↔ `dataValidations` (checkboxes export as a TRUE/FALSE list); filterOps ↔ `autoFilter` (value lists with date groups, custom and wildcard conditions, top 10, dynamic, sort state) | `xlsx/xlsxRules.ts` |
+| Tables (ListObjects) read and written back as table parts, kept on the sheet as `grownTables` | `xlsx/xlsxTables.ts` |
+| Writer: values, formulas (with `_xlfn.`/`_xlws.` prefixes, `fullCalcOnLoad`), rich text, merges, frozen panes, sizes, hidden rows/columns/sheets, tab colours, named ranges, CF, DV, autofilter + `_FilterDatabase`, tables, hyperlinks, comments (with the VML Excel needs), page setup, print area/titles, manual breaks, header/footer, sheet view options, `sheetProtection` + unlocked cells; Grown's per-user protected ranges ride in a namespaced `extLst` entry Excel ignores | `xlsx/xlsxWrite.ts` |
+| Reader: the inverse, plus shared-formula expansion (via `translateFormula`), inline strings, `t="d"`, the 1904 date system, chart sheets skipped with a warning | `xlsx/xlsxRead.ts` |
+| Import: kind detection, csv/tsv via `csvText.ts` (typed or as text), SheetJS for ods/xls/xlsb, and the merge modes (new spreadsheet, insert sheets with unique names and renamed references, replace spreadsheet, replace current sheet, append rows, replace at the selected cell) | `sheetImport.ts`, `ImportDialog.tsx` |
+| Export: File ▸ Download xlsx uses the writer; ods keeps formulas, number formats, merges and widths | `export.ts` |
+| Drive: "Open in Sheets" on an .xlsx/.xls/.ods/.csv imports it into a new spreadsheet | `EditorPlaceholder.tsx` |
+| Print model: paper, orientation, margins (presets), scale or fit to N×M pages, print area, repeated rows/columns, gridlines, headings, centring, page order, header/footer codes, manual breaks with insert/remove/reset/move; pagination with Excel's rules (manual breaks ignored while fitting) | `printSettings.ts` |
+| Print rendering: one `@page`-sized block per page, CSS zoom for the scale, repeated titles, merges clipped per page, borders, cell styles; the same document is the preview (pages drawn as paper on screen) and what is printed through a hidden iframe | `printRender.ts`, `PrintDialog.tsx` |
+| Protection model and checks (cells, formats, structure, row/column sizing, moves), structure ops move/shrink/drop protected ranges | `protection.ts`, `formulaShift.ts` |
+| Editor glue: typed input and paste refused on protected cells with a notice; relayed ops touching them are dropped and the cells restored; blocked row/column inserts/deletes undone; formulas painted when shown; page-break lines (dashed automatic, solid manual) and a grey outside-print-area wash; headings blanked through the header hooks | `viewTools.ts`, `SheetEditor.tsx`, `ProtectDialog.tsx`, `SheetMenuBar.tsx` |
+| Server: `EnforceProtection` in `SaveSheet` undoes edits of protected cells (formula values recomputed by the engine are not edits), changes to protection items the caller may not manage, deleted protected sheets and size/merge changes on a locked sheet; `OpGuard` drops such ops in the collaboration hub; the structure endpoint refuses ops on sheets with cells the caller may not edit, and shifts `grownProtection` with the cells | `internal/sheets/protection.go`, `collab.go`, `service.go`, `structure.go`, `internal/server/server.go`, `sheets_structure.go` |
+
+Who may edit protected cells: the spreadsheet owner, the user who set the
+protection, and the users it lists (picked from the directory roster, the same
+source as sharing). There is no password (Excel's hashes are not imported), and
+no DB migration: the model lives in the workbook JSON.
+
+### 14.3 Ports
+
+| OnlyOffice file | Tags ported / passing | Where |
+|---|---|---|
+| `ProtectTests.js` | 1 / 1 | `__parity__/protect.parity.test.ts` |
+| `UserProtectedRangesTest.js` | 4 / 4 | `__parity__/protect.parity.test.ts` |
+| `PrintTests.js` | 4 / 4 | `__parity__/print.parity.test.ts` |
+| `SheetViewTests.js` | 1 / 1 | `__parity__/view.parity.test.ts` |
+| `open-oox-in-browser.js` | 1 / 1 | `__parity__/view.parity.test.ts` |
+
+Notes:
+
+- The suite has two tests titled "Test: change"; the second (range
+  manipulation) is tagged `#Test: change (range manipulation)`.
+- OnlyOffice appends a range whose deletion is undone at the end of its list;
+  the manipulation checks look ranges up by name rather than position.
+- PrintTests opens a binary sample workbook and compares OnlyOffice's pixel
+  geometry. The ports rebuild a sheet of the same shape (19 × 58, A4
+  landscape, 10 mm margins, fit to one page) and check the same behaviours
+  with Grown's page counts: the fit scale, pages once scaling is off, manual
+  breaks ignored while fitting, repeated titles, and the break editing
+  sequence (insert/remove/reset/move with undo/redo) exactly.
+- SheetViewTests' doubled column width is Grown's `viewColumnWidth`, used by
+  print output; the grid keeps its widths while formulas are shown.
+- open-oox-in-browser's table part is read and written back byte for byte
+  (minus the `xr:uid` revision attributes, which Grown doesn't keep).
+
+Other tests: `xlsx/xlsxRoundTrip.test.ts` (15: every feature built in code →
+xlsx → read back), `m11.test.ts` (import modes, csv typing, print rendering,
+op blocking), `printProtectShift.test.ts`; Go `protection_test.go` (cell
+checks, save enforcement, item merging, deleted sheets, locked config, op
+guard, structure, and a DB-backed `SaveSheet` test that skips without
+`GROWN_TEST_DSN`).
+
+### 14.4 Corpus (local only)
+
+`xlsx/corpus.test.ts` walks `GROWN_CONVERSION_CORPUS` (CC2's pattern): each
+file is imported, written to xlsx and read again, and the values, formulas,
+number formats, merges, rule counts, hidden rows/columns and names must match.
+For .xlsx the first read is also checked against SheetJS as an independent
+oracle (every value and formula SheetJS sees). Result against
+`research/onlyoffice/core`: **36/36 files (100 %)**: the 30
+`AVSOfficeEWSEditorTest/TestFiles` spreadsheets (27 xlsx, 1 xls, 2 csv) and the
+6 `OOXML/test/ExampleFiles/xls*` files. Chart sheets in three of them are
+skipped with a warning. The 28 xlsx/xls files of the directory row and the six
+`conversion.cpp` files carry `oo:core/…` tags (34, taking common/conversion
+from 25 to 59 ported); the two CSVs are checked untagged. Run:
+
+    GROWN_CONVERSION_CORPUS=/path/to/research/onlyoffice/core npx vitest run src/pages/sheets/xlsx/corpus.test.ts
+
+E2e: `web/e2e/sheets-xlsx.spec.ts` imports an .xlsx written the way Excel
+writes one (styles, currency and date formats, a merge with wrap and borders,
+a frozen row, a cellIs rule, a list validation, a named range, a formula),
+checks the saved model, exports it, checks the parts and re-imports it as a new
+spreadsheet; a second test drives Show formulas (Ctrl+`), gridlines, zoom,
+the print dialog (fit to page → 1 page, repeated rows, footer codes in the
+preview), Insert ▸ Page break and a protected range.
+
+### 14.5 Not done / follow-ups
+
+- Charts, pivots, images and sparklines are not written to or read from xlsx
+  (`chartEx-serialize` stays n/a); theme fonts, gradient fills and patterns
+  are approximated by a colour; data-bar and icon-set `x14` extensions
+  (negative colours, custom icons) are not read.
+- Named sheet views (OnlyOffice `NamedSheetViews`) are not modelled; the
+  M11 SheetViewTests case is show formulas only.
+- An import that replaces the workbook reloads the editor locally; other open
+  editors see it after a reload.
+- Hidden headings leave blank header strips (FortuneSheet 1.0.4 mis-places
+  its overlays with a zero-width header); FortuneSheet's own zoom control in
+  the footer does not persist zoom on the sheet.
+- Protection is enforced for org members saving through `SaveSheet` and for
+  relayed ops. The client cannot tell which of its saved edits the server
+  undid until it reloads. Toolbar formatting of protected cells is undone
+  through the op check, not refused up front.
+- Print uses the browser's print dialog; PDF export still goes through the
+  HTML-table convert endpoint rather than the print renderer.
+

@@ -534,6 +534,52 @@ function shiftNamedRanges(list: any, sheets: any[], op: StructureOp): any {
   });
 }
 
+function shiftRectList(list: unknown, op: StructureOp): CellRect[] {
+  return (Array.isArray(list) ? list : []).map((r) => shiftRect(r, op)).filter((r): r is CellRect => r !== null);
+}
+
+/** grownProtection after op (protection.ts): ranges move, shrink or disappear with their cells. */
+function shiftProtectionField(p: any, op: StructureOp): any {
+  if (!p || typeof p !== "object") return p;
+  const ranges = (Array.isArray(p.ranges) ? p.ranges : [])
+    .map((pr: any) => ({ ...pr, ranges: shiftRectList(pr?.ranges, op) }))
+    .filter((pr: any) => pr.ranges.length > 0);
+  const sheet = p.sheet && typeof p.sheet === "object" ? { ...p.sheet, except: shiftRectList(p.sheet.except, op) } : (p.sheet ?? null);
+  return { ...p, sheet, ranges };
+}
+
+/** grownPrint after op: print area, title rows/columns and manual breaks follow their rows/columns. */
+function shiftPrintField(ps: any, op: StructureOp): any {
+  if (!ps || typeof ps !== "object") return ps;
+  const out = { ...ps };
+  if (ps.printArea) out.printArea = shiftRect(ps.printArea, op);
+  const span = (pair: unknown, axis: "row" | "col"): [number, number] | null => {
+    if (!Array.isArray(pair)) return null;
+    const r = axis === "row" ? { r1: pair[0], r2: pair[1], c1: 0, c2: 0 } : { c1: pair[0], c2: pair[1], r1: 0, r2: 0 };
+    const moved = op.kind === "insertCells" || op.kind === "deleteCells" ? r : shiftRect(r, op);
+    if (!moved) return null;
+    return axis === "row" ? [moved.r1, moved.r2] : [moved.c1, moved.c2];
+  };
+  if (ps.titleRows) out.titleRows = span(ps.titleRows, "row");
+  if (ps.titleCols) out.titleCols = span(ps.titleCols, "col");
+  const breaks = (list: unknown, axis: "row" | "col") => {
+    const map = axisMapper(op, axis);
+    const xs = Array.isArray(list) ? (list as number[]) : [];
+    if (!map) return xs;
+    return [...new Set(xs.map((x) => map(x)).filter((x): x is number => x !== null && x > 0))].sort((a, b) => a - b);
+  };
+  out.rowBreaks = breaks(ps.rowBreaks, "row");
+  out.colBreaks = breaks(ps.colBreaks, "col");
+  return out;
+}
+
+/** grownTables after op: each table's range moves with its cells; deleted tables go. */
+function shiftTables(list: any[], op: StructureOp): any[] {
+  return list
+    .map((t) => (t?.ref ? { ...t, ref: shiftRect(t.ref, op) } : t))
+    .filter((t) => t && t.ref);
+}
+
 /** The grown* model fields (and _namedRanges on sheet 0) a sheet has after op. */
 function modelFields(sheets: any[], i: number, op: StructureOp, target: number): Record<string, unknown> {
   const sheet = sheets[i];
@@ -542,6 +588,9 @@ function modelFields(sheets: any[], i: number, op: StructureOp, target: number):
   if ("grownCF" in (sheet ?? {})) out.grownCF = shiftCF(sheet.grownCF, host, op, i === target);
   if ("grownDV" in (sheet ?? {})) out.grownDV = shiftDV(sheet.grownDV, host, op, i === target);
   if (i === target && "grownFilter" in (sheet ?? {})) out.grownFilter = shiftFilter(sheet.grownFilter, op);
+  if (i === target && sheet?.grownProtection) out.grownProtection = shiftProtectionField(sheet.grownProtection, op);
+  if (i === target && sheet?.grownPrint) out.grownPrint = shiftPrintField(sheet.grownPrint, op);
+  if (i === target && Array.isArray(sheet?.grownTables)) out.grownTables = shiftTables(sheet.grownTables, op);
   if (i === 0 && "_namedRanges" in (sheet ?? {})) out._namedRanges = shiftNamedRanges(sheet._namedRanges, sheets, op);
   return out;
 }

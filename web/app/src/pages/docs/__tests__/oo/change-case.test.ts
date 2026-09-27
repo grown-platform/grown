@@ -2,10 +2,13 @@
 // fixtures below are Grown's own sentences). Grown exposes change case as
 // Format > Text > Change case (Sentence case / lowercase / UPPERCASE /
 // Capitalize Each Word / tOGGLE cASE), implemented by changeCase() in
-// textCase.ts. Equations don't exist yet (Docs M11).
+// textCase.ts. Equations (M11) are left unchanged.
 import { describe, expect, it } from "vitest";
 import type { Editor } from "@tiptap/core";
 import { changeCase, changeCaseText, type CaseMode } from "../../textCase";
+import { MathInput } from "../../math/autocorrect";
+import { toLinear } from "../../math/linear";
+import { contentOf } from "../../math/MathNode";
 import {
   htmlSnapshot,
   makeEditor,
@@ -111,23 +114,37 @@ describe("OnlyOffice change-case: partial selection", () => {
 });
 
 describe("OnlyOffice change-case: equations", () => {
-  // In OnlyOffice, change case leaves equation text untouched (letters in
-  // math are variables, and "." may be a decimal point). Grown has no
-  // equation node yet.
-  it.skip("oo:word/change-case/change-case.js#Sentence case math", () => {
-    // TODO(M11): needs the math node.
+  // Change case leaves equation text untouched (letters in math are
+  // variables and "." may be a decimal point). The equation is typed with
+  // math autocorrect, as the OnlyOffice case does, then the paragraph is
+  // selected and its case changed.
+  function mathCase(typed: string, mode: CaseMode): string {
+    const m = new MathInput();
+    m.type(typed);
+    const e = makeEditor("<p></p>");
+    e.commands.insertEquation({ content: m.root, edit: false });
+    selectRange(e, 1, e.state.doc.content.size - 1);
+    apply(e, mode);
+    let out = "";
+    e.state.doc.descendants((n) => {
+      if (n.type.name === "math") out = toLinear(contentOf(n));
+    });
+    return out;
+  }
+  it("oo:word/change-case/change-case.js#Sentence case math", () => {
+    expect(mathCase("(abc. aaaaa)/2 ", "sentence")).toBe("(abc. aaaaa)/2");
   });
-  it.skip("oo:word/change-case/change-case.js#Upper case math", () => {
-    // TODO(M11): needs the math node.
+  it("oo:word/change-case/change-case.js#Upper case math", () => {
+    expect(mathCase("abc/def+2_(xyz.rt\\delta aaa+2) ", "upper")).toBe("abc/def+2_(xyz.rtδaaa+2)");
   });
-  it.skip("oo:word/change-case/change-case.js#Lower case math", () => {
-    // TODO(M11): needs the math node.
+  it("oo:word/change-case/change-case.js#Lower case math", () => {
+    expect(mathCase("ABC/DEF+2_(XYZ.RTΔAAA+2) ", "lower")).toBe("ABC/DEF+2_(XYZ.RTΔAAA+2)");
   });
-  it.skip("oo:word/change-case/change-case.js#ToggleCase case math", () => {
-    // TODO(M11): needs the math node.
+  it("oo:word/change-case/change-case.js#ToggleCase case math", () => {
+    expect(mathCase("aBC/Def+2_(XyZ.RtΔAaA+2) ", "toggle")).toBe("aBC/Def+2_(XyZ.RtΔAaA+2)");
   });
-  it.skip("oo:word/change-case/change-case.js#CapitalizeWords case math", () => {
-    // TODO(M11): needs the math node.
+  it("oo:word/change-case/change-case.js#CapitalizeWords case math", () => {
+    expect(mathCase("aBC/Def+2_(XyZ.RtΔAaA+2) ", "capitalize")).toBe("aBC/Def+2_(XyZ.RtΔAaA+2)");
   });
 });
 

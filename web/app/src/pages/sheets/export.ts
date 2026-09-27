@@ -172,21 +172,75 @@ export async function downloadSheet(
     return;
   }
 
-  // xlsx / ods — build a multi-sheet workbook with SheetJS.
+  if (fmt === "xlsx") {
+    const { workbookToXlsx } = await import("./xlsx/xlsxWrite");
+    const bytes = await workbookToXlsx(allSheets(wb), { title });
+    triggerDownload(
+      new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      `${name}.xlsx`,
+    );
+    return;
+  }
+
+  // ods — SheetJS writes values, formulas, number formats, merges and column widths.
   const XLSX = await import("xlsx");
+  const out = sheetjsWorkbook(XLSX, allSheets(wb));
+  XLSX.writeFile(out, `${name}.${fmt}`, { bookType: fmt });
+}
+
+/** A SheetJS workbook with values, formulas, number formats, merges and sizes. */
+export function sheetjsWorkbook(XLSX: typeof import("xlsx"), sheets: any[]): import("xlsx").WorkBook {
   const out = XLSX.utils.book_new();
   const used = new Set<string>();
-  allSheets(wb).forEach((s, i) => {
+  sheets.forEach((s, i) => {
     let nm =
       (s.name || `Sheet${i + 1}`).replace(/[\\/?*[\]:]/g, " ").slice(0, 31) ||
       `Sheet${i + 1}`;
     while (used.has(nm)) nm = `${nm.slice(0, 28)}_${i}`;
     used.add(nm);
-    XLSX.utils.book_append_sheet(
-      out,
-      XLSX.utils.aoa_to_sheet(sheetToAoa(s)),
-      nm,
-    );
+    const ws: any = {};
+    let maxR = 0;
+    let maxC = 0;
+    forEachCell(s, (r, c, cell) => {
+      const x: any = {};
+      const v = cell.ct?.t === "inlineStr" && Array.isArray(cell.ct.s) ? cell.ct.s.map((p: any) => p?.v ?? "").join("") : cell.v;
+      if (typeof cell.f === "string" && cell.f.startsWith("=")) x.f = cell.f.slice(1);
+      if (typeof v === "number") x.t = "n";
+      else if (typeof v === "boolean") x.t = "b";
+      else if (v === undefined || v === null || v === "") {
+        if (!x.f) return;
+        x.t = "s";
+      } else x.t = "s";
+      x.v = v ?? "";
+      if (cell.ct?.fa && cell.ct.fa !== "General") x.z = cell.ct.fa;
+      ws[XLSX.utils.encode_cell({ r, c })] = x;
+      maxR = Math.max(maxR, r);
+      maxC = Math.max(maxC, c);
+    });
+    ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } });
+    const merges = Object.values(s.config?.merge ?? {}) as any[];
+    if (merges.length) ws["!merges"] = merges.map((m) => ({ s: { r: m.r, c: m.c }, e: { r: m.r + m.rs - 1, c: m.c + m.cs - 1 } }));
+    const cl = s.config?.columnlen ?? {};
+    if (Object.keys(cl).length) {
+      const cols: any[] = [];
+      for (const [k, px] of Object.entries(cl)) cols[Number(k)] = { wpx: px };
+      ws["!cols"] = cols;
+    }
+    XLSX.utils.book_append_sheet(out, ws, nm);
   });
-  XLSX.writeFile(out, `${name}.${fmt}`, { bookType: fmt });
+  return out;
+}
+
+function forEachCell(sheet: any, fn: (r: number, c: number, cell: any) => void) {
+  if (Array.isArray(sheet?.data)) {
+    sheet.data.forEach((row: any[], r: number) =>
+      row?.forEach?.((cell: any, c: number) => {
+        if (cell && typeof cell === "object") fn(r, c, cell);
+      }),
+    );
+    return;
+  }
+  for (const cd of Array.isArray(sheet?.celldata) ? sheet.celldata : []) {
+    if (cd?.v && typeof cd.v === "object") fn(cd.r, cd.c, cd.v);
+  }
 }

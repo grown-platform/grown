@@ -354,6 +354,7 @@ export const SHORTCUT_GROUPS: { title: string; items: ShortcutRow[] }[] = [
       { label: "Tab character", keys: "Tab" },
       { label: "Footnote", keys: "Ctrl+Alt+F" },
       { label: "Endnote", keys: "Ctrl+Alt+D" },
+      { label: "Equation", keys: "Ctrl+Alt+=", note: "Word: Alt+=" },
       { label: "Insert link", keys: "Ctrl+K" },
       { label: "Non-breaking space", keys: "Ctrl+Shift+Space" },
       { label: "Non-breaking hyphen", keys: "Ctrl+Shift+-" },

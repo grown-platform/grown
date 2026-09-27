@@ -39,7 +39,10 @@ test.describe.serial("slides", () => {
 
       const deck = await getDeckData(page.request, id);
       expect(deck?.slides).toHaveLength(2);
-      const texts = deck!.slides[1].elements.filter((e) => e.type === "text");
+      // The new slide has the "Title and content" placeholders (M7) and the box.
+      const els = deck!.slides[1].elements as Array<{ type: string; text?: string; placeholder?: { type: string } }>;
+      expect(els.filter((e) => e.placeholder).map((e) => e.placeholder!.type)).toEqual(["title", "body"]);
+      const texts = els.filter((e) => e.type === "text" && !e.placeholder);
       expect(texts).toHaveLength(1);
       expect(texts[0].text).toBe("Text");
 

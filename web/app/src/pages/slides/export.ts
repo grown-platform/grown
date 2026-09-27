@@ -16,6 +16,8 @@ import { effective, insetsOf, listMarkers, paragraphs } from "./textOps";
 import { resolveSlideLink } from "./links";
 import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
 import { inlineImages } from "./assets";
+import { backgroundCss } from "./slideProps";
+import { withFooters } from "./layouts";
 import { CELL_PAD, cellFormat, cellTextEl, colWidths, isCovered, offsets, rowHeights, spanOf } from "./tableOps";
 
 export type DeckFormat =
@@ -230,11 +232,12 @@ function slideHTML(slide: Slide, idx: number, slides: readonly Slide[]): string 
   const inner = flattenGroups(slide.elements)
     .map((e) => elementHTML(e, slideHref))
     .join("");
-  return `<div class="slide" id="slide-${idx + 1}" style="position:relative;width:${CANVAS_W}px;height:${CANVAS_H}px;background:${slide.background};overflow:hidden;">${inner}</div>`;
+  const bg = backgroundCss(slide).replace(/"/g, "&quot;");
+  return `<div class="slide" id="slide-${idx + 1}" style="position:relative;width:${CANVAS_W}px;height:${CANVAS_H}px;background:${bg};overflow:hidden;">${inner}</div>`;
 }
 
 function fullHTML(deck: DeckDoc, title: string): string {
-  const slides = deck.slides.map((s, i) => slideHTML(s, i, deck.slides)).join("\n");
+  const slides = deck.slides.map((_, i) => slideHTML(withFooters(deck, i), i, deck.slides)).join("\n");
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>@page{size:${CANVAS_W}px ${CANVAS_H}px;margin:0}body{margin:0}.slide{page-break-after:always}</style>
 </head><body>${slides}</body></html>`;
@@ -337,10 +340,30 @@ function textSVG(el: SlideElement): string {
   );
 }
 
+/** SVG for a gradient/picture background (M7), drawn over the colour. */
+export function backgroundSVG(slide: Pick<Slide, "bgFill">): string {
+  const f = slide.bgFill;
+  if (!f) return "";
+  if (f.kind === "image")
+    return `<image x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" preserveAspectRatio="xMidYMid slice" href="${esc(f.src)}"/>`;
+  const stops = f.stops.map((s) => `<stop offset="${s.pos}" stop-color="${esc(s.color)}"/>`).join("");
+  let grad: string;
+  if (f.radial) grad = `<radialGradient id="slide-bg">${stops}</radialGradient>`;
+  else {
+    const a = ((f.angle ?? 90) * Math.PI) / 180;
+    const dx = Math.cos(a) / 2;
+    const dy = Math.sin(a) / 2;
+    const n = (v: number) => Math.round(v * 1000) / 1000;
+    grad = `<linearGradient id="slide-bg" x1="${n(0.5 - dx)}" y1="${n(0.5 - dy)}" x2="${n(0.5 + dx)}" y2="${n(0.5 + dy)}">${stops}</linearGradient>`;
+  }
+  return `<defs>${grad}</defs><rect x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" fill="url(#slide-bg)"/>`;
+}
+
 // Render one slide to a standalone SVG string (matches the canvas model).
 function slideToSVG(slide: Slide): string {
   const parts: string[] = [
     `<rect x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" fill="${slide.background || "#ffffff"}"/>`,
+    backgroundSVG(slide),
   ];
   for (const el of flattenGroups(slide.elements)) {
     const strokeAttr =
@@ -440,9 +463,7 @@ export async function downloadDeck(
 
   // Current-slide image exports (Google parity: jpg/png/svg).
   if (fmt === "svg" || fmt === "png" || fmt === "jpg") {
-    const slide =
-      deck.slides[Math.min(slideIndex, deck.slides.length - 1)] ||
-      deck.slides[0];
+    const slide = withFooters(deck, Math.max(0, Math.min(slideIndex, deck.slides.length - 1)));
     const svg = slideToSVG(slide);
     if (fmt === "svg") {
       triggerDownload(

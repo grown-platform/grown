@@ -89,6 +89,8 @@ const DrawingDialog = lazy(() =>
 );
 import { Comments, type CommentsHandle } from "./Comments";
 import { EditorContextMenu } from "./EditorContextMenu";
+import { EquationEditor } from "./math/EquationEditor";
+import { setMathEditHandler } from "./math/MathNode";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { FindBar, type FindMode } from "./FindBar";
 import { AutoCorrectDialog } from "./AutoCorrectDialog";
@@ -164,6 +166,8 @@ export function DocEditor({ user }: DocEditorProps) {
     scene?: string;
     pos: number | null;
   }>({ open: false, pos: null });
+  // Equation panel: the math node being edited (M11).
+  const [mathEdit, setMathEdit] = useState<{ pos: number; isNew: boolean } | null>(null);
   // Left-hand outline (table of contents) pane.
   const [showOutline, setShowOutline] = useState(false);
   // Header/footer margin regions (bound to named Yjs fragments).
@@ -463,6 +467,7 @@ export function DocEditor({ user }: DocEditorProps) {
       for (const e of [editor, ...liveReview.current.margins]) e?.commands.rejectAllSuggestions();
     },
     insertDrawing: () => setDrawing({ open: true, pos: null }),
+    insertEquation: () => editor?.chain().focus().insertEquation().run(),
   };
 
   function onDrawingSave(d: DrawingData) {
@@ -474,6 +479,13 @@ export function DocEditor({ user }: DocEditorProps) {
     }
     setDrawing({ open: false, pos: null });
   }
+
+  // Clicking an equation (or inserting one) opens the equation panel.
+  useEffect(() => {
+    if (!editor) return;
+    setMathEditHandler(editor, (pos, isNew) => setMathEdit({ pos, isNew }));
+    return () => setMathEditHandler(editor, null);
+  }, [editor]);
 
   // Double-click a drawing image to re-open it in the Excalidraw editor.
   useEffect(() => {
@@ -646,6 +658,7 @@ export function DocEditor({ user }: DocEditorProps) {
         run: () => e.chain().focus().insertFootnote().run(),
       },
       { label: "Drawing", section: "Insert", run: actions.insertDrawing },
+      { label: "Equation", section: "Insert", run: () => e.chain().focus().insertEquation().run() },
       { label: "Insert emoji", section: "Insert", run: actions.emoji },
       {
         label: "Special characters",
@@ -817,6 +830,7 @@ export function DocEditor({ user }: DocEditorProps) {
         <Toolbar
           editor={editor}
           onOpenMenus={() => setDialog("menus")}
+          onInsertEquation={actions.insertEquation}
           mode={mode === "editing" && suggesting ? "suggesting" : mode}
           onModeChange={(m) => {
             if (m === "suggesting") setMine(true);
@@ -1033,6 +1047,7 @@ export function DocEditor({ user }: DocEditorProps) {
       <EditorContextMenu
         editor={editor}
         onComment={() => actions.commentOnSelection()}
+        onEditEquation={(pos) => setMathEdit({ pos, isNew: false })}
       />
       <ParagraphDialogs editor={editor} />
       <TableDialogs editor={editor} />
@@ -1102,6 +1117,15 @@ export function DocEditor({ user }: DocEditorProps) {
         onClose={() => setDialog(null)}
         commands={commands}
       />
+      {editor && mathEdit && (
+        <EquationEditor
+          key={`${mathEdit.pos}-${mathEdit.isNew}`}
+          editor={editor}
+          pos={mathEdit.pos}
+          isNew={mathEdit.isNew}
+          onClose={() => setMathEdit(null)}
+        />
+      )}
       {drawing.open && (
         <Suspense fallback={null}>
           <DrawingDialog

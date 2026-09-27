@@ -90,6 +90,31 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
       file.mime_type ===
         "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 
+  // A spreadsheet opened from Drive can be imported into a Grown Sheets
+  // workbook (a copy; the Drive file is left as is).
+  const canOpenInSheets =
+    appId === "sheets" && /\.(xlsx|xlsm|xls|ods|csv|tsv)$/i.test(file.name);
+
+  async function openInSheets() {
+    if (!file) return;
+    setConverting(true);
+    setConvertError(null);
+    try {
+      const resp = await fetch(url, { credentials: "same-origin" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const bytes = new Uint8Array(await resp.arrayBuffer());
+      const { importSpreadsheetFile, applyImport } = await import("./sheets/sheetImport");
+      const { createSheet, saveSheet } = await import("./sheets/api");
+      const imp = await importSpreadsheetFile(bytes, file.name, { userId: user.id });
+      const sheet = await createSheet(file.name.replace(/\.[^.]+$/, ""));
+      await saveSheet(sheet.id, JSON.stringify(applyImport([], imp, "newSpreadsheet")));
+      navigate(`/sheets/d/${sheet.id}`);
+    } catch (e) {
+      setConvertError((e as Error).message);
+      setConverting(false);
+    }
+  }
+
   async function openInSlides() {
     if (!file) return;
     setConverting(true);
@@ -155,6 +180,18 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
             {file.name}
           </Typography>
         </Box>
+        {canOpenInSheets && (
+          <Button
+            onClick={openInSheets}
+            loading={converting}
+            variant="solid"
+            color="neutral"
+            startDecorator={<Icons.TableChart />}
+            data-testid="open-in-sheets"
+          >
+            Open in Sheets
+          </Button>
+        )}
         {canOpenInSlides && (
           <Button
             onClick={openInSlides}
@@ -194,7 +231,7 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
       <Container maxWidth="lg" sx={{ py: 3 }}>
         {convertError && (
           <Alert variant="soft" color="danger" sx={{ mb: 2 }}>
-            Couldn’t open this file in Slides: {convertError}
+            Couldn’t open this file in {canOpenInSheets ? "Sheets" : "Slides"}: {convertError}
           </Alert>
         )}
         {canOpenInSlides ? (

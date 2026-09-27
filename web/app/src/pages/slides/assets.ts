@@ -2,7 +2,7 @@
 // referenced by URL. Exports that leave the browser (pptx, HTML, SVG/PNG)
 // need the bytes, so inlineImages turns those URLs back into data: URLs.
 
-import type { DeckDoc, SlideElement } from "./model";
+import type { DeckDoc, SlideElement, SlideFill } from "./model";
 
 /** Is `src` a server-side asset (or any same-origin URL) to inline? */
 export function isAssetUrl(src: string | undefined): boolean {
@@ -38,7 +38,10 @@ export async function inlineImages(
       if (e.children) collect(e.children);
     }
   };
-  deck.slides.forEach((s) => collect(s.elements));
+  deck.slides.forEach((s) => {
+    collect(s.elements);
+    if (s.bgFill?.kind === "image" && isAssetUrl(s.bgFill.src)) urls.add(s.bgFill.src);
+  });
   if (!urls.size) return deck;
   const map = new Map<string, string>();
   await Promise.all(
@@ -53,7 +56,14 @@ export async function inlineImages(
       ...(e.type === "image" && e.src && map.has(e.src) ? { src: map.get(e.src)! } : {}),
       ...(e.children ? { children: swap(e.children) } : {}),
     }));
-  return { ...deck, slides: deck.slides.map((s) => ({ ...s, elements: swap(s.elements) })) };
+  return {
+    ...deck,
+    slides: deck.slides.map((s) => ({
+      ...s,
+      elements: swap(s.elements),
+      ...(s.bgFill?.kind === "image" && map.has(s.bgFill.src) ? { bgFill: { kind: "image" as const, src: map.get(s.bgFill.src)! } } : {}),
+    })),
+  };
 }
 
 /** A data: URL as a Blob (null if it isn't a base64 data URL). */
@@ -73,7 +83,7 @@ export function dataUrlToBlob(u: string): Blob | null {
 /** externalizeImages uploads inline raster pictures (data: URLs, e.g. from
  *  a pptx import) with `upload` and points the elements at the returned
  *  URLs. Pictures that fail to upload, and SVGs, stay inline. */
-export async function externalizeImages<S extends { elements: SlideElement[] }>(
+export async function externalizeImages<S extends { elements: SlideElement[]; bgFill?: SlideFill }>(
   slides: S[],
   upload: (b: Blob) => Promise<string>,
 ): Promise<S[]> {
@@ -84,7 +94,13 @@ export async function externalizeImages<S extends { elements: SlideElement[] }>(
       if (e.children) collect(e.children);
     }
   };
-  slides.forEach((s) => collect(s.elements));
+  const inlineBg = (s: S) =>
+    s.bgFill?.kind === "image" && s.bgFill.src.startsWith("data:") && !s.bgFill.src.startsWith("data:image/svg") ? s.bgFill.src : null;
+  slides.forEach((s) => {
+    collect(s.elements);
+    const bg = inlineBg(s);
+    if (bg) urls.add(bg);
+  });
   if (!urls.size) return slides;
   const map = new Map<string, string>();
   for (const u of urls) {
@@ -102,5 +118,12 @@ export async function externalizeImages<S extends { elements: SlideElement[] }>(
       ...(e.type === "image" && e.src && map.has(e.src) ? { src: map.get(e.src)! } : {}),
       ...(e.children ? { children: swap(e.children) } : {}),
     }));
-  return slides.map((s) => ({ ...s, elements: swap(s.elements) }));
+  return slides.map((s) => {
+    const bg = inlineBg(s);
+    return {
+      ...s,
+      elements: swap(s.elements),
+      ...(bg && map.has(bg) ? { bgFill: { kind: "image" as const, src: map.get(bg)! } } : {}),
+    };
+  });
 }

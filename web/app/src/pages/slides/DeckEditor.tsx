@@ -84,12 +84,14 @@ import {
 import {
   CANVAS_W,
   CANVAS_H,
+  setCanvasSize,
   parseDeck,
   newElement,
   isShape,
   TRANSITIONS,
   ANIMATION_TYPES,
   type DeckDoc,
+  type DeckHF,
   type Slide,
   type SlideElement,
   type ElementType,
@@ -99,15 +101,32 @@ import {
   type TextAlign,
 } from "./model";
 import { SlideView, ELEMENT_ANIM_CSS } from "./SlideView";
+import { applyTheme, reconcileRefs, setActiveTheme, themeOf, withColorRef } from "./theme";
+import {
+  applyLayout as applyLayoutOp,
+  findLayout,
+  footerElements,
+  hfFlags,
+  layoutsOf,
+  nextLayoutFor,
+  newLayoutDeck,
+  nextPlaceholder,
+  resetSlide as resetSlideOp,
+  slideFromLayout,
+  withFooters,
+} from "./layouts";
+import { backgroundToAll, deckSize, resizeDeck, setSlideBackground, showSlides, toggleHidden, type BackgroundPatch } from "./slideProps";
+import { BackgroundDialog, HeaderFooterDialog, LayoutGrid, PageSetupDialog, ThemeDialog, ThemePalette } from "./DesignDialogs";
 import { SlideCanvas } from "./SlideCanvas";
 import { SlideMenuBar, type SlideActions } from "./SlideMenuBar";
 import { downloadDeck } from "./export";
 import { ShareDialog } from "./ShareDialog";
 import { DeckVersionHistory } from "../../components/versions/DeckVersionPreview";
 import { VERSION_RESTORED_MSG, isVersionRestoredMsg } from "../../components/versions/api";
-import { PPTX_ACCEPT, readPptxSlides } from "./pptx/importDeck";
+import { PPTX_ACCEPT, readPptxSlides, slidesForDeck } from "./pptx/importDeck";
 import {
   addNextSlide,
+  insertSlideAfter,
   alignElements,
   applyCollabOp,
   arrangeMany,
@@ -336,6 +355,17 @@ export function DeckEditor({ user }: { user: User }) {
   // The picture in crop mode (its handles crop; a drag pans it).
   const [cropId, setCropId] = useState<string | null>(null);
   const [altFor, setAltFor] = useState<string[] | null>(null);
+  // ---- design (M7) ----
+  const [themeDlg, setThemeDlg] = useState<"gallery" | "edit" | null>(null);
+  const [pageSetupOpen, setPageSetupOpen] = useState(false);
+  const [bgOpen, setBgOpen] = useState(false);
+  const [hfOpen, setHfOpen] = useState(false);
+  const [layoutMenu, setLayoutMenu] = useState<"new" | "apply" | null>(null);
+  const [fillMenuOpen, setFillMenuOpen] = useState(false);
+  // Slideshow position in the list of visible (not skipped) slides.
+  const [showIdx, setShowIdx] = useState(0);
+  const bgImageInput = useRef<HTMLInputElement | null>(null);
+  const bgImageResolve = useRef<((src: string | null) => void) | null>(null);
   const replaceInput = useRef<HTMLInputElement | null>(null);
 
   const me = {
@@ -345,6 +375,17 @@ export function DeckEditor({ user }: { user: User }) {
   };
 
   docRef.current = doc;
+  // The open deck's slide size and theme drive the canvas height and the
+  // table style colours (live module state, see model.setCanvasSize).
+  setCanvasSize(doc?.size);
+  setActiveTheme(doc?.theme);
+  useEffect(
+    () => () => {
+      setCanvasSize(undefined);
+      setActiveTheme(undefined);
+    },
+    [],
+  );
   const slides = doc?.slides ?? [];
   const slide: Slide | undefined = slides[cur];
   // Stale ids (an element removed by undo or a peer) are kept in `sel` so the
@@ -380,7 +421,8 @@ export function DeckEditor({ user }: { user: User }) {
       .then((d) => {
         if (cancelled) return;
         setTitle(d.title);
-        setDoc(parseDeck(d.data));
+        // A deck that was never saved starts from the title layout (M7).
+        setDoc(d.data ? parseDeck(d.data) : newLayoutDeck());
       })
       .catch(() => !cancelled && setDoc(parseDeck()));
     return () => {
@@ -436,6 +478,7 @@ export function DeckEditor({ user }: { user: User }) {
       if (!slide) return;
       if (opts?.history !== false) pushHistory();
       // Connectors glued to this element move with it.
+      el = reconcileRefs(slide.elements.find((e) => e.id === el.id), el);
       const all = withGluedConnectors(slide.elements, [el]);
       if (all.length > 1) {
         applyToSlide(slide.id, (s) => upsertElementsOp(s, all));
@@ -454,6 +497,7 @@ export function DeckEditor({ user }: { user: User }) {
     (els: SlideElement[], opts?: { history?: boolean }) => {
       if (!slide || !els.length) return;
       if (opts?.history !== false) pushHistory();
+      els = els.map((e) => reconcileRefs(slide.elements.find((x) => x.id === e.id), e));
       const all = withGluedConnectors(slide.elements, els);
       applyToSlide(slide.id, (s) => upsertElementsOp(s, all));
       broadcast({ t: "upsertMany", si: slide.id, els: all });
@@ -489,8 +533,19 @@ export function DeckEditor({ user }: { user: User }) {
   const setSlides = useCallback(
     (next: Slide[], opts?: { history?: boolean }) => {
       if (opts?.history !== false) pushHistory();
-      setDoc({ slides: next });
+      setDoc((d) => ({ ...(d ?? {}), slides: next }));
       broadcast({ t: "slides", slides: next });
+      scheduleSave();
+    },
+    [broadcast, scheduleSave, pushHistory],
+  );
+
+  // Replace the whole deck (theme, layouts, size, header & footer): M7.
+  const setDeck = useCallback(
+    (next: DeckDoc) => {
+      pushHistory();
+      setDoc(next);
+      broadcast({ t: "deck", deck: next });
       scheduleSave();
     },
     [broadcast, scheduleSave, pushHistory],
@@ -513,6 +568,7 @@ export function DeckEditor({ user }: { user: User }) {
         ids?: string[];
         elements?: SlideElement[];
         slides?: Slide[];
+        deck?: DeckDoc;
         p?: Peer;
       };
       try {
@@ -528,7 +584,8 @@ export function DeckEditor({ user }: { user: User }) {
         return;
       }
       if (m.t === "slides" && m.slides) {
-        setDoc({ slides: m.slides });
+        const next = m.slides;
+        setDoc((d) => ({ ...(d ?? {}), slides: next }));
       } else if (m.t !== "presence" && m.t !== "slides") {
         setDoc((d) => (d ? applyCollabOp(d, m) : d));
       } else if (m.t === "presence" && m.p) {
@@ -596,6 +653,15 @@ export function DeckEditor({ user }: { user: User }) {
         e.preventDefault();
         setCropId(null);
         return;
+      }
+      // Ctrl/Cmd+Enter: next placeholder (also from inside a text box).
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === "Enter" && !cropId) {
+        const t = e.target as HTMLElement | null;
+        if (editingText || !(t?.tagName === "INPUT" || t?.tagName === "TEXTAREA")) {
+          e.preventDefault();
+          gotoNextPlaceholder();
+          return;
+        }
       }
       if (editingText) return;
       const tag = (e.target as HTMLElement)?.tagName;
@@ -760,8 +826,102 @@ export function DeckEditor({ user }: { user: User }) {
     setCur(r.cur);
     if (clearSel) setSelId(null);
   }
-  function doNewSlide() {
-    applySlidesResult(addNextSlide(slides, cur));
+  // New slide (Ctrl+M): the current slide's layout (title → title and
+  // content), or a picked one.
+  function doNewSlide(layoutId?: string) {
+    if (!doc) return;
+    const layout = layoutId ? findLayout(doc, layoutId) : nextLayoutFor(doc, cur);
+    if (!layout) {
+      applySlidesResult(addNextSlide(slides, cur));
+      return;
+    }
+    applySlidesResult(insertSlideAfter(slides, cur, slideFromLayout(layout)));
+  }
+  // Ctrl+Enter: select the next placeholder; after the last one, add a
+  // slide and select its first placeholder (OnlyOffice/PowerPoint).
+  function gotoNextPlaceholder() {
+    if (!slide || !doc) return;
+    const h = textEditor.current;
+    const curId = h && editingText ? h.current().id : (selIds[selIds.length - 1] ?? null);
+    if (editingText) (document.activeElement as HTMLElement | null)?.blur();
+    const next = nextPlaceholder(slide, curId);
+    if (next) {
+      setSel([next]);
+      return;
+    }
+    const layout = nextLayoutFor(doc, cur);
+    if (!layout) return;
+    const ns = slideFromLayout(layout);
+    const r = insertSlideAfter(slides, cur, ns);
+    setSlides(r.slides);
+    setCur(r.cur);
+    const first = nextPlaceholder(ns, null);
+    setSel(first ? [first] : []);
+  }
+  function applyLayoutToSlide(id: string) {
+    const l = findLayout(doc, id);
+    if (!slide || !l) return;
+    setSlides(slides.map((x) => (x.id === slide.id ? applyLayoutOp(x, l) : x)));
+  }
+  function resetCurrentSlide() {
+    if (!slide) return;
+    const l = findLayout(doc, slide.layout);
+    if (!l) return;
+    setSlides(slides.map((x) => (x.id === slide.id ? resetSlideOp(x, l) : x)));
+  }
+  function startPresent() {
+    if (doc) setShowIdx(showSlides(doc, cur).start);
+    setPresenter(false);
+    setPresent(true);
+  }
+  function toggleSkip() {
+    if (!slide) return;
+    setSlides(toggleHidden(slides, [slide.id]));
+  }
+  function applyBackground(p: BackgroundPatch, all: boolean) {
+    if (!slide) return;
+    const one = setSlideBackground(slide, p);
+    setSlides(all ? backgroundToAll(slides, one) : slides.map((x) => (x.id === slide.id ? one : x)));
+    setBgOpen(false);
+  }
+  function pickBackgroundImage(): Promise<string | null> {
+    return new Promise((resolve) => {
+      bgImageResolve.current = resolve;
+      bgImageInput.current?.click();
+    });
+  }
+  async function onBgImagePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    const done = bgImageResolve.current;
+    bgImageResolve.current = null;
+    if (!f) return done?.(null);
+    try {
+      done?.(await deckImageSrc(id, f));
+    } catch {
+      done?.(null);
+    }
+  }
+  function applyHeaderFooter(next: DeckHF, all: boolean) {
+    if (!doc || !slide) return;
+    const flags = { dt: !!next.dt, ftr: !!next.ftr, sldNum: !!next.sldNum };
+    if (all) {
+      const hf: DeckHF = { ...next, ...flags };
+      setDeck({
+        ...doc,
+        hf,
+        slides: doc.slides.map((x) => {
+          if (!x.hf) return x;
+          const o = { ...x };
+          delete o.hf;
+          return o;
+        }),
+      });
+    } else {
+      const hf: DeckHF = { ...next, dt: doc.hf?.dt, ftr: doc.hf?.ftr, sldNum: doc.hf?.sldNum };
+      setDeck({ ...doc, hf, slides: doc.slides.map((x) => (x.id === slide.id ? { ...x, hf: flags } : x)) });
+    }
+    setHfOpen(false);
   }
   function duplicateSlide() {
     applySlidesResult(duplicateSlideAt(slides, cur));
@@ -867,7 +1027,8 @@ export function DeckEditor({ user }: { user: User }) {
       const r = await readPptxSlides(f);
       // Pictures go to the deck's asset store, keeping the deck (and its
       // collab broadcast) small; they stay inline if uploading fails.
-      const imported = await externalizeImages(r.slides, (b) => uploadDeckAsset(id, b));
+      const fitted = docRef.current ? slidesForDeck(r.deck, docRef.current) : r.slides;
+      const imported = await externalizeImages(fitted, (b) => uploadDeckAsset(id, b));
       const base = docRef.current?.slides ?? slides;
       setSlides([...base, ...imported]);
       setCur(base.length);
@@ -1381,11 +1542,7 @@ export function DeckEditor({ user }: { user: User }) {
     openLink();
   }
   function setBackground() {
-    if (!slide) return;
-    const c =
-      window.prompt("Slide background color (hex)", slide.background) ||
-      slide.background;
-    setSlides(patchSlide(slides, slide.id, { background: c }));
+    if (slide) setBgOpen(true);
   }
 
   // Speaker notes for the current slide. Debounced through the normal save path;
@@ -1422,7 +1579,7 @@ export function DeckEditor({ user }: { user: User }) {
     hist.current = r.history;
     const d = r.doc;
     setDoc(d);
-    broadcast({ t: "slides", slides: d.slides });
+    broadcast({ t: "deck", deck: d });
     scheduleSave();
     setCur((c) => Math.min(c, d.slides.length - 1));
   }
@@ -1432,7 +1589,7 @@ export function DeckEditor({ user }: { user: User }) {
     hist.current = r.history;
     const d = r.doc;
     setDoc(d);
-    broadcast({ t: "slides", slides: d.slides });
+    broadcast({ t: "deck", deck: d });
     scheduleSave();
   }
 
@@ -1483,15 +1640,12 @@ export function DeckEditor({ user }: { user: User }) {
     redo,
     insert,
     insertImageFile,
-    newSlide: doNewSlide,
+    newSlide: () => doNewSlide(),
     openShapes: () => setGalleryOpen(true),
     drawShape: pickShape,
     duplicateSlide,
     deleteSlide,
-    present: () => {
-      setPresenter(false);
-      setPresent(true);
-    },
+    present: startPresent,
     toggle,
     setList,
     setLineSpacing,
@@ -1521,6 +1675,17 @@ export function DeckEditor({ user }: { user: User }) {
       locked: selectedEls.length > 0 && selectedEls.every((e) => e.locked),
     },
     setBackground,
+    changeTheme: () => setThemeDlg("gallery"),
+    editTheme: () => setThemeDlg("edit"),
+    layouts: layoutsOf(doc).map((l) => ({ id: l.id, name: l.name })),
+    currentLayout: slide?.layout,
+    applyLayout: applyLayoutToSlide,
+    newSlideWithLayout: (lid: string) => doNewSlide(lid),
+    resetSlide: resetCurrentSlide,
+    slideHidden: !!slide?.hidden,
+    toggleSkip,
+    pageSetup: () => setPageSetupOpen(true),
+    headerFooter: () => setHfOpen(true),
     paste: pasteEl,
     duplicateSelected: () => {
       duplicateEls(selectedEls);
@@ -1545,18 +1710,26 @@ export function DeckEditor({ user }: { user: User }) {
   const peerList = Object.values(peers);
 
   if (present && slide) {
-    return (
-      <PresentView
-        slides={slides}
-        cur={cur}
-        presenter={presenter}
-        onAdvance={() => setCur((c) => nextSlideIndex(c, slides.length))}
-        onPrev={() => setCur((c) => prevSlideIndex(c))}
-        onTogglePresenter={() => setPresenter((v) => !v)}
-        onExit={() => setPresent(false)}
-        onJump={setCur}
-      />
-    );
+    // Skipped (hidden) slides are left out; header/footer boxes drawn in.
+    const show = showSlides(doc);
+    if (show.slides.length) {
+      const at = Math.min(showIdx, show.slides.length - 1);
+      return (
+        <PresentView
+          slides={show.slides}
+          cur={at}
+          presenter={presenter}
+          onAdvance={() => setShowIdx((c) => nextSlideIndex(c, show.slides.length))}
+          onPrev={() => setShowIdx((c) => prevSlideIndex(c))}
+          onTogglePresenter={() => setPresenter((v) => !v)}
+          onExit={() => {
+            setCur(show.indexOf[at] ?? cur);
+            setPresent(false);
+          }}
+          onJump={setShowIdx}
+        />
+      );
+    }
   }
 
   return (
@@ -1568,6 +1741,13 @@ export function DeckEditor({ user }: { user: User }) {
         accept="image/*"
         hidden
         onChange={onImagePicked}
+      />
+      <input
+        ref={bgImageInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={onBgImagePicked}
       />
       <input
         ref={replaceInput}
@@ -1654,10 +1834,7 @@ export function DeckEditor({ user }: { user: User }) {
           <Button
             size="sm"
             startDecorator={<SlideshowIcon />}
-            onClick={() => {
-              setPresenter(false);
-              setPresent(true);
-            }}
+            onClick={startPresent}
           >
             Present
           </Button>
@@ -1755,6 +1932,32 @@ export function DeckEditor({ user }: { user: User }) {
               <TableSizePicker onPick={insertTable} />
             </Menu>
           </Dropdown>
+          {!selected && (
+            <>
+              <Divider orientation="vertical" sx={{ mx: 0.5 }} />
+              <Button size="sm" variant="plain" color="neutral" onClick={setBackground}>
+                Background
+              </Button>
+              <Dropdown open={layoutMenu === "apply"} onOpenChange={(_, o) => setLayoutMenu(o ? "apply" : null)}>
+                <MenuButton size="sm" variant="plain" color="neutral" aria-label="Layout">
+                  Layout
+                </MenuButton>
+                <Menu size="sm" placement="bottom-start" sx={{ p: 0 }}>
+                  <LayoutGrid
+                    layouts={layoutsOf(doc)}
+                    current={slide?.layout}
+                    onPick={(lid) => {
+                      setLayoutMenu(null);
+                      applyLayoutToSlide(lid);
+                    }}
+                  />
+                </Menu>
+              </Dropdown>
+              <Button size="sm" variant="plain" color="neutral" onClick={() => setThemeDlg("gallery")}>
+                Theme
+              </Button>
+            </>
+          )}
           {drawTool && (
             <Typography
               level="body-xs"
@@ -1820,6 +2023,23 @@ export function DeckEditor({ user }: { user: User }) {
               aria-label="Fill color"
               style={{ marginLeft: 4 }}
             />
+          )}
+          {selected && isShape(selected.type) && (
+            <Dropdown open={fillMenuOpen} onOpenChange={(_, o) => setFillMenuOpen(o)}>
+              <MenuButton size="sm" variant="plain" aria-label="Theme fill colour" sx={{ px: 0.5, minWidth: 0 }}>
+                ▾
+              </MenuButton>
+              <Menu size="sm" placement="bottom-start" sx={{ p: 0 }}>
+                <ThemePalette
+                  theme={themeOf(doc)}
+                  onPick={(ref) => {
+                    setFillMenuOpen(false);
+                    const t = themeOf(doc);
+                    upsertMany(selectedEls.filter((e) => isShape(e.type)).map((e) => withColorRef(e, "fill", ref, t)));
+                  }}
+                />
+              </Menu>
+            </Dropdown>
           )}
           <ImageControls el={selected} cmd={imageCmd} />
           <TableControls el={selTable} cmd={tableCmd} activeCell={activeSel ? [activeSel.r, activeSel.c] : null} />
@@ -1905,7 +2125,28 @@ export function DeckEditor({ user }: { user: User }) {
                     flexShrink: 0,
                   }}
                 >
-                  <SlideView slide={s} width={140} />
+                  <Box sx={{ opacity: s.hidden ? 0.45 : 1, lineHeight: 0 }}>
+                    <SlideView slide={withFooters(doc, i)} width={140} />
+                  </Box>
+                  {s.hidden && (
+                    <Box
+                      data-testid="slide-hidden"
+                      title="Skipped in the slideshow"
+                      sx={{
+                        position: "absolute",
+                        left: 2,
+                        bottom: 2,
+                        px: 0.5,
+                        fontSize: 10,
+                        lineHeight: "14px",
+                        borderRadius: 3,
+                        bgcolor: "rgba(32,33,36,0.8)",
+                        color: "#fff",
+                      }}
+                    >
+                      Skipped
+                    </Box>
+                  )}
                   {here.length > 0 && (
                     <Box
                       sx={{
@@ -1934,15 +2175,31 @@ export function DeckEditor({ user }: { user: User }) {
               </Box>
             );
           })}
-          <Button
-            size="sm"
-            variant="soft"
-            startDecorator={<AddIcon />}
-            onClick={doNewSlide}
-            sx={{ width: "100%", mt: 0.5 }}
-          >
-            New slide
-          </Button>
+          <Box sx={{ display: "flex", gap: 0.25, mt: 0.5 }}>
+            <Button
+              size="sm"
+              variant="soft"
+              startDecorator={<AddIcon />}
+              onClick={() => doNewSlide()}
+              sx={{ flex: 1 }}
+            >
+              New slide
+            </Button>
+            <Dropdown open={layoutMenu === "new"} onOpenChange={(_, o) => setLayoutMenu(o ? "new" : null)}>
+              <MenuButton size="sm" variant="soft" aria-label="New slide with layout" sx={{ px: 0.5, minWidth: 0 }}>
+                ▾
+              </MenuButton>
+              <Menu size="sm" placement="right-start" sx={{ p: 0, zIndex: 1300 }}>
+                <LayoutGrid
+                  layouts={layoutsOf(doc)}
+                  onPick={(lid) => {
+                    setLayoutMenu(null);
+                    doNewSlide(lid);
+                  }}
+                />
+              </Menu>
+            </Dropdown>
+          </Box>
           <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
             <Button
               size="sm"
@@ -2018,6 +2275,7 @@ export function DeckEditor({ user }: { user: User }) {
                   setSel(ids);
                 }}
                 onChange={(el) => upsertElement(el)}
+                decorations={footerElements(doc, cur)}
                 onChangeMany={(els, o) => upsertMany(els, o)}
                 snap={{ guides: snapGuides, grid: snapGrid ? GRID_SIZE : 0 }}
                 showGrid={snapGrid}
@@ -2416,6 +2674,40 @@ export function DeckEditor({ user }: { user: User }) {
           </Box>
         </ModalDialog>
       </Modal>
+      <ThemeDialog
+        open={!!themeDlg}
+        tab={themeDlg ?? "gallery"}
+        current={themeOf(doc)}
+        onApply={(t) => {
+          setThemeDlg(null);
+          setDeck(applyTheme(doc, t));
+        }}
+        onClose={() => setThemeDlg(null)}
+      />
+      <PageSetupDialog
+        open={pageSetupOpen}
+        size={deckSize(doc)}
+        onApply={(size, mode) => {
+          setPageSetupOpen(false);
+          setDeck(resizeDeck(doc, size, mode));
+        }}
+        onClose={() => setPageSetupOpen(false)}
+      />
+      <BackgroundDialog
+        open={bgOpen}
+        slide={slide}
+        theme={themeOf(doc)}
+        onApply={applyBackground}
+        onPickImage={pickBackgroundImage}
+        onClose={() => setBgOpen(false)}
+      />
+      <HeaderFooterDialog
+        open={hfOpen}
+        hf={doc.hf}
+        slideHf={hfFlags(doc, cur)}
+        onApply={applyHeaderFooter}
+        onClose={() => setHfOpen(false)}
+      />
       <HyperlinkDialog
         open={!!linkDlg}
         init={linkDlg?.init ?? null}

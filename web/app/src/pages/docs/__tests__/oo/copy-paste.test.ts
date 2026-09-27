@@ -360,12 +360,13 @@ describe("OnlyOffice copy/paste: paste then copy back", () => {
   });
 
   it.skip("oo:word/copypaste/copy-paste-tests.js#Paste Newton’s binom formula from word", () => {
-    // TODO(M11): Word pastes OMML equations; needs the math node.
+    // Commented out upstream; its expected value is OnlyOffice's own copy
+    // HTML. Grown pastes Word's OMML as an equation since M11 (math.test.ts).
   });
 
   it.skip("oo:word/copypaste/copy-paste-tests.js#Paste footnote formula from word", () => {
-    // TODO(M11): an equation inside a footnote; needs the math node and
-    // rich footnote bodies.
+    // TODO(F1): an equation inside a footnote needs rich footnote bodies
+    // (equations themselves paste since M11).
   });
 });
 

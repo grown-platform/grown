@@ -9,6 +9,7 @@
 
 import { INDENT_STEP, type SlideElement, type TextRun } from "../model";
 import { effective, insetsOf, paragraphs } from "../textOps";
+import { parseRef } from "../theme";
 
 /** EMU per logical px (960 px = 10 in = 9 144 000 EMU). */
 export const EMU_PER_PX = 9525;
@@ -37,6 +38,14 @@ function xmlText(s: string): string {
   return esc(s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ""));
 }
 
+/** `<a:schemeClr>` for a theme ref ("accent1/lumMod:75000"), or null. */
+export function schemeClrXml(ref: string): string | null {
+  const p = parseRef(ref);
+  if (!p) return null;
+  const mods = p.mods.map((m) => (m.val === undefined ? `<a:${m.name}/>` : `<a:${m.name} val="${m.val}"/>`)).join("");
+  return `<a:schemeClr val="${p.slot}">${mods}</a:schemeClr>`;
+}
+
 const hex = (c: string | undefined) =>
   (c || "#000000").replace("#", "").slice(0, 6).padEnd(6, "0").toUpperCase();
 
@@ -58,11 +67,19 @@ function rPrXml(el: SlideElement, r: TextRun, tag: "rPr" | "endParaRPr", link: L
   attrs.push(`dirty="0"`);
   const kids: string[] = [];
   const color = effective(el, r, "color") as string | undefined;
-  kids.push(`<a:solidFill><a:srgbClr val="${hex(color)}"/></a:solidFill>`);
+  // A theme colour/font (M7) is written as a scheme reference when the run
+  // doesn't override it.
+  const scheme = r.color === undefined && el.themeRefs?.color ? schemeClrXml(el.themeRefs.color) : null;
+  kids.push(`<a:solidFill>${scheme ?? `<a:srgbClr val="${hex(color)}"/>`}</a:solidFill>`);
   const face = (effective(el, r, "fontFamily") as string | undefined) || "Arial";
-  kids.push(
-    `<a:latin typeface="${esc(face)}"/><a:ea typeface="${esc(face)}"/><a:cs typeface="${esc(face)}"/>`,
-  );
+  const role = r.fontFamily === undefined ? el.themeRefs?.font : undefined;
+  if (role) {
+    const t = role === "major" ? "+mj" : "+mn";
+    kids.push(`<a:latin typeface="${t}-lt"/><a:ea typeface="${t}-ea"/><a:cs typeface="${t}-cs"/>`);
+  } else
+    kids.push(
+      `<a:latin typeface="${esc(face)}"/><a:ea typeface="${esc(face)}"/><a:cs typeface="${esc(face)}"/>`,
+    );
   if (url && tag === "rPr") {
     const ref = link(url);
     if (ref)

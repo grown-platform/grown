@@ -11,14 +11,20 @@ import {
   type DeckDoc,
   type Slide,
   type SlideElement,
+  type SlideLayout,
   type TransitionType,
 } from "../model";
 import { textBodyXml, type LinkRef, type LinkResolver } from "./textXml";
 import { tableXml } from "./tableXml";
 import { inlineImages } from "../assets";
 import { toPpAction } from "../links";
+import { deckSize } from "../slideProps";
+import { findLayout, layoutsOf, withFooters } from "../layouts";
+import { themeOf } from "../theme";
+import { bgXml, patchClrMap, patchLayoutXml, patchThemeXml, replaceBg, setPh, setSchemeFill, toField } from "./designXml";
 
-/** Slide size written to every pptx: 10 in × 5.625 in (16:9). */
+/** Slide width written to every pptx: 10 in; the height follows the
+ *  deck's size (5.625 in for 16:9). */
 export const SLIDE_W_IN = 10;
 export const SLIDE_H_IN = 5.625;
 
@@ -241,18 +247,38 @@ export async function deckToPptx(
   const mod = await import("pptxgenjs");
   const PptxGenJS = mod.default;
   const pptx = new PptxGenJS();
+  const size = deckSize(deck);
   pptx.defineLayout({
-    name: "GROWN16x9",
+    name: "GROWN",
     width: SLIDE_W_IN,
-    height: SLIDE_H_IN,
+    height: Math.round(((SLIDE_W_IN * size.h) / CANVAS_W) * 10000) / 10000,
   });
-  pptx.layout = "GROWN16x9";
+  pptx.layout = "GROWN";
   pptx.title = title;
+  const theme = themeOf(deck);
+  pptx.theme = { headFontFace: theme.fonts.major, bodyFontFace: theme.fonts.minor };
+  // Layouts (M7): each becomes a pptx slide layout (pptxgenjs "master"),
+  // written only when some slide uses one.
+  const layouts = deck.slides.some((s) => findLayout(deck, s.layout)) ? layoutsOf(deck) : [];
+  const layoutNames = new Map<string, string>();
+  for (const l of layouts) {
+    let name = l.name || l.id;
+    while ([...layoutNames.values()].includes(name)) name += " (2)";
+    layoutNames.set(l.id, name);
+    pptx.defineSlideMaster({ title: name, objects: [] });
+  }
   const slideGroups: Map<string, SlideElement>[] = [];
   const slideEls: ElementMark[][] = [];
-  for (const slide of deck.slides) {
-    const s = pptx.addSlide();
-    s.background = { color: hex6(slide.background || "#ffffff") };
+  const autoDate = deck.hf?.dateText === undefined;
+  for (let si = 0; si < deck.slides.length; si++) {
+    // Header/footer boxes are written as the slide's dt/ftr/sldNum placeholders.
+    const slide = withFooters(deck, si);
+    const masterName = slide.layout ? layoutNames.get(slide.layout) : undefined;
+    const s = masterName ? pptx.addSlide({ masterName }) : pptx.addSlide();
+    if (slide.hidden) s.hidden = true;
+    if (slide.bgFill?.kind === "image")
+      s.background = slide.bgFill.src.startsWith("data:") ? { data: slide.bgFill.src } : { path: slide.bgFill.src };
+    else s.background = { color: hex6(slide.background || "#ffffff") };
     const groups = new Map<string, SlideElement>();
     // Slides with preset shapes/connectors mark every element, so adjust
     // values, connectors and glue targets can be found after pptxgenjs.
@@ -268,7 +294,9 @@ export async function deckToPptx(
       let extra: Extra = path.length ? { objectName: groupMarker(path) } : {};
       if (mark) {
         extra = { objectName: `${ELEMENT_MARKER}${marks.length}` };
-        marks.push({ el, path });
+        const field =
+          el.placeholder?.type === "sldNum" ? "slidenum" : el.placeholder?.type === "dt" && autoDate ? "datetime1" : undefined;
+        marks.push({ el, path, ...(field ? { field } : {}) });
       }
       try {
         if (el.type === "shape" || el.type === "connector") {
@@ -300,7 +328,7 @@ export async function deckToPptx(
     if (slide.notes && slide.notes.trim()) s.addNotes(slide.notes);
   }
   const raw = (await pptx.write({ outputType: "uint8array" })) as Uint8Array;
-  return patchPptx(raw, deck, slideGroups, slideEls);
+  return patchPptx(raw, deck, slideGroups, slideEls, layouts.map((l) => ({ layout: l, name: layoutNames.get(l.id)! })));
 }
 
 /** Apply the XML patches pptxgenjs cannot express: transitions, and the
@@ -310,19 +338,32 @@ export async function patchPptx(
   deck: DeckDoc,
   slideGroups: Map<string, SlideElement>[] = [],
   slideEls: ElementMark[][] = [],
+  layouts: { layout: SlideLayout; name: string }[] = [],
 ): Promise<Uint8Array> {
-  const hasTransitions = deck.slides.some(
-    (s) => s.transition && s.transition !== "none",
-  );
-  const hasGroups = slideGroups.some((g) => g.size > 0);
-  const hasMarks = slideEls.some((m) => m.length > 0);
-  if (!hasTransitions && !hasGroups && !hasMarks) return raw;
   const zip = await JSZip.loadAsync(raw);
+  // Theme (M7): colour scheme + name; a dark theme's colour map.
+  const theme = themeOf(deck);
+  for (const f of zip.file(/^ppt\/theme\/theme\d+\.xml$/))
+    zip.file(f.name, patchThemeXml(await f.async("string"), theme));
+  if (theme.dark)
+    for (const f of zip.file(/^ppt\/slideMasters\/slideMaster\d+\.xml$/))
+      zip.file(f.name, patchClrMap(await f.async("string"), true));
+  // Layouts: found by the name pptxgenjs gave them.
+  if (layouts.length) {
+    const byName = new Map(layouts.map((l) => [l.name, l.layout]));
+    for (const f of zip.file(/^ppt\/slideLayouts\/slideLayout\d+\.xml$/)) {
+      const xml = await f.async("string");
+      const name = /<p:cSld\b[^>]*\bname="([^"]*)"/.exec(xml)?.[1];
+      const l = name !== undefined ? byName.get(unescapeXml(name)) : undefined;
+      if (l) zip.file(f.name, patchLayoutXml(xml, l));
+    }
+  }
   for (let i = 0; i < deck.slides.length; i++) {
     const xml = transitionXml(deck.slides[i].transition);
     const groups = slideGroups[i];
     const marks = slideEls[i];
-    if (!xml && !groups?.size && !marks?.length) continue;
+    const bg = bgXml(deck.slides[i]);
+    if (!xml && !groups?.size && !marks?.length && !bg) continue;
     const path = `ppt/slides/slide${i + 1}.xml`;
     const f = zip.file(path);
     if (!f) continue;
@@ -336,9 +377,14 @@ export async function patchPptx(
     }
     if (groups?.size) out = wrapGroups(out, groups);
     if (xml) out = insertTransition(out, xml);
+    if (bg) out = replaceBg(out, bg);
     zip.file(path, out);
   }
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
+function unescapeXml(s: string): string {
+  return s.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
 // ------------------------------------------------------------ groups
@@ -443,6 +489,8 @@ export function wrapGroups(
 export interface ElementMark {
   el: SlideElement;
   path: string[];
+  /** Header/footer field the text is written as (slide number, date). */
+  field?: "slidenum" | "datetime1";
 }
 
 export const ELEMENT_MARKER = "grown-el:";
@@ -458,6 +506,8 @@ function needsElementPatch(els: readonly SlideElement[]): boolean {
       e.type === "table" ||
       e.type === "image" ||
       !!e.alt ||
+      !!e.placeholder ||
+      !!e.themeRefs ||
       (e.children ? needsElementPatch(e.children) : false),
   );
 }
@@ -561,12 +611,19 @@ export function patchElements(slideXml: string, marks: ElementMark[], link?: Lin
     );
     if (el.alt) cNvPr.setAttribute("descr", el.alt);
     else cNvPr.removeAttribute("descr"); // pptxgenjs writes the image path/data here
+    if (el.placeholder && !path.length) setPh(doc, node, el.placeholder);
+    // Theme colours (M7): fill / outline as scheme references.
+    const spPr = Array.from(node.children).find((c) => c.localName === "spPr");
+    if (el.themeRefs?.fill && el.fill && el.fill !== "none") setSchemeFill(doc, spPr, el.themeRefs.fill);
+    if (el.themeRefs?.stroke && el.stroke && el.stroke !== "none")
+      setSchemeFill(doc, spPr ? Array.from(spPr.children).find((c) => c.localName === "ln") : undefined, el.themeRefs.stroke);
     if (el.type === "image") {
       patchPicture(doc, node, el);
       continue;
     }
     if (el.type === "text") {
       replaceTxBody(doc, node, textBodyXml(el, link ?? (() => null)));
+      if (mark.field) toField(doc, node, mark.field);
       continue;
     }
     if (el.type === "table" && el.table) {
