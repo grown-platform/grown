@@ -133,12 +133,11 @@ function textCase(inline: boolean) {
   expect(xmlOf(e)).toBe(doc("qwe"));
 }
 
-const P = "oo:word/custom-xml/custom-xml.js#";
 
 describe("OnlyOffice custom XML: block content controls", () => {
-  it(`${P}Date and CheckBox content control's load/save from/to different CustomXML's`, () => dateAndCheckbox(false));
-  it(`${P}Date content control load/save CustomXML`, () => dateCase(false));
-  it(`${P}Test invalid date content when loading customXML (bug 72133)`, () => {
+  it("oo:word/custom-xml/custom-xml.js#Date and CheckBox content control's load/save from/to different CustomXML's", () => dateAndCheckbox(false));
+  it("oo:word/custom-xml/custom-xml.js#Date content control load/save CustomXML", () => dateCase(false));
+  it("oo:word/custom-xml/custom-xml.js#Test invalid date content when loading customXML (bug 72133)", () => {
     const e = setup(doc("BAD DATE"));
     const c = addBound(e, "date", false);
     expect(innerText(c().node), "an invalid date shows as is").toBe("BAD DATE");
@@ -147,21 +146,21 @@ describe("OnlyOffice custom XML: block content controls", () => {
     updateDataBinding(e, c().pos);
     expect(xmlOf(e)).toBe(doc("Invalid date"));
   });
-  it(`${P}Checkbox content control load/save CustomXML`, () => checkboxCase(false));
-  it(`${P}ComboBox content control load from/save CustomXML`, () => listCase("comboBox", false));
-  it(`${P}DropDown content control load from/save CustomXML`, () => listCase("dropDownList", false));
-  it(`${P}Picture content control load from/save CustomXML`, () => pictureCase(false));
-  it(`${P}Simple text content control load from/save CustomXML`, () => textCase(false));
+  it("oo:word/custom-xml/custom-xml.js#Checkbox content control load/save CustomXML", () => checkboxCase(false));
+  it("oo:word/custom-xml/custom-xml.js#ComboBox content control load from/save CustomXML", () => listCase("comboBox", false));
+  it("oo:word/custom-xml/custom-xml.js#DropDown content control load from/save CustomXML", () => listCase("dropDownList", false));
+  it("oo:word/custom-xml/custom-xml.js#Picture content control load from/save CustomXML", () => pictureCase(false));
+  it("oo:word/custom-xml/custom-xml.js#Simple text content control load from/save CustomXML", () => textCase(false));
 });
 
 describe("OnlyOffice custom XML: inline content controls", () => {
-  it(`${P}Date and CheckBox inline content control's load/save from/to different CustomXML's`, () => dateAndCheckbox(true));
-  it(`${P}Date content control load/save CustomXML (inline)`, () => dateCase(true));
-  it(`${P}Checkbox content control load/save CustomXML (inline)`, () => checkboxCase(true));
-  it(`${P}ComboBox content control load from/save CustomXML (inline)`, () => listCase("comboBox", true));
-  it(`${P}DropDown content control load from/save CustomXML (inline)`, () => listCase("dropDownList", true));
-  it(`${P}Picture content control load from/save CustomXML (inline)`, () => pictureCase(true));
-  it(`${P}Simple text content control load from/save CustomXML (inline)`, () => textCase(true));
+  it("oo:word/custom-xml/custom-xml.js#Date and CheckBox inline content control's load/save from/to different CustomXML's", () => dateAndCheckbox(true));
+  it("oo:word/custom-xml/custom-xml.js#Date content control load/save CustomXML (inline)", () => dateCase(true));
+  it("oo:word/custom-xml/custom-xml.js#Checkbox content control load/save CustomXML (inline)", () => checkboxCase(true));
+  it("oo:word/custom-xml/custom-xml.js#ComboBox content control load from/save CustomXML (inline)", () => listCase("comboBox", true));
+  it("oo:word/custom-xml/custom-xml.js#DropDown content control load from/save CustomXML (inline)", () => listCase("dropDownList", true));
+  it("oo:word/custom-xml/custom-xml.js#Picture content control load from/save CustomXML (inline)", () => pictureCase(true));
+  it("oo:word/custom-xml/custom-xml.js#Simple text content control load from/save CustomXML (inline)", () => textCase(true));
 
   it("editing a bound control writes the part (Grown)", () => {
     const e = setup(doc("hello"));
@@ -188,30 +187,30 @@ const BOOKS =
 
 describe("OnlyOffice custom XML: XPath", () => {
   const x = () => parseCustomXml(BOOKS)!;
-  it(`${P}Check /bookstore/book`, () => {
+  it("oo:word/custom-xml/custom-xml.js#Check /bookstore/book", () => {
     const n = findByXPath(x(), "/bookstore/book");
     expect(n.map((b) => b.el.getAttribute("id"))).toEqual(["1", "2", "3"]);
   });
-  it(`${P}Check /bookstore/book/title`, () => {
+  it("oo:word/custom-xml/custom-xml.js#Check /bookstore/book/title", () => {
     expect(findByXPath(x(), "/bookstore/book/title").map((b) => b.el.textContent)).toEqual(["A Tale", "Second Book", "Third"]);
   });
-  it(`${P}Check /bookstore/book[2]/author`, () => {
+  it("oo:word/custom-xml/custom-xml.js#Check /bookstore/book[2]/author", () => {
     const n = findByXPath(x(), "/bookstore/book[2]/author");
     expect(n.length).toBe(1);
     expect(n[0].el.textContent).toBe("Ben Writer");
   });
-  it(`${P}Check /bookstore/*`, () => {
+  it("oo:word/custom-xml/custom-xml.js#Check /bookstore/*", () => {
     expect(findByXPath(x(), "/bookstore/*").map((b) => b.el.getAttribute("id"))).toEqual(["1", "2", "3", "4"]);
   });
-  it(`${P}Check /bookstore/book/@category`, () => {
+  it("oo:word/custom-xml/custom-xml.js#Check /bookstore/book/@category", () => {
     const n = findByXPath(x(), "/bookstore/book/@category");
     expect(n.map((b) => b.el.getAttribute("id"))).toEqual(["1", "2", "3"]);
     expect(n.map((b) => b.el.getAttribute(b.attr!))).toEqual(["fiction", "fiction", "poetry"]);
   });
-  it(`${P}Check //bookstore`, () => expect(findByXPath(x(), "//bookstore").length).toBe(1));
-  it(`${P}Check //title`, () => expect(findByXPath(x(), "//title").length).toBe(5));
-  it(`${P}Check /bookstore/book//title`, () => expect(findByXPath(x(), "/bookstore/book//title").length).toBe(3));
-  it(`${P}Check /bookstore/otherbook//title`, () => expect(findByXPath(x(), "/bookstore/otherbook//title").length).toBe(2));
-  it(`${P}Check getXPath un-unique`, () => expect(xpathOf(findByXPath(x(), "/bookstore/book")[1].el)).toBe("/bookstore/book[2]"));
-  it(`${P}Check getXPath unique`, () => expect(xpathOf(findByXPath(x(), "/bookstore/otherbook/author")[0].el)).toBe("/bookstore/otherbook/author"));
+  it("oo:word/custom-xml/custom-xml.js#Check //bookstore", () => expect(findByXPath(x(), "//bookstore").length).toBe(1));
+  it("oo:word/custom-xml/custom-xml.js#Check //title", () => expect(findByXPath(x(), "//title").length).toBe(5));
+  it("oo:word/custom-xml/custom-xml.js#Check /bookstore/book//title", () => expect(findByXPath(x(), "/bookstore/book//title").length).toBe(3));
+  it("oo:word/custom-xml/custom-xml.js#Check /bookstore/otherbook//title", () => expect(findByXPath(x(), "/bookstore/otherbook//title").length).toBe(2));
+  it("oo:word/custom-xml/custom-xml.js#Check getXPath un-unique", () => expect(xpathOf(findByXPath(x(), "/bookstore/book")[1].el)).toBe("/bookstore/book[2]"));
+  it("oo:word/custom-xml/custom-xml.js#Check getXPath unique", () => expect(xpathOf(findByXPath(x(), "/bookstore/otherbook/author")[0].el)).toBe("/bookstore/otherbook/author"));
 });

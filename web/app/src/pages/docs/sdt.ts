@@ -1249,6 +1249,25 @@ export const ContentControls = Extension.create({
             }
             return false;
           },
+          // In the fill-in view a double click selects a whole field (a
+          // sub-field of a complex form), a triple click the whole complex
+          // form (OnlyOffice).
+          handleDoubleClickOn(view, pos, node, nodePos) {
+            if (!isFillMode(view.state) || node.type.name !== SDT_INLINE) return false;
+            const pr = prOf(node);
+            if (pr.type === "complex" || !pr.form) return false;
+            const inner = sdtAncestors(view.state.doc.resolve(pos))[0];
+            if (inner && inner.pos !== nodePos) return false;
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, nodePos + 1, nodePos + node.nodeSize - 1)));
+            return true;
+          },
+          handleTripleClick(view, pos) {
+            if (!isFillMode(view.state)) return false;
+            const complex = sdtAncestors(view.state.doc.resolve(pos)).find((h) => prOf(h.node).type === "complex");
+            if (!complex) return false;
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, complex.pos + 1, complex.pos + complex.node.nodeSize - 1)));
+            return true;
+          },
           attributes(state): Record<string, string> {
             return isFillMode(state) ? { class: "doc-forms-fill" } : {};
           },
