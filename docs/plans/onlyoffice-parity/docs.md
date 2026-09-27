@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -309,14 +309,14 @@ Grown paths are relative to the repo root; `docs/` below means
 
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
-| Track insertions / deletions | ReviewChanges `txtTurnon`, `revisions/*.js` | Have | `docs/suggesting.ts` |
-| Accept / reject current, all; next / previous | ReviewChanges | Partial | per-run + all in `docs/Suggestions.tsx`; no navigation |
-| Tracked formatting changes | sdkjs `RevisionsChange.js` | Missing | — |
-| Tracked paragraph split/merge, table and structural changes | `revisions/document-content.js` | Missing | typing Enter in suggesting mode is applied directly |
-| Author, date, change type in balloons/popover | ReviewPopover | Partial | author only, no date |
-| Display modes (Markup + balloons, only markup, Final, Original) | ReviewChanges `txtMarkup*` | Missing | — |
-| Track on for me / for everyone | ReviewChanges `txtOn/txtOnGlobal` | Partial | local toggle only |
-| Review in header/footer/notes | shortcuts test | Missing | — |
+| Track insertions / deletions | ReviewChanges `txtTurnon`, `revisions/*.js` | Have | `docs/suggesting.ts` (ids and dates since M5) |
+| Accept / reject current, all; next / previous | ReviewChanges | Have (M5) | `docs/Suggestions.tsx`, commands in `suggesting.ts` |
+| Tracked formatting changes | sdkjs `RevisionsChange.js` | Have (M5) | `formatChange` mark |
+| Tracked paragraph split/merge, table and structural changes | `revisions/document-content.js` | Partial (M5) | paragraph marks and paragraph properties tracked; list wrapping, tables and block objects are not |
+| Author, date, change type in balloons/popover | ReviewPopover | Have (M5) | `docs/ReviewPopover.tsx` |
+| Display modes (Markup + balloons, only markup, Final, Original) | ReviewChanges `txtMarkup*` | Have (M5) | `review-<mode>` CSS; Original can't show old formatting |
+| Track on for me / for everyone | ReviewChanges `txtOn/txtOnGlobal` | Have (M5) | `review` Yjs map + per-user default (`docs/review.ts`) |
+| Review in header/footer/notes | shortcuts test | Partial (M5) | header/footer tracked; note bodies are strings (F1) |
 | Compare documents / combine | ReviewChanges `txtCompare/txtCombine`, `Editor/Comparison.js`, `Merge.js` | Missing | — |
 
 ### 2.12 Comments
@@ -879,7 +879,7 @@ Google Docs binding or model and the ported test asserts Grown's behaviour.
 * **Tests**: 37 tagged cases, 34 passing, 3 skipped:
   `oo/copy-paste.test.ts` 32 (30 pass; the upstream-commented "Newton’s
   binom formula" and "footnote formula" cases are skipped for M11),
-  `oo/replace-smart.test.ts` 2 (1 pass; "with revisions" skipped for M5),
+  `oo/replace-smart.test.ts` 2 (1 pass; "with revisions" passes since M5),
   `oo/autocorrect-as-you-type.test.ts` 2, `oo/text-selection-units.test.ts`
   1 (pluginsApi "CurrenWord/CurrentSentence"; its hidden PAGE-field
   sub-case waits for M8 fields). Grown-native: `search.test.ts`,
@@ -898,7 +898,7 @@ Google Docs binding or model and the ported test asserts Grown's behaviour.
 | copy-paste: copy back | Word-style HTML with inline `mso-*` CSS and a `docData` payload | Semantic HTML (`<h1>`, `<strong>`, `<ul><li><p>`) plus a `data-pm-slice` attribute, which is Grown's "internal format" | grown-variant |
 | copy-paste: images | Loaded asynchronously, so the test document stays empty | `<img>` becomes an image node at once (data URLs allowed); images pointing at the copier's disk are dropped | grown-variant |
 | replace-text-smart: runs | Adjacent runs with the same formatting stay separate runs | Adjacent text with equal marks is one run in ProseMirror, so `"e"` + `" Test"` read as `"e Test"` | Note only |
-| replace-text-smart: with revisions | Smart replace under tracking | Needs change ids and per-run review types | M5 |
+| replace-text-smart: with revisions | Smart replace under tracking | See §6.11 (word-level diff) | Done (M5), grown-variant |
 | as-you-type: which text is judged | `EnterText` doesn't trigger corrections; only the final Space does | Same in the ports (`addText`, then a typed space); in the app every word end triggers | Done (M2) |
 | autocorrect: dashes | Word turns spaced ` - ` / ` -- ` into an en dash and `--` between words into an em dash | `--` always becomes an em dash | grown-variant |
 | pluginsApi: current word/sentence around a hidden field | A PAGE field inside "Test" splits the word | No field node | M8 |
@@ -1087,7 +1087,8 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   into `DocxImport.page` but not applied), floating image position and
   wrap (M7), WMF/EMF/TIFF images, direct "not bold/italic" over a style,
   caps / small caps as direct formatting, formatting-change revisions and
-  revision dates (M5), rich footnote bodies (F1), equations as math (M11).
+  revision dates (both mapped since M5, §6.11), rich footnote bodies (F1),
+  equations as math (M11).
 * **Not yet** (rest of the M6 row): opening a `.docx` from Drive and
   importing into an existing document; a server-side OOXML schema
   validation step (checked here by structure tests and pandoc's reader,
@@ -1194,6 +1195,116 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | api-table-cell theme colour | Theme colours | No document theme | n/a |
 | Table without style or borders (docx) | No borders (Normal Table) | Grown's light grid (legacy look); Normal Table is a template users can pick | grown-variant |
 | Header cells | Only a row property | TipTap `<th>` cells; `tblHeader` rows import as header cells with repeat on | Note only |
+
+### 6.11 M5 status (track changes v2)
+
+* **Model** (`changes.ts`, pure; `suggesting.ts`, the extension). Every
+  record carries `id`, `author` and `date` (ISO, seconds, as WordprocessingML
+  stores it): `insertion` / `deletion` marks (new `id`/`date` attributes;
+  old documents without ids read as one change per run), a `formatChange`
+  mark whose `old` attribute is the JSON of the formatting marks before the
+  change, and two paragraph/heading attributes (`TrackParagraphs`):
+  `paraChange` (the paragraph *mark* — the break at the paragraph's end —
+  was inserted or deleted, Word's model) and `propsChange` (the previous
+  node type and attributes). All are strings, so they ride y-prosemirror and
+  the update log like any attribute. `collectChanges` groups records by id
+  into logical changes (insert / delete / replace / format / paragraph);
+  `resolveParts` accepts or rejects them (rejecting a formatting change
+  restores the old marks; accepting a deleted paragraph mark, or rejecting an
+  inserted one, joins the paragraph with the next, which then carries the
+  next paragraph's mark; tables and block objects stop a join).
+* **Tracking**: typing is marked by `appendTransaction` (continuing an
+  adjacent own insertion's id, including the paragraph mark just before);
+  typing, pasting or Enter over a selection marks it deleted and inserts
+  the new content at its start as one "replace" change; Backspace / Delete
+  (and Ctrl/Alt+Backspace/Delete by word) mark text deleted, skip text that
+  is already deleted, remove your own pending insertions outright and, at a
+  paragraph boundary, mark the paragraph mark deleted; cut marks the
+  selection deleted after copying; a drag-move inserts at the drop point
+  and marks the source deleted (one "Moved" change). Enter records the first half's paragraph mark as inserted (the
+  original mark stays with the second half; untracked, the new mark is
+  plain). Mark steps on formatting marks record `formatChange` (dropped
+  again when the formatting returns to the snapshot); attribute / block
+  type steps on paragraphs record `propsChange` (not for paragraphs that
+  are empty or entirely your own insertion). Remote (Yjs) transactions,
+  undo/redo and `setContent` loads are never re-tracked; untracked typing
+  next to or inside a change no longer inherits its mark. Tracking state is
+  per editor (a WeakMap; TipTap 2 extension storage is shared).
+* **Review UI**: `Suggestions.tsx` — track changes menu (On/Off for me,
+  On/Off for me and everyone, "Track my changes by default"), display mode,
+  previous / next with "n of m", accept / reject current, accept / reject
+  all, and the grouped change list (kind, author, date, summary, per-change
+  accept / reject) across the header, body and footer editors.
+  `ReviewPopover.tsx` — a card under the change at the caret with author,
+  date, summary and accept / reject. The toolbar mode chip gained
+  "Suggesting"; Tools > Review, View > Changes and the command palette reach
+  every command.
+* **Display modes** are CSS on the page (`review-markup|simple|final|
+  original`, `editorStyles.ts`): Markup shows insertions, strike-through
+  deletions, a dotted underline for formatting changes, ¶ for tracked
+  paragraph marks and a tint for paragraph-property changes; Simple markup
+  and Final hide deletions and plain the rest (Simple adds a bar beside
+  changed paragraphs); Original hides insertions and plains deletions. The
+  mode is a per-user preference (localStorage).
+* **On for everyone**: `review.ts` — `trackAll` in a `review` Yjs map
+  (`{on, at}`); my per-document choice (`{on, at}`, localStorage) and the
+  document setting are compared by time and the newer wins, so "for
+  everyone" overrides earlier personal choices and a later personal choice
+  overrides it (OnlyOffice's four options); with neither, the per-user
+  default applies.
+* **Header/footer**: the margin schema includes the review marks and
+  paragraph attributes, `MarginEditor` runs `Suggesting` when tracking is
+  on and registers its editor with the review panel and popover.
+* **Smart replace** (`search.ts`): text already deleted is left out of the
+  comparison and stays; under tracking replaced characters are marked
+  deleted (own insertions removed), new characters are insertions placed
+  after what they replace with its formatting, one change per replacement.
+  Find & replace (one / all) goes through the same path.
+* **DOCX** (`docx/read.ts`, `docx/write.ts`), both ways: `w:ins` / `w:del`
+  (and moves on import) with author and date, `w:rPrChange` (old run
+  properties ⇄ `formatChange.old`), `w:pPrChange` (old paragraph
+  properties, style and numbering ⇄ `propsChange`) and paragraph-mark
+  revisions in `w:pPr/w:rPr`, in the body and in headers/footers. The
+  reader groups Word's per-run revisions into logical changes (adjacent,
+  same author and date; a deletion next to an insertion is a replacement)
+  and numbers ids in document order, so docx → Grown → docx → Grown is
+  stable. The writer keeps schema order (rPrChange last in rPr; pPr's rPr
+  before pPrChange) and unique revision ids.
+* **Tests**: 7 tagged cases, 5 passing and 2 skipped:
+  `oo/revisions-paragraph.test.ts` 2, `oo/revisions-document.test.ts` 5
+  (new paragraph under tracking; entire document deleted / added, with a
+  paragraph where OnlyOffice has a block content control; the two
+  sdt-only cases skipped for M10), and `oo/replace-smart.test.ts` "Replace
+  text with revisions" (un-skipped; grown-variant, below). Grown-native:
+  `track-changes.test.ts` (20: ids/dates, grouping, other authors'
+  insertions, drag-move, untracked typing, typing into deletions,
+  formatting record /
+  revert / own insertions, paragraph properties, paragraph-mark
+  merge/split, Enter over a selection, navigation and current change,
+  legacy id-less marks, Yjs sync without re-tracking, track settings,
+  header fragment, replace all under tracking), `docx-revisions.test.ts`
+  (4: reader mapping incl. header, writer XML and schema order, Grown →
+  docx → Grown → docx → Grown equality, header revisions). Playwright:
+  `web/e2e/docs-review.spec.ts` (tracking on for everyone from the panel,
+  insertion / deletion / formatting / paragraph mark, change list, popover
+  author and date, all four display modes, accept one / reject one, reload,
+  next change + reject current, accept all).
+* **Not yet**: tracked table structure (rows/cells), list wrapping and
+  block objects (images, drawings, page breaks are deleted untracked when
+  selected on their own), tracked changes inside footnote bodies (F1),
+  Original mode showing the old formatting of a formatting change (CSS
+  can't; needs decorations), balloons in the margin (the popover is the
+  per-change view), move tracking (moves import as insert + delete), and
+  per-user colours for deletions.
+* **Semantic differences**:
+
+| Case | OnlyOffice | Grown | Status |
+|---|---|---|---|
+| replace-text-smart: with revisions | Character-level diff, so "common" → "and another" becomes interleaved single-letter deletions and insertions ("c" / "and an" / "o" / "mmo" / …) | Word-level diff (M2's `diffChunks`): one deletion ("common") plus one insertion ("and another inserted"). Same review rules (deleted text skipped and kept, own insertions removed, other users' insertions kept under a deletion) | grown-variant |
+| replace-text-smart: with revisions, tracking off | The upstream sub-case marks part of the new text as removed (its own TODO says the case is wrong without tracking) | New text is plain; deleted text stays deleted | grown-variant |
+| document-content: block-level sdt | The "entire document" cases include a block content control | A middle paragraph stands in until M10; the sdt-only cases are skipped | Until M10 |
+| Rejecting an inserted paragraph mark | The merged paragraph's properties follow Word's mark rules | The first paragraph keeps its type and attributes and takes the next paragraph's mark state (so a heading split by Enter stays a heading) | Note only |
+| Review colours | Per-user colours for all change types | Insertions take the author's colour; deletions are red, formatting purple | Note only |
 
 ### Known flaky e2e (as of 2026-09-26)
 
