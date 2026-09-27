@@ -197,6 +197,17 @@ spec:
               value: {{ .maxBytes | default 33554432 | int64 | quote }}
             {{- end }}
             {{- end }}
+            {{- with (.Values.music | default dict).radioCache }}
+            # --- Music radio cache: instance-wide cap (0 = unlimited) ---
+            {{- if hasKey . "maxBytes" }}
+            - name: GROWN_RADIO_CACHE_MAX_BYTES
+              value: {{ if kindIs "string" .maxBytes }}{{ .maxBytes | quote }}{{ else }}{{ .maxBytes | int64 | quote }}{{ end }}
+            {{- end }}
+            {{- if hasKey . "maxDays" }}
+            - name: GROWN_RADIO_CACHE_MAX_DAYS
+              value: {{ .maxDays | int | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.grown.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

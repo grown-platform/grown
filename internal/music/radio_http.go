@@ -27,6 +27,15 @@ type radioStationJSON struct {
 	PlayURL string `json:"play_url"`
 }
 
+// radioCacheJSON reports radio cache usage for the station list. MaxBytes /
+// MaxDays are the instance-wide limits (0 = unlimited).
+type radioCacheJSON struct {
+	UsedBytes int64 `json:"used_bytes"`
+	Songs     int   `json:"songs"`
+	MaxBytes  int64 `json:"max_bytes"`
+	MaxDays   int   `json:"max_days"`
+}
+
 func stationToJSON(s Station) radioStationJSON {
 	return radioStationJSON{
 		ID:            s.ID,
@@ -86,7 +95,20 @@ func (h *HTTP) ListStationsHandler() http.Handler {
 		for _, s := range list {
 			out = append(out, stationToJSON(s))
 		}
-		writeJSON(w, map[string]any{"stations": out})
+		resp := map[string]any{"stations": out}
+		if h.cacheLimits != nil {
+			// Usage is this org's cached radio bytes; the limit is shared by
+			// the whole server (the cap is instance-wide).
+			if used, n, err := h.repo.RadioCacheUsage(r.Context(), o.ID); err == nil {
+				resp["cache"] = radioCacheJSON{
+					UsedBytes: used,
+					Songs:     n,
+					MaxBytes:  h.cacheLimits.MaxBytes,
+					MaxDays:   h.cacheLimits.MaxDays,
+				}
+			}
+		}
+		writeJSON(w, resp)
 	})
 }
 
@@ -135,12 +157,12 @@ func (h *HTTP) CreateStationHandler() http.Handler {
 	})
 }
 
-// PlayHandler starts the live tap + recording for the caller (reference-counted
-// per station) and returns the station so the client can begin playback.
+// PlayHandler validates the station and returns it so the client can begin
+// playback of its PlayURL (which is what drives recording).
 // POST /api/v1/music/radio/{id}/play
 func (h *HTTP) PlayHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u, ok := auth.UserFromContext(r.Context())
+		_, ok := auth.UserFromContext(r.Context())
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -160,16 +182,17 @@ func (h *HTTP) PlayHandler() http.Handler {
 			http.Error(w, "station not found", http.StatusNotFound)
 			return
 		}
-		if h.radio != nil {
-			// Listener id is per-user; recording is reference-counted per station.
-			h.radio.Start(o.ID, station.ID, u.ID, u.ID)
-		}
+		// Recording is NOT started here: it is tied to the lifetime of the
+		// /stream proxy connection (see StreamProxyHandler). A per-user
+		// listener registered here leaked whenever the tab closed without
+		// POSTing /stop, recording the station forever.
 		writeJSON(w, stationToJSON(station))
 	})
 }
 
-// StopHandler drops the caller as a listener; the tap closes when the last
-// listener leaves. POST /api/v1/music/radio/{id}/stop
+// StopHandler drops the caller's legacy per-user listener (the stream proxy now
+// releases its own listener on disconnect); kept so older clients' /stop calls
+// still succeed. POST /api/v1/music/radio/{id}/stop
 func (h *HTTP) StopHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, ok := auth.UserFromContext(r.Context())
@@ -284,6 +307,17 @@ func (h *HTTP) StreamProxyHandler() http.Handler {
 		if upResp.StatusCode < 200 || upResp.StatusCode >= 300 {
 			http.Error(w, "upstream error", http.StatusBadGateway)
 			return
+		}
+
+		// Record while (and only while) this listener's audio connection is
+		// open: the recorder is reference-counted per station, and the
+		// listener is released when the browser disconnects for any reason.
+		if h.radio != nil {
+			if u, ok := auth.UserFromContext(r.Context()); ok {
+				listener := "stream:" + randKey()
+				h.radio.Start(o.ID, station.ID, listener, u.ID)
+				defer h.radio.Stop(station.ID, listener)
+			}
 		}
 
 		ct := upResp.Header.Get("Content-Type")

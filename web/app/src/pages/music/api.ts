@@ -7,6 +7,7 @@ import type {
   PlaylistInput,
   Station,
   RetentionMode,
+  RadioCache,
 } from "./types";
 
 const API_BASE = "/api/v1";
@@ -139,8 +140,18 @@ export async function listLikedTracks(): Promise<Track[]> {
 // --- Radio ----------------------------------------------------------------
 
 export async function listStations(): Promise<Station[]> {
-  const r = await jsonFetch<{ stations?: Station[] }>("/music/radio/stations");
-  return r.stations ?? [];
+  return (await listRadio()).stations;
+}
+
+/** listRadio returns the stations plus radio cache usage (when reported). */
+export async function listRadio(): Promise<{
+  stations: Station[];
+  cache: RadioCache | null;
+}> {
+  const r = await jsonFetch<{ stations?: Station[]; cache?: RadioCache }>(
+    "/music/radio/stations",
+  );
+  return { stations: r.stations ?? [], cache: r.cache ?? null };
 }
 
 /** createStation adds a custom radio station (any http(s) stream URL). */
@@ -156,7 +167,8 @@ export async function createStation(input: {
   return r.station;
 }
 
-/** playStation starts server-side caching for the station and returns it. */
+/** playStation validates the station and returns it; server-side caching runs
+ *  while the play_url stream is open. */
 export function playStation(id: string): Promise<Station> {
   return jsonFetch<Station>(`/music/radio/${id}/play`, {
     method: "POST",

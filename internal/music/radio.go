@@ -11,8 +11,13 @@ import (
 
 // Retention modes for a radio station's cached songs.
 const (
-	RetentionKeep = "keep" // keep cached songs indefinitely (default)
-	RetentionDays = "days" // trash radio-source tracks older than RetentionDays
+	// RetentionKeep keeps cached songs until the instance-wide radio cache cap
+	// (RadioCacheLimits) evicts them. It was the default for stations created
+	// before the cap existed; new stations default to RetentionDays.
+	RetentionKeep = "keep"
+	// RetentionDays trashes radio-source tracks older than RetentionDays
+	// (default for new stations: DefaultStationRetentionDays).
+	RetentionDays = "days"
 )
 
 // Station is the in-memory representation of a grown.music_radio_stations row.
@@ -55,12 +60,16 @@ type StationFields struct {
 
 // UpsertStation inserts a station (idempotent on org_id+stream_url); if one
 // already exists it leaves retention untouched and refreshes the display name.
+// New stations get a bounded retention ("days", DefaultStationRetentionDays)
+// rather than the column's legacy "keep" default.
 func (r *Repository) UpsertStation(ctx context.Context, orgID string, f StationFields) (Station, error) {
-	q := `INSERT INTO grown.music_radio_stations (org_id, name, stream_url, genre, logo_url)
-		VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''))
+	q := `INSERT INTO grown.music_radio_stations
+		(org_id, name, stream_url, genre, logo_url, retention_mode, retention_days)
+		VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),'days',$6)
 		ON CONFLICT (org_id, stream_url) DO UPDATE SET name = EXCLUDED.name
 		RETURNING ` + stationColumns
-	s, err := scanStation(r.pool.QueryRow(ctx, q, orgID, f.Name, f.StreamURL, f.Genre, f.LogoURL))
+	s, err := scanStation(r.pool.QueryRow(ctx, q, orgID, f.Name, f.StreamURL, f.Genre, f.LogoURL,
+		DefaultStationRetentionDays))
 	if err != nil {
 		return Station{}, fmt.Errorf("music.UpsertStation: %w", err)
 	}
@@ -204,9 +213,10 @@ func (r *Repository) RadioTrackExists(ctx context.Context, stationID, artist, ti
 
 // SweepExpiredRadioTracks soft-deletes radio-source tracks for stations on the
 // "days" retention policy whose tracks are older than the station's
-// retention_days. Returns the trashed tracks' blob keys so the caller can drop
-// the bytes. Best-effort: called periodically by a background ticker.
-func (r *Repository) SweepExpiredRadioTracks(ctx context.Context) ([]string, error) {
+// retention_days. Tracks a user saved (liked or added to a playlist) are never
+// swept. Returns the number trashed; the cache janitor's purge step then
+// deletes the S3 objects and the rows.
+func (r *Repository) SweepExpiredRadioTracks(ctx context.Context) (int, error) {
 	q := `UPDATE grown.music_tracks t SET trashed_at=now(), updated_at=now()
 		FROM grown.music_radio_stations s
 		WHERE t.radio_station_id = s.id
@@ -215,19 +225,10 @@ func (r *Repository) SweepExpiredRadioTracks(ctx context.Context) ([]string, err
 		  AND s.retention_mode = 'days'
 		  AND s.retention_days IS NOT NULL
 		  AND t.created_at < now() - (s.retention_days || ' days')::interval
-		RETURNING t.blob_key`
-	rows, err := r.pool.Query(ctx, q)
+		  AND NOT ` + savedTrackPredicate
+	tag, err := r.pool.Exec(ctx, q)
 	if err != nil {
-		return nil, fmt.Errorf("music.SweepExpiredRadioTracks: %w", err)
+		return 0, fmt.Errorf("music.SweepExpiredRadioTracks: %w", err)
 	}
-	defer rows.Close()
-	var keys []string
-	for rows.Next() {
-		var k string
-		if err := rows.Scan(&k); err != nil {
-			return nil, fmt.Errorf("music.SweepExpiredRadioTracks scan: %w", err)
-		}
-		keys = append(keys, k)
-	}
-	return keys, rows.Err()
+	return int(tag.RowsAffected()), nil
 }

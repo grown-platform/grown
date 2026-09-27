@@ -53,7 +53,8 @@ export interface PlaylistInput {
   description: string;
 }
 
-/** RetentionMode mirrors the backend: keep songs forever, or erase after N days. */
+/** RetentionMode mirrors the backend: keep songs (until the server-wide radio
+ *  cache limit evicts them), or erase after N days. */
 export type RetentionMode = "keep" | "days";
 
 /** Station mirrors the radio_station JSON served by the music HTTP layer. */
@@ -69,4 +70,15 @@ export interface Station {
   track_count: number;
   /** play_url is grown's same-origin live-stream proxy for the <audio> element. */
   play_url: string;
+}
+
+/** RadioCache is the radio cache usage returned with the station list:
+ *  used_bytes/songs are this org's cached radio songs; max_bytes/max_days are
+ *  the server-wide limits (0 = unlimited). Liked or playlisted songs are never
+ *  evicted. */
+export interface RadioCache {
+  used_bytes: number;
+  songs: number;
+  max_bytes: number;
+  max_days: number;
 }

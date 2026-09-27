@@ -196,8 +196,15 @@ func main() {
 	// Recording is best-effort; failures never block startup or playback.
 	musicRepo := music.NewRepository(pool)
 	music.SeedStations(startupCtx, musicRepo, defaultOrg.ID)
-	musicRecorder := radio.NewRecorder(musicRepo, blobs)
-	radio.StartRetentionSweeper(context.Background(), musicRepo, blobs, time.Hour)
+	// The janitor enforces per-station retention plus the instance-wide radio
+	// cache cap (GROWN_RADIO_CACHE_MAX_BYTES / _MAX_DAYS), and deletes the S3
+	// objects + rows of trashed radio tracks. It runs hourly and is kicked
+	// after every cached song.
+	radioLimits := music.RadioCacheLimitsFromEnv()
+	logger.Info("radio cache limits", "max_bytes", radioLimits.MaxBytes, "max_days", radioLimits.MaxDays)
+	radioJanitor := radio.NewJanitor(musicRepo, blobs, radioLimits, time.Hour)
+	radioJanitor.Start(context.Background())
+	musicRecorder := radio.NewRecorder(musicRepo, blobs).WithAfterSave(radioJanitor.Kick)
 
 	// Feature flag: GROWN_PDF_BUILTIN=true mounts the PDF signing backend
 	// in-process (gRPC + gateway + raw-HTTP under /pdf-api/), authenticated by

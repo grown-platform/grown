@@ -35,11 +35,21 @@ type HTTP struct {
 	repo  *Repository
 	blobs BlobStore
 	radio RadioController
+	// cacheLimits is the instance-wide radio cache cap, surfaced in the
+	// station list so the UI can show "Radio cache: X of Y".
+	cacheLimits *RadioCacheLimits
 }
 
 // NewHTTP constructs the raw HTTP handlers.
 func NewHTTP(repo *Repository, blobs BlobStore) *HTTP {
 	return &HTTP{repo: repo, blobs: blobs}
+}
+
+// WithRadioCacheLimits sets the radio cache limits reported by the station
+// list. Returns the receiver for chaining.
+func (h *HTTP) WithRadioCacheLimits(l RadioCacheLimits) *HTTP {
+	h.cacheLimits = &l
+	return h
 }
 
 // WithRadio attaches the radio recorder so the radio control + proxy endpoints

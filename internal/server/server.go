@@ -711,7 +711,8 @@ func New(cfg Config) *Server {
 		musicSvc = music.NewService(cfg.MusicRepo, cfg.MusicBlobs)
 		musicHTTP = music.NewHTTP(cfg.MusicRepo, cfg.MusicBlobs)
 		if cfg.MusicRadio != nil {
-			musicHTTP = musicHTTP.WithRadio(cfg.MusicRadio)
+			musicHTTP = musicHTTP.WithRadio(cfg.MusicRadio).
+				WithRadioCacheLimits(music.RadioCacheLimitsFromEnv())
 		}
 		grownv1.RegisterMusicServiceServer(grpcSrv, musicSvc)
 	}
