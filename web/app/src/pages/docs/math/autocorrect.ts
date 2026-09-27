@@ -223,6 +223,33 @@ export class MathInput {
     }
   }
 
+  /** moveRight: next character; into the next object's first argument; from
+   *  the end of an argument to the next argument, or out after the object. */
+  moveRight() {
+    const c = this.current();
+    const r = c[this.elem];
+    if (isRun(r) && this.offset < r.text.length) {
+      const ch = [...r.text.slice(this.offset)][0];
+      this.offset += ch.length;
+      return;
+    }
+    if (isObj(c[this.elem + 1])) {
+      this.enter([...this.path, { index: this.elem + 1, slot: 0 }]);
+      return;
+    }
+    if (!this.path.length) return;
+    const step = this.path[this.path.length - 1];
+    const parentPath = this.path.slice(0, -1);
+    this.path = parentPath;
+    const obj = this.current()[step.index] as MObj;
+    if (step.slot + 1 < slots(obj).length) {
+      this.enter([...parentPath, { index: step.index, slot: step.slot + 1 }]);
+      return;
+    }
+    this.elem = step.index + 1;
+    this.offset = 0;
+  }
+
   /** Put the caret at the start of an object's argument. */
   enter(pathToContent: PathStep[], atEnd = false) {
     this.path = [...pathToContent];

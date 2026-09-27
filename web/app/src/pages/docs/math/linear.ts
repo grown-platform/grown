@@ -245,8 +245,10 @@ class Parser {
   /** unwrap: a plain (…) group used as an operand stands for its content. */
   unwrap(c: Content): Content {
     const items = c.filter((n) => !(isRun(n) && n.text === ""));
-    if (items.length === 1 && isObj(items[0]) && items[0].t === "d" && this.parens.has(items[0]) && items[0].items.length === 1)
-      return items[0].items[0];
+    // (also a ( ) delimiter built earlier by autocorrect: "(a+b)/2" typed)
+    const d = items[0];
+    if (items.length === 1 && isObj(d) && d.t === "d" && d.items.length === 1 && (this.parens.has(d) || (d.beg === "(" && d.end === ")")))
+      return d.items[0];
     return c;
   }
 

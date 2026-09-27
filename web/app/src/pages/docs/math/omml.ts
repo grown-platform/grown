@@ -7,7 +7,9 @@ export const OMML_NS = "http://schemas.openxmlformats.org/officeDocument/2006/ma
 
 // --- reading -------------------------------------------------------------------
 
-const local = (e: Element) => e.localName || e.nodeName.replace(/^.*:/, "");
+// Names match without prefix and case, so the OMML Word puts in clipboard
+// HTML (<m:omath> parsed as HTML) reads too.
+const local = (e: Element) => (e.localName || e.nodeName).replace(/^.*:/, "").toLowerCase();
 const kids = (e: Element | null | undefined, name?: string) => {
   const out: Element[] = [];
   if (!e) return out;
@@ -19,7 +21,7 @@ function val(e: Element | null | undefined): string | null {
   if (!e) return null;
   for (let i = 0; i < e.attributes.length; i++) {
     const a = e.attributes[i];
-    if ((a.localName || a.name.replace(/^.*:/, "")) === "val") return a.value;
+    if (a.name.replace(/^.*:/, "").toLowerCase() === "val") return a.value;
   }
   return null;
 }
@@ -38,7 +40,7 @@ export function readOMML(oMath: Element): Content {
 
 /** readOMathPara: the equations of an m:oMathPara (one per m:oMath). */
 export function readOMathPara(para: Element): Content[] {
-  return kids(para, "oMath").map(readOMML);
+  return kids(para, "omath").map(readOMML);
 }
 
 function arg(e: Element | null): Content {
@@ -53,8 +55,19 @@ function readRun(r: Element): MRun {
     else if (n === "tab") text += "\t";
     else if (n === "br") text += "";
   }
+  if (!kids(r).some((c) => local(c) === "t")) {
+    // Word's clipboard HTML puts the text straight into <m:r> (maybe in spans)
+    const walk = (e: Element) => {
+      for (const n of Array.from(e.childNodes)) {
+        if (n.nodeType === 3) text += n.textContent ?? "";
+        else if (n.nodeType === 1 && local(n as Element) !== "rpr") walk(n as Element);
+      }
+    };
+    walk(r);
+    text = text.replace(/\u00a0/g, " ");
+  }
   const out = run(text);
-  for (const rPr of kids(r, "rPr")) {
+  for (const rPr of kids(r, "rpr")) {
     const sty = val(kid(rPr, "sty"));
     if (sty === "p" || sty === "b" || sty === "bi") out.sty = sty;
     if (kid(rPr, "nor")) out.nor = true;
@@ -78,58 +91,58 @@ function readNode(c: Element): MNode[] | null {
     case "r":
       return [readRun(c)];
     case "f": {
-      const t = prop(c, "fPr", "type");
+      const t = prop(c, "fpr", "type");
       return [{ t: "f", type: t === "skw" || t === "lin" || t === "noBar" ? t : "bar", num: arg(kid(c, "num")), den: arg(kid(c, "den")) }];
     }
-    case "sSup":
+    case "ssup":
       return [{ t: "sSup", base: arg(kid(c, "e")), sup: arg(kid(c, "sup")) }];
-    case "sSub":
+    case "ssub":
       return [{ t: "sSub", base: arg(kid(c, "e")), sub: arg(kid(c, "sub")) }];
-    case "sSubSup":
+    case "ssubsup":
       return [{ t: "sSubSup", base: arg(kid(c, "e")), sub: arg(kid(c, "sub")), sup: arg(kid(c, "sup")) }];
-    case "sPre":
+    case "spre":
       return [{ t: "sPre", base: arg(kid(c, "e")), sub: arg(kid(c, "sub")), sup: arg(kid(c, "sup")) }];
     case "rad":
-      return [{ t: "rad", deg: on(c, "radPr", "degHide") ? [run()] : arg(kid(c, "deg")), base: arg(kid(c, "e")) }];
+      return [{ t: "rad", deg: on(c, "radpr", "deghide") ? [run()] : arg(kid(c, "deg")), base: arg(kid(c, "e")) }];
     case "nary": {
-      const chr = prop(c, "naryPr", "chr") || "∫";
-      const loc = prop(c, "naryPr", "limLoc");
+      const chr = prop(c, "narypr", "chr") || "∫";
+      const loc = prop(c, "narypr", "limloc");
       return [
         {
           t: "nary",
           chr,
           limLoc: loc === "subSup" || loc === "undOvr" ? loc : NARY_INTEGRALS.includes(chr) ? "subSup" : "undOvr",
-          sub: on(c, "naryPr", "subHide") ? null : arg(kid(c, "sub")),
-          sup: on(c, "naryPr", "supHide") ? null : arg(kid(c, "sup")),
+          sub: on(c, "narypr", "subhide") ? null : arg(kid(c, "sub")),
+          sup: on(c, "narypr", "suphide") ? null : arg(kid(c, "sup")),
           base: arg(kid(c, "e")),
         },
       ];
     }
     case "d": {
-      const dPr = kid(c, "dPr");
-      const beg = kid(dPr, "begChr") ? val(kid(dPr, "begChr")) ?? "" : "(";
-      const end = kid(dPr, "endChr") ? val(kid(dPr, "endChr")) ?? "" : ")";
-      const sep = kid(dPr, "sepChr") ? val(kid(dPr, "sepChr")) ?? "|" : "|";
+      const dPr = kid(c, "dpr");
+      const beg = kid(dPr, "begchr") ? val(kid(dPr, "begchr")) ?? "" : "(";
+      const end = kid(dPr, "endchr") ? val(kid(dPr, "endchr")) ?? "" : ")";
+      const sep = kid(dPr, "sepchr") ? val(kid(dPr, "sepchr")) ?? "|" : "|";
       const items = kids(c, "e").map((e) => arg(e));
       return [{ t: "d", beg, end, sep: sep === "|" ? "∣" : sep, items: items.length ? items : [[run()]] }];
     }
     case "func":
-      return [{ t: "func", name: arg(kid(c, "fName")), arg: arg(kid(c, "e")) }];
-    case "limLow":
+      return [{ t: "func", name: arg(kid(c, "fname")), arg: arg(kid(c, "e")) }];
+    case "limlow":
       return [{ t: "limLow", base: arg(kid(c, "e")), lim: arg(kid(c, "lim")) }];
-    case "limUpp":
+    case "limupp":
       return [{ t: "limUpp", base: arg(kid(c, "e")), lim: arg(kid(c, "lim")) }];
     case "acc":
-      return [{ t: "acc", chr: prop(c, "accPr", "chr") || "̂", base: arg(kid(c, "e")) }];
+      return [{ t: "acc", chr: prop(c, "accpr", "chr") || "̂", base: arg(kid(c, "e")) }];
     case "bar":
-      return [{ t: "bar", pos: prop(c, "barPr", "pos") === "top" ? "top" : "bot", base: arg(kid(c, "e")) }];
+      return [{ t: "bar", pos: prop(c, "barpr", "pos") === "top" ? "top" : "bot", base: arg(kid(c, "e")) }];
     case "box":
       return [{ t: "box", base: arg(kid(c, "e")) }];
-    case "borderBox":
+    case "borderbox":
       return [{ t: "borderBox", base: arg(kid(c, "e")) }];
-    case "groupChr": {
-      const chr = prop(c, "groupChrPr", "chr") || "⏟";
-      const pos = prop(c, "groupChrPr", "pos");
+    case "groupchr": {
+      const chr = prop(c, "groupchrpr", "chr") || "⏟";
+      const pos = prop(c, "groupchrpr", "pos");
       return [{ t: "groupChr", chr, pos: pos === "top" ? "top" : "bot", base: arg(kid(c, "e")) }];
     }
     case "m": {
@@ -138,17 +151,17 @@ function readNode(c: Element): MNode[] | null {
       for (const r of rows) while (r.length < cols) r.push([run()]);
       return [{ t: "m", rows: rows.length ? rows : [[[run()]]] }];
     }
-    case "eqArr":
+    case "eqarr":
       return [{ t: "eqArr", rows: kids(c, "e").map((e) => arg(e)) }];
     case "phant":
       return [{ t: "phant", base: arg(kid(c, "e")) }];
-    case "oMath":
+    case "omath":
       return readContent(c);
     // properties and run wrappers
-    case "rPr":
-    case "ctrlPr":
-    case "argPr":
-    case "oMathParaPr":
+    case "rpr":
+    case "ctrlpr":
+    case "argpr":
+    case "omathparapr":
       return null;
     default: {
       // w:r inside math, w:ins / w:del wrappers, smart tags: keep their content

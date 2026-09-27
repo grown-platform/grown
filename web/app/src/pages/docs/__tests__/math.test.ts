@@ -156,6 +156,19 @@ describe("math node", () => {
     expect(m[0].display).toBe(true);
   });
 
+  it("pastes Word's equation (OMML in its msEquation comment), not the picture", () => {
+    const e = makeEditor("<p></p>");
+    const word =
+      `<html xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"><body><!--StartFragment--><p class=MsoNormal>` +
+      `<!--[if gte msEquation 12]><m:oMathPara><m:oMath><m:sSup><m:sSupPr><span style='font-family:"Cambria Math"'><m:ctrlPr></m:ctrlPr></span></m:sSupPr>` +
+      `<m:e><i><span style='font-family:"Cambria Math"'><m:r>x</m:r></span></i></m:e><m:sup><i><span><m:r>2</m:r></span></i></m:sup></m:sSup></m:oMath></m:oMathPara><![endif]-->` +
+      `<![if !msEquation]><img width=40 height=20 src="file:///C:/Temp/msohtmlclip1/01/clip_image001.png"><![endif]></p><!--EndFragment--></body></html>`;
+    e.view.pasteHTML(word);
+    const m = mathNodes(e);
+    expect(m.map((x) => [toLinear(x.content), x.display])).toEqual([["x^2", true]]);
+    expect(e.getHTML()).not.toContain("<img");
+  });
+
   it("renders with KaTeX", () => {
     const el = document.createElement("span");
     renderMath(el, parseLinear("∑_(i=1)^n▒i^2"), false);

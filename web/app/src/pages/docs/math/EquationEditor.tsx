@@ -163,6 +163,12 @@ export function EquationEditor({ editor, pos, isNew, onClose }: EquationEditorPr
     } else if (e.key === "Escape") {
       e.preventDefault();
       cancel();
+    } else if (mode === "unicode" && free === null && (e.key === "ArrowRight" || e.key === "ArrowLeft") && !e.shiftKey && !mod) {
+      // Arrow keys move the equation caret (in and out of arguments).
+      e.preventDefault();
+      if (e.key === "ArrowRight") engine.current.moveRight();
+      else engine.current.moveLeft();
+      bump();
     } else if (mode === "unicode" && free === null && mod && !e.altKey && (e.key === "z" || e.key === "Z" || e.key === "y")) {
       e.preventDefault();
       if (e.key === "y" || e.shiftKey) engine.current.redo();
