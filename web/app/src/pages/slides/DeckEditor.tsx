@@ -142,7 +142,6 @@ import {
 import { GRID_SIZE, fitCanvasWidth, fitPresentWidth } from "./geometry";
 import {
   primaryId,
-  pruneSelection,
   selectAll,
   selectedElement,
   selectedElements,
@@ -173,7 +172,6 @@ export function DeckEditor({ user }: { user: User }) {
   const [cur, setCur] = useState(0);
   // Selected top-level element ids on the current slide (last = primary).
   const [sel, setSel] = useState<string[]>([]);
-  const selId = primaryId(sel);
   const setSelId = (id: string | null) => setSel(id ? [id] : []);
   // Arrange → Align relative to the slide (else to the selection).
   const [alignTo, setAlignTo] = useState<AlignTo>("selection");
@@ -222,13 +220,13 @@ export function DeckEditor({ user }: { user: User }) {
   docRef.current = doc;
   const slides = doc?.slides ?? [];
   const slide: Slide | undefined = slides[cur];
-  const selected: SlideElement | undefined = selectedElement(slide, selId);
+  // Stale ids (an element removed by undo or a peer) are kept in `sel` so the
+  // selection comes back on redo, but every operation uses the live ones.
   const selectedEls: SlideElement[] = selectedElements(slide, sel);
-
-  // Drop selected ids that left the slide (remote edits, undo, slide change).
-  useEffect(() => {
-    setSel((c) => pruneSelection(slide, c));
-  }, [slide]);
+  const live = new Set(selectedEls.map((e) => e.id));
+  const selIds = sel.filter((i) => live.has(i)); // click order, last = primary
+  const selId = primaryId(selIds);
+  const selected: SlideElement | undefined = selectedElement(slide, selId);
 
   // Load deck.
   useEffect(() => {
@@ -423,17 +421,17 @@ export function DeckEditor({ user }: { user: User }) {
         (e.target as HTMLElement)?.isContentEditable
       )
         return;
-      const act = editorKeyAction(e, { hasSelection: sel.length > 0 });
+      const act = editorKeyAction(e, { hasSelection: selIds.length > 0 });
       if (!act) return;
-      if (act.type === "deleteSelected" && sel.length) {
+      if (act.type === "deleteSelected" && selIds.length) {
         e.preventDefault();
-        removeMany(sel);
+        removeMany(selIds);
       } else if (act.type === "newSlide") {
         e.preventDefault();
         doNewSlide();
-      } else if (act.type === "nudge" && slide && sel.length) {
+      } else if (act.type === "nudge" && slide && selIds.length) {
         e.preventDefault();
-        upsertMany(moveElementsBy(slide.elements, sel, act.dx, act.dy));
+        upsertMany(moveElementsBy(slide.elements, selIds, act.dx, act.dy));
       } else if (act.type === "undo") {
         e.preventDefault();
         undo();
@@ -453,7 +451,7 @@ export function DeckEditor({ user }: { user: User }) {
         clip.current = selectedEls.map((x) => ({ ...x }));
         copyPending.current = true;
         // Cut: the cut event that follows writes the clipboard from clip.
-        if (act.type === "cut") removeMany(sel);
+        if (act.type === "cut") removeMany(selIds);
       } else if (act.type === "paste" && clip.current) {
         // The paste event decides: an image on the OS clipboard is pasted
         // as a picture, otherwise the in-app elements. Browsers that fire no
@@ -472,7 +470,7 @@ export function DeckEditor({ user }: { user: User }) {
         // toolbar controls.
         if (e.target !== document.body || !slide?.elements.length) return;
         e.preventDefault();
-        const next = cycleSelection(slide.elements, sel, act.dir);
+        const next = cycleSelection(slide.elements, selIds, act.dir);
         if (next) setSel([next]);
       } else if (act.type === "deselect") {
         setSel([]);
@@ -653,8 +651,8 @@ export function DeckEditor({ user }: { user: User }) {
     updateSelected((e) => ({ ...e, [k]: v }));
   }
   function arrange(dir: ArrangeDir) {
-    if (!slide || !sel.length) return;
-    const els = arrangeMany(slide.elements, sel, dir);
+    if (!slide || !selIds.length) return;
+    const els = arrangeMany(slide.elements, selIds, dir);
     pushHistory();
     applyToSlide(slide.id, (s) => ({ ...s, elements: els }));
     broadcast({ t: "reorder", si: slide.id, ids: els.map((e) => e.id) });
@@ -674,14 +672,14 @@ export function DeckEditor({ user }: { user: User }) {
   }
   function doGroup() {
     if (!slide) return;
-    const r = groupElements(slide.elements, sel);
+    const r = groupElements(slide.elements, selIds);
     if (!r) return;
     setElements(r.elements);
     setSel([r.groupId]);
   }
   function doUngroup() {
     if (!slide) return;
-    const r = ungroupMany(slide.elements, sel);
+    const r = ungroupMany(slide.elements, selIds);
     if (!r) return;
     setElements(r.elements);
     setSel(r.ids);
@@ -812,7 +810,7 @@ export function DeckEditor({ user }: { user: User }) {
     arrange,
     rotate,
     setLink,
-    deleteSelected: () => removeMany(sel),
+    deleteSelected: () => removeMany(selIds),
     selectAll: () => setSel(selectAll(slide)),
     align,
     distribute,
@@ -1298,7 +1296,7 @@ export function DeckEditor({ user }: { user: User }) {
               <SlideCanvas
                 slide={slide}
                 width={canvasW}
-                selectedIds={sel}
+                selectedIds={selIds}
                 onSelect={setSel}
                 onChange={(el) => upsertElement(el)}
                 onChangeMany={(els, o) => upsertMany(els, o)}

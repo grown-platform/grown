@@ -185,6 +185,9 @@ export function SlideCanvas({
         dy += s.dy;
         g = s.guides;
       }
+      // Keep stored positions tidy (0.01 px), so a snapped edge lands exactly.
+      dx = Math.round(dx * 100) / 100;
+      dy = Math.round(dy * 100) / 100;
       els = d.starts.map((s) => moveElementBy(s, dx, dy));
     } else if (d.starts.length === 1) {
       const s0 = d.starts[0];
