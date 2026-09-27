@@ -98,28 +98,30 @@ export function CanvasOverlay({
             }}
             sx={{
               position: "absolute",
-              left: Math.min(Math.max(pos.x * k - 12, 0), width - 26),
-              top: Math.max(pos.y * k - 22, 0) + (i % 3) * 2,
-              width: 26,
+              left: Math.min(Math.max(pos.x * k - 4, 0), width - 30),
+              top: Math.max(pos.y * k - 30, 0) + (i % 3) * 3,
+              minWidth: 28,
               height: 24,
+              px: 0.75,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              gap: 0.25,
               pointerEvents: "auto",
               cursor: "pointer",
-              color: active ? "#fff" : "#8a5a00",
-              filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))",
-              "& svg": { fontSize: 26, color: active ? "#e37400" : "#fbbc04" },
+              borderRadius: "12px 12px 12px 2px",
+              bgcolor: active ? "#e37400" : "#fbbc04",
+              color: active ? "#fff" : "#3c2a00",
+              border: "1.5px solid #fff",
+              boxShadow: "0 1px 3px rgba(0,0,0,.35)",
+              fontSize: 11,
+              fontWeight: 700,
               opacity: pos.orphan ? 0.7 : 1,
+              "& svg": { fontSize: 13 },
             }}
           >
             <ChatBubbleIcon />
-            <Box
-              component="span"
-              sx={{ position: "absolute", top: 3, fontSize: 10, fontWeight: 700, color: active ? "#fff" : "#5f3b00" }}
-            >
-              {c.replies.length + 1}
-            </Box>
+            {c.replies.length + 1}
           </Box>
         );
       })}

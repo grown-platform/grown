@@ -18,6 +18,7 @@
 
 import { findTransitionEl, readTiming, readTransitionEl } from "./motionXml";
 import JSZip from "jszip";
+import { anchorImported, readCommentParts } from "./commentsXml";
 import {
   CANVAS_W,
   DEFAULT_CANVAS_H,
@@ -2097,6 +2098,14 @@ export async function readPptx(
   const title = desc(core, "title")[0]?.textContent?.trim() || undefined;
 
   const deck: DeckDoc = { slides };
+  // Comment threads (M10).
+  const comments = await readCommentParts(
+    zip,
+    presPath,
+    slidePaths.map((p) => ({ path: p, id: slideIds.get(p)! })).filter((x) => slides.some((s) => s.id === x.id)),
+    cx / 914400,
+  ).catch(() => []);
+  if (comments.length) deck.comments = anchorImported(comments, slides);
   if (deckTheme) deck.theme = deckTheme;
   if (layouts.length) deck.layouts = layouts;
   if (H !== DEFAULT_CANVAS_H) deck.size = { w: CANVAS_W, h: H };
