@@ -2186,7 +2186,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   protection option, and server-side enforcement of the comments / tracked
   / forms modes.
 
-### Known flaky e2e (as of 2026-09-26)
+### Known flaky e2e (as of 2026-09-27)
 
 - ~~`web/e2e/docs/oo-shortcuts.spec.ts` "Check sending event to interface"
   fails about 1 run in 3~~ — **fixed (M4 branch)**. Root cause was a real
@@ -2249,3 +2249,22 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
     which is only cancelled when the handler returns, so a lone peer's
     handler and room leaked until someone else joined. The writer now stops
     on a context cancelled when the reader exits.
+- ~~`web/e2e/slides-export.spec.ts` "print dialog …" failed under
+  full-suite load with `expect(img.slides).toBe(3)` → 2~~ — **fixed
+  (wave 10)**; listed here because this is the suite-wide flaky list (see
+  slides.md §6.16). The Slides print preview rebuilds after a 150 ms
+  debounce plus an async render, and the spec's only wait was the page
+  count, which reads "Page 1 of 1" both before and after "Include hidden
+  slides" (2 or 3 slides on one 3-up handout page), so a slow runner read
+  the stale 2-slide preview. `PrintDialog` now marks the preview region
+  `aria-busy` until it shows the current options (tracked synchronously,
+  not in an effect), and the spec waits for `aria-busy="false"` after each
+  change. With the page-count wait removed to force the race: before 2/6
+  failures ("Received: 2"), after 6/6; full spec `--repeat-each 10
+  --workers 8`: 20/20.
+- Other intermittent failures seen in local logs from 2026-09-26/27
+  (sheets-shortcuts "Test catch events", sheets-dynarray clipboard
+  collision, sheets-analysis comment card strict-mode) were single runs
+  during in-progress Sheets work on unfinished branches, not reproduced on
+  merged main; auth/dashboard/drive `waitForURL` timeouts in one report
+  were the :8080 stack being redeployed mid-run. None is tracked as flaky.

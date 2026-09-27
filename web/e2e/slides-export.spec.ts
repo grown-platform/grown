@@ -202,7 +202,12 @@ test.describe.serial("slides export and print", () => {
       await page.keyboard.press("ControlOrMeta+p");
       const dialog = page.getByTestId("print-dialog");
       await expect(dialog).toBeVisible();
+      // The preview rebuilds after a debounce; aria-busy clears once it shows
+      // the current options. Page counts alone can't tell (2 or 3 slides on a
+      // 3-up handout are both "Page 1 of 1"), so wait on it before reading.
+      const settled = () => expect(page.getByTestId("print-preview")).toHaveAttribute("aria-busy", "false");
       // Full slides, hidden slide skipped: 2 pages.
+      await settled();
       await expect(page.getByTestId("print-page-count")).toHaveText("Page 1 of 2");
 
       await dialog.getByRole("combobox", { name: "Print layout" }).click();
@@ -210,6 +215,7 @@ test.describe.serial("slides export and print", () => {
       await dialog.getByRole("combobox", { name: "Slides per page" }).click();
       await page.getByRole("option", { name: "3", exact: true }).click();
       await dialog.getByRole("checkbox", { name: "Include hidden slides" }).check();
+      await settled();
       await expect(page.getByTestId("print-page-count")).toHaveText("Page 1 of 1");
       const preview = page.getByTestId("print-preview-page");
       await expect(preview).toHaveAttribute("alt", "Preview of page 1 of 1");
@@ -229,11 +235,13 @@ test.describe.serial("slides export and print", () => {
       await dialog.getByRole("textbox", { name: "Custom slide range" }).fill("9");
       await expect(page.getByTestId("print-page-count")).toHaveText("0 pages");
       await dialog.getByRole("textbox", { name: "Custom slide range" }).fill("1, 3");
+      await settled();
       await expect(page.getByTestId("print-page-count")).toHaveText("Page 1 of 1");
 
       // Notes pages as a PDF: slides 1 and 3, with their notes as text.
       await dialog.getByRole("combobox", { name: "Print layout" }).click();
       await page.getByRole("option", { name: "Notes pages" }).click();
+      await settled();
       await expect(page.getByTestId("print-page-count")).toHaveText("Page 1 of 2");
       const dl = page.waitForEvent("download", { timeout: 30_000 });
       await page.getByTestId("print-download-pdf").click();
