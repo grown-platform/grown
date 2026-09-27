@@ -92,8 +92,10 @@ export const SHEET_SHORTCUTS: ShortcutDef[] = [
   { id: "link", group: "Insert", label: "Insert link", keys: ["Ctrl+K"], ctx: "grid" },
   { id: "comment", group: "Insert", label: "Insert comment", keys: ["Ctrl+Alt+M"], ctx: "grid" },
   { id: "newSheet", group: "Insert", label: "Insert sheet", keys: ["Shift+F11"], ctx: "grid" },
+  { id: "insertTable", group: "Insert", label: "Insert table", keys: ["Ctrl+L", "Ctrl+T"], ctx: "grid" },
   // Data
   { id: "refreshPivot", group: "Data", label: "Refresh pivot tables", keys: ["Alt+F5", "Ctrl+Alt+F5"], ctx: "grid" },
+  { id: "tableTotals", group: "Data", label: "Table total row on/off", keys: ["Ctrl+Shift+R"], ctx: "grid" },
   // Application
   { id: "print", group: "Application", label: "Print", keys: ["Ctrl+P"], ctx: "any" },
   { id: "shortcuts", group: "Application", label: "Keyboard shortcuts", keys: ["Ctrl+/"], ctx: "any" },

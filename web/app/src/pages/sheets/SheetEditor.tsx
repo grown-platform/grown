@@ -134,6 +134,10 @@ import { gridGeometry } from "./chartAnchor";
 import { translateFormula } from "./formulaShift";
 import { selectAllTarget } from "./selectAll";
 import { autoSumSelection, proposeSum, type CellKind } from "./autoSum";
+import { activeTable, afterTableEdit, bindTableTools, tableRenderHooks, toggleTotalsRow } from "./tableTools";
+import { CreateTableDialog, TablePropertiesDialog, tableAtSelection } from "./TableDialogs";
+import { TableNameBox, selectionStore } from "./TableNameBox";
+import { tableName } from "./tables";
 
 // Shared font list in the font menu (CC7).
 extendSheetFonts();
@@ -301,6 +305,9 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const traceRef = useRef<TraceState | null>(null);
   traceRef.current = trace;
   const [commentsPanel, setCommentsPanel] = useState(false);
+  // Excel tables: Insert ▸ Table / Format as table, and Table properties.
+  const [tableCreate, setTableCreate] = useState<{ style?: string } | null>(null);
+  const [tableProps, setTableProps] = useState<string | null | undefined>(undefined);
   const commentsRef = useRef<CellCommentsHandle | null>(null);
   // A new generateSheetId identity makes FortuneSheet re-read gridlines/zoom from the sheet.
   const [viewGen, setViewGen] = useState(0);
@@ -343,12 +350,21 @@ export function SheetEditor({ user }: SheetEditorProps) {
       beforeRenderCellArea: (cells: any, ctx: CanvasRenderingContext2D) => {
         viewHooks.beforeRenderCellArea();
         refreshPaintThreads(ref.current);
+        tableRenderHooks.beforeRenderCellArea(cells);
         return dataToolHooks.beforeRenderCellArea(cells, ctx);
+      },
+      // Tables (tableTools.ts): header renames, calculated columns,
+      // auto-expand and typed structured references follow each edit.
+      afterUpdateCell: (r: number, c: number, oldValue: any, newValue: any) => {
+        typed.afterUpdateCell?.(r, c, oldValue, newValue);
+        setTimeout(() => afterTableEdit(ref.current, r, c, newValue), 0);
       },
       // Formulas shown (View ▸ Show ▸ Formulas) are painted by viewTools;
       // superscript/subscript cells by cellScript.
       beforeRenderCell: (cell: any, info: any, ctx: CanvasRenderingContext2D) => {
         if (viewHooks.beforeRenderCell(cell, info, ctx) === false) return false;
+        // The table style first: conditional formatting paints over it.
+        if (tableRenderHooks.beforeRenderCell(cell, info, ctx) === false) return false;
         if (dataToolHooks.beforeRenderCell(cell, info, ctx) === false) return false;
         try {
           const v = sheetViewOptions(currentSheet(ref.current));
@@ -359,6 +375,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
         return true;
       },
       afterRenderCell: (cell: any, info: any, ctx: CanvasRenderingContext2D) => {
+        tableRenderHooks.afterRenderCell(cell, info, ctx);
         dataToolHooks.afterRenderCell(cell, info, ctx);
         viewHooks.afterRenderCell(cell, info, ctx);
         paintCommentMarker(threadsForPaint(), info, ctx);
@@ -367,6 +384,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
         const r = sel?.row_focus ?? sel?.row?.[0];
         const c = sel?.column_focus ?? sel?.column?.[0];
         if (typeof r === "number" && typeof c === "number") activeCellStore.set({ sheetId: String(sheetId), r, c });
+        selectionStore.bump();
       },
       beforeRenderRowHeaderCell: viewHooks.beforeRenderRowHeaderCell,
       beforeRenderColumnHeaderCell: viewHooks.beforeRenderColumnHeaderCell,
@@ -441,6 +459,33 @@ export function SheetEditor({ user }: SheetEditorProps) {
       cancelled = true;
     };
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => bindTableTools(() => ref.current), []);
+
+  // A table's header filter buttons open Grown's filter dialog (the M8 model)
+  // for that column instead of FortuneSheet's own menu.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const btn = (e.target as HTMLElement | null)?.closest?.(".luckysheet-filter-options") as HTMLElement | null;
+      if (!btn) return;
+      const wb = ref.current;
+      const sheet = currentSheet(wb);
+      const f = sheet?.grownFilter;
+      if (!wb || !f?.table || !f.range) return;
+      const i = Array.from(btn.parentElement?.querySelectorAll(".luckysheet-filter-options") ?? []).indexOf(btn);
+      if (i < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        wb.setSelection([{ row: [f.range.r1, f.range.r1], column: [f.range.c1 + i, f.range.c1 + i] }], { id: sheet.id });
+      } catch {
+        /* the dialog falls back to the first column */
+      }
+      setTimeout(() => setFilterOpen(true), 0);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
 
   // View options and protection checks read the grid through viewTools.
   useEffect(() => {
@@ -1008,6 +1053,25 @@ export function SheetEditor({ user }: SheetEditorProps) {
     const old = cellAt(t.sheetId, t.r, t.c);
     if (old) wb.setCellValue(t.r, t.c, { ...old, fc: undefined, un: undefined, hl: undefined }, { id: t.sheetId });
   }
+  // The name box dropdown: select a named range.
+  function goToName(name: string) {
+    const wb = ref.current;
+    const all: any[] = wb?.getAllSheets?.() ?? [];
+    const nr = (Array.isArray(all[0]?._namedRanges) ? all[0]._namedRanges : []).find((x: any) => x?.name === name);
+    if (!wb || !nr) return;
+    const text = String(nr.range ?? "");
+    const bang = text.lastIndexOf("!");
+    const sheetName = bang >= 0 ? text.slice(0, bang).replace(/^'|'$/g, "").replace(/''/g, "'") : nr.sheetName;
+    const sheet = all.find((x) => (nr.sheetId && x?.id === nr.sheetId && bang < 0) || x?.name === sheetName) ?? currentSheet(wb);
+    const rect = parseA1Range(text);
+    if (!sheet || !rect) return;
+    try {
+      if (String(wb.getSheet?.()?.id) !== String(sheet.id)) wb.activateSheet?.({ id: sheet.id });
+      wb.setSelection([{ row: [rect.r1, rect.r2], column: [rect.c1, rect.c2] }], { id: sheet.id });
+    } catch {
+      /* ignore */
+    }
+  }
   function openWizard() {
     const a = activeCell();
     if (!a) return;
@@ -1135,6 +1199,14 @@ export function SheetEditor({ user }: SheetEditorProps) {
         return wb.addSheet();
       case "refreshPivot":
         return pivotToolsRef.current?.changed();
+      case "insertTable":
+        return setTableCreate({});
+      case "tableTotals": {
+        // Ctrl+Shift+R: the total row of the table at the active cell.
+        const t = activeTable(wb);
+        if (t) toggleTotalsRow(wb, tableName(t));
+        return;
+      }
       case "dropdown": {
         // A list-validated cell shows FortuneSheet's dropdown button.
         const btn = document.getElementById("luckysheet-dataVerification-dropdown-btn");
@@ -1576,6 +1648,13 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onGoalSeek={openGoalSeek}
               onTrace={(k) => void runTrace(k)}
               onShortcuts={() => setShortcutsOpen(true)}
+              onInsertTable={() => setTableCreate({})}
+              onFormatAsTable={(style) => {
+                const name = tableAtSelection(ref.current);
+                if (name) setTableProps(name);
+                else setTableCreate({ style });
+              }}
+              onTableProperties={() => setTableProps(tableAtSelection(ref.current))}
             />
           </Box>
           <Box sx={{ flex: 1 }} />
@@ -1699,6 +1778,9 @@ export function SheetEditor({ user }: SheetEditorProps) {
         getWb={() => ref.current}
       />
       <SheetNotice />
+      <CreateTableDialog open={tableCreate !== null} onClose={() => setTableCreate(null)} getWb={getWbRef.current} initialStyle={tableCreate?.style} />
+      <TablePropertiesDialog open={tableProps !== undefined} onClose={() => setTableProps(undefined)} getWb={getWbRef.current} name={tableProps ?? null} />
+      <TableNameBox getWb={getWbRef.current} container={editorEl} onGoToName={goToName} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} userId={user.id} onImport={runImport} />
       {printFor && (
         <PrintDialog

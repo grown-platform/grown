@@ -13,6 +13,10 @@ import {
   IconButton,
 } from "@mui/joy";
 import DeleteIcon from "@mui/icons-material/Delete";
+import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
+import { rectToA1 } from "./cellValue";
+import { tableName } from "./tables";
+import { selectTable, workbookTables } from "./tableTools";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet ref API is loosely typed. */
 
@@ -96,6 +100,8 @@ export function NamedRangesDialog({
   getWb,
 }: NamedRangesDialogProps) {
   const [ranges, setRanges] = useState<NamedRange[]>([]);
+  // Excel tables are names too (Table1, Table1[Col]); listed read-only.
+  const [tables, setTables] = useState<{ name: string; ref: string }[]>([]);
   const [newName, setNewName] = useState("");
   const [newRange, setNewRange] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +110,12 @@ export function NamedRangesDialog({
     const wb = getWb();
     if (!wb) return;
     setRanges(loadNamedRanges(wb));
+    setTables(
+      workbookTables(wb).map(({ sheet, table }) => ({
+        name: tableName(table),
+        ref: `${sheet.name}!${rectToA1(table.ref)}`,
+      })),
+    );
     // Pre-fill range from current selection.
     try {
       const selArr = wb?.getSelection?.();
@@ -135,7 +147,7 @@ export function NamedRangesDialog({
       return;
     }
     const trimmed = newName.trim();
-    if (ranges.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) {
+    if (ranges.some((r) => r.name.toLowerCase() === trimmed.toLowerCase()) || tables.some((t) => t.name.toLowerCase() === trimmed.toLowerCase())) {
       setError(`Name "${trimmed}" already exists.`);
       return;
     }
@@ -174,8 +186,36 @@ export function NamedRangesDialog({
         </Typography>
 
         <Stack spacing={1} sx={{ mt: 1 }}>
+          {/* Tables */}
+          {tables.map((t) => (
+            <Box
+              key={`table-${t.name}`}
+              data-testid="name-manager-table"
+              sx={{ display: "flex", alignItems: "center", gap: 1, p: 1, borderRadius: "sm", bgcolor: "background.level1" }}
+            >
+              <TableChartOutlinedIcon fontSize="small" sx={{ opacity: 0.7 }} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography level="body-sm" fontWeight="md">
+                  {t.name}
+                </Typography>
+                <Typography level="body-xs" sx={{ opacity: 0.65 }}>
+                  Table · {t.ref}
+                </Typography>
+              </Box>
+              <Button
+                size="sm"
+                variant="plain"
+                onClick={() => {
+                  selectTable(getWb(), t.name);
+                  onClose();
+                }}
+              >
+                Go to
+              </Button>
+            </Box>
+          ))}
           {/* Existing named ranges */}
-          {ranges.length === 0 && (
+          {ranges.length === 0 && tables.length === 0 && (
             <Typography level="body-sm" sx={{ opacity: 0.6 }}>
               No named ranges defined.
             </Typography>
