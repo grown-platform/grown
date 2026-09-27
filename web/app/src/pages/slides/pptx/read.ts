@@ -65,6 +65,8 @@ import { hasPreset } from "../presetGeometry";
 import { isConnectorPreset } from "../presetDefs";
 import { cellTextEl, setCellText } from "../tableOps";
 import { findTableTemplate, NO_STYLE_NO_GRID } from "../tableStyles";
+import { mediaMimeOf, readMediaExt, readSlideChart, readWordArt } from "./objectsXml";
+import { parseMediaUrl } from "../media";
 
 export interface PptxImport {
   deck: DeckDoc;
@@ -1364,6 +1366,12 @@ async function readSp(
   };
   if (t.colorRef || t.fontRef)
     el.themeRefs = { ...(t.colorRef ? { color: t.colorRef } : {}), ...(t.fontRef ? { font: t.fontRef } : {}) };
+  // Word art (M11): run outline/gradient/effects and the body's warp.
+  const art = readWordArt(txBody, (c) => (c ? readColor(c, pc.color) : undefined));
+  if (art) {
+    el.wordArt = art;
+    if (art.gradient && !t.color) el.color = art.gradient.from;
+  }
   out.push(el);
   if (!visible && cNvPrId) sc.glue?.ids.set(cNvPrId, el.id);
 }
@@ -1409,6 +1417,11 @@ async function readPic(
   const raw = readXfrm(kid(spPr, "xfrm"));
   if (!raw) return;
   const box = tf(raw);
+  const nvPr = path(pic, "nvPicPr", "nvPr");
+  if (kid(nvPr, "videoFile") || kid(nvPr, "audioFile")) {
+    await readMedia(pic, nvPr!, box, sc, out);
+    return;
+  }
   const src = await mediaDataUrl(
     sc.pc,
     rid(path(pic, "blipFill", "blip"), "embed"),
@@ -1427,6 +1440,59 @@ async function readPic(
     src,
     ...(url ? { url } : {}),
     ...readPictureProps(pic, sc),
+  });
+}
+
+/** Largest embedded clip imported (bigger ones are skipped with a warning). */
+const MAX_IMPORT_MEDIA = 100 << 20;
+
+/** A video/audio `p:pic` (M11): the embedded file (p14:media) or the linked
+ *  URL (a:videoFile/a:audioFile r:link), its poster picture, and Grown's
+ *  playback options. */
+async function readMedia(pic: Element, nvPr: Element, box: Box, sc: SlideCtx, out: SlideElement[]) {
+  const pc = sc.pc;
+  const rels = await pc.pkg.relsOf(pc.part);
+  const fileEl = kid(nvPr, "videoFile") ?? kid(nvPr, "audioFile")!;
+  const ext = readMediaExt(nvPr);
+  const kind = ext.kind ?? (fileEl.localName === "audioFile" ? "audio" : "video");
+  const embedId = rid(desc(nvPr, "media")[0] ?? null, "embed");
+  const linkRel = rels.get(rid(fileEl, "link") ?? "");
+  let src: string | undefined;
+  let mime: string | undefined;
+  const embedRel = embedId ? rels.get(embedId) : undefined;
+  const internal = embedRel && !embedRel.external ? embedRel : linkRel && !linkRel.external ? linkRel : undefined;
+  if (internal) {
+    const e = internal.target.split(".").pop()?.toLowerCase() ?? "";
+    mime = mediaMimeOf(e);
+    const f = pc.pkg.zip.file(internal.target);
+    if (!mime) sc.warnings.add(`Media format .${e} can't be played in a browser and was skipped`);
+    else if (f) {
+      const bytes = await f.async("uint8array");
+      if (bytes.length > MAX_IMPORT_MEDIA) sc.warnings.add("A media clip larger than 100 MB was skipped");
+      else src = `data:${mime};base64,${await f.async("base64")}`;
+    }
+  } else if (linkRel?.external) {
+    src = linkRel.target;
+  }
+  if (!src) return;
+  const poster = await mediaDataUrl(pc, rid(path(pic, "blipFill", "blip"), "embed"), sc);
+  const media: SlideElement["media"] = { kind, src, ...(mime ? { mime } : {}) };
+  if (!internal) {
+    const p = parseMediaUrl(src);
+    if (p?.embed) media.embed = p.embed;
+    else if (p?.mime) media.mime = p.mime;
+  }
+  if (ext.embed) media.embed = ext.embed;
+  if (poster && !poster.startsWith("data:image/svg")) media.poster = poster;
+  for (const k of ["autoplay", "loop", "muted"] as const) if (ext[k]) media[k] = true;
+  const descr = path(pic, "nvPicPr", "cNvPr")?.getAttribute("descr");
+  out.push({
+    id: uid(),
+    type: "media",
+    ...toPx(box, sc),
+    ...orient(box),
+    media,
+    ...(descr ? { alt: descr } : {}),
   });
 }
 
@@ -1476,11 +1542,16 @@ async function readGraphicFrame(
   if (!raw) return;
   if (!tbl) {
     const uri = desc(gf, "graphicData")[0]?.getAttribute("uri") || "";
+    if (uri.endsWith("/chart")) {
+      if (await readChartFrame(gf, tf(raw), sc, out)) return;
+    } else if (uri.endsWith("/diagram")) {
+      if (await readDiagramFrame(gf, raw, tf, sc, out)) return;
+    }
     sc.warnings.add(
       uri.includes("chart")
-        ? "Charts are not supported yet and were skipped"
+        ? "A chart could not be read and was skipped"
         : uri.includes("diagram")
-          ? "SmartArt diagrams are not supported yet and were skipped"
+          ? "A SmartArt diagram without a cached drawing was skipped"
           : "An embedded object was skipped",
     );
     return;
@@ -1491,6 +1562,60 @@ async function readGraphicFrame(
   if (!el) return;
   const descr = cNvPr?.getAttribute("descr");
   out.push({ ...el, ...toPx(box, sc), ...(descr ? { alt: descr } : {}) });
+}
+
+/** A chart graphic frame (M11): the chart part → a Grown chart element. */
+async function readChartFrame(gf: Element, box: Box, sc: SlideCtx, out: SlideElement[]): Promise<boolean> {
+  const pc = sc.pc;
+  const r = rid(desc(gf, "chart")[0] ?? null, "id");
+  const rel = r ? (await pc.pkg.relsOf(pc.part)).get(r) : undefined;
+  if (!rel || rel.external) return false;
+  const doc = await pc.pkg.xml(rel.target);
+  if (!doc) return false;
+  const chart = readSlideChart(doc);
+  if (!chart) return false;
+  const descr = path(gf, "nvGraphicFramePr", "cNvPr")?.getAttribute("descr");
+  out.push({ id: uid(), type: "chart", ...toPx(box, sc), ...orient(box), chart, ...(descr ? { alt: descr } : {}) });
+  return true;
+}
+
+const REL_DIAGRAM_DRAWING = "diagramDrawing";
+
+/**
+ * A SmartArt graphic frame (M11): its cached drawing (`dsp:drawing`, which
+ * PowerPoint keeps beside the diagram data) is read like a shape tree, in
+ * the frame's coordinates, and becomes a group. The diagram data itself is
+ * not kept (flagged exception F6).
+ */
+async function readDiagramFrame(gf: Element, raw: Box, tf: Tf, sc: SlideCtx, out: SlideElement[]): Promise<boolean> {
+  const pc = sc.pc;
+  const rels = await pc.pkg.relsOf(pc.part);
+  let target: string | undefined;
+  // The data part names its drawing (dsp:dataModelExt@relId, a slide rel).
+  const dm = rid(desc(gf, "relIds")[0] ?? null, "dm");
+  const dataRel = dm ? rels.get(dm) : undefined;
+  if (dataRel && !dataRel.external) {
+    const data = await pc.pkg.xml(dataRel.target);
+    const relId = desc(data, "dataModelExt")[0]?.getAttribute("relId");
+    const dr = relId ? rels.get(relId) : undefined;
+    if (dr && !dr.external) target = dr.target;
+  }
+  if (!target) {
+    const drawings = [...rels.values()].filter((r) => r.type.endsWith("/" + REL_DIAGRAM_DRAWING));
+    if (drawings.length === 1) target = drawings[0].target;
+  }
+  if (!target) return false;
+  const doc = await pc.pkg.xml(target);
+  const tree = desc(doc, "spTree")[0];
+  if (!tree) return false;
+  // Drawing shapes are positioned relative to the frame.
+  const inner: Tf = (b) => tf({ ...b, x: b.x + raw.x, y: b.y + raw.y });
+  const members: SlideElement[] = [];
+  await readTree(tree, inner, sc, members, false);
+  if (!members.length) return false;
+  const box = tf(raw);
+  out.push({ id: uid(), type: "group", ...toPx(box, sc), ...orient(box), name: "Diagram", children: members });
+  return true;
 }
 
 /** A cell border line: undefined = not specified, width 0 = no line. */

@@ -737,7 +737,8 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
         color: "#222222",
       },
     ]);
-    expect(r.warnings.join()).toMatch(/Charts/);
+    // The chart frame has no chart part here, so it is skipped (M11 reads real ones).
+    expect(r.warnings.join()).toMatch(/chart could not be read/);
   });
 
   it("reads speaker notes from the notes slide body placeholder", async () => {

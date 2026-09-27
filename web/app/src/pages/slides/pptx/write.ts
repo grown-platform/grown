@@ -23,6 +23,18 @@ import { themeOf } from "../theme";
 import { insertTiming, insertTransition, timingXml, transitionXml } from "./motionXml";
 import { effectsOf } from "../animOps";
 import { bgXml, patchClrMap, patchLayoutXml, patchThemeXml, replaceBg, setPh, setSchemeFill, toField } from "./designXml";
+import {
+  CT_CHART,
+  CT_XLSX,
+  REL_AUDIO,
+  REL_CHART,
+  REL_PACKAGE,
+  chartFrameXml,
+  chartWorkbook,
+  mediaExt,
+  mediaExtXml,
+  slideChartXml,
+} from "./objectsXml";
 
 /** Slide width written to every pptx: 10 in; the height follows the
  *  deck's size (5.625 in for 16:9). */
@@ -165,6 +177,28 @@ function addPreset(s: PSlide, el: SlideElement, extra: Extra) {
   } as Parameters<PSlide["addShape"]>[1]);
 }
 
+/** A clip (M11): an uploaded (inlined) file is embedded; a YouTube/Vimeo
+ *  page or a direct URL is linked (pptxgenjs "online"). The poster frame is
+ *  the cover picture. Audio's a:audioFile and the playback options are
+ *  patched in afterwards (patchElements). */
+function addMedia(s: PSlide, el: SlideElement, extra: Extra) {
+  const m = el.media;
+  if (!m || !m.src) return;
+  const cover = m.poster?.startsWith("data:image/") ? { cover: m.poster } : {};
+  const geom = { x: pxToInch(el.x), y: pxToInch(el.y), w: pxToInch(el.w), h: pxToInch(Math.max(el.h, 1)) };
+  if (m.src.startsWith("data:")) {
+    s.addMedia({ ...geom, type: m.kind, data: m.src, extn: mediaExt(m.mime ?? /^data:([^;,]+)/.exec(m.src)?.[1], m.kind), ...cover, ...extra });
+    return;
+  }
+  let link = m.src;
+  try {
+    link = new URL(m.src, typeof location !== "undefined" ? location.origin : "https://localhost").toString();
+  } catch {
+    /* keep as is */
+  }
+  s.addMedia({ ...geom, type: "online", link, ...cover, ...extra });
+}
+
 function addTable(s: PSlide, el: SlideElement, extra: Extra) {
   const t = el.table;
   if (!t || !t.rows || !t.cols) return;
@@ -263,7 +297,11 @@ export async function deckToPptx(
       try {
         if (el.type === "shape" || el.type === "connector") {
           if (el.preset) addPreset(s, el, extra);
-        } else if (el.type === "text") addText(s, el, extra);
+        } else if (el.type === "chart") {
+          // A stand-in the patch swaps for a p:graphicFrame + chart part.
+          if (el.chart) s.addShape("rect", { ...geomOpts(el), fill: { type: "none" }, ...extra });
+        } else if (el.type === "media") addMedia(s, el, extra);
+        else if (el.type === "text") addText(s, el, extra);
         else if (el.type === "table") addTable(s, el, extra);
         else if (el.type === "line") {
           s.addShape("line", {
@@ -320,6 +358,8 @@ export async function patchPptx(
       if (l) zip.file(f.name, patchLayoutXml(xml, l));
     }
   }
+  // Charts (M11): parts collected while patching slides, written after.
+  const charts: SlideElement[] = [];
   for (let i = 0; i < deck.slides.length; i++) {
     const xml = transitionXml(deck.slides[i]);
     const animated = effectsOf(deck.slides[i]).length > 0;
@@ -336,7 +376,16 @@ export async function patchPptx(
       const relsFile = zip.file(relsPath);
       const rels = relsFile ? new SlideRels(await relsFile.async("string")) : null;
       const spids = new Map<string, string>();
-      out = patchElements(out, marks, rels ? linkResolver(rels, deck.slides) : undefined, spids);
+      const objects: ObjectSink | undefined = rels
+        ? {
+            chart: (el) => {
+              charts.push(el);
+              return rels.add(REL_CHART, `../charts/chart${charts.length}.xml`, false);
+            },
+            rel: (type, target, external) => rels.add(type, target, external),
+          }
+        : undefined;
+      out = patchElements(out, marks, rels ? linkResolver(rels, deck.slides) : undefined, spids, objects);
       if (animated) {
         // Only top-level elements carry effects (group members are wrapped later).
         for (const m of marks) if (m.path.length) spids.delete(m.el.id);
@@ -349,7 +398,34 @@ export async function patchPptx(
     if (bg) out = replaceBg(out, bg);
     zip.file(path, out);
   }
+  if (charts.length) await addChartParts(zip, charts, theme);
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
+/** Write chart parts (and their embedded workbooks) and register them. */
+async function addChartParts(zip: JSZip, charts: SlideElement[], theme: ReturnType<typeof themeOf>) {
+  const ctPath = "[Content_Types].xml";
+  let ct = (await zip.file(ctPath)?.async("string")) ?? "";
+  for (let n = 1; n <= charts.length; n++) {
+    const chart = charts[n - 1].chart!;
+    const book = `Microsoft_Excel_Worksheet${n}.xlsx`;
+    let rid: string | undefined;
+    try {
+      zip.file(`ppt/embeddings/${book}`, await chartWorkbook(chart));
+      rid = "rId1";
+      zip.file(
+        `ppt/charts/_rels/chart${n}.xml.rels`,
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="${REL_PACKAGE}" Target="../embeddings/${book}"/></Relationships>`,
+      );
+    } catch {
+      /* cached values only */
+    }
+    zip.file(`ppt/charts/chart${n}.xml`, slideChartXml(chart, theme, rid));
+    if (!ct.includes(`PartName="/ppt/charts/chart${n}.xml"`))
+      ct = ct.replace("</Types>", `<Override PartName="/ppt/charts/chart${n}.xml" ContentType="${CT_CHART}"/></Types>`);
+  }
+  if (!/Extension="xlsx"/i.test(ct)) ct = ct.replace("</Types>", `<Default Extension="xlsx" ContentType="${CT_XLSX}"/></Types>`);
+  zip.file(ctPath, ct);
 }
 
 function unescapeXml(s: string): string {
@@ -474,6 +550,8 @@ function needsElementPatch(els: readonly SlideElement[]): boolean {
       e.type === "text" ||
       e.type === "table" ||
       e.type === "image" ||
+      e.type === "chart" ||
+      e.type === "media" ||
       !!e.alt ||
       !!e.placeholder ||
       !!e.themeRefs ||
@@ -552,11 +630,20 @@ const TYPE_NAME: Partial<Record<SlideElement["type"], string>> = {
  * `a:endCxn` glue (ids of the target shapes), and replace the marker names
  * with the element's name (or a group marker for wrapGroups).
  */
+/** Relationship helpers patchElements needs for charts and media (M11). */
+export interface ObjectSink {
+  /** Register a chart part for `el`; returns the slide relationship id. */
+  chart: (el: SlideElement) => string;
+  /** Add (or reuse) a slide relationship. */
+  rel: (type: string, target: string, external: boolean) => string;
+}
+
 export function patchElements(
   slideXml: string,
   marks: ElementMark[],
   link?: LinkResolver,
   idOf: Map<string, string> = new Map(),
+  objects?: ObjectSink,
 ): string {
   const doc = new DOMParser().parseFromString(slideXml, "application/xml");
   const found: { mark: ElementMark; node: Element; cNvPr: Element }[] = [];
@@ -594,6 +681,15 @@ export function patchElements(
       patchPicture(doc, node, el);
       continue;
     }
+    if (el.type === "chart") {
+      if (el.chart && objects) replaceWithChart(doc, node, cNvPr, el, objects.chart(el));
+      else node.parentNode?.removeChild(node);
+      continue;
+    }
+    if (el.type === "media") {
+      if (el.media) patchMedia(doc, node, el.media, objects);
+      continue;
+    }
     if (el.type === "text") {
       replaceTxBody(doc, node, textBodyXml(el, link ?? (() => null)));
       if (mark.field) toField(doc, node, mark.field);
@@ -622,6 +718,48 @@ export function patchElements(
   const decl = /^<\?xml[^>]*\?>\s*/.exec(slideXml);
   if (decl && !out.startsWith("<?xml")) out = decl[0] + out;
   return out;
+}
+
+/** Swap a chart's stand-in shape for a p:graphicFrame showing chart `rid`. */
+function replaceWithChart(doc: Document, sp: Element, cNvPr: Element, el: SlideElement, rid: string) {
+  const xml = chartFrameXml(cNvPr.getAttribute("id") ?? "0", cNvPr.getAttribute("name") ?? "Chart", el, rid);
+  const parsed = new DOMParser().parseFromString(`<w xmlns:p="${P_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">${xml}</w>`, "application/xml");
+  const frame = parsed.documentElement.firstElementChild;
+  if (!frame || parsed.getElementsByTagName("parsererror").length) return;
+  sp.parentNode?.replaceChild(doc.importNode(frame, true), sp);
+}
+
+/** Finish a media `p:pic`: audio clips get `a:audioFile` (pptxgenjs writes
+ *  a:videoFile for both; a linked clip also gets an audio relationship),
+ *  and the playback options go into a Grown `p:nvPr` extension. */
+function patchMedia(doc: Document, pic: Element, m: NonNullable<SlideElement["media"]>, objects?: ObjectSink) {
+  const nvPr = pic.getElementsByTagNameNS(P_NS, "nvPr")[0];
+  if (!nvPr) return;
+  const vf = Array.from(nvPr.children).find((c) => c.localName === "videoFile");
+  if (vf && m.kind === "audio") {
+    const af = doc.createElementNS(A_NS, "a:audioFile");
+    let rid = vf.getAttributeNS(R_NS, "link") ?? "";
+    const linked = !m.src.startsWith("data:");
+    if (linked && objects) {
+      let target = m.src;
+      try {
+        target = new URL(m.src, typeof location !== "undefined" ? location.origin : "https://localhost").toString();
+      } catch {
+        /* keep */
+      }
+      rid = objects.rel(REL_AUDIO, target, true);
+    }
+    af.setAttributeNS(R_NS, "r:link", rid);
+    nvPr.replaceChild(af, vf);
+  }
+  let extLst = Array.from(nvPr.children).find((c) => c.localName === "extLst");
+  if (!extLst) {
+    extLst = doc.createElementNS(P_NS, "p:extLst");
+    nvPr.appendChild(extLst);
+  }
+  const parsed = new DOMParser().parseFromString(`<w xmlns:p="${P_NS}">${mediaExtXml(m)}</w>`, "application/xml");
+  const ext = parsed.documentElement.firstElementChild;
+  if (ext) extLst.appendChild(doc.importNode(ext, true));
 }
 
 /** Swap a shape's `p:txBody` for `xml` (from textBodyXml). */
