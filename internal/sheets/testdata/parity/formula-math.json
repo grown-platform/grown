@@ -320,7 +320,7 @@
         {"formula":"=AGGREGATE(15,6,\"abc\")","expect":{"error":"#VALUE!"}},
         {"formula":"=AGGREGATE(\"x\",6,A101:A111,2)","expect":{"error":"#VALUE!"}},
         {"formula":"=AGGREGATE(14,\"y\",A101:A111,2)","expect":{"error":"#VALUE!"},"pending":"oo-diff/range-as-scalar: multi-cell range accepted as a scalar"},
-        {"formula":"=AGGREGATE(14,6,A101:A111,\"z\")","expect":{"error":"#VALUE!"},"pending":"oo-diff/num-vs-value-error: #NUM! vs #VALUE! for invalid numbers"},
+        {"formula":"=AGGREGATE(14,6,A101:A111,\"z\")","expect":{"error":"#VALUE!"}},
         {"formula":"=AGGREGATE(14,6,A101:A111)","expect":{"error":"#VALUE!"}},
         {"formula":"=AGGREGATE(14,6,A101:A111,0,-1)","expect":{"error":"#VALUE!"},"pending":"oo-diff/num-vs-value-error: #NUM! vs #VALUE! for invalid numbers"},
         {"formula":"=AGGREGATE(9,6,)","expect":{"error":"#VALUE!"},"pending":"oo-diff/omitted-arg-rejected: OnlyOffice rejects an empty argument here; Grown reads it as 0/empty"},

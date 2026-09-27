@@ -110,11 +110,10 @@ func sttNums(vals []value) (nums []float64, err *value) {
 
 // sttNumsArg gathers numbers from argument i (range or scalar).
 func sttNumsArg(c *callCtx, i int) ([]float64, *value) {
-	rv, ok := c.rangeArg(i)
-	if !ok {
+	if i >= c.nargs() {
 		return nil, nil
 	}
-	return sttNums(rv.flat())
+	return sttNums(sttFlatArg(c, i))
 }
 
 // sttNumsA pulls numbers using the *A semantics: text counts as 0, booleans as
@@ -156,7 +155,7 @@ func sttMean(xs []float64) float64 { return sttSum(xs) / float64(len(xs)) }
 // ---- MEDIAN / MODE ----------------------------------------------------------
 
 func sttMedian(c *callCtx) value {
-	nums, err := sttNums(c.flat())
+	nums, err := sttNums(sttFlat(c, false))
 	if err != nil {
 		return *err
 	}
@@ -172,7 +171,7 @@ func sttMedian(c *callCtx) value {
 }
 
 func sttMode(c *callCtx) value {
-	nums, err := sttNums(c.flat())
+	nums, err := sttNums(sttFlat(c, false))
 	if err != nil {
 		return *err
 	}
@@ -213,9 +212,9 @@ func sttVarStdev(c *callCtx, sample, stdev, useA bool) value {
 	var nums []float64
 	var err *value
 	if useA {
-		nums, err = sttNumsA(c.flat())
+		nums, err = sttNumsA(sttFlat(c, true))
 	} else {
-		nums, err = sttNums(c.flat())
+		nums, err = sttNums(sttFlat(c, false))
 	}
 	if err != nil {
 		return *err
@@ -244,9 +243,9 @@ func sttVarStdev(c *callCtx, sample, stdev, useA bool) value {
 	}
 	variance := ss / divisor
 	if stdev {
-		return numVal(math.Sqrt(variance))
+		return sdNum(math.Sqrt(variance))
 	}
-	return numVal(variance)
+	return sdNum(variance)
 }
 
 // ---- COUNTIF / COUNTIFS -----------------------------------------------------
@@ -349,7 +348,7 @@ func sttAverageif(c *callCtx) value {
 		if av.isErr() {
 			return av
 		}
-		if av.kind == kindNum {
+		if av.kind == kindNum && !av.blank {
 			sum += av.num
 			count++
 		}
@@ -401,7 +400,7 @@ func sttAverageifs(c *callCtx) value {
 		if av.isErr() {
 			return av
 		}
-		if av.kind == kindNum {
+		if av.kind == kindNum && !av.blank {
 			sum += av.num
 			count++
 		}
@@ -455,7 +454,7 @@ func sttMinMaxifs(c *callCtx, wantMax bool) value {
 		if v.isErr() {
 			return v
 		}
-		if v.kind != kindNum {
+		if v.kind != kindNum || v.blank {
 			continue
 		}
 		if !found {
@@ -483,7 +482,7 @@ func sttCountblank(c *callCtx) value {
 	count := 0
 	for _, v := range rv.flat() {
 		// Blank = empty cell (modelled as numeric 0 default) or empty string.
-		if v.kind == kindStr && v.str == "" {
+		if v.blank || (v.kind == kindStr && v.str == "") {
 			count++
 		}
 	}
@@ -500,11 +499,11 @@ func sttLargeSmall(c *callCtx, large bool) value {
 	if err != nil {
 		return *err
 	}
-	kf, ok := c.num(1)
+	kf, e, ok := sdArg(c, 1)
 	if !ok {
-		return errNum
+		return e
 	}
-	k := int(math.Trunc(kf))
+	k := int(math.Ceil(kf))
 	n := len(nums)
 	if n == 0 || k < 1 || k > n {
 		return errNum
@@ -557,9 +556,9 @@ func sttRankImpl(c *callCtx, avg bool) value {
 	if c.nargs() < 2 {
 		return errNA
 	}
-	num, ok := c.num(0)
+	num, e, ok := sdArg(c, 0)
 	if !ok {
-		return errValue
+		return e
 	}
 	nums, err := sttNumsArg(c, 1)
 	if err != nil {
@@ -628,9 +627,9 @@ func sttPercentile(c *callCtx, inc bool) value {
 	if err != nil {
 		return *err
 	}
-	k, ok := c.num(1)
+	k, e, ok := sdArg(c, 1)
 	if !ok {
-		return errNum
+		return e
 	}
 	if len(nums) == 0 {
 		return errNum
@@ -651,9 +650,9 @@ func sttQuartile(c *callCtx, inc bool) value {
 	if err != nil {
 		return *err
 	}
-	qf, ok := c.num(1)
+	qf, e, ok := sdArg(c, 1)
 	if !ok {
-		return errNum
+		return e
 	}
 	q := int(math.Trunc(qf))
 	if q < 0 || q > 4 || len(nums) == 0 {
@@ -670,7 +669,7 @@ func sttQuartile(c *callCtx, inc bool) value {
 // ---- MINA / MAXA / AVERAGEA -------------------------------------------------
 
 func sttMinMaxA(c *callCtx, wantMax bool) value {
-	nums, err := sttNumsA(c.flat())
+	nums, err := sttNumsA(sttFlat(c, true))
 	if err != nil {
 		return *err
 	}
@@ -689,7 +688,7 @@ func sttMinMaxA(c *callCtx, wantMax bool) value {
 }
 
 func sttAverageA(c *callCtx) value {
-	nums, err := sttNumsA(c.flat())
+	nums, err := sttNumsA(sttFlat(c, true))
 	if err != nil {
 		return *err
 	}
@@ -702,7 +701,7 @@ func sttAverageA(c *callCtx) value {
 // ---- GEOMEAN / HARMEAN ------------------------------------------------------
 
 func sttGeomean(c *callCtx) value {
-	nums, err := sttNums(c.flat())
+	nums, err := sttNums(sttFlat(c, false))
 	if err != nil {
 		return *err
 	}
@@ -720,7 +719,7 @@ func sttGeomean(c *callCtx) value {
 }
 
 func sttHarmean(c *callCtx) value {
-	nums, err := sttNums(c.flat())
+	nums, err := sttNums(sttFlat(c, false))
 	if err != nil {
 		return *err
 	}
@@ -740,8 +739,21 @@ func sttHarmean(c *callCtx) value {
 // ---- paired-series helpers (CORREL, COVAR, regression) ----------------------
 
 // sttPairs extracts aligned numeric pairs from two range arguments, skipping any
-// position where either side is non-numeric. Returns the first error found.
+// position where either side is not a number. An empty argument is #VALUE!
+// and an error argument propagates; arguments of different sizes report
+// badShape; otherwise the first error inside either range is returned.
 func sttPairs(c *callCtx, ai, bi int) (xs, ys []float64, err *value, badShape bool) {
+	for _, i := range []int{ai, bi} {
+		if v, ok := c.raw(i).(value); ok && v.kind != kindArray {
+			switch {
+			case v.isErr():
+				return nil, nil, &v, false
+			case isOmitted(v):
+				e := errValue
+				return nil, nil, &e, false
+			}
+		}
+	}
 	ra, oka := c.rangeArg(ai)
 	rb, okb := c.rangeArg(bi)
 	if !oka || !okb {
@@ -761,7 +773,7 @@ func sttPairs(c *callCtx, ai, bi int) (xs, ys []float64, err *value, badShape bo
 			e := fb[i]
 			return nil, nil, &e, false
 		}
-		if fa[i].kind != kindNum || fb[i].kind != kindNum {
+		if fa[i].kind != kindNum || fb[i].kind != kindNum || fa[i].blank || fb[i].blank {
 			continue
 		}
 		xs = append(xs, fa[i].num)
@@ -770,147 +782,159 @@ func sttPairs(c *callCtx, ai, bi int) (xs, ys []float64, err *value, badShape bo
 	return xs, ys, nil, false
 }
 
-// sttSums returns n, Σx, Σy, Σxy, Σx², Σy² for paired series.
-func sttSums(xs, ys []float64) (n float64, sx, sy, sxy, sxx, syy float64) {
+// sttDevSums returns n, the means, and the sums of squared and cross
+// deviations Σ(x−x̄)², Σ(y−ȳ)², Σ(x−x̄)(y−ȳ) of paired series. Working with
+// deviations keeps the results exact for constant series and avoids the
+// overflow of Σx² for large values. ok is false when a sum other than
+// Σ(y−ȳ)² (which a regression does not need) overflowed.
+func sttDevSums(xs, ys []float64) (n, mx, my, sxx, syy, sxy float64, ok bool) {
 	n = float64(len(xs))
-	for i := range xs {
-		x, y := xs[i], ys[i]
-		sx += x
-		sy += y
-		sxy += x * y
-		sxx += x * x
-		syy += y * y
+	if n == 0 {
+		return 0, 0, 0, 0, 0, 0, true
 	}
-	return
+	mx, my = sttSum(xs)/n, sttSum(ys)/n
+	for i := range xs {
+		dx, dy := xs[i]-mx, ys[i]-my
+		sxx += dx * dx
+		syy += dy * dy
+		sxy += dx * dy
+	}
+	for _, v := range []float64{mx, my, sxx, sxy} {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return n, mx, my, sxx, syy, sxy, false
+		}
+	}
+	return n, mx, my, sxx, syy, sxy, true
 }
 
-func sttCorrelOf(xs, ys []float64) (float64, bool) {
-	n, sx, sy, sxy, sxx, syy := sttSums(xs, ys)
-	if n == 0 {
-		return 0, false
+// sttCorrelOf returns Pearson's r, or an error value.
+func sttCorrelOf(xs, ys []float64) (float64, *value) {
+	n, _, _, sxx, syy, sxy, ok := sttDevSums(xs, ys)
+	if !ok {
+		e := errNum
+		return 0, &e
 	}
-	covN := n*sxy - sx*sy
-	denom := math.Sqrt((n*sxx - sx*sx) * (n*syy - sy*sy))
-	if denom == 0 {
-		return 0, false
+	if math.IsInf(syy, 0) {
+		e := errNum
+		return 0, &e
 	}
-	return covN / denom, true
+	if n == 0 || sxx == 0 || syy == 0 {
+		e := errDiv0
+		return 0, &e
+	}
+	r := sxy / math.Sqrt(sxx*syy)
+	if math.IsNaN(r) || math.IsInf(r, 0) {
+		e := errNum
+		return 0, &e
+	}
+	return r, nil
 }
 
 func sttCorrel(c *callCtx) value {
 	xs, ys, err, bad := sttPairs(c, 0, 1)
-	if bad {
-		return errNA
-	}
 	if err != nil {
 		return *err
 	}
-	r, ok := sttCorrelOf(xs, ys)
-	if !ok {
-		return errDiv0
+	if bad {
+		return errNA
+	}
+	r, e := sttCorrelOf(xs, ys)
+	if e != nil {
+		return *e
 	}
 	return numVal(r)
 }
 
 func sttRsq(c *callCtx) value {
 	xs, ys, err, bad := sttPairs(c, 0, 1)
-	if bad {
-		return errNA
-	}
 	if err != nil {
 		return *err
 	}
-	r, ok := sttCorrelOf(xs, ys)
-	if !ok {
-		return errDiv0
+	if bad {
+		return errNA
+	}
+	r, e := sttCorrelOf(xs, ys)
+	if e != nil {
+		return *e
 	}
 	return numVal(r * r)
 }
 
 func sttCovar(c *callCtx) value {
-	xs, ys, err, bad := sttPairs(c, 0, 1)
-	if bad {
-		return errNA
-	}
-	if err != nil {
-		return *err
-	}
-	n, sx, sy, sxy, _, _ := sttSums(xs, ys)
-	if n == 0 {
-		return errDiv0
-	}
-	// Population covariance (COVAR / COVARIANCE.P): divide by n.
-	return numVal((sxy - sx*sy/n) / n)
+	// Population covariance (COVAR, COVARIANCE.P).
+	return sttCovariance(c, false)
 }
 
 // sttSlopeIntercept returns the least-squares slope and intercept of y on x.
 func sttSlopeIntercept(ys, xs []float64) (slope, intercept float64, ok bool) {
-	n, sx, sy, sxy, sxx, _ := sttSums(xs, ys)
-	if n == 0 {
+	n, mx, my, sxx, _, sxy, fine := sttDevSums(xs, ys)
+	if n == 0 || !fine || sxx == 0 {
 		return 0, 0, false
 	}
-	denom := n*sxx - sx*sx
-	if denom == 0 {
-		return 0, 0, false
-	}
-	slope = (n*sxy - sx*sy) / denom
-	intercept = (sy - slope*sx) / n
+	slope = sxy / sxx
+	intercept = my - slope*mx
 	return slope, intercept, true
 }
 
-func sttSlope(c *callCtx) value {
-	// SLOPE(known_ys, known_xs)
-	ys, xs, err, bad := sttPairs(c, 0, 1)
-	if bad {
-		return errNA
-	}
+// sttLine fits known_ys (argument yi) on known_xs (xi) and returns the
+// slope and intercept, or an error value.
+func sttLine(c *callCtx, yi, xi int) (slope, intercept float64, e *value) {
+	ys, xs, err, bad := sttPairs(c, yi, xi)
 	if err != nil {
-		return *err
+		return 0, 0, err
 	}
-	slope, _, ok := sttSlopeIntercept(ys, xs)
-	if !ok {
-		return errDiv0
+	if bad {
+		v := errNA
+		return 0, 0, &v
+	}
+	n, mx, my, sxx, _, sxy, ok := sttDevSums(xs, ys)
+	switch {
+	case !ok:
+		v := errNum
+		return 0, 0, &v
+	case n == 0 || sxx == 0:
+		v := errDiv0
+		return 0, 0, &v
+	}
+	slope = sxy / sxx
+	intercept = my - slope*mx
+	if math.IsNaN(intercept) || math.IsInf(intercept, 0) || math.IsNaN(slope) || math.IsInf(slope, 0) {
+		v := errNum
+		return 0, 0, &v
+	}
+	return slope, intercept, nil
+}
+
+func sttSlope(c *callCtx) value {
+	slope, _, e := sttLine(c, 0, 1)
+	if e != nil {
+		return *e
 	}
 	return numVal(slope)
 }
 
 func sttIntercept(c *callCtx) value {
-	// INTERCEPT(known_ys, known_xs)
-	ys, xs, err, bad := sttPairs(c, 0, 1)
-	if bad {
-		return errNA
-	}
-	if err != nil {
-		return *err
-	}
-	_, intercept, ok := sttSlopeIntercept(ys, xs)
-	if !ok {
-		return errDiv0
+	_, intercept, e := sttLine(c, 0, 1)
+	if e != nil {
+		return *e
 	}
 	return numVal(intercept)
 }
 
 func sttForecast(c *callCtx) value {
 	// FORECAST(x, known_ys, known_xs)
-	if c.nargs() < 3 {
+	if c.nargs() != 3 {
 		return errNA
 	}
-	x, ok := c.num(0)
+	x, ev, ok := sdArg(c, 0)
 	if !ok {
-		return errValue
+		return ev
 	}
-	ys, xs, err, bad := sttPairs(c, 1, 2)
-	if bad {
-		return errNA
+	slope, intercept, e := sttLine(c, 1, 2)
+	if e != nil {
+		return *e
 	}
-	if err != nil {
-		return *err
-	}
-	slope, intercept, ok2 := sttSlopeIntercept(ys, xs)
-	if !ok2 {
-		return errDiv0
-	}
-	return numVal(intercept + slope*x)
+	return sdNum(intercept + slope*x)
 }
 
 // ---- TRIMMEAN / PERCENTRANK -------------------------------------------------
@@ -923,9 +947,9 @@ func sttTrimmean(c *callCtx) value {
 	if err != nil {
 		return *err
 	}
-	pct, ok := c.num(1)
+	pct, e, ok := sdArg(c, 1)
 	if !ok {
-		return errNum
+		return e
 	}
 	if pct < 0 || pct >= 1 {
 		return errNum
@@ -956,13 +980,13 @@ func sttPercentrank(c *callCtx) value {
 	if err != nil {
 		return *err
 	}
-	x, ok := c.num(1)
+	x, ev, ok := sdArg(c, 1)
 	if !ok {
-		return errNum
+		return ev
 	}
 	n := len(nums)
 	if n == 0 {
-		return errNum
+		return errNA
 	}
 	sort.Float64s(nums)
 	if x < nums[0] || x > nums[n-1] {
@@ -970,9 +994,9 @@ func sttPercentrank(c *callCtx) value {
 	}
 	sig := 3
 	if c.nargs() >= 3 {
-		s, ok2 := c.num(2)
+		s, ev, ok2 := sdArg(c, 2)
 		if !ok2 {
-			return errNum
+			return ev
 		}
 		sig = int(math.Trunc(s))
 		if sig < 1 {
@@ -1010,7 +1034,7 @@ func sttPercentRankOf(sorted []float64, x float64) float64 {
 // ---- DEVSQ / AVEDEV / STANDARDIZE -------------------------------------------
 
 func sttDevsq(c *callCtx) value {
-	nums, err := sttNums(c.flat())
+	nums, err := sttNums(sttFlat(c, false))
 	if err != nil {
 		return *err
 	}
@@ -1027,7 +1051,7 @@ func sttDevsq(c *callCtx) value {
 }
 
 func sttAvedev(c *callCtx) value {
-	nums, err := sttNums(c.flat())
+	nums, err := sttNums(sttFlat(c, false))
 	if err != nil {
 		return *err
 	}

@@ -762,3 +762,58 @@ New pending keys, which the M1 skips had hidden:
 Now possible but not done here: values carry their reference, so functions
 can tell `SUM("10")` from a text cell (`direct-text-args`, 85 checks).
 FormulaTrace's remaining six tests need the trace UI (M5).
+
+## 10. M3 results (Wave 3, 2026-09-26)
+
+M3a (distributions) and M3b (tests and descriptive statistics) are done.
+All 155 `statisticalTests.js` tags are ported, and 151 of them pass. The
+four FORECAST.ETS tags (M3c, optional) are pending as whole cases, because
+Grown has no FORECAST.ETS functions yet.
+
+### 10.1 What landed
+
+| Piece | Where |
+|---|---|
+| Special functions: regularized incomplete gamma (series and continued fraction) and beta (Lentz continued fraction, symmetric branch), a Brent root finder. The prefactors x^a·e^−x/Γ(a) and x^a·y^b/B(a,b) are computed from Stirling's series for large shapes, so there is no cancellation of huge logarithms. The beta function takes 1 − x separately, so t and F tails stay exact. | `formula_stat_numerics.go` |
+| Distributions, each in its Excel 2010 name and its legacy name: T (DIST, DIST.RT, DIST.2T, INV, INV.2T, TDIST, TINV), CHISQ / CHI, F, BETA, GAMMA, LOGNORM / LOGINV, WEIBULL, EXPON, POISSON, BINOM (plus DIST.RANGE, INV, CRITBINOM), HYPGEOM and NEGBINOM. Also GAMMA, GAMMALN(.PRECISE), FISHER and FISHERINV. Each maps over ranges inside ARRAYFORMULA. The inverses solve the smaller tail. | `formula_stat_dist.go` |
+| T.TEST (paired, pooled, and Welch with fractional df), Z.TEST, F.TEST and CHISQ.TEST, with the legacy names TTEST, ZTEST, FTEST and CHITEST. Also CONFIDENCE.T, COVARIANCE.P/S, PROB, STEYX, PERMUTATIONA, VARA, VARPA and STDEVPA. | `formula_stat_tests.go` |
+| LINEST, LOGEST, TREND and GROWTH rewritten. They now take several x variables, the `const` argument and the five-row `stats` output, and they drop collinear variables. The fit uses a centred modified Gram–Schmidt QR. | `formula_stat_regression.go` |
+| Argument rules for the aggregates. Typed numeric text and typed booleans count, and other typed text is `#VALUE!`. Text, booleans and empty cells in references are skipped; the *A functions count text as 0. This applies to AVERAGE, MIN, MAX, COUNT, COUNTA, MEDIAN, MODE, STDEV/VAR, GEOMEAN, HARMEAN, AVEDEV, DEVSQ, SKEW, KURT, and the LARGE/SMALL/PERCENTILE/QUARTILE/TRIMMEAN families. | `formula_stat_args.go` |
+| Fixes to existing functions. Empty cells no longer read as 0 in the statistical functions or in criteria. The k, percent and x arguments propagate errors. LARGE and SMALL round k up. The NORM family, GAUSS, PHI, STANDARDIZE and CONFIDENCE propagate errors and read TRUE/FALSE flags. NORM.S.INV keeps precision near 1. The paired functions (CORREL, RSQ, SLOPE, INTERCEPT, FORECAST) use deviations, so they neither overflow nor lose exact zeros. FREQUENCY ignores empty bins. | `formula_stat.go`, `formula_more.go`, `formula.go` (criteria) |
+| Precision unit test, with reference values from a 60-digit evaluation | `formula_stat_dist_test.go` |
+| Fixture | `testdata/parity/formula-statistical.json` |
+
+Precision checks, against 60-digit references: `F.DIST` at F(10⁶, 10⁶)
+and 10⁻¹⁵, the t tail with df = 10¹⁰, `CHIINV(1e-10, 1)`, and
+`GAMMA.INV(1 − 1e-15, 1, 1)` all agree to 1e-12 relative or better. In
+four such tail cases OnlyOffice's own answer is less precise (key
+`oo-tail-precision`).
+
+The facts were extracted with the M0 harness. The suite computes some
+expected values with the engine's `Math.ln` and `Math.binomCoeff`, so the
+harness now defines both.
+
+### 10.2 Counts
+
+| OnlyOffice file | Tags ported / passing | Checks | Passing | Pending (diff) | Skipped (tables/1904) | Pending (ETS cases) |
+|---|---|---|---|---|---|---|
+| `statisticalTests.js` | 155 / 151 | 6,330 | 5,829 | 178 | 181 | 142 |
+
+Scoreboard `sheets/formulas`: 378 → 533 ported tags. One pending check in
+`mathematicTests.js` now passes, and its marker was lifted.
+
+### 10.3 Pending keys
+
+| Key | Checks | Note |
+|---|---|---|
+| `mode-errors`, `mode-ties`, `array-result-padding` | 33 | MODE with no numbers or an undefined name: OnlyOffice gives `#VALUE!`, Grown gives `#N/A` / `#NAME?`. MODE breaks ties differently. MODE.MULT array-range padding. |
+| `criteria-typed-input`, `criteria-semantics`, `criteria-range-type` | 60 | COUNTIF/COUNTIFS/AVERAGEIF. The suite types `' 123'`, `'$123'` and `'true'` into cells, which a typed-input converter would have to parse. Wildcards with `<>`, error and date-text criteria, array criteria, and non-reference ranges. |
+| `kurt-error-code` | 12 | KURT: OnlyOffice gives `#NUM!` where Excel gives `#DIV/0!` |
+| `single-element-array` | 11 | `{x}` evaluates as the scalar `x`. Keeping 1×1 array constants broke 11 checks in other suites, so that change was reverted. |
+| `suite-state`, `suite-value` | 14 | Expected values that do not follow from the fixture cells, or that contradict Excel (`MEDIAN(-3.5,1.4,6.9,-4.5)` = 4.15) |
+| `date-text-year`, `date-1900` | 10 | `"12/12"` without a year (the suite assumes 2025), and serials ≤ 60. → M6 |
+| `single-cell-pairs`, `whole-column-errors`, `skew-edge`, `oo-quirk`, `percentrank-*`, `oo-inverse-limit`, `oo-tail-precision` | 29 | OnlyOffice-specific results; see the reasons in the fixture |
+| `array-lifting`, `value-locale`, `frequency-bool`, `linest-collinear-stats` | 9 | → M5 / M6 |
+
+Not done: FORECAST.ETS, FORECAST.ETS.CONFINT, FORECAST.ETS.SEASONALITY and
+FORECAST.ETS.STAT (M3c, 142 checks).
