@@ -42,7 +42,7 @@
       "passing": null
     },
     "common/visio": {
-      "ported": 0,
+      "ported": 10,
       "passing": null
     },
     "docs/autocorrect": {
@@ -74,7 +74,7 @@
       "passing": null
     },
     "docs/equations": {
-      "ported": 0,
+      "ported": 924,
       "passing": null
     },
     "docs/find-replace": {
@@ -298,7 +298,7 @@
       "passing": null
     },
     "slides/shortcuts": {
-      "ported": 19,
+      "ported": 22,
       "passing": null
     },
     "slides/shortcuts fixture": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 1045,
+    "ported": 1982,
     "passing": null
   }
 }
