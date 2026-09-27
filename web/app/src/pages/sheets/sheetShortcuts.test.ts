@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SHEET_SHORTCUTS,
+  arrayFormulaText,
   autoSumRange,
   findShortcut,
   matchCombo,
@@ -102,5 +103,13 @@ describe("date serials", () => {
   it("counts days from 1899-12-30", () => {
     expect(serialOf(new Date(2026, 8, 26))).toBe(46291);
     expect(serialOf(new Date(2026, 8, 26, 12, 0, 0))).toBe(46291.5);
+  });
+});
+
+describe("Ctrl+Shift+Enter", () => {
+  it("wraps a formula once in ARRAYFORMULA", () => {
+    expect(arrayFormulaText("=A1:A3*2")).toBe("=ARRAYFORMULA(A1:A3*2)");
+    expect(arrayFormulaText("=ARRAYFORMULA(A1)")).toBe("=ARRAYFORMULA(A1)");
+    expect(arrayFormulaText("text")).toBe("text");
   });
 });
