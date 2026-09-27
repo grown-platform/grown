@@ -75,6 +75,19 @@ import { addRule, newRule, type IconSetName } from "./cfOps";
 import { NumberFormatDialog } from "./NumberFormatDialog";
 import { selectionRanges, typedInputHooks } from "./numberFormatActions";
 import { useStableCallback } from "./useStableCallback";
+import {
+  afterDragFill,
+  fillSelection,
+  fixUpAfterStructure,
+  pasteSpecialHere,
+  rememberCopy,
+  selectionRect,
+  structureOpFromOps,
+} from "./editActions";
+import type { CellRect } from "./cellRange";
+import { FillSeriesDialog } from "./FillSeriesDialog";
+import { SortDialog } from "./SortDialog";
+import { PasteSpecialDialog } from "./PasteSpecialDialog";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -146,6 +159,10 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [numFmtRanges, setNumFmtRanges] = useState<any[]>([]);
   const [dvOpen, setDvOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  // Dialogs that act on a range keep the selection taken when they opened.
+  const [seriesRange, setSeriesRange] = useState<CellRect | null>(null);
+  const [sortRangeSel, setSortRangeSel] = useState<CellRect | null>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
   const [chartsOpen, setChartsOpen] = useState(false);
   const [charts, setCharts] = useState<ChartConfig[]>([]);
@@ -375,8 +392,67 @@ export function SheetEditor({ user }: SheetEditorProps) {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // Grid shortcuts FortuneSheet lacks: Ctrl+D / Ctrl+R fill down / right,
+  // Ctrl+Shift+V paste values only; Ctrl+C / Ctrl+X also remember the block
+  // for Paste special. Only while the grid (not a cell editor or dialog) has
+  // the keyboard. After a fill-handle drag, Grown's autofill replaces
+  // FortuneSheet's (see editActions.afterDragFill).
+  useEffect(() => {
+    const inGrid = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.('[data-testid="sheet-editor"]')) return false;
+      const box = document.querySelector<HTMLElement>(".luckysheet-input-box");
+      const editing = box ? box.style.zIndex === "19" : false;
+      return !editing;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || !inGrid(e)) return;
+      const wb = ref.current;
+      if (!wb) return;
+      const k = e.key.toLowerCase();
+      if (!e.shiftKey && (k === "d" || k === "r")) {
+        e.preventDefault();
+        e.stopPropagation();
+        fillSelection(wb, k === "d" ? "down" : "right");
+      } else if (e.shiftKey && k === "v") {
+        e.preventDefault();
+        e.stopPropagation();
+        pasteSpecialHere(wb, { what: "values" });
+      } else if (!e.shiftKey && (k === "c" || k === "x")) {
+        rememberCopy(wb);
+      }
+    };
+    const onMouseUp = () =>
+      window.setTimeout(() => {
+        try {
+          if (ref.current) afterDragFill(ref.current);
+        } catch {
+          /* keep FortuneSheet's own fill */
+        }
+      }, 0);
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("mouseup", onMouseUp, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("mouseup", onMouseUp, true);
+    };
+  }, []);
+
   function onOp(ops: any[]) {
     if (applyingRemote.current) return;
+    // Row/column inserts and deletes from FortuneSheet's own header menus:
+    // fix formulas, named ranges and rule models from the pre-op workbook.
+    const before = dataRef.current;
+    const structOp = before ? structureOpFromOps(ops, before) : null;
+    if (structOp && before) {
+      setTimeout(() => {
+        try {
+          if (ref.current) fixUpAfterStructure(ref.current, before, structOp);
+        } catch {
+          /* keep FortuneSheet's own shift */
+        }
+      }, 0);
+    }
     const ws = wsRef.current;
     if (
       ws &&
@@ -640,6 +716,9 @@ export function SheetEditor({ user }: SheetEditorProps) {
                 const sheet = currentSheet(ref.current);
                 if (sheet?.id) setCircleInvalid(ref.current, sheet.id, !sheet.grownCircleInvalid);
               }}
+              onFillSeries={() => setSeriesRange(selectionRect(ref.current))}
+              onSortDialog={() => setSortRangeSel(selectionRect(ref.current))}
+              onPasteSpecial={() => setPasteOpen(true)}
               onCustomNumberFormat={() => {
                 setNumFmtRanges(selectionRanges(ref.current));
                 setNumFmtOpen(true);
@@ -747,6 +826,19 @@ export function SheetEditor({ user }: SheetEditorProps) {
         getWb={() => ref.current}
       />
       <SheetNotice />
+      <FillSeriesDialog
+        open={seriesRange !== null}
+        onClose={() => setSeriesRange(null)}
+        getWb={getWbRef.current}
+        range={seriesRange}
+      />
+      <SortDialog
+        open={sortRangeSel !== null}
+        onClose={() => setSortRangeSel(null)}
+        getWb={getWbRef.current}
+        range={sortRangeSel}
+      />
+      <PasteSpecialDialog open={pasteOpen} onClose={() => setPasteOpen(false)} getWb={getWbRef.current} />
       <ChartDialog
         open={chartOpen}
         onClose={() => setChartOpen(false)}

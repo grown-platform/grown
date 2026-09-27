@@ -32,6 +32,11 @@ export interface PasteSpecialOptions {
   transpose?: boolean;
   /** Moves a formula by (dr, dc); default leaves it unchanged. */
   translate?: (formula: string, dr: number, dc: number) => string;
+  /**
+   * Size of the selected target. When it is a whole multiple of the pasted
+   * block (in both directions) the block is repeated to fill it, like Excel.
+   */
+  target?: { rows: number; cols: number };
 }
 
 export interface PasteWrite {
@@ -106,11 +111,35 @@ function clean(x: number): number {
   return Number.isFinite(x) ? Number(x.toPrecision(15)) : x;
 }
 
+/** How many times the block repeats down and across to fill the target. */
+export function tileCount(block: CopiedBlock, opts: Pick<PasteSpecialOptions, "target" | "transpose">): { down: number; across: number } {
+  const { rows, cols } = pastedSize(block, opts.transpose);
+  const t = opts.target;
+  if (!t || !rows || !cols || t.rows % rows || t.cols % cols) return { down: 1, across: 1 };
+  return { down: Math.max(1, t.rows / rows), across: Math.max(1, t.cols / cols) };
+}
+
 /**
  * pasteSpecial returns the writes for pasting `block` with its top-left at
- * (r, c). `get` reads the current target cells.
+ * (r, c), repeated over opts.target when that is a multiple of the block.
+ * `get` reads the current target cells.
  */
 export function pasteSpecial(
+  block: CopiedBlock,
+  r: number,
+  c: number,
+  get: (r: number, c: number) => Cell,
+  opts: PasteSpecialOptions,
+): PasteWrite[] {
+  const { down, across } = tileCount(block, opts);
+  const { rows, cols } = pastedSize(block, opts.transpose);
+  const out: PasteWrite[] = [];
+  for (let i = 0; i < down; i++)
+    for (let j = 0; j < across; j++) out.push(...pasteOnce(block, r + i * rows, c + j * cols, get, opts));
+  return out;
+}
+
+function pasteOnce(
   block: CopiedBlock,
   r: number,
   c: number,

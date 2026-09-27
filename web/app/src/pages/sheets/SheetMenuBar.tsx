@@ -22,6 +22,16 @@ import {
   splitTextToColumns,
   type SortError,
 } from "./dataActions";
+import {
+  changeSelectionCase,
+  deleteRowsCols,
+  fillSelection,
+  insertRowsCols,
+  moveSelection,
+  pasteSpecialHere,
+  shiftCells,
+} from "./editActions";
+import type { TextCase } from "./textCase";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet API is loosely typed here. */
 type Wb = () => any;
@@ -61,7 +71,21 @@ interface SheetMenuBarProps {
   onFilterColumn?: () => void;
   /** Toggles red circles around cells that break their validation rule. */
   onCircleInvalid?: () => void;
+  /** Opens Edit ▸ Fill ▸ Series… */
+  onFillSeries?: () => void;
+  /** Opens the multi-key Sort range dialog. */
+  onSortDialog?: () => void;
+  /** Opens the Paste special dialog. */
+  onPasteSpecial?: () => void;
 }
+
+const TEXT_CASES: [TextCase, string][] = [
+  ["lower", "lowercase"],
+  ["upper", "UPPERCASE"],
+  ["sentence", "Sentence case"],
+  ["capitalize", "Capitalize Each Word"],
+  ["toggle", "tOGGLE cASE"],
+];
 
 // Example values shown next to each Format ▸ Number preset.
 const PRESET_SAMPLE: Record<string, number | string> = {
@@ -129,6 +153,9 @@ export function SheetMenuBar({
   onCustomNumberFormat,
   onFilterColumn,
   onCircleInvalid,
+  onFillSeries,
+  onSortDialog,
+  onPasteSpecial,
 }: SheetMenuBarProps) {
   const wb = () => {
     try {
@@ -147,6 +174,8 @@ export function SheetMenuBar({
   };
   const rowIdx = () => sel()?.row?.[0] ?? 0;
   const colIdx = () => sel()?.column?.[0] ?? 0;
+  const rowEnd = () => sel()?.row?.[1] ?? rowIdx();
+  const colEnd = () => sel()?.column?.[1] ?? colIdx();
   const call = (fn: (w: any) => void) => () => {
     const w = wb();
     if (w) {
@@ -223,25 +252,68 @@ export function SheetMenuBar({
           <MenuItem onClick={() => document.execCommand("paste")}>
             Paste{kbd("Ctrl+V")}
           </MenuItem>
-          <MenuItem disabled>Paste special{arrow}</MenuItem>
-          <MenuItem disabled>Move{arrow}</MenuItem>
+          {section("Paste special")}
+          <MenuItem sx={sub} onClick={call((w) => pasteSpecialHere(w, { what: "values" }))}>
+            Values only{kbd("Ctrl+Shift+V")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => pasteSpecialHere(w, { what: "formats" }))}>
+            Format only
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => pasteSpecialHere(w, { what: "formulas" }))}>
+            Formula only
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => pasteSpecialHere(w, { what: "all", transpose: true }))}>
+            Transposed
+          </MenuItem>
+          {onPasteSpecial && (
+            <MenuItem sx={sub} onClick={onPasteSpecial}>
+              Paste special…
+            </MenuItem>
+          )}
+          {section("Fill")}
+          <MenuItem sx={sub} onClick={call((w) => fillSelection(w, "down"))}>
+            Down{kbd("Ctrl+D")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => fillSelection(w, "right"))}>
+            Right{kbd("Ctrl+R")}
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => fillSelection(w, "up"))}>
+            Up
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => fillSelection(w, "left"))}>
+            Left
+          </MenuItem>
+          {onFillSeries && (
+            <MenuItem sx={sub} onClick={onFillSeries}>
+              Series…
+            </MenuItem>
+          )}
+          {section("Move")}
+          <MenuItem sx={sub} onClick={call((w) => moveSelection(w, "row", -1))}>
+            Row up
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => moveSelection(w, "row", 1))}>
+            Row down
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => moveSelection(w, "col", -1))}>
+            Column left
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => moveSelection(w, "col", 1))}>
+            Column right
+          </MenuItem>
           <ListDivider />
           {section("Delete")}
-          <MenuItem
-            sx={sub}
-            onClick={call((w) =>
-              w.deleteRowOrColumn("row", rowIdx(), rowIdx()),
-            )}
-          >
+          <MenuItem sx={sub} onClick={call((w) => deleteRowsCols(w, "row", rowIdx(), rowEnd()))}>
             Delete row
           </MenuItem>
-          <MenuItem
-            sx={sub}
-            onClick={call((w) =>
-              w.deleteRowOrColumn("column", colIdx(), colIdx()),
-            )}
-          >
+          <MenuItem sx={sub} onClick={call((w) => deleteRowsCols(w, "col", colIdx(), colEnd()))}>
             Delete column
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => shiftCells(w, "up"))}>
+            Delete cells and shift up
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => shiftCells(w, "left"))}>
+            Delete cells and shift left
           </MenuItem>
           <ListDivider />
           <MenuItem onClick={onFindReplace}>
@@ -316,39 +388,25 @@ export function SheetMenuBar({
       {top(
         "Insert",
         <>
-          <MenuItem disabled>Cells{arrow}</MenuItem>
+          {section("Cells")}
+          <MenuItem sx={sub} onClick={call((w) => shiftCells(w, "right"))}>
+            Insert cells and shift right
+          </MenuItem>
+          <MenuItem sx={sub} onClick={call((w) => shiftCells(w, "down"))}>
+            Insert cells and shift down
+          </MenuItem>
           {section("Rows")}
-          <MenuItem
-            sx={sub}
-            onClick={call((w) =>
-              w.insertRowOrColumn("row", rowIdx(), 1, "lefttop"),
-            )}
-          >
+          <MenuItem sx={sub} onClick={call((w) => insertRowsCols(w, "row", rowIdx(), rowEnd() - rowIdx() + 1, "before"))}>
             Row above
           </MenuItem>
-          <MenuItem
-            sx={sub}
-            onClick={call((w) =>
-              w.insertRowOrColumn("row", rowIdx(), 1, "rightbottom"),
-            )}
-          >
+          <MenuItem sx={sub} onClick={call((w) => insertRowsCols(w, "row", rowEnd(), rowEnd() - rowIdx() + 1, "after"))}>
             Row below
           </MenuItem>
           {section("Columns")}
-          <MenuItem
-            sx={sub}
-            onClick={call((w) =>
-              w.insertRowOrColumn("column", colIdx(), 1, "lefttop"),
-            )}
-          >
+          <MenuItem sx={sub} onClick={call((w) => insertRowsCols(w, "col", colIdx(), colEnd() - colIdx() + 1, "before"))}>
             Column left
           </MenuItem>
-          <MenuItem
-            sx={sub}
-            onClick={call((w) =>
-              w.insertRowOrColumn("column", colIdx(), 1, "rightbottom"),
-            )}
-          >
+          <MenuItem sx={sub} onClick={call((w) => insertRowsCols(w, "col", colEnd(), colEnd() - colIdx() + 1, "after"))}>
             Column right
           </MenuItem>
           <ListDivider />
@@ -408,6 +466,12 @@ export function SheetMenuBar({
           <MenuItem sx={sub} onClick={fmt("cl", 1)}>
             Strikethrough{kbd("Alt+Shift+5")}
           </MenuItem>
+          {section("Change case")}
+          {TEXT_CASES.map(([mode, label]) => (
+            <MenuItem key={mode} sx={sub} data-textcase={mode} onClick={call((w) => changeSelectionCase(w, mode))}>
+              {label}
+            </MenuItem>
+          ))}
           {section("Alignment")}
           <MenuItem sx={sub} onClick={fmt("ht", "1")}>
             Left
@@ -493,6 +557,11 @@ export function SheetMenuBar({
           <MenuItem sx={sub} onClick={dataOp((w) => sortRange(w, false))}>
             Sort range (Z → A)
           </MenuItem>
+          {onSortDialog && (
+            <MenuItem sx={sub} onClick={onSortDialog}>
+              Advanced range sorting options…
+            </MenuItem>
+          )}
           <ListDivider />
           <MenuItem onClick={dataOp((w) => toggleFilter(w))}>
             Create a filter
