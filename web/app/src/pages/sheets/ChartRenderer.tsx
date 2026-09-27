@@ -6,7 +6,8 @@
  * dependency and it works fully offline.
  */
 
-export type ChartType = "column" | "bar" | "line" | "area" | "pie";
+import type { ChartType } from "./chartData";
+export type { ChartType };
 
 export interface ChartSeries {
   name: string;
