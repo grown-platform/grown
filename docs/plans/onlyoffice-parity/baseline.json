@@ -74,7 +74,7 @@
       "passing": null
     },
     "docs/equations": {
-      "ported": 0,
+      "ported": 924,
       "passing": null
     },
     "docs/find-replace": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 1013,
+    "ported": 1937,
     "passing": null
   }
 }
