@@ -131,3 +131,103 @@ export function presentKeyAction(e: KeyInput): PresentKeyAction | null {
 export function presentKeyPreventsDefault(a: PresentKeyAction | null): boolean {
   return a === "next" || a === "prev";
 }
+
+// ---- text formatting (inside a text box, or on selected text boxes) ----
+
+export type TextToggle = "bold" | "italic" | "underline" | "strike" | "super" | "sub";
+
+export type TextKeyAction =
+  | { type: "toggle"; key: TextToggle }
+  | { type: "fontStep"; dir: 1 | -1 }
+  | { type: "align"; align: "left" | "center" | "right" | "justify" }
+  | { type: "list"; list: "bullet" | "number" }
+  | { type: "copyFormat" }
+  | { type: "pasteFormat" }
+  | { type: "clearFormat" }
+  | { type: "link" }
+  /** Editing only: insert a character (NBSP, €, en dash, tab). */
+  | { type: "insert"; text: string }
+  /** Editing only: Tab / Shift+Tab (the editor indents list paragraphs,
+   *  otherwise Tab inserts a tab character). */
+  | { type: "tab"; dir: 1 | -1 }
+  /** Editing only: Esc leaves the text box (it stays selected). */
+  | { type: "exitEdit" };
+
+/**
+ * textKeyAction maps the text-formatting shortcuts (OnlyOffice / PowerPoint
+ * names, with Google Slides aliases):
+ * Ctrl+B/I/U, Ctrl+5 or Alt+Shift+5 strikethrough, Ctrl+. superscript,
+ * Ctrl+, subscript, Ctrl+] / Ctrl+[ (or Ctrl+Shift+> / <) font size,
+ * Ctrl+E/J/L/R (or Ctrl+Shift+E/J/L/R) align, Ctrl+Shift+L or Ctrl+Shift+8
+ * bullets, Ctrl+Shift+7 numbering, Ctrl+Shift+C/V copy/paste format,
+ * Ctrl+Space or Ctrl+\ clear formatting, Ctrl+K link; while editing also
+ * Ctrl+Shift+Space no-break space, Ctrl+Alt+E euro sign, Ctrl+Alt+- en
+ * dash, Tab/Shift+Tab and Esc. `hasFormat` is whether paint format holds
+ * a captured style (otherwise Ctrl+Shift+V is left to the paste handler).
+ */
+export function textKeyAction(
+  e: KeyInput,
+  ctx: { editing: boolean; hasFormat?: boolean },
+): TextKeyAction | null {
+  const mod = !!e.ctrlKey || !!e.metaKey;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (ctx.editing) {
+    if (e.key === "Escape") return { type: "exitEdit" };
+    if (e.key === "Tab" && !mod && !e.altKey) return { type: "tab", dir: e.shiftKey ? -1 : 1 };
+    if (mod && e.altKey && !e.shiftKey) {
+      if (e.code === "KeyE" || k === "e") return { type: "insert", text: "€" };
+      if (e.code === "Minus" || k === "-") return { type: "insert", text: "–" };
+    }
+    if (mod && e.shiftKey && !e.altKey && (e.key === " " || e.code === "Space"))
+      return { type: "insert", text: " " };
+  }
+  // Google Slides strikethrough: Alt+Shift+5.
+  if (!mod && e.altKey && e.shiftKey && (e.code === "Digit5" || k === "5" || k === "%"))
+    return { type: "toggle", key: "strike" };
+  if (!mod || e.altKey) return null;
+  if (e.shiftKey) {
+    if (e.code === "KeyC" || k === "c") return { type: "copyFormat" };
+    if (e.code === "KeyV" || k === "v") return ctx.hasFormat ? { type: "pasteFormat" } : null;
+    if (e.code === "KeyL" || k === "l") return { type: "list", list: "bullet" };
+    if (e.code === "Digit8" || k === "*" || k === "8") return { type: "list", list: "bullet" };
+    if (e.code === "Digit7" || k === "&" || k === "7") return { type: "list", list: "number" };
+    if (e.code === "KeyE" || k === "e") return { type: "align", align: "center" };
+    if (e.code === "KeyJ" || k === "j") return { type: "align", align: "justify" };
+    if (e.code === "KeyR" || k === "r") return { type: "align", align: "right" };
+    if (k === ">" || e.code === "Period") return { type: "fontStep", dir: 1 };
+    if (k === "<" || e.code === "Comma") return { type: "fontStep", dir: -1 };
+    return null;
+  }
+  switch (k) {
+    case "b":
+      return { type: "toggle", key: "bold" };
+    case "i":
+      return { type: "toggle", key: "italic" };
+    case "u":
+      return { type: "toggle", key: "underline" };
+    case "5":
+      return { type: "toggle", key: "strike" };
+    case ".":
+      return { type: "toggle", key: "super" };
+    case ",":
+      return { type: "toggle", key: "sub" };
+    case "]":
+      return { type: "fontStep", dir: 1 };
+    case "[":
+      return { type: "fontStep", dir: -1 };
+    case "e":
+      return { type: "align", align: "center" };
+    case "j":
+      return { type: "align", align: "justify" };
+    case "l":
+      return { type: "align", align: "left" };
+    case "r":
+      return { type: "align", align: "right" };
+    case " ":
+    case "\\":
+      return { type: "clearFormat" };
+    case "k":
+      return { type: "link" };
+  }
+  return null;
+}
