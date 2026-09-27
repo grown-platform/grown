@@ -19,6 +19,7 @@ package sheets
 import (
 	"encoding/json"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -114,6 +115,9 @@ type sheetState struct {
 	rowCount, colCount int
 	// spillAreas records, per anchor, the area its dynamic array covers.
 	spillAreas map[cellAddr]area
+	// hiddenRows are the sheet's hidden rows (config.rowhidden); true when a
+	// filter hid the row (it lies in the grownFilter range), for SUBTOTAL.
+	hiddenRows map[int]bool
 }
 
 func newSheetState(name string, data []FsCellData) *sheetState {
@@ -557,6 +561,35 @@ func loadNamedRanges(wb FsWorkbook, view *workbookView) {
 	}
 }
 
+// loadHiddenRows reads config.rowhidden; rows inside the sheet filter's
+// range (below its header) count as filtered.
+func loadHiddenRows(sh FsSheet) map[int]bool {
+	if sh.Extra == nil {
+		return nil
+	}
+	var cfg struct {
+		RowHidden map[string]json.RawMessage `json:"rowhidden"`
+	}
+	if raw, ok := sh.Extra["config"]; !ok || json.Unmarshal(raw, &cfg) != nil || len(cfg.RowHidden) == 0 {
+		return nil
+	}
+	var filter struct {
+		Range *struct{ R1, R2 int } `json:"range"`
+	}
+	if raw, ok := sh.Extra["grownFilter"]; ok {
+		_ = json.Unmarshal(raw, &filter)
+	}
+	out := make(map[int]bool, len(cfg.RowHidden))
+	for k := range cfg.RowHidden {
+		r, err := strconv.Atoi(k)
+		if err != nil {
+			continue
+		}
+		out[r] = filter.Range != nil && r > filter.Range.R1 && r <= filter.Range.R2
+	}
+	return out
+}
+
 // resolveName evaluates a defined name; ok=false when no such name exists.
 func (p *parser) resolveName(upper string) (value, bool) {
 	wb := p.ev.book()
@@ -589,6 +622,7 @@ func newWorkbookEvaluator(wb FsWorkbook, now time.Time) *Evaluator {
 	for i := range wb {
 		st := newSheetState(wb[i].Name, wb[i].CellData)
 		st.rowCount, st.colCount = wb[i].Row, wb[i].Column
+		st.hiddenRows = loadHiddenRows(wb[i])
 		view.sheets = append(view.sheets, st)
 	}
 	if len(view.sheets) == 0 {

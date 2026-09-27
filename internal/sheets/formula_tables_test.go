@@ -426,3 +426,22 @@ func TestOOFormulaTraceTables(t *testing.T) {
 		checkPrec(t, tr, "E8", arrowCheck{"E8", "A3", "A3:A5"}, arrowCheck{"A4", "C1", ""})
 	})
 }
+
+// SUBTOTAL (a table's totals row) skips rows a filter hid (codes 1-11 and
+// 101-111), rows hidden by hand (101-111 only) and nested SUBTOTALs.
+func TestSubtotalHiddenRows(t *testing.T) {
+	wb := tableBook(map[string]interface{}{
+		"A1": "N", "A2": 1.0, "A3": 2.0, "A4": 4.0, "A5": 8.0, "A6": "=SUBTOTAL(9,A2:A5)",
+		"B1": "=SUBTOTAL(9,A2:A6)", "B2": "=SUBTOTAL(109,A2:A6)", "B3": "=SUBTOTAL(3,A2:A6)", "B4": "=SUBTOTAL(109,A3)",
+	})
+	cfg, _ := json.Marshal(map[string]interface{}{"rowhidden": map[string]int{"2": 0, "4": 0}})
+	flt, _ := json.Marshal(map[string]interface{}{"range": map[string]int{"r1": 0, "c1": 0, "r2": 2, "c2": 0}})
+	wb[0].Extra = map[string]json.RawMessage{"config": cfg, "grownFilter": flt}
+	get := recalcBook(t, wb)
+	// Row 3 (index 2) is filtered out, row 5 (index 4) hidden by hand.
+	for ref, want := range map[string]interface{}{"A6": 13.0, "B1": 13.0, "B2": 5.0, "B3": 3.0, "B4": 0.0} {
+		if got := get("Sheet1", ref); fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s = %v, want %v", ref, got, want)
+		}
+	}
+}
