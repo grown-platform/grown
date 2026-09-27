@@ -1,6 +1,7 @@
 import { Extension, Mark, Node, mergeAttributes } from "@tiptap/core";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
+import { GrownTable, GrownTableView, GrownTableCell, GrownTableHeader, GrownTableRow, TableTools } from "./tables";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import TextStyle from "@tiptap/extension-text-style";
@@ -14,10 +15,6 @@ import TaskItem from "@tiptap/extension-task-item";
 import Image from "@tiptap/extension-image";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
-import Table from "@tiptap/extension-table";
-import TableRow from "@tiptap/extension-table-row";
-import TableHeader from "@tiptap/extension-table-header";
-import TableCell from "@tiptap/extension-table-cell";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import { InsertionMark, DeletionMark, Suggesting } from "./suggesting";
@@ -484,27 +481,6 @@ export const Endnote = Node.create({
   },
 });
 
-// TableCell/TableHeader extended with a backgroundColor attribute so cells can
-// be shaded (Format > Table > Cell color), set via the table extension's
-// setCellAttribute command.
-function withCellBackground<T extends { extend: (c: object) => unknown }>(base: T) {
-  return (base.extend as (c: object) => unknown)({
-    addAttributes(this: { parent?: () => object }) {
-      return {
-        ...(this.parent?.() || {}),
-        backgroundColor: {
-          default: null,
-          parseHTML: (el: HTMLElement) => el.style.backgroundColor || null,
-          renderHTML: (attrs: { backgroundColor?: string }) =>
-            attrs.backgroundColor
-              ? { style: `background-color: ${attrs.backgroundColor}` }
-              : {},
-        },
-      };
-    },
-  });
-}
-
 // Image with an optional display size (px). Imported .docx pictures carry
 // their Word size; the writer uses it for the drawing extent (Docs M6).
 // Only the width renders, so the browser keeps the aspect ratio.
@@ -532,8 +508,10 @@ export const SizedImage = Image.extend({
   },
 });
 
-export const TableCellBg = withCellBackground(TableCell) as typeof TableCell;
-export const TableHeaderBg = withCellBackground(TableHeader) as typeof TableHeader;
+// Table nodes with the M4 table / row / cell properties (tables.ts). The
+// cell and header nodes keep the M1 backgroundColor attribute.
+export const TableCellBg = GrownTableCell;
+export const TableHeaderBg = GrownTableHeader;
 
 /** Options for the collaborative (app) editor: Yjs document + websocket
  *  provider. `collab` may be omitted; it defaults to true. */
@@ -605,10 +583,11 @@ export function buildExtensions(opts: BuildOpts) {
     ImagePaste,
     Subscript,
     Superscript,
-    Table.configure({ resizable: true }),
-    TableRow,
+    GrownTable.configure({ resizable: true, View: GrownTableView }),
+    GrownTableRow,
     TableHeaderBg,
     TableCellBg,
+    TableTools,
     CommentMark,
     Footnote,
     Endnote,

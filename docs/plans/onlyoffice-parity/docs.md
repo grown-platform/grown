@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -220,21 +220,21 @@ Grown paths are relative to the repo root; `docs/` below means
 
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
-| Insert table with size / custom / draw / erase | Toolbar, InsertTableDialog | Partial | fixed 3x3 `docs/MenuBar.tsx:299` |
+| Insert table with size / custom / draw / erase | Toolbar, InsertTableDialog | Partial | M4: hover size picker (toolbar + Insert menu), `TableUI.tsx`; no draw/erase |
 | Add/delete rows/cols, merge/split | TableSettings | Have | table extension commands |
 | Cell background | TableSettings | Have | `TableCellBg` `docs/extensions.ts:543` |
-| Border style/color per side, hidden borders | TableSettings `tip*`, Toolbar `mniHiddenBorders` | Missing | — |
-| Table style templates (grid/list/plain, banded, header/first/last) | TableSettings `txtTable_*` | Missing | — |
-| Column width / row height numeric, fixed layout grid | TableSettings `textCellSize`, `table-grid.js` | Partial | drag resize only |
-| Distribute rows / columns | DocumentHolder | Missing | — |
-| Repeat header row on each page | TableSettings `strRepeatRow`, `table-header.js` | Missing | — |
-| Cell margins, vertical alignment, table alignment/indent | TableSettingsAdvanced | Missing | — |
+| Border style/color per side, hidden borders | TableSettings `tip*`, Toolbar `mniHiddenBorders` | Have (M4) | table + cell borders, presets, `tables.ts` |
+| Table style templates (grid/list/plain, banded, header/first/last) | TableSettings `txtTable_*` | Have (M4) | 10 Word-named templates + look switches, `tableModel.ts` |
+| Column width / row height numeric, fixed layout grid | TableSettings `textCellSize`, `table-grid.js` | Have (M4) | `resolveFixedGrid`, `setColumnWidth`, `setRowHeight` |
+| Distribute rows / columns | DocumentHolder | Have (M4) | `distributeRows/Columns` |
+| Repeat header row on each page | TableSettings `strRepeatRow`, `table-header.js` | Partial (M4) | row attr + print CSS; on-screen repetition waits for M9 pagination |
+| Cell margins, vertical alignment, table alignment/indent | TableSettingsAdvanced | Have (M4) | no table indent |
 | Table position / wrap (inline vs flow) | TableSettingsAdvanced, `flowTablePosition.js` | Missing | — |
-| Convert text to table / table to text | TextToTableDialog, TableToTextDialog | Missing | — |
+| Convert text to table / table to text | TextToTableDialog, TableToTextDialog | Have (M4) | `textToTable` / `tableToText` |
 | Table formulas | TableFormulaDialog | Missing | — |
-| Split table / nested tables | DocumentHolder `textNest` | Partial | nesting allowed by schema, no split |
-| Autofit to contents/window | TableSettingsAdvanced | Missing | — |
-| Bad-table correction (vMerge) on load | `correctBadTable.js` | Missing | — |
+| Split table / nested tables | DocumentHolder `textNest` | Have (M4) | `splitTable` |
+| Autofit to contents/window | TableSettingsAdvanced | Have (M4) | `autofitTable` |
+| Bad-table correction (vMerge) on load | `correctBadTable.js` | Have (M4) | `correctBadTable` (docx) + `normalizeTable` (paste/import) |
 
 ### 2.6 Images, shapes, drawings, SmartArt, charts, text art
 
@@ -1037,7 +1037,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   block quotes as a 36pt indent, code blocks in Courier New, rules as a
   bottom border, Excalidraw drawings rasterised to PNG in the browser.
   Every table gets single 0.5pt grid borders (Grown has no border model
-  yet). Output: content types, package/document rels, styles, numbering,
+  yet; since M4 tables carry their own borders and styles, see §6.10). Output: content types, package/document rels, styles, numbering,
   foot/endnotes with separators (+ `settings.xml` footnotePr), comments +
   commentsExtended, header1/footer1, media, core/app properties, Letter
   page with 1in margins.
@@ -1082,7 +1082,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   §5), so the parity scoreboard is unchanged.
 * **Dropped on import** (reported in `DocxImport.warnings`; each waits for
   the milestone that adds the model): bookmarks (M8), table borders and
-  table styles (M4), per-section page setup, first/even headers and
+  table styles (mapped since M4, §6.10), per-section page setup, first/even headers and
   section-level header variants (M9; the final section's page size is read
   into `DocxImport.page` but not applied), floating image position and
   wrap (M7), WMF/EMF/TIFF images, direct "not bold/italic" over a style,
@@ -1105,13 +1105,113 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | Export page setup | Section properties | Letter, 1in margins (orientation/margins are not persisted yet) | Until M9 |
 
 
+### 6.10 M4 status (tables)
+
+* **Model** (`tableModel.ts`, pure): additive attributes on TipTap's table
+  nodes, all strings / numbers / booleans. Table: `tableStyle` (template
+  id), `look` ("header banded firstCol lastRow lastCol bandedCols"; null =
+  Word's default 04A0), `borders` (JSON per side incl. `insideH` /
+  `insideV`, explicit "none"), `cellMargins` ("t r b l" pt), `layout`
+  ("fixed" | null), `width` ("100%" | "<n>pt"), `align`. Row:
+  `repeatHeader`, `height` (pt, at least). Cell: `backgroundColor` (M1),
+  `borders`, `verticalAlign`, `margins`. Column widths stay TipTap's
+  per-cell `colwidth`. Ten style templates named after Word's built-ins
+  (Table Grid, Plain Table 1/3, Grid Table 1 Light, Grid Table 4 Accent
+  1/2/6, List Table 3 Accent 5, Grid Table 5 Dark Accent 1, Normal Table)
+  with header / total row / first / last column / banded rows and columns.
+  Rendering is CSS: the table sets `--tbl-<side>` variables (template rule,
+  overridden inline by direct borders), cells draw the outer or inside
+  line by position (collapsed model); cell borders are inline, a cell's
+  explicit "none" renders `hidden` so it wins. `GrownTableView` (TipTap's
+  resizable view + the attributes) lays columns out on the widest width
+  per column across rows, not only the first row.
+* **Grid resolver**: `resolveFixedGrid(grid, rows)` — a column takes the
+  widest explicit single-column cell width in any row, else its tblGrid
+  width; merged-continuation cells are ignored; spanning cells wider than
+  their columns widen them in proportion. The DOCX reader uses it for
+  fixed-layout tables; `pmColumnWidths` is the same rule for the editor.
+* **Normaliser**: `correctBadTable` (WordprocessingML vMerge: a
+  continuation with no merge above becomes a restart; a row of only
+  continuations is folded away) runs in the DOCX reader; `normalizeTable`
+  (TipTap JSON: invalid spans reset, rowspans clipped at the table end,
+  colspans clipped where they run into a merge from above, fully covered
+  rows folded with their merges shortened, empty rows dropped, ragged rows
+  padded, colwidth arrays fixed, empty cells filled) runs on paste
+  (`transformPasted`, tables on an open slice edge are left to
+  prosemirror-tables), on DOCX import and in `textToTable`.
+* **Commands** (`tables.ts`): border presets (all / outer / inner / top /
+  bottom / left / right / inside H / inside V / none) on the selected
+  cells (outline of the selection, Word style) or the whole table; table
+  style + look; cell props; column width / row height; distribute rows
+  (average) and columns (keep the total); autofit to contents / window /
+  fixed; repeat header row (rows from the top to the selection); split
+  table (cuts merges across the split; caret in the new paragraph, as in
+  Word); text → table (tabs, commas, semicolons, custom, or paragraphs in
+  N columns; marks kept) and table → text.
+* **UI** (`TableUI.tsx`): hover size picker in the toolbar and Insert menu;
+  a right-hand **Table settings** panel (style gallery with previews and
+  look switches, borders with scope / style / width / colour, vertical
+  alignment, cell shading and margins, column width / row height,
+  distribute, repeat header, fit contents / window / fixed, alignment,
+  default cell margins, split, convert to text); Format > Table, the
+  context menu (in a table) and the command palette reach the same
+  commands; a Convert text to table dialog. CellSelection is now visible.
+  HTML export carries the table stylesheet.
+* **DOCX** (`docx/tables.ts`), both ways: `tblStyle` (Word id or name →
+  template; a localised id such as "Gitternetztabelle4Akzent1" still
+  matches by name), `tblLook`, `tblBorders` (incl. `nil`), `tblW` (pct /
+  dxa), `jc`, `tblLayout`, `tblCellMar`, `trHeight`, `tblHeader` (repeat
+  header row; header cells as before), `tcBorders`, `tcMar`, `vAlign`, and
+  `w:style` definitions (with `tblStylePr` firstRow / lastRow / firstCol /
+  lastCol / band1Horz / band1Vert) for the templates used. Unknown table
+  styles keep their borders along `basedOn` (warning). A vertically merged
+  cell writes its bottom border on its last part and reads it back from
+  there. Unstyled tables still export Grown's light grid, with direct
+  sides on top.
+* **Tests**: 8 tagged cases, all passing: `oo/table-grid.test.ts` 6,
+  `oo/table-normalize.test.ts` 1 (correctBadTable "bad vMerge"),
+  `oo/table-cell-props.test.ts` 1 (api-table-cell "SetColor, GetColor";
+  the theme-colour step is n/a). Grown-native: `tables.test.ts` (46:
+  resolver, normaliser incl. overlapping merges / covered rows / nested
+  tables / schema validity, encodings and CSS, every command, paste, Yjs
+  sync), `docx-tables.test.ts` (8: reader mapping, unknown style, bad
+  vMerge, ragged rows, merged borders, writer schema order + style
+  definition, Grown → docx → Grown equality, legacy grid). Playwright:
+  `web/e2e/docs-tables.spec.ts` (2 tests; styled table persisted across
+  reload and through .docx export + import; text ↔ table, repeat header,
+  split).
+* **Not yet**: on-screen header-row repetition and table page breaks (M9
+  pagination; print uses `display: table-header-group`), draw / erase
+  table, table indent, text wrapping around tables (flow tables, n/a per
+  F2), table formulas, per-cell text direction, a style editor for custom
+  table styles (unknown docx styles keep only borders).
+* **Semantic differences**:
+
+| Case | OnlyOffice | Grown | Status |
+|---|---|---|---|
+| table-grid units | Millimetres, read from a laid-out table | Unitless pure resolver; the editor stores px | Note only |
+| correctBadTable | Runs on the internal table model | Runs on the DOCX reader's vMerge rows; the editor has rowspans, where `normalizeTable` covers the same repairs | Note only |
+| api-table-cell theme colour | Theme colours | No document theme | n/a |
+| Table without style or borders (docx) | No borders (Normal Table) | Grown's light grid (legacy look); Normal Table is a template users can pick | grown-variant |
+| Header cells | Only a row property | TipTap `<th>` cells; `tblHeader` rows import as header cells with repeat on | Note only |
+
 ### Known flaky e2e (as of 2026-09-26)
 
-- `web/e2e/docs/oo-shortcuts.spec.ts` "Check sending event to interface" fails
-  about 1 run in 3 on a production build: after Ctrl+K and accepting the prompt,
-  the selected text has no link. Possible causes are a race between the collab
-  replay and the link mark, or prompt/keypress timing. Needs a look before the
-  link work in M8.
+- ~~`web/e2e/docs/oo-shortcuts.spec.ts` "Check sending event to interface"
+  fails about 1 run in 3~~ — **fixed (M4 branch)**. Root cause was a real
+  product race, not collab: the test presses Ctrl+K right after
+  Shift+Home. The browser reports the new selection through the
+  asynchronous `selectionchange` event, and the Ctrl+K handler ran first,
+  so ProseMirror still held the collapsed caret (logged: DOM "Grown"
+  selected, state 6..6); the blocking `window.prompt` then kept the pending
+  event queued until after `setLink` had run on an empty selection.
+  `links.ts:promptLink` (now shared by Ctrl+K, the toolbar, Insert > Link
+  and the context menu) reads the DOM selection into the state
+  (`syncSelectionFromDOM`) before prompting and links the captured range;
+  it also runs `resolveLinkInput`, which the Ctrl+K path skipped. Before:
+  3/10 and 2/10 failures with `--repeat-each 10`; after: 20/20 and 10/10
+  on a production build (`__tests__/links.test.ts` reproduces the stale
+  state in jsdom).
 - Related: Grown's docs collab hub replays updates but never answers the
   y-protocol sync handshake, so `WebsocketProvider.synced` never becomes true.
   Nothing in the app reads it today. e2e waits for "connected" plus a short

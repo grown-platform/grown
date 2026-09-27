@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Sheet,
   IconButton,
@@ -43,7 +44,9 @@ import FormatClearIcon from "@mui/icons-material/FormatClear";
 import RemoveIcon from "@mui/icons-material/Remove";
 import AddIcon from "@mui/icons-material/Add";
 import type { Editor } from "@tiptap/react";
-import { resolveLinkInput } from "../../lib/urlType";
+import { promptLink } from "./links";
+import GridOnIcon from "@mui/icons-material/GridOn";
+import { TableSizePicker, insertPickedTable } from "./TableUI";
 
 export type EditorMode = "editing" | "viewing";
 
@@ -107,6 +110,7 @@ export function Toolbar({
   mode,
   onModeChange,
 }: ToolbarProps) {
+  const [tableOpen, setTableOpen] = useState(false);
   if (!editor) return null;
 
   const iconBtn = (
@@ -159,13 +163,7 @@ export function Toolbar({
     />
   );
 
-  const promptLink = () => {
-    const prev = (editor.getAttributes("link").href as string) || "";
-    const url = resolveLinkInput(window.prompt("Link URL", prev));
-    if (url === null) return;
-    if (url === "") editor.chain().focus().unsetLink().run();
-    else editor.chain().focus().setLink({ href: url }).run();
-  };
+  const askLink = () => promptLink(editor);
   const promptImage = () => {
     const url = window.prompt("Image URL");
     if (url) editor.chain().focus().setImage({ src: url }).run();
@@ -362,11 +360,29 @@ export function Toolbar({
 
       {iconBtn(
         editor.isActive("link"),
-        promptLink,
+        askLink,
         "Insert link",
         <LinkIcon />,
       )}
       {iconBtn(false, promptImage, "Insert image", <ImageIcon />)}
+      <Dropdown open={tableOpen} onOpenChange={(_, o) => setTableOpen(o)}>
+        <Tooltip title="Insert table" size="sm">
+          <MenuButton
+            slots={{ root: IconButton }}
+            slotProps={{ root: { size: "sm", variant: "plain", "aria-label": "Insert table" } }}
+          >
+            <GridOnIcon />
+          </MenuButton>
+        </Tooltip>
+        <Menu sx={{ p: 0 }}>
+          <TableSizePicker
+            onPick={(r, c) => {
+              setTableOpen(false);
+              insertPickedTable(editor, r, c);
+            }}
+          />
+        </Menu>
+      </Dropdown>
 
       <Divider orientation="vertical" sx={{ mx: 0.5 }} />
 

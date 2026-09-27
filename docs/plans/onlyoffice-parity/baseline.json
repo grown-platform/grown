@@ -150,7 +150,7 @@
       "passing": null
     },
     "docs/tables": {
-      "ported": 0,
+      "ported": 8,
       "passing": null
     },
     "docs/text-input": {
@@ -194,7 +194,7 @@
       "passing": null
     },
     "sheets/formatting": {
-      "ported": 57,
+      "ported": 0,
       "passing": null
     },
     "sheets/formulas": {
@@ -294,11 +294,11 @@
       "passing": null
     },
     "slides/shapes": {
-      "ported": 9,
+      "ported": 8,
       "passing": null
     },
     "slides/shortcuts": {
-      "ported": 10,
+      "ported": 9,
       "passing": null
     },
     "slides/shortcuts fixture": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 797,
+    "ported": 746,
     "passing": null
   }
 }

@@ -1,3 +1,4 @@
+import { tableSx } from "./tableModel";
 import type { SxProps } from "@mui/joy/styles/types";
 import type { Indents } from "./Ruler";
 
@@ -101,6 +102,8 @@ export function editorPageSx(
     },
     "@media print": {
       "& .ProseMirror .page-break": { borderTop: "none" },
+      // Repeated header rows print at the top of every page (Docs M4).
+      "& .ProseMirror tr[data-repeat-header]": { display: "table-header-group" },
     },
     // Header/footer margin regions: placed inside the page's top/bottom margins,
     // visually separated from the body, smaller and muted like Google Docs.
@@ -168,17 +171,30 @@ export function editorPageSx(
     "& .ProseMirror .doc-comment-anchor--active": {
       backgroundColor: "rgba(244,180,0,.5)",
     },
-    "& .ProseMirror table": {
-      borderCollapse: "collapse",
-      width: "100%",
-      margin: "0.5em 0",
-    },
     "& .ProseMirror th, & .ProseMirror td": {
-      border: "1px solid #ccced1",
-      padding: "4px 8px",
       minWidth: "2em",
+      position: "relative",
     },
-    "& .ProseMirror th": { bgcolor: "#f1f3f4", fontWeight: 600 },
+    "& .ProseMirror table:not([data-table-style]) th": { bgcolor: "#f1f3f4", fontWeight: 600 },
+    // Table borders, margins and style templates (Docs M4).
+    ...tableEditorSx,
+    "& .ProseMirror .selectedCell::after": {
+      content: '""',
+      position: "absolute",
+      inset: 0,
+      background: "rgba(26,115,232,.15)",
+      pointerEvents: "none",
+    },
+    "& .ProseMirror .column-resize-handle": {
+      position: "absolute",
+      right: "-2px",
+      top: 0,
+      bottom: "-2px",
+      width: "4px",
+      backgroundColor: "#1a73e8",
+      pointerEvents: "none",
+    },
+    "& .ProseMirror.resize-cursor": { cursor: "col-resize" },
     "& .collaboration-cursor__caret": {
       borderLeft: "1px solid currentColor",
       borderRight: "1px solid currentColor",
@@ -201,6 +217,17 @@ export function editorPageSx(
     },
   };
 }
+
+const TABLE_SX = tableSx(".ProseMirror");
+const tableEditorSx = {
+  ...TABLE_SX,
+  "& .ProseMirror table": {
+    borderCollapse: "collapse",
+    width: "100%",
+    margin: "0.5em 0",
+    ...TABLE_SX["& .ProseMirror table"],
+  },
+};
 
 /** workspaceSx is the gray canvas the page sits on. */
 export const workspaceSx: SxProps = {

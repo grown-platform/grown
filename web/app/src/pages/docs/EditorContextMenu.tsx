@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Sheet, List, ListItemButton, ListDivider, Typography } from "@mui/joy";
 import type { Editor } from "@tiptap/react";
-import { resolveLinkInput } from "../../lib/urlType";
 import { copySelection, cutSelection, paste } from "./editorActions";
+import { promptLink } from "./links";
+import { isInTable } from "@tiptap/pm/tables";
+import { distributeColumns, distributeRows } from "./tables";
+import { openTableSettings } from "./TableUI";
 
 interface MenuPos {
   x: number;
@@ -32,6 +35,7 @@ export function EditorContextMenu({
 }: EditorContextMenuProps) {
   const [pos, setPos] = useState<MenuPos | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
+  const [inTable, setInTable] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,6 +45,7 @@ export function EditorContextMenu({
       e.preventDefault();
       const { from, to } = editor.state.selection;
       setHasSelection(from !== to);
+      setInTable(isInTable(editor.state));
       setPos({ x: e.clientX, y: e.clientY });
     };
     el.addEventListener("contextmenu", onContextMenu);
@@ -151,11 +156,7 @@ export function EditorContextMenu({
         </ListItemButton>
         <ListItemButton
           onClick={run(() => {
-            const prev = (editor.getAttributes("link").href as string) || "";
-            const url = resolveLinkInput(window.prompt("Link URL", prev));
-            if (url === null) return;
-            if (url === "") editor.chain().focus().unsetLink().run();
-            else editor.chain().focus().setLink({ href: url }).run();
+            promptLink(editor);
           })}
           role="menuitem"
         >
@@ -176,6 +177,29 @@ export function EditorContextMenu({
         >
           Italic{kbd("Ctrl+I")}
         </ListItemButton>
+        {inTable && (
+          <>
+            <ListDivider />
+            <ListItemButton onClick={run(() => editor.chain().focus().addRowAfter().run())} role="menuitem">
+              Insert row below
+            </ListItemButton>
+            <ListItemButton onClick={run(() => editor.chain().focus().addColumnAfter().run())} role="menuitem">
+              Insert column right
+            </ListItemButton>
+            <ListItemButton onClick={run(() => editor.chain().focus().mergeOrSplit().run())} role="menuitem">
+              Merge / split cells
+            </ListItemButton>
+            <ListItemButton onClick={run(() => distributeColumns(editor))} role="menuitem">
+              Distribute columns
+            </ListItemButton>
+            <ListItemButton onClick={run(() => distributeRows(editor))} role="menuitem">
+              Distribute rows
+            </ListItemButton>
+            <ListItemButton onClick={run(() => openTableSettings())} role="menuitem">
+              Table settings…
+            </ListItemButton>
+          </>
+        )}
         <ListDivider />
         <ListItemButton
           disabled={!hasSelection}

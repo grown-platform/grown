@@ -45,13 +45,13 @@ const JC_IN: Record<string, Align> = {
   thaiDistribute: "justify",
 };
 
-const BORDER_IN: Record<string, BorderSpec["style"]> = {
+export const BORDER_IN: Record<string, BorderSpec["style"]> = {
   dashed: "dashed", dashSmallGap: "dashed", dotDash: "dashed", dotDotDash: "dashed", dashDotStroked: "dashed",
   dotted: "dotted", double: "double", triple: "double", doubleWave: "double",
   thinThickSmallGap: "double", thickThinSmallGap: "double", thinThickMediumGap: "double",
   thickThinMediumGap: "double", thinThickLargeGap: "double", thickThinLargeGap: "double",
 };
-const BORDER_OUT: Record<BorderSpec["style"], string> = {
+export const BORDER_OUT: Record<BorderSpec["style"], string> = {
   solid: "single", dashed: "dashed", dotted: "dotted", double: "double",
 };
 
