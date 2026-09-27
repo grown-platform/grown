@@ -2083,8 +2083,10 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   changes only forces tracking and blocks accept / reject (resolving
   transactions carry `reviewResolve`); filling forms only is the fill-in
   view. **Server**: `docs_documents.protection` (migration 0096),
-  `GET/PUT /api/v1/docs/d/{id}/protection` (the owner sets it; the
-  Protect dialog calls it), and the collab hub's new `ServeFunc` checks
+  `GET/PUT /api/v1/docs/d/{id}/protection` (reading needs read access
+  to the document, decided by `docsAccessFor` exactly as for the collab
+  WebSocket: org member, per-user grantee or share link; only the owner
+  sets it; the Protect dialog calls it), and the collab hub's new `ServeFunc` checks
   write access per message, so non-owners' updates are dropped while a
   document is read-only (a `ProtectionGate` caches the mode for 2 s).
   The other modes are enforced by every editor, not the server (the hub

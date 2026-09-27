@@ -1,13 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
-	"code.pick.haus/grown/grown/internal/auth"
 	"code.pick.haus/grown/grown/internal/docs"
 )
 
@@ -26,30 +26,35 @@ func docsProtectionID(path string) (string, bool) {
 	return id, true
 }
 
-// serveDocsProtection reads (GET, any org member) or sets (PUT, the owner
-// only) a document's protection mode (Docs M10). The editors enforce every
-// mode from the document itself; the server keeps the mode so the collab
-// hub can drop non-owners' writes to a read-only document.
-func serveDocsProtection(w http.ResponseWriter, r *http.Request, id string, repo *docs.Repository) {
+// docsProtectionStore is the slice of *docs.Repository the protection route
+// needs: the access lookups plus the stored mode.
+type docsProtectionStore interface {
+	docsDocLookup
+	GetProtection(ctx context.Context, id string) (string, error)
+	SetProtection(ctx context.Context, id, mode string) error
+}
+
+// serveDocsProtection reads (GET, anyone who may read the document) or sets
+// (PUT, the owner only) a document's protection mode (Docs M10). Read access
+// is decided by docsAccessFor, the same check as the collab WebSocket: an
+// org member of the document's org, a per-user grantee or a share-link
+// token. Callers without it get 404 (absent and forbidden look alike). The
+// editors enforce every mode from the document itself; the server keeps the
+// mode so the collab hub can drop non-owners' writes to a read-only document.
+func serveDocsProtection(w http.ResponseWriter, r *http.Request, id string, repo docsProtectionStore, grants docsRoleLookup) {
 	ctx := r.Context()
-	u, okU := auth.UserFromContext(ctx)
-	org, okO := auth.OrgFromContext(ctx)
-	if !okU || !okO {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	d, err := repo.Get(ctx, org.ID, id)
-	if errors.Is(err, docs.ErrNotFound) {
+	acc := docsAccessFor(r, id, repo, grants)
+	if !acc.Read {
 		http.Error(w, "document not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
 		mode, err := repo.GetProtection(ctx, id)
+		if errors.Is(err, docs.ErrNotFound) {
+			http.Error(w, "document not found", http.StatusNotFound)
+			return
+		}
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -57,7 +62,7 @@ func serveDocsProtection(w http.ResponseWriter, r *http.Request, id string, repo
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"mode": mode})
 	case http.MethodPut:
-		if d.OwnerID != u.ID {
+		if !acc.Owner {
 			http.Error(w, "only the owner can change protection", http.StatusForbidden)
 			return
 		}
@@ -68,7 +73,10 @@ func serveDocsProtection(w http.ResponseWriter, r *http.Request, id string, repo
 			http.Error(w, "invalid protection mode", http.StatusBadRequest)
 			return
 		}
-		if err := repo.SetProtection(ctx, id, body.Mode); err != nil {
+		if err := repo.SetProtection(ctx, id, body.Mode); errors.Is(err, docs.ErrNotFound) {
+			http.Error(w, "document not found", http.StatusNotFound)
+			return
+		} else if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
