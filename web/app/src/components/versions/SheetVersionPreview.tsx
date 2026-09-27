@@ -77,7 +77,9 @@ export function SheetVersionPreview({ data, older }: { data: string; older: stri
                     title={v?.f ? String(v.f) : undefined}
                     sx={{
                       ...cell,
+                      minWidth: 56,
                       maxWidth: 160,
+                      textAlign: typeof v?.v === "number" ? "right" : undefined,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       bgcolor: isChanged ? "#fff3bf" : (v?.bg ?? undefined),
