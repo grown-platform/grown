@@ -4,6 +4,7 @@
 // (<ReferenceDialogs editor/>) and opened from menus with
 // openReferenceDialog(kind), like ParagraphDialogs.
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   Box,
   Button,
@@ -67,8 +68,14 @@ export function ReferenceDialogs({ editor }: { editor: Editor | null }) {
     return () => window.removeEventListener(EVENT, on);
   }, [editor]);
   const close = () => {
-    setKind(null);
-    editor?.commands.focus();
+    // Unmount the modal now and focus the editor within the same event.
+    // An insert's own view.focus() runs while the modal's focus trap is
+    // still mounted: the trap takes focus back, so ProseMirror never
+    // writes its caret to the DOM, and TipTap's commands.focus() waits a
+    // frame. Keys typed in that frame went where the browser had parked
+    // its caret (the start of the document) and were lost.
+    flushSync(() => setKind(null));
+    if (editor && !editor.isDestroyed) editor.view.focus();
   };
   if (!editor || !kind) return null;
   return (

@@ -188,4 +188,30 @@ test.describe.serial("docs references", () => {
       for (const d of ids) await trashDoc(page.request, d);
     }
   });
+
+  // Regression: text typed straight after Insert in the cross-reference
+  // dialog was sometimes lost (the modal's focus trap left the DOM caret
+  // at the start of the document until TipTap's next-frame focus).
+  test("text typed right after a dialog insert lands after the reference", async ({ page }) => {
+    const id = await createDoc(page.request, "M8 crossref typing");
+    try {
+      await openDoc(page, id);
+      await editor(page).click();
+      await page.keyboard.press("Control+Alt+Digit2");
+      await page.keyboard.type("Scope");
+      await page.keyboard.press("Enter");
+      for (let i = 0; i < 6; i++) {
+        await page.keyboard.type(`Item ${i} “`);
+        await menu(page, "References", "ref-crossref");
+        await page.getByTestId("crossref-list").getByText("Scope", { exact: true }).click();
+        await page.getByTestId("crossref-insert").click();
+        await page.keyboard.type("”.");
+        await expect(editor(page).locator(":scope > p").last()).toHaveText(`Item ${i} “Scope”.`);
+        await page.keyboard.press("Enter");
+      }
+      await expect(editor(page).locator("h2")).toHaveText("Scope");
+    } finally {
+      await trashDoc(page.request, id);
+    }
+  });
 });

@@ -1605,6 +1605,23 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   3/10 and 2/10 failures with `--repeat-each 10`; after: 20/20 and 10/10
   on a production build (`__tests__/links.test.ts` reproduces the stale
   state in jsdom).
+- ~~`web/e2e/docs-references.spec.ts` lost the closing quote in
+  `See Figure 1 and “Scope”.` about 1 run in 5~~ — **fixed**. Not
+  autocorrect: the text typed straight after a References dialog's Insert
+  went to the wrong place. `insertCrossReference` calls `view.focus()`
+  while the Joy modal's focus trap is still mounted; the trap takes focus
+  back, so ProseMirror skips writing its caret to the DOM (it only does so
+  with focus), and the dialog's `close()` used TipTap's
+  `commands.focus()`, which waits an animation frame. Keys typed in that
+  frame went to wherever Chrome had parked the caret when the editor was
+  briefly focused: the start of the document, i.e. inside the referenced
+  heading next to its `_Ref` bookmark point, where the mutation was
+  dropped (logged: `characterData "”Scope"` on the h2). `close()` in
+  `ReferenceDialogs.tsx` now unmounts the modal with `flushSync` and calls
+  `view.focus()` in the same event. Before: 6/6 failures of the new
+  "text typed right after a dialog insert" e2e; after: 20/20
+  (`__tests__/reference-dialog-focus.test.tsx` checks focus and the DOM
+  caret synchronously after the click in jsdom).
 - Related: Grown's docs collab hub replays updates but never answers the
   y-protocol sync handshake, so `WebsocketProvider.synced` never becomes true.
   Nothing in the app reads it today. e2e waits for "connected" plus a short
