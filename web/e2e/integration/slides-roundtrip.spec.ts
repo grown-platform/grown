@@ -20,10 +20,9 @@ import {
 // - pptx (slides.md §6.12 "Gaps"): effects on groups are not written.
 // - ODP writer (docs/plans/onlyoffice-parity/slides.md §6.16 "More formats"):
 //   charts are written as pictures and groups are flattened.
-// - ODP reader (web/app/src/pages/slides/odp/read.ts header; added in
-//   c7d6e33 after §6.16's "there is no ODP import" was written): animations,
-//   tables and charts are not read (reported as warnings), groups flattened,
-//   no theme.
+// - ODP reader (slides.md §6.16 "Gaps"; web/app/src/pages/slides/odp/read.ts
+//   header): animations, tables and charts are not read (reported as
+//   warnings), groups flattened, no theme.
 // - PDF (slides.md §6.16 "Gaps"): a picture per page under a text layer;
 //   there is no PDF import into Slides.
 

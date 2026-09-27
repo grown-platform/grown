@@ -2175,7 +2175,8 @@ pptx has its round-trip suite (M1–M11) and ODP its writer tests.
   - list markers are literal text, not `text:list`;
   - gradients keep only two stops;
   - crop and word-art effects are dropped;
-  - there is no ODP import.
+  - ODP import (`odp/read.ts`) flattens groups and drops tables,
+    animations, charts and embedded objects (with a warning).
 - The print window prints what the preview shows. Browser print settings
   (margins, scale) can still shrink it.
 - "Convert to video" is out of scope (declined in the plan).
