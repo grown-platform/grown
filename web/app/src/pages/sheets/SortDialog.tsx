@@ -119,7 +119,7 @@ export function SortDialog({
               setRangeText(e.target.value);
               setError("");
             }}
-            slotProps={{ input: { "aria-label": "Sort range" } }}
+            slotProps={{ input: { "aria-label": "Range to sort" } }}
           />
           {error && <FormHelperText>{error}</FormHelperText>}
         </FormControl>

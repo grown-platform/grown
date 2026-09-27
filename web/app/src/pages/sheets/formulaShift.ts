@@ -782,20 +782,21 @@ export function applyStructureOp(sheets: any[], op: StructureOp): any[] {
 export function structureFormulaEdits(
   before: any[],
   op: StructureOp,
-): { sheetId: string; r: number; c: number; f: string }[] {
+  opts: { includeUnchanged?: boolean } = {},
+): { sheetId: string; r: number; c: number; f: string; cell: any }[] {
   const res = resolveOp(before, op);
   if (!res) return [];
   const { op: o, target } = res;
-  const edits: { sheetId: string; r: number; c: number; f: string }[] = [];
+  const edits: { sheetId: string; r: number; c: number; f: string; cell: any }[] = [];
   before.forEach((sheet, i) => {
     const host = String(sheet?.name ?? "");
     forEachCell(sheet, (r, c, cell) => {
       if (!cell || !isFormula(cell.f)) return;
       const f = shiftFormula(cell.f, host, o);
-      if (f === cell.f) return;
+      if (f === cell.f && !opts.includeUnchanged) return;
       const p = i === target ? mapCell(r, c, o) : [r, c];
       if (!p) return;
-      edits.push({ sheetId: sheet.id, r: p[0], c: p[1], f });
+      edits.push({ sheetId: sheet.id, r: p[0], c: p[1], f, cell });
     });
   });
   return edits;

@@ -29,7 +29,7 @@ import {
   translateFormula,
   type StructureOp,
 } from "./formulaShift";
-import { pasteSpecial, pastedSize, tileCount, type CopiedBlock, type PasteSpecialOptions } from "./pasteSpecial";
+import { pasteSpecial, type CopiedBlock, type PasteSpecialOptions } from "./pasteSpecial";
 import { patchSheet, setSheetCF, setSheetDV } from "./sheetDataTools";
 import { detectHeader, sortBlock, type SortOptions } from "./sortOps";
 import { changeCase, changeRunsCase, type TextCase } from "./textCase";
@@ -130,14 +130,23 @@ export function afterDragFill(wb: Wb): boolean {
   lastDrop = apply;
   const copy = dropCellCache.copyRange as any;
   const dir = dropCellCache.direction as FillDirection | null;
-  if (!apply?.row || !copy?.row || !dir) return false;
+  if (!copy?.row || !dir) return false;
+  // FortuneSheet builds applyRange inside an immer draft: the axis it did not
+  // change still points at the (now revoked) draft array, so only the moved
+  // axis is read from it; the other comes from copyRange (a deep clone).
+  const vertical = dir === "down" || dir === "up";
+  let moved: [number, number];
+  try {
+    const a = vertical ? apply.row : apply.column;
+    moved = [Number(a[0]), Number(a[1])];
+  } catch {
+    return false;
+  }
+  if (!moved.every(Number.isFinite)) return false;
   const src: CellRect = { r1: copy.row[0], r2: copy.row[1], c1: copy.column[0], c2: copy.column[1] };
-  const dest: CellRect = {
-    r1: Math.min(src.r1, apply.row[0]),
-    r2: Math.max(src.r2, apply.row[1]),
-    c1: Math.min(src.c1, apply.column[0]),
-    c2: Math.max(src.c2, apply.column[1]),
-  };
+  const dest: CellRect = vertical
+    ? { ...src, r1: Math.min(src.r1, moved[0]), r2: Math.max(src.r2, moved[1]) }
+    : { ...src, c1: Math.min(src.c1, moved[0]), c2: Math.max(src.c2, moved[1]) };
   const writes = autofillRange(cellGetter(wb), src, dest, dir, { translate: translateFormula });
   writeCells(wb, writes);
   return true;
@@ -199,15 +208,8 @@ export function pasteSpecialHere(wb: Wb, opts: Omit<PasteSpecialOptions, "transl
   const full = { ...opts, target, translate: translateFormula };
   const writes = pasteSpecial(copied, sel.r1, sel.c1, cellGetter(wb), full);
   writeCells(wb, writes);
-  const size = pastedSize(copied, opts.transpose);
-  const tiles = tileCount(copied, full);
-  try {
-    wb.setSelection?.([
-      { row: [sel.r1, sel.r1 + size.rows * tiles.down - 1], column: [sel.c1, sel.c1 + size.cols * tiles.across - 1] },
-    ]);
-  } catch {
-    /* keep the old selection */
-  }
+  // The selection is left alone: FortuneSheet's setSelection normalises the
+  // range objects in place, and React may replay the update on frozen state.
   return true;
 }
 
@@ -256,30 +258,20 @@ export function fixUpAfterStructure(wb: Wb, before: any[], op: StructureOp): voi
   let edits: ReturnType<typeof structureFormulaEdits> = [];
   let patches: ReturnType<typeof structureModelPatches> = [];
   try {
-    edits = structureFormulaEdits(before, op);
+    // Every formula is rewritten from its pre-op text: FortuneSheet may have
+    // shifted some of them (wrongly, on other sheets) and not others.
+    edits = structureFormulaEdits(before, op, { includeUnchanged: true });
     patches = structureModelPatches(before, op);
   } catch {
     return;
   }
-  const after = sheetsSnapshot(wb);
-  const bySheet = new Map<string, { r: number; c: number; cell: any }[]>();
-  for (const e of edits) {
-    const sheet = after.find((s) => s?.id === e.sheetId);
-    const cur = sheet?.data?.[e.r]?.[e.c];
-    if (!cur || cur.f === e.f) continue;
-    // Keep the cached value: the formula text changed, not what it computes
-    // (a #REF! result arrives with the next recalc).
-    const list = bySheet.get(e.sheetId) ?? [];
-    list.push({ r: e.r, c: e.c, cell: { ...cur, f: e.f } });
-    bySheet.set(e.sheetId, list);
-  }
-  const calls: any[] = [];
-  for (const [sheetId, list] of bySheet) {
-    for (const w of list) {
-      const { f, v, m, ct } = w.cell;
-      calls.push({ name: "setCellValue", args: [w.r, w.c, { f, v: v ?? "", m: m ?? "", ct }, null, { id: sheetId }] });
-    }
-  }
+  // Queued after FortuneSheet's own update, so the positions are post-op ones.
+  // The cached value is kept: the formula text changed, not what it computes
+  // (a #REF! result arrives with the next recalc).
+  const calls = edits.map((e) => {
+    const { v, m, ct } = e.cell ?? {};
+    return { name: "setCellValue", args: [e.r, e.c, { f: e.f, v: v ?? "", m: m ?? "", ct }, null, { id: e.sheetId }] };
+  });
   if (calls.length) wb.batchCallApis?.(calls);
   for (const p of patches) {
     // CF and validation also refresh FortuneSheet's derived per-cell fields.
@@ -359,17 +351,6 @@ export function moveSelection(wb: Wb, axis: "row" | "col", delta: -1 | 1): boole
   // Moving down by one = moving the block to start two past its end (pre-move coordinates).
   const to = delta < 0 ? a - 1 : b + 2;
   const ok = applyWholeSheetOp(wb, { kind: "move", axis, sheet: sheetName(wb), index: a, count, to });
-  if (ok) {
-    const range =
-      axis === "row"
-        ? { row: [a + delta, b + delta], column: [sel.c1, sel.c2] }
-        : { row: [sel.r1, sel.r2], column: [a + delta, b + delta] };
-    try {
-      wb.setSelection?.([range]);
-    } catch {
-      /* ignore */
-    }
-  }
   return ok;
 }
 

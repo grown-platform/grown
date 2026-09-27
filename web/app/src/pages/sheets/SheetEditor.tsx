@@ -426,8 +426,9 @@ export function SheetEditor({ user }: SheetEditorProps) {
       window.setTimeout(() => {
         try {
           if (ref.current) afterDragFill(ref.current);
-        } catch {
-          /* keep FortuneSheet's own fill */
+        } catch (err) {
+          // FortuneSheet's own fill stays.
+          console.warn("autofill failed", err);
         }
       }, 0);
     document.addEventListener("keydown", onKey, true);

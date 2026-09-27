@@ -195,7 +195,7 @@ describe("structureFormulaEdits / structureModelPatches", () => {
   const op: StructureOp = { kind: "insert", axis: "row", sheet: "Sheet1", index: 2, count: 3 };
 
   it("lists changed formulas at post-op positions", () => {
-    expect(structureFormulaEdits(before, op)).toEqual([
+    expect(structureFormulaEdits(before, op).map(({ cell: _cell, ...e }) => e)).toEqual([
       { sheetId: "s1", r: 0, c: 0, f: "=B8" },
       { sheetId: "s2", r: 0, c: 0, f: "=Sheet1!A13" },
     ]);
@@ -215,6 +215,12 @@ describe("structureFormulaEdits / structureModelPatches", () => {
 
   it("uses the pre-op position to find a moved formula cell", () => {
     const edits = structureFormulaEdits(before, { kind: "delete", axis: "row", sheet: "Sheet1", index: 1, count: 1 });
-    expect(edits).toContainEqual({ sheetId: "s1", r: 8, c: 0, f: "=SUM(A1:A1)" });
+    expect(edits.map(({ cell: _cell, ...e }) => e)).toContainEqual({ sheetId: "s1", r: 8, c: 0, f: "=SUM(A1:A1)" });
+  });
+
+  it("can list unchanged formulas too, with their pre-op cell", () => {
+    const all = structureFormulaEdits(before, op, { includeUnchanged: true });
+    expect(all.length).toBeGreaterThan(structureFormulaEdits(before, op).length);
+    expect(all.find((e) => e.sheetId === "s2" && e.r === 1)).toMatchObject({ f: "=A10", cell: { f: "=A10" } });
   });
 });
