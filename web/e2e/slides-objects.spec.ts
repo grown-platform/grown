@@ -82,13 +82,7 @@ test("chart, process diagram and word art: insert, edit, persist", async ({ page
     await insertMenu(page, "Chart…");
     const chartDlg = page.getByRole("dialog", { name: "Chart" });
     await expect(chartDlg.getByTestId("chart-grid")).toBeVisible();
-    // oo:slide/shortcuts/shortcuts.js#Check select all in chart title (grown-variant):
-    // the title is edited in the chart dialog; Ctrl+A there selects all of it.
-    const title = chartDlg.getByLabel("Chart title");
-    await title.fill("Diagram Title");
-    await title.press("ControlOrMeta+a");
-    expect(await title.evaluate((n: HTMLInputElement) => n.value.slice(n.selectionStart ?? 0, n.selectionEnd ?? 0))).toBe("Diagram Title");
-    await title.fill("Quarterly sales");
+    await chartDlg.getByLabel("Chart title").fill("Quarterly sales");
     await chartDlg.getByLabel("Cell 2,2").fill("6.2");
     await chartDlg.getByLabel("Cell 1,4").fill("West");
     await chartDlg.getByRole("button", { name: "Insert", exact: true }).click();
@@ -204,6 +198,31 @@ test("chart, process diagram and word art: insert, edit, persist", async ({ page
     await expect(thumb.locator('svg[data-chart-type="column"]')).toBeVisible();
     await expect(thumb.locator('[data-warp="textArchUp"]')).toBeVisible();
     if (SHOT) await page.getByTestId("slide-canvas").screenshot({ path: SHOT });
+  } finally {
+    await trashDeck(page.request, id);
+  }
+});
+
+// Grown variant: a chart title is edited in the chart dialog's title field
+// (there is no in-place title editing on the canvas); Ctrl+A there selects
+// the whole title, as OnlyOffice selects "Diagram Title".
+test("oo:slide/shortcuts/shortcuts.js#Check select all in chart title (grown-variant)", async ({ page }) => {
+  const id = await createDeck(page.request, "e2e slides chart title");
+  try {
+    await saveDeckData(page.request, id, { slides: [{ id: "s1", background: "#ffffff", elements: [] }] });
+    await page.goto(`${BASE_URL}/slides/d/${id}`);
+    await expect(page.getByTestId("slide-canvas")).toBeVisible();
+    await insertMenu(page, "Chart…");
+    const title = page.getByRole("dialog", { name: "Chart" }).getByLabel("Chart title");
+    await title.fill("Diagram Title");
+    await title.press("ArrowLeft");
+    await title.press("ControlOrMeta+a");
+    expect(await title.evaluate((n: HTMLInputElement) => n.value.slice(n.selectionStart ?? 0, n.selectionEnd ?? 0))).toBe("Diagram Title");
+    // Typing replaces the whole selected title.
+    await page.keyboard.type("Sales");
+    await expect(title).toHaveValue("Sales");
+    await page.getByRole("dialog", { name: "Chart" }).getByRole("button", { name: "Insert", exact: true }).click();
+    await expect(page.locator('[data-el-type="chart"]').getByText("Sales", { exact: true })).toBeVisible();
   } finally {
     await trashDeck(page.request, id);
   }
