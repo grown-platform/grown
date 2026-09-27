@@ -89,15 +89,36 @@ import {
   Stamp,
   MessageSquare,
   Search,
+  ListChecks,
+  RectangleHorizontal,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import { PDFDocument, rgb, StandardFonts, degrees, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, PDFHexString, rgb, StandardFonts, degrees, type PDFField, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { Card, LoadingSpinner } from "tibui";
 import { apiClient } from "@/utils/apiClient";
 import { SignatureDialog, type SigResult } from "@/features/editor/components/SignatureDialog";
+import { FieldButtonProps, FieldCalcProps, FieldFormatProps } from "@/features/editor/components/FieldActionProps";
+import {
+  calculationOrder,
+  fieldKey,
+  formatValue,
+  keystrokeAccepts,
+  normalizeInput,
+  parseFormatScript,
+  runCalculations,
+  type CalcFieldType,
+  type FieldFormat,
+} from "@/features/editor/forms/formCalc";
+import {
+  importAcroForm,
+  writeButtonAction,
+  writeCalcOrder,
+  writeFieldActions,
+  type PdfFieldModel,
+} from "@/features/editor/forms/formPdf";
 import { saveDraft, loadDraft, clearDraft, type EditorDraft } from "@/features/editor/draftDb";
 // Self-host the pdf.js worker so the editor works offline / in CI (no CDN).
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -244,6 +265,9 @@ type Tool =
   | "field-check"
   | "field-radio"
   | "field-dropdown"
+  // CC3 — list box (single/multi-select) + push button fields.
+  | "field-listbox"
+  | "field-button"
   // Wave 4b — signing / Fill & Sign. signature/initials drop a remembered PNG
   // as an image annotation; date drops a text annotation; stamp-* drop small
   // vector marks (reusing the ink/line/ellipse annotation + export paths).
@@ -360,22 +384,14 @@ interface PolyAnnotation {
 // undo all reuse the existing infra. `value` is boolean for checkboxes,
 // string for text/dropdown/radio (the selected option). `options` drives the
 // choices for dropdown + radio; `groupName` is a radio group's export name.
-type FieldType = "text" | "checkbox" | "radio" | "dropdown";
-interface FieldAnnotation {
+// CC3 adds listbox (`selected`, `multiSelect`) + push button (`label`,
+// `buttonAction`), raw field `actions` (/AA C/F/K/V JavaScript, evaluated only
+// through the safe formCalc interpreter), `calcOrder` (/AcroForm /CO position)
+// and `hidden`/`readOnly` flags — see forms/formPdf.ts PdfFieldModel.
+type FieldType = CalcFieldType;
+interface FieldAnnotation extends PdfFieldModel {
   id: string;
   type: "field";
-  page: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  fieldType: FieldType;
-  name: string;
-  value: string | boolean;
-  options?: string[];
-  groupName?: string;
-  required?: boolean;
-  fontSize?: number;
 }
 // ---- Sticky-note comment (Wave 5c) -----------------------------------------
 // A comment marker anchored at a normalized point (x,y = the marker's top-left).
@@ -441,6 +457,20 @@ const lineArrowMode = (a: LineAnnotation): ArrowMode => {
 const isPoly = (a: Annotation): a is PolyAnnotation => a.type === "poly";
 const isField = (a: Annotation): a is FieldAnnotation => a.type === "field";
 const isNote = (a: Annotation): a is NoteAnnotation => a.type === "note";
+// CC3 — a text field's display format (from its /AA /F, else /K script).
+const fieldFormat = (f: FieldAnnotation): FieldFormat | null =>
+  f.fieldType === "text" ? (parseFormatScript(f.actions?.F) ?? parseFormatScript(f.actions?.K)) : null;
+// CC3 — run every calculate action (in /CO order) over the field annotations
+// after `source` committed a value (null = recalc all). Non-field annotations
+// and untouched fields keep their identity.
+function recalcAnnotations(prev: Annotation[], source: string | null): Annotation[] {
+  const fields = prev.filter(isField);
+  if (!fields.some((f) => f.actions?.C)) return prev;
+  const next = runCalculations(fields, source);
+  if (next === fields) return prev;
+  const byId = new Map(fields.map((f, i) => [f.id, next[i]]));
+  return prev.map((a) => (isField(a) ? (byId.get(a.id) ?? a) : a));
+}
 const isStamp = (a: Annotation): a is StampAnnotation => a.type === "stamp";
 
 // Wave 7 — rotation. Only rectangular annotations rotate (box shapes, image,
@@ -642,7 +672,7 @@ const POLY_TOOLS: Tool[] = ["polygon", "polyline"];
 const isPolyTool = (t: Tool): boolean => POLY_TOOLS.includes(t);
 const DEFAULT_RX = 12; // default rounded-rect corner radius (pt)
 const DASH_PT: [number, number] = [6, 4]; // dashed-stroke pattern (pt)
-const FIELD_TOOLS: Tool[] = ["field-text", "field-check", "field-radio", "field-dropdown"];
+const FIELD_TOOLS: Tool[] = ["field-text", "field-check", "field-radio", "field-dropdown", "field-listbox", "field-button"];
 const isFieldTool = (t: Tool): boolean => FIELD_TOOLS.includes(t);
 // Wave 4b: click-to-place tools (signature/initials/date + quick stamps). A
 // single click on the page drops the mark, so they resolve in the overlay
@@ -658,6 +688,8 @@ const FIELD_TOOL_TYPE: Record<string, FieldType> = {
   "field-check": "checkbox",
   "field-radio": "radio",
   "field-dropdown": "dropdown",
+  "field-listbox": "listbox",
+  "field-button": "button",
 };
 // Default normalized field size for a click-placed field. Checkbox/radio need a
 // square-ish box, so height is derived from width via the page aspect (the px
@@ -671,6 +703,12 @@ function defaultFieldRect(ft: FieldType, x: number, y: number, pageAspect: numbe
   } else if (ft === "radio") {
     width = 0.28;
     height = 0.09; // ~2 stacked options
+  } else if (ft === "listbox") {
+    width = 0.28;
+    height = 0.1; // ~3 visible rows
+  } else if (ft === "button") {
+    width = 0.16;
+    height = 0.04;
   } else {
     width = 0.28;
     height = 0.035;
@@ -1252,6 +1290,16 @@ export function EditorPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // CC3 — transient form message (button submit/reset, format mismatch, import).
+  const [formMessage, setFormMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!formMessage) return;
+    const t = window.setTimeout(() => setFormMessage(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [formMessage]);
+  // CC3 — the text field currently being typed in shows its raw value; every
+  // other formatted field shows its AF*_Format display text.
+  const [focusedFieldId, setFocusedFieldId] = useState<string | null>(null);
   // Wave 6c — brief confirmation that an embedded editable layer was restored on
   // load. Cleared whenever a fresh doc is opened/created/closed.
   const [restoreNotice, setRestoreNotice] = useState(false);
@@ -1666,8 +1714,23 @@ export function EditorPage() {
         setRestoreNotice(true);
       } else {
         setDocName(name);
-        setAnnotations([]);
         setRestoreNotice(false);
+        // CC3 — an existing AcroForm becomes editable editor fields (with their
+        // calculate/format actions and /CO order); the base bytes drop those
+        // fields so export doesn't duplicate them. Any failure → plain load.
+        let imported: Awaited<ReturnType<typeof importAcroForm>> = null;
+        try {
+          imported = await importAcroForm(bytes);
+        } catch {
+          imported = null;
+        }
+        if (imported) {
+          setPdfBytes(imported.bytes);
+          setAnnotations(imported.fields.map((f) => ({ ...f, id: uid(), type: "field" as const })));
+          setFormMessage(`Imported ${imported.fields.length} form field${imported.fields.length === 1 ? "" : "s"} as editable fields.`);
+        } else {
+          setAnnotations([]);
+        }
       }
       undoStack.current = [];
       redoStack.current = [];
@@ -2024,6 +2087,15 @@ export function EditorPage() {
       fontSize: 12,
     };
     if (ft === "dropdown") base.options = ["Option 1", "Option 2"];
+    if (ft === "listbox") {
+      base.options = ["Option 1", "Option 2", "Option 3"];
+      base.selected = [];
+    }
+    if (ft === "button") {
+      base.value = "";
+      base.label = "Reset";
+      base.buttonAction = { kind: "reset" };
+    }
     if (ft === "radio") {
       base.options = ["Option 1", "Option 2"];
       base.groupName = `radio_${n}`;
@@ -2034,6 +2106,65 @@ export function EditorPage() {
   // on a field that isn't the single selection).
   const setFieldValue = (id: string, patch: Partial<FieldAnnotation>) => {
     setAnnotations((prev) => prev.map((a) => (a.id === id && isField(a) ? { ...a, ...patch } : a)));
+  };
+  // CC3 — commit a filled value, then run calculations with this field as the
+  // source (its own value is never overwritten by the recalc it triggers).
+  const commitFieldValue = (id: string, patch: Partial<FieldAnnotation>) => {
+    setAnnotations((prev) => {
+      let source: string | null = null;
+      const next = prev.map((a) => {
+        if (a.id !== id || !isField(a)) return a;
+        const u = { ...a, ...patch };
+        source = fieldKey(u);
+        return u;
+      });
+      return source === null ? prev : recalcAnnotations(next, source);
+    });
+  };
+  // Text fields commit on blur/Enter: keystroke-normalise (AF*_Keystroke with
+  // willCommit), flag values that don't match the format, then recalc.
+  const commitTextField = (id: string) => {
+    const f = annotationsRef.current.find((a) => a.id === id);
+    if (!f || !isField(f) || f.fieldType !== "text") return;
+    const raw = typeof f.value === "string" ? f.value : "";
+    const { value, valid } = normalizeInput(fieldFormat(f), raw);
+    if (!valid) setFormMessage(`"${raw}" doesn't match the format of field "${f.name}".`);
+    commitFieldValue(id, { value: valid ? value : raw });
+  };
+  // Recalculate everything (after editing a calculate script / order).
+  const recalcAll = () => setAnnotations((prev) => recalcAnnotations(prev, null));
+  // Push-button actions (CC3): reset form, show/hide/toggle target fields;
+  // submitting is deliberately disabled (message only).
+  const runButtonAction = (btn: FieldAnnotation) => {
+    const act = btn.buttonAction ?? { kind: "none" };
+    if (act.kind === "none") return;
+    if (act.kind === "submit") {
+      setFormMessage("Submitting forms is disabled in Grown — download the PDF instead.");
+      return;
+    }
+    snapshot();
+    if (act.kind === "reset") {
+      setAnnotations((prev) =>
+        recalcAnnotations(
+          prev.map((a) =>
+            isField(a) && a.fieldType !== "button"
+              ? { ...a, value: a.fieldType === "checkbox" ? false : "", ...(a.fieldType === "listbox" ? { selected: [] } : {}) }
+              : a,
+          ),
+          null,
+        ),
+      );
+      setFormMessage("Form reset.");
+      return;
+    }
+    const targets = new Set(act.targets);
+    setAnnotations((prev) =>
+      prev.map((a) => {
+        if (!isField(a) || !(targets.has(a.name) || (a.groupName && targets.has(a.groupName)))) return a;
+        const hidden = act.kind === "hide" ? true : act.kind === "show" ? false : !a.hidden;
+        return { ...a, hidden: hidden || undefined };
+      }),
+    );
   };
 
   // ---- Eraser (Wave 5a) -----------------------------------------------------
@@ -3771,6 +3902,16 @@ export function EditorPage() {
       // Original groupName → created PDFRadioGroup, so annotations that share a
       // groupName add their options to the same group.
       const radioGroups = new Map<string, ReturnType<typeof form.createRadioGroup>>();
+      // CC3 — created field per annotation id (for /AA actions + /CO order),
+      // and fields to drop before flattening (hidden ones must not bake in).
+      const created = new Map<string, PDFField>();
+      const hiddenFields = new Set<PDFField>();
+      const track = (f: FieldAnnotation, pf: PDFField) => {
+        created.set(f.id, pf);
+        if (f.readOnly) pf.enableReadOnly();
+        if (f.hidden) hiddenFields.add(pf);
+        writeFieldActions(pf, f.actions);
+      };
       for (const f of fieldAnns) {
         const page = docPages[f.page - 1];
         if (!page) continue;
@@ -3783,16 +3924,43 @@ export function EditorPage() {
         try {
           if (f.fieldType === "text") {
             const tf = form.createTextField(uniqueName(f.name));
-            if (typeof f.value === "string" && f.value) tf.setText(f.value);
+            const raw = typeof f.value === "string" ? f.value : "";
+            // CC3 — the appearance shows the AF*_Format display text (so a
+            // flattened export bakes "$1,234.50"), while /V keeps the raw value.
+            const disp = formatValue(fieldFormat(f), raw);
+            const shownText = disp ? disp.text : raw;
+            if (shownText) tf.setText(shownText);
             if (f.required) tf.enableRequired();
             tf.setFontSize(size);
-            tf.addToPage(page, { x, y, width: w, height: h, font: formFont, borderWidth: 1 });
+            tf.addToPage(page, { x, y, width: w, height: h, font: formFont, borderWidth: 1, hidden: f.hidden });
+            if (shownText !== raw) {
+              tf.updateAppearances(formFont);
+              tf.acroField.setValue(PDFHexString.fromText(raw));
+            }
+            track(f, tf);
           } else if (f.fieldType === "checkbox") {
             const cb = form.createCheckBox(uniqueName(f.name));
             if (f.required) cb.enableRequired();
-            cb.addToPage(page, { x, y, width: w, height: h });
+            cb.addToPage(page, { x, y, width: w, height: h, hidden: f.hidden });
             if (f.value === true) cb.check();
             else cb.uncheck();
+            track(f, cb);
+          } else if (f.fieldType === "listbox") {
+            const lb = form.createOptionList(uniqueName(f.name));
+            const opts = (f.options ?? []).filter(Boolean);
+            if (opts.length) lb.addOptions(opts);
+            if (f.multiSelect) lb.enableMultiselect();
+            if (f.required) lb.enableRequired();
+            const sel = (f.selected ?? []).filter((o) => opts.includes(o));
+            if (sel.length) lb.select(f.multiSelect ? sel : sel.slice(0, 1));
+            lb.setFontSize(size);
+            lb.addToPage(page, { x, y, width: w, height: h, font: formFont, hidden: f.hidden });
+            track(f, lb);
+          } else if (f.fieldType === "button") {
+            const btn = form.createButton(uniqueName(f.name));
+            btn.addToPage(f.label || f.name, page, { x, y, width: w, height: h, font: formFont, hidden: f.hidden });
+            writeButtonAction(btn, f.buttonAction);
+            track(f, btn);
           } else if (f.fieldType === "dropdown") {
             const dd = form.createDropdown(uniqueName(f.name));
             const opts = (f.options ?? []).filter(Boolean);
@@ -3800,7 +3968,8 @@ export function EditorPage() {
             if (f.required) dd.enableRequired();
             if (typeof f.value === "string" && f.value && opts.includes(f.value)) dd.select(f.value);
             dd.setFontSize(size);
-            dd.addToPage(page, { x, y, width: w, height: h, font: formFont });
+            dd.addToPage(page, { x, y, width: w, height: h, font: formFont, hidden: f.hidden });
+            track(f, dd);
           } else if (f.fieldType === "radio") {
             const key = f.groupName || f.name || "radio";
             let rg = radioGroups.get(key);
@@ -3815,7 +3984,7 @@ export function EditorPage() {
             opts.forEach((opt, i) => {
               // Stack options top-to-bottom within the field box.
               const oy = y + (n - 1 - i) * rowH;
-              rg!.addOptionToPage(opt, page, { x, y: oy, width: Math.min(rowH, w), height: rowH });
+              rg!.addOptionToPage(opt, page, { x, y: oy, width: Math.min(rowH, w), height: rowH, hidden: f.hidden });
             });
             if (typeof f.value === "string" && f.value && opts.includes(f.value)) rg.select(f.value);
           }
@@ -3823,7 +3992,25 @@ export function EditorPage() {
           // Skip a single malformed field rather than failing the whole export.
         }
       }
-      if (flattenForms) form.flatten();
+      // CC3 — document calculation order (/AcroForm /CO) for live forms.
+      if (!flattenForms) {
+        writeCalcOrder(
+          form,
+          calculationOrder(fieldAnns)
+            .map((f) => created.get(f.id))
+            .filter((pf): pf is PDFField => !!pf),
+        );
+      } else {
+        // Hidden fields don't print/show, so they must not bake into content.
+        for (const pf of hiddenFields) {
+          try {
+            form.removeField(pf);
+          } catch {
+            /* ignore */
+          }
+        }
+        form.flatten();
+      }
     }
 
     // ---- Document metadata (Wave 6b) ---------------------------------------
@@ -4403,6 +4590,8 @@ export function EditorPage() {
     { t: "field-check", icon: CheckSquare, label: "Checkbox" },
     { t: "field-radio", icon: CircleDot, label: "Radio" },
     { t: "field-dropdown", icon: ChevronDownSquare, label: "Dropdown" },
+    { t: "field-listbox", icon: ListChecks, label: "List box" },
+    { t: "field-button", icon: RectangleHorizontal, label: "Button" },
   ];
   // Playwright hooks map each Tool to a stable `tool-<name>` testid.
   const toolTestId: Record<Tool, string> = {
@@ -4427,6 +4616,8 @@ export function EditorPage() {
     "field-check": "tool-field-check",
     "field-radio": "tool-field-radio",
     "field-dropdown": "tool-field-dropdown",
+    "field-listbox": "tool-field-listbox",
+    "field-button": "tool-field-button",
     signature: "tool-signature",
     initials: "tool-initials",
     date: "tool-date",
@@ -5237,50 +5428,131 @@ export function EditorPage() {
                       <input data-testid="field-group" value={selected.groupName ?? ""} onChange={(e) => updateSelected({ groupName: e.target.value })} className="w-full border rounded px-2 py-1 mt-0.5 text-sm" />
                     </label>
                   )}
-                  {(selected.fieldType === "dropdown" || selected.fieldType === "radio") && (
+                  {(selected.fieldType === "dropdown" || selected.fieldType === "radio" || selected.fieldType === "listbox") && (
                     <label className="block">
                       <span className="text-xs text-gray-600">Options (comma or newline)</span>
                       <textarea
                         data-testid="field-options"
                         rows={2}
                         value={(selected.options ?? []).join(", ")}
-                        onChange={(e) => updateSelected({ options: parseOptions(e.target.value) })}
+                        onChange={(e) => {
+                          const options = parseOptions(e.target.value);
+                          updateSelected(
+                            selected.fieldType === "listbox" ? { options, selected: (selected.selected ?? []).filter((o) => options.includes(o)) } : { options },
+                          );
+                        }}
                         className="w-full border rounded px-2 py-1 mt-0.5 text-sm"
                       />
                     </label>
                   )}
-                  <div>
-                    <span className="text-xs text-gray-600">Default value</span>
-                    {selected.fieldType === "checkbox" ? (
-                      <label className="flex items-center gap-2 mt-1 text-sm">
-                        <input data-testid="field-value" type="checkbox" checked={selected.value === true} onChange={(e) => { snapshot(); updateSelected({ value: e.target.checked }); }} />
-                        Checked by default
-                      </label>
-                    ) : selected.fieldType === "dropdown" || selected.fieldType === "radio" ? (
-                      <select
-                        data-testid="field-value"
-                        value={typeof selected.value === "string" ? selected.value : ""}
-                        onChange={(e) => { snapshot(); updateSelected({ value: e.target.value }); }}
-                        className="w-full border rounded px-2 py-1 mt-0.5 text-sm"
-                      >
-                        <option value=""></option>
-                        {(selected.options ?? []).map((opt, i) => (
-                          <option key={i} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    ) : (
+                  {selected.fieldType === "listbox" && (
+                    <label className="flex items-center gap-2 text-sm">
                       <input
-                        data-testid="field-value"
-                        value={typeof selected.value === "string" ? selected.value : ""}
-                        onChange={(e) => updateSelected({ value: e.target.value })}
-                        className="w-full border rounded px-2 py-1 mt-0.5 text-sm"
+                        data-testid="field-multiselect"
+                        type="checkbox"
+                        checked={selected.multiSelect === true}
+                        onChange={(e) => {
+                          snapshot();
+                          const multi = e.target.checked;
+                          updateSelected({ multiSelect: multi || undefined, selected: multi ? selected.selected : (selected.selected ?? []).slice(0, 1) });
+                        }}
                       />
+                      Allow multiple selection
+                    </label>
+                  )}
+                  {selected.fieldType === "button" ? (
+                    <FieldButtonProps
+                      key={selected.id}
+                      field={selected}
+                      fieldNames={annotations.filter(isField).filter((f) => f.id !== selected.id).map((f) => fieldKey(f))}
+                      onChange={(patch) => updateSelected(patch)}
+                      fillSign={fillSign}
+                    />
+                  ) : (
+                    <div>
+                      <span className="text-xs text-gray-600">Default value</span>
+                      {selected.fieldType === "checkbox" ? (
+                        <label className="flex items-center gap-2 mt-1 text-sm">
+                          <input data-testid="field-value" type="checkbox" checked={selected.value === true} onChange={(e) => { snapshot(); commitFieldValue(selected.id, { value: e.target.checked }); }} />
+                          Checked by default
+                        </label>
+                      ) : selected.fieldType === "listbox" ? (
+                        <select
+                          data-testid="field-value"
+                          multiple
+                          size={Math.min(4, Math.max(2, (selected.options ?? []).length))}
+                          value={selected.multiSelect ? (selected.selected ?? []) : (selected.selected ?? []).slice(0, 1)}
+                          onChange={(e) => {
+                            snapshot();
+                            let picked = Array.from(e.target.selectedOptions).map((o) => o.value);
+                            if (!selected.multiSelect) picked = picked.slice(-1);
+                            commitFieldValue(selected.id, { selected: picked });
+                          }}
+                          className="w-full border rounded px-2 py-1 mt-0.5 text-sm"
+                        >
+                          {(selected.options ?? []).map((opt, i) => (
+                            <option key={i} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : selected.fieldType === "dropdown" || selected.fieldType === "radio" ? (
+                        <select
+                          data-testid="field-value"
+                          value={typeof selected.value === "string" ? selected.value : ""}
+                          onChange={(e) => { snapshot(); commitFieldValue(selected.id, { value: e.target.value }); }}
+                          className="w-full border rounded px-2 py-1 mt-0.5 text-sm"
+                        >
+                          <option value=""></option>
+                          {(selected.options ?? []).map((opt, i) => (
+                            <option key={i} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          data-testid="field-value"
+                          value={typeof selected.value === "string" ? selected.value : ""}
+                          onChange={(e) => updateSelected({ value: e.target.value })}
+                          onBlur={() => commitTextField(selected.id)}
+                          className="w-full border rounded px-2 py-1 mt-0.5 text-sm"
+                        />
+                      )}
+                    </div>
+                  )}
+                  {selected.fieldType === "text" && (
+                    <>
+                      <FieldFormatProps
+                        field={selected}
+                        onChange={(actions) => updateSelected({ actions })}
+                      />
+                      <FieldCalcProps
+                        key={selected.id}
+                        field={selected}
+                        fieldNames={annotations.filter(isField).filter((f) => f.id !== selected.id && f.fieldType !== "button").map((f) => fieldKey(f))}
+                        onChange={(patch) => {
+                          snapshot();
+                          updateSelected(patch);
+                          recalcAll();
+                        }}
+                      />
+                    </>
+                  )}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {selected.fieldType !== "button" && (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input data-testid="field-required" type="checkbox" checked={selected.required === true} onChange={(e) => updateSelected({ required: e.target.checked })} />
+                        Required
+                      </label>
                     )}
+                    {selected.fieldType !== "button" && (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input data-testid="field-readonly" type="checkbox" checked={selected.readOnly === true} onChange={(e) => updateSelected({ readOnly: e.target.checked || undefined })} />
+                        Read-only
+                      </label>
+                    )}
+                    <label className="flex items-center gap-2 text-sm">
+                      <input data-testid="field-hidden" type="checkbox" checked={selected.hidden === true} onChange={(e) => { snapshot(); updateSelected({ hidden: e.target.checked || undefined }); }} />
+                      Hidden
+                    </label>
                   </div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input data-testid="field-required" type="checkbox" checked={selected.required === true} onChange={(e) => updateSelected({ required: e.target.checked })} />
-                    Required
-                  </label>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Font size: {selected.fontSize ?? 12}pt</label>
                     <input data-testid="field-fontsize" aria-label="Font size" type="range" min={6} max={36} value={selected.fontSize ?? 12} onChange={(e) => updateSelected({ fontSize: parseInt(e.target.value) })} className="w-full" />
@@ -5565,6 +5837,17 @@ export function EditorPage() {
             </div>
           )}
 
+          {/* CC3 — transient form message as a floating toast (no layout shift). */}
+          {formMessage && (
+            <div
+              data-testid="form-action-message"
+              role="status"
+              aria-live="polite"
+              className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-3 py-2 rounded-lg shadow-lg bg-gray-900 text-white text-sm max-w-md text-center"
+            >
+              {formMessage}
+            </div>
+          )}
           {(error || saveMsg || restoreNotice) && (
             <div className="px-4 pt-3 space-y-2" role="status" aria-live="polite">
               {error && <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
@@ -5859,10 +6142,19 @@ export function EditorPage() {
                           if (!interactive || gestureMoved.current) return;
                           if (ann.fieldType === "checkbox") {
                             snapshot();
-                            setFieldValue(ann.id, { value: ann.value !== true });
+                            commitFieldValue(ann.id, { value: ann.value !== true });
+                          } else if (ann.fieldType === "button" && fillSign) {
+                            // Buttons act only while filling (Fill & Sign), so a
+                            // click while laying out the form just selects it.
+                            runButtonAction(ann);
                           }
                         };
                         const opts = ann.options ?? [];
+                        // CC3 — formatted display (AF*_Format) unless being typed in.
+                        const fmt = fieldFormat(ann);
+                        const rawText = typeof ann.value === "string" ? ann.value : "";
+                        const shown = fmt && focusedFieldId !== ann.id ? formatValue(fmt, rawText) : null;
+                        const sel = ann.selected ?? [];
                         return (
                           <div
                             key={ann.id}
@@ -5874,16 +6166,22 @@ export function EditorPage() {
                             data-annot-w={ann.width}
                             data-annot-h={ann.height}
                             data-field-type={ann.fieldType}
+                            data-field-name={ann.name}
+                            data-field-hidden={ann.hidden ? "true" : undefined}
+                            data-field-calc={ann.actions?.C ? "true" : undefined}
                             onMouseDown={(e) => startMove(e, ann)}
                             onClick={fieldClick}
+                            title={ann.hidden ? `${ann.name} (hidden)` : undefined}
                             className={`absolute box-border ${isSel ? "ring-2 ring-blue-500" : "hover:ring-1 hover:ring-blue-300"} ${interactive ? "cursor-move" : ""}`}
                             style={{
                               left: `${ann.x * 100}%`,
                               top: `${ann.y * 100}%`,
                               width: `${ann.width * 100}%`,
                               height: `${ann.height * 100}%`,
-                              border: ann.fieldType === "radio" ? "none" : "1px solid #6b7280",
-                              background: "rgba(219,234,254,0.35)",
+                              border: ann.fieldType === "radio" ? "none" : ann.hidden ? "1px dashed #9ca3af" : ann.fieldType === "button" ? "1px solid #4b5563" : "1px solid #6b7280",
+                              background: ann.fieldType === "button" ? "#e5e7eb" : ann.actions?.C ? "rgba(254,243,199,0.55)" : "rgba(219,234,254,0.35)",
+                              // Hidden fields stay selectable in the editor but read as ghosted.
+                              opacity: ann.hidden ? 0.35 : 1,
                               pointerEvents: interactive ? "auto" : "none",
                             }}
                           >
@@ -5891,15 +6189,29 @@ export function EditorPage() {
                               <input
                                 type="text"
                                 data-testid={`field-input-${ann.id}`}
-                                value={typeof ann.value === "string" ? ann.value : ""}
+                                value={shown ? shown.text : rawText}
+                                data-raw-value={rawText}
                                 disabled={!interactive}
+                                readOnly={ann.readOnly}
                                 onFocus={() => {
                                   setSelectedIds([ann.id]);
+                                  setFocusedFieldId(ann.id);
                                   snapshot();
                                 }}
-                                onChange={(e) => setFieldValue(ann.id, { value: e.target.value })}
+                                onChange={(e) => {
+                                  // AF*_Keystroke: reject characters the format can't hold.
+                                  if (!keystrokeAccepts(fmt, e.target.value)) return;
+                                  setFieldValue(ann.id, { value: e.target.value });
+                                }}
+                                onBlur={() => {
+                                  setFocusedFieldId((cur) => (cur === ann.id ? null : cur));
+                                  commitTextField(ann.id);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                }}
                                 className="w-full h-full bg-transparent outline-none px-1"
-                                style={{ fontSize: fontPx, pointerEvents: interactive ? "auto" : "none" }}
+                                style={{ fontSize: fontPx, pointerEvents: interactive ? "auto" : "none", color: shown?.red ? "#dc2626" : undefined }}
                               />
                             )}
                             {ann.fieldType === "checkbox" && (
@@ -5916,7 +6228,7 @@ export function EditorPage() {
                                 onChange={(e) => {
                                   setSelectedIds([ann.id]);
                                   snapshot();
-                                  setFieldValue(ann.id, { value: e.target.value });
+                                  commitFieldValue(ann.id, { value: e.target.value });
                                 }}
                                 className="w-full h-full bg-transparent outline-none px-1"
                                 style={{ fontSize: fontPx, pointerEvents: interactive ? "auto" : "none" }}
@@ -5938,7 +6250,7 @@ export function EditorPage() {
                                       setSelectedIds([ann.id]);
                                       if (!interactive || gestureMoved.current) return;
                                       snapshot();
-                                      setFieldValue(ann.id, { value: opt });
+                                      commitFieldValue(ann.id, { value: opt });
                                     }}
                                   >
                                     <span
@@ -5948,6 +6260,49 @@ export function EditorPage() {
                                     <span className="truncate">{opt}</span>
                                   </label>
                                 ))}
+                              </div>
+                            )}
+                            {ann.fieldType === "listbox" && (
+                              <div
+                                role="listbox"
+                                aria-multiselectable={ann.multiSelect ? true : undefined}
+                                aria-label={ann.name}
+                                data-testid={`field-input-${ann.id}`}
+                                className="w-full h-full overflow-auto select-none bg-white/60"
+                                style={{ fontSize: fontPx, lineHeight: 1.25 }}
+                              >
+                                {opts.map((opt, i) => {
+                                  const on = sel.includes(opt);
+                                  return (
+                                    <div
+                                      key={i}
+                                      role="option"
+                                      aria-selected={on}
+                                      data-testid={`field-listopt-${ann.id}-${i}`}
+                                      className={`px-1 truncate ${on ? "bg-blue-600 text-white" : ""} ${interactive ? "cursor-pointer" : ""}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedIds([ann.id]);
+                                        if (!interactive || gestureMoved.current || ann.readOnly) return;
+                                        snapshot();
+                                        // Multi-select toggles; single-select picks exactly one.
+                                        const next = ann.multiSelect ? (on ? sel.filter((o) => o !== opt) : opts.filter((o) => o === opt || sel.includes(o))) : [opt];
+                                        commitFieldValue(ann.id, { selected: next });
+                                      }}
+                                    >
+                                      {opt}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {ann.fieldType === "button" && (
+                              <div
+                                data-testid={`field-input-${ann.id}`}
+                                className="w-full h-full flex items-center justify-center select-none truncate px-1 font-medium text-gray-800"
+                                style={{ fontSize: fontPx }}
+                              >
+                                {ann.label || ann.name}
                               </div>
                             )}
                           </div>
