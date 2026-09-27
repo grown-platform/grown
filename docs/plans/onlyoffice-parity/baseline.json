@@ -186,7 +186,7 @@
       "passing": null
     },
     "sheets/editing": {
-      "ported": 85,
+      "ported": 88,
       "passing": null
     },
     "sheets/engine-internal": {
@@ -198,7 +198,7 @@
       "passing": null
     },
     "sheets/formulas": {
-      "ported": 633,
+      "ported": 634,
       "passing": null
     },
     "sheets/harness": {
@@ -226,7 +226,7 @@
       "passing": null
     },
     "sheets/sort-filter": {
-      "ported": 55,
+      "ported": 86,
       "passing": null
     },
     "sheets/utils": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2210,
+    "ported": 2245,
     "passing": null
   }
 }
