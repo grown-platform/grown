@@ -194,7 +194,7 @@
       "passing": null
     },
     "sheets/formatting": {
-      "ported": 0,
+      "ported": 57,
       "passing": null
     },
     "sheets/formulas": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 738,
+    "ported": 795,
     "passing": null
   }
 }

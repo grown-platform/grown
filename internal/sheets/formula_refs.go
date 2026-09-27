@@ -629,7 +629,7 @@ func (ev *Evaluator) writeBack(si int, data []FsCellData) []FsCellData {
 		if res, ok := st.results[addr]; ok && cd.V != nil && strings.HasPrefix(cd.V.F, "=") {
 			newCell := *cd.V
 			newCell.V = res.asInterface()
-			newCell.M = res.toStr()
+			newCell.M = cellDisplayText(res, newCell.CT)
 			nc.V = &newCell
 		} else if sv, ok := st.spillCells[addr]; ok {
 			var base FsCell
@@ -638,7 +638,7 @@ func (ev *Evaluator) writeBack(si int, data []FsCellData) []FsCellData {
 			}
 			base.F = ""
 			base.V = sv.asInterface()
-			base.M = sv.toStr()
+			base.M = cellDisplayText(sv, base.CT)
 			base.Extra = withSpillMark(base.Extra, base.M)
 			nc.V = &base
 		} else if isSpillOutput(cd.V) {

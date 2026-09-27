@@ -12,6 +12,8 @@ import {
 import ArrowRightIcon from "@mui/icons-material/ArrowRight";
 import { SHEET_DOWNLOAD_FORMATS, type SheetFormat } from "./export";
 import { ICON_STYLE_LABELS, type IconStyle } from "./iconSets";
+import { formatValue } from "./numberFormat";
+import { NUMBER_FORMAT_PRESETS, applyNumberFormat } from "./numberFormatActions";
 import {
   sortRange,
   sortSheet,
@@ -53,7 +55,23 @@ interface SheetMenuBarProps {
   onIconSet: (style: IconStyle) => void;
   /** Clears all icon-set rules. */
   onClearIconSets: () => void;
+  /** Opens the Custom number format dialog. */
+  onCustomNumberFormat: () => void;
 }
+
+// Example values shown next to each Format ▸ Number preset.
+const PRESET_SAMPLE: Record<string, number | string> = {
+  automatic: 1234.56,
+  text: "abc",
+  percent: 0.1234,
+  accounting: -1234.56,
+  financial: -1234.56,
+  date: 45293.5,
+  time: 45293.5,
+  datetime: 45293.5,
+  duration: 1.5347,
+  fraction: 1.75,
+};
 
 const menuButtonSx = {
   fontWeight: 400,
@@ -104,6 +122,7 @@ export function SheetMenuBar({
   onInsertPivot,
   onIconSet,
   onClearIconSets,
+  onCustomNumberFormat,
 }: SheetMenuBarProps) {
   const wb = () => {
     try {
@@ -354,41 +373,21 @@ export function SheetMenuBar({
         <>
           <MenuItem disabled>Theme</MenuItem>
           {section("Number")}
-          <MenuItem sx={sub} onClick={fmt("ct", { fa: "General", t: "g" })}>
-            Automatic
-          </MenuItem>
-          <MenuItem sx={sub} onClick={fmt("ct", { fa: "@", t: "s" })}>
-            Plain text
-          </MenuItem>
-          <MenuItem sx={sub} onClick={fmt("ct", { fa: "#,##0.00", t: "n" })}>
-            Number
-          </MenuItem>
-          <MenuItem sx={sub} onClick={fmt("ct", { fa: "0.00%", t: "n" })}>
-            Percent
-          </MenuItem>
-          <MenuItem sx={sub} onClick={fmt("ct", { fa: "0.00E+00", t: "n" })}>
-            Scientific
-          </MenuItem>
-          <MenuItem sx={sub} onClick={fmt("ct", { fa: "$#,##0.00", t: "n" })}>
-            Currency
-          </MenuItem>
-          <MenuItem sx={sub} onClick={fmt("ct", { fa: "$#,##0", t: "n" })}>
-            Currency (rounded)
-          </MenuItem>
-          <MenuItem sx={sub} onClick={fmt("ct", { fa: "yyyy-MM-dd", t: "d" })}>
-            Date
-          </MenuItem>
-          <MenuItem
-            sx={sub}
-            onClick={fmt("ct", { fa: "h:mm:ss AM/PM", t: "d" })}
-          >
-            Time
-          </MenuItem>
-          <MenuItem
-            sx={sub}
-            onClick={fmt("ct", { fa: "yyyy-MM-dd h:mm:ss", t: "d" })}
-          >
-            Date time
+          {NUMBER_FORMAT_PRESETS.map((p) => (
+            <MenuItem
+              key={p.id}
+              sx={sub}
+              data-numfmt={p.id}
+              onClick={call((w) => applyNumberFormat(w, p.fa))}
+            >
+              {p.label}
+              <Typography level="body-xs" sx={{ ml: "auto", pl: 3, opacity: 0.5 }}>
+                {formatValue(PRESET_SAMPLE[p.id] ?? 1234.56, p.fa)}
+              </Typography>
+            </MenuItem>
+          ))}
+          <MenuItem sx={sub} onClick={onCustomNumberFormat}>
+            Custom number format…
           </MenuItem>
           {section("Text")}
           <MenuItem sx={sub} onClick={fmt("bl", 1)}>
