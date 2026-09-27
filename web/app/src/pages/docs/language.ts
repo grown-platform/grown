@@ -36,7 +36,12 @@ export const LangMark = Mark.create({
     };
   },
   parseHTML() {
-    return [{ tag: "span[lang]" }, { tag: "span[data-noproof]" }];
+    // Higher priority and non-consuming, so a pasted Word span with both a
+    // lang and a style keeps its textStyle too.
+    return [
+      { tag: "span[lang]", priority: 60, consuming: false },
+      { tag: "span[data-noproof]", priority: 60, consuming: false },
+    ];
   },
   renderHTML({ HTMLAttributes }) {
     return ["span", mergeAttributes(HTMLAttributes, { class: "doc-lang" }), 0];

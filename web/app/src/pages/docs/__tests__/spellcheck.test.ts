@@ -132,3 +132,11 @@ describe("proofing language in DOCX", () => {
     expect(await zip.file("word/styles.xml")!.async("string")).toContain('<w:lang w:val="en-GB"/>');
   });
 });
+
+describe("lang mark parsing", () => {
+  it("keeps both the language and the style of a pasted Word span", () => {
+    const e = makeEditor(`<p><span lang="FR" style="color: #ff0000">rouge</span> plain</p>`);
+    const marks = e.state.doc.firstChild!.firstChild!.marks.map((m) => m.type.name).sort();
+    expect(marks).toEqual(["lang", "textStyle"]);
+  });
+});
