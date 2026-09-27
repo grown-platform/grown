@@ -1658,11 +1658,11 @@ func (p *parser) dispatch(name string, args []interface{}) value {
 
 // Register the core built-ins. Additional categories live in formula_*.go.
 func init() {
-	registerFunc("SUM", func(c *callCtx) value { return fnSum(c.flat()) })
+	registerFunc("SUM", func(c *callCtx) value { return fnSum(sttFlat(c, false)) })
 	registerFunc("IF", func(c *callCtx) value { return fnIf(c.p, c.args) })
-	registerFunc("AND", func(c *callCtx) value { return fnAnd(c.flat()) })
-	registerFunc("OR", func(c *callCtx) value { return fnOr(c.flat()) })
-	registerFunc("NOT", func(c *callCtx) value { return fnNot(c.flat()) })
+	registerFunc("AND", lgAnd)
+	registerFunc("OR", lgOr)
+	registerFunc("NOT", lgNot)
 	registerFunc("ROUND", mth2Round) // formula_math2.go
 	registerFunc("ABS", mth2Unary(func(x float64) value { return numVal(math.Abs(x)) }))
 	registerFunc("CONCATENATE", func(c *callCtx) value { return fnConcatenate(c.flat()) })
@@ -1716,47 +1716,6 @@ func fnIf(p *parser, args []interface{}) value {
 		return asValue(args[2])
 	}
 	return boolVal(false) // Excel returns FALSE when no else branch
-}
-
-func fnAnd(vals []value) value {
-	if len(vals) == 0 {
-		return errNA
-	}
-	for _, v := range vals {
-		if v.isErr() {
-			return v
-		}
-		if !v.isTruthy() {
-			return boolVal(false)
-		}
-	}
-	return boolVal(true)
-}
-
-func fnOr(vals []value) value {
-	if len(vals) == 0 {
-		return errNA
-	}
-	for _, v := range vals {
-		if v.isErr() {
-			return v
-		}
-		if v.isTruthy() {
-			return boolVal(true)
-		}
-	}
-	return boolVal(false)
-}
-
-func fnNot(vals []value) value {
-	if len(vals) == 0 {
-		return errNA
-	}
-	v := vals[0]
-	if v.isErr() {
-		return v
-	}
-	return boolVal(!v.isTruthy())
 }
 
 func fnConcatenate(vals []value) value {

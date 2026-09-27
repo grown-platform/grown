@@ -109,15 +109,37 @@ func lgSwitch(c *callCtx) value {
 	return errNA
 }
 
-// lgEqual reports whether two values are equal using Excel's comparison rules:
-// numerics compare numerically; otherwise a case-insensitive string compare.
+// lgEqual reports whether two values are equal the way SWITCH (and "=")
+// compares them: the types must match (TRUE is not 1, 1 is not "1"), text
+// compares case-insensitively, and an empty cell equals 0, "" and FALSE. An
+// array compares by its top-left element.
 func lgEqual(a, b value) bool {
-	an, aok := a.toNum()
-	bn, bok := b.toNum()
-	if aok && bok && a.kind != kindStr && b.kind != kindStr {
-		return an == bn
+	a, b = a.topLeft(), b.topLeft()
+	if a.blank && b.blank {
+		return true
 	}
-	return lgUpper(a.toStr()) == lgUpper(b.toStr())
+	if a.blank {
+		a, b = b, a
+	}
+	if b.blank {
+		switch a.kind {
+		case kindNum, kindBool:
+			return a.num == 0
+		case kindStr:
+			return a.str == ""
+		}
+		return false
+	}
+	if a.kind != b.kind {
+		return false
+	}
+	switch a.kind {
+	case kindNum, kindBool:
+		return a.num == b.num
+	case kindStr:
+		return lgUpper(a.str) == lgUpper(b.str)
+	}
+	return false
 }
 
 // lgUpper is an ASCII-friendly upper-caser used for case-insensitive matching.
@@ -131,23 +153,157 @@ func lgUpper(s string) string {
 	return string(b)
 }
 
-// lgXor returns TRUE when an odd number of arguments are truthy. An error in any
-// argument propagates.
-func lgXor(c *callCtx) value {
-	vals := c.flat()
-	if len(vals) == 0 {
+// lgLogicals collects the logical values of AND/OR/XOR's arguments the way
+// Excel reads them:
+//
+//   - from a reference or an array: booleans and numbers count (non-zero is
+//     TRUE); text and empty cells are skipped;
+//   - typed directly (or a function's result): booleans and numbers count,
+//     the text "TRUE"/"FALSE" counts as that logical, other text is #VALUE!;
+//     an empty argument counts as FALSE.
+//
+// An error anywhere is returned as is. No logical value at all is #VALUE!.
+func lgLogicals(c *callCtx) ([]bool, *value) {
+	var out []bool
+	fromData := func(x value) *value {
+		switch {
+		case x.isErr():
+			return &x
+		case x.blank:
+		case x.kind == kindNum, x.kind == kindBool:
+			out = append(out, x.num != 0)
+		}
+		return nil
+	}
+	for i := 0; i < c.nargs(); i++ {
+		switch a := c.raw(i).(type) {
+		case rangeVal:
+			for _, row := range a.cells {
+				for _, x := range row {
+					if e := fromData(x); e != nil {
+						return nil, e
+					}
+				}
+			}
+		case value:
+			switch {
+			case a.kind == kindArray && a.arr != nil:
+				for _, row := range a.arr.cells {
+					for _, x := range row {
+						if e := fromData(x); e != nil {
+							return nil, e
+						}
+					}
+				}
+			case a.ref != nil:
+				if e := fromData(a); e != nil {
+					return nil, e
+				}
+			case a.isErr():
+				return nil, &a
+			case isEmptyArg(a):
+				out = append(out, false)
+			case a.kind == kindStr:
+				b, ok := lgTextLogical(a.str)
+				if !ok {
+					return nil, &errValue
+				}
+				out = append(out, b)
+			case a.blank:
+			case a.kind == kindNum, a.kind == kindBool:
+				out = append(out, a.num != 0)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, &errValue
+	}
+	return out, nil
+}
+
+// lgTextLogical reads the text "TRUE" or "FALSE" (any case) as a logical.
+func lgTextLogical(s string) (bool, bool) {
+	switch lgUpper(s) {
+	case "TRUE":
+		return true, true
+	case "FALSE":
+		return false, true
+	}
+	return false, false
+}
+
+func lgAnd(c *callCtx) value {
+	if c.nargs() == 0 {
 		return errNA
 	}
-	count := 0
-	for _, v := range vals {
-		if v.isErr() {
-			return v
+	vals, e := lgLogicals(c)
+	if e != nil {
+		return *e
+	}
+	for _, b := range vals {
+		if !b {
+			return boolVal(false)
 		}
-		if v.isTruthy() {
+	}
+	return boolVal(true)
+}
+
+func lgOr(c *callCtx) value {
+	if c.nargs() == 0 {
+		return errNA
+	}
+	vals, e := lgLogicals(c)
+	if e != nil {
+		return *e
+	}
+	for _, b := range vals {
+		if b {
+			return boolVal(true)
+		}
+	}
+	return boolVal(false)
+}
+
+// lgXor returns TRUE when an odd number of the logical values are TRUE.
+func lgXor(c *callCtx) value {
+	if c.nargs() == 0 {
+		return errNA
+	}
+	vals, e := lgLogicals(c)
+	if e != nil {
+		return *e
+	}
+	count := 0
+	for _, b := range vals {
+		if b {
 			count++
 		}
 	}
 	return boolVal(count%2 == 1)
+}
+
+// lgNot negates one logical: a number (non-zero is TRUE), a boolean, the text
+// "TRUE"/"FALSE", or an empty cell (FALSE). Other text is #VALUE!.
+func lgNot(c *callCtx) value {
+	if c.nargs() == 0 {
+		return errNA
+	}
+	v := c.scalar(0).topLeft()
+	switch {
+	case v.isErr():
+		return v
+	case v.blank, isEmptyArg(v):
+		return boolVal(true)
+	case v.kind == kindStr:
+		b, ok := lgTextLogical(v.str)
+		if !ok {
+			return errValue
+		}
+		return boolVal(!b)
+	case v.kind == kindNum, v.kind == kindBool:
+		return boolVal(v.num == 0)
+	}
+	return errValue
 }
 
 // ---- Information ------------------------------------------------------------

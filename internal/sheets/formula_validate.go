@@ -40,6 +40,61 @@ func init() {
 	}
 }
 
+// Functions that read these scalar arguments with c.num / c.text turn an
+// error argument into #VALUE! (or ignore it); Excel passes the error on.
+// Only an argument that is a single error value is checked, so a range or an
+// array holding errors still goes to the function.
+func init() {
+	for name, idx := range map[string][]int{
+		"CHOOSE": {0}, "DROP": nil, "TAKE": nil, "EXPAND": {0, 1, 2},
+		"INDEX": {1, 2}, "SORTBY": nil, "FILTER": {0, 1},
+		"ARABIC": nil, "BASE": nil, "DECIMAL": nil, "MDETERM": nil, "MUNIT": nil,
+		"RANDARRAY": nil, "SERIESSUM": {0, 1, 2}, "SEQUENCE": nil,
+		"FVSCHEDULE": {0}, "MIRR": {1, 2}, "NPV": {0}, "XNPV": {0}, "XIRR": {2},
+	} {
+		guardErrorArgs(name, idx, false)
+	}
+	// The database functions' field and criteria: an error typed as the
+	// argument is the result; an error read from a field cell stays #VALUE!.
+	for _, name := range []string{
+		"DAVERAGE", "DCOUNT", "DCOUNTA", "DGET", "DMAX", "DMIN", "DPRODUCT",
+		"DSTDEV", "DSTDEVP", "DSUM", "DVAR", "DVARP",
+	} {
+		guardErrorArgs(name, []int{1, 2}, true)
+	}
+}
+
+// guardErrorArgs makes an error value passed as one of the listed arguments
+// (every argument when idx is nil) the function's result, left to right.
+// With direct, an error read from a cell is left to the function.
+func guardErrorArgs(name string, idx []int, direct bool) {
+	f, ok := funcTable[name]
+	if !ok {
+		panic("formula_validate.go: " + name + " is not registered yet")
+	}
+	funcTable[name] = func(c *callCtx) value {
+		check := func(i int) (value, bool) {
+			if v, ok := c.raw(i).(value); ok && v.kind != kindArray && v.isErr() && (!direct || v.ref == nil) {
+				return v, true
+			}
+			return value{}, false
+		}
+		if idx == nil {
+			for i := 0; i < c.nargs(); i++ {
+				if e, bad := check(i); bad {
+					return e
+				}
+			}
+		}
+		for _, i := range idx {
+			if e, bad := check(i); bad {
+				return e
+			}
+		}
+		return f(c)
+	}
+}
+
 type argGuard struct {
 	noBool    bool // a boolean argument is #VALUE!
 	noOmitted bool // an empty argument is #N/A
