@@ -446,6 +446,7 @@ func New(cfg Config) *Server {
 	var slidesSvc *slides.Service
 	var slidesHub *slides.Hub
 	var slidesAssets *slides.Assets
+	var slidesMentions *slides.Mentions
 	if cfg.SlidesRepo != nil {
 		slidesSvc = slides.NewService(cfg.SlidesRepo)
 		if cfg.SharingRepo != nil {
@@ -458,6 +459,9 @@ func New(cfg Config) *Server {
 			slidesAssets = slides.NewAssets(cfg.SlidesBlobs, func(r *http.Request, id string) (bool, bool) {
 				return slidesDeckAccess(r, id, repo, grants)
 			})
+		}
+		if cfg.NotificationsRepo != nil && cfg.UsersRepo != nil {
+			slidesMentions = newSlidesMentions(cfg.SlidesRepo, cfg.SharingRepo, cfg.UsersRepo, cfg.NotificationsRepo)
 		}
 		grownv1.RegisterSlidesServiceServer(grpcSrv, versionsW.slidesServer(slidesSvc))
 	}
@@ -934,6 +938,10 @@ func New(cfg Config) *Server {
 				}
 				if _, _, ok := slides.AssetPath(r.URL.Path); ok && slidesAssets != nil {
 					slidesAssets.ServeHTTP(w, r)
+					return
+				}
+				if _, ok := slides.MentionPath(r.URL.Path); ok && slidesMentions != nil {
+					slidesMentions.ServeHTTP(w, r)
 					return
 				}
 			}
