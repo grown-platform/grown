@@ -93,6 +93,7 @@ import { setMathEditHandler } from "./math/MathNode";
 import { ReferenceDialogs, openReferenceDialog } from "./ReferenceDialogs";
 import { CompareDialog, openCompareDialog } from "./CompareDialog";
 import { MailMerge, openMailMerge } from "./MailMergePanel";
+import { FillFormBar, FormsUI, useProtectionMode } from "./FormsUI";
 import { insertTableOfContents, toggleFieldCodes, updateFields } from "./references";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { FindBar, type FindMode } from "./FindBar";
@@ -255,10 +256,14 @@ export function DocEditor({ user }: DocEditorProps) {
     };
   }, [id]);
 
+  // Document protection (M10): read-only and comments-only documents
+  // aren't editable.
+  const protMode = useProtectionMode(editor);
+
   // Editing vs Viewing mode: actually toggle ProseMirror editability.
   useEffect(() => {
-    editor?.setEditable(mode === "editing");
-  }, [editor, mode]);
+    editor?.setEditable(mode === "editing" && protMode !== "readOnly" && protMode !== "comments");
+  }, [editor, mode, protMode]);
 
   // The user's AutoCorrect settings (stored per user in this browser).
   useEffect(() => {
@@ -896,6 +901,7 @@ export function DocEditor({ user }: DocEditorProps) {
             }
           />
         </Box>
+        <FillFormBar editor={editor} title={title} />
       </Container>
 
       <Box sx={{ display: "flex", alignItems: "stretch", minHeight: "70vh" }}>
@@ -1152,6 +1158,7 @@ export function DocEditor({ user }: DocEditorProps) {
       <ReferenceDialogs editor={editor} />
       <CompareDialog editor={editor} docId={id} title={title} userName={user.display_name || user.email} />
       <MailMerge editor={editor} title={title} />
+      <FormsUI editor={editor} docId={id} title={title} />
       <ShortcutsDialog
         open={dialog === "shortcuts"}
         onClose={() => setDialog(null)}

@@ -898,6 +898,10 @@ func New(cfg Config) *Server {
 					serveDocsWS(w, r, id, cfg.DocsRepo, cfg.SharingRepo, docsHub)
 					return
 				}
+				if id, ok := docsProtectionID(r.URL.Path); ok && cfg.DocsRepo != nil {
+					serveDocsProtection(w, r, id, cfg.DocsRepo)
+					return
+				}
 				if r.URL.Path == "/api/v1/docs/convert" && r.Method == http.MethodPost {
 					serveDocsConvert(w, r)
 					return
@@ -2619,11 +2623,13 @@ func docsConnectID(path string) (string, bool) {
 func serveDocsWS(w http.ResponseWriter, r *http.Request, id string, repo *docs.Repository, grants *sharing.Repository, hub *docs.Hub) {
 	ctx := r.Context()
 	authorized, canWrite := false, false
+	isOwner := false
 
 	if u, hasUser := auth.UserFromContext(ctx); hasUser {
 		if org, ok := auth.OrgFromContext(ctx); ok {
-			if _, err := repo.Get(ctx, org.ID, id); err == nil {
+			if d, err := repo.Get(ctx, org.ID, id); err == nil {
 				authorized, canWrite = true, true
+				isOwner = d.OwnerID == u.ID
 			}
 		}
 		// Per-user grant path: a non-org-member with a grant may connect; only an
@@ -2652,7 +2658,9 @@ func serveDocsWS(w http.ResponseWriter, r *http.Request, id string, repo *docs.R
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	hub.Serve(w, r, id, canWrite)
+	// Read-only document protection (Docs M10): only the owner writes.
+	gate := &docs.ProtectionGate{Load: func() (string, error) { return repo.GetProtection(context.Background(), id) }}
+	hub.ServeFunc(w, r, id, docsWriteGate(canWrite, isOwner, gate))
 }
 
 // sheetsConnectID returns the sheet id from /api/v1/sheets/d/{id}/connect.
