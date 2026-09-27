@@ -88,6 +88,8 @@ import {
 import { downloadSheet } from "./export";
 import { storableWorkbook } from "./workbookJson";
 import { normalizeWorkbook, seedSelection } from "./normalize";
+// Registers the type-based default alignment FortuneSheet paints with.
+import "./cellAlign";
 import { FilterDialog } from "./FilterDialog";
 import { SheetNotice } from "./SheetNotice";
 import {

@@ -5,6 +5,8 @@
 // superscript, 2 = subscript, like the OOXML vertAlign values) and the text is
 // painted here from the beforeRenderCell hook: smaller and raised or lowered.
 
+import { effectiveHorizontalAlign } from "./cellAlign";
+
 export const VA_SUPER = 1;
 export const VA_SUB = 2;
 
@@ -49,7 +51,7 @@ export function paintScriptCell(cell: any, info: ScriptCellInfo, ctx: CanvasRend
   const size = Math.max(6, Math.round(base * 0.65 * zoom));
   ctx.fillStyle = cell?.fc || "#000000";
   ctx.font = `${cell?.it ? "italic " : ""}${cell?.bl ? "bold " : ""}${size}px ${cell?.ff || "Arial"}, sans-serif`;
-  const ht = String(cell?.ht ?? "1");
+  const ht = effectiveHorizontalAlign(cell);
   ctx.textAlign = ht === "0" ? "center" : ht === "2" ? "right" : "left";
   const x = ht === "0" ? info.startX + w / 2 : ht === "2" ? info.endX - 3 * zoom : info.startX + 3 * zoom;
   ctx.textBaseline = va === VA_SUPER ? "top" : "bottom";

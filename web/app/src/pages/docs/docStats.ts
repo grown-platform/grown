@@ -70,3 +70,32 @@ export function docStats(doc: PMNode, o: DocStatsOptions = {}): DocStats {
     lines: o.lines ?? null,
   };
 }
+
+/** statusWordCount is the status bar's live count: runs of non-space
+ *  characters in the text, as docStats counts them. */
+export function statusWordCount(text: string): number {
+  return (text.match(/\S+/g) || []).length;
+}
+
+/**
+ * throttleTrailing returns a scheduler that runs `fn` at most once per `ms`,
+ * always once more after the last call. Unlike a debounce, calls arriving
+ * faster than `ms` (someone typing) don't postpone it indefinitely: the
+ * status bar word count updates while typing, not only after a pause.
+ */
+export function throttleTrailing(fn: () => void, ms: number): { schedule: () => void; cancel: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    schedule() {
+      if (timer !== undefined) return; // already due; the pending run sees this change too
+      timer = setTimeout(() => {
+        timer = undefined;
+        fn();
+      }, ms);
+    },
+    cancel() {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+    },
+  };
+}

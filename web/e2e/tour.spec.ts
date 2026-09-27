@@ -32,6 +32,8 @@ test("tour: docs editor", async ({ page }) => {
   try {
     await openDoc(page, id);
     await typeInto(page, "Tour heading\nSome body text for the visual tour.");
+    // The status bar recounts words a moment after typing (throttled).
+    await expect(page.getByTestId("status-words")).toHaveText("9 words");
     await page.screenshot(shot("docs"));
   } finally {
     await trashDoc(page.request, id);
