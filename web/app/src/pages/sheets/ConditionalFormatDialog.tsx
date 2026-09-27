@@ -1,85 +1,132 @@
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Modal,
-  ModalDialog,
-  ModalClose,
-  Typography,
+  Box,
+  Button,
+  Checkbox,
+  Chip,
+  Divider,
   FormControl,
   FormLabel,
-  Input,
-  Select,
-  Option,
-  Button,
-  Box,
-  Stack,
-  Divider,
-  Chip,
-  Checkbox,
   IconButton,
+  Input,
+  Modal,
+  ModalClose,
+  ModalDialog,
+  Option,
+  Select,
+  Stack,
+  Typography,
 } from "@mui/joy";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import {
+  addRule,
+  colorScaleRule,
+  describeRule,
+  deleteRule,
+  ICON_COUNTS,
+  ICON_SET_LABELS,
+  ICON_SETS,
+  moveRule,
+  newRule,
+  rangesText,
+  setIconSet,
+  sortByPriority,
+  type CellIsOp,
+  type CfRule,
+  type CfType,
+  type Cfvo,
+  type CfvoType,
+  type DataBarOptions,
+  type IconSetName,
+  type TimePeriod,
+} from "./cfOps";
+import { currentSheet, drawIcon, setSheetCF, sheetCF } from "./sheetDataTools";
+import { parseA1Range } from "./cellValue";
+import type { CellRect } from "./cellRange";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet ref API is loosely typed. */
 
-// FortuneSheet stores conditional-format rules on the sheet as
-// luckysheet_conditionformat_save. Three rule families are supported here:
-//   - "default":        a condition (greaterThan, between, …) → text/cell color.
-//   - "colorGradation": a 2–3 colour scale mapped across the range's values.
-//   - "dataBar":        an in-cell bar whose length tracks the value.
-// Color-based rules carry `format` as an array of "rgb(r,g,b)" strings (matching
-// FortuneSheet's format[0] indexing); default rules carry {textColor,cellColor}.
+// Conditional formatting rules manager. Rules are Grown's own model
+// (cfOps.ts, stored on the sheet as `grownCF`); the grid paints them through
+// sheetDataTools.ts. Rules run in priority order (top of the list first); a
+// higher rule's colours win, and "Stop if true" skips the rules below it.
 
-type ConditionName =
-  | "greaterThan"
-  | "lessThan"
-  | "equal"
-  | "textContains"
-  | "between";
+const TYPE_LABELS: [CfType, string][] = [
+  ["cellIs", "Cell value"],
+  ["containsText", "Text contains"],
+  ["notContainsText", "Text does not contain"],
+  ["beginsWith", "Text begins with"],
+  ["endsWith", "Text ends with"],
+  ["timePeriod", "Date occurring"],
+  ["containsBlanks", "Cell is empty"],
+  ["notContainsBlanks", "Cell is not empty"],
+  ["containsErrors", "Cell has an error"],
+  ["notContainsErrors", "Cell has no error"],
+  ["duplicateValues", "Duplicate values"],
+  ["uniqueValues", "Unique values"],
+  ["top10", "Top / bottom rank"],
+  ["aboveAverage", "Above / below average"],
+  ["expression", "Custom formula"],
+  ["colorScale", "Colour scale"],
+  ["dataBar", "Data bar"],
+  ["iconSet", "Icon set"],
+];
 
-type CellRange = Array<{ row: [number, number]; column: [number, number] }>;
+const CELL_OPS: [CellIsOp, string][] = [
+  ["greaterThan", "Greater than"],
+  ["greaterThanOrEqual", "Greater than or equal to"],
+  ["lessThan", "Less than"],
+  ["lessThanOrEqual", "Less than or equal to"],
+  ["equal", "Equal to"],
+  ["notEqual", "Not equal to"],
+  ["between", "Between"],
+  ["notBetween", "Not between"],
+];
 
-interface DefaultRule {
-  type: "default";
-  cellrange: CellRange;
-  format: { textColor: string | null; cellColor: string | null };
-  conditionName: ConditionName;
-  conditionRange: never[];
-  conditionValue: [string] | [string, string];
-}
-interface ColorScaleRule {
-  type: "colorGradation";
-  cellrange: CellRange;
-  format: string[]; // ["rgb(min)", "rgb(mid)?", "rgb(max)"]
-  conditionName: null;
-  conditionRange: never[];
-  conditionValue: never[];
-}
-interface DataBarRule {
-  type: "dataBar";
-  cellrange: CellRange;
-  format: string[]; // ["rgb(gradientStart)", "rgb(barColor)"]
-  conditionName: null;
-  conditionRange: never[];
-  conditionValue: never[];
-}
-type CfRule = DefaultRule | ColorScaleRule | DataBarRule;
+const PERIODS: [TimePeriod, string][] = [
+  ["yesterday", "Yesterday"],
+  ["today", "Today"],
+  ["tomorrow", "Tomorrow"],
+  ["last7Days", "In the last 7 days"],
+  ["lastWeek", "Last week"],
+  ["thisWeek", "This week"],
+  ["nextWeek", "Next week"],
+  ["lastMonth", "Last month"],
+  ["thisMonth", "This month"],
+  ["nextMonth", "Next month"],
+];
 
-type Style = "default" | "colorGradation" | "dataBar";
+const CFVO_TYPES: [CfvoType, string][] = [
+  ["min", "Minimum"],
+  ["max", "Maximum"],
+  ["autoMin", "Automatic minimum"],
+  ["autoMax", "Automatic maximum"],
+  ["num", "Number"],
+  ["percent", "Percent"],
+  ["percentile", "Percentile"],
+  ["formula", "Formula"],
+];
 
-const STYLE_LABELS: Record<Style, string> = {
-  default: "Single color (condition)",
-  colorGradation: "Color scale",
-  dataBar: "Data bar",
-};
-
-const CONDITION_LABELS: Record<ConditionName, string> = {
-  greaterThan: "Greater than",
-  lessThan: "Less than",
-  equal: "Equal to",
-  textContains: "Text contains",
-  between: "Between",
-};
+const FORMATTING_TYPES = new Set<CfType>([
+  "cellIs",
+  "containsText",
+  "notContainsText",
+  "beginsWith",
+  "endsWith",
+  "timePeriod",
+  "containsBlanks",
+  "notContainsBlanks",
+  "containsErrors",
+  "notContainsErrors",
+  "duplicateValues",
+  "uniqueValues",
+  "top10",
+  "aboveAverage",
+  "expression",
+]);
 
 interface ConditionalFormatDialogProps {
   open: boolean;
@@ -87,251 +134,212 @@ interface ConditionalFormatDialogProps {
   getWb: () => any;
 }
 
-// ---- colour helpers ---------------------------------------------------------
-
-function toHex(c: string | null | undefined, fallback: string): string {
-  if (!c) return fallback;
-  if (c.startsWith("#")) return c;
-  const m = c.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-  if (m) {
-    const h = (n: string) => Number(n).toString(16).padStart(2, "0");
-    return `#${h(m[1])}${h(m[2])}${h(m[3])}`;
-  }
-  return fallback;
-}
-function toRgb(hex: string): string {
-  const m = hex.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-  if (!m) return "rgb(255,255,255)";
-  return `rgb(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)})`;
-}
-
-function ruleLabel(rule: CfRule): string {
-  if (rule.type === "colorGradation") {
-    return `Color scale (${rule.format.length} colors)`;
-  }
-  if (rule.type === "dataBar") {
-    return `Data bar`;
-  }
-  const cond = CONDITION_LABELS[rule.conditionName] ?? rule.conditionName;
-  const vals = rule.conditionValue.join(" and ");
-  const fmts: string[] = [];
-  if (rule.format.cellColor) fmts.push(`bg ${rule.format.cellColor}`);
-  if (rule.format.textColor) fmts.push(`text ${rule.format.textColor}`);
-  return `${cond} ${vals} → ${fmts.join(", ") || "no style"}`;
-}
-
-// swatches renders the colour preview chips for a rule in the list.
-function ruleSwatches(rule: CfRule): string[] {
-  if (rule.type === "default") return rule.format.cellColor ? [rule.format.cellColor] : [];
-  return rule.format.map((c) => toHex(c, "#ffffff"));
-}
-
-/** Parse the current selection into a cellrange array, falling back to A1:Z100. */
-function selectionToCellrange(wb: any): CellRange {
+function selectionRanges(wb: any): CellRect[] {
   try {
-    const selArr = wb?.getSelection?.();
-    const sel = Array.isArray(selArr) ? selArr[0] : selArr;
-    if (sel)
-      return [{ row: [sel.row[0], sel.row[1]], column: [sel.column[0], sel.column[1]] }];
+    const s = wb?.getSelection?.();
+    const list = Array.isArray(s) ? s : s ? [s] : [];
+    const out = list.map((x: any) => ({
+      r1: Math.min(x.row[0], x.row[1]),
+      r2: Math.max(x.row[0], x.row[1]),
+      c1: Math.min(x.column[0], x.column[1]),
+      c2: Math.max(x.column[0], x.column[1]),
+    }));
+    if (out.length) return out;
   } catch {
     /* ignore */
   }
-  return [{ row: [0, 99], column: [0, 25] }];
+  return [{ r1: 0, c1: 0, r2: 99, c2: 25 }];
 }
 
-// Editing form state covers every style; only the relevant fields are read.
-interface EditState {
-  style: Style;
-  conditionName: ConditionName;
-  conditionValue: [string] | [string, string];
-  textColor: string | null;
-  cellColor: string | null;
-  scaleMin: string;
-  scaleMid: string;
-  scaleMax: string;
-  useMid: boolean;
-  barColor: string;
-}
-
-const emptyEdit = (): EditState => ({
-  style: "default",
-  conditionName: "greaterThan",
-  conditionValue: [""],
-  textColor: null,
-  cellColor: null,
-  scaleMin: "#f8696b",
-  scaleMid: "#ffeb84",
-  scaleMax: "#63be7b",
-  useMid: true,
-  barColor: "#638ec6",
-});
-
-function editFromRule(r: CfRule): EditState {
-  const e = emptyEdit();
-  e.style = r.type;
-  if (r.type === "default") {
-    e.conditionName = r.conditionName;
-    e.conditionValue = r.conditionValue;
-    e.textColor = r.format.textColor;
-    e.cellColor = r.format.cellColor;
-  } else if (r.type === "colorGradation") {
-    e.scaleMin = toHex(r.format[0], "#f8696b");
-    if (r.format.length >= 3) {
-      e.useMid = true;
-      e.scaleMid = toHex(r.format[1], "#ffeb84");
-      e.scaleMax = toHex(r.format[2], "#63be7b");
-    } else {
-      e.useMid = false;
-      e.scaleMax = toHex(r.format[1], "#63be7b");
-    }
-  } else if (r.type === "dataBar") {
-    e.barColor = toHex(r.format[r.format.length - 1], "#638ec6");
+/** "A1:B10, D2" → rectangles (null when any part is not a reference). */
+export function parseRanges(text: string, maxRow = 1048575, maxCol = 16383): CellRect[] | null {
+  const parts = text
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.length) return null;
+  const out: CellRect[] = [];
+  for (const p of parts) {
+    const r = parseA1Range(p, maxRow, maxCol);
+    if (!r) return null;
+    out.push(r);
   }
-  return e;
+  return out;
 }
 
-export function ConditionalFormatDialog({
-  open,
-  onClose,
-  getWb,
-}: ConditionalFormatDialogProps) {
+function ColorInput({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+  return (
+    <input
+      type="color"
+      value={value}
+      onChange={(ev) => onChange(ev.target.value)}
+      style={{ width: 36, height: 30, padding: 2, border: "1px solid #ccc", borderRadius: 4, cursor: "pointer" }}
+      aria-label={label}
+    />
+  );
+}
+
+function IconPreview({ set }: { set: IconSetName }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const c = ref.current;
+    const ctx = c?.getContext("2d");
+    if (!c || !ctx) return;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ICON_SETS[set].forEach((g, i) => drawIcon(ctx, g, 2 + i * 18, 2, 14));
+  }, [set]);
+  return <canvas ref={ref} width={ICON_SETS[set].length * 18 + 2} height={18} aria-hidden />;
+}
+
+function Swatches({ rule }: { rule: CfRule }) {
+  let colors: string[] = [];
+  if (rule.type === "colorScale") colors = rule.colors ?? [];
+  else if (rule.type === "dataBar") colors = [rule.bar?.color ?? "#638ec6"];
+  else colors = [rule.style?.fill, rule.style?.color].filter(Boolean) as string[];
+  if (rule.type === "iconSet") return <IconPreview set={rule.iconSet ?? "3TrafficLights1"} />;
+  return (
+    <Box sx={{ display: "flex", gap: 0.25, flexShrink: 0 }}>
+      {colors.map((c, j) => (
+        <Box key={j} sx={{ width: 16, height: 16, borderRadius: "2px", bgcolor: c, border: "1px solid", borderColor: "divider" }} />
+      ))}
+    </Box>
+  );
+}
+
+function CfvoEditor({
+  cfvo,
+  onChange,
+  label,
+  types,
+  showGte,
+}: {
+  cfvo: Cfvo;
+  onChange: (c: Cfvo) => void;
+  label: string;
+  types: CfvoType[];
+  showGte?: boolean;
+}) {
+  const needsValue = !["min", "max", "autoMin", "autoMax"].includes(cfvo.type);
+  return (
+    <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
+      <Typography level="body-sm" sx={{ minWidth: 70 }}>
+        {label}
+      </Typography>
+      {showGte && (
+        <Select
+          size="sm"
+          value={cfvo.gte === false ? ">" : ">="}
+          onChange={(_, v) => onChange({ ...cfvo, gte: v !== ">" })}
+          slotProps={{ button: { "aria-label": `${label} comparison` } }}
+        >
+          <Option value=">=">≥</Option>
+          <Option value=">">&gt;</Option>
+        </Select>
+      )}
+      <Select
+        size="sm"
+        value={cfvo.type}
+        onChange={(_, v) => v && onChange({ ...cfvo, type: v as CfvoType })}
+        slotProps={{ button: { "aria-label": `${label} type` } }}
+      >
+        {CFVO_TYPES.filter(([k]) => types.includes(k)).map(([k, l]) => (
+          <Option key={k} value={k}>
+            {l}
+          </Option>
+        ))}
+      </Select>
+      {needsValue && (
+        <Input
+          size="sm"
+          sx={{ width: 110 }}
+          value={cfvo.value ?? ""}
+          onChange={(e) => onChange({ ...cfvo, value: e.target.value })}
+          slotProps={{ input: { "aria-label": `${label} value` } }}
+        />
+      )}
+    </Box>
+  );
+}
+
+export function ConditionalFormatDialog({ open, onClose, getWb }: ConditionalFormatDialogProps) {
+  const [sheetId, setSheetId] = useState<string | null>(null);
   const [rules, setRules] = useState<CfRule[]>([]);
-  const [editing, setEditing] = useState<EditState | null>(null);
-  const [editIdx, setEditIdx] = useState<number | null>(null); // null = new rule
+  const [editing, setEditing] = useState<CfRule | null>(null);
+  const [rangeText, setRangeText] = useState("");
+  const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    const wb = getWb();
-    if (!wb) return;
-    try {
-      const sheet = wb.getSheet?.();
-      const allSheets: any[] = wb.getAllSheets?.() ?? [];
-      const s = allSheets.find((x: any) => x.id === sheet?.id) ?? sheet;
-      setRules(
-        Array.isArray(s?.luckysheet_conditionformat_save)
-          ? s.luckysheet_conditionformat_save
-          : [],
-      );
-    } catch {
-      setRules([]);
-    }
+    const sheet = currentSheet(getWb());
+    setSheetId(sheet?.id ?? null);
+    setRules(sortByPriority(sheetCF(sheet)));
     setEditing(null);
-    setEditIdx(null);
+    setErr(null);
   }, [getWb]);
 
   useEffect(() => {
     if (open) load();
   }, [open, load]);
 
-  function saveRules(newRules: CfRule[]) {
+  function save(next: CfRule[]) {
     const wb = getWb();
-    if (!wb) return;
-    try {
-      const all: any[] = wb.getAllSheets?.() ?? [];
-      const curId = wb.getSheet?.()?.id;
-      const updated = all.map((s: any) =>
-        s.id === curId
-          ? { ...s, luckysheet_conditionformat_save: newRules }
-          : s,
-      );
-      wb.updateSheet?.(updated);
-    } catch {
-      /* ignore */
-    }
-    setRules(newRules);
+    if (!wb || !sheetId) return;
+    setSheetCF(wb, sheetId, next);
+    setRules(sortByPriority(next));
   }
 
-  function deleteRule(idx: number) {
-    saveRules(rules.filter((_, i) => i !== idx));
+  function startNew() {
+    const ranges = selectionRanges(getWb());
+    setEditing(newRule("cellIs", ranges));
+    setRangeText(rangesText(ranges));
+    setErr(null);
   }
 
-  function startEdit(idx: number | null) {
-    setEditing(idx === null ? emptyEdit() : editFromRule(rules[idx]));
-    setEditIdx(idx);
+  function startEdit(r: CfRule) {
+    setEditing({ ...r });
+    setRangeText(rangesText(r.ranges));
+    setErr(null);
   }
 
-  function commitEdit() {
+  function changeType(t: CfType) {
     if (!editing) return;
-    const wb = getWb();
-    if (!wb) return;
-    const cellrange =
-      editIdx !== null && editIdx < rules.length
-        ? rules[editIdx].cellrange
-        : selectionToCellrange(wb);
+    const base =
+      t === "colorScale"
+        ? colorScaleRule(editing.ranges, 3)
+        : newRule(t, editing.ranges, FORMATTING_TYPES.has(t) && editing.style ? { style: editing.style } : {});
+    setEditing({ ...base, id: editing.id, priority: editing.priority, stopIfTrue: editing.stopIfTrue });
+  }
 
-    let rule: CfRule;
-    if (editing.style === "colorGradation") {
-      const fmt = editing.useMid
-        ? [toRgb(editing.scaleMin), toRgb(editing.scaleMid), toRgb(editing.scaleMax)]
-        : [toRgb(editing.scaleMin), toRgb(editing.scaleMax)];
-      rule = {
-        type: "colorGradation",
-        cellrange,
-        format: fmt,
-        conditionName: null,
-        conditionRange: [],
-        conditionValue: [],
-      };
-    } else if (editing.style === "dataBar") {
-      rule = {
-        type: "dataBar",
-        cellrange,
-        format: ["rgb(255,255,255)", toRgb(editing.barColor)],
-        conditionName: null,
-        conditionRange: [],
-        conditionValue: [],
-      };
-    } else {
-      const v0 = (editing.conditionValue?.[0] ?? "").toString();
-      const v1 =
-        editing.conditionName === "between"
-          ? (editing.conditionValue?.[1] ?? "").toString()
-          : undefined;
-      rule = {
-        type: "default",
-        cellrange,
-        format: { textColor: editing.textColor, cellColor: editing.cellColor },
-        conditionName: editing.conditionName,
-        conditionRange: [],
-        conditionValue: v1 != null ? [v0, v1] : [v0],
-      };
+  function commit() {
+    if (!editing) return;
+    const ranges = parseRanges(rangeText);
+    if (!ranges) {
+      setErr("Enter the cells to format, e.g. A1:B10 or A1:A10, C1:C10.");
+      return;
     }
-    const next =
-      editIdx !== null ? rules.map((r, i) => (i === editIdx ? rule : r)) : [...rules, rule];
-    saveRules(next);
+    const e = { ...editing, ranges };
+    if ((e.type === "cellIs" && !(e.formula1 ?? "").trim()) || (e.type === "expression" && !(e.formula1 ?? "").trim())) {
+      setErr("Enter a value or formula.");
+      return;
+    }
+    if (e.type === "expression" && !e.formula1!.trim().startsWith("=")) e.formula1 = "=" + e.formula1!.trim();
+    const exists = rules.some((r) => r.id === e.id);
+    save(exists ? rules.map((r) => (r.id === e.id ? e : r)) : addRule(rules, e));
     setEditing(null);
-    setEditIdx(null);
   }
 
   const e = editing;
-  const isBetween = e?.conditionName === "between";
-
-  // small reusable colour input
-  const colorInput = (val: string, onChange: (v: string) => void, label: string) => (
-    <input
-      type="color"
-      value={val}
-      onChange={(ev) => onChange(ev.target.value)}
-      style={{
-        width: 40,
-        height: 32,
-        padding: 2,
-        border: "1px solid #ccc",
-        borderRadius: 4,
-        cursor: "pointer",
-      }}
-      aria-label={label}
-    />
-  );
+  const set = (patch: Partial<CfRule>) => e && setEditing({ ...e, ...patch });
+  const setBar = (patch: Partial<DataBarOptions>) => e && setEditing({ ...e, bar: { ...e.bar!, ...patch } });
 
   return (
     <Modal open={open} onClose={onClose}>
-      <ModalDialog sx={{ width: 500, maxWidth: "95vw" }} aria-labelledby="cf-title">
+      <ModalDialog sx={{ width: 560, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }} aria-labelledby="cf-title">
         <ModalClose />
         <Typography id="cf-title" level="title-lg">
           Conditional formatting
         </Typography>
 
-        {!editing && (
+        {!e && (
           <Stack spacing={1} sx={{ mt: 1 }}>
             {rules.length === 0 && (
               <Typography level="body-sm" sx={{ opacity: 0.6 }}>
@@ -340,59 +348,47 @@ export function ConditionalFormatDialog({
             )}
             {rules.map((r, i) => (
               <Box
-                key={i}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  p: 1,
-                  borderRadius: "sm",
-                  bgcolor: "background.level1",
-                }}
+                key={r.id}
+                sx={{ display: "flex", alignItems: "center", gap: 1, p: 1, borderRadius: "sm", bgcolor: "background.level1" }}
+                data-testid="cf-rule"
               >
-                <Box sx={{ display: "flex", gap: 0.25, flexShrink: 0 }}>
-                  {ruleSwatches(r).map((c, j) => (
-                    <Box
-                      key={j}
-                      sx={{
-                        width: 16,
-                        height: 16,
-                        borderRadius: "2px",
-                        bgcolor: c,
-                        border: "1px solid",
-                        borderColor: "divider",
-                      }}
-                    />
-                  ))}
+                <Swatches rule={r} />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography level="body-sm" noWrap>
+                    {describeRule(r)}
+                  </Typography>
+                  <Typography level="body-xs" sx={{ opacity: 0.6 }} noWrap>
+                    {rangesText(r.ranges)}
+                  </Typography>
                 </Box>
-                <Typography
-                  level="body-sm"
-                  sx={{
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {ruleLabel(r)}
-                </Typography>
-                <IconButton size="sm" variant="plain" onClick={() => startEdit(i)} aria-label="Edit rule">
-                  <EditIcon fontSize="small" />
+                <Checkbox
+                  size="sm"
+                  label="Stop if true"
+                  checked={!!r.stopIfTrue}
+                  onChange={(ev) => save(rules.map((x) => (x.id === r.id ? { ...x, stopIfTrue: ev.target.checked } : x)))}
+                />
+                <IconButton size="sm" variant="plain" disabled={i === 0} onClick={() => save(moveRule(rules, r.id, -1))} aria-label="Move rule up">
+                  <ArrowUpwardIcon fontSize="small" />
                 </IconButton>
                 <IconButton
                   size="sm"
                   variant="plain"
-                  color="danger"
-                  onClick={() => deleteRule(i)}
-                  aria-label="Delete rule"
+                  disabled={i === rules.length - 1}
+                  onClick={() => save(moveRule(rules, r.id, 1))}
+                  aria-label="Move rule down"
                 >
+                  <ArrowDownwardIcon fontSize="small" />
+                </IconButton>
+                <IconButton size="sm" variant="plain" onClick={() => startEdit(r)} aria-label="Edit rule">
+                  <EditIcon fontSize="small" />
+                </IconButton>
+                <IconButton size="sm" variant="plain" color="danger" onClick={() => save(deleteRule(rules, r.id))} aria-label="Delete rule">
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Box>
             ))}
             <Box sx={{ display: "flex", gap: 1, justifyContent: "space-between", mt: 1 }}>
-              <Button variant="outlined" onClick={() => startEdit(null)}>
+              <Button variant="outlined" onClick={startNew}>
                 Add rule
               </Button>
               <Button variant="plain" onClick={onClose}>
@@ -404,178 +400,279 @@ export function ConditionalFormatDialog({
 
         {e && (
           <Stack spacing={1.5} sx={{ mt: 1 }}>
-            <Typography level="title-sm">
-              {editIdx === null ? "New rule" : "Edit rule"}
-            </Typography>
-
             <FormControl>
-              <FormLabel>Format style</FormLabel>
-              <Select
-                value={e.style}
-                onChange={(_, v) => v && setEditing({ ...e, style: v as Style })}
-                aria-label="Format style"
-              >
-                {(Object.entries(STYLE_LABELS) as [Style, string][]).map(([k, label]) => (
+              <FormLabel>Apply to range</FormLabel>
+              <Input
+                value={rangeText}
+                onChange={(ev) => setRangeText(ev.target.value)}
+                slotProps={{ input: { "aria-label": "Apply to range" } }}
+              />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Format cells if…</FormLabel>
+              <Select value={e.type} onChange={(_, v) => v && changeType(v as CfType)} slotProps={{ button: { "aria-label": "Rule type" } }}>
+                {TYPE_LABELS.map(([k, l]) => (
                   <Option key={k} value={k}>
-                    {label}
+                    {l}
                   </Option>
                 ))}
               </Select>
             </FormControl>
 
-            {/* ---- Single-color (condition) rule ---- */}
-            {e.style === "default" && (
+            {e.type === "cellIs" && (
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                <Select
+                  value={e.operator ?? "greaterThan"}
+                  onChange={(_, v) => v && set({ operator: v as CellIsOp })}
+                  slotProps={{ button: { "aria-label": "Condition type" } }}
+                  sx={{ minWidth: 200 }}
+                >
+                  {CELL_OPS.map(([k, l]) => (
+                    <Option key={k} value={k}>
+                      {l}
+                    </Option>
+                  ))}
+                </Select>
+                <Input
+                  value={e.formula1 ?? ""}
+                  onChange={(ev) => set({ formula1: ev.target.value })}
+                  placeholder="Value or =formula"
+                  slotProps={{ input: { "aria-label": "Condition value" } }}
+                />
+                {(e.operator === "between" || e.operator === "notBetween") && (
+                  <Input
+                    value={e.formula2 ?? ""}
+                    onChange={(ev) => set({ formula2: ev.target.value })}
+                    placeholder="and"
+                    slotProps={{ input: { "aria-label": "Second condition value" } }}
+                  />
+                )}
+              </Box>
+            )}
+
+            {(e.type === "containsText" || e.type === "notContainsText" || e.type === "beginsWith" || e.type === "endsWith") && (
+              <Input
+                value={e.text ?? ""}
+                onChange={(ev) => set({ text: ev.target.value })}
+                placeholder="Text, or =formula"
+                slotProps={{ input: { "aria-label": "Condition value" } }}
+              />
+            )}
+
+            {e.type === "timePeriod" && (
+              <Select value={e.period ?? "today"} onChange={(_, v) => v && set({ period: v as TimePeriod })} slotProps={{ button: { "aria-label": "Date period" } }}>
+                {PERIODS.map(([k, l]) => (
+                  <Option key={k} value={k}>
+                    {l}
+                  </Option>
+                ))}
+              </Select>
+            )}
+
+            {e.type === "top10" && (
+              <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                <Select value={e.bottom ? "bottom" : "top"} onChange={(_, v) => set({ bottom: v === "bottom" })}>
+                  <Option value="top">Top</Option>
+                  <Option value="bottom">Bottom</Option>
+                </Select>
+                <Input
+                  type="number"
+                  value={String(e.rank ?? 10)}
+                  onChange={(ev) => set({ rank: Number(ev.target.value) || 1 })}
+                  sx={{ width: 90 }}
+                  slotProps={{ input: { "aria-label": "Rank" } }}
+                />
+                <Checkbox label="% of range" checked={!!e.percent} onChange={(ev) => set({ percent: ev.target.checked })} />
+              </Box>
+            )}
+
+            {e.type === "aboveAverage" && (
+              <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
+                <Select value={e.above === false ? "below" : "above"} onChange={(_, v) => set({ above: v !== "below" })}>
+                  <Option value="above">Above</Option>
+                  <Option value="below">Below</Option>
+                </Select>
+                <Checkbox label="or equal to" checked={!!e.equalAverage} onChange={(ev) => set({ equalAverage: ev.target.checked })} />
+                <Typography level="body-sm">Std. deviations</Typography>
+                <Input
+                  type="number"
+                  value={String(e.stdDev ?? 0)}
+                  onChange={(ev) => set({ stdDev: Math.max(0, Number(ev.target.value) || 0) })}
+                  sx={{ width: 80 }}
+                  slotProps={{ input: { "aria-label": "Standard deviations" } }}
+                />
+              </Box>
+            )}
+
+            {e.type === "expression" && (
+              <Input
+                value={e.formula1 ?? ""}
+                onChange={(ev) => set({ formula1: ev.target.value })}
+                placeholder="=$A1>10"
+                slotProps={{ input: { "aria-label": "Custom formula" } }}
+              />
+            )}
+
+            {FORMATTING_TYPES.has(e.type) && (
               <>
-                <FormControl>
-                  <FormLabel>Condition</FormLabel>
+                <Divider />
+                <Box sx={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "center" }}>
+                  <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <Typography level="body-sm">Fill</Typography>
+                    <ColorInput
+                      value={e.style?.fill ?? "#ffffff"}
+                      onChange={(v) => set({ style: { ...e.style, fill: v } })}
+                      label="Background color"
+                    />
+                    {e.style?.fill ? (
+                      <Chip size="sm" onClick={() => set({ style: { ...e.style, fill: null } })}>
+                        clear
+                      </Chip>
+                    ) : (
+                      <Typography level="body-xs">none</Typography>
+                    )}
+                  </Box>
+                  <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <Typography level="body-sm">Text</Typography>
+                    <ColorInput
+                      value={e.style?.color ?? "#000000"}
+                      onChange={(v) => set({ style: { ...e.style, color: v } })}
+                      label="Text color"
+                    />
+                    {e.style?.color ? (
+                      <Chip size="sm" onClick={() => set({ style: { ...e.style, color: null } })}>
+                        clear
+                      </Chip>
+                    ) : (
+                      <Typography level="body-xs">none</Typography>
+                    )}
+                  </Box>
+                </Box>
+              </>
+            )}
+
+            {e.type === "colorScale" && (
+              <Stack spacing={1}>
+                <Select
+                  size="sm"
+                  value={String(e.cfvos?.length ?? 2)}
+                  onChange={(_, v) => {
+                    const rr = colorScaleRule(e.ranges, v === "3" ? 3 : 2);
+                    set({ cfvos: rr.cfvos, colors: rr.colors });
+                  }}
+                  slotProps={{ button: { "aria-label": "Colour scale stops" } }}
+                >
+                  <Option value="2">2-colour scale</Option>
+                  <Option value="3">3-colour scale</Option>
+                </Select>
+                {(e.cfvos ?? []).map((cv, i) => (
+                  <Box key={i} sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <ColorInput
+                      value={e.colors?.[i] ?? "#ffffff"}
+                      onChange={(v) => set({ colors: (e.colors ?? []).map((c, j) => (j === i ? v : c)) })}
+                      label={`Stop ${i + 1} colour`}
+                    />
+                    <CfvoEditor
+                      cfvo={cv}
+                      label={i === 0 ? "Minpoint" : i === (e.cfvos?.length ?? 0) - 1 ? "Maxpoint" : "Midpoint"}
+                      types={i === 0 ? ["min", "num", "percent", "percentile", "formula"] : i === (e.cfvos?.length ?? 0) - 1 ? ["max", "num", "percent", "percentile", "formula"] : ["num", "percent", "percentile", "formula"]}
+                      onChange={(c) => set({ cfvos: (e.cfvos ?? []).map((x, j) => (j === i ? c : x)) })}
+                    />
+                  </Box>
+                ))}
+              </Stack>
+            )}
+
+            {e.type === "dataBar" && e.bar && (
+              <Stack spacing={1}>
+                <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center" }}>
+                  <Typography level="body-sm">Bar</Typography>
+                  <ColorInput value={e.bar.color} onChange={(v) => setBar({ color: v })} label="Bar color" />
+                  <Typography level="body-sm">Negative</Typography>
+                  <ColorInput value={e.bar.negativeColor} onChange={(v) => setBar({ negativeColor: v })} label="Negative bar color" />
+                  <Checkbox
+                    size="sm"
+                    label="Border"
+                    checked={!!e.bar.borderColor}
+                    onChange={(ev) => setBar({ borderColor: ev.target.checked ? e.bar!.color : null })}
+                  />
+                  <Checkbox size="sm" label="Gradient" checked={e.bar.gradient} onChange={(ev) => setBar({ gradient: ev.target.checked })} />
+                  <Checkbox size="sm" label="Show bar only" checked={!e.bar.showValue} onChange={(ev) => setBar({ showValue: !ev.target.checked })} />
+                </Box>
+                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                  <Select size="sm" value={e.bar.axisPosition} onChange={(_, v) => v && setBar({ axisPosition: v })} slotProps={{ button: { "aria-label": "Axis position" } }}>
+                    <Option value="automatic">Axis: automatic</Option>
+                    <Option value="middle">Axis: cell midpoint</Option>
+                    <Option value="none">No axis</Option>
+                  </Select>
+                  <Select size="sm" value={e.bar.direction} onChange={(_, v) => v && setBar({ direction: v })} slotProps={{ button: { "aria-label": "Bar direction" } }}>
+                    <Option value="context">Direction: context</Option>
+                    <Option value="leftToRight">Left to right</Option>
+                    <Option value="rightToLeft">Right to left</Option>
+                  </Select>
+                </Box>
+                <CfvoEditor cfvo={e.bar.min} label="Minimum" types={["autoMin", "min", "num", "percent", "percentile", "formula"]} onChange={(c) => setBar({ min: c })} />
+                <CfvoEditor cfvo={e.bar.max} label="Maximum" types={["autoMax", "max", "num", "percent", "percentile", "formula"]} onChange={(c) => setBar({ max: c })} />
+                <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                  <Typography level="body-sm">Bar length %</Typography>
+                  <Input size="sm" type="number" value={String(e.bar.minLength)} onChange={(ev) => setBar({ minLength: Number(ev.target.value) || 0 })} sx={{ width: 80 }} slotProps={{ input: { "aria-label": "Shortest bar" } }} />
+                  <Typography level="body-sm">to</Typography>
+                  <Input size="sm" type="number" value={String(e.bar.maxLength)} onChange={(ev) => setBar({ maxLength: Number(ev.target.value) || 100 })} sx={{ width: 80 }} slotProps={{ input: { "aria-label": "Longest bar" } }} />
+                </Box>
+              </Stack>
+            )}
+
+            {e.type === "iconSet" && (
+              <Stack spacing={1}>
+                <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
                   <Select
-                    value={e.conditionName}
-                    onChange={(_, v) => v && setEditing({ ...e, conditionName: v as ConditionName })}
-                    aria-label="Condition type"
+                    size="sm"
+                    value={e.iconSet ?? "3TrafficLights1"}
+                    onChange={(_, v) => v && setEditing(setIconSet(e, v as IconSetName))}
+                    slotProps={{ button: { "aria-label": "Icon style" } }}
+                    sx={{ minWidth: 220 }}
                   >
-                    {(Object.entries(CONDITION_LABELS) as [ConditionName, string][]).map(([k, label]) => (
+                    {(Object.keys(ICON_COUNTS) as IconSetName[]).map((k) => (
                       <Option key={k} value={k}>
-                        {label}
+                        {ICON_SET_LABELS[k]}
                       </Option>
                     ))}
                   </Select>
-                </FormControl>
-                <FormControl>
-                  <FormLabel>{isBetween ? "Minimum value" : "Value"}</FormLabel>
-                  <Input
-                    value={e.conditionValue?.[0] ?? ""}
-                    onChange={(ev) =>
-                      setEditing({
-                        ...e,
-                        conditionValue: [ev.target.value, (e.conditionValue as any)?.[1] ?? ""] as any,
-                      })
-                    }
-                    placeholder={e.conditionName === "textContains" ? "Text to match" : "Enter value"}
-                    slotProps={{ input: { "aria-label": "Condition value" } }}
-                  />
-                </FormControl>
-                {isBetween && (
-                  <FormControl>
-                    <FormLabel>Maximum value</FormLabel>
-                    <Input
-                      value={(e.conditionValue as any)?.[1] ?? ""}
-                      onChange={(ev) =>
-                        setEditing({
-                          ...e,
-                          conditionValue: [e.conditionValue?.[0] ?? "", ev.target.value] as [string, string],
-                        })
-                      }
-                      placeholder="Enter value"
-                      slotProps={{ input: { "aria-label": "Second condition value" } }}
+                  <IconPreview set={e.iconSet ?? "3TrafficLights1"} />
+                </Box>
+                <Box sx={{ display: "flex", gap: 2 }}>
+                  <Checkbox size="sm" label="Reverse icon order" checked={!!e.reverse} onChange={(ev) => set({ reverse: ev.target.checked })} />
+                  <Checkbox size="sm" label="Show icon only" checked={e.showValue === false} onChange={(ev) => set({ showValue: !ev.target.checked })} />
+                </Box>
+                {(e.cfvos ?? []).slice(1).map((cv, k) => {
+                  const i = k + 1;
+                  return (
+                    <CfvoEditor
+                      key={i}
+                      cfvo={cv}
+                      showGte
+                      label={`Icon ${i + 1} when`}
+                      types={["num", "percent", "percentile", "formula"]}
+                      onChange={(c) => set({ cfvos: (e.cfvos ?? []).map((x, j) => (j === i ? c : x)) })}
                     />
-                  </FormControl>
-                )}
-                <Divider />
-                <Typography level="title-sm">Formatting</Typography>
-                <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-                  <FormControl sx={{ flex: 1, minWidth: 140 }}>
-                    <FormLabel>Background color</FormLabel>
-                    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                      {colorInput(e.cellColor ?? "#ffffff", (v) => setEditing({ ...e, cellColor: v }), "Background color")}
-                      {e.cellColor ? (
-                        <Chip
-                          size="sm"
-                          variant="soft"
-                          endDecorator={
-                            <span style={{ cursor: "pointer" }} onClick={() => setEditing({ ...e, cellColor: null })}>
-                              ×
-                            </span>
-                          }
-                        >
-                          {e.cellColor}
-                        </Chip>
-                      ) : (
-                        <Typography level="body-xs" sx={{ opacity: 0.5 }}>
-                          None
-                        </Typography>
-                      )}
-                    </Box>
-                  </FormControl>
-                  <FormControl sx={{ flex: 1, minWidth: 140 }}>
-                    <FormLabel>Text color</FormLabel>
-                    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                      {colorInput(e.textColor ?? "#000000", (v) => setEditing({ ...e, textColor: v }), "Text color")}
-                      {e.textColor ? (
-                        <Chip
-                          size="sm"
-                          variant="soft"
-                          endDecorator={
-                            <span style={{ cursor: "pointer" }} onClick={() => setEditing({ ...e, textColor: null })}>
-                              ×
-                            </span>
-                          }
-                        >
-                          {e.textColor}
-                        </Chip>
-                      ) : (
-                        <Typography level="body-xs" sx={{ opacity: 0.5 }}>
-                          None
-                        </Typography>
-                      )}
-                    </Box>
-                  </FormControl>
-                </Box>
-              </>
+                  );
+                })}
+              </Stack>
             )}
 
-            {/* ---- Color scale ---- */}
-            {e.style === "colorGradation" && (
-              <>
-                <Typography level="body-sm" sx={{ opacity: 0.7 }}>
-                  Colors map from the lowest to highest value in the selection.
-                </Typography>
-                <Box sx={{ display: "flex", gap: 2, alignItems: "flex-end" }}>
-                  <FormControl>
-                    <FormLabel>Min</FormLabel>
-                    {colorInput(e.scaleMin, (v) => setEditing({ ...e, scaleMin: v }), "Minimum color")}
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Mid</FormLabel>
-                    {colorInput(e.scaleMid, (v) => setEditing({ ...e, scaleMid: v }), "Midpoint color")}
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>Max</FormLabel>
-                    {colorInput(e.scaleMax, (v) => setEditing({ ...e, scaleMax: v }), "Maximum color")}
-                  </FormControl>
-                </Box>
-                <Checkbox
-                  size="sm"
-                  label="Use a midpoint color (3-color scale)"
-                  checked={e.useMid}
-                  onChange={(ev) => setEditing({ ...e, useMid: ev.target.checked })}
-                />
-              </>
+            {err && (
+              <Typography level="body-sm" color="danger">
+                {err}
+              </Typography>
             )}
-
-            {/* ---- Data bar ---- */}
-            {e.style === "dataBar" && (
-              <>
-                <Typography level="body-sm" sx={{ opacity: 0.7 }}>
-                  Each cell shows a bar proportional to its value.
-                </Typography>
-                <FormControl>
-                  <FormLabel>Bar color</FormLabel>
-                  {colorInput(e.barColor, (v) => setEditing({ ...e, barColor: v }), "Bar color")}
-                </FormControl>
-              </>
-            )}
-
-            <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end", mt: 0.5 }}>
-              <Button
-                variant="plain"
-                onClick={() => {
-                  setEditing(null);
-                  setEditIdx(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button onClick={commitEdit}>Save rule</Button>
+            <Box sx={{ display: "flex", gap: 1, justifyContent: "space-between", mt: 0.5 }}>
+              <Checkbox size="sm" label="Stop if true" checked={!!e.stopIfTrue} onChange={(ev) => set({ stopIfTrue: ev.target.checked })} />
+              <Box sx={{ display: "flex", gap: 1 }}>
+                <Button variant="plain" onClick={() => setEditing(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={commit}>Save rule</Button>
+              </Box>
             </Box>
           </Stack>
         )}
