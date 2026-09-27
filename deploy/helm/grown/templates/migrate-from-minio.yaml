@@ -1,0 +1,124 @@
+{{- if .Values.migrateFromMinio.enabled }}
+{{- $m := .Values.migrateFromMinio }}
+{{- if and (not .Values.minio.enabled) (not $m.source.endpoint) }}
+{{- fail "migrateFromMinio.enabled needs a source: set minio.enabled=true (bundled legacy MinIO) or migrateFromMinio.source.endpoint" }}
+{{- end }}
+{{- $srcEndpoint := $m.source.endpoint | default (printf "http://%s.%s.svc.cluster.local:%v" (include "grown.minioName" .) .Release.Namespace .Values.minio.apiPort) }}
+{{- $srcSecret := $m.source.existingSecret | default (include "grown.minioName" .) }}
+{{- $srcAccessKey := ternary $m.source.accessKeyKey "MINIO_ROOT_USER" (not (empty $m.source.existingSecret)) }}
+{{- $srcSecretKey := ternary $m.source.secretKeyKey "MINIO_ROOT_PASSWORD" (not (empty $m.source.existingSecret)) }}
+{{- $pairs := $m.buckets | default (splitList " " (include "grown.bucketPairs" .)) }}
+# One-shot MinIO -> rustfs copy. Deliberately NOT a Helm hook: it's a plain Job,
+# so it runs once and stays around with its logs. To re-run (it is idempotent:
+# already-copied objects with matching size/mtime are skipped):
+#   kubectl -n {{ .Release.Namespace }} delete job {{ .Release.Name }}-migrate-from-minio
+# and reconcile/upgrade the release again. Its pod template carries no
+# chart-version label, so ordinary upgrades leave the (immutable) Job untouched.
+#
+# Tool: rclone. It streams each object source -> memory -> destination (no
+# scratch volume; multipart for large objects), preserves Content-Type and user
+# metadata (-M), retries per request, runs transfers concurrently in one
+# process, and re-runs incrementally. Verification: `rclone size` (object count
+# + bytes) on both sides and `rclone check --one-way` (every source object
+# present in the destination with the same size, and MD5 where both sides
+# expose one). Any mismatch => the Job fails.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-migrate-from-minio
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate-from-minio
+spec:
+  backoffLimit: {{ $m.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        # Stable labels only (no chart version): a Job's pod template is
+        # immutable, so it must render identically across chart upgrades.
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: migrate-from-minio
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: migrate
+          image: {{ $m.image }}
+          command: ["/bin/sh", "/scripts/migrate.sh"]
+          env:
+            - name: BUCKET_PAIRS
+              value: {{ join " " $pairs | quote }}
+            - name: WAIT_TIMEOUT
+              value: {{ $m.waitTimeoutSeconds | quote }}
+            - name: HOME
+              value: /tmp
+            # "" => in-memory config; remotes come from RCLONE_CONFIG_* below.
+            - name: RCLONE_CONFIG
+              value: ""
+            - name: RCLONE_TRANSFERS
+              value: {{ $m.transfers | quote }}
+            # --- source: MinIO ---
+            - name: RCLONE_CONFIG_SRC_TYPE
+              value: s3
+            - name: RCLONE_CONFIG_SRC_PROVIDER
+              value: Minio
+            - name: RCLONE_CONFIG_SRC_ENDPOINT
+              value: {{ $srcEndpoint | quote }}
+            - name: RCLONE_CONFIG_SRC_REGION
+              value: us-east-1
+            - name: RCLONE_CONFIG_SRC_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: {{ $srcSecret }}, key: {{ $srcAccessKey }} }
+            - name: RCLONE_CONFIG_SRC_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ $srcSecret }}, key: {{ $srcSecretKey }} }
+            # --- destination: rustfs (or the external S3 endpoint grown uses) ---
+            - name: RCLONE_CONFIG_DST_TYPE
+              value: s3
+            - name: RCLONE_CONFIG_DST_PROVIDER
+              value: Other
+            - name: RCLONE_CONFIG_DST_ENDPOINT
+              value: {{ include "grown.s3Endpoint" . | quote }}
+            - name: RCLONE_CONFIG_DST_REGION
+              value: us-east-1
+            - name: RCLONE_CONFIG_DST_FORCE_PATH_STYLE
+              value: "true"
+            - name: RCLONE_CONFIG_DST_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: access_key }
+            - name: RCLONE_CONFIG_DST_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "grown.s3CredsSecret" . }}, key: secret_key }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: scripts, mountPath: /scripts, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ .Release.Name }}-migrate-from-minio
+        # Only rclone's config/cache: objects are streamed, never staged here.
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-migrate-from-minio
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate-from-minio
+data:
+  migrate.sh: |-
+{{ .Files.Get "files/migrate-from-minio.sh" | indent 4 }}
+{{- end }}
