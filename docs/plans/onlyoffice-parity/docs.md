@@ -1622,7 +1622,32 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   "text typed right after a dialog insert" e2e; after: 20/20
   (`__tests__/reference-dialog-focus.test.tsx` checks focus and the DOM
   caret synchronously after the click in jsdom).
-- Related: Grown's docs collab hub replays updates but never answers the
-  y-protocol sync handshake, so `WebsocketProvider.synced` never becomes true.
-  Nothing in the app reads it today. e2e waits for "connected" plus a short
-  settle instead.
+- ~~Docs Presence chip (`collab-status`) stuck on "connecting" after
+  opening/reloading a doc (docs-find.spec and the specs that reload)~~ —
+  **fixed**. Not the socket: in every stuck load the WebSocket had opened,
+  sent syncStep1 and received the whole replay, with no close. y-websocket
+  emits `status` only on transitions, and `Presence` read `wsconnected` in
+  its first render but subscribed in an effect; when the socket opened
+  between the two, the one-off "connected" event reached no listener and the
+  chip stayed "connecting" for the life of the page. `Presence` now re-reads
+  the provider's state after subscribing. Before: 6/120 loads stuck
+  (worst run 4/30) in `docs-collab-reconnect.spec.ts` with an edit before
+  each reload; after: 0/150 (`__tests__/presence-status.test.tsx`
+  reproduces it in jsdom). Found alongside, in the hub
+  (`internal/docs/collab.go`, `collab_serve_test.go`):
+  - replay pushed the update log through the peer's 256-slot outbound queue,
+    which drops on overflow, so a doc with more than ~256 stored updates
+    (one per keystroke) reloaded with edits missing. Replay now writes
+    straight to the socket before the writer starts, and closes the socket
+    on a replay error so the client reconnects instead of keeping a partial
+    doc;
+  - the hub never answered the sync handshake or echoed awareness, so a lone
+    client received nothing after the replay and y-websocket dropped and
+    reopened the socket every 30 s (chip flicker). The hub now answers
+    syncStep1 with an empty syncStep2 (after the replay, so
+    `WebsocketProvider.synced` now flips) and echoes the sender's awareness,
+    as the reference y-websocket server does;
+  - after a client closed, `Serve` waited on the hijacked request's context,
+    which is only cancelled when the handler returns, so a lone peer's
+    handler and room leaked until someone else joined. The writer now stops
+    on a context cancelled when the reader exits.

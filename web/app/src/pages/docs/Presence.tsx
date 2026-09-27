@@ -12,13 +12,16 @@ interface PeerState {
   color: string;
 }
 
+/** currentStatus derives the chip's status from the provider's socket state. */
+function currentStatus(provider: WebsocketProvider): string {
+  return provider.wsconnected ? "connected" : "connecting";
+}
+
 /** Presence renders connection status and an avatar stack of everyone currently
  *  editing, driven by the Yjs awareness protocol. */
 export function Presence({ provider }: PresenceProps) {
   const [peers, setPeers] = useState<PeerState[]>([]);
-  const [status, setStatus] = useState<string>(
-    provider.wsconnected ? "connected" : "connecting",
-  );
+  const [status, setStatus] = useState<string>(() => currentStatus(provider));
 
   useEffect(() => {
     const awareness = provider.awareness;
@@ -38,6 +41,11 @@ export function Presence({ provider }: PresenceProps) {
     const onStatus = (e: { status: string }) => setStatus(e.status);
     awareness.on("change", update);
     provider.on("status", onStatus);
+    // The provider emits "status" only on transitions. The socket can open
+    // between the first render (which read wsconnected) and this effect, and
+    // that one-off "connected" event then reached no listener, leaving the
+    // chip on "connecting" for good. Re-read the state now that we listen.
+    setStatus(currentStatus(provider));
     update();
     return () => {
       awareness.off("change", update);
