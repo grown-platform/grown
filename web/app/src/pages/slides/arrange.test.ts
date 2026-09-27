@@ -1,5 +1,6 @@
 // Multi-element arrange ops (align, distribute, z-order, cycling, locking)
 // and the finer-grained collab ops, plus the OnlyOffice M2 ports.
+import { newChartElement } from "./chartElement";
 import { describe, it, expect } from "vitest";
 import {
   alignElements,
@@ -205,16 +206,20 @@ describe("OnlyOffice parity: shapes", () => {
   });
 
   // Delete removes, in turn: the animation effect (Grown: the element's
-  // entrance animation), the shape, a shape inside a group, then the group.
-  // Grown variant: there are no chart objects yet (M11), so that step is
-  // omitted; a group left with one member dissolves, so the group here has
-  // three members like OnlyOffice's.
+  // entrance animation), the shape, the chart (M11), a shape inside a group,
+  // then the group. Grown variant: a group left with one member dissolves,
+  // so the group here has three members like OnlyOffice's.
   it("oo:slide/shortcuts/shortcuts.js#Check remove graphic objects", () => {
     const animated = el("shape", 0, 0, 100, 100, { animation: { type: "fade-in", order: 1 } });
     expect(removeAnimation(animated).animation).toBeUndefined();
     let els: SlideElement[] = [removeAnimation(animated)];
     expect(editorKeyAction({ key: "Delete" }, { hasSelection: true })).toEqual({ type: "deleteSelected" });
     els = removeDeep(els, "shape");
+    expect(els).toEqual([]);
+
+    els = [{ ...newChartElement("column"), id: "chart" }];
+    expect(editorKeyAction({ key: "Delete" }, { hasSelection: true })).toEqual({ type: "deleteSelected" });
+    els = removeDeep(els, "chart");
     expect(els).toEqual([]);
 
     els = groupElements([el("s1"), el("s2"), el("s3")], ["s1", "s2", "s3"], () => "group")!.elements;

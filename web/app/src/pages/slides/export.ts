@@ -16,6 +16,8 @@ import { effective, insetsOf, listMarkers, paragraphs } from "./textOps";
 import { resolveSlideLink } from "./links";
 import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
 import { inlineImages } from "./assets";
+import { objectsToPictures } from "./exportObjects";
+import { wordArtCssText, wordArtSvgAttrs } from "./wordArt";
 import { backgroundCss } from "./slideProps";
 import { withFooters } from "./layouts";
 import { CELL_PAD, cellFormat, cellTextEl, colWidths, isCovered, offsets, rowHeights, spanOf } from "./tableOps";
@@ -76,7 +78,8 @@ function elementHTML(el: SlideElement, slideHref?: (url: string) => string | nul
           return i ?? (url.startsWith("#") ? null : url);
         })
       : esc(el.text || "").replace(/\n/g, "<br/>");
-    return `<div style="${style}">${el.vert === "vert270" ? `<div style="transform:rotate(180deg)">${body}</div>` : body}</div>`;
+    const art = el.wordArt ? `<div style="width:100%;${wordArtCssText(el.wordArt).replace(/"/g, "&quot;")}">${body}</div>` : body;
+    return `<div style="${style}">${el.vert === "vert270" ? `<div style="transform:rotate(180deg)">${art}</div>` : art}</div>`;
   }
   const bd =
     el.stroke && el.stroke !== "none"
@@ -335,8 +338,13 @@ function textSVG(el: SlideElement): string {
       return `<tspan x="${tx}" y="${startY + i * lineH}">${mark}${segs}</tspan>`;
     })
     .join("");
+  // Word art (M11): gradient fill, outline and shadow/glow on the whole text.
+  const art = wordArtSvgAttrs(el, `wa-${el.id}`);
+  const fillAttr = art.attrs.includes(' fill="') ? "" : ` fill="${el.color || "#000"}"`;
+  const body = art.defs ? tspans.replace(/ fill="[^"]*"/g, "") : tspans;
   return (
-    `<text font-family="${el.fontFamily || "Arial"}" font-size="${size}" fill="${el.color || "#000"}" text-anchor="${anchor}" xml:space="preserve">${tspans}</text>`
+    (art.defs ? `<defs>${art.defs}</defs>` : "") +
+    `<text font-family="${el.fontFamily || "Arial"}" font-size="${size}"${fillAttr}${art.attrs} text-anchor="${anchor}" xml:space="preserve">${body}</text>`
   );
 }
 
@@ -458,6 +466,8 @@ export async function downloadDeck(
   slideIndex = 0,
 ): Promise<void> {
   const name = (title || "presentation").replace(/[/\\?%*:|"<>]/g, "-");
+  // Charts, clips and warped word art export as pictures (not to pptx).
+  if (fmt !== "pptx" && fmt !== "txt") deck = await objectsToPictures(deck);
   // Files that leave the browser carry their pictures inline.
   if (fmt !== "pdf" && fmt !== "txt") deck = await inlineImages(deck);
 

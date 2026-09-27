@@ -104,6 +104,19 @@ export interface SlideActions {
   image: ImageCommands | null;
   /** Alt text for the selection. */
   altText: () => void;
+  /** Charts, diagrams, media and word art (M11). */
+  objects: ObjectActions;
+}
+
+export interface ObjectActions {
+  insertChart: (type?: "column" | "bar" | "line" | "pie") => void;
+  insertDiagram: () => void;
+  insertMedia: (kind: "video" | "audio") => void;
+  insertWordArt: () => void;
+  editWordArt: (() => void) | null;
+  editChart: (() => void) | null;
+  editDiagram: (() => void) | null;
+  editPlayback: (() => void) | null;
 }
 
 const menuButtonSx = {
@@ -277,12 +290,24 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
             Curved connector
           </MenuItem>
           <ListDivider />
-          <MenuItem disabled>Diagram{arrow}</MenuItem>
+          <MenuItem onClick={() => actions.objects.insertDiagram()}>Diagram…</MenuItem>
           <MenuItem onClick={actions.insertTable}>Table…</MenuItem>
-          <MenuItem disabled>Chart{arrow}</MenuItem>
-          <MenuItem disabled>Word art</MenuItem>
-          <MenuItem disabled>Video</MenuItem>
-          <MenuItem disabled>Audio</MenuItem>
+          <MenuItem onClick={() => actions.objects.insertChart()}>Chart…</MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.objects.insertChart("bar")}>
+            Bar
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.objects.insertChart("column")}>
+            Column
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.objects.insertChart("line")}>
+            Line
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => actions.objects.insertChart("pie")}>
+            Pie
+          </MenuItem>
+          <MenuItem onClick={actions.objects.insertWordArt}>Word art</MenuItem>
+          <MenuItem onClick={() => actions.objects.insertMedia("video")}>Video…</MenuItem>
+          <MenuItem onClick={() => actions.objects.insertMedia("audio")}>Audio…</MenuItem>
           <MenuItem onClick={actions.text.specialChars}>Special characters…</MenuItem>
           <MenuItem onClick={actions.openAnimations}>Animation</MenuItem>
           <MenuItem onClick={actions.setLink}>Link…{kbd("Ctrl+K")}</MenuItem>
@@ -455,6 +480,19 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           </MenuItem>
           <MenuItem sx={sub} disabled={actions.selection.count === 0} onClick={actions.altText}>
             Alt text…
+          </MenuItem>
+          {section("Objects")}
+          <MenuItem sx={sub} disabled={!actions.objects.editWordArt} onClick={() => actions.objects.editWordArt?.()}>
+            Word art…
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.objects.editChart} onClick={() => actions.objects.editChart?.()}>
+            Chart data…
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.objects.editDiagram} onClick={() => actions.objects.editDiagram?.()}>
+            Diagram outline…
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.objects.editPlayback} onClick={() => actions.objects.editPlayback?.()}>
+            Playback…
           </MenuItem>
           <MenuItem disabled>Borders &amp; lines{arrow}</MenuItem>
           <MenuItem onClick={actions.text.textOptions}>Text options…</MenuItem>

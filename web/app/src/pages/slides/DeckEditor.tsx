@@ -64,6 +64,8 @@ import {
 } from "./api";
 import { externalizeImages } from "./assets";
 import { AltTextDialog, ImageControls, type ImageCommands } from "./ImageControls";
+import { useObjects } from "./useObjects";
+import { refitDiagram } from "./diagrams";
 import {
   actualSize as imgActualSize,
   cropToFill,
@@ -93,7 +95,7 @@ import { SlideView } from "./SlideView";
 import { SlideShow } from "./SlideShow";
 import { MotionPanel } from "./MotionPanel";
 import { effectsOf, removeEffects } from "./animOps";
-import { applyTheme, reconcileRefs, setActiveTheme, themeOf, withColorRef } from "./theme";
+import { activeTheme, applyTheme, reconcileRefs, setActiveTheme, themeOf, withColorRef } from "./theme";
 import {
   applyLayout as applyLayoutOp,
   findLayout,
@@ -460,7 +462,8 @@ export function DeckEditor({ user }: { user: User }) {
       if (!slide) return;
       if (opts?.history !== false) pushHistory();
       // Connectors glued to this element move with it.
-      el = reconcileRefs(slide.elements.find((e) => e.id === el.id), el);
+      const prev = slide.elements.find((e) => e.id === el.id);
+      el = refitDiagram(prev, reconcileRefs(prev, el), activeTheme());
       const all = withGluedConnectors(slide.elements, [el]);
       if (all.length > 1) {
         applyToSlide(slide.id, (s) => upsertElementsOp(s, all));
@@ -479,7 +482,10 @@ export function DeckEditor({ user }: { user: User }) {
     (els: SlideElement[], opts?: { history?: boolean }) => {
       if (!slide || !els.length) return;
       if (opts?.history !== false) pushHistory();
-      els = els.map((e) => reconcileRefs(slide.elements.find((x) => x.id === e.id), e));
+      els = els.map((e) => {
+        const prev = slide.elements.find((x) => x.id === e.id);
+        return refitDiagram(prev, reconcileRefs(prev, e), activeTheme());
+      });
       const all = withGluedConnectors(slide.elements, els);
       applyToSlide(slide.id, (s) => upsertElementsOp(s, all));
       broadcast({ t: "upsertMany", si: slide.id, els: all });
@@ -487,6 +493,16 @@ export function DeckEditor({ user }: { user: User }) {
     },
     [slide, applyToSlide, broadcast, scheduleSave, pushHistory],
   );
+
+  // Charts, diagrams, video/audio and word art (M11).
+  const objects = useObjects({
+    deckId: id,
+    size: deckSize(doc),
+    selected: selectedEls,
+    upsert: (el) => upsertElement(el),
+    upsertMany: (els) => upsertMany(els),
+    select: (eid) => setSelId(eid),
+  });
 
   const removeMany = useCallback(
     (ids: string[]) => {
@@ -1693,6 +1709,7 @@ export function DeckEditor({ user }: { user: User }) {
     table: tableCmd,
     image: imageCmd,
     altText: () => selIds.length && setAltFor(selIds),
+    objects,
   };
 
   if (doc === null) {
@@ -2049,6 +2066,26 @@ export function DeckEditor({ user }: { user: User }) {
             </Dropdown>
           )}
           <ImageControls el={selected} cmd={imageCmd} />
+          {objects.editChart && (
+            <Button size="sm" variant="plain" color="neutral" onClick={objects.editChart}>
+              Edit chart
+            </Button>
+          )}
+          {objects.editDiagram && (
+            <Button size="sm" variant="plain" color="neutral" onClick={objects.editDiagram}>
+              Edit outline
+            </Button>
+          )}
+          {objects.editPlayback && (
+            <Button size="sm" variant="plain" color="neutral" onClick={objects.editPlayback}>
+              Playback
+            </Button>
+          )}
+          {objects.editWordArt && (
+            <Button size="sm" variant="plain" color="neutral" onClick={objects.editWordArt}>
+              Word art
+            </Button>
+          )}
           <TableControls el={selTable} cmd={tableCmd} activeCell={activeSel ? [activeSel.r, activeSel.c] : null} />
           <ShapeFormatControls
             el={selected}
@@ -2295,6 +2332,7 @@ export function DeckEditor({ user }: { user: User }) {
                 onEditExit={(elId, [from, to]) => {
                   savedTextSel.current = { id: elId, from, to };
                 }}
+                onOpenObject={objects.openObject}
                 onEditorMouseUp={(h) => {
                   if (!painterArmed || !painter) return;
                   const [a, b] = h.selection();
@@ -2639,6 +2677,7 @@ export function DeckEditor({ user }: { user: User }) {
         onApply={applyTextOptions}
         onClose={() => setTextOptsOpen(false)}
       />
+      {objects.dialogs}
       {altFor && (
         <AltTextDialog
           initial={slide?.elements.find((e) => e.id === altFor[0])?.alt ?? ""}
