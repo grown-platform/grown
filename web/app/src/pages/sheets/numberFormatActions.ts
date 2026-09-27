@@ -78,11 +78,20 @@ export function displayFor(cell: any, fa: string): string | null {
   return null;
 }
 
-function selectionRanges(w: any): any[] {
+/**
+ * The current selection as plain, mutable copies (FortuneSheet hands out
+ * frozen objects, and setSelection normalises the ranges it is given in place).
+ */
+export function selectionRanges(w: any): any[] {
   try {
     const s = w?.getSelection?.();
     if (!s) return [];
-    return Array.isArray(s) ? s : [s];
+    return (Array.isArray(s) ? s : [s]).map((r: any) => ({
+      row: [...r.row],
+      column: [...r.column],
+      ...(r.row_focus != null ? { row_focus: r.row_focus } : {}),
+      ...(r.column_focus != null ? { column_focus: r.column_focus } : {}),
+    }));
   } catch {
     return [];
   }
@@ -115,9 +124,9 @@ export function refreshDisplay(w: any, range: any) {
   );
 }
 
-/** Apply a number format to the current selection. */
-export function applyNumberFormat(w: any, fa: string) {
-  const ranges = selectionRanges(w);
+/** Apply a number format to the current selection (or the given ranges). */
+export function applyNumberFormat(w: any, fa: string, given?: any[]) {
+  const ranges = given ?? selectionRanges(w);
   const ct = { fa, t: cellTypeFor(fa) };
   for (const range of ranges) {
     try {
@@ -129,9 +138,9 @@ export function applyNumberFormat(w: any, fa: string) {
   }
 }
 
-/** The format code of the selection's focus cell. */
-export function currentFormat(w: any): { fa: string; value: unknown } {
-  const range = selectionRanges(w)[0];
+/** The format code of the selection's (or the given range's) focus cell. */
+export function currentFormat(w: any, given?: any[]): { fa: string; value: unknown } {
+  const range = (given ?? selectionRanges(w))[0];
   if (!range) return { fa: "General", value: undefined };
   const r = range.row_focus ?? range.row[0];
   const c = range.column_focus ?? range.column[0];

@@ -52,20 +52,23 @@ export function NumberFormatDialog({
   open,
   onClose,
   getWb,
+  ranges,
 }: {
   open: boolean;
   onClose: () => void;
   getWb: () => any;
+  /** The selection when the dialog was opened (the grid may lose it meanwhile). */
+  ranges: any[];
 }) {
   const [code, setCode] = useState("General");
   const [cellValue, setCellValue] = useState<unknown>(undefined);
 
   useEffect(() => {
     if (!open) return;
-    const { fa, value } = currentFormat(getWb());
+    const { fa, value } = currentFormat(getWb(), ranges.length ? ranges : undefined);
     setCode(fa || "General");
     setCellValue(value);
-  }, [open, getWb]);
+  }, [open, getWb, ranges]);
 
   const rows = useMemo(() => {
     const vals: unknown[] = cellValue != null && cellValue !== "" ? [cellValue, ...SAMPLES] : SAMPLES;
@@ -74,7 +77,7 @@ export function NumberFormatDialog({
 
   const apply = () => {
     const w = getWb();
-    if (w) applyNumberFormat(w, code.trim() || "General");
+    if (w) applyNumberFormat(w, code.trim() || "General", ranges.length ? ranges : undefined);
     onClose();
   };
 

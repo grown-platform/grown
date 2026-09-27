@@ -61,7 +61,7 @@ import { downloadSheet } from "./export";
 import { storableWorkbook } from "./workbookJson";
 import { normalizeWorkbook, seedSelection } from "./normalize";
 import { NumberFormatDialog } from "./NumberFormatDialog";
-import { typedInputHooks } from "./numberFormatActions";
+import { selectionRanges, typedInputHooks } from "./numberFormatActions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -130,6 +130,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [cfOpen, setCfOpen] = useState(false);
   const [nrOpen, setNrOpen] = useState(false);
   const [numFmtOpen, setNumFmtOpen] = useState(false);
+  const [numFmtRanges, setNumFmtRanges] = useState<any[]>([]);
   const [dvOpen, setDvOpen] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
   const [chartsOpen, setChartsOpen] = useState(false);
@@ -579,7 +580,10 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onInsertPivot={() => setPivotOpen(true)}
               onIconSet={addIconSet}
               onClearIconSets={clearAllIconSets}
-              onCustomNumberFormat={() => setNumFmtOpen(true)}
+              onCustomNumberFormat={() => {
+                setNumFmtRanges(selectionRanges(ref.current));
+                setNumFmtOpen(true);
+              }}
             />
           </Box>
           <Box sx={{ flex: 1 }} />
@@ -665,6 +669,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
         open={numFmtOpen}
         onClose={() => setNumFmtOpen(false)}
         getWb={getWbRef.current}
+        ranges={numFmtRanges}
       />
       <NamedRangesDialog
         open={nrOpen}
