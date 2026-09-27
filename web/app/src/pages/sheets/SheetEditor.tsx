@@ -117,7 +117,7 @@ import type { CellRect } from "./cellRange";
 import { FillSeriesDialog } from "./FillSeriesDialog";
 import { SortDialog } from "./SortDialog";
 import { PasteSpecialDialog } from "./PasteSpecialDialog";
-import { findShortcut, autoSumRange, a1, serialOf, stepFontSize, toggleReference, SHORTCUT_NUMBER_FORMATS, DATE_SHORTCUT_FORMAT, TIME_SHORTCUT_FORMAT } from "./sheetShortcuts";
+import { findShortcut, arrayFormulaText, autoSumRange, a1, serialOf, stepFontSize, toggleReference, SHORTCUT_NUMBER_FORMATS, DATE_SHORTCUT_FORMAT, TIME_SHORTCUT_FORMAT } from "./sheetShortcuts";
 import { SheetShortcutsDialog } from "./SheetShortcutsDialog";
 import { FunctionWizard } from "./FunctionWizard";
 import { GoalSeekDialog } from "./GoalSeekDialog";
@@ -129,6 +129,9 @@ import { paintScriptCell, toggleScript, VA_SUB, VA_SUPER } from "./cellScript";
 import { applyNumberFormat } from "./numberFormatActions";
 import { formatValue } from "./numberFormat";
 import { parseA1Range } from "./cellValue";
+import { gridGeometry } from "./chartAnchor";
+import { translateFormula } from "./formulaShift";
+import { selectAllTarget } from "./selectAll";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -213,11 +216,22 @@ function setTextSelection(el: HTMLElement, start: number, end: number) {
   sel?.removeAllRanges();
   sel?.addRange(range);
 }
-// Replaces a cell editor's text (FortuneSheet reads innerText when it commits).
+// Replaces a cell editor's text (FortuneSheet reads innerText when it
+// commits). A keydown + input pair with a character key code makes
+// FortuneSheet re-render a formula into its coloured reference spans (so its
+// own caret bookkeeping works for the next typed key); the caret is then put
+// back where it belongs.
 function setEditorText(el: HTMLElement, text: string, start: number, end = start) {
   el.textContent = text;
   setTextSelection(el, start, end);
+  el.dispatchEvent(new KeyboardEvent("keydown", { key: "a", code: "KeyA", keyCode: 65, which: 65, bubbles: true } as KeyboardEventInit));
   el.dispatchEvent(new Event("input", { bubbles: true }));
+  const restore = () => {
+    if (el.innerText.replace(/\n$/, "") === text) setTextSelection(el, start, end);
+  };
+  restore();
+  window.setTimeout(restore, 0);
+  window.setTimeout(restore, 40);
 }
 
 const COLORS = [
@@ -575,6 +589,12 @@ export function SheetEditor({ user }: SheetEditorProps) {
       const wb = ref.current;
       if (!wb) return;
       const editing = isEditingCell();
+      // Ctrl/⌘+arrows while typing move the caret by word / to the line end
+      // (FortuneSheet would move the grid selection instead).
+      if (editing && (e.ctrlKey || e.metaKey) && e.key.startsWith("Arrow")) {
+        e.stopPropagation();
+        return;
+      }
       if (!editing && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.code === "KeyC" || e.code === "KeyX")) rememberCopy(wb);
       const def = findShortcut(e, editing ? "editor" : "grid");
       if (!def) return;
@@ -703,6 +723,18 @@ export function SheetEditor({ user }: SheetEditorProps) {
       const s = wb?.getSelection?.();
       const sel = Array.isArray(s) ? s[s.length - 1] : s;
       const sheetId = String(wb?.getSheet?.()?.id ?? "");
+      // getSelection() has no focus cell; the afterSelectionChange hook does.
+      const f = activeCellStore.get();
+      if (
+        f &&
+        f.sheetId === sheetId &&
+        sel?.row &&
+        f.r >= Math.min(sel.row[0], sel.row[1]) &&
+        f.r <= Math.max(sel.row[0], sel.row[1]) &&
+        f.c >= Math.min(sel.column[0], sel.column[1]) &&
+        f.c <= Math.max(sel.column[0], sel.column[1])
+      )
+        return f;
       const r = sel?.row_focus ?? sel?.row?.[0];
       const c = sel?.column_focus ?? sel?.column?.[0];
       if (!sheetId || typeof r !== "number" || typeof c !== "number") return null;
@@ -806,6 +838,88 @@ export function SheetEditor({ user }: SheetEditorProps) {
     const i = sheets.findIndex((x: any) => String(x.id) === cur);
     const next = sheets[i + dir];
     if (next) wb.activateSheet({ id: next.id });
+  }
+  // Shift+Enter / Tab / Shift+Tab while editing: commit (FortuneSheet's Enter)
+  // and move up / right / left instead of down.
+  function commitAndMove(action: string) {
+    const a = activeCell();
+    const input = document.querySelector<HTMLElement>(".luckysheet-cell-input");
+    if (!a || !input) return;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true } as KeyboardEventInit));
+    const r = action === "saveUp" ? Math.max(0, a.r - 1) : a.r;
+    const c = action === "saveRight" ? a.c + 1 : action === "saveLeft" ? Math.max(0, a.c - 1) : a.c;
+    window.setTimeout(() => {
+      try {
+        ref.current?.setSelection([{ row: [r, r], column: [c, c] }], { id: a.sheetId });
+      } catch {
+        /* FortuneSheet's own move stays */
+      }
+    }, 0);
+  }
+  // Ctrl+Enter: the text being typed goes into every selected cell, formulas
+  // with their relative references moved (A1:B1 with =A2:B2 → B1 =B2:C2).
+  function fillEntry() {
+    const wb = ref.current;
+    const a = activeCell();
+    const input = document.querySelector<HTMLElement>(".luckysheet-cell-input");
+    if (!wb || !a || !input) return;
+    const text = input.innerText.replace(/\n$/, "");
+    const rects = selectionRanges(wb).map((rg: any) => ({
+      r1: Math.min(rg.row[0], rg.row[1]),
+      r2: Math.max(rg.row[0], rg.row[1]),
+      c1: Math.min(rg.column[0], rg.column[1]),
+      c2: Math.max(rg.column[0], rg.column[1]),
+    }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true } as KeyboardEventInit));
+    window.setTimeout(() => {
+      const calls: { name: string; args: any[] }[] = [];
+      for (const rc of rects) {
+        for (let r = rc.r1; r <= rc.r2; r++) {
+          for (let c = rc.c1; c <= rc.c2; c++) {
+            if (r === a.r && c === a.c) continue;
+            const v = text.startsWith("=") ? translateFormula(text, r - a.r, c - a.c) : text;
+            calls.push({ name: "setCellValue", args: [r, c, v, { id: a.sheetId }] });
+          }
+        }
+      }
+      try {
+        if (calls.length) wb.batchCallApis(calls);
+        wb.setSelection(rects.map((rc) => ({ row: [rc.r1, rc.r2], column: [rc.c1, rc.c2] })), { id: a.sheetId });
+      } catch {
+        /* the active cell keeps its entry */
+      }
+    }, 0);
+  }
+  // Ctrl+Shift+Enter: enter the formula as an array formula.
+  function arrayEntry() {
+    const input = document.querySelector<HTMLElement>(".luckysheet-cell-input");
+    if (!input) return;
+    const text = input.innerText.replace(/\n$/, "");
+    const next = arrayFormulaText(text);
+    if (next !== text) setEditorText(input, next, next.length);
+    window.setTimeout(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true } as KeyboardEventInit));
+    }, 50);
+  }
+  // Ctrl+A: the data around the active cell (or a table's rows, then the
+  // table), then the whole sheet (selectAll.ts).
+  function selectAllStep() {
+    const wb = ref.current;
+    const a = activeCell();
+    const sheet = currentSheet(wb);
+    const sel = selectionRect(wb);
+    if (!wb || !a || !sheet || !sel) return;
+    const data: any[][] = Array.isArray(sheet.data) ? sheet.data : [];
+    const filled = (r: number, c: number) => {
+      const v = data[r]?.[c];
+      return !!v && ((v.v != null && v.v !== "") || !!v.f || !!v.ct?.s);
+    };
+    const tables = Array.isArray(sheet.grownTables) ? sheet.grownTables : [];
+    const t = selectAllTarget(filled, sel, a.r, a.c, tables);
+    const rows = Math.max(data.length, Number(sheet.row) || 0) - 1;
+    const cols = Math.max(data[0]?.length ?? 0, Number(sheet.column) || 0) - 1;
+    const range = t ? { row: [t.r1, t.r2], column: [t.c1, t.c2] } : { row: [0, Math.max(0, rows)], column: [0, Math.max(0, cols)] };
+    wb.setSelection([range], { id: a.sheetId });
   }
   function recalcNow() {
     const wb = ref.current;
@@ -986,6 +1100,38 @@ export function SheetEditor({ user }: SheetEditorProps) {
         if (btn && btn.style.display !== "none") btn.click();
         return;
       }
+      case "clearActive": {
+        // Backspace clears only the active cell (Delete clears the selection)
+        // and leaves it in edit mode, as in Excel.
+        const a = activeCell();
+        if (!a) return;
+        wb.clearCell(a.r, a.c, { id: a.sheetId });
+        editActiveCell("", 0);
+        return;
+      }
+      case "contextMenu": {
+        // The grid's context menu at the active cell (Shift+F10 / the menu key).
+        const a = activeCell();
+        const area = editorEl?.querySelector<HTMLElement>(".fortune-cell-area");
+        const sheet = currentSheet(wb);
+        if (!a || !area || !sheet) return;
+        const g = gridGeometry(sheet);
+        const rect = area.getBoundingClientRect();
+        const x = rect.left + g.colLeft(a.c) - area.scrollLeft + 10;
+        const y = rect.top + g.rowTop(a.r) - area.scrollTop + 8;
+        area.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 }));
+        return;
+      }
+      case "fillEntry":
+        return fillEntry();
+      case "arrayEntry":
+        return arrayEntry();
+      case "selectAll":
+        return selectAllStep();
+      case "saveUp":
+      case "saveRight":
+      case "saveLeft":
+        return commitAndMove(action);
       case "print":
         return openPrint();
       case "shortcuts":
@@ -1135,15 +1281,29 @@ export function SheetEditor({ user }: SheetEditorProps) {
       return;
     }
     if (!writes.length) return;
+    // Computed values are not user edits: applyOp keeps them out of the undo
+    // history (setCellValue would record them, so Ctrl+Z would first undo a
+    // spill instead of the user's own change).
+    const ops = writes.map((w) => {
+      const sheet = (wb.getAllSheets?.() ?? []).find((sh: any) => sh?.id === w.sheetId);
+      const old = sheet?.data?.[w.r]?.[w.c] ?? null;
+      let value: any = null;
+      if (w.value) value = { ...(old ?? {}), ...w.value };
+      else if (old) {
+        // Keep the cell's formatting, drop the spilled value.
+        const { v: _v, m: _m, grownSpill: _g, ...rest } = old;
+        void _v;
+        void _m;
+        void _g;
+        value = Object.keys(rest).length ? rest : null;
+      }
+      return { op: "replace", id: w.sheetId, path: ["data", w.r, w.c], value };
+    });
     applyingRemote.current = true;
     try {
-      for (const w of writes) {
-        try {
-          wb.setCellValue(w.r, w.c, w.value, { id: w.sheetId });
-        } catch {
-          /* ignore */
-        }
-      }
+      wb.applyOp(ops);
+    } catch {
+      /* ignore */
     } finally {
       applyingRemote.current = false;
     }

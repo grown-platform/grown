@@ -57,17 +57,24 @@ export const SHEET_SHORTCUTS: ShortcutDef[] = [
   { id: "insertTime", group: "Cells and editing", label: "Insert the current time", keys: ["Ctrl+Shift+;"], ctx: "any" },
   { id: "edit", group: "Cells and editing", label: "Edit the active cell", keys: ["F2"], ctx: "grid", native: true },
   { id: "newLine", group: "Cells and editing", label: "New line in a cell", keys: ["Alt+Enter"], ctx: "editor", native: true },
-  { id: "saveDown", group: "Cells and editing", label: "Save and move down / up", keys: ["Enter", "Shift+Enter"], ctx: "editor", native: true },
-  { id: "saveRight", group: "Cells and editing", label: "Save and move right / left", keys: ["Tab", "Shift+Tab"], ctx: "editor", native: true },
+  { id: "saveDown", group: "Cells and editing", label: "Save and move down", keys: ["Enter"], ctx: "editor", native: true },
+  { id: "saveUp", group: "Cells and editing", label: "Save and move up", keys: ["Shift+Enter"], ctx: "editor" },
+  { id: "saveRight", group: "Cells and editing", label: "Save and move right", keys: ["Tab"], ctx: "editor" },
+  { id: "saveLeft", group: "Cells and editing", label: "Save and move left", keys: ["Shift+Tab"], ctx: "editor" },
+  { id: "fillEntry", group: "Cells and editing", label: "Enter into every selected cell", keys: ["Ctrl+Enter"], ctx: "editor" },
+  { id: "arrayEntry", group: "Formulas", label: "Enter as an array formula", keys: ["Ctrl+Shift+Enter"], ctx: "editor" },
   { id: "cancel", group: "Cells and editing", label: "Cancel editing", keys: ["Escape"], ctx: "editor", native: true },
   { id: "dropdown", group: "Cells and editing", label: "Open the cell's dropdown list", keys: ["Alt+ArrowDown"], ctx: "grid" },
   { id: "clear", group: "Cells and editing", label: "Clear the selection", keys: ["Delete"], ctx: "grid", native: true },
+  { id: "clearActive", group: "Cells and editing", label: "Clear the active cell and edit it", keys: ["Backspace"], ctx: "grid" },
+  { id: "contextMenu", group: "Cells and editing", label: "Open the context menu", keys: ["Shift+F10", "ContextMenu"], ctx: "grid" },
   { id: "fillDown", group: "Cells and editing", label: "Fill down", keys: ["Ctrl+D"], ctx: "grid" },
   { id: "fillRight", group: "Cells and editing", label: "Fill right", keys: ["Ctrl+R"], ctx: "grid" },
   { id: "copy", group: "Cells and editing", label: "Copy / cut / paste", keys: ["Ctrl+C", "Ctrl+X", "Ctrl+V"], ctx: "grid", native: true },
   { id: "pasteValues", group: "Cells and editing", label: "Paste values only", keys: ["Ctrl+Shift+V"], ctx: "grid" },
   { id: "undo", group: "Cells and editing", label: "Undo / redo", keys: ["Ctrl+Z", "Ctrl+Y"], ctx: "any", native: true },
-  { id: "selectAll", group: "Cells and editing", label: "Select all", keys: ["Ctrl+A"], ctx: "any", native: true },
+  { id: "selectAll", group: "Cells and editing", label: "Select the data around the cell, then the sheet", keys: ["Ctrl+A"], ctx: "grid" },
+  { id: "selectAllText", group: "Cells and editing", label: "Select all text (while editing)", keys: ["Ctrl+A"], ctx: "editor", native: true },
   { id: "find", group: "Cells and editing", label: "Find and replace", keys: ["Ctrl+H"], ctx: "any" },
   // Formulas
   { id: "autoSum", group: "Formulas", label: "AutoSum", keys: ["Alt+="], ctx: "grid" },
@@ -279,3 +286,11 @@ export const SHORTCUT_NUMBER_FORMATS: Record<string, string> = {
   fmtScientific: "0.00E+00",
   fmtGeneral: "General",
 };
+
+/** Wraps a formula for Ctrl+Shift+Enter: =ARRAYFORMULA(…) (Google Sheets' array entry). */
+export function arrayFormulaText(text: string): string {
+  const t = text.trim();
+  if (!t.startsWith("=")) return t;
+  if (/^=\s*ARRAYFORMULA\s*\(/i.test(t)) return t;
+  return `=ARRAYFORMULA(${t.slice(1)})`;
+}
