@@ -4,10 +4,68 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 )
+
+// ErrPandocUnavailable is returned when the pandoc binary is not on PATH.
+var ErrPandocUnavailable = errors.New("pandoc is not installed on this server")
+
+// ErrPDFUnavailable is returned for a PDF export when no PDF engine is
+// installed. The default image ships pandoc without one: Docs and Sheets
+// build their PDFs in the browser and only use this path as a fallback.
+var ErrPDFUnavailable = errors.New("no PDF engine is installed on this server (PDF files are generated in the browser)")
+
+// pdfEngines are the pandoc --pdf-engine programs we accept, in order of
+// preference. tectonic fetches its TeX bundle from the network on first use;
+// the others work offline once installed.
+var pdfEngines = []string{"tectonic", "xelatex", "lualatex", "pdflatex", "weasyprint", "wkhtmltopdf"}
+
+// PDFEngine returns the PDF engine pandoc would use, or "" when none of
+// pdfEngines is on PATH (or pandoc itself is missing).
+func PDFEngine() string {
+	if _, err := exec.LookPath("pandoc"); err != nil {
+		return ""
+	}
+	for _, e := range pdfEngines {
+		if _, err := exec.LookPath(e); err == nil {
+			return e
+		}
+	}
+	return ""
+}
+
+// ConvertCapabilities is what GET /api/v1/docs/convert/capabilities returns.
+type ConvertCapabilities struct {
+	// Pandoc reports whether the pandoc binary is installed.
+	Pandoc bool `json:"pandoc"`
+	// Formats lists the export formats the server can produce now.
+	Formats []string `json:"formats"`
+	// PDF reports whether ?to=pdf works (pandoc plus a PDF engine).
+	PDF       bool   `json:"pdf"`
+	PDFEngine string `json:"pdf_engine,omitempty"`
+}
+
+// Capabilities probes PATH for pandoc and a PDF engine.
+func Capabilities() ConvertCapabilities {
+	c := ConvertCapabilities{Formats: []string{}}
+	if _, err := exec.LookPath("pandoc"); err != nil {
+		return c
+	}
+	c.Pandoc = true
+	c.PDFEngine = PDFEngine()
+	c.PDF = c.PDFEngine != ""
+	for k := range convertFormats {
+		if k != "pdf" || c.PDF {
+			c.Formats = append(c.Formats, k)
+		}
+	}
+	sort.Strings(c.Formats)
+	return c
+}
 
 // ConvertFormat describes a downloadable export target produced by pandoc.
 type ConvertFormat struct {
@@ -21,7 +79,8 @@ type ConvertFormat struct {
 }
 
 // convertFormats are the binary/markup exports we delegate to pandoc. Plain
-// text, HTML, and PDF are handled client-side and are intentionally absent.
+// text and HTML are handled client-side and are intentionally absent; PDF is
+// built client-side too, "pdf" here is the fallback when a PDF engine exists.
 var convertFormats = map[string]ConvertFormat{
 	"docx": {"docx", "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", false},
 	"odt":  {"odt", "odt", "application/vnd.oasis.opendocument.text", false},
@@ -81,6 +140,15 @@ func ConvertHTML(ctx context.Context, html []byte, to string) ([]byte, ConvertFo
 	if len(html) > maxConvertBytes {
 		return nil, f, fmt.Errorf("input too large: %d bytes (max %d)", len(html), maxConvertBytes)
 	}
+	if _, err := exec.LookPath("pandoc"); err != nil {
+		return nil, f, ErrPandocUnavailable
+	}
+	engine := ""
+	if f.Pandoc == "pdf" {
+		if engine = PDFEngine(); engine == "" {
+			return nil, f, ErrPDFUnavailable
+		}
+	}
 	out, err := os.CreateTemp("", "grown-docs-*."+f.Ext)
 	if err != nil {
 		return nil, f, fmt.Errorf("temp file: %w", err)
@@ -98,8 +166,8 @@ func ConvertHTML(ctx context.Context, html []byte, to string) ([]byte, ConvertFo
 		args = append(args, "--standalone")
 	}
 	if f.Pandoc == "pdf" {
-		// pandoc needs an external engine to render PDF; tectonic compiles via LaTeX.
-		args = append(args, "--pdf-engine=tectonic")
+		// pandoc needs an external engine to render PDF.
+		args = append(args, "--pdf-engine="+engine)
 	}
 	cmd := exec.CommandContext(ctx, "pandoc", args...)
 	cmd.Stdin = bytes.NewReader(html)

@@ -84,3 +84,33 @@ func TestDocsConvertRejectsOversize(t *testing.T) {
 		t.Fatalf("anonymous: status %d, want 401", w.Code)
 	}
 }
+
+// TestDocsConvertPDFWithoutEngine: a PDF export on a server with no PDF
+// engine is a 501 with a clear message, never a 500, and the capabilities
+// endpoint says so.
+func TestDocsConvertPDFWithoutEngine(t *testing.T) {
+	if docs.PDFEngine() != "" {
+		t.Skip("a PDF engine is installed")
+	}
+	w := httptest.NewRecorder()
+	serveDocsConvert(w, convertReq("/api/v1/docs/convert?to=pdf", []byte("<p>x</p>"), true))
+	if w.Code != http.StatusNotImplemented && w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d (%s), want 501/503", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "not installed") && !strings.Contains(w.Body.String(), "no PDF engine") {
+		t.Errorf("body = %q", w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/docs/convert/capabilities", nil)
+	serveDocsConvertCapabilities(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous capabilities: %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	r = r.WithContext(auth.WithUser(r.Context(), users.User{ID: "u1", OrgID: "o1"}))
+	serveDocsConvertCapabilities(w, r)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"pdf":false`) {
+		t.Errorf("capabilities: %d %s", w.Code, w.Body.String())
+	}
+}

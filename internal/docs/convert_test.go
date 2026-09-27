@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -142,10 +143,8 @@ func TestConvertHTMLExportFormats(t *testing.T) {
 			continue
 		}
 		t.Run(to, func(t *testing.T) {
-			if to == "pdf" {
-				if _, err := exec.LookPath("tectonic"); err != nil {
-					t.Skip("pdf export needs the tectonic engine, not installed")
-				}
+			if to == "pdf" && PDFEngine() == "" {
+				t.Skip("pdf export needs a PDF engine, none installed")
 			}
 			out, f, err := ConvertHTML(ctx, []byte(simpleHTML), to)
 			if err != nil {
@@ -247,6 +246,50 @@ func TestConvertPandocMissing(t *testing.T) {
 	}
 	if _, err := ImportToHTML(ctx, []byte(simpleHTML), "html"); err == nil {
 		t.Fatal("ImportToHTML without pandoc: want error, got nil")
+	}
+}
+
+// TestConvertPDFEngineMissing: with pandoc but no PDF engine on PATH, a PDF
+// export fails with ErrPDFUnavailable (the handler's 501), and Capabilities
+// leaves pdf out while still listing pandoc's other formats.
+func TestConvertPDFEngineMissing(t *testing.T) {
+	pandoc, err := exec.LookPath("pandoc")
+	if err != nil {
+		t.Skip("pandoc not installed")
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(pandoc, dir+"/pandoc"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	if e := PDFEngine(); e != "" {
+		t.Skipf("PDF engine %q still resolvable", e)
+	}
+	_, _, err = ConvertHTML(context.Background(), []byte(simpleHTML), "pdf")
+	if !errors.Is(err, ErrPDFUnavailable) {
+		t.Fatalf("ConvertHTML(pdf) err = %v, want ErrPDFUnavailable", err)
+	}
+	c := Capabilities()
+	if !c.Pandoc || c.PDF || c.PDFEngine != "" {
+		t.Errorf("capabilities = %+v, want pandoc without pdf", c)
+	}
+	if strings.Contains(strings.Join(c.Formats, ","), "pdf") || !strings.Contains(strings.Join(c.Formats, ","), "odt") {
+		t.Errorf("formats = %v", c.Formats)
+	}
+}
+
+// TestConvertCapabilitiesNoPandoc: without pandoc nothing is offered and
+// ConvertHTML reports ErrPandocUnavailable.
+func TestConvertCapabilitiesNoPandoc(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if _, err := exec.LookPath("pandoc"); err == nil {
+		t.Skip("pandoc still resolvable with an empty PATH")
+	}
+	if c := Capabilities(); c.Pandoc || c.PDF || len(c.Formats) != 0 {
+		t.Errorf("capabilities = %+v, want nothing", c)
+	}
+	if _, _, err := ConvertHTML(context.Background(), []byte(simpleHTML), "pdf"); !errors.Is(err, ErrPandocUnavailable) {
+		t.Errorf("err = %v, want ErrPandocUnavailable", err)
 	}
 }
 
