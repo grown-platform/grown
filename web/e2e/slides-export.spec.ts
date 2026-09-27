@@ -182,6 +182,12 @@ test.describe.serial("slides export and print", () => {
       const zip = await download(page, /PNG images, all slides/);
       const names = zip.toString("latin1").match(/slide-0\d\.png/g) ?? [];
       expect([...new Set(names)]).toEqual(["slide-01.png", "slide-02.png", "slide-03.png"]);
+
+      // ODP: mimetype first and stored, one draw:page per slide.
+      const odp = await download(page, /ODP Document/);
+      expect(odp.subarray(30, 38).toString("latin1")).toBe("mimetype");
+      expect(odp.subarray(38, 85).toString("latin1")).toBe("application/vnd.oasis.opendocument.presentation");
+      if (SHOT) await writeFile(`${SHOT}deck.odp`, odp);
     } finally {
       await trashDeck(page.request, id);
     }
