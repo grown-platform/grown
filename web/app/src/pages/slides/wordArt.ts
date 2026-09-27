@@ -136,6 +136,9 @@ export function wordArtCssText(art: WordArt | undefined): string {
     .join(";");
 }
 
+/** How far the ends of an arch warp lean in from horizontal (radians). */
+const ARCH_END = (25 * Math.PI) / 180;
+
 export interface WarpPath {
   /** SVG path data in the box's coordinates. */
   d: string;
@@ -166,18 +169,32 @@ export function warpPath(warp: TextWarp, w: number, h: number, fs: number): Warp
   };
   switch (warp) {
     case "textArchUp": {
-      const rx = Math.max(1, w / 2 - pad);
-      const ry = Math.max(1, h - fs * 0.35 - pad);
-      const cy = h - fs * 0.15;
-      const pts = sample((t) => [w / 2 - rx * Math.cos(Math.PI * t), cy - ry * Math.sin(Math.PI * t)]);
-      return { d: `M${f2(w / 2 - rx)},${f2(cy)} A${f2(rx)},${f2(ry)} 0 0 1 ${f2(w / 2 + rx)},${f2(cy)}`, length: polyLength(pts) };
+      // An elliptical arc whose ends lean in by ARCH_END (not a full half
+      // ellipse, so the end glyphs don't turn sideways and leave the box).
+      const t = fs * 0.95;
+      const b = fs * 0.35;
+      const m = Math.min(fs * 0.6, w * 0.2);
+      const rx = Math.max(1, (w / 2 - m) / Math.cos(ARCH_END));
+      const ry = Math.max(1, (h - b - t) / (1 - Math.sin(ARCH_END)));
+      const cy = t + ry;
+      const pt = (phi: number): [number, number] => [w / 2 + rx * Math.cos(phi), cy - ry * Math.sin(phi)];
+      const [x0, y0] = pt(Math.PI - ARCH_END);
+      const [x1, y1] = pt(ARCH_END);
+      const pts = sample((u) => pt(Math.PI - ARCH_END - u * (Math.PI - 2 * ARCH_END)));
+      return { d: `M${f2(x0)},${f2(y0)} A${f2(rx)},${f2(ry)} 0 0 1 ${f2(x1)},${f2(y1)}`, length: polyLength(pts) };
     }
     case "textArchDown": {
-      const rx = Math.max(1, w / 2 - pad);
-      const ry = Math.max(1, h - fs - pad);
-      const cy = fs * 0.85;
-      const pts = sample((t) => [w / 2 - rx * Math.cos(Math.PI * t), cy + ry * Math.sin(Math.PI * t)]);
-      return { d: `M${f2(w / 2 - rx)},${f2(cy)} A${f2(rx)},${f2(ry)} 0 0 0 ${f2(w / 2 + rx)},${f2(cy)}`, length: polyLength(pts) };
+      const t = fs * 0.95;
+      const b = fs * 0.3;
+      const m = Math.min(fs * 0.6, w * 0.2);
+      const rx = Math.max(1, (w / 2 - m) / Math.cos(ARCH_END));
+      const ry = Math.max(1, (h - b - t) / (1 - Math.sin(ARCH_END)));
+      const cy = h - b - ry;
+      const pt = (phi: number): [number, number] => [w / 2 + rx * Math.cos(phi), cy + ry * Math.sin(phi)];
+      const [x0, y0] = pt(Math.PI - ARCH_END);
+      const [x1, y1] = pt(ARCH_END);
+      const pts = sample((u) => pt(Math.PI - ARCH_END - u * (Math.PI - 2 * ARCH_END)));
+      return { d: `M${f2(x0)},${f2(y0)} A${f2(rx)},${f2(ry)} 0 0 0 ${f2(x1)},${f2(y1)}`, length: polyLength(pts) };
     }
     case "textCircle": {
       const rx = Math.max(1, w / 2 - fs);
@@ -272,6 +289,18 @@ export function warpSvgMarkup(el: SlideElement, id: string): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="visible"${f ? ` style="overflow:visible;filter:${escXml(f)}"` : ""}>` +
     `<defs>${g ? gradientDef(gid, g) : ""}<path id="${pid}" d="${p.d}" fill="none"/></defs>` +
     `<text font-size="${fs}" font-family="${escXml(el.fontFamily || "Arial")}" font-weight="${el.bold ? 700 : 400}" font-style="${el.italic ? "italic" : "normal"}" fill="${g ? `url(#${gid})` : escXml(el.color || "#000")}"${stroke}>` +
-    `<textPath href="#${pid}" textLength="${Math.max(1, Math.round(p.length * 0.98 * 100) / 100)}" lengthAdjust="spacingAndGlyphs">${escXml(warpText(el))}</textPath></text></svg>`
+    `<textPath href="#${pid}"${warpFit(art.warp, warpText(el), fs, p.length, !!el.bold)}>${escXml(warpText(el))}</textPath></text></svg>`
   );
+}
+
+/** How the text sits on a warp path: a circle is filled (spread out); on
+ *  other paths text shorter than the path is centred at its own width, and
+ *  longer text is squeezed to fit (as PowerPoint fits warped text). The
+ *  natural width is estimated at ~0.58 em per character (0.62 bold). */
+export function warpFit(warp: TextWarp, text: string, fs: number, length: number, bold = false): string {
+  const natural = text.length * fs * (bold ? 0.62 : 0.58);
+  const fit = Math.max(1, Math.round(length * 0.98 * 100) / 100);
+  if (natural > fit) return ` textLength="${fit}" lengthAdjust="spacingAndGlyphs"`;
+  if (warp === "textCircle") return ` textLength="${fit}" lengthAdjust="spacing"`;
+  return ` startOffset="50%" text-anchor="middle"`;
 }

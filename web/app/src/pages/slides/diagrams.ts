@@ -146,8 +146,9 @@ class Builder {
 export function fitFont(t: string, b: Pick<Box, "w" | "h">, max = 28, min = 9): number {
   const lines = t.split("\n");
   const longest = Math.max(1, ...lines.map((l) => l.length));
-  const byW = (b.w * 0.9) / (longest * 0.55);
-  const byH = (b.h * 0.8) / (lines.length * 1.25);
+  // The text box keeps its default 4 px insets; ~0.55 em per character.
+  const byW = (Math.max(1, b.w - 8) * 0.92) / (longest * 0.55);
+  const byH = (Math.max(1, b.h - 8) * 0.85) / (lines.length * 1.25);
   return Math.round(Math.max(min, Math.min(max, byW, byH)));
 }
 
@@ -173,9 +174,10 @@ function buildList(b: Builder, roots: OutlineNode[], box: Box) {
 
 function buildProcess(b: Builder, roots: OutlineNode[], box: Box) {
   const n = roots.length;
-  const gapW = n > 1 ? Math.min(60, (box.w / n) * 0.3) : 0;
+  const gapW = n > 1 ? Math.min(44, (box.w / n) * 0.22) : 0;
   const bw = (box.w - gapW * (n - 1)) / n;
-  const bh = Math.min(box.h, bw * 0.7);
+  // Nodes listing sub-items get taller boxes.
+  const bh = Math.min(box.h, bw * (roots.some((r) => r.children.length) ? 1.2 : 0.7));
   const y = box.y + (box.h - bh) / 2;
   roots.forEach((node, i) => {
     const x = box.x + i * (bw + gapW);
@@ -362,6 +364,11 @@ export function diagramMembers(layout: DiagramLayout, outline: string, box: Box,
       buildVenn(b, roots, box);
       break;
   }
+  // One text size for the whole diagram (the smallest that fits), as in
+  // PowerPoint's SmartArt.
+  const texts = b.els.filter((e) => e.type === "text");
+  const size = Math.min(...texts.map((e) => e.fontSize ?? 18));
+  for (const t of texts) t.fontSize = size;
   return b.els;
 }
 
@@ -391,3 +398,12 @@ export function rebuildDiagram(el: SlideElement, spec: Partial<DiagramSpec>, the
   return { ...el, diagram: next, children: diagramMembers(next.layout, next.outline, box, theme) };
 }
 
+
+/** After an edit, a diagram group whose box changed size is rebuilt at the
+ *  new size (so text refits, unlike a plain group whose members scale with
+ *  their fonts unchanged). Other edits pass through. */
+export function refitDiagram(prev: SlideElement | undefined, next: SlideElement, theme: DeckTheme): SlideElement {
+  if (!next.diagram || !prev?.diagram || next.type !== "group") return next;
+  if (Math.abs(prev.w - next.w) < 0.5 && Math.abs(prev.h - next.h) < 0.5) return next;
+  return rebuildDiagram(next, {}, theme);
+}

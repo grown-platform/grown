@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DIAGRAM_LAYOUTS, diagramMembers, fitFont, formatOutline, newDiagram, outlineTree, parseOutline, rebuildDiagram } from "./diagrams";
+import { DIAGRAM_LAYOUTS, diagramMembers, fitFont, formatOutline, newDiagram, outlineTree, parseOutline, rebuildDiagram, refitDiagram } from "./diagrams";
 import { applyTheme, findTheme, OFFICE_THEME } from "./theme";
 import { unionRects } from "./geometry";
 import type { DeckDoc } from "./model";
@@ -115,5 +115,21 @@ describe("diagram groups", () => {
     const out = applyTheme(deck, coral).slides[0].elements[0];
     const first = out.children!.find((e) => e.preset === "roundRect")!;
     expect(first.fill!.toLowerCase()).toBe(coral.colors.accent1.toLowerCase());
+  });
+});
+
+describe("refitDiagram", () => {
+  it("rebuilds a resized diagram so text refits; moves and other groups pass through", () => {
+    const g = newDiagram("process", "Plan\nBuild", box, OFFICE_THEME);
+    const moved = { ...g, x: g.x + 10 };
+    expect(refitDiagram(g, moved, OFFICE_THEME)).toBe(moved);
+    const small = { ...g, w: 160, h: 80 };
+    const r = refitDiagram(g, small, OFFICE_THEME);
+    expect(r.id).toBe(g.id);
+    const bigFont = g.children!.find((c) => c.type === "text")!.fontSize!;
+    const smallFont = r.children!.find((c) => c.type === "text")!.fontSize!;
+    expect(smallFont).toBeLessThan(bigFont);
+    const plain = { ...g, diagram: undefined };
+    expect(refitDiagram(plain, { ...plain, w: 10 }, OFFICE_THEME).children).toBe(plain.children);
   });
 });

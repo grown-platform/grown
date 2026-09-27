@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gradientCss, newWordArt, setWordArt, shadowOffset, warpPath, warpText, wordArtCss, wordArtCssText, wordArtFilter, TEXT_WARPS } from "./wordArt";
+import { gradientCss, newWordArt, warpFit, setWordArt, shadowOffset, warpPath, warpText, wordArtCss, wordArtCssText, wordArtFilter, TEXT_WARPS } from "./wordArt";
 import { newElement } from "./model";
 
 describe("word art effects", () => {
@@ -50,12 +50,25 @@ describe("text warps (SVG textPath subset, F5)", () => {
     for (const { value } of TEXT_WARPS) expect(warpPath(value, 0, 0, 40).d).not.toMatch(/NaN/);
   });
 
-  it("arch up is a half ellipse over the top: length ≈ half the perimeter", () => {
-    const p = warpPath("textArchUp", 400, 200, 20);
-    // rx = 194, ry = 187: Ramanujan's perimeter / 2 ≈ 596.
-    expect(p.length).toBeGreaterThan(585);
-    expect(p.length).toBeLessThan(605);
+  it("arch up rises from the box's lower corners to its top", () => {
+    const fs = 20;
+    const p = warpPath("textArchUp", 400, 200, fs);
     expect(p.d).toContain(" 0 0 1 ");
+    const [, x0, y0] = /^M([\d.]+),([\d.]+)/.exec(p.d)!.map(Number);
+    const [, x1, y1] = / ([\d.]+),([\d.]+)$/.exec(p.d)!.map(Number);
+    expect(x0).toBeCloseTo(12, 0); // margin 0.6 em
+    expect(x1).toBeCloseTo(388, 0);
+    expect(y0).toBeCloseTo(200 - fs * 0.35, 0); // ends near the bottom
+    expect(y1).toBeCloseTo(y0, 5);
+    // Longer than the chord, shorter than the half ellipse.
+    expect(p.length).toBeGreaterThan(376);
+    expect(p.length).toBeLessThan(600);
+  });
+
+  it("text fits its path: centred when short, squeezed when long, spread round a circle", () => {
+    expect(warpFit("textArchUp", "Hi", 20, 400)).toBe(' startOffset="50%" text-anchor="middle"');
+    expect(warpFit("textArchUp", "x".repeat(60), 20, 400)).toBe(' textLength="392" lengthAdjust="spacingAndGlyphs"');
+    expect(warpFit("textCircle", "Hi", 20, 400)).toBe(' textLength="392" lengthAdjust="spacing"');
   });
 
   it("slants run corner to corner", () => {
