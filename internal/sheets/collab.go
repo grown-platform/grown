@@ -3,6 +3,7 @@ package sheets
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -88,10 +89,22 @@ func (r *room) broadcast(from *peer, msg []byte) {
 // isPresence reports whether a client message is an ephemeral presence/cursor
 // update (a JSON object with "type":"presence") rather than a document-mutating
 // op (a JSON array of FortuneSheet ops). Read-only viewers may still broadcast
-// presence; their ops are dropped.
+// presence; their ops are dropped. The type is parsed, not searched for: a
+// viewer must not pass off another message (say a "versionRestored" notice,
+// which makes every editor reload) by mentioning "presence" in it.
 func isPresence(msg []byte) bool {
 	t := bytes.TrimLeft(msg, " \t\r\n")
-	return len(t) > 0 && t[0] == '{' && bytes.Contains(t, []byte(`"presence"`))
+	if len(t) == 0 || t[0] != '{' {
+		return false
+	}
+	var m struct {
+		Type *string `json:"type"`
+		T    *string `json:"t"`
+	}
+	if json.Unmarshal(t, &m) != nil || m.Type == nil || *m.Type != "presence" {
+		return false
+	}
+	return m.T == nil || *m.T == "presence"
 }
 
 // Serve runs the read/write loops for one client connected to sheetID. Caller

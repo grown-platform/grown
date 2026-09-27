@@ -67,6 +67,9 @@ func ImportSupported(from string) (ImportFormat, bool) {
 // maxConvertBytes bounds the input accepted for conversion in either direction.
 const maxConvertBytes = 16 << 20
 
+// MaxConvertBytes is maxConvertBytes, for the HTTP handlers.
+const MaxConvertBytes = maxConvertBytes
+
 // ConvertHTML converts an HTML document to the target format via pandoc,
 // returning the encoded file bytes. Binary writers (docx/odt/epub) require a
 // real output file, so we always route through a temp file.

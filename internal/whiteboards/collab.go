@@ -2,6 +2,7 @@ package whiteboards
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -84,9 +85,25 @@ func (r *room) broadcast(from *peer, msg []byte) {
 	}
 }
 
+// isPresence reports whether a client message is a pointer/presence update
+// ({"type":"presence",...}), the only message a read-only peer may relay.
+// The type is parsed, not searched for.
+func isPresence(msg []byte) bool {
+	var m struct {
+		Type *string `json:"type"`
+		T    *string `json:"t"`
+	}
+	if json.Unmarshal(msg, &m) != nil || m.Type == nil || *m.Type != "presence" {
+		return false
+	}
+	return m.T == nil || *m.T == "presence"
+}
+
 // Serve runs the read/write loops for one client connected to boardID. Caller
-// must verify access first.
-func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, boardID string) {
+// must verify access first. When canWrite is false (a viewer/commenter grant)
+// only presence is relayed: scene updates and restore notices are dropped, so
+// a read-only peer cannot change the board through its editors' autosave.
+func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, boardID string, canWrite bool) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -123,6 +140,9 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, boardID string) {
 			break
 		}
 		if typ != websocket.MessageText {
+			continue
+		}
+		if !canWrite && !isPresence(data) {
 			continue
 		}
 		room.broadcast(self, data)

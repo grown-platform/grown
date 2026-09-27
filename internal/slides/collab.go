@@ -394,6 +394,12 @@ func (h *Hub) route(r *room, self *peer, data []byte, canWrite bool) {
 	}
 	switch t {
 	case "presence":
+		// Anyone, viewers included, may relay presence, so it must not also
+		// carry another type the clients act on (a "versionRestored" notice
+		// makes every editor reload).
+		if env.Type != "" && env.Type != "presence" {
+			return
+		}
 		r.broadcast(self, data)
 		return
 	case "hello":

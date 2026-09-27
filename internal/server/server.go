@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -438,11 +440,7 @@ func New(cfg Config) *Server {
 		docsHub = docs.NewHub(cfg.DocsRepo)
 		grownv1.RegisterDocsServiceServer(grpcSrv, docsSvc)
 		if cfg.DocsBlobs != nil {
-			repo, grants := cfg.DocsRepo, cfg.SharingRepo
-			docsAssets = docs.NewAssets(cfg.DocsBlobs, func(r *http.Request, id string) (bool, bool) {
-				acc := docsAccessFor(r, id, repo, docsGrantLookup(grants))
-				return acc.Read, acc.Write
-			})
+			docsAssets = newDocsAssets(cfg.DocsBlobs, cfg.DocsRepo, cfg.SharingRepo)
 		}
 	}
 
@@ -473,10 +471,7 @@ func New(cfg Config) *Server {
 		}
 		slidesHub = slides.NewHub()
 		if cfg.SlidesBlobs != nil {
-			repo, grants := cfg.SlidesRepo, cfg.SharingRepo
-			slidesAssets = slides.NewAssets(cfg.SlidesBlobs, func(r *http.Request, id string) (bool, bool) {
-				return slidesDeckAccess(r, id, repo, grants)
-			})
+			slidesAssets = newSlidesAssets(cfg.SlidesBlobs, cfg.SlidesRepo, cfg.SharingRepo)
 		}
 		if cfg.NotificationsRepo != nil && cfg.UsersRepo != nil {
 			slidesMentions = newSlidesMentions(cfg.SlidesRepo, cfg.SharingRepo, cfg.UsersRepo, cfg.NotificationsRepo)
@@ -2779,6 +2774,22 @@ func slidesDeckAccess(r *http.Request, id string, repo *slides.Repository, grant
 	return false, false
 }
 
+// newDocsAssets wires the document image assets to the same access check as
+// the collab WebSocket (org member, grantee or share-link token).
+func newDocsAssets(blobs docs.AssetBlobStore, repo *docs.Repository, grants *sharing.Repository) *docs.Assets {
+	return docs.NewAssets(blobs, func(r *http.Request, id string) (bool, bool) {
+		acc := docsAccessFor(r, id, repo, docsGrantLookup(grants))
+		return acc.Read, acc.Write
+	})
+}
+
+// newSlidesAssets wires the deck assets to the deck access check.
+func newSlidesAssets(blobs slides.AssetBlobStore, repo *slides.Repository, grants *sharing.Repository) *slides.Assets {
+	return slides.NewAssets(blobs, func(r *http.Request, id string) (bool, bool) {
+		return slidesDeckAccess(r, id, repo, grants)
+	})
+}
+
 // whiteboardsConnectID returns the board id from /api/v1/whiteboards/d/{id}/connect.
 func whiteboardsConnectID(path string) (string, bool) {
 	const prefix = "/api/v1/whiteboards/d/"
@@ -2796,7 +2807,7 @@ func whiteboardsConnectID(path string) (string, bool) {
 // serveWhiteboardsWS authorizes the board collab WebSocket and hands it to the
 // broadcast hub. Two paths grant access: (1) an org member whose org owns the
 // board (full edit), or (2) a per-user grantee (object_grants), whose role
-// determines read/write (cross-org).
+// determines read/write (cross-org). Viewers/commenters connect read-only.
 func serveWhiteboardsWS(w http.ResponseWriter, r *http.Request, id string, repo *whiteboards.Repository, grants *sharing.Repository, hub *whiteboards.Hub) {
 	ctx := r.Context()
 	u, ok := auth.UserFromContext(ctx)
@@ -2804,17 +2815,19 @@ func serveWhiteboardsWS(w http.ResponseWriter, r *http.Request, id string, repo 
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	authorized := false
+	authorized, canWrite := false, false
 	if org, ok := auth.OrgFromContext(ctx); ok {
 		if _, err := repo.Get(ctx, org.ID, id); err == nil {
-			authorized = true
+			authorized, canWrite = true, true
 		}
 	}
-	// Per-user grant path: a non-org-member with a grant may connect.
+	// Per-user grant path: a non-org-member with a grant may connect; only an
+	// editor grant writes.
 	if !authorized && grants != nil {
-		if _, ok, err := grants.RoleFor(ctx, u.ID, sharing.TypeWhiteboardBoard, id); err == nil && ok {
+		if role, ok, err := grants.RoleFor(ctx, u.ID, sharing.TypeWhiteboardBoard, id); err == nil && ok {
 			if _, derr := repo.GetByID(ctx, id); derr == nil {
 				authorized = true
+				canWrite = sharing.CanWrite(role)
 			}
 		}
 	}
@@ -2822,7 +2835,7 @@ func serveWhiteboardsWS(w http.ResponseWriter, r *http.Request, id string, repo 
 		http.Error(w, "whiteboard not found", http.StatusNotFound)
 		return
 	}
-	hub.Serve(w, r, id)
+	hub.Serve(w, r, id, canWrite)
 }
 
 // serveDocsConvert converts client-rendered HTML to a downloadable format via
@@ -2838,9 +2851,8 @@ func serveDocsConvert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported format", http.StatusBadRequest)
 		return
 	}
-	html, err := io.ReadAll(io.LimitReader(r.Body, 16<<20))
-	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
+	html, ok := readConvertBody(w, r)
+	if !ok {
 		return
 	}
 	data, f, err := docs.ConvertHTML(r.Context(), html, to)
@@ -2874,19 +2886,41 @@ func serveDocsImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported format", http.StatusBadRequest)
 		return
 	}
-	data, err := io.ReadAll(io.LimitReader(r.Body, 16<<20))
-	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
+	data, ok := readConvertBody(w, r)
+	if !ok {
 		return
 	}
 	html, err := docs.ImportToHTML(r.Context(), data, from)
 	if err != nil {
-		http.Error(w, "import failed: "+err.Error(), http.StatusInternalServerError)
+		// pandoc refusing the file is the uploader's problem (422); anything
+		// else is ours. Neither echoes pandoc's output (temp paths, stderr).
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			http.Error(w, "import failed: the file could not be read as "+from, http.StatusUnprocessableEntity)
+			return
+		}
+		slog.Error("docs import", "from", from, "err", err)
+		http.Error(w, "import failed", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(html)
+}
+
+// readConvertBody reads a conversion input, refusing (413) one over the
+// converter's limit rather than silently converting a truncated file.
+func readConvertBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	data, err := io.ReadAll(io.LimitReader(r.Body, docs.MaxConvertBytes+1))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return nil, false
+	}
+	if len(data) > docs.MaxConvertBytes {
+		http.Error(w, fmt.Sprintf("file too large (max %d bytes)", docs.MaxConvertBytes), http.StatusRequestEntityTooLarge)
+		return nil, false
+	}
+	return data, true
 }
 
 // redirectOnAuthURL converts AuthService.Login responses into HTTP 302 redirects

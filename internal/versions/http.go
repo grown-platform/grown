@@ -102,6 +102,8 @@ func (h *Handler) fail(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrTooLarge):
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+	case errors.Is(err, ErrForbidden):
+		http.Error(w, ErrForbidden.Error(), http.StatusForbidden)
 	default:
 		slog.Error("versions", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
