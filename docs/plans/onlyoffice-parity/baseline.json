@@ -166,7 +166,7 @@
       "passing": null
     },
     "docs/track-changes": {
-      "ported": 0,
+      "ported": 7,
       "passing": null
     },
     "sheets/charts": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 993,
+    "ported": 1000,
     "passing": null
   }
 }
