@@ -102,7 +102,7 @@
       "passing": null
     },
     "docs/images": {
-      "ported": 0,
+      "ported": 11,
       "passing": null
     },
     "docs/layout": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2315,
+    "ported": 2326,
     "passing": null
   }
 }
