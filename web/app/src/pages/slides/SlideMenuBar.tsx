@@ -70,6 +70,18 @@ export interface SlideActions {
     locked: boolean;
   };
   setBackground: () => void;
+  /** Themes and layouts (M7). */
+  changeTheme: () => void;
+  editTheme: () => void;
+  layouts: { id: string; name: string }[];
+  currentLayout?: string;
+  applyLayout: (id: string) => void;
+  newSlideWithLayout: (id: string) => void;
+  resetSlide: () => void;
+  slideHidden: boolean;
+  toggleSkip: () => void;
+  pageSetup: () => void;
+  headerFooter: () => void;
   paste: () => void;
   duplicateSelected: () => void;
   openTransition: () => void;
@@ -188,7 +200,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           </MenuItem>
           <MenuItem disabled>Slides recordings</MenuItem>
           <MenuItem disabled>Motion</MenuItem>
-          <MenuItem disabled>Theme builder</MenuItem>
+          <MenuItem onClick={actions.editTheme}>Theme builder</MenuItem>
           <MenuItem disabled>Comments{arrow}</MenuItem>
           <MenuItem disabled>Guides{arrow}</MenuItem>
           {section("Snap to")}
@@ -265,7 +277,8 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem onClick={actions.newSlide}>
             New slide{kbd("Ctrl+M")}
           </MenuItem>
-          <MenuItem disabled>Slide numbers</MenuItem>
+          <MenuItem onClick={actions.headerFooter}>Slide numbers…</MenuItem>
+          <MenuItem onClick={actions.headerFooter}>Header &amp; footer…</MenuItem>
         </>,
       )}
 
@@ -443,20 +456,38 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           <MenuItem onClick={actions.newSlide}>
             New slide{kbd("Ctrl+M")}
           </MenuItem>
+          {section("New slide with layout")}
+          {actions.layouts.map((l) => (
+            <MenuItem key={l.id} sx={sub} onClick={() => actions.newSlideWithLayout(l.id)}>
+              {l.name}
+            </MenuItem>
+          ))}
+          <ListDivider />
           <MenuItem disabled>Create a slide{arrow}</MenuItem>
           <MenuItem disabled>Templates</MenuItem>
           <MenuItem onClick={actions.duplicateSlide}>Duplicate slide</MenuItem>
           <MenuItem onClick={actions.deleteSlide}>Delete slide</MenuItem>
-          <MenuItem disabled>Skip slide</MenuItem>
+          <MenuItem onClick={actions.toggleSkip}>
+            {check(actions.slideHidden)}Skip slide
+          </MenuItem>
           <MenuItem disabled>Move slide{arrow}</MenuItem>
           <ListDivider />
           <MenuItem onClick={actions.setBackground}>
             Change background…
           </MenuItem>
-          <MenuItem disabled>Apply layout{arrow}</MenuItem>
+          {section("Apply layout")}
+          {actions.layouts.map((l) => (
+            <MenuItem key={l.id} sx={sub} onClick={() => actions.applyLayout(l.id)}>
+              {check(l.id === actions.currentLayout)}
+              {l.name}
+            </MenuItem>
+          ))}
+          <MenuItem onClick={actions.resetSlide} disabled={!actions.currentLayout}>
+            Reset slide
+          </MenuItem>
           <MenuItem onClick={actions.openTransition}>Transition…</MenuItem>
-          <MenuItem disabled>Edit theme</MenuItem>
-          <MenuItem disabled>Change theme</MenuItem>
+          <MenuItem onClick={actions.editTheme}>Edit theme</MenuItem>
+          <MenuItem onClick={actions.changeTheme}>Change theme</MenuItem>
         </>,
       )}
 
@@ -753,7 +784,7 @@ function FileMenu({ actions }: { actions: SlideActions }) {
         <MenuItem disabled>Details</MenuItem>
         <MenuItem disabled>Security limitations</MenuItem>
         <MenuItem disabled>Language{arrow}</MenuItem>
-        <MenuItem disabled>Page setup</MenuItem>
+        <MenuItem onClick={actions.pageSetup}>Page setup</MenuItem>
         <MenuItem disabled>Print preview</MenuItem>
         <MenuItem onClick={actions.print}>Print{kbd("Ctrl+P")}</MenuItem>
       </Menu>

@@ -51,6 +51,8 @@ import {
 import { clickSelect, marqueeMerge } from "./selection";
 import { moveElementBy } from "./deckOps";
 import { cropPan, cropResize, fullImageRect } from "./imageOps";
+import { backgroundCss } from "./slideProps";
+import { isEmptyPlaceholder, placeholderPrompt } from "./layouts";
 import {
   cellTextEl,
   colWidths,
@@ -109,6 +111,8 @@ interface SlideCanvasProps {
   onTableSel?: (v: { id: string; sel: CellSel } | null) => void;
   /** The picture in crop mode: handles crop, a drag pans the picture. */
   cropId?: string | null;
+  /** Header/footer boxes drawn over the slide (not selectable). */
+  decorations?: SlideElement[];
 }
 
 type Drag =
@@ -168,6 +172,7 @@ export function SlideCanvas({
   tableSel,
   onTableSel,
   cropId,
+  decorations,
 }: SlideCanvasProps) {
   const scale = canvasScale(width);
   const height = canvasHeight(width);
@@ -597,7 +602,7 @@ export function SlideCanvas({
         width,
         height,
         cursor: painting ? "copy" : undefined,
-        bgcolor: slide.background,
+        background: backgroundCss(slide),
         boxShadow: "md",
         flexShrink: 0,
         userSelect: "none",
@@ -645,7 +650,9 @@ export function SlideCanvas({
                 outline:
                   selected && !(isConnector && single)
                     ? `${2 / scale}px ${el.locked ? "dashed" : "solid"} ${SELECT_BLUE}`
-                    : "none",
+                    : isEmptyPlaceholder(el) && !isEditing
+                      ? `${1 / scale}px dashed rgba(128,128,128,0.7)`
+                      : "none",
                 // A connector is clicked on its stroke, not its (often 0-high) box.
                 ...(isConnector ? { pointerEvents: "none" as const } : {}),
               }}
@@ -713,6 +720,10 @@ export function SlideCanvas({
                     onTextKey={onTextKey}
                     onMouseUp={onEditorMouseUp}
                   />
+                ) : isEmptyPlaceholder(el) ? (
+                  <div data-testid="ph-prompt" style={{ width: "100%", pointerEvents: "none", opacity: 0.5 }}>
+                    {renderSlideText({ ...el, text: placeholderPrompt(el), runs: undefined, paras: undefined, list: undefined })}
+                  </div>
                 ) : (
                   <div style={{ width: "100%", pointerEvents: "none" }}>
                     <ShrinkFit on={el.autofit === "shrink"}>{renderSlideText(el)}</ShrinkFit>
@@ -819,6 +830,13 @@ export function SlideCanvas({
             </div>
           );
         })}
+
+        {/* header & footer boxes (from the layout; not editable here) */}
+        {decorations?.map((el) => (
+          <div key={el.id} data-hf={el.id} style={{ ...elementStyle(el), pointerEvents: "none" }}>
+            <div style={{ width: "100%" }}>{renderSlideText(el)}</div>
+          </div>
+        ))}
 
         {/* multi-selection box with shared resize handles */}
         {selBox && (

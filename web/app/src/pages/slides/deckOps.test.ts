@@ -267,6 +267,15 @@ describe("applyCollabOp", () => {
     const next = [slide("z")];
     expect(applyCollabOp(doc, { t: "slides", slides: next }).slides).toBe(next);
   });
+  it("keeps deck props on a slides op and replaces the deck on a deck op (M7)", () => {
+    const themed = { ...doc, size: { w: 960, h: 720 }, hf: { sldNum: true } };
+    const out = applyCollabOp(themed, { t: "slides", slides: [slide("z")] });
+    expect(out.size).toEqual({ w: 960, h: 720 });
+    expect(out.hf).toEqual({ sldNum: true });
+    const deck = { slides: [slide("q")], size: { w: 960, h: 600 } };
+    expect(applyCollabOp(themed, { t: "deck", deck })).toBe(deck);
+    expect(applyCollabOp(themed, { t: "deck" })).toBe(themed);
+  });
   it("ignores unknown/malformed ops", () => {
     expect(applyCollabOp(doc, { t: "presence" })).toBe(doc);
     expect(applyCollabOp(doc, { t: "upsert", si: "s0" })).toBe(doc);
