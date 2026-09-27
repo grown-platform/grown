@@ -204,6 +204,12 @@ export function isSuggesting(editor: Editor): boolean {
   return tracking.get(editor) ?? false;
 }
 
+/** suggestUser is the author the editor records changes under. */
+export function suggestUser(editor: Editor): SuggestUser {
+  const ext = editor.extensionManager.extensions.find((e) => e.name === "suggesting");
+  return (ext?.options as { user?: SuggestUser } | undefined)?.user ?? { name: "", color: INS_COLOR };
+}
+
 // --- helpers -------------------------------------------------------------------------------
 
 /** setCaret puts a collapsed selection at (or next to) pos. */

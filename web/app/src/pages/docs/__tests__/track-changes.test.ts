@@ -252,3 +252,22 @@ describe("track changes: review commands", () => {
     expect(b.getJSON()).toEqual(a.getJSON());
   });
 });
+
+describe("track changes: find and replace", () => {
+  it("tracks replace all as replacements", () => {
+    const e = makeEditor("<p>red fish, <strong>red</strong> boat</p>", { suggesting: true });
+    e.commands.setSearch("red");
+    e.commands.replaceAllMatches("blue");
+    expect(reviewText(e)).toEqual([
+      ["remove", "red"],
+      ["add", "blue"],
+      ["common", " fish, "],
+      ["remove", "red"],
+      ["add", "blue"],
+      ["common", " boat"],
+    ]);
+    expect(collectChanges(e.state.doc).map((c) => c.kind)).toEqual(["replace", "replace"]);
+    e.commands.acceptAllSuggestions();
+    expect(e.getHTML()).toBe("<p>blue fish, <strong>blue</strong> boat</p>");
+  });
+});

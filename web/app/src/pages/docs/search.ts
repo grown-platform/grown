@@ -21,6 +21,8 @@ import {
   type Transaction,
 } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { formatMarks, newChangeId, nowIso } from "./changes";
+import { isSuggesting, markDeleted, suggestUser, suggestingKey, type SuggestUser } from "./suggesting";
 
 // --- matching ---------------------------------------------------------------------
 
@@ -200,81 +202,127 @@ export function diffChunks(oldText: string, newText: string): Chunk[] {
   return chunks;
 }
 
-/** textWithMarks returns the characters and marks of [from, to) when the
- *  range is plain text inside one textblock, else null. */
+/** textWithMarks returns the visible characters of [from, to) (text marked
+ *  as a tracked deletion is left out), their marks and positions, when the
+ *  range is plain text inside one textblock; else null. */
 function textWithMarks(
   doc: PMNode,
   from: number,
   to: number,
-): { text: string; marks: (readonly Mark[])[] } | null {
+): { text: string; marks: (readonly Mark[])[]; pos: number[] } | null {
   const $a = doc.resolve(from);
   const $b = doc.resolve(to);
   if (!$a.sameParent($b) || !$a.parent.isTextblock) return null;
   let text = "";
   const marks: (readonly Mark[])[] = [];
+  const pos: number[] = [];
   let ok = true;
-  doc.nodesBetween(from, to, (node, pos) => {
+  doc.nodesBetween(from, to, (node, p) => {
     if (!ok) return false;
     if (!node.isInline) return true;
     if (!node.isText) {
       ok = false;
       return false;
     }
-    const a = Math.max(from, pos);
-    const b = Math.min(to, pos + node.nodeSize);
+    if (node.marks.some((m) => m.type.name === "deletion")) return false;
+    const a = Math.max(from, p);
+    const b = Math.min(to, p + node.nodeSize);
     for (let k = a; k < b; k++) {
-      text += node.text![k - pos];
+      text += node.text![k - p];
       marks.push(node.marks);
+      pos.push(k);
     }
     return false;
   });
-  return ok ? { text, marks } : null;
+  return ok ? { text, marks, pos } : null;
+}
+
+/** Contiguous document ranges covering the visible characters [a, b). */
+function charRanges(pos: number[], a: number, b: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (let k = a; k < b; k++) {
+    const last = out[out.length - 1];
+    if (last && last[1] === pos[k]) last[1]++;
+    else out.push([pos[k], pos[k] + 1]);
+  }
+  return out;
 }
 
 /** smartReplace replaces [from, to) with `text` in `tr`, keeping per-run
- *  formatting where characters survive and giving new characters the marks
- *  of the first character they replace (or of the preceding character for
- *  a pure insertion). Ranges that contain inline objects fall back to a
- *  plain replace with the first character's marks. Returns the new end. */
+ *  formatting: surviving characters keep theirs, new characters take the
+ *  formatting of what they replace. Text that is already a tracked deletion
+ *  is not compared and stays. With `track` (a user) the edit is tracked:
+ *  replaced characters become deletions (the user's own insertions are
+ *  removed) and new characters insertions placed after what they replace.
+ *  Returns the end of the replacement. */
 export function smartReplace(
   tr: Transaction,
   schema: Schema,
   from: number,
   to: number,
   text: string,
+  track: SuggestUser | null = null,
 ): number {
   const doc = tr.doc;
   const old = textWithMarks(doc, from, to);
+  const id = newChangeId();
+  const date = nowIso();
+  const insMark = track ? schema.marks.insertion?.create({ author: track.name, color: track.color, id, date }) : null;
+  const withIns = (marks: readonly Mark[]) => (insMark ? [...formatMarks([...marks]), insMark] : marks);
   if (!old) {
     const marks = doc.resolve(Math.min(from + 1, to)).marks();
+    if (track) {
+      const r = markDeleted(tr, from, to, track, id, date);
+      if (text) tr.insert(r.start, schema.text(text, withIns(marks)));
+      return r.start + text.length;
+    }
     if (text) tr.replaceWith(from, to, schema.text(text, marks));
     else tr.delete(from, to);
     return from + text.length;
   }
   const chunks = diffChunks(old.text, text);
   const beforeMarks = doc.resolve(from).marks();
+  const endOf = (a: number) => (a > 0 ? old.pos[a - 1] + 1 : old.pos[0] ?? from);
+  const startLen = tr.doc.content.size;
   for (let k = chunks.length - 1; k >= 0; k--) {
     const c = chunks[k];
-    if (!c.text) {
-      tr.delete(from + c.a, from + c.b);
-      continue;
-    }
     const marks =
       c.a < c.b
         ? old.marks[c.a]
         : c.a > 0
           ? old.marks[c.a - 1]
           : old.marks[0] ?? beforeMarks;
-    tr.replaceWith(from + c.a, from + c.b, schema.text(c.text, marks));
+    const ranges = charRanges(old.pos, c.a, c.b);
+    if (track) {
+      // New text goes after what it replaces; then strike the old.
+      const at = c.a < c.b ? old.pos[c.b - 1] + 1 : endOf(c.a);
+      if (c.text) tr.insert(at, schema.text(c.text, withIns(marks)));
+      for (let r = ranges.length - 1; r >= 0; r--) markDeleted(tr, ranges[r][0], ranges[r][1], track, id, date);
+    } else {
+      for (let r = ranges.length - 1; r >= 0; r--) tr.delete(ranges[r][0], ranges[r][1]);
+      const at = c.a < c.b ? old.pos[c.a] : endOf(c.a);
+      if (c.text) tr.insert(at, schema.text(c.text, marks));
+    }
   }
-  return from + text.length;
+  return to + (tr.doc.content.size - startLen);
+}
+
+/** trackUser is the Suggesting user when the editor is tracking changes. */
+function trackUser(editor: Editor): SuggestUser | null {
+  return isSuggesting(editor) ? suggestUser(editor) : null;
+}
+
+/** tagReplace marks a replace transaction: tracked ones were recorded here,
+ *  untracked ones keep the review marks they copied. */
+function tagReplace(tr: Transaction, track: SuggestUser | null): Transaction {
+  return track ? tr.setMeta(suggestingKey, true) : tr.setMeta("keepReviewMarks", true);
 }
 
 /** replaceTextSmart replaces the text of each selected textblock with the
  *  matching entry of `texts` (a single string for a single paragraph),
  *  preserving run formatting (OnlyOffice Api.ReplaceTextSmart). Selected
- *  parts of partly selected blocks are replaced. Returns false when there
- *  is nothing selected. */
+ *  parts of partly selected blocks are replaced. Tracked when the editor
+ *  is in Suggesting mode. Returns false when there is nothing selected. */
 export function replaceTextSmart(editor: Editor, texts: string | string[]): boolean {
   const list = typeof texts === "string" ? [texts] : texts;
   const { state } = editor;
@@ -288,11 +336,12 @@ export function replaceTextSmart(editor: Editor, texts: string | string[]): bool
     if (a <= b) ranges.push({ from: a, to: b });
     return false;
   });
+  const track = trackUser(editor);
   const tr = state.tr;
   const n = Math.min(ranges.length, list.length);
-  for (let k = n - 1; k >= 0; k--) smartReplace(tr, state.schema, ranges[k].from, ranges[k].to, list[k]);
+  for (let k = n - 1; k >= 0; k--) smartReplace(tr, state.schema, ranges[k].from, ranges[k].to, list[k], track);
   if (!tr.docChanged) return true;
-  editor.view.dispatch(tr);
+  editor.view.dispatch(tagReplace(tr, track));
   return true;
 }
 
@@ -417,7 +466,9 @@ export const Search = Extension.create({
             return true;
           }
           if (!dispatch) return true;
-          const end = smartReplace(tr, state.schema, m.from, m.to, expandReplacement(replacement, m.groups));
+          const track = trackUser(this.editor);
+          const end = smartReplace(tr, state.schema, m.from, m.to, expandReplacement(replacement, m.groups), track);
+          tagReplace(tr, track);
           const next = findMatches(tr.doc, s.query, s.options);
           const ni = nearestMatch(next, end);
           if (ni >= 0 && next[ni]) {
@@ -436,10 +487,12 @@ export const Search = Extension.create({
           const matches = s.query ? findMatches(state.doc, s.query, s.options, Infinity) : [];
           if (!matches.length) return false;
           if (dispatch) {
+            const track = trackUser(this.editor);
             for (let k = matches.length - 1; k >= 0; k--) {
               const m = matches[k];
-              smartReplace(tr, state.schema, m.from, m.to, expandReplacement(replacement, m.groups));
+              smartReplace(tr, state.schema, m.from, m.to, expandReplacement(replacement, m.groups), track);
             }
+            tagReplace(tr, track);
           }
           return true;
         },
