@@ -1458,7 +1458,7 @@ function SettingsPanel({
       />
       <ToggleRow
         label="Limit to 1 response"
-        hint="Respondents can submit only once."
+        hint="Respondents must sign in and can submit only once."
         checked={settings.limit_one_response}
         onChange={(v) => onChange({ limit_one_response: v })}
       />

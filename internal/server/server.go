@@ -856,6 +856,9 @@ func New(cfg Config) *Server {
 	}
 	if formsSvc != nil {
 		_ = grownv1.RegisterFormsServiceHandlerServer(context.Background(), mux, formsSvc)
+		_ = mux.HandlePath(http.MethodGet, forms.MyResponsePath, func(w http.ResponseWriter, r *http.Request, p map[string]string) {
+			formsSvc.ServeMyResponse(w, r, p["form_id"])
+		})
 	}
 	if photosSvc != nil {
 		_ = grownv1.RegisterPhotosServiceHandlerServer(context.Background(), mux, photosSvc)

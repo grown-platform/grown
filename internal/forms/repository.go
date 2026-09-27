@@ -18,6 +18,14 @@ import (
 // ErrNotFound is returned when no form/response matches the given id (within org).
 var ErrNotFound = errors.New("form not found")
 
+// ErrAlreadyResponded is returned when a form limits respondents to one
+// response and the respondent already submitted one.
+var ErrAlreadyResponded = errors.New("you've already responded to this form")
+
+// ErrSignInRequired is returned for an anonymous submission to a form that
+// limits respondents to one response (the limit is per signed-in user).
+var ErrSignInRequired = errors.New("this form requires sign-in")
+
 // Question types supported by the editor / fill view.
 const (
 	TypeShortAnswer    = "short_answer"
@@ -322,19 +330,77 @@ func scanResponse(row pgx.Row) (Response, error) {
 // SubmitResponse records a submission for a form. orgID/respondentID are stored
 // for ownership/auditing; respondentID may be empty for anonymous submissions.
 // score is nil for non-quiz forms.
+//
+// When the form has "Limit to 1 response" on (read from the form row, so the
+// caller can't bypass it), an anonymous submission returns ErrSignInRequired
+// and a respondent who already has a response gets ErrAlreadyResponded. The
+// check before the insert catches responses from before the limit was turned
+// on; the partial unique index form_responses_limit_one_uniq (0097) makes two
+// racing first submissions yield exactly one row.
 func (r *Repository) SubmitResponse(ctx context.Context, orgID, formID, respondentID, email string, answers map[string]any, score *float64) (Response, error) {
+	var limitOne bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE((settings->>'limit_one_response')::boolean, false)
+		 FROM grown.forms WHERE id=$1 AND org_id=$2`, formID, orgID).Scan(&limitOne)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Response{}, ErrNotFound
+	}
+	if err != nil {
+		return Response{}, fmt.Errorf("forms.SubmitResponse: %w", err)
+	}
 	var rid any
 	if respondentID != "" {
 		rid = respondentID
 	}
-	q := `INSERT INTO grown.form_responses (form_id, org_id, respondent_id, respondent_email, answers, score)
-		VALUES ($1,$2,$3,$4,$5,$6)
+	if limitOne {
+		if respondentID == "" {
+			return Response{}, ErrSignInRequired
+		}
+		var exists bool
+		if err := r.pool.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM grown.form_responses WHERE form_id=$1 AND respondent_id=$2)`,
+			formID, respondentID).Scan(&exists); err != nil {
+			return Response{}, fmt.Errorf("forms.SubmitResponse: %w", err)
+		}
+		if exists {
+			return Response{}, ErrAlreadyResponded
+		}
+	}
+	q := `INSERT INTO grown.form_responses (form_id, org_id, respondent_id, respondent_email, answers, score, limit_one)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)
 		RETURNING id::text, form_id::text, respondent_email, answers, created_at, score`
-	resp, err := scanResponse(r.pool.QueryRow(ctx, q, formID, orgID, rid, email, marshalAnswers(answers), score))
+	resp, err := scanResponse(r.pool.QueryRow(ctx, q, formID, orgID, rid, email, marshalAnswers(answers), score, limitOne))
+	if isUniqueViolation(err) {
+		return Response{}, ErrAlreadyResponded
+	}
 	if err != nil {
 		return Response{}, fmt.Errorf("forms.SubmitResponse: %w", err)
 	}
 	return resp, nil
+}
+
+// UserResponse returns respondentID's most recent response to formID within
+// orgID, or ErrNotFound if they haven't responded.
+func (r *Repository) UserResponse(ctx context.Context, orgID, formID, respondentID string) (Response, error) {
+	q := `SELECT id::text, form_id::text, respondent_email, answers, created_at, score
+		FROM grown.form_responses
+		WHERE form_id=$1 AND org_id=$2 AND respondent_id=$3
+		ORDER BY created_at DESC LIMIT 1`
+	resp, err := scanResponse(r.pool.QueryRow(ctx, q, formID, orgID, respondentID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Response{}, ErrNotFound
+	}
+	if err != nil {
+		return Response{}, fmt.Errorf("forms.UserResponse: %w", err)
+	}
+	return resp, nil
+}
+
+// isUniqueViolation reports whether err is a PostgreSQL unique-constraint
+// violation (SQLSTATE 23505).
+func isUniqueViolation(err error) bool {
+	var pe interface{ SQLState() string }
+	return errors.As(err, &pe) && pe.SQLState() == "23505"
 }
 
 // ListResponses returns all responses for a form within orgID, newest first.

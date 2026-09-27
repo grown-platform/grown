@@ -7,9 +7,20 @@ import type {
   ListFormResponsesResponse,
   FormResponseSummary,
   AnswerMap,
+  MyResponseStatus,
 } from "./types";
 
 const API_BASE = "/api/v1";
+
+/** An API failure that keeps the HTTP status (e.g. 409 = already responded). */
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
@@ -25,7 +36,7 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* non-JSON error body */
     }
-    throw new Error(detail);
+    throw new ApiError(detail, resp.status);
   }
   return (await resp.json()) as T;
 }
@@ -70,6 +81,11 @@ export function submitResponse(
       answers_json: JSON.stringify(answers),
     }),
   });
+}
+
+/** Whether the signed-in user already responded to the form. */
+export function getMyResponse(formId: string): Promise<MyResponseStatus> {
+  return jsonFetch<MyResponseStatus>(`/forms/${formId}/my-response`);
 }
 
 export async function listResponses(formId: string): Promise<FormResponse[]> {
