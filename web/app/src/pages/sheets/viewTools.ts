@@ -76,7 +76,21 @@ const state: RenderState = {
   breaksKey: "",
 };
 
+let refreshedAt = 0;
+
+/** Header cells may paint before the cell area in a frame: refresh when stale. */
+function refreshIfStale(): void {
+  if (Date.now() - refreshedAt > 100) {
+    try {
+      refresh();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 function refresh(): void {
+  refreshedAt = Date.now();
   const sheet = activeSheet();
   state.sheetId = sheet?.id ?? null;
   state.view = sheetViewOptions(sheet);
@@ -251,6 +265,26 @@ export const viewHooks = {
   },
   afterRenderCell: (_cell: any, info: CellInfo, ctx: CanvasRenderingContext2D): void => {
     if (state.breaks) paintBreaks(info, ctx);
+  },
+  // Headings hidden: the header strips stay (FortuneSheet 1.0.4 mis-positions
+  // its overlays with a zero-width header) but are painted blank.
+  beforeRenderRowHeaderCell: (_n: string, _i: number, top: number, width: number, height: number, ctx: CanvasRenderingContext2D): boolean => {
+    refreshIfStale();
+    if (state.view.showHeadings) return true;
+    ctx.save();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, top, width, height + 1);
+    ctx.restore();
+    return false;
+  },
+  beforeRenderColumnHeaderCell: (_n: string, _i: number, left: number, width: number, height: number, ctx: CanvasRenderingContext2D): boolean => {
+    refreshIfStale();
+    if (state.view.showHeadings) return true;
+    ctx.save();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(left, 0, width + 1, height);
+    ctx.restore();
+    return false;
   },
   beforeUpdateCell: (r: number, c: number): boolean => {
     try {

@@ -237,6 +237,8 @@ export function SheetEditor({ user }: SheetEditorProps) {
         dataToolHooks.afterRenderCell(cell, info, ctx);
         viewHooks.afterRenderCell(cell, info, ctx);
       },
+      beforeRenderRowHeaderCell: viewHooks.beforeRenderRowHeaderCell,
+      beforeRenderColumnHeaderCell: viewHooks.beforeRenderColumnHeaderCell,
       afterActivateSheet: () => setTimeout(() => refreshViewRef.current(), 0),
     };
   }
@@ -588,8 +590,9 @@ export function SheetEditor({ user }: SheetEditorProps) {
     patchSheet(wb, sheet.id, viewFields(next));
     setView(next);
     invalidateView();
-    // Gridlines and zoom are read from the sheet when FortuneSheet re-initialises it.
-    if (patch.showGridLines !== undefined || patch.zoom !== undefined) setViewGen((g) => g + 1);
+    // Gridlines and zoom are read from the sheet when FortuneSheet re-initialises
+    // it; headings repaint with the grid.
+    if (patch.showGridLines !== undefined || patch.zoom !== undefined || patch.showHeadings !== undefined) setViewGen((g) => g + 1);
   }
   const viewActionRef = useRef(applyView);
   viewActionRef.current = applyView;
@@ -985,8 +988,6 @@ export function SheetEditor({ user }: SheetEditorProps) {
             onChange={stableOnChange}
             onOp={stableOnOp}
             hooks={hooks.current}
-            rowHeaderWidth={view.showHeadings ? 46 : 0}
-            columnHeaderHeight={view.showHeadings ? 20 : 0}
             generateSheetId={generateSheetId}
           />
         </Box>
