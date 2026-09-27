@@ -528,7 +528,8 @@ describe("text", () => {
     expect(r.deck.slides[0].elements).toHaveLength(1);
     expect(r.deck.slides[0].elements[0]).toMatchObject({
       type: "text",
-      text: "Line one\nstill one\nLine two",
+      // a:br is a line break inside the paragraph ("\v").
+      text: "Line one\vstill one\nLine two",
       fontSize: 32, // 24 pt
       fontFamily: "Courier New",
       bold: true,
@@ -540,6 +541,10 @@ describe("text", () => {
       valign: "bottom",
       lineSpacing: 1.2,
     });
+    // The unformatted runs after the first keep their own (default) style.
+    const el = r.deck.slides[0].elements[0];
+    expect(el.runs?.[0]).toEqual({ text: "Line one\v" });
+    expect(el.runs?.[1]).toMatchObject({ bold: false, italic: false, underline: false, strike: false, fontSize: 24 });
   });
 
   it("applies normAutofit font scale", async () => {

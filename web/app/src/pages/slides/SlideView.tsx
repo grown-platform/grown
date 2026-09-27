@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { Box } from "@mui/joy";
 import {
   CANVAS_W,
@@ -10,6 +11,9 @@ import {
 } from "./model";
 import { relativeTo } from "./groupOps";
 import { connectorHitPath, shapeLayers } from "./shapeRender";
+import { insetsOf } from "./textOps";
+import { isRich, layoutParagraphs, markerCss, paraCss, runCss } from "./textLayout";
+import { parseSlideLink } from "./links";
 
 // CSS keyframes for element entrance animations (injected globally once).
 export const ELEMENT_ANIM_CSS = `
@@ -44,11 +48,13 @@ interface SlideViewProps {
   revealedIds?: ReadonlySet<string>;
   /** When true, elements with a `url` become clickable links (present mode). */
   linkable?: boolean;
+  /** Follow a slide link (`#slide:…`) clicked in present mode. */
+  onSlideLink?: (url: string) => void;
 }
 
 /** SlideView renders a slide read-only, scaled to fit `width` px (16:9).
  *  Used for the thumbnail rail and present mode. */
-export function SlideView({ slide, width, revealedIds, linkable }: SlideViewProps) {
+export function SlideView({ slide, width, revealedIds, linkable, onSlideLink }: SlideViewProps) {
   const scale = width / CANVAS_W;
   const height = width * (CANVAS_H / CANVAS_W);
   return (
@@ -78,6 +84,7 @@ export function SlideView({ slide, width, revealedIds, linkable }: SlideViewProp
             el={el}
             revealedIds={revealedIds}
             linkable={linkable}
+            onSlideLink={onSlideLink}
           />
         ))}
       </Box>
@@ -96,6 +103,7 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
     transformOrigin: "center",
   };
   if (el.type === "text") {
+    const ins = insetsOf(el);
     return {
       ...base,
       fontSize: el.fontSize,
@@ -103,10 +111,12 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
       color: el.color,
       fontWeight: el.bold ? 700 : 400,
       fontStyle: el.italic ? "italic" : "normal",
-      textDecoration:
-        [el.underline ? "underline" : "", el.strike ? "line-through" : ""]
-          .filter(Boolean)
-          .join(" ") || "none",
+      // Rich text decorates each run itself (CSS can't undo a parent's line).
+      textDecoration: isRich(el)
+        ? "none"
+        : [el.underline ? "underline" : "", el.strike ? "line-through" : ""]
+            .filter(Boolean)
+            .join(" ") || "none",
       textAlign: el.align,
       display: "flex",
       flexDirection: "column",
@@ -119,8 +129,11 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
       whiteSpace: "pre-wrap",
       wordBreak: "break-word",
       lineHeight: el.lineSpacing || 1.2,
-      padding: 4,
+      padding: `${ins.t}px ${ins.r}px ${ins.b}px ${ins.l}px`,
+      boxSizing: "border-box",
       overflow: "hidden",
+      ...(el.rtl ? { direction: "rtl" as const } : {}),
+      ...(el.vert ? { writingMode: "vertical-rl" as const } : {}),
     };
   }
   const border =
@@ -226,10 +239,12 @@ function ElementView({
   el,
   revealedIds,
   linkable,
+  onSlideLink,
 }: {
   el: SlideElement;
   revealedIds?: ReadonlySet<string>;
   linkable?: boolean;
+  onSlideLink?: (url: string) => void;
 }) {
   const style = elementStyle(el);
 
@@ -248,13 +263,22 @@ function ElementView({
   const merged: React.CSSProperties = { ...style, ...animStyle };
 
   // In present mode, an element with a url becomes a clickable overlay link.
+  const slideLink = !!parseSlideLink(el.url);
   const linkOverlay =
     linkable && el.url ? (
       <a
-        href={el.url}
-        target="_blank"
+        href={slideLink ? undefined : el.url}
+        target={slideLink ? undefined : "_blank"}
         rel="noopener noreferrer"
         title={el.url}
+        data-link={el.url}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (slideLink) {
+            e.preventDefault();
+            onSlideLink?.(el.url!);
+          }
+        }}
         style={{
           position: "absolute",
           left: el.x,
@@ -275,7 +299,7 @@ function ElementView({
         <GroupChildren el={el} />
       </div>
     ) : (
-      renderElementBody(el, merged)
+      renderElementBody(el, merged, linkable ? { onSlideLink } : undefined)
     );
   return linkOverlay ? (
     <>
@@ -290,6 +314,7 @@ function ElementView({
 function renderElementBody(
   el: SlideElement,
   merged: React.CSSProperties,
+  links?: TextLinkOpts,
 ): React.ReactElement {
   if (el.type === "image") {
     return el.src ? (
@@ -311,7 +336,11 @@ function renderElementBody(
     );
   }
   if (el.type === "text")
-    return <div style={merged}>{renderSlideText(el)}</div>;
+    return (
+      <div style={merged}>
+        <ShrinkFit on={el.autofit === "shrink"}>{renderSlideText(el, links)}</ShrinkFit>
+      </div>
+    );
   if (el.type === "table")
     return (
       <div style={merged}>
@@ -339,17 +368,101 @@ export function GroupChildren({ el }: { el: SlideElement }) {
   );
 }
 
-/** renderSlideText returns a text element's body, prefixing each line with a
- *  bullet/number when the element has a list style (display-only; the stored
- *  text stays plain). */
-export function renderSlideText(el: SlideElement): React.ReactNode {
-  if (!el.list) return el.text;
-  return (el.text || "").split("\n").map((ln, i) => (
-    <div key={i}>
-      {el.list === "number" ? `${i + 1}. ` : "• "}
-      {ln}
+/** Link behaviour of rendered text runs (present mode). */
+export interface TextLinkOpts {
+  onSlideLink?: (url: string) => void;
+}
+
+/** renderSlideText returns a text element's body. A plain element is its
+ *  text (pre-wrap); a rich one (runs, paragraph levels, lists, line breaks)
+ *  is one block per paragraph with styled runs and list markers. With
+ *  `links`, run links are clickable (present mode). */
+export function renderSlideText(el: SlideElement, links?: TextLinkOpts): React.ReactNode {
+  if (!isRich(el)) return el.text;
+  const laid = layoutParagraphs(el);
+  const body = laid.map((p, i) => {
+    const last = p.runs[p.runs.length - 1];
+    return (
+      <div key={i} data-para="" style={paraCss(el, p.props, !!p.marker) as React.CSSProperties}>
+        {p.marker && (
+          <span data-marker="" style={markerCss(el, p) as React.CSSProperties}>
+            {p.marker}
+          </span>
+        )}
+        {p.runs.map((r, j) => {
+          const parts = r.text.split("\v");
+          const content = parts.map((t, k) => (
+            <span key={k}>
+              {k > 0 && <br />}
+              {t}
+            </span>
+          ));
+          const style = runCss(el, r) as React.CSSProperties;
+          if (!r.url)
+            return (
+              <span key={j} style={style}>
+                {content}
+              </span>
+            );
+          const slide = !!parseSlideLink(r.url);
+          return (
+            <a
+              key={j}
+              data-link={r.url}
+              href={links && !slide ? r.url : undefined}
+              target={links && !slide ? "_blank" : undefined}
+              rel="noopener noreferrer"
+              title={r.url}
+              style={{ ...style, cursor: links ? "pointer" : undefined, pointerEvents: "auto" }}
+              onClick={
+                links
+                  ? (e) => {
+                      e.stopPropagation();
+                      if (slide) {
+                        e.preventDefault();
+                        links.onSlideLink?.(r.url!);
+                      }
+                    }
+                  : undefined
+              }
+            >
+              {content}
+            </a>
+          );
+        })}
+        {(!p.runs.length || /\v$/.test(last.text)) && <br />}
+      </div>
+    );
+  });
+  return el.vert === "vert270" ? <div style={{ transform: "rotate(180deg)" }}>{body}</div> : body;
+}
+
+/** ShrinkFit scales its content down (CSS zoom) until it fits the text box
+ *  (Format ▸ Text fitting ▸ Shrink on overflow). */
+export function ShrinkFit({ on, children }: { on: boolean; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const n = ref.current;
+    const box = n?.parentElement;
+    if (!n || !box) return;
+    n.style.zoom = "";
+    if (!on || box.scrollHeight <= box.clientHeight + 0.5) return;
+    let lo = 0.1;
+    let hi = 1;
+    for (let i = 0; i < 8; i++) {
+      const mid = (lo + hi) / 2;
+      n.style.zoom = String(mid);
+      if (box.scrollHeight <= box.clientHeight + 0.5) lo = mid;
+      else hi = mid;
+    }
+    n.style.zoom = String(lo);
+  });
+  if (!on) return <>{children}</>;
+  return (
+    <div ref={ref} data-shrink="" style={{ width: "100%" }}>
+      {children}
     </div>
-  ));
+  );
 }
 
 /** SlideTable renders an element's table grid. When onCellChange is supplied the

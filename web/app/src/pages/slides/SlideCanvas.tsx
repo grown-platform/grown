@@ -1,13 +1,17 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/joy";
 import { CANVAS_W, CANVAS_H, type Slide, type SlideElement } from "./model";
 import {
   elementStyle,
   GroupChildren,
   ShapeSvg,
+  ShrinkFit,
   SlideTable,
   renderSlideText,
 } from "./SlideView";
+import { EDITOR_CSS, TextEditor, type TextEditorHandle } from "./TextEditor";
+import { rangeInRendered } from "./textDom";
+import type { TextKeyAction } from "./keymap";
 import {
   GLUE_DISTANCE,
   adjustHandles,
@@ -67,6 +71,23 @@ interface SlideCanvasProps {
   drawTool?: DrawTool | null;
   /** A draw gesture finished: insert this element. */
   onDrawn?: (el: SlideElement) => void;
+  /** Filled with the active text editor while a text box is being edited. */
+  textEditorRef?: React.MutableRefObject<TextEditorHandle | null>;
+  /** A formatting shortcut inside the text editor (see TextEditor). */
+  onTextKey?: (a: TextKeyAction, h: TextEditorHandle) => boolean;
+  /** Text editing ended on element `id` with this selection. */
+  onEditExit?: (id: string, sel: [number, number]) => void;
+  /** Mouse up inside the text editor (paint format applies here). */
+  onEditorMouseUp?: (h: TextEditorHandle) => void;
+  /** Start editing a text box with a selection (bump `nonce` to re-request). */
+  editRequest?: { id: string; sel: [number, number]; nonce: number } | null;
+  /** Paint format is armed: clicking a text box applies it. */
+  painting?: boolean;
+  onPaint?: (el: SlideElement) => void;
+  /** Ctrl/Cmd+click on a text link (outside text editing). */
+  onFollowLink?: (url: string) => void;
+  /** Highlight a find match in a (top-level) text box, without focus. */
+  findHighlight?: { elId: string; start: number; end: number } | null;
 }
 
 type Drag =
@@ -112,11 +133,23 @@ export function SlideCanvas({
   onContext,
   drawTool,
   onDrawn,
+  textEditorRef,
+  onTextKey,
+  onEditExit,
+  onEditorMouseUp,
+  editRequest,
+  painting,
+  onPaint,
+  onFollowLink,
+  findHighlight,
 }: SlideCanvasProps) {
   const scale = canvasScale(width);
   const height = canvasHeight(width);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ id: string; sel?: [number, number] | "all"; n: number } | null>(null);
+  // Each edit session mounts a fresh editor.
+  const editSession = useRef(0);
+  const editingId = editing?.id ?? null;
   const [guides, setGuides] = useState<Guide[]>([]);
   const [marquee, setMarquee] = useState<Rect | null>(null);
   // Connection sites shown while a connector end is dragged or drawn.
@@ -139,14 +172,33 @@ export function SlideCanvas({
     };
   }
 
-  function beginEdit(id: string) {
-    setEditingId(id);
+  function beginEdit(id: string, sel?: [number, number] | "all") {
+    setEditing({ id, sel, n: ++editSession.current });
     onEditingText?.(true);
   }
   function endEdit() {
-    setEditingId(null);
+    setEditing(null);
     onEditingText?.(false);
   }
+  // Find match highlight (CSS Custom Highlight API; skipped where missing).
+  useEffect(() => {
+    const hl = (globalThis as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights;
+    const Highlight = (globalThis as { Highlight?: new (r: Range) => unknown }).Highlight;
+    if (!hl || !Highlight) return;
+    hl.delete("slides-find");
+    if (!findHighlight || !rootRef.current) return;
+    const box = rootRef.current.querySelector<HTMLElement>(`[data-el-id="${findHighlight.elId}"]`);
+    const r = box && rangeInRendered(box, findHighlight.start, findHighlight.end);
+    if (r) hl.set("slides-find", new Highlight(r));
+    return () => void hl.delete("slides-find");
+  });
+
+  // Re-enter a text box with a selection (after a menu/dialog applied a
+  // format to the saved selection).
+  useEffect(() => {
+    if (editRequest && slide.elements.some((e) => e.id === editRequest.id && e.type === "text"))
+      beginEdit(editRequest.id, editRequest.sel);
+  }, [editRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function startDrag(e: React.PointerEvent, mode: DragMode, ids: string[]) {
     const starts = slide.elements.filter((x) => ids.includes(x.id) && !x.locked);
@@ -167,6 +219,12 @@ export function SlideCanvas({
   function onElementPointerDown(e: React.PointerEvent, el: SlideElement) {
     if (editingId === el.id || e.button !== 0) return;
     e.stopPropagation();
+    const link = (e.target as HTMLElement).closest?.("[data-link]");
+    if (link && (e.ctrlKey || e.metaKey) && onFollowLink) {
+      onFollowLink(link.getAttribute("data-link") || "");
+      return;
+    }
+    if (painting && el.type === "text" && onPaint) onPaint(el);
     const additive = e.shiftKey || e.ctrlKey || e.metaKey;
     const next = clickSelect(selectedIds, el.id, additive);
     onSelect(next);
@@ -341,6 +399,11 @@ export function SlideCanvas({
     drag.current = { kind: "endpoint", el0: { ...el }, end, moved: false };
   }
 
+  function editingSel(el: SlideElement): [number, number] | "all" | "end" {
+    if (editing?.id === el.id && editing.sel) return editing.sel;
+    return "end";
+  }
+
   const handleSize = 10 / scale;
   const handleStyle = (h: Handle): React.CSSProperties => ({
     position: "absolute",
@@ -372,6 +435,7 @@ export function SlideCanvas({
         position: "relative",
         width,
         height,
+        cursor: painting ? "copy" : undefined,
         bgcolor: slide.background,
         boxShadow: "md",
         flexShrink: 0,
@@ -389,6 +453,7 @@ export function SlideCanvas({
           height: CANVAS_H,
         }}
       >
+        <style>{EDITOR_CSS}</style>
         {showGrid && (
           <div
             data-testid="snap-grid"
@@ -403,9 +468,9 @@ export function SlideCanvas({
         )}
         {slide.elements.map((el) => {
           const selected = selSet.has(el.id);
-          const editing = el.id === editingId;
+          const isEditing = el.id === editingId;
           const style = elementStyle(el);
-          const single = selected && !multi && !editing && !el.locked;
+          const single = selected && !multi && !isEditing && !el.locked;
           const isConnector = el.type === "connector";
           return (
             <div
@@ -415,7 +480,7 @@ export function SlideCanvas({
               data-selected={selected ? "true" : undefined}
               style={{
                 ...style,
-                cursor: editing ? "text" : el.locked ? "default" : "move",
+                cursor: isEditing ? "text" : el.locked ? "default" : "move",
                 outline:
                   selected && !(isConnector && single)
                     ? `${2 / scale}px ${el.locked ? "dashed" : "solid"} ${SELECT_BLUE}`
@@ -478,33 +543,25 @@ export function SlideCanvas({
                   </div>
                 )
               ) : el.type === "text" ? (
-                editing ? (
-                  <div
-                    contentEditable
-                    suppressContentEditableWarning
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      outline: "none",
-                      cursor: "text",
-                    }}
-                    ref={(n) => {
-                      if (n && n.innerText !== el.text)
-                        n.innerText = el.text || "";
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onBlur={(e) => {
-                      onChange({
-                        ...el,
-                        text: (e.target as HTMLElement).innerText,
-                      });
+                isEditing ? (
+                  <TextEditor
+                    key={editing?.n}
+                    el={el}
+                    initialSel={editingSel(el)}
+                    handleRef={textEditorRef}
+                    onCommit={(next) => onChange(next)}
+                    onExit={(next, sel) => {
+                      if (next) onChange(next);
                       endEdit();
+                      onEditExit?.(el.id, sel);
                     }}
+                    onTextKey={onTextKey}
+                    onMouseUp={onEditorMouseUp}
                   />
                 ) : (
-                  <span style={{ width: "100%", pointerEvents: "none" }}>
-                    {renderSlideText(el)}
-                  </span>
+                  <div style={{ width: "100%", pointerEvents: "none" }}>
+                    <ShrinkFit on={el.autofit === "shrink"}>{renderSlideText(el)}</ShrinkFit>
+                  </div>
                 )
               ) : el.type === "shape" || isConnector ? (
                 <ShapeSvg el={el} hit />

@@ -29,6 +29,13 @@ const (
 	TypeDate           = "date"
 	TypeTime           = "time"
 	TypeFileUpload     = "file_upload"
+	// Grid questions: rows x columns (columns are Options). Answers are a
+	// JSON object keyed by row label: a column string (multiple-choice grid)
+	// or a list of column strings (checkbox grid).
+	TypeMultipleChoiceGrid = "multiple_choice_grid"
+	TypeCheckboxGrid       = "checkbox_grid"
+	// TypeRating is a 1..ScaleMax icon rating (stars/hearts/thumbs).
+	TypeRating = "rating"
 )
 
 // SubmitTarget is the special go_to_section value meaning "submit the form".
@@ -54,6 +61,29 @@ type Question struct {
 	GoToSection map[string]string `json:"go_to_section,omitempty"`
 	// IsSection: when true this is a section divider, not a real question.
 	IsSection bool `json:"is_section,omitempty"`
+	// Validation is an optional response-validation rule.
+	Validation *Validation `json:"validation,omitempty"`
+	// TextFormat / Mask restrict short-answer input (see validate.go).
+	TextFormat string `json:"text_format,omitempty"`
+	Mask       string `json:"mask,omitempty"`
+	// Rows are grid rows; the grid's columns are Options.
+	Rows              []string `json:"rows,omitempty"`
+	LimitOnePerColumn bool     `json:"limit_one_per_column,omitempty"`
+	// RatingIcon is "star" (default), "heart" or "thumb".
+	RatingIcon string `json:"rating_icon,omitempty"`
+	// AfterSection (section dividers only): "" = next section, a section id,
+	// or SubmitTarget.
+	AfterSection string `json:"after_section,omitempty"`
+}
+
+// Validation is a Google-Forms-style response validation rule. See the
+// FormValidation proto message for the kind/op pairs.
+type Validation struct {
+	Kind      string `json:"kind"`
+	Op        string `json:"op"`
+	Value     string `json:"value,omitempty"`
+	Value2    string `json:"value2,omitempty"`
+	ErrorText string `json:"error_text,omitempty"`
 }
 
 // Settings holds per-form behaviour toggles.
@@ -64,6 +94,8 @@ type Settings struct {
 	ShuffleQuestions    bool   `json:"shuffle_questions"`
 	ConfirmationMessage string `json:"confirmation_message"`
 	IsQuiz              bool   `json:"is_quiz"`
+	// AfterFirstSection: where to go after the implicit first section.
+	AfterFirstSection string `json:"after_first_section,omitempty"`
 }
 
 // Form is the in-memory representation of a grown.forms row.

@@ -22,74 +22,39 @@ import {
 } from "@mui/joy";
 import EditIcon from "@mui/icons-material/Edit";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
+import StarIcon from "@mui/icons-material/Star";
+import StarBorderIcon from "@mui/icons-material/StarBorder";
+import FavoriteIcon from "@mui/icons-material/Favorite";
+import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
+import ThumbUpIcon from "@mui/icons-material/ThumbUp";
+import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import { getForm, submitResponse } from "./api";
-import type { Form, FormQuestion, FormResponse, AnswerMap } from "./types";
-import { SUBMIT_TARGET } from "./types";
+import type {
+  Form,
+  FormQuestion,
+  FormResponse,
+  AnswerMap,
+  AnswerValue,
+  GridAnswer,
+} from "./types";
 import { FORMS_ACCENT } from "./helpers";
+import {
+  applyTextFormat,
+  buildPages,
+  formatMask,
+  gridSelections,
+  isAnswered,
+  maskDisplay,
+  nextPage,
+  pruneSkipped,
+  questionError,
+  ratingLevels,
+} from "./validate";
 
 interface Props {
   user: User;
-}
-
-function isAnswered(
-  q: FormQuestion,
-  v: string | string[] | undefined,
-): boolean {
-  if (q.type === "checkboxes") return Array.isArray(v) && v.length > 0;
-  if (q.type === "file_upload") return typeof v === "string" && v.trim() !== "";
-  return typeof v === "string" && v.trim() !== "";
-}
-
-// Build the ordered list of section indices visible to the responder given the
-// current state. Returns the ordered list of section "page" ids (undefined =
-// initial page before any section). A question with is_section=true acts as a
-// page boundary.
-function buildPages(form: Form): string[][] {
-  const pages: string[][] = [[]];
-  for (const q of form.questions) {
-    if (q.is_section) {
-      pages.push([q.id]); // first element is the section id itself
-    } else {
-      pages[pages.length - 1].push(q.id);
-    }
-  }
-  return pages;
-}
-
-// Given a current page's last MC/dropdown answer, resolve the next page index.
-// Returns the index of the target page, or -1 meaning "submit now".
-function resolveNextPage(
-  form: Form,
-  currentPageQIds: string[],
-  answers: AnswerMap,
-  allPages: string[][],
-  currentPageIdx: number,
-): number {
-  // Check questions on this page for branching (last branch wins).
-  let branchTarget: string | undefined;
-  for (const qid of currentPageQIds) {
-    const q = form.questions.find((fq) => fq.id === qid);
-    if (!q || !q.go_to_section || Object.keys(q.go_to_section).length === 0)
-      continue;
-    const ans = answers[qid];
-    if (typeof ans === "string" && q.go_to_section[ans]) {
-      branchTarget = q.go_to_section[ans];
-    }
-  }
-
-  if (branchTarget === SUBMIT_TARGET) return -1; // submit
-
-  if (branchTarget) {
-    // Find the page that starts with this section id.
-    const idx = allPages.findIndex((page) => page[0] === branchTarget);
-    if (idx >= 0) return idx;
-  }
-
-  // Default: next page.
-  if (currentPageIdx + 1 >= allPages.length) return -1; // no more pages
-  return currentPageIdx + 1;
 }
 
 export default function FormFill({ user }: Props) {
@@ -106,8 +71,12 @@ export default function FormFill({ user }: Props) {
   const [showErrors, setShowErrors] = useState(false);
   const [submittedResponse, setSubmittedResponse] =
     useState<FormResponse | null>(null);
-  // Section paging.
-  const [pageIdx, setPageIdx] = useState(0);
+  // Section paging: the pages visited so far (Back pops, so it retraces the
+  // branches the respondent actually took).
+  const [history, setHistory] = useState<number[]>([0]);
+  const pageIdx = history[history.length - 1];
+  // Questions whose field has lost focus: their validation shows live.
+  const [touched, setTouched] = useState<Set<string>>(new Set());
   // File inputs by question id.
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -131,46 +100,38 @@ export default function FormFill({ user }: Props) {
     };
   }, [id]);
 
-  const pages = useMemo(() => (form ? buildPages(form) : [[]]), [form]);
+  const pages = useMemo(
+    () => buildPages(form?.questions ?? []),
+    [form],
+  );
   const hasSections = pages.length > 1;
+  const currentPageQuestions = pages[pageIdx]?.questions ?? [];
+  const currentSection = pages[pageIdx]?.section ?? null;
 
-  // Questions visible on the current page (excluding the section marker itself).
-  const currentPageQIds = useMemo(() => {
-    if (!pages[pageIdx]) return [];
-    // First element might be the section header id — skip it for actual questions.
-    return pages[pageIdx].filter((qid) => {
-      if (!form) return false;
-      const q = form.questions.find((fq) => fq.id === qid);
-      return q && !q.is_section;
-    });
-  }, [pages, pageIdx, form]);
-
-  const currentPageQuestions = useMemo(() => {
-    if (!form) return [];
-    return currentPageQIds
-      .map((qid) => form.questions.find((q) => q.id === qid))
-      .filter(Boolean) as FormQuestion[];
-  }, [form, currentPageQIds]);
-
-  // Current section (if any).
-  const currentSection = useMemo(() => {
-    if (!form || !hasSections || pageIdx === 0) return null;
-    const sectionId = pages[pageIdx]?.[0];
-    return (
-      form.questions.find((q) => q.id === sectionId && q.is_section) ?? null
-    );
-  }, [form, hasSections, pages, pageIdx]);
-
-  const missing = useMemo(() => {
-    const m = new Set<string>();
+  // Per-question error message on the current page (required first, then
+  // response validation).
+  const errors = useMemo(() => {
+    const m = new Map<string, string>();
     if (!form) return m;
-    currentPageQuestions.forEach((q) => {
-      if (q.required && !isAnswered(q, answers[q.id])) m.add(q.id);
-    });
+    for (const q of currentPageQuestions) {
+      const msg = questionError(q, answers[q.id]);
+      if (msg) m.set(q.id, msg);
+    }
     if (pageIdx === 0 && form.settings?.collect_email && !email.trim())
-      m.add("__email__");
+      m.set("__email__", "This is a required question");
     return m;
   }, [form, currentPageQuestions, answers, email, pageIdx]);
+
+  function shownError(qid: string): string | null {
+    const msg = errors.get(qid);
+    if (!msg) return null;
+    if (showErrors) return msg;
+    // Before a Next/Submit attempt only validation (not "required") shows,
+    // and only once the respondent has left the field.
+    return touched.has(qid) && msg !== "This is a required question"
+      ? msg
+      : null;
+  }
 
   const answeredCount = useMemo(() => {
     if (!form) return 0;
@@ -179,8 +140,11 @@ export default function FormFill({ user }: Props) {
     ).length;
   }, [form, answers]);
 
-  function setAnswer(qid: string, v: string | string[]) {
+  function setAnswer(qid: string, v: AnswerValue) {
     setAnswers((cur) => ({ ...cur, [qid]: v }));
+  }
+  function touch(qid: string) {
+    setTouched((cur) => (cur.has(qid) ? cur : new Set(cur).add(qid)));
   }
   function toggleCheckbox(qid: string, opt: string) {
     setAnswers((cur) => {
@@ -199,24 +163,27 @@ export default function FormFill({ user }: Props) {
     setAnswer(qid, `[file:${file.name}]`);
   }
 
+  function resetAll() {
+    setAnswers({});
+    setEmail("");
+    setShowErrors(false);
+    setTouched(new Set());
+    setHistory([0]);
+  }
+
   function goNext() {
     if (!form) return;
-    if (missing.size > 0) {
+    if (errors.size > 0) {
       setShowErrors(true);
       return;
     }
     setShowErrors(false);
-    const next = resolveNextPage(
-      form,
-      currentPageQIds,
-      answers,
-      pages,
-      pageIdx,
-    );
-    if (next === -1) {
+    const next = nextPage(form, pages, pageIdx, answers);
+    if (next === -1 || history.includes(next)) {
       void doSubmit();
     } else {
-      setPageIdx(next);
+      setHistory((h) => [...h, next]);
+      window.scrollTo?.(0, 0);
     }
   }
 
@@ -227,7 +194,8 @@ export default function FormFill({ user }: Props) {
     try {
       const res = await submitResponse(
         form.id,
-        answers,
+        // Answers left behind on sections the branches skipped aren't sent.
+        pruneSkipped(form, answers),
         form.settings?.collect_email ? email : undefined,
       );
       setSubmitted(true);
@@ -241,7 +209,7 @@ export default function FormFill({ user }: Props) {
 
   async function submit() {
     if (!form) return;
-    if (missing.size > 0) {
+    if (errors.size > 0) {
       setShowErrors(true);
       return;
     }
@@ -338,11 +306,8 @@ export default function FormFill({ user }: Props) {
                 <Button
                   variant="plain"
                   onClick={() => {
-                    setAnswers({});
-                    setEmail("");
+                    resetAll();
                     setSubmitted(false);
-                    setShowErrors(false);
-                    setPageIdx(0);
                     setSubmittedResponse(null);
                   }}
                 >
@@ -369,9 +334,8 @@ export default function FormFill({ user }: Props) {
   const doneQs =
     answeredCount + (form.settings?.collect_email && email.trim() ? 1 : 0);
 
-  const isLastPage = hasSections
-    ? resolveNextPage(form, currentPageQIds, answers, pages, pageIdx) === -1
-    : true;
+  const next = hasSections ? nextPage(form, pages, pageIdx, answers) : -1;
+  const isLastPage = next === -1 || history.includes(next);
 
   return (
     <>
@@ -479,7 +443,7 @@ export default function FormFill({ user }: Props) {
           {pageIdx === 0 && form.settings?.collect_email && (
             <Sheet variant="outlined" sx={{ borderRadius: "md", p: 3, mb: 2 }}>
               <FormControl
-                error={showErrors && missing.has("__email__")}
+                error={!!shownError("__email__")}
                 required
               >
                 <FormLabel>
@@ -494,7 +458,7 @@ export default function FormFill({ user }: Props) {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Your email"
                 />
-                {showErrors && missing.has("__email__") && (
+                {shownError("__email__") && (
                   <FormHelperText>This is a required question</FormHelperText>
                 )}
               </FormControl>
@@ -510,8 +474,9 @@ export default function FormFill({ user }: Props) {
               <QuestionInput
                 q={q}
                 value={answers[q.id]}
-                error={showErrors && missing.has(q.id)}
+                error={shownError(q.id)}
                 onChange={(v) => setAnswer(q.id, v)}
+                onBlur={() => touch(q.id)}
                 onToggle={(opt) => toggleCheckbox(q.id, opt)}
                 onFile={(file) => handleFileChange(q.id, file)}
                 fileRef={(el) => {
@@ -536,7 +501,9 @@ export default function FormFill({ user }: Props) {
               <Button
                 variant="outlined"
                 color="neutral"
-                onClick={() => setPageIdx((p) => Math.max(0, p - 1))}
+                onClick={() =>
+                  setHistory((h) => (h.length > 1 ? h.slice(0, -1) : h))
+                }
               >
                 Back
               </Button>
@@ -571,12 +538,7 @@ export default function FormFill({ user }: Props) {
             <Button
               variant="plain"
               color="neutral"
-              onClick={() => {
-                setAnswers({});
-                setEmail("");
-                setShowErrors(false);
-                setPageIdx(0);
-              }}
+              onClick={resetAll}
             >
               Clear form
             </Button>
@@ -592,23 +554,35 @@ function QuestionInput({
   value,
   error,
   onChange,
+  onBlur,
   onToggle,
   onFile,
   fileRef,
 }: {
   q: FormQuestion;
-  value: string | string[] | undefined;
-  error: boolean;
-  onChange: (v: string) => void;
+  value: AnswerValue | undefined;
+  error: string | null;
+  onChange: (v: AnswerValue) => void;
+  onBlur: () => void;
   onToggle: (opt: string) => void;
   onFile: (file: File | null) => void;
   fileRef: (el: HTMLInputElement | null) => void;
 }) {
   const selected = Array.isArray(value) ? value : [];
   const strValue = typeof value === "string" ? value : "";
+  const mask = formatMask(q.text_format, q.mask);
+  const numeric =
+    q.text_format === "digits" ||
+    q.text_format === "phone" ||
+    q.text_format === "zip" ||
+    q.text_format === "credit_card";
 
   return (
-    <FormControl error={error}>
+    <FormControl
+      error={!!error}
+      onBlur={onBlur}
+      data-testid={`fill-question-${q.id}`}
+    >
       <FormLabel>
         {q.title || "Question"}
         {q.required && (
@@ -626,8 +600,16 @@ function QuestionInput({
       {q.type === "short_answer" && (
         <Input
           value={strValue}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Your answer"
+          onChange={(e) =>
+            onChange(applyTextFormat(q, strValue, e.target.value))
+          }
+          placeholder={mask ? maskDisplay(mask) : "Your answer"}
+          slotProps={{
+            input: {
+              inputMode: numeric ? "numeric" : undefined,
+              "aria-label": q.title || "Your answer",
+            },
+          }}
           sx={{ maxWidth: 400 }}
         />
       )}
@@ -760,7 +742,18 @@ function QuestionInput({
         </Box>
       )}
 
-      {error && <FormHelperText>This is a required question</FormHelperText>}
+      {(q.type === "multiple_choice_grid" || q.type === "checkbox_grid") && (
+        <GridInput q={q} value={value} onChange={onChange} />
+      )}
+      {q.type === "rating" && (
+        <RatingInput q={q} value={strValue} onChange={onChange} />
+      )}
+
+      {error && (
+        <FormHelperText data-testid={`question-error-${q.id}`} role="alert">
+          {error}
+        </FormHelperText>
+      )}
       {q.required && !error && (
         <Box sx={{ mt: 1 }}>
           <Chip size="sm" variant="soft" color="neutral">
@@ -778,4 +771,161 @@ function scaleValues(q: FormQuestion): number[] {
   const out: number[] = [];
   for (let n = min; n <= max; n++) out.push(n);
   return out;
+}
+
+/** Multiple-choice / checkbox grid: one row per `rows` entry, one column per
+ *  option. With "limit one response per column", picking a column moves it
+ *  out of any other row (as Google Forms does). */
+function GridInput({
+  q,
+  value,
+  onChange,
+}: {
+  q: FormQuestion;
+  value: AnswerValue | undefined;
+  onChange: (v: AnswerValue) => void;
+}) {
+  const sel = gridSelections(value);
+  const multi = q.type === "checkbox_grid";
+  function pick(row: string, col: string) {
+    const next: GridAnswer = {};
+    for (const [r, cols] of Object.entries(sel)) {
+      const kept = q.limit_one_per_column
+        ? cols.filter((c) => c !== col || r === row)
+        : cols;
+      if (kept.length) next[r] = multi ? kept : kept[0];
+    }
+    const cur = sel[row] ?? [];
+    if (multi) {
+      const cols = cur.includes(col)
+        ? cur.filter((c) => c !== col)
+        : [...cur, col];
+      if (cols.length) next[row] = cols;
+      else delete next[row];
+    } else {
+      next[row] = col;
+    }
+    onChange(next);
+  }
+  return (
+    <Box sx={{ overflowX: "auto", mt: 1 }}>
+      <Box
+        component="table"
+        role={multi ? "grid" : "radiogroup"}
+        aria-label={q.title || "Grid"}
+        sx={{
+          borderCollapse: "collapse",
+          minWidth: "100%",
+          "& th, & td": { px: 1, py: 0.75, textAlign: "center" },
+          "& tbody tr:nth-of-type(odd)": { bgcolor: "background.level1" },
+          "& th[scope=row]": { textAlign: "left", fontWeight: 400 },
+        }}
+      >
+        <thead>
+          <tr>
+            <th />
+            {q.options.map((c) => (
+              <Typography key={c} component="th" level="body-sm">
+                {c}
+              </Typography>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {(q.rows ?? []).map((row) => (
+            <tr key={row}>
+              <Typography component="th" scope="row" level="body-sm">
+                {row}
+              </Typography>
+              {q.options.map((col) => {
+                const on = (sel[row] ?? []).includes(col);
+                const label = `${row}: ${col}`;
+                return (
+                  <td key={col}>
+                    {multi ? (
+                      <Checkbox
+                        checked={on}
+                        onChange={() => pick(row, col)}
+                        slotProps={{ input: { "aria-label": label } }}
+                      />
+                    ) : (
+                      <Radio
+                        checked={on}
+                        onChange={() => pick(row, col)}
+                        name={`${q.id}-${row}`}
+                        value={col}
+                        slotProps={{ input: { "aria-label": label } }}
+                      />
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </Box>
+    </Box>
+  );
+}
+
+const RATING_ICONS = {
+  star: [StarIcon, StarBorderIcon],
+  heart: [FavoriteIcon, FavoriteBorderIcon],
+  thumb: [ThumbUpIcon, ThumbUpOffAltIcon],
+} as const;
+
+/** 1..N icon rating. Clicking the current rating clears it. */
+function RatingInput({
+  q,
+  value,
+  onChange,
+}: {
+  q: FormQuestion;
+  value: string;
+  onChange: (v: AnswerValue) => void;
+}) {
+  const [hover, setHover] = useState(0);
+  const max = ratingLevels(q);
+  const cur = Number(value) || 0;
+  const [On, Off] = RATING_ICONS[q.rating_icon ?? "star"] ?? RATING_ICONS.star;
+  const shown = hover || cur;
+  return (
+    <Box
+      role="radiogroup"
+      aria-label={q.title || "Rating"}
+      sx={{ display: "flex", gap: 0.5, mt: 1, flexWrap: "wrap" }}
+      onMouseLeave={() => setHover(0)}
+    >
+      {Array.from({ length: max }, (_, i) => i + 1).map((n) => {
+        const Icon = n <= shown ? On : Off;
+        return (
+          <Box
+            key={n}
+            component="button"
+            type="button"
+            role="radio"
+            aria-checked={cur === n}
+            aria-label={`Rate ${n} of ${max}`}
+            onMouseEnter={() => setHover(n)}
+            onClick={() => onChange(cur === n ? "" : String(n))}
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              border: 0,
+              bgcolor: "transparent",
+              cursor: "pointer",
+              p: 0.5,
+              color: n <= shown ? FORMS_ACCENT : "neutral.400",
+              borderRadius: "sm",
+              "&:focus-visible": { outline: `2px solid ${FORMS_ACCENT}` },
+            }}
+          >
+            <Icon />
+            <Typography level="body-xs">{n}</Typography>
+          </Box>
+        );
+      })}
+    </Box>
+  );
 }

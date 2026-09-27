@@ -16,15 +16,16 @@ export function blankQuestion(
 ): FormQuestion {
   const needsOptions =
     type === "multiple_choice" || type === "checkboxes" || type === "dropdown";
-  return {
+  const isGrid = type === "multiple_choice_grid" || type === "checkbox_grid";
+  const q: FormQuestion = {
     id: newQuestionId(),
     type,
     title: "",
     description: "",
     required: false,
-    options: needsOptions ? ["Option 1"] : [],
-    scale_min: type === "linear_scale" ? 1 : 0,
-    scale_max: type === "linear_scale" ? 5 : 0,
+    options: needsOptions ? ["Option 1"] : isGrid ? ["Column 1"] : [],
+    scale_min: type === "linear_scale" || type === "rating" ? 1 : 0,
+    scale_max: type === "linear_scale" || type === "rating" ? 5 : 0,
     scale_min_label: "",
     scale_max_label: "",
     points: 0,
@@ -32,6 +33,9 @@ export function blankQuestion(
     go_to_section: {},
     is_section: false,
   };
+  if (isGrid) q.rows = ["Row 1"];
+  if (type === "rating") q.rating_icon = "star";
+  return q;
 }
 
 /** blankSection builds a section-divider pseudo-question. */

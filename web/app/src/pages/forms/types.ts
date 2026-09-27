@@ -9,7 +9,35 @@ export type QuestionType =
   | "linear_scale"
   | "date"
   | "time"
-  | "file_upload";
+  | "file_upload"
+  | "multiple_choice_grid"
+  | "checkbox_grid"
+  | "rating";
+
+/** Response-validation rule kinds and their ops (Google Forms parity). */
+export type ValidationKind = "number" | "text" | "length" | "regex" | "checkbox";
+
+export interface FormValidation {
+  kind: ValidationKind | "";
+  op: string;
+  value?: string;
+  /** Upper bound for between / not_between. */
+  value2?: string;
+  /** Replaces the default error message when set. */
+  error_text?: string;
+}
+
+/** Short-answer input formats, in the spirit of OnlyOffice text-form formats. */
+export type TextFormat =
+  | ""
+  | "digits"
+  | "letters"
+  | "phone"
+  | "zip"
+  | "credit_card"
+  | "mask";
+
+export type RatingIcon = "star" | "heart" | "thumb";
 
 export interface FormQuestion {
   id: string;
@@ -29,6 +57,17 @@ export interface FormQuestion {
   go_to_section: Record<string, string>;
   // When true, this "question" is a section divider (title only, no answer).
   is_section: boolean;
+  // --- CC4 (all optional: older forms don't carry them) ---
+  validation?: FormValidation | null;
+  text_format?: TextFormat;
+  /** 9 digit, a/A letter, O digit-or-letter, X any, \c literal c. */
+  mask?: string;
+  /** Grid rows; the columns are `options`. */
+  rows?: string[];
+  limit_one_per_column?: boolean;
+  rating_icon?: RatingIcon;
+  /** Section dividers: "" = next section, a section id or SUBMIT_TARGET. */
+  after_section?: string;
 }
 
 export interface FormSettings {
@@ -39,6 +78,8 @@ export interface FormSettings {
   confirmation_message: string;
   // Quiz mode toggle.
   is_quiz: boolean;
+  /** Where to go after the implicit first section (see after_section). */
+  after_first_section?: string;
 }
 
 export interface Form {
@@ -94,6 +135,9 @@ export interface FormQuestionSummary {
   title: string;
   counts: Record<string, number>;
   text_answers: string[];
+  grid_rows?: { row: string; counts: Record<string, number> }[];
+  answered_count?: number;
+  skipped_count?: number;
 }
 
 export interface FormResponseSummary {
@@ -102,8 +146,13 @@ export interface FormResponseSummary {
   questions: FormQuestionSummary[];
 }
 
-/** Answer values keyed by question id: string for most types, string[] for checkboxes. */
-export type AnswerMap = Record<string, string | string[]>;
+/** Grid answers are keyed by row: a column (multiple-choice grid) or columns (checkbox grid). */
+export type GridAnswer = Record<string, string | string[]>;
+
+/** Answer values keyed by question id: string for most types, string[] for
+ *  checkboxes, a row-keyed object for grids. */
+export type AnswerValue = string | string[] | GridAnswer;
+export type AnswerMap = Record<string, AnswerValue>;
 
 export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   short_answer: "Short answer",
@@ -115,6 +164,9 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   date: "Date",
   time: "Time",
   file_upload: "File upload",
+  multiple_choice_grid: "Multiple choice grid",
+  checkbox_grid: "Checkbox grid",
+  rating: "Rating",
 };
 
 export const QUESTION_TYPE_ORDER: QuestionType[] = [
@@ -124,6 +176,9 @@ export const QUESTION_TYPE_ORDER: QuestionType[] = [
   "checkboxes",
   "dropdown",
   "linear_scale",
+  "rating",
+  "multiple_choice_grid",
+  "checkbox_grid",
   "date",
   "time",
   "file_upload",
@@ -131,3 +186,6 @@ export const QUESTION_TYPE_ORDER: QuestionType[] = [
 
 /** The special go_to_section value that means "end the form / submit". */
 export const SUBMIT_TARGET = "__submit__";
+
+/** Joins a grid row and column in a grid question's correct_answers. */
+export const GRID_KEY_SEP = "\u001f";
