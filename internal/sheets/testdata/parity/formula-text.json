@@ -1687,6 +1687,12 @@
       ]
     },
     {
+      "id": "oo:cell/spreadsheet-calculation/formula-tests/textAndDataTests.js#T(123)",
+      "checks": [
+        {"formula":"=T(123)","expect":""}
+      ]
+    },
+    {
       "id": "oo:cell/spreadsheet-calculation/formula-tests/textAndDataTests.js#T(HELLO)",
       "checks": [
         {"formula":"=T(\"HELLO\")","expect":"HELLO"}

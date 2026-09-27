@@ -1056,10 +1056,10 @@ describe("SheetStructureTests.js", () => {
     seq(v, ["mon.day"], ["mon.day", "mon.day"], ["mon.day", "mon.day"]);
   }
 
-  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Autofill: Days of week and months with spaces and "." - Horizontal sequence', () => {
+  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Autofill: Days of week and months with spaces and dot - Horizontal sequence', () => {
     decoratedNames(false);
   });
-  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Autofill: Days of week and months with spaces and "." - Vertical sequence.', () => {
+  it('oo:cell/spreadsheet-calculation/SheetStructureTests.js#Autofill: Days of week and months with spaces and dot - Vertical sequence.', () => {
     decoratedNames(true);
   });
 
