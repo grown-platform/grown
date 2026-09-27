@@ -2327,7 +2327,7 @@ targeted role and name assertions rather than an axe scan.
 - The MotionPanel preview ignores reduced motion. Only the slideshow
   honours it.
 
-### 6.16 M10 status (Wave 8): comments, collab hardening
+### 6.18 M10 status (Wave 8): comments, collab hardening
 
 Version history had already landed with CC7 (`grown.object_versions`,
 File ▸ Version history), so M10 covers comments and the collab hub. No
