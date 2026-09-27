@@ -115,3 +115,27 @@ describe("inlineImages", () => {
     expect(calls.sort()).toEqual(["/api/v1/slides/d/x/assets/1", "/api/v1/slides/d/x/assets/missing"]);
   });
 });
+
+describe("externalizeImages", () => {
+  it("uploads each inline raster picture once and keeps SVGs and failures inline", async () => {
+    const { externalizeImages } = await import("../assets");
+    const svg = "data:image/svg+xml;base64,PHN2Zy8+";
+    const bad = "data:image/png;base64,AAAA";
+    const slides = [
+      { id: "s", background: "#fff", elements: [pic({ id: "a" }), pic({ id: "b" }), pic({ id: "c", src: svg }), pic({ id: "d", src: bad })] },
+    ];
+    let n = 0;
+    const out = await externalizeImages(slides, async (b) => {
+      n++;
+      if (b.size === 3) throw new Error("refused");
+      expect(b.type).toBe("image/png");
+      return "/api/v1/slides/d/x/assets/" + "a".repeat(64);
+    });
+    const els = out[0].elements;
+    expect(els[0].src).toBe("/api/v1/slides/d/x/assets/" + "a".repeat(64));
+    expect(els[1].src).toBe(els[0].src);
+    expect(els[2].src).toBe(svg);
+    expect(els[3].src).toBe(bad);
+    expect(n).toBe(2);
+  });
+});

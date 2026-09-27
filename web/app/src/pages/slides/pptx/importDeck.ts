@@ -2,7 +2,8 @@
 // Drive's open flow. The reader is loaded lazily so jszip only ships when a
 // file is actually imported.
 
-import { createDeck, saveDeck } from "../api";
+import { createDeck, saveDeck, uploadDeckAsset } from "../api";
+import { externalizeImages } from "../assets";
 import type { Slide } from "../model";
 
 export const PPTX_ACCEPT =
@@ -31,6 +32,8 @@ export async function importPptxAsNewDeck(
 ): Promise<{ id: string; warnings: string[] }> {
   const r = await readPptxSlides(data);
   const d = await createDeck(importTitle(fileName, r.title));
-  await saveDeck(d.id, JSON.stringify({ slides: r.slides }));
+  // Pictures go to the deck's asset store (inline when that isn't available).
+  const slides = await externalizeImages(r.slides, (b) => uploadDeckAsset(d.id, b));
+  await saveDeck(d.id, JSON.stringify({ slides }));
   return { id: d.id, warnings: r.warnings };
 }

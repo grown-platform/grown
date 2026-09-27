@@ -55,3 +55,52 @@ export async function inlineImages(
     }));
   return { ...deck, slides: deck.slides.map((s) => ({ ...s, elements: swap(s.elements) })) };
 }
+
+/** A data: URL as a Blob (null if it isn't a base64 data URL). */
+export function dataUrlToBlob(u: string): Blob | null {
+  const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(u);
+  if (!m || !m[2]) return null;
+  try {
+    const bin = atob(m[3]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: m[1] });
+  } catch {
+    return null;
+  }
+}
+
+/** externalizeImages uploads inline raster pictures (data: URLs, e.g. from
+ *  a pptx import) with `upload` and points the elements at the returned
+ *  URLs. Pictures that fail to upload, and SVGs, stay inline. */
+export async function externalizeImages<S extends { elements: SlideElement[] }>(
+  slides: S[],
+  upload: (b: Blob) => Promise<string>,
+): Promise<S[]> {
+  const urls = new Set<string>();
+  const collect = (els: readonly SlideElement[]) => {
+    for (const e of els) {
+      if (e.type === "image" && e.src?.startsWith("data:") && !e.src.startsWith("data:image/svg")) urls.add(e.src);
+      if (e.children) collect(e.children);
+    }
+  };
+  slides.forEach((s) => collect(s.elements));
+  if (!urls.size) return slides;
+  const map = new Map<string, string>();
+  for (const u of urls) {
+    const b = dataUrlToBlob(u);
+    if (!b) continue;
+    try {
+      map.set(u, await upload(b));
+    } catch {
+      /* keep inline */
+    }
+  }
+  const swap = (els: SlideElement[]): SlideElement[] =>
+    els.map((e) => ({
+      ...e,
+      ...(e.type === "image" && e.src && map.has(e.src) ? { src: map.get(e.src)! } : {}),
+      ...(e.children ? { children: swap(e.children) } : {}),
+    }));
+  return slides.map((s) => ({ ...s, elements: swap(s.elements) }));
+}

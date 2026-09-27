@@ -65,7 +65,9 @@ import {
   collabURL,
   deckImageSrc,
   imageNaturalSize,
+  uploadDeckAsset,
 } from "./api";
+import { externalizeImages } from "./assets";
 import { AltTextDialog, ImageControls, type ImageCommands } from "./ImageControls";
 import {
   actualSize as imgActualSize,
@@ -853,8 +855,11 @@ export function DeckEditor({ user }: { user: User }) {
     setImportMsg(`Importing ${f.name}…`);
     try {
       const r = await readPptxSlides(f);
+      // Pictures go to the deck's asset store, keeping the deck (and its
+      // collab broadcast) small; they stay inline if uploading fails.
+      const imported = await externalizeImages(r.slides, (b) => uploadDeckAsset(id, b));
       const base = docRef.current?.slides ?? slides;
-      setSlides([...base, ...r.slides]);
+      setSlides([...base, ...imported]);
       setCur(base.length);
       setSelId(null);
       const n = r.slides.length;
@@ -1282,6 +1287,11 @@ export function DeckEditor({ user }: { user: User }) {
     const el = selTable;
     if (!el || e.ctrlKey || e.metaKey || e.altKey) return false;
     const sel = activeSel;
+    // Esc first drops the cell selection (the table stays selected).
+    if (sel && e.key === "Escape") {
+      setTableSel(null);
+      return true;
+    }
     // Without an active cell, arrows keep nudging and Delete deletes the table.
     if (!sel && e.key !== "Enter") return false;
     const res = tableKey(el.table!, sel, e.key, e.shiftKey);
