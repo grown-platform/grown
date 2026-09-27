@@ -213,13 +213,14 @@ export function paragraphAttrs(p: ParaPr): Record<string, unknown> {
 /** writePPr serialises paragraph props in CT_PPrBase element order. */
 export function writePPr(
   p: ParaPr,
-  opts: { styleId?: string | null; numId?: string | null; numLvl?: number | null; extra?: string; rPr?: string } = {},
+  opts: { styleId?: string | null; numId?: string | null; numLvl?: number | null; extra?: string; rPr?: string; framePr?: string } = {},
 ): string {
   const parts: string[] = [];
   if (opts.styleId) parts.push(el("w:pStyle", { "w:val": opts.styleId }));
   if (p.keepNext) parts.push(el("w:keepNext"));
   if (p.keepLines) parts.push(el("w:keepLines"));
   if (p.pageBreakBefore) parts.push(el("w:pageBreakBefore"));
+  if (opts.framePr) parts.push(opts.framePr);
   if (p.widowControl === false) parts.push(el("w:widowControl", { "w:val": "0" }));
   const numId = opts.numId !== undefined ? opts.numId : p.numId;
   const numLvl = opts.numLvl !== undefined ? opts.numLvl : p.numLvl;

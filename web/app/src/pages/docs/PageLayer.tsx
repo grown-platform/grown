@@ -23,6 +23,7 @@ import { lineNumbers, type DocLayout } from "./paginationModel";
 import type { PageBox } from "./pagination";
 import type { BaseGeom } from "./paginationPlugin";
 import type { SuggestUser } from "./suggesting";
+import { hfNavKey, hfNavigate } from "./hfNav";
 
 // --- fragment HTML ---------------------------------------------------------------------------
 
@@ -306,6 +307,31 @@ export function PageHeadersFooters(props: PageLayerProps) {
   const html = useFragmentHtml(ydoc, names);
   const [active, setActive] = useState<{ page: number; which: HfWhich } | null>(null);
   const last = dl.layout.pages.length - 1;
+  // PageUp / PageDown / Alt+PageUp / Alt+PageDown / Escape inside a header
+  // or footer (M13, hfNav.ts).
+  const onHfKey = (e: React.KeyboardEvent, page: number, which: HfWhich) => {
+    const act = hfNavKey(e);
+    if (!act) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (act === "exit") {
+      setActive(null);
+      props.editor.commands.focus();
+      return;
+    }
+    const to = hfNavigate({ page, which }, act, dl.layout.pages.length);
+    if (!to) return;
+    setActive(to);
+    const sel = `.doc-hf--${to.which}[data-page="${to.page + 1}"] .ProseMirror`;
+    const focus = (tries: number) => {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (el) {
+        el.focus();
+        el.scrollIntoView({ block: "nearest" });
+      } else if (tries > 0) requestAnimationFrame(() => focus(tries - 1));
+    };
+    requestAnimationFrame(() => focus(10));
+  };
   const box = (page: PageBox, i: number, which: HfWhich) => {
     const g = pageGeom(page, base);
     const name = frags[i][which];
@@ -343,6 +369,8 @@ export function PageHeadersFooters(props: PageLayerProps) {
         key={`${which}${i}`}
         className={`doc-hf doc-hf--${which} ${cls}`}
         data-page={i + 1}
+        data-active={active && active.page === i && active.which === which ? "true" : undefined}
+        onKeyDownCapture={live ? (e: React.KeyboardEvent) => onHfKey(e, i, which) : undefined}
         data-fragment={name}
         data-pgfmt={dl.sections[page.section]?.props.pgNum.fmt ?? "decimal"}
         onDoubleClick={() => {

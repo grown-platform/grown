@@ -7,6 +7,7 @@ import type { Editor } from "@tiptap/react";
 import { getLayout, onLayout, paginationState, setForcePaged, afterNextLayout, type PaginationState } from "./paginationPlugin";
 import { pageIndexAt, pageSnippets, type DocLayout } from "./paginationModel";
 import { setDocSettings } from "./pageLayout";
+import { LanguageStatus } from "./SpellMenu";
 
 // --- live pagination state -----------------------------------------------------------------
 
@@ -38,6 +39,26 @@ function countWords(editor: Editor): number {
   return (text.match(/\S+/g) || []).length;
 }
 
+/** visiblePage: the 1-based number of the page sheet covering most of the
+ *  viewport, or 0 when there are no page sheets (pageless). */
+export function visiblePage(inside: HTMLElement): number {
+  const root = inside.closest("[data-testid='doc-editor']") ?? document;
+  const pages = root.querySelectorAll<HTMLElement>(".doc-page[data-page]");
+  if (!pages.length) return 0;
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  let best = 0;
+  let bestArea = -1;
+  pages.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const seen = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+    if (seen > bestArea) {
+      bestArea = seen;
+      best = Number(el.dataset.page) || 0;
+    }
+  });
+  return best;
+}
+
 export function StatusBar({
   editor,
   state,
@@ -63,20 +84,36 @@ export function StatusBar({
         setWords(countWords(editor));
       }, 250);
     };
+    // The page shown is the page in view (M13): the page sheet taking up
+    // most of the viewport, as Word's status bar does while scrolling.
+    // Pageless (no sheets) falls back to the caret's page.
+    let raf = 0;
     const sel = () => {
+      if (editor.isDestroyed) return;
+      const inView = visiblePage(editor.view.dom as HTMLElement);
+      if (inView) return setPage(inView);
       const dl = getLayout(editor);
       if (dl) setPage(pageIndexAt(dl, editor.state.selection.from) + 1);
+    };
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(sel);
     };
     upd();
     sel();
     editor.on("update", upd);
-    editor.on("selectionUpdate", sel);
-    editor.on("transaction", sel);
+    editor.on("selectionUpdate", onScroll);
+    editor.on("transaction", onScroll);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
     return () => {
       window.clearTimeout(t);
+      cancelAnimationFrame(raf);
       editor.off("update", upd);
-      editor.off("selectionUpdate", sel);
-      editor.off("transaction", sel);
+      editor.off("selectionUpdate", onScroll);
+      editor.off("transaction", onScroll);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
     };
   }, [editor]);
   const dl = state?.dl;
@@ -101,12 +138,20 @@ export function StatusBar({
         borderColor: "divider",
       }}
     >
-      <Box component="button" onClick={onShowPages} data-testid="status-page" sx={{ all: "unset", cursor: "pointer" }} title="Show page thumbnails">
+      <Box
+        component="button"
+        onClick={onShowPages}
+        data-testid="status-page"
+        aria-label={`Page ${Math.min(page, total)} of ${total} in view`}
+        sx={{ all: "unset", cursor: "pointer" }}
+        title="The page in view (follows scrolling). Click for page thumbnails."
+      >
         Page {Math.min(page, total)} of {total}
       </Box>
       <Box data-testid="status-words">
         {words.toLocaleString()} word{words === 1 ? "" : "s"}
       </Box>
+      <LanguageStatus editor={editor} />
       <Box sx={{ flex: 1 }} />
       <Box
         component="button"

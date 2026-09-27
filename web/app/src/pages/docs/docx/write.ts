@@ -11,6 +11,7 @@
 // generated list definitions, task items get a ☐/☒ prefix, block quotes
 // an indent, code blocks Courier New, horizontal rules a bottom border,
 // Excalidraw drawings their rendered image (when a rasteriser is given).
+import { dropCapOf } from "../dropCap";
 import JSZip from "jszip";
 import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
 import { TableMap } from "@tiptap/pm/tables";
@@ -56,6 +57,14 @@ export interface DocxWriteInput {
   rasterize?: (src: string) => Promise<RasterImage | null>;
   /** Fixed timestamp for revisions and core properties (tests). */
   now?: Date;
+}
+
+/** Length of a paragraph's first letter (a surrogate pair counts 2). */
+function firstLetterLength(node: PMNode): number {
+  const first = node.firstChild;
+  if (!first?.isText || !first.text) return 0;
+  const cp = first.text.codePointAt(0) ?? 0;
+  return cp > 0xffff ? 2 : 1;
 }
 
 const REL_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -596,6 +605,19 @@ class Writer {
       numLvl = numId && numId !== "0" ? ((node.attrs.numLvl as number | null) ?? 0) : null;
     }
     const pPr = writePPr(direct, { styleId, numId, numLvl, rPr: this.paraMarkRPr(node), extra: this.pPrChange(node) });
+    const drop = node.type.name === "paragraph" ? dropCapOf(node.attrs) : null;
+    const first = drop ? firstLetterLength(node) : 0;
+    if (drop && first) {
+      // Word's drop cap: a framed paragraph holding the letter (M13).
+      const framePr = el("w:framePr", { "w:dropCap": drop.kind, "w:lines": drop.lines, "w:hSpace": drop.distance ? Math.round(drop.distance * 20) : undefined, "w:wrap": "around", "w:vAnchor": "text", "w:hAnchor": "text" });
+      const framePPr = writePPr({ ...direct, spaceBefore: 0, spaceAfter: 0, lineRule: "exact", lineValue: Math.round(drop.lines * 12 * 1.15) }, { styleId, framePr });
+      const letterNode = node.firstChild!;
+      const lr = { ...marksRunProps(letterNode.marks), fontSize: Math.round(drop.lines * 12 * 1.2) };
+      if (drop.font) lr.fontFamily = drop.font;
+      const letterRuns = `<w:r>${writeRPr(lr)}<w:t xml:space="preserve">${esc(letterNode.text!.slice(0, first))}</w:t></w:r>`;
+      const rest = await this.inline(node.cut(first), ctx, "");
+      return `<w:p>${framePPr}${letterRuns}</w:p><w:p>${pPr}${rest}</w:p>`;
+    }
     const runs = await this.inline(node, ctx, prefix);
     return `<w:p>${pPr}${runs}</w:p>`;
   }

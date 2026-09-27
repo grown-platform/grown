@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Container,
@@ -91,6 +91,12 @@ import { EditorContextMenu } from "./EditorContextMenu";
 import { EquationEditor } from "./math/EquationEditor";
 import { setMathEditHandler } from "./math/MathNode";
 import { ReferenceDialogs, openReferenceDialog } from "./ReferenceDialogs";
+import { InsertDialogs, openInsertDialog, pickTextFromFile } from "./InsertDialogs";
+import { ProofingDialogs, openProofingDialog } from "./SpellMenu";
+import { toggleDarkDocument, useDarkDocument } from "./viewModes";
+import { ApiConsole } from "./api/ApiConsole";
+import { scriptingEnabled } from "./api/flag";
+import { spellService } from "../../lib/spell/service";
 import { CompareDialog, openCompareDialog } from "./CompareDialog";
 import { MailMerge, openMailMerge } from "./MailMergePanel";
 import { insertTableOfContents, toggleFieldCodes, updateFields } from "./references";
@@ -273,6 +279,9 @@ export function DocEditor({ user }: DocEditorProps) {
   // Page numbers for fields come from the pagination plugin (M9); the
   // page-number labels and the status bar read the same layout.
   const pg = usePagination(editor);
+  // View ▸ Dark document (M13) and the scripting API's header/footer parts.
+  const darkDoc = useDarkDocument();
+  const apiParts = useCallback(() => [headerEditor, footerEditor].filter((x): x is NonNullable<typeof x> => !!x), [headerEditor, footerEditor]);
 
   // "Insert page numbers" reveals the headers and footers.
   useEffect(() => {
@@ -402,10 +411,8 @@ export function DocEditor({ user }: DocEditorProps) {
       const words = (editor?.getText().trim().match(/\S+/g) || []).length;
       window.alert(`Title: ${title}\nWords: ${words}`);
     },
-    wordCount: () => {
-      const words = (editor?.getText().trim().match(/\S+/g) || []).length;
-      window.alert(`${words} word${words === 1 ? "" : "s"}`);
-    },
+    // Word count opens the document statistics (M13).
+    wordCount: () => openInsertDialog("stats"),
     findReplace: () => openFind("replace"),
     find: () => openFind("find"),
     autoCorrect: () => setDialog("autocorrect"),
@@ -538,6 +545,10 @@ export function DocEditor({ user }: DocEditorProps) {
       ) {
         e.preventDefault();
         actions.commentOnSelection();
+      } else if (e.key === "F7" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        // Spelling (M13).
+        e.preventDefault();
+        openProofingDialog("spelling");
       } else if (
         (e.ctrlKey || e.metaKey) &&
         e.altKey &&
@@ -716,6 +727,17 @@ export function DocEditor({ user }: DocEditorProps) {
       { label: "Page numbers", section: "Insert", run: () => openLayoutDialog("pagenumbers") },
       { label: "Page thumbnails", section: "View", run: () => setShowPages((v) => !v) },
       { label: "Word count", section: "Tools", run: actions.wordCount },
+      // M13: proofing, symbols, view toggles.
+      { label: "Spelling and grammar", section: "Tools", run: () => openProofingDialog("spelling") },
+      { label: "Check spelling as you type", section: "Tools", run: () => e.commands.setSpellcheck(!spellService().enabled) },
+      { label: "Language", section: "Tools", run: () => openProofingDialog("language") },
+      { label: "Document statistics", section: "Tools", run: () => openInsertDialog("stats") },
+      { label: "Symbol", section: "Insert", run: () => openInsertDialog("symbol") },
+      { label: "Date and time", section: "Insert", run: () => openInsertDialog("datetime") },
+      { label: "Drop cap", section: "Insert", run: () => openInsertDialog("dropcap") },
+      { label: "Text from file", section: "Insert", run: () => pickTextFromFile(e) },
+      { label: "Show non-printing characters", section: "View", run: () => e.chain().focus().toggleNonPrinting().run() },
+      { label: "Dark document", section: "View", run: () => toggleDarkDocument() },
       {
         label: "Version history",
         section: "File",
@@ -922,7 +944,7 @@ export function DocEditor({ user }: DocEditorProps) {
             data-testid="doc-editor"
             data-paged={paged ? "true" : "false"}
             lang="en"
-            className={`review-${display}`}
+            className={`review-${display}${darkDoc ? " doc-dark" : ""}`}
           >
             {paged && <PageBackground dl={paged.dl} base={paged.base} />}
             {!paged && showHeaderFooter && (
@@ -1150,6 +1172,9 @@ export function DocEditor({ user }: DocEditorProps) {
       <ParagraphDialogs editor={editor} />
       <TableDialogs editor={editor} />
       <ReferenceDialogs editor={editor} />
+      <InsertDialogs editor={editor} />
+      <ProofingDialogs editor={editor} />
+      {scriptingEnabled() && <ApiConsole editor={editor} parts={apiParts} />}
       <CompareDialog editor={editor} docId={id} title={title} userName={user.display_name || user.email} />
       <MailMerge editor={editor} title={title} />
       <ShortcutsDialog
