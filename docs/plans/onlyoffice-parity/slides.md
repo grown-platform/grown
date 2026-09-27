@@ -222,7 +222,7 @@ combine/fragment/intersect/subtract via `path-boolean.js`). Connectors
 | Feature | Grown | Where |
 | --- | --- | --- |
 | Rect, roundRect, ellipse, triangle, diamond, rightArrow | Have | `model.ts` `SHAPE_TYPES`, `shapeClipPath` |
-| Other presets (~180: arrows, callouts, flowchart, stars, math, action buttons…) | Partial (69 presets, M3) | `presetDefs.ts`, `presetGeometry.ts` |
+| Other presets (~180: arrows, callouts, flowchart, stars, math, action buttons…) | Partial (68 presets, M3) | `presetDefs.ts`, `presetGeometry.ts` |
 | Straight line | Have (horizontal only, `h:0`) | `newElement("line")` |
 | Diagonal lines, arrows, elbow/curved connectors, polyline/scribble | Have except polyline/scribble (M3) | `type: "connector"`, `connectorOps.ts` |
 | Solid fill / stroke colour / stroke width | Have | `fill/stroke/strokeWidth` |
@@ -1179,7 +1179,7 @@ ECMA-376 Part 1 formulas (§20.1.10.56 and the annex definitions). Nothing
 comes from OnlyOffice's `CreateGeometry.js` (AGPL) or LibreOffice. The file
 header records this.
 
-It covers 69 presets:
+It covers 68 presets:
 
 - 22 basic shapes, including `pie`, `can`, `cube`, `heart`, `smileyFace` and
   `lightningBolt`.
@@ -1266,7 +1266,7 @@ PDF, SVG and PNG exports use the same markup.
   angle), wedgeRectCallout (unbounded 2-axis) and bentConnector3.
 - `shapeRender.test.ts`, `connectorOps.test.ts` (glue, reroute and unglue)
   and `drawTool.test.ts` cover rendering, glue and draw-to-insert.
-- `pptx/presets.test.ts` round-trips all 64 non-legacy presets with shifted
+- `pptx/presets.test.ts` round-trips all 60 non-legacy presets with shifted
   adjust values, rotation, flips and dash. It also round-trips connectors
   with glue, and runs a double round trip.
 - The e2e test `web/e2e/slides-shapes.spec.ts` covers gallery click and drag,

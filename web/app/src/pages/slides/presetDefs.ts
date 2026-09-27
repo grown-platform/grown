@@ -7,7 +7,7 @@
 // workspace, so nothing was generated from it, and nothing here comes from
 // OnlyOffice (sdkjs CreateGeometry.js, AGPL) or LibreOffice code.
 //
-// Coverage: 69 presets, the ones PowerPoint/OnlyOffice users reach for
+// Coverage: 68 presets, the ones PowerPoint/OnlyOffice users reach for
 // most (see PRESET_GALLERY). Adjust names, defaults, ranges, guides and
 // paths follow the spec, so avLst values round-trip with PowerPoint. The
 // text rectangles of parallelogram, hexagon, octagon, wave, and the callouts
