@@ -23,8 +23,9 @@ import {
 //
 // .docx goes through the direct writer/reader (docs.md §6.9) and keeps
 // everything. The other formats go through pandoc from the editor's HTML
-// (docs.md §1.4, §2.19), which by design drops comments, tracked changes
-// and stored pictures; those losses are asserted explicitly below.
+// (docs.md §1.4, §2.19), which by design drops comments and tracked
+// changes; those losses are asserted explicitly below. Pictures, stored or
+// data: URLs, are resolved by the server and survive (§6.20).
 
 const TAG = () => `rt${Date.now().toString(36)}`;
 
@@ -246,16 +247,21 @@ test.describe.serial("docs integration: export → import round trips", () => {
       await buildRichDoc(page, id);
       const src = page.url();
 
-      // Documented pandoc-path losses (docs.md §1.4 "Import", §2.19, and
-      // §6.18 "HTML-based exports ... stored pictures are relative URLs the
-      // converter can't fetch"): comments, tracked changes and stored
-      // pictures do not survive; the TOC comes back as plain text.
-      const pandoc: Expect = { styles: true, table: true, picture: false, tracked: false, comment: false, toc: "text" };
+      // Documented pandoc-path losses (docs.md §1.4 "Import", §2.19):
+      // comments and tracked changes do not survive; the TOC comes back as
+      // plain text. The stored picture does (the server reads it from the
+      // asset store, §6.20).
+      const pandoc: Expect = { styles: true, table: true, picture: true, tracked: false, comment: false, toc: "text" };
+      const png = await (await page.request.get(
+        `${BASE_URL}${await editor(page).locator('.doc-obj[data-kind="picture"] img').first().getAttribute("src")}`,
+      )).body();
+      expect(png.subarray(1, 4).toString()).toBe("PNG");
 
       // .odt: import from the Docs home and through Drive.
       const odt = await downloadAs(page, "OpenDocument Format (.odt)");
       expect(odt.bytes.subarray(0, 2).toString()).toBe("PK");
       expect(odt.bytes.includes(Buffer.from("application/vnd.oasis.opendocument.text"))).toBe(true);
+      expect(odt.bytes.includes(Buffer.from("Pictures/")), "odt picture part").toBe(true);
       docs.push(await importFromHome(page, `${tag}.odt`, odt.bytes));
       await expectContent(page, pandoc);
       const odtFile = await uploadToDrive(page, `${tag}-drive.odt`, odt.bytes);
@@ -268,19 +274,23 @@ test.describe.serial("docs integration: export → import round trips", () => {
       await expect(page.getByTestId("collab-status")).toHaveText("connected", { timeout: 15_000 });
       const rtf = await downloadAs(page, "Rich Text Format (.rtf)");
       expect(rtf.bytes.subarray(0, 5).toString()).toBe("{\\rtf");
+      expect(rtf.bytes.toString("latin1")).toContain("\\pngblip");
       const rtfFile = await uploadToDrive(page, `${tag}-drive.rtf`, rtf.bytes);
       files.push(rtfFile);
       docs.push(await openInDocsFromDrive(page, rtfFile));
       await expect(editor(page)).toContainText("Plain text with bold words in it.", { timeout: 15_000 });
       await expect(editor(page)).toContainText("Alpha item");
+      await expectContent(page, { picture: true });
 
       // .md and .html: back through the Docs home.
       await page.goto(src);
       await expect(page.getByTestId("collab-status")).toHaveText("connected", { timeout: 15_000 });
       const md = await downloadAs(page, "Markdown (.md)");
       expect(md.bytes.toString("utf8")).toMatch(/^# .*Overview/m);
+      // Markdown keeps pictures inline as data: URLs (one .md file).
+      expect(md.bytes.toString("utf8")).toContain(`data:image/png;base64,${png.toString("base64")}`);
       docs.push(await importFromHome(page, `${tag}.md`, md.bytes));
-      await expectContent(page, { styles: true, table: true, tracked: false, comment: false });
+      await expectContent(page, { styles: true, table: true, picture: true, tracked: false, comment: false });
 
       await page.goto(src);
       await expect(page.getByTestId("collab-status")).toHaveText("connected", { timeout: 15_000 });

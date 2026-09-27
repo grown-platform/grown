@@ -2314,7 +2314,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | Shape text | Any block content (lists, tables) | Runs and line breaks (paragraphs join with a break); text boxes with tables keep the M6 path | Known gap |
 | Relative size (wp14:sizeRelH/V) | Size follows the page / margin | Kept and written back; the object renders at its stored size | Known gap |
 | Picture in a shared (token) view | — | Asset GET accepts `?token=`, but the page's `<img>` doesn't send it, so token views show stored pictures only to signed-in readers | Known gap |
-| HTML-based exports (pandoc: odt, epub…) | — | Stored pictures are relative URLs the converter can't fetch; charts export empty | Known gap |
+| HTML-based exports (pandoc: odt, epub…) | — | Stored and data: pictures are resolved by the server (§6.20); charts export empty | Known gap |
 
 * **Not yet**: grouping, shape effects (shadow, 3-D, gradients),
   edit points / merge shapes, vertical text boxes, SmartArt, text art,
@@ -2451,6 +2451,63 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   pandoc 3.1.13 under `--sandbox` refuses `data:` image URIs
   ("Could not fetch resource data:image/png…"), so pictures are missing
   from odt/rtf/epub (and the docx fallback) built by the production
-  server; the pandoc 3.10 in `flake.nix` keeps them. A newer pandoc in
-  the image (a newer Alpine or a static release) should fix it; not yet
-  verified.
+  server; the pandoc 3.10 in `flake.nix` keeps them. Fixed in §6.20.
+
+### 6.20 Pictures in pandoc exports (2026-09-27)
+
+* **Bug**: odt, rtf, epub and md downloads (and the pandoc docx/pdf
+  fallbacks) lost every picture on the production server. pandoc runs with
+  `--sandbox` (CC2), so it can't fetch stored pictures
+  (`/api/v1/docs/d/<id>/assets/<sha>`), and Alpine's pandoc 3.1.13 also
+  refuses `data:` URIs under the sandbox. `--resource-path` doesn't help:
+  the 3.1.13 sandbox refuses files there too. The direct .docx writer and the
+  browser PDF were not affected (they embed pictures client-side).
+* **Fix** (`internal/docs/export_images.go`, `export_images.lua`): before
+  pandoc runs, `ConvertHTMLWith` rewrites every `<img src>`. `data:` URLs
+  (base64 or percent-encoded) are decoded; asset URLs are read from the docs
+  blob store by `Assets.Loader`, which applies the same read check as the
+  asset GET (org member, grantee), once per document. The bytes must sniff
+  as PNG, JPEG, GIF, WebP or BMP (SVG only when declared `image/svg+xml` and
+  it has an `<svg` root, for drawings); caps are 20 MiB per picture, 64 MiB
+  and 1000 pictures per export. Each picture is written to the per-export
+  temp dir as `grown-img-N.<ext>` and its src points there; any other src
+  (paths, `file:`, http(s), other documents) becomes empty and `srcset` is
+  dropped. A generated Lua filter reads exactly those files into pandoc's
+  mediabag and turns every other Image (including `<embed>`/`<video>`) into
+  its alt text. pandoc itself keeps `--sandbox` and reads only stdin.
+* **Markdown**: a single `.md` has nowhere to put a media folder, so the md
+  export keeps pictures inline as base64 `data:` URLs (asset pictures too),
+  written as `![alt](data:...)`: the filter clears the picture's size and
+  classes, since with them pandoc's gfm writer falls back to a raw `<img>`
+  tag that the import sanitizer (and many viewers) drop.
+  The download stays one `.md` file, most Markdown viewers show the
+  pictures, and it re-imports into Grown with them. A zip (md + media/)
+  was rejected: it changes the file type users asked for.
+* **Import sandbox hole (found here)**: in pandoc 3.1.13,
+  `--embed-resources` ignores `--sandbox`. The production import endpoint
+  therefore still inlined server files and fetched URLs named in an
+  uploaded html/md/txt (`<img src="/etc/passwd">` came back as
+  `data:text/plain,...`); `TestImportToHTMLSandboxLocalFile` and
+  `TestConvertSandboxNoFetch` fail under 3.1.13 and pass under 3.8+/3.10,
+  which is why local runs missed it. Import no longer passes
+  `--embed-resources`: `import_sanitize.lua` turns mediabag entries (the
+  pictures packed in docx/odt/epub/rtf) into `data:` URIs itself and never
+  reads anything else. `--wrap=none` keeps the HTML unwrapped as before.
+* **Seen under 3.1.13, not fixed**: the odt *reader* turns a table's header
+  row into ordinary cells and a code block into a paragraph
+  (`TestConvertFidelityRoundTrip/odt`, `TestConvertDocxToOdt` fail there);
+  the exported .odt itself is fine.
+* **Gaps**: RTF can only hold PNG/JPEG (pandoc skips GIF/WebP/BMP/SVG);
+  charts still export empty.
+* **Tests**: `internal/docs/export_images_test.go` (data: and asset
+  pictures in docx/odt/epub zip parts, rtf `\pict`, md inline; denied
+  asset; SVG drawing; odt/epub/rtf/docx re-import with both pictures;
+  sandbox escape with a server path, `file://`, `/etc/passwd`, an http URL
+  that must not be hit, non-image `data:`, `<embed>`/`<video>`/`<object>`
+  and the temp dir's own file names), `assets_test.go`
+  (`TestDocAssetsExportLoader`), `internal/server/authz_docs_import_test.go`
+  (`TestDocsConvertResolvesAssets`), and `web/e2e/integration/
+  docs-roundtrip.spec.ts` (a doc with a stored picture exports to .odt and
+  re-imports with it). Run against the production pandoc with
+  `golang:1.25.7-alpine` plus `pandoc@v3.20` from the Alpine 3.20
+  community repository (the plain image now installs pandoc 3.8).

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 )
 
@@ -130,9 +131,16 @@ const maxConvertBytes = 16 << 20
 const MaxConvertBytes = maxConvertBytes
 
 // ConvertHTML converts an HTML document to the target format via pandoc,
-// returning the encoded file bytes. Binary writers (docx/odt/epub) require a
-// real output file, so we always route through a temp file.
+// returning the encoded file bytes. Grown asset URLs are dropped; use
+// ConvertHTMLWith to resolve them.
 func ConvertHTML(ctx context.Context, html []byte, to string) ([]byte, ConvertFormat, error) {
+	return ConvertHTMLWith(ctx, html, to, ExportOptions{})
+}
+
+// ConvertHTMLWith is ConvertHTML with the document's pictures resolved
+// through opts (see export_images.go). Binary writers (docx/odt/epub) require
+// a real output file, so we always route through a temp dir.
+func ConvertHTMLWith(ctx context.Context, html []byte, to string, opts ExportOptions) ([]byte, ConvertFormat, error) {
 	f, ok := convertFormats[to]
 	if !ok {
 		return nil, ConvertFormat{}, fmt.Errorf("unsupported format %q", to)
@@ -149,19 +157,26 @@ func ConvertHTML(ctx context.Context, html []byte, to string) ([]byte, ConvertFo
 			return nil, f, ErrPDFUnavailable
 		}
 	}
-	out, err := os.CreateTemp("", "grown-docs-*."+f.Ext)
+	dir, err := os.MkdirTemp("", "grown-docs-export-*")
 	if err != nil {
-		return nil, f, fmt.Errorf("temp file: %w", err)
+		return nil, f, fmt.Errorf("temp dir: %w", err)
 	}
-	outPath := out.Name()
-	out.Close()
-	defer os.Remove(outPath)
+	defer os.RemoveAll(dir)
+	outPath := filepath.Join(dir, "out."+f.Ext)
+
+	// Pictures: data: and asset URLs become files in dir, handed to pandoc
+	// by a Lua filter; any other src is removed. Markdown keeps them inline.
+	html, filter := prepareExportImages(ctx, html, dir, f.Pandoc == "gfm", opts.Assets)
+	filterPath := filepath.Join(dir, "images.lua")
+	if err := os.WriteFile(filterPath, filter, 0o600); err != nil {
+		return nil, f, fmt.Errorf("write filter: %w", err)
+	}
 
 	// --sandbox: the HTML is user-supplied, so pandoc must not resolve <img
 	// src> / <link href> against the server's filesystem or network (it would
 	// otherwise embed e.g. /etc/passwd into the docx, or fetch internal URLs).
-	// Grown's editor inlines images as data: URIs, which still work.
-	args := []string{"--sandbox", "-f", "html", "-t", f.Pandoc, "-o", outPath}
+	// The pictures come in through the filter's mediabag instead.
+	args := []string{"--sandbox", "-f", "html", "-t", f.Pandoc, "--lua-filter", filterPath, "-o", outPath}
 	if f.Standalone {
 		args = append(args, "--standalone")
 	}

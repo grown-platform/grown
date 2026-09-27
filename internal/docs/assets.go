@@ -189,3 +189,36 @@ func (a *Assets) serve(w http.ResponseWriter, r *http.Request, docID, sha string
 	}
 	_, _ = io.Copy(w, body)
 }
+
+// Loader returns an AssetLoader for exports requested by r: it reads a
+// picture only when r's caller may read that document (the same check as
+// GET), and only through the blob store. Access is decided once per document.
+func (a *Assets) Loader(r *http.Request) AssetLoader {
+	if a == nil {
+		return nil
+	}
+	allowed := map[string]bool{}
+	return func(ctx context.Context, docID, sha string) ([]byte, error) {
+		ok, seen := allowed[docID]
+		if !seen {
+			ok, _ = a.access(r, docID)
+			allowed[docID] = ok
+		}
+		if !ok {
+			return nil, errors.New("not found")
+		}
+		body, _, _, err := a.blobs.Get(ctx, assetKey(docID, sha))
+		if err != nil {
+			return nil, err
+		}
+		defer body.Close()
+		data, err := io.ReadAll(io.LimitReader(body, MaxAssetBytes+1))
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > MaxAssetBytes {
+			return nil, errors.New("asset too large")
+		}
+		return data, nil
+	}
+}
