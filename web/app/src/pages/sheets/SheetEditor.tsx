@@ -70,9 +70,8 @@ import { DataValidationDialog } from "./DataValidationDialog";
 import { ChartDialog } from "./ChartDialog";
 import { ChartsPanel } from "./ChartsPanel";
 import type { ChartConfig } from "./chartData";
-import { PivotDialog } from "./PivotDialog";
-import { PivotPanel } from "./PivotPanel";
 import type { PivotConfig } from "./pivotData";
+import { usePivotTools } from "./usePivotTools";
 import {
   applyIconSets,
   clearIconSets,
@@ -212,6 +211,8 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [pivotsOpen, setPivotsOpen] = useState(false);
   const [pivots, setPivots] = useState<PivotConfig[]>([]);
   const pivotsRef = useRef<PivotConfig[]>([]);
+  // Pivot tables on the grid (usePivotTools): typing guard and refresh after edits.
+  const pivotToolsRef = useRef<{ guard: (r: number, c: number, v?: unknown) => boolean; changed: () => void } | null>(null);
   const iconSetsRef = useRef<IconSetRule[]>([]);
   const dataRef = useRef<any[] | null>(null);
   const ref = useRef<any>(null);
@@ -226,6 +227,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
       // Protection first, then validation; a rejected value never reaches typed-input parsing.
       beforeUpdateCell: (r: number, c: number, v: any) =>
         viewHooks.beforeUpdateCell(r, c) !== false &&
+        pivotToolsRef.current?.guard(r, c, v) !== false &&
         dataToolHooks.beforeUpdateCell(r, c, v) !== false &&
         typed.beforeUpdateCell(r, c, v),
       beforePaste: (selection: any) => viewHooks.beforePaste(selection),
@@ -287,6 +289,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
     invalidateView();
     setData(parsed);
     if (remount) setWbKey((k) => k + 1);
+    if (loadedPivots.some((p) => p.anchor)) setTimeout(() => pivotToolsRef.current?.changed(), 800);
     if (iconSetsRef.current.length) {
       setTimeout(() => applyIconSets(ref.current, iconSetsRef.current), 300);
     }
@@ -699,6 +702,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
       }
       names.set(sh.id, sh.name);
     }
+    pivotToolsRef.current?.changed();
     // Keep derived CF/validation/filter fields in step with the edit.
     setTimeout(() => {
       try {
@@ -821,11 +825,6 @@ export function SheetEditor({ user }: SheetEditorProps) {
     setCharts(next);
     persistExtras();
   }
-  function persistPivots(next: PivotConfig[]) {
-    pivotsRef.current = next;
-    setPivots(next);
-    persistExtras();
-  }
   async function commitTitle() {
     const t = title.trim() || "Untitled spreadsheet";
     setTitle(t);
@@ -874,6 +873,19 @@ export function SheetEditor({ user }: SheetEditorProps) {
       }
     },
   };
+
+  const pivotTools = usePivotTools({
+    getWb: getWbRef.current,
+    pivotsRef,
+    pivots,
+    setPivots,
+    persist: persistExtras,
+    dialogOpen: pivotOpen,
+    setDialogOpen: setPivotOpen,
+    panelOpen: pivotsOpen,
+    setPanelOpen: setPivotsOpen,
+  });
+  pivotToolsRef.current = pivotTools;
 
   if (data === null) {
     return (
@@ -1115,26 +1127,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
           setChartOpen(true);
         }}
       />
-      <PivotDialog
-        open={pivotOpen}
-        onClose={() => setPivotOpen(false)}
-        getWb={() => ref.current}
-        onAdd={(cfg) => {
-          persistPivots([...pivotsRef.current, cfg]);
-          setPivotsOpen(true);
-        }}
-      />
-      <PivotPanel
-        open={pivotsOpen}
-        onClose={() => setPivotsOpen(false)}
-        getWb={() => ref.current}
-        pivots={pivots}
-        onDelete={(pid) => persistPivots(pivotsRef.current.filter((p) => p.id !== pid))}
-        onNew={() => {
-          setPivotsOpen(false);
-          setPivotOpen(true);
-        }}
-      />
+      {pivotTools.element}
     </Box>
   );
 }

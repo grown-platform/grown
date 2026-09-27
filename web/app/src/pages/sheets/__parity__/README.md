@@ -38,4 +38,7 @@ Current files:
 | `textCase.parity.test.ts` | `CellSettingsTests.js` | `../textCase.ts` |
 | `numberFormat.parity.test.ts` | `NumFormatParse.js`, `testsForFWB.html.js`, `CellFormatTests.js` (fixtures in `internal/sheets/testdata/numfmt/`, shared with the Go port) | `../numberFormat.ts` |
 
-Later milestones add pivots (M9) and charts (M10).
+| `pivot.parity.test.ts` | `PivotTests.js` (recorded reports in `pivot.fixtures.json`) | `../pivotEngine.ts` |
+| `pivot2.parity.test.ts` | `PivotTests2.js` (workbook facts in `pivot2.fixtures.json`; GETPIVOTDATA in `internal/sheets/formula_pivot_test.go`) | `../pivotEngine.ts`, `../pivotGrid.ts` |
+
+Later milestones add charts (M10).
