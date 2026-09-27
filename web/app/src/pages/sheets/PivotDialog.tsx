@@ -29,6 +29,7 @@ import {
   SHOW_AS_TITLE,
   VALUES,
   buildReport,
+  canAddCalculatedItemName,
   cellItemKey,
   compareItemKeys,
   dataFieldNames,
@@ -221,6 +222,7 @@ export function PivotDialog({ open, onClose, getWb, editing, onSave }: PivotDial
   const names = source?.names ?? [];
   const groups = c.groups ?? [];
   const calcs = c.calculated ?? [];
+  const cItems = c.calculatedItems ?? [];
   const nSrc = names.length;
   const fieldIds = [...names.map((_, i) => i), ...groups.map((_, i) => nSrc + i)];
   const valueIds = [...fieldIds, ...calcs.map((_, i) => nSrc + groups.length + i)];
@@ -581,6 +583,12 @@ export function PivotDialog({ open, onClose, getWb, editing, onSave }: PivotDial
         return;
       }
     }
+    for (const k of cItems) {
+      if (!k.name.trim() || !isValidCalc(k.formula)) {
+        setError(`Check the calculated item "${k.name || "(no name)"}".`);
+        return;
+      }
+    }
     onSave({ ...c, title: c.title.trim() }, placement);
     onClose();
   }
@@ -703,6 +711,51 @@ export function PivotDialog({ open, onClose, getWb, editing, onSave }: PivotDial
                         slotProps={{ input: { "aria-label": "Calculated field formula" } }}
                       />
                       <IconButton size="sm" variant="plain" aria-label="Remove calculated field" onClick={() => set({ calculated: calcs.filter((_, j) => j !== i), values: values.filter((v) => v.field !== nSrc + groups.length + i) })}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </Section>
+                <Section
+                  title="Calculated items"
+                  action={
+                    <Select
+                      size="sm"
+                      placeholder="Add to"
+                      value={null}
+                      onChange={(_, v) => {
+                        if (v == null || !source) return;
+                        const f = v as number;
+                        let n = 1;
+                        while (!canAddCalculatedItemName(c, source, f, `Formula${n}`)) n++;
+                        set({ calculatedItems: [...cItems, { field: f, name: `Formula${n}`, formula: "" }] });
+                      }}
+                      slotProps={{ button: { "aria-label": "Add calculated item" } }}
+                    >
+                      {axisFields.map((f) => (
+                        <Option key={f} value={f}>
+                          {fname(f)}
+                        </Option>
+                      ))}
+                    </Select>
+                  }
+                >
+                  {cItems.map((k, i) => (
+                    <Box key={i} sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
+                      <Typography level="body-xs" sx={{ minWidth: 60 }}>
+                        {fname(k.field)}
+                      </Typography>
+                      <Input size="sm" value={k.name} onChange={(e) => set({ calculatedItems: cItems.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} sx={{ width: 100 }} slotProps={{ input: { "aria-label": "Calculated item name" } }} />
+                      <Input
+                        size="sm"
+                        value={k.formula}
+                        placeholder="=East-West"
+                        color={k.formula && !isValidCalc(k.formula) ? "danger" : "neutral"}
+                        onChange={(e) => set({ calculatedItems: cItems.map((x, j) => (j === i ? { ...x, formula: e.target.value } : x)) })}
+                        sx={{ flex: 1 }}
+                        slotProps={{ input: { "aria-label": "Calculated item formula" } }}
+                      />
+                      <IconButton size="sm" variant="plain" aria-label="Remove calculated item" onClick={() => set({ calculatedItems: cItems.filter((_, j) => j !== i) })}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     </Box>

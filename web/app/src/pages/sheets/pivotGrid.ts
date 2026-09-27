@@ -168,19 +168,26 @@ export function autoFitPivot(wb: Wb, cfg: PivotConfig): void {
   if (!out) return;
   const sheet = sheetOf(wb, out.sheetId);
   if (!sheet) return;
+  // Measure the report itself: the grid snapshot lags the writes just made.
+  let rep: PivotReport;
+  try {
+    rep = buildReport(wb, cfg);
+  } catch {
+    return;
+  }
   const lens = sheet.config?.columnlen ?? {};
   const custom = sheet.config?.customWidth ?? {};
   const widths: Record<string, number> = {};
-  for (let c = out.c0; c < out.c0 + out.cols; c++) {
-    if (custom[c]) continue;
+  for (let c = 0; c < rep.cols; c++) {
+    const col = out.c0 + c;
+    if (custom[col]) continue;
     let chars = 0;
-    for (let r = out.r0; r < out.r0 + out.rows; r++) {
-      const cell = gridCell(sheet, r, c);
-      const text = cell ? String(cell.m ?? cell.v ?? "") : "";
-      chars = Math.max(chars, text.length);
+    for (let r = 0; r < rep.rows; r++) {
+      const cell = fortuneCell(rep.cells[r][c]);
+      if (cell) chars = Math.max(chars, String(cell.m ?? "").length);
     }
     const px = Math.min(260, Math.max(73, Math.round(chars * 7.5 + 14)));
-    if (px > (Number(lens[c]) || 73)) widths[String(c)] = px;
+    if (px > (Number(lens[col]) || 73)) widths[String(col)] = px;
   }
   if (Object.keys(widths).length) {
     try {
