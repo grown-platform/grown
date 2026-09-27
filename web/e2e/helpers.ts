@@ -69,7 +69,8 @@ export async function getSheetData(
   if (!res.ok()) throw new Error(`getSheet failed: ${res.status()}`);
   const body = await res.json();
   // The workbook JSON is carried as a string in the `data` field.
-  return JSON.parse(body.data ?? "[]");
+  // A sheet that was never saved carries an empty string.
+  return JSON.parse(body.data || "[]");
 }
 
 // formulaCell builds a single FortuneSheet formula cell datum (1 sheet).

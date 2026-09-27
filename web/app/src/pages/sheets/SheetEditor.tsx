@@ -62,6 +62,7 @@ import { storableWorkbook } from "./workbookJson";
 import { normalizeWorkbook, seedSelection } from "./normalize";
 import { NumberFormatDialog } from "./NumberFormatDialog";
 import { selectionRanges, typedInputHooks } from "./numberFormatActions";
+import { useStableCallback } from "./useStableCallback";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet models are loosely typed. */
 
@@ -149,6 +150,11 @@ export function SheetEditor({ user }: SheetEditorProps) {
     hooks.current = { ...WORKBOOK_HOOKS, ...typedInputHooks(() => ref.current) };
   }
   const getWbRef = useRef(() => ref.current);
+  // <Workbook> needs stable onOp/onChange: a new onOp on each render (presence
+  // ticks, dialogs, autosave status) re-runs FortuneSheet's selection restore,
+  // which snapped the selection back to A1 (see useStableCallback.ts).
+  const stableOnOp = useStableCallback((ops: any[]) => onOp(ops));
+  const stableOnChange = useStableCallback((d: any[]) => onChange(d));
   const wsRef = useRef<WebSocket | null>(null);
   const applyingRemote = useRef(false);
   // Last known tab name per sheet id (to spot renames in onChange).
@@ -359,9 +365,9 @@ export function SheetEditor({ user }: SheetEditorProps) {
   }
   function onChange(d: any[]) {
     // FortuneSheet re-invokes onChange with the same workbook object whenever
-    // this component re-renders (the prop identity changes, e.g. on every
-    // presence tick). Treat that as no change, otherwise each call would push
-    // the debounced save back and it would never fire.
+    // the prop identity changes. The prop is stable now (stableOnChange), but
+    // treat a repeat as no change anyway, otherwise each call would push the
+    // debounced save back and it would never fire.
     if (d === dataRef.current) return;
     dataRef.current = d;
     // A tab rename shows up as a changed name for a known sheet id.
@@ -644,8 +650,8 @@ export function SheetEditor({ user }: SheetEditorProps) {
           <Workbook
             ref={ref}
             data={data}
-            onChange={onChange}
-            onOp={onOp}
+            onChange={stableOnChange}
+            onOp={stableOnOp}
             hooks={hooks.current}
           />
         </Box>
