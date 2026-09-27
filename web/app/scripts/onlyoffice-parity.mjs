@@ -224,7 +224,7 @@ function buildReport(o) {
     const pr = perRow.get(r);
     a.rows++;
     a.oo += r.testCount;
-    if (r.portable) a.portable += r.testCount;
+    a.portable += r.portableCount;
     if (live != null && a.live != null) {
       a.live += live;
       a.liveRows = (a.liveRows || 0) + 1;

@@ -4,6 +4,7 @@ import {
   parseManifest,
   normalizeResearchPath,
   normalizePortability,
+  notApplicableCount,
   normalizeArea,
   splitTargets,
   parseMilestones,
@@ -51,6 +52,7 @@ describe("parseManifest", () => {
       area: "formulas",
       portability: "go",
       portable: true,
+      portableCount: 2,
       targets: ["a.test.ts", "b_test.go"],
       milestones: ["M0", "M1"],
     });
@@ -81,6 +83,15 @@ describe("normalisers", () => {
     expect(normalizePortability("none").portable).toBe(false);
     expect(normalizePortability("helper").portable).toBe(false);
     expect(normalizePortability("")).toEqual({ value: "-", portable: false });
+  });
+
+  it("n/a cases in a mixed portability note", () => {
+    expect(notApplicableCount("go (28) + n/a (19 plugin/async/iterative)")).toBe(19);
+    expect(notApplicableCount("mixed (2 vitest / 3 n/a)")).toBe(3);
+    expect(notApplicableCount("mixed (28 vitest / 6 playwright / 6 n/a)")).toBe(6);
+    expect(notApplicableCount("n/a (harness; write own)")).toBe(0);
+    expect(notApplicableCount("vitest (4) + playwright (2)")).toBe(0);
+    expect(notApplicableCount("High (as key-map table)")).toBe(0);
   });
 
   it("areas", () => {

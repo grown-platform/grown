@@ -99,6 +99,7 @@ export function parseManifest(text, file = "manifest.csv") {
       area: normalizeArea(area),
       portability: port.value,
       portable: port.portable,
+      portableCount: port.portable ? Math.max(0, Number(count) - notApplicableCount(portability)) : 0,
       targets: splitTargets(target),
       milestones: parseMilestones(milestone),
     });
@@ -130,6 +131,19 @@ export function normalizePortability(s) {
   const first = (s || "").trim().toLowerCase().split(/[\s(]/)[0].replace(/[,;:]+$/, "");
   const value = first === "na" ? "n/a" : first || "-";
   return { value, portable: !NOT_PORTABLE.has(value) };
+}
+
+/**
+ * Cases a mixed row declares not applicable: "go (28) + n/a (19 plugin)" -> 19,
+ * "mixed (2 vitest / 3 n/a)" -> 3. The Portable column subtracts them, so a
+ * row can mark its OnlyOffice-internal cases without being split. A row whose
+ * first word is n/a is not portable at all, whatever its note says.
+ */
+export function notApplicableCount(s) {
+  let n = 0;
+  for (const m of (s || "").matchAll(/\bn\/a\s*\((\d+)/gi)) n += Number(m[1]);
+  for (const m of (s || "").matchAll(/(\d+)\s+n\/a\b/gi)) n += Number(m[1]);
+  return n;
 }
 
 /**
