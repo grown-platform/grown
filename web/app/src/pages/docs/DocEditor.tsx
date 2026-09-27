@@ -355,38 +355,59 @@ export function DocEditor({ user }: DocEditorProps) {
   // header/footer, comments), not just HTML.
   useEffect(() => {
     if (!editor) return;
-    // Only an empty editor takes the seed: after an in-app navigation this
-    // effect first runs with the previous document's editor (M12 results).
-    // The seed is only taken once the apply module has loaded and this editor
-    // is still live and empty: the editor is rebuilt when the collab session
-    // is (e.g. arriving from Drive's Open in Docs), and a destroyed editor
-    // must not swallow the seed meant for its successor.
-    if (editor.getText().trim() === "" && hasDocxSeed(id)) {
-      void import("./docx/apply").then(async ({ applyDocxImport, importComments }) => {
-        if (editor.isDestroyed || editor.getText().trim() !== "") return;
-        const docx = takeDocxSeed(id);
-        if (!docx) return;
-        applyDocxImport(editor, docx);
-        if (!docx.comments.length) return;
-        await importComments(
-          editor,
-          docx.comments,
-          {
-            add: (body, quote, from, to) => addComment(id, body, quote, from, to),
-            reply: (parent, body) => replyToComment(id, parent, body),
-            resolve: (cid) => resolveComment(id, cid),
-          },
-          user.display_name || user.email,
-        );
-      });
-      return;
-    }
-    const seed = sessionStorage.getItem(`docseed:${id}`);
-    if (seed && editor.getText().trim() === "") {
-      editor.commands.setContent(seed);
+    if (!hasDocxSeed(id) && sessionStorage.getItem(`docseed:${id}`) === null) return;
+    // The seed is applied only once the collab socket has synced (the
+    // server's replay has arrived). The hub never asks a client for state it
+    // made before connecting, so content set before the sync never reached
+    // the server: the new document looked right and reloaded empty (seen
+    // arriving from Drive's Open in Docs, whose first editor is also rebuilt
+    // with its collab session before its socket opens).
+    // Only a live, empty editor takes the seed: after an in-app navigation
+    // this effect first runs with the previous document's editor (M12
+    // results), and a destroyed editor must not swallow the seed meant for
+    // its successor.
+    const provider = collab.provider;
+    let live = true;
+    const usable = () => live && !editor.isDestroyed && editor.getText().trim() === "";
+    const apply = () => {
+      if (!usable()) return;
+      if (hasDocxSeed(id)) {
+        void import("./docx/apply").then(async ({ applyDocxImport, importComments }) => {
+          if (!usable()) return;
+          const docx = takeDocxSeed(id);
+          if (!docx) return;
+          applyDocxImport(editor, docx);
+          if (!docx.comments.length) return;
+          await importComments(
+            editor,
+            docx.comments,
+            {
+              add: (body, quote, from, to) => addComment(id, body, quote, from, to),
+              reply: (parent, body) => replyToComment(id, parent, body),
+              resolve: (cid) => resolveComment(id, cid),
+            },
+            user.display_name || user.email,
+          );
+        });
+        return;
+      }
+      const seed = sessionStorage.getItem(`docseed:${id}`);
+      if (seed === null) return;
       sessionStorage.removeItem(`docseed:${id}`);
-    }
-  }, [editor, id]);
+      editor.commands.setContent(seed);
+    };
+    const onSync = (synced: boolean) => {
+      if (!synced) return;
+      provider.off("sync", onSync);
+      apply();
+    };
+    if (provider.synced) apply();
+    else provider.on("sync", onSync);
+    return () => {
+      live = false;
+      provider.off("sync", onSync);
+    };
+  }, [editor, id, collab]);
 
   async function commitTitle() {
     const t = title.trim() || "Untitled document";

@@ -39,13 +39,20 @@ const MIME_TO_EDITOR: Array<{ test: (m: string) => boolean; app: string }> = [
 
 /** Returns the app id of the editor that should open this file, or null for
  *  files that have no dedicated editor (images, video, audio, plain text). */
-export function editorAppFor(file: DriveFile): string | null {
+export function editorAppFor(
+  file: Pick<DriveFile, "mime_type" | "name">,
+): string | null {
   const m = file.mime_type;
   for (const rule of MIME_TO_EDITOR) {
     if (rule.test(m)) return rule.app;
   }
+  // Visio drawings open in Whiteboard. Browsers have no registered type for
+  // .vsdx and upload it as application/octet-stream, so match the name too.
+  if (m === VSDX_MIME || /\.vsdx$/i.test(file.name)) return "whiteboard";
   return null;
 }
+
+const VSDX_MIME = "application/vnd.ms-visio.drawing.main+xml";
 
 /** Returns the route to navigate to when "Open" is invoked on a file. Routes
  *  through the editor when one is mapped; 3D models open in the 3D app; other

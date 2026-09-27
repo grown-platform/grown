@@ -109,7 +109,17 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
     appId === "docs" &&
     (/\.(docx|odt|rtf)$/i.test(file.name) ||
       needsServerConversion(officeCaps, file.name, "docx"));
-  const openTarget = canOpenInDocs ? "Docs" : canOpenInSheets ? "Sheets" : canOpenInSlides ? "Slides" : null;
+  // A Visio drawing can be imported into a new whiteboard (a copy).
+  const canOpenInWhiteboard = appId === "whiteboard" && /\.vsdx$/i.test(file.name);
+  const openTarget = canOpenInDocs
+    ? "Docs"
+    : canOpenInSheets
+      ? "Sheets"
+      : canOpenInSlides
+        ? "Slides"
+        : canOpenInWhiteboard
+          ? "Whiteboard"
+          : null;
 
   async function openInDocs() {
     if (!file) return;
@@ -165,6 +175,26 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
         file.name,
       );
       navigate(`/slides/d/${deckId}`);
+    } catch (e) {
+      setConvertError((e as Error).message);
+      setConverting(false);
+    }
+  }
+
+  async function openInWhiteboard() {
+    if (!file) return;
+    setConverting(true);
+    setConvertError(null);
+    try {
+      const resp = await fetch(url, { credentials: "same-origin" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const { createWhiteboard } = await import("./whiteboard/api");
+      const { setPendingImport } = await import("./whiteboard/sceneIO");
+      const board = await createWhiteboard(file.name.replace(/\.vsdx$/i, ""));
+      // The editor imports the drawing once its canvas is ready.
+      setPendingImport(board.id, new File([blob], file.name, { type: blob.type }));
+      navigate(`/whiteboard/d/${board.id}`);
     } catch (e) {
       setConvertError((e as Error).message);
       setConverting(false);
@@ -251,6 +281,18 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
             data-testid="open-in-slides"
           >
             Open in Slides
+          </Button>
+        )}
+        {canOpenInWhiteboard && (
+          <Button
+            onClick={openInWhiteboard}
+            loading={converting}
+            variant="solid"
+            color="neutral"
+            startDecorator={<Icons.Gesture />}
+            data-testid="open-in-whiteboard"
+          >
+            Open in Whiteboard
           </Button>
         )}
         <Button

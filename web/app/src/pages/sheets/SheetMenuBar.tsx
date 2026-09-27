@@ -608,7 +608,7 @@ export function SheetMenuBar({
           <MenuItem
             onClick={call((w) => {
               const r = sel();
-              if (r) w.mergeCells(r, "merge-all");
+              if (r) w.mergeCells([r], "merge-all");
             })}
           >
             Merge cells
@@ -616,7 +616,7 @@ export function SheetMenuBar({
           <MenuItem
             onClick={call((w) => {
               const r = sel();
-              if (r) w.cancelMerge(r);
+              if (r) w.cancelMerge([r]);
             })}
           >
             Unmerge

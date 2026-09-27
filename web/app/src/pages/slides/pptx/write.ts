@@ -641,6 +641,24 @@ export interface ObjectSink {
   rel: (type: string, target: string, external: boolean) => string;
 }
 
+/**
+ * pptxgenjs numbers a table's graphic frame `tableNo * slideNo + 1`, which
+ * can repeat the id of another shape on the slide (ids are `index + 2`).
+ * Shape ids must be unique within a slide: animation targets (`spTgt`) and
+ * connector glue name them. Give every repeat a fresh id, in document order.
+ */
+export function dedupeShapeIds(doc: Document) {
+  const all = Array.from(doc.getElementsByTagNameNS(P_NS, "cNvPr"));
+  let next = 0;
+  for (const c of all) next = Math.max(next, Number(c.getAttribute("id")) || 0);
+  const seen = new Set<string>();
+  for (const c of all) {
+    const id = c.getAttribute("id") ?? "";
+    if (seen.has(id)) c.setAttribute("id", String(++next));
+    seen.add(c.getAttribute("id")!);
+  }
+}
+
 export function patchElements(
   slideXml: string,
   marks: ElementMark[],
@@ -649,6 +667,7 @@ export function patchElements(
   objects?: ObjectSink,
 ): string {
   const doc = new DOMParser().parseFromString(slideXml, "application/xml");
+  dedupeShapeIds(doc);
   const found: { mark: ElementMark; node: Element; cNvPr: Element }[] = [];
   for (const cNvPr of Array.from(doc.getElementsByTagNameNS(P_NS, "cNvPr"))) {
     const name = cNvPr.getAttribute("name") ?? "";
