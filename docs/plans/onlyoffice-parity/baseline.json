@@ -194,7 +194,7 @@
       "passing": null
     },
     "sheets/formatting": {
-      "ported": 0,
+      "ported": 57,
       "passing": null
     },
     "sheets/formulas": {
@@ -294,11 +294,11 @@
       "passing": null
     },
     "slides/shapes": {
-      "ported": 8,
+      "ported": 9,
       "passing": null
     },
     "slides/shortcuts": {
-      "ported": 9,
+      "ported": 10,
       "passing": null
     },
     "slides/shortcuts fixture": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 746,
+    "ported": 805,
     "passing": null
   }
 }
