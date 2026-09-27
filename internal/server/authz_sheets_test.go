@@ -197,18 +197,18 @@ func TestAuthzSheetsCollab(t *testing.T) {
 	op := func(r, c int, v string) string {
 		return `[{"op":"replace","id":"s1","path":["data",` + itoa(r) + `,` + itoa(c) + `],"value":{"v":"` + v + `"}}]`
 	}
-	// Viewer op, then a spoofed restore notice dressed as presence (it would
-	// make every editor reload and drop unsaved work), then bob's op on the
-	// protected A1, then bob's allowed op on D1 (the sentinel).
+	// A connection's messages are relayed in order, so each sender ends with
+	// an allowed sentinel: once it arrives, everything before it was handled.
+	// Viewer op, a spoofed restore notice dressed as presence (it would make
+	// every editor reload and drop unsaved work), then viewer presence.
 	wsSend(t, viv, websocket.MessageText, op(0, 3, "viewer-op"))
 	wsSend(t, viv, websocket.MessageText, `{"type":"versionRestored","presence":{"userId":"x"}}`)
+	wsSend(t, viv, websocket.MessageText, `{"type":"presence","presence":{"userId":"viv-presence"}}`)
+	expectNextWithout(t, alice, "viv-presence", "viewer-op", "versionRestored")
+	// bob's op on the protected A1, then his allowed op on D1.
 	wsSend(t, bob, websocket.MessageText, op(0, 0, "bob-protected"))
 	wsSend(t, bob, websocket.MessageText, op(0, 3, "bob-allowed"))
-	expectNextWithout(t, alice, "bob-allowed", "viewer-op", "versionRestored", "bob-protected")
-
-	// Viewer presence still relays.
-	wsSend(t, viv, websocket.MessageText, `{"type":"presence","presence":{"userId":"viv-presence"}}`)
-	expectNextWithout(t, alice, "viv-presence")
+	expectNextWithout(t, alice, "bob-allowed", "bob-protected")
 	// The owner may edit the protected cell.
 	wsSend(t, alice, websocket.MessageText, op(0, 0, "alice-protected"))
 	expectNextWithout(t, bob, "alice-protected")

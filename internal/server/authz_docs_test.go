@@ -159,6 +159,9 @@ func TestAuthzDocsCollabReadOnly(t *testing.T) {
 		}
 	}
 	upd := func(tag string) string { return string(syncUpdate([]byte(tag))) }
+	// Awareness (cursor) messages are relayed for read-only peers too; one
+	// sent after the refused updates arrives after them if they were relayed.
+	awareness := func(tag string) string { return "\x01" + tag }
 
 	// Without protection a share-link viewer is still read-only.
 	watcher := e.mustDial("alice", path)
@@ -166,8 +169,10 @@ func TestAuthzDocsCollabReadOnly(t *testing.T) {
 	editor := e.mustDial("bob", path)
 	time.Sleep(150 * time.Millisecond)
 	wsSend(t, linkViewer, websocket.MessageBinary, upd("link-viewer-update"))
+	wsSend(t, linkViewer, websocket.MessageBinary, awareness("link-viewer-cursor"))
+	expectNextWithout(t, watcher, "link-viewer-cursor", "link-viewer-update")
 	wsSend(t, editor, websocket.MessageBinary, upd("editor-update"))
-	expectNextWithout(t, watcher, "editor-update", "link-viewer-update")
+	expectNextWithout(t, watcher, "editor-update")
 	watcher.CloseNow()
 	linkViewer.CloseNow()
 	editor.CloseNow()
@@ -181,9 +186,11 @@ func TestAuthzDocsCollabReadOnly(t *testing.T) {
 	owner := e.mustDial("alice", path)
 	bob, ed, viv := e.mustDial("bob", path), e.mustDial("ed", path), e.mustDial("viv", path)
 	time.Sleep(150 * time.Millisecond)
-	wsSend(t, bob, websocket.MessageBinary, upd("bob-readonly"))
-	wsSend(t, ed, websocket.MessageBinary, upd("ed-readonly"))
-	wsSend(t, viv, websocket.MessageBinary, upd("viv-readonly"))
+	for name, c := range map[string]*websocket.Conn{"bob": bob, "ed": ed, "viv": viv} {
+		wsSend(t, c, websocket.MessageBinary, upd(name+"-readonly"))
+		wsSend(t, c, websocket.MessageBinary, awareness(name+"-cursor"))
+		expectNextWithout(t, watcher, name+"-cursor", "readonly")
+	}
 	wsSend(t, owner, websocket.MessageBinary, upd("owner-update"))
 	expectNextWithout(t, watcher, "owner-update", "bob-readonly", "ed-readonly", "viv-readonly")
 

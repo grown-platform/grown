@@ -288,9 +288,13 @@ func TestAuthzSlidesCollab(t *testing.T) {
 	}
 	alice, ed, viv := join("alice", "A"), join("ed", "E"), join("viv", "V")
 
+	// Each sender's messages arrive in order: the viewer's presence sentinel
+	// comes after everything it sent that must be dropped.
 	wsSend(t, viv, websocket.MessageText, `{"t":"upsert","id":"v1","si":"s1","el":{"id":"x","text":"viewer-op"}}`)
 	wsSend(t, viv, websocket.MessageText, `{"t":"presence","type":"versionRestored"}`)
 	wsSend(t, viv, websocket.MessageText, `{"t":"versionRestored"}`)
+	wsSend(t, viv, websocket.MessageText, `{"t":"presence","p":{"userId":"viv-sentinel"}}`)
+	expectNextWithout(t, ed, "viv-sentinel", "viewer-op", "versionRestored")
 	wsSend(t, alice, websocket.MessageText, `{"t":"upsert","id":"a1","base":0,"si":"s1","el":{"id":"x","text":"alice-op"}}`)
 	expectNextWithout(t, ed, "alice-op", "viewer-op", "versionRestored")
 
@@ -316,11 +320,15 @@ func TestAuthzWhiteboardsCollab(t *testing.T) {
 	}
 	alice, ed, viv, cara := e.mustDial("alice", path), e.mustDial("ed", path), e.mustDial("viv", path), e.mustDial("cara", path)
 	time.Sleep(150 * time.Millisecond)
+	// Each sender ends with a presence sentinel (relayed in order after what
+	// it sent before).
 	wsSend(t, viv, websocket.MessageText, `{"type":"scene","elements":[{"id":"viewer-scene"}]}`)
-	wsSend(t, cara, websocket.MessageText, `{"type":"scene","elements":[{"id":"commenter-scene"}]}`)
 	wsSend(t, viv, websocket.MessageText, `{"type":"versionRestored","presence":{}}`)
 	wsSend(t, viv, websocket.MessageText, `{"type":"presence","presence":{"userId":"viv-presence"}}`)
-	expectNextWithout(t, alice, "viv-presence", "viewer-scene", "commenter-scene", "versionRestored")
+	expectNextWithout(t, alice, "viv-presence", "viewer-scene", "versionRestored")
+	wsSend(t, cara, websocket.MessageText, `{"type":"scene","elements":[{"id":"commenter-scene"}]}`)
+	wsSend(t, cara, websocket.MessageText, `{"type":"presence","presence":{"userId":"cara-presence"}}`)
+	expectNextWithout(t, alice, "cara-presence", "commenter-scene")
 	wsSend(t, ed, websocket.MessageText, `{"type":"scene","elements":[{"id":"editor-scene"}]}`)
 	expectNextWithout(t, alice, "editor-scene", "viewer-scene", "commenter-scene")
 }

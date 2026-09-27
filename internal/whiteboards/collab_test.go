@@ -37,19 +37,16 @@ func TestServeDropsReadOnlyScenes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// One connection's messages are relayed in order, so once the viewer's
+	// presence arrives, anything it sent before has been dropped or relayed.
 	send(viewer, `{"type":"scene","elements":[{"id":"viewer-scene"}]}`)
 	send(viewer, `{"type":"versionRestored","presence":{}}`)
 	send(viewer, `{"type":"presence","presence":{"userId":"viewer-presence"}}`)
-	send(other, `{"type":"scene","elements":[{"id":"editor-scene"}]}`)
-	got := []string{}
-	for len(got) < 2 {
-		_, b, err := editor.Read(ctx)
-		if err != nil {
-			t.Fatalf("read: %v (got %q)", err, got)
-		}
-		got = append(got, string(b))
+	if _, b, err := editor.Read(ctx); err != nil || !strings.Contains(string(b), "viewer-presence") {
+		t.Fatalf("editor received %q (%v); want only the viewer's presence", b, err)
 	}
-	if !strings.Contains(got[0], "viewer-presence") || !strings.Contains(got[1], "editor-scene") {
-		t.Fatalf("editor received %q; want only the viewer's presence, then the editor's scene", got)
+	send(other, `{"type":"scene","elements":[{"id":"editor-scene"}]}`)
+	if _, b, err := editor.Read(ctx); err != nil || !strings.Contains(string(b), "editor-scene") {
+		t.Fatalf("editor received %q (%v); want the other editor's scene", b, err)
 	}
 }
