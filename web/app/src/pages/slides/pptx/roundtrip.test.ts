@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { deckToPptx } from "./write";
 import { readPptx } from "./read";
 import { DECK_TEMPLATES } from "../templates";
-import { newElement, type DeckDoc, type SlideElement } from "../model";
+import { newElement, type DeckDoc, type SlideElement, type TransitionType } from "../model";
+import { normalizeTransition } from "../transitions";
 
 // Round trip: DeckDoc → pptx (pptxgenjs + patches) → DeckDoc. The fixture
 // .pptx is generated here, never checked in.
@@ -35,6 +36,14 @@ function normalize(deck: DeckDoc) {
           continue;
         if (k === "rotation" && x === 0) continue;
         if (k === "transition" && x === "none") continue;
+        if (k === "anims") continue; // animations: see pptx/motion.test.ts
+        if (k === "transition" && typeof x === "string" && x.startsWith("slide-")) {
+          // Pre-M8 names read back as push + direction.
+          const n = normalizeTransition(x as TransitionType);
+          o.transition = n.type;
+          o.transitionDir = n.dir;
+          continue;
+        }
         o[k] = round(x);
       }
       return o;

@@ -16,6 +16,7 @@
 // fonts are kept as `themeRefs`, hidden slides stay hidden, and the
 // date/footer/slide-number placeholders become header & footer settings.
 
+import { findTransitionEl, readTiming, readTransitionEl } from "./motionXml";
 import JSZip from "jszip";
 import {
   CANVAS_W,
@@ -1003,6 +1004,9 @@ interface SlideCtx {
   layoutMode?: boolean;
   /** The slide's date/footer/number placeholders (header & footer). */
   hf?: SlideHFRead;
+  /** Slide tree only: `cNvPr@id` → the Grown elements read from that
+   *  shape (animation targets). */
+  spids?: Map<string, string[]>;
 }
 
 interface SlideHFRead {
@@ -1698,6 +1702,8 @@ async function readTree(
   for (const c of contentKids(tree)) {
     if (skipPh && (c.localName === "sp" || c.localName === "pic") && spPh(c))
       continue;
+    const before = out.length;
+    const spid = sc.spids ? c.getElementsByTagNameNS("*", "cNvPr")[0]?.getAttribute("id") : null;
     switch (c.localName) {
       case "sp":
         await readSp(c, tf, sc, out, false);
@@ -1718,35 +1724,13 @@ async function readTree(
         sc.warnings.add("Ink was skipped");
         break;
     }
+    if (spid && out.length > before) sc.spids!.set(spid, out.slice(before).map((e) => e.id));
   }
 }
 
-/** Map a `<p:transition>` to Grown's closest transition. */
+/** Map a `<p:transition>` to Grown's transition type (see motionXml). */
 export function mapTransition(tr: Element | null): TransitionType | undefined {
-  if (!tr) return undefined;
-  const effect = tr.children[0];
-  if (!effect) return undefined;
-  const dir = effect.getAttribute("dir");
-  switch (effect.localName) {
-    case "fade":
-    case "dissolve":
-      return "fade";
-    case "push":
-    case "cover":
-    case "pull":
-    case "wipe":
-      if (!dir || dir === "l") return "slide-left";
-      if (dir === "r") return "slide-right";
-      if (dir === "u") return "slide-up";
-      return "fade";
-    default:
-      return "fade";
-  }
-}
-
-function findTransition(root: Element): Element | null {
-  for (const c of contentKids(root)) if (c.localName === "transition") return c;
-  return null;
+  return readTransitionEl(tr).transition;
 }
 
 async function readBackground(
@@ -1947,7 +1931,8 @@ export async function readPptx(
     if (showMaster && sc.layoutTree)
       await readTreeGlued(sc.layoutTree, { ...sc, pc: pcLayout }, elements, true);
     const tree = kid(slideCSld, "spTree");
-    if (tree) await readTreeGlued(tree, sc, elements, false);
+    const spids = new Map<string, string[]>();
+    if (tree) await readTreeGlued(tree, { ...sc, spids }, elements, false);
 
     let notes: string | undefined;
     const notesPath = await pkg.relOfType(slidePath, "notesSlide");
@@ -1958,7 +1943,9 @@ export async function readPptx(
       if (t.trim()) notes = t;
     }
 
-    const transition = mapTransition(findTransition(sld.documentElement));
+    const trans = readTransitionEl(findTransitionEl(sld.documentElement));
+    const timing = readTiming(sld.documentElement, spids, uid);
+    if (timing.simplified) warnings.add("Some animations were simplified (motion paths and triggers are not supported)");
     const slide: Slide = {
       id: slideIds.get(slidePath) ?? uid(),
       background: bg.color ?? "#ffffff",
@@ -1966,12 +1953,11 @@ export async function readPptx(
       ...(bg.fill ? { bgFill: bg.fill } : {}),
       elements,
       ...(notes ? { notes } : {}),
-      ...(transition ? { transition } : {}),
+      ...trans,
+      ...(timing.anims.length ? { anims: timing.anims } : {}),
       ...(layoutId ? { layout: layoutId } : {}),
       ...(sld.documentElement.getAttribute("show") === "0" ? { hidden: true } : {}),
     };
-    if (desc(sld, "timing").length && desc(sld, "timing")[0].children.length)
-      warnings.add("Animations were not imported");
     slides.push(slide);
     hfs.push(hf);
   }

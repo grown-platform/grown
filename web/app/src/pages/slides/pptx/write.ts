@@ -12,7 +12,6 @@ import {
   type Slide,
   type SlideElement,
   type SlideLayout,
-  type TransitionType,
 } from "../model";
 import { textBodyXml, type LinkRef, type LinkResolver } from "./textXml";
 import { tableXml } from "./tableXml";
@@ -21,6 +20,8 @@ import { toPpAction } from "../links";
 import { deckSize } from "../slideProps";
 import { findLayout, layoutsOf, withFooters } from "../layouts";
 import { themeOf } from "../theme";
+import { insertTiming, insertTransition, timingXml, transitionXml } from "./motionXml";
+import { effectsOf } from "../animOps";
 import { bgXml, patchClrMap, patchLayoutXml, patchThemeXml, replaceBg, setPh, setSchemeFill, toField } from "./designXml";
 
 /** Slide width written to every pptx: 10 in; the height follows the
@@ -57,47 +58,8 @@ export const ROUND_RECT_RATIO = 0.18;
 
 // ------------------------------------------------------------ transitions
 
-/**
- * The `<p:transition>` element for a Grown transition, or "" for none.
- * Directions follow PowerPoint: "Push from right" moves the old slide left
- * (`dir="l"`).
- */
-export function transitionXml(t: TransitionType | undefined): string {
-  switch (t) {
-    case "fade":
-      return `<p:transition spd="med"><p:fade/></p:transition>`;
-    case "slide-left":
-      return `<p:transition spd="med"><p:push dir="l"/></p:transition>`;
-    case "slide-right":
-      return `<p:transition spd="med"><p:push dir="r"/></p:transition>`;
-    case "slide-up":
-      return `<p:transition spd="med"><p:push dir="u"/></p:transition>`;
-    default:
-      return "";
-  }
-}
-
-/**
- * Insert a transition into a slide part. ECMA-376 orders the children of
- * `<p:sld>` as cSld, clrMapOvr, transition, timing, extLst, so it goes right
- * after clrMapOvr (or cSld when there is no colour-map override). An existing
- * transition is replaced.
- */
-export function insertTransition(slideXml: string, xml: string): string {
-  const s = slideXml.replace(
-    /<p:transition\b(?:[^>]*\/>|[\s\S]*?<\/p:transition>)/,
-    "",
-  );
-  if (!xml) return s;
-  for (const anchor of ["</p:clrMapOvr>", "</p:cSld>"]) {
-    const i = s.indexOf(anchor);
-    if (i >= 0) {
-      const at = i + anchor.length;
-      return s.slice(0, at) + xml + s.slice(at);
-    }
-  }
-  return s;
-}
+// Transitions and animations live in motionXml.ts (M8).
+export { transitionXml, insertTransition } from "./motionXml";
 
 // ------------------------------------------------------------ build
 
@@ -283,7 +245,7 @@ export async function deckToPptx(
     // Slides with preset shapes/connectors mark every element, so adjust
     // values, connectors and glue targets can be found after pptxgenjs.
     const marks: ElementMark[] = [];
-    const mark = needsElementPatch(slide.elements);
+    const mark = needsElementPatch(slide.elements) || effectsOf(slide).length > 0;
     const emit = (el: SlideElement, path: string[]) => {
       if (el.type === "group") {
         const key = `g${groups.size + 1}`;
@@ -359,11 +321,12 @@ export async function patchPptx(
     }
   }
   for (let i = 0; i < deck.slides.length; i++) {
-    const xml = transitionXml(deck.slides[i].transition);
+    const xml = transitionXml(deck.slides[i]);
+    const animated = effectsOf(deck.slides[i]).length > 0;
     const groups = slideGroups[i];
     const marks = slideEls[i];
     const bg = bgXml(deck.slides[i]);
-    if (!xml && !groups?.size && !marks?.length && !bg) continue;
+    if (!xml && !groups?.size && !marks?.length && !bg && !animated) continue;
     const path = `ppt/slides/slide${i + 1}.xml`;
     const f = zip.file(path);
     if (!f) continue;
@@ -372,7 +335,13 @@ export async function patchPptx(
       const relsPath = `ppt/slides/_rels/slide${i + 1}.xml.rels`;
       const relsFile = zip.file(relsPath);
       const rels = relsFile ? new SlideRels(await relsFile.async("string")) : null;
-      out = patchElements(out, marks, rels ? linkResolver(rels, deck.slides) : undefined);
+      const spids = new Map<string, string>();
+      out = patchElements(out, marks, rels ? linkResolver(rels, deck.slides) : undefined, spids);
+      if (animated) {
+        // Only top-level elements carry effects (group members are wrapped later).
+        for (const m of marks) if (m.path.length) spids.delete(m.el.id);
+        out = insertTiming(out, timingXml(deck.slides[i], spids));
+      }
       if (rels?.changed) zip.file(relsPath, rels.xml());
     }
     if (groups?.size) out = wrapGroups(out, groups);
@@ -583,9 +552,13 @@ const TYPE_NAME: Partial<Record<SlideElement["type"], string>> = {
  * `a:endCxn` glue (ids of the target shapes), and replace the marker names
  * with the element's name (or a group marker for wrapGroups).
  */
-export function patchElements(slideXml: string, marks: ElementMark[], link?: LinkResolver): string {
+export function patchElements(
+  slideXml: string,
+  marks: ElementMark[],
+  link?: LinkResolver,
+  idOf: Map<string, string> = new Map(),
+): string {
   const doc = new DOMParser().parseFromString(slideXml, "application/xml");
-  const idOf = new Map<string, string>();
   const found: { mark: ElementMark; node: Element; cNvPr: Element }[] = [];
   for (const cNvPr of Array.from(doc.getElementsByTagNameNS(P_NS, "cNvPr"))) {
     const name = cNvPr.getAttribute("name") ?? "";
