@@ -165,18 +165,18 @@ export function allowedUnder(mode: ProtectionMode, tr: Transaction): boolean {
 export const DocProtection = Extension.create({
   name: "docProtection",
   priority: 1200,
-  onCreate() {
-    const editor = this.editor;
-    const map = protectionMap(editor);
-    const h = () => queueMicrotask(() => sync(editor));
-    map.observe(h);
-    sync(editor);
-    this.editor.on("destroy", () => map.unobserve(h));
-  },
   addProseMirrorPlugins() {
+    const editor = this.editor;
     return [
       new Plugin<{ mode: ProtectionMode }>({
         key: protectionKey,
+        view() {
+          const map = protectionMap(editor);
+          const h = () => queueMicrotask(() => sync(editor));
+          map.observe(h);
+          h();
+          return { destroy: () => map.unobserve(h) };
+        },
         state: {
           init: () => ({ mode: "none" }),
           apply(tr, v) {
