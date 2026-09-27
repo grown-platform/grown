@@ -109,6 +109,7 @@ import {
   hfFlags,
   layoutsOf,
   nextLayoutFor,
+  newLayoutDeck,
   nextPlaceholder,
   resetSlide as resetSlideOp,
   slideFromLayout,
@@ -120,7 +121,7 @@ import { SlideCanvas } from "./SlideCanvas";
 import { SlideMenuBar, type SlideActions } from "./SlideMenuBar";
 import { downloadDeck } from "./export";
 import { ShareDialog } from "./ShareDialog";
-import { PPTX_ACCEPT, readPptxSlides } from "./pptx/importDeck";
+import { PPTX_ACCEPT, readPptxSlides, slidesForDeck } from "./pptx/importDeck";
 import {
   addNextSlide,
   insertSlideAfter,
@@ -417,7 +418,8 @@ export function DeckEditor({ user }: { user: User }) {
       .then((d) => {
         if (cancelled) return;
         setTitle(d.title);
-        setDoc(parseDeck(d.data));
+        // A deck that was never saved starts from the title layout (M7).
+        setDoc(d.data ? parseDeck(d.data) : newLayoutDeck());
       })
       .catch(() => !cancelled && setDoc(parseDeck()));
     return () => {
@@ -1015,7 +1017,8 @@ export function DeckEditor({ user }: { user: User }) {
       const r = await readPptxSlides(f);
       // Pictures go to the deck's asset store, keeping the deck (and its
       // collab broadcast) small; they stay inline if uploading fails.
-      const imported = await externalizeImages(r.slides, (b) => uploadDeckAsset(id, b));
+      const fitted = docRef.current ? slidesForDeck(r.deck, docRef.current) : r.slides;
+      const imported = await externalizeImages(fitted, (b) => uploadDeckAsset(id, b));
       const base = docRef.current?.slides ?? slides;
       setSlides([...base, ...imported]);
       setCur(base.length);

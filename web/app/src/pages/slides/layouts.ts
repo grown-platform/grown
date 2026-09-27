@@ -369,3 +369,10 @@ export function withFooters(deck: DeckDoc, i: number, now?: Date): Slide {
   const extra = footerElements(deck, i, now);
   return extra.length ? { ...s, elements: [...s.elements, ...extra] } : s;
 }
+
+/** A new deck: one title slide made from the title layout (empty
+ *  placeholders with prompts), in the default theme. */
+export function newLayoutDeck(): DeckDoc {
+  const title = layoutByType(builtinLayouts(OFFICE_THEME), "title")!;
+  return { slides: [slideFromLayout(title)] };
+}

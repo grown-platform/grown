@@ -255,10 +255,9 @@ export function LayoutThumb({ layout, width = 120 }: { layout: SlideLayout; widt
       .filter((e) => !isHF(e))
       .map((e) =>
         isEmptyPlaceholder(e)
-          ? { ...e, text: placeholderPrompt(e), color: e.color, runs: undefined }
+          ? { ...e, text: placeholderPrompt(e), runs: undefined }
           : e,
-      )
-      .map((e) => (e.placeholder ? { ...e, stroke: "#9aa0a6" } : e)),
+      ),
   };
   return (
     <Box sx={{ border: "1px solid", borderColor: "divider", lineHeight: 0 }}>
