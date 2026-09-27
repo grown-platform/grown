@@ -69,6 +69,10 @@ test.describe.serial("docs: OnlyOffice shortcut ports", () => {
       expect((await firstParagraph(page)).trimEnd()).toBe("Hello Hello Hello Hello Hello");
 
       await page.keyboard.press(DOC_START);
+      // The browser moves the caret for Ctrl+Home and reports it to the editor
+      // asynchronously; a Delete in the same millisecond still sees the old
+      // caret (same race as the Ctrl+K link fix). People don't type that fast.
+      await page.waitForTimeout(100);
       await page.keyboard.press("Delete");
       expect((await firstParagraph(page)).trimEnd()).toBe("ello Hello Hello Hello Hello");
       await page.keyboard.press(`${WORD}+Delete`);
