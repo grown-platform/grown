@@ -449,7 +449,11 @@ export function SheetEditor({ user }: SheetEditorProps) {
         setOwnerId(s.owner_id);
         setEditContext({ user: user.id, owner: s.owner_id });
         try {
-          loadWorkbook(s.data ? JSON.parse(s.data) : null);
+          // Opening another spreadsheet in this editor (File ▸ Import as a new
+          // spreadsheet, Make a copy, …) remounts the grid: FortuneSheet keeps
+          // its current sheet id across a new `data`, which pointed at a sheet
+          // of the previous workbook (charts on the grid were not drawn).
+          loadWorkbook(s.data ? JSON.parse(s.data) : null, dataRef.current !== null);
         } catch {
           setData(DEFAULT_DATA);
         }
