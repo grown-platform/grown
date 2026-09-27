@@ -116,7 +116,7 @@ test.describe("PDF Editor - calculated fields (CC3)", () => {
     return fs.promises.readFile(await dl.path());
   }
 
-  test("(a) oo:pdf/forms/actions.js#Test calculate action — imported chain, typed in the editor", async ({ page }) => {
+  test("(a) imported calculate chain typed in the editor — oo:pdf/forms/actions.js#Test calculate action", async ({ page }) => {
     const pdf = await buildCalcPdf([
       { name: "TextForm1", value: "1", calc: "this.getField('TextForm2').value += 1" },
       { name: "TextForm2", value: "2", calc: "this.getField('TextForm3').value += 1" },
