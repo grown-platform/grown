@@ -33,6 +33,8 @@ import type * as Y from "yjs";
 import { ColumnBreak, SectionBreak } from "./pageLayout";
 import { Pagination } from "./paginationPlugin";
 import type { WebsocketProvider } from "y-websocket";
+import { ContentControls, SdtBlock, SdtInline } from "./sdt";
+import { DocProtection } from "./protection";
 
 // TipTap has no official font-size extension, so add a textStyle attribute that
 // renders inline `font-size`. Mirrors the shape of @tiptap/extension-color.
@@ -623,6 +625,11 @@ export function buildExtensions(opts: BuildOpts) {
     SectionBreak,
     ColumnBreak,
     Pagination,
+    // Content controls, forms and protection (M10).
+    SdtInline,
+    SdtBlock,
+    ContentControls,
+    DocProtection,
     ...collabExts,
   ];
 }

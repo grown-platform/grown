@@ -24,6 +24,7 @@ import {
   type Deletion,
   type TrackedChange,
 } from "./changes";
+import { protectionState, REVIEW_RESOLVE } from "./protection";
 
 // Track changes ("Suggesting" mode), v2 (M5). While tracking is on, edits
 // are recorded instead of applied destructively:
@@ -201,6 +202,8 @@ const tracking = new WeakMap<Editor, boolean>();
 
 /** isSuggesting reports whether the editor records edits as changes. */
 export function isSuggesting(editor: Editor): boolean {
+  // "Tracked changes only" protection (M10) tracks every edit.
+  if (!editor.isDestroyed && protectionState(editor.state).mode === "trackedChanges") return true;
   return tracking.get(editor) ?? false;
 }
 
@@ -512,7 +515,7 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
         if (!parts.length) return false;
         if (dispatch) {
           resolveParts(tr, parts, accept);
-          tr.setMeta(suggestingKey, true);
+          tr.setMeta(suggestingKey, true).setMeta(REVIEW_RESOLVE, true);
         }
         return true;
       };
@@ -523,7 +526,7 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
         if (!parts.length) return false;
         if (dispatch) {
           resolveParts(tr, parts, accept);
-          tr.setMeta(suggestingKey, true);
+          tr.setMeta(suggestingKey, true).setMeta(REVIEW_RESOLVE, true);
         }
         return true;
       };
@@ -534,7 +537,7 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
         if (!parts.length) return false;
         if (dispatch) {
           resolveParts(tr, parts, accept);
-          tr.setMeta(suggestingKey, true);
+          tr.setMeta(suggestingKey, true).setMeta(REVIEW_RESOLVE, true);
         }
         return true;
       };
@@ -550,7 +553,7 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
           const parts = collectParts(props.state.doc).filter((p) => ids.has(p.id));
           if (props.dispatch) {
             resolveParts(props.tr, parts, accept);
-            props.tr.setMeta(suggestingKey, true);
+            props.tr.setMeta(suggestingKey, true).setMeta(REVIEW_RESOLVE, true);
           }
           return true;
         }
@@ -595,7 +598,7 @@ export const Suggesting = Extension.create<{ user: SuggestUser }>({
   addProseMirrorPlugins() {
     const editor = this.editor;
     const user = () => this.options.user;
-    const active = () => tracking.get(editor) ?? false;
+    const active = () => isSuggesting(editor);
     let viewRef: EditorView | null = null;
     return [
       new Plugin({

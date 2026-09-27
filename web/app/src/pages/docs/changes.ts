@@ -263,9 +263,16 @@ export function collectParts(doc: PMNode): Part[] {
       if (props)
         parts.push({ kind: "props", id: props.id ?? "", author: props.author ?? "", date: props.date ?? "", from: pos + 1, to: end, nodePos: pos, text: "" });
       // Descend first so the paragraph mark sorts after the text.
-      node.forEach((child, offset) => {
-        const cpos = pos + 1 + offset;
-        const text = child.isText ? child.text ?? "" : child.type.name === "hardBreak" ? "\n" : "￼";
+      const inline = (parent: PMNode, base: number) => parent.forEach((child, offset) => {
+        const cpos = base + offset;
+        // Inline content controls (M10): their content is tracked text; a
+        // control carries a review mark itself only when inserted or
+        // deleted whole, and then it is one part.
+        if (child.type.name === "sdtInline" && !(child.content.size && child.marks.some((m) => REVIEW_MARKS.has(m.type.name) && allMarked(child, m)))) {
+          inline(child, cpos + 1);
+          return;
+        }
+        const text = child.isText ? child.text ?? "" : child.type.name === "hardBreak" ? "\n" : child.type.name === "sdtInline" ? child.textContent : "￼";
         for (const m of child.marks) {
           const kind: PartKind | null =
             m.type.name === "insertion" ? "ins" : m.type.name === "deletion" ? "del" : m.type.name === "formatChange" ? "fmt" : null;
@@ -282,6 +289,7 @@ export function collectParts(doc: PMNode): Part[] {
           });
         }
       });
+      inline(node, pos + 1);
       const pc = parseParaChange(node.attrs.paraChange);
       if (pc)
         parts.push({
@@ -308,6 +316,16 @@ export function collectParts(doc: PMNode): Part[] {
     prev = p;
   }
   return parts;
+}
+
+/** Every text inside `node` carries `m`. */
+function allMarked(node: PMNode, m: Mark): boolean {
+  let all = true;
+  node.descendants((c) => {
+    if (c.isText && !m.isInSet(c.marks)) all = false;
+    return all;
+  });
+  return all;
 }
 
 function sameFamily(a: PartKind, b: PartKind): boolean {
@@ -400,6 +418,8 @@ export function resolveParts(tr: Transaction, parts: Part[], accept: boolean): v
   const { schema } = tr.doc.type;
   const doc = tr.doc;
   const deletions: Deletion[] = [];
+  const base = tr.steps.length;
+  const emptied = emptiedBlockControls(doc, parts, accept);
   for (const p of parts) {
     switch (p.kind) {
       case "ins":
@@ -451,6 +471,42 @@ export function resolveParts(tr: Transaction, parts: Part[], accept: boolean): v
     }
   }
   applyDeletions(tr, deletions);
+  // A block content control whose whole content goes is removed too (M10,
+  // OnlyOffice): the paragraph after it stays.
+  for (const pos of emptied.reverse()) {
+    const p = tr.mapping.slice(base).map(pos, 1);
+    const node = tr.doc.nodeAt(p);
+    if (node?.type.name !== "sdtBlock") continue;
+    if (tr.doc.childCount === 1) tr.replaceWith(p, p + node.nodeSize, schema.nodes.paragraph.create());
+    else tr.delete(p, p + node.nodeSize);
+  }
+}
+
+/** Block content controls with text, all of which the resolution removes
+ *  (deletions accepted / insertions rejected). */
+function emptiedBlockControls(doc: PMNode, parts: Part[], accept: boolean): number[] {
+  if (!doc.type.schema.nodes.sdtBlock) return [];
+  const kind: PartKind = accept ? "del" : "ins";
+  const ranges = parts.filter((p) => p.kind === kind);
+  if (!ranges.length) return [];
+  const out: number[] = [];
+  doc.descendants((n, pos) => {
+    if (n.type.name !== "sdtBlock") return true;
+    let any = false;
+    let all = true;
+    n.descendants((c, p) => {
+      if (!all) return false;
+      if (!c.isText) return true;
+      any = true;
+      const a = pos + 1 + p;
+      const b = a + c.nodeSize;
+      if (!ranges.some((r) => r.from <= a && b <= r.to)) all = false;
+      return false;
+    });
+    if (any && all) out.push(pos);
+    return false;
+  });
+  return out;
 }
 
 /** A range to remove; `merge` is set when it removes a paragraph mark (the
@@ -486,7 +542,11 @@ export function applyDeletions(tr: Transaction, deletions: Deletion[]): void {
  *  of the same type merged), the shape OnlyOffice's revision tests use. */
 export function reviewRuns(block: PMNode): [ReviewType, string][] {
   const out: [ReviewType, string][] = [];
-  block.forEach((child) => {
+  const visit = (child: PMNode) => {
+    if (child.type.name === "sdtInline") {
+      child.forEach(visit);
+      return;
+    }
     const text = child.isText ? child.text ?? "" : child.type.name === "hardBreak" ? "\n" : "";
     if (!text) return;
     const t: ReviewType = child.marks.some((m) => m.type.name === "deletion")
@@ -497,7 +557,8 @@ export function reviewRuns(block: PMNode): [ReviewType, string][] {
     const last = out[out.length - 1];
     if (last && last[0] === t) last[1] += text;
     else out.push([t, text]);
-  });
+  };
+  block.forEach(visit);
   return out;
 }
 

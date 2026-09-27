@@ -1,18 +1,21 @@
 // Port of OnlyOffice word/api/cross-ref.js (behaviour only).
 //
-// OnlyOffice puts the heading inside a block-level content control (and,
-// for bug 69293, a locked one). Grown has no content controls until M10,
-// so the heading stands on its own; the reference behaviour is the same:
-// the new paragraph reads the heading text and the heading gets a hidden
-// "_Ref1" bookmark.
+// The heading sits inside a block-level content control (M10) and, for
+// bug 69293, a locked one: the new paragraph reads the heading text and
+// the heading gets a hidden "_Ref1" bookmark.
 import { describe, expect, it } from "vitest";
 import { makeEditor, paragraphText, setCursor, textblocks } from "../harness";
 import { addRefToParagraph } from "../../crossref";
 import { refBookmarkForParagraph } from "../../bookmarks";
+import { allSdts, prOf } from "../../sdt";
+
+const inControl = (lock?: string) =>
+  `<div data-sdt-pr='${JSON.stringify({ type: "richText", ...(lock ? { lock } : {}) })}'><h1>HeadingText</h1></div><p></p>`;
 
 describe("OnlyOffice cross-ref", () => {
   it("oo:word/api/cross-ref.js#Test adding cross-ref to a block-level sdt", () => {
-    const e = makeEditor("<h1>HeadingText</h1><p></p>");
+    const e = makeEditor(inControl());
+    expect(allSdts(e.state.doc).length).toBe(1);
     expect(paragraphText(e, 0)).toBe("HeadingText");
     const [heading, p] = textblocks(e);
     setCursor(e, p.pos);
@@ -21,9 +24,10 @@ describe("OnlyOffice cross-ref", () => {
     expect(paragraphText(e, 1)).toBe("HeadingText");
     expect(refBookmarkForParagraph(e.state.doc, heading.pos - 1)).toBe("_Ref1");
 
-    // Again in a fresh document (upstream: a locked content control, bug
-    // 69293; locking arrives with M10): same text, same bookmark name.
-    const f = makeEditor("<h1>HeadingText</h1><p></p>");
+    // Again with a locked content control (bug 69293): same text, same
+    // bookmark name.
+    const f = makeEditor(inControl("sdtContentLocked"));
+    expect(prOf(allSdts(f.state.doc)[0].node).lock).toBe("sdtContentLocked");
     const [h2, p2] = textblocks(f);
     setCursor(f, p2.pos);
     addRefToParagraph(f, h2.pos - 1, "text", true);
