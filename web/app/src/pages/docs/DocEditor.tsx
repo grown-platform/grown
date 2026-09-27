@@ -36,12 +36,7 @@ import { takeDocxSeed } from "./docx/seed";
 import { setExportDocId } from "./export";
 import { createCollab, colorFor } from "./collab";
 import { buildExtensions } from "./extensions";
-import {
-  editorPageSx,
-  workspaceSx,
-  pageDims,
-  type Orientation,
-} from "./editorStyles";
+import { editorPageSx, pagedSheetSx, workspaceSx } from "./editorStyles";
 import { Toolbar, type EditorMode } from "./Toolbar";
 import { MenuBar, type DocActions } from "./MenuBar";
 import { Presence } from "./Presence";
@@ -57,8 +52,12 @@ import {
   EmojiDialog,
   SpecialCharsDialog,
   CustomSpacingDialog,
-  PageSetupDialog,
 } from "./dialogs";
+import { LayoutDialogs, openLayoutDialog } from "./LayoutDialogs";
+import { PageBackground, PageHeadersFooters } from "./PageLayer";
+import { PageThumbnails, PrintPreview, StatusBar, usePagination } from "./PagesUI";
+import { currentSection, setSectionProps } from "./pageLayout";
+import { ptToPx } from "./sections";
 import { VersionHistory } from "./VersionHistory";
 import { Outline } from "./Outline";
 import { Footnotes } from "./Footnotes";
@@ -92,7 +91,7 @@ import { EditorContextMenu } from "./EditorContextMenu";
 import { EquationEditor } from "./math/EquationEditor";
 import { setMathEditHandler } from "./math/MathNode";
 import { ReferenceDialogs, openReferenceDialog } from "./ReferenceDialogs";
-import { insertTableOfContents, setPageResolver, toggleFieldCodes, updateFields } from "./references";
+import { insertTableOfContents, toggleFieldCodes, updateFields } from "./references";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { FindBar, type FindMode } from "./FindBar";
 import { AutoCorrectDialog } from "./AutoCorrectDialog";
@@ -108,16 +107,14 @@ export function DocEditor({ user }: DocEditorProps) {
   const navigate = useNavigate();
   const [title, setTitle] = useState("Untitled document");
   const [starred, setStarred] = useState(false);
-  const [indents, setIndents] = useState<Indents>({
-    left: 1,
-    right: 1,
-    firstLine: 0,
-  });
+  // The ruler's first-line indent (a page-wide default); the margins come
+  // from the section at the caret (M9).
+  const [firstLine, setFirstLine] = useState(0);
   const [mode, setMode] = useState<EditorMode>("editing");
-  const [orientation, setOrientation] = useState<Orientation>("portrait");
-  const [vMargins, setVMargins] = useState({ top: 1, bottom: 1 });
   const [showPageNumbers, setShowPageNumbers] = useState(false);
-  const [pageCount, setPageCount] = useState(1);
+  const [zoom, setZoom] = useState(100);
+  const [showPages, setShowPages] = useState(false);
+  const [printPreview, setPrintPreview] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
   const commentsRef = useRef<CommentsHandle>(null);
   const [dialog, setDialog] = useState<
@@ -128,7 +125,6 @@ export function DocEditor({ user }: DocEditorProps) {
     | "specials"
     | "find"
     | "menus"
-    | "pagesetup"
     | "shortcuts"
     | "spacing"
     | "autocorrect"
@@ -272,41 +268,16 @@ export function DocEditor({ user }: DocEditorProps) {
     editor?.commands.setSuggesting(suggesting);
   }, [editor, suggesting]);
 
-  // Track how many pages the content spans, for page-number labels.
-  useEffect(() => {
-    const el = pageRef.current;
-    if (!el) return;
-    const { h } = pageDims(orientation);
-    const update = () =>
-      setPageCount(Math.max(1, Math.ceil(el.scrollHeight / h)));
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    update();
-    return () => ro.disconnect();
-  }, [orientation, editor]);
+  // Page numbers for fields come from the pagination plugin (M9); the
+  // page-number labels and the status bar read the same layout.
+  const pg = usePagination(editor);
 
-  // Page numbers for PAGE / NUMPAGES / PAGEREF fields and TOC entries
-  // (M8): measured on the rendered page, the same way as the page-number
-  // labels, until M9's pagination.
+  // "Insert page numbers" reveals the headers and footers.
   useEffect(() => {
-    if (!editor) return;
-    setPageResolver(editor, (doc) => {
-      const el = pageRef.current;
-      if (!el) throw new Error("no page");
-      const { h } = pageDims(orientation);
-      const top = el.getBoundingClientRect().top;
-      const view = editor.view;
-      return {
-        pageAt: (pos: number) => {
-          const p = Math.max(0, Math.min(pos, view.state.doc.content.size));
-          void doc;
-          return Math.max(1, Math.floor((view.coordsAtPos(p).top - top) / h) + 1);
-        },
-        pageCount: () => Math.max(1, Math.ceil(el.scrollHeight / h)),
-      };
-    });
-    return () => setPageResolver(editor, null);
-  }, [editor, orientation]);
+    const on = () => setShowHeaderFooter(true);
+    window.addEventListener("grown-docs-show-hf", on);
+    return () => window.removeEventListener("grown-docs-show-hf", on);
+  }, []);
 
   // Debounced thumbnail save: a few seconds after the last edit, store a small
   // HTML preview for the Docs home grid.
@@ -437,7 +408,9 @@ export function DocEditor({ user }: DocEditorProps) {
     customSpacing: () => setDialog("spacing"),
     emoji: () => setDialog("emoji"),
     specialChars: () => setDialog("specials"),
-    pageSetup: () => setDialog("pagesetup"),
+    pageSetup: () => openLayoutDialog("pagesetup"),
+    printPreview: () => setPrintPreview(true),
+    togglePageThumbnails: () => setShowPages((s) => !s),
     togglePageNumbers: () => setShowPageNumbers((s) => !s),
     versionHistory: () => setPanel("versions"),
     nameVersion: async () => {
@@ -545,7 +518,10 @@ export function DocEditor({ user }: DocEditorProps) {
   // word count (Ctrl+Shift+C). Editing shortcuts live in shortcuts.ts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === "/") {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        setPrintPreview(true);
+      } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === "/") {
         e.preventDefault();
         setDialog("menus");
       } else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === "/") {
@@ -722,7 +698,19 @@ export function DocEditor({ user }: DocEditorProps) {
       { label: "Download", section: "File", run: actions.download },
       { label: "Share", section: "File", run: actions.share },
       { label: "Make a copy", section: "File", run: actions.makeCopy },
-      { label: "Print", section: "File", run: () => window.print() },
+      { label: "Print", section: "File", run: () => setPrintPreview(true) },
+      { label: "Print preview", section: "File", run: () => setPrintPreview(true) },
+      { label: "Page setup", section: "Layout", run: () => openLayoutDialog("pagesetup") },
+      { label: "Columns", section: "Layout", run: () => openLayoutDialog("columns") },
+      { label: "Section break (next page)", section: "Layout", run: () => e.chain().focus().insertSectionBreak("nextPage").run() },
+      { label: "Section break (continuous)", section: "Layout", run: () => e.chain().focus().insertSectionBreak("continuous").run() },
+      { label: "Column break", section: "Layout", run: () => e.chain().focus().insertColumnBreak().run() },
+      { label: "Watermark", section: "Layout", run: () => openLayoutDialog("watermark") },
+      { label: "Line numbers", section: "Layout", run: () => openLayoutDialog("linenumbers") },
+      { label: "Hyphenation", section: "Layout", run: () => openLayoutDialog("hyphenation") },
+      { label: "Header & footer options", section: "Layout", run: () => openLayoutDialog("headerfooter") },
+      { label: "Page numbers", section: "Insert", run: () => openLayoutDialog("pagenumbers") },
+      { label: "Page thumbnails", section: "View", run: () => setShowPages((v) => !v) },
       { label: "Word count", section: "Tools", run: actions.wordCount },
       {
         label: "Version history",
@@ -772,6 +760,16 @@ export function DocEditor({ user }: DocEditorProps) {
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, title]);
+
+  // Page geometry: the section at the caret drives the ruler; the first
+  // section the pageless sheet; the layout the paginated view.
+  const secProps = editor && !editor.isDestroyed ? currentSection(editor).props : (pg?.settings.section ?? null) ?? {
+    pageW: 612, pageH: 792, orient: "portrait" as const, margins: { top: 72, bottom: 72, left: 72, right: 72, header: 36, footer: 36, gutter: 0 },
+  };
+  const indents: Indents = { left: secProps.margins.left / 72, right: secProps.margins.right / 72, firstLine };
+  const vMargins = { top: secProps.margins.top / 72, bottom: secProps.margins.bottom / 72 };
+  const pageBox = { w: ptToPx(secProps.pageW), h: ptToPx(secProps.pageH), hyphenation: pg?.settings.hyphenation };
+  const paged = pg && pg.paged && pg.dl && pg.base ? { dl: pg.dl, base: pg.base } : null;
 
   return (
     <>
@@ -879,7 +877,12 @@ export function DocEditor({ user }: DocEditorProps) {
         <Box sx={{ display: { xs: "none", md: "block" } }}>
           <Ruler
             indents={indents}
-            onChange={setIndents}
+            pageInches={secProps.pageW / 72}
+            onChange={(next) => {
+              setFirstLine(next.firstLine);
+              if (editor && (Math.abs(next.left - indents.left) > 1e-6 || Math.abs(next.right - indents.right) > 1e-6))
+                setSectionProps(editor, (p) => ({ ...p, margins: { ...p.margins, left: next.left * 72, right: next.right * 72 } }));
+            }}
             paragraph={editor ? selectedParagraphIndents(editor) : null}
             onParagraphChange={(p) =>
               editor?.chain().setIndents({ left: p.left, right: p.right, firstLine: p.firstLine }).run()
@@ -894,15 +897,28 @@ export function DocEditor({ user }: DocEditorProps) {
             <Outline editor={editor} onClose={() => setShowOutline(false)} />
           </Box>
         )}
+        {showPages && editor && (
+          <Box sx={{ display: { xs: "none", md: "block" } }}>
+            <PageThumbnails editor={editor} dl={pg?.dl ?? null} onClose={() => setShowPages(false)} />
+          </Box>
+        )}
         <Box sx={{ ...workspaceSx, flex: 1, minWidth: 0 }}>
+          <Box sx={zoom !== 100 ? { zoom: zoom / 100 } : undefined} data-zoom={zoom}>
           <Sheet
             ref={pageRef}
             variant="plain"
-            sx={editorPageSx(indents, orientation, vMargins)}
+            sx={
+              paged
+                ? { ...editorPageSx(indents, secProps.orient, vMargins, pageBox), ...pagedSheetSx(paged.base, paged.dl.layout.height, pg?.settings.hyphenation) }
+                : editorPageSx(indents, secProps.orient, vMargins, pageBox)
+            }
             data-testid="doc-editor"
+            data-paged={paged ? "true" : "false"}
+            lang="en"
             className={`review-${display}`}
           >
-            {showHeaderFooter && (
+            {paged && <PageBackground dl={paged.dl} base={paged.base} />}
+            {!paged && showHeaderFooter && (
               <Box className="doc-header-region">
                 <MarginEditor
                   ydoc={collab.ydoc}
@@ -916,9 +932,9 @@ export function DocEditor({ user }: DocEditorProps) {
               </Box>
             )}
             <EditorContent editor={editor} />
-            <Footnotes editor={editor} />
-            <Endnotes editor={editor} />
-            {showHeaderFooter && (
+            {!paged && <Footnotes editor={editor} />}
+            {!paged && <Endnotes editor={editor} />}
+            {!paged && showHeaderFooter && (
               <Box className="doc-footer-region">
                 <MarginEditor
                   ydoc={collab.ydoc}
@@ -931,15 +947,32 @@ export function DocEditor({ user }: DocEditorProps) {
                 />
               </Box>
             )}
+            {paged && editor && (
+              <PageHeadersFooters
+                editor={editor}
+                ydoc={collab.ydoc}
+                dl={paged.dl}
+                base={paged.base}
+                editable={mode === "editing"}
+                showHeaderFooter={showHeaderFooter}
+                onShowHeaderFooter={() => setShowHeaderFooter(true)}
+                showPageNumbers={showPageNumbers}
+                suggesting={suggesting}
+                user={reviewUser}
+                onHeaderEditor={setHeaderEditor}
+                onFooterEditor={setFooterEditor}
+              />
+            )}
             <ReviewPopover sources={reviewSources} container={pageRef} hidden={display !== "markup"} />
-            {showPageNumbers &&
-              Array.from({ length: pageCount }, (_, i) => (
+            {!paged &&
+              showPageNumbers &&
+              Array.from({ length: pg?.dl?.layout.pages.length ?? 1 }, (_, i) => (
                 <Box
                   key={i}
                   sx={{
                     position: "absolute",
                     right: 24,
-                    top: `${(i + 1) * pageDims(orientation).h - 30}px`,
+                    top: `${(i + 1) * ptToPx(secProps.pageH) - 30}px`,
                     fontSize: 11,
                     color: "#80868b",
                     pointerEvents: "none",
@@ -949,6 +982,25 @@ export function DocEditor({ user }: DocEditorProps) {
                 </Box>
               ))}
           </Sheet>
+          {paged && (
+            <Box
+              sx={{
+                width: `${Math.min(paged.base.maxW, 816)}px`,
+                maxWidth: "100%",
+                mx: "auto",
+                mt: 2,
+                bgcolor: "#fff",
+                px: { xs: 2, md: `${paged.base.left - (paged.base.maxW - Math.min(paged.base.maxW, 816)) / 2}px` },
+                "&:empty": { display: "none" },
+                "& .ProseMirror": { outline: "none" },
+              }}
+              className="doc-notes"
+            >
+              <Footnotes editor={editor} />
+              <Endnotes editor={editor} />
+            </Box>
+          )}
+          </Box>
         </Box>
         {panel === "versions" && (
           <>
@@ -1080,6 +1132,8 @@ export function DocEditor({ user }: DocEditorProps) {
         )}
       </Box>
 
+      <StatusBar editor={editor} state={pg} zoom={zoom} onZoom={setZoom} onShowPages={() => setShowPages((v) => !v)} />
+
       <EditorContextMenu
         editor={editor}
         onComment={() => actions.commentOnSelection()}
@@ -1139,16 +1193,8 @@ export function DocEditor({ user }: DocEditorProps) {
           }}
         />
       )}
-      <PageSetupDialog
-        open={dialog === "pagesetup"}
-        onClose={() => setDialog(null)}
-        orientation={orientation}
-        onChange={setOrientation}
-        vMargins={vMargins}
-        onVMarginsChange={setVMargins}
-        indents={indents}
-        onIndentsChange={setIndents}
-      />
+      <LayoutDialogs editor={editor} ydoc={collab.ydoc} />
+      <PrintPreview editor={editor} sheetRef={pageRef} open={printPreview} onClose={() => setPrintPreview(false)} />
       <CommandPalette
         open={dialog === "menus"}
         onClose={() => setDialog(null)}

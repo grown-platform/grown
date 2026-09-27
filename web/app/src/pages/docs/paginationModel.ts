@@ -332,3 +332,68 @@ export function layoutPageResolver(dl: DocLayout) {
     },
   };
 }
+
+// --- line numbers ------------------------------------------------------------------------
+
+export interface LineMark {
+  page: number;
+  /** Virtual y of the line's top and its height. */
+  y: number;
+  h: number;
+  n: number;
+}
+
+/**
+ * lineNumbers numbers the text lines of sections with line numbering
+ * (Word's lnNumType): restarting per page, per section or never, counting
+ * by N (only multiples are returned). Table rows, breaks and atoms are
+ * not counted.
+ */
+export function lineNumbers(dl: DocLayout): LineMark[] {
+  const out: LineMark[] = [];
+  const secOf = blockSections(dl.sections);
+  let n = 0;
+  let lastPage = -1;
+  let lastSection = -1;
+  dl.measured.boxes.forEach((box, i) => {
+    const sec = dl.sections[secOf[i] ?? 0];
+    const ln = sec?.props.lnNum;
+    if (!ln || box.kind !== "flow" || box.atomic) return;
+    const pieces = dl.layout.blocks[i] ?? [];
+    pieces.forEach((p) => {
+      let y = p.top;
+      for (let k = p.from; k < p.to; k++) {
+        if (sec.index !== lastSection) {
+          if (lastSection < 0 || ln.restart !== "continuous") n = ln.start - 1;
+          lastSection = sec.index;
+          lastPage = p.page;
+        } else if (ln.restart === "newPage" && p.page !== lastPage) n = ln.start - 1;
+        lastPage = p.page;
+        n++;
+        if (n % ln.countBy === 0) out.push({ page: p.page, y, h: box.lines[k], n });
+        y += box.lines[k];
+      }
+    });
+  });
+  return out;
+}
+
+/** The text on each page (for thumbnails), trimmed to `max` characters. */
+export function pageSnippets(dl: DocLayout, doc: PMNode, max = 90): string[] {
+  const out = dl.layout.pages.map(() => "");
+  dl.layout.blocks.forEach((pieces, i) => {
+    pieces.forEach((p, k) => {
+      if (out[p.page].length >= max) return;
+      const from = pieceStart(dl, i, k);
+      const next = k + 1 < pieces.length ? pieceStart(dl, i, k + 1) : dl.measured.blockPos[i] + (doc.maybeChild(i)?.nodeSize ?? 0);
+      if (next <= from) return;
+      try {
+        const t = doc.textBetween(Math.max(0, from), Math.min(doc.content.size, next), " ", " ").trim();
+        if (t) out[p.page] = (out[p.page] ? `${out[p.page]} ${t}` : t).slice(0, max);
+      } catch {
+        /* ignore */
+      }
+    });
+  });
+  return out;
+}

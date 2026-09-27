@@ -2,6 +2,9 @@ import { tableSx } from "./tableModel";
 import { referencesSx } from "./referencesStyles";
 import type { SxProps } from "@mui/joy/styles/types";
 import type { Indents } from "./Ruler";
+import type { BaseGeom } from "./paginationPlugin";
+import type { Hyphenation } from "./sections";
+import { MARGIN_FIELD_CSS } from "./margin";
 
 const PX_PER_INCH = 96;
 const PAGE_GAP = 10; // gray gap drawn between pages
@@ -30,8 +33,12 @@ export function editorPageSx(
   indents: Indents,
   orientation: Orientation = "portrait",
   vMargins: VMargins = { top: 1, bottom: 1 },
+  page?: { w: number; h: number; hyphenation?: Hyphenation | null },
 ): SxProps {
-  const { w: PAGE_W, h: PAGE_H } = pageDims(orientation);
+  const dims = pageDims(orientation);
+  const PAGE_W = page?.w ?? dims.w;
+  const PAGE_H = page?.h ?? dims.h;
+  const hyph = page?.hyphenation;
   const MT = vMargins.top * PX_PER_INCH;
   const MB = vMargins.bottom * PX_PER_INCH;
   return {
@@ -67,6 +74,7 @@ export function editorPageSx(
       outline: "none",
       minHeight: `${PAGE_H - MT - MB}px`,
       lineHeight: 1.6,
+      ...(hyph?.auto ? { hyphens: "auto", WebkitHyphens: "auto" } : {}),
     },
     "& .ProseMirror p": {
       margin: "0 0 0.75em",
@@ -117,8 +125,40 @@ export function editorPageSx(
       breakAfter: "page",
       pageBreakAfter: "always",
     },
+    // Section and column breaks (M9): a labelled double / dashed line.
+    "& .ProseMirror .section-break, & .ProseMirror .column-break": {
+      height: 0,
+      margin: "1.2em 0",
+      position: "relative",
+      borderTop: "3px double #c7d2fe",
+    },
+    "& .ProseMirror .column-break": { borderTop: "1px dashed #c7d2fe" },
+    "& .ProseMirror .section-break::after, & .ProseMirror .column-break::after": {
+      content: "attr(data-label)",
+      position: "absolute",
+      top: "-0.75em",
+      left: "50%",
+      transform: "translateX(-50%)",
+      fontSize: "11px",
+      lineHeight: "1.4",
+      color: "#5f6368",
+      background: "#fff",
+      padding: "0 6px",
+      whiteSpace: "nowrap",
+    },
+    "& .ProseMirror .column-break::after": { content: '"Column break"' },
+    "& .ProseMirror .section-break.ProseMirror-selectednode, & .ProseMirror .column-break.ProseMirror-selectednode": {
+      outline: "2px solid #8ab4f8",
+    },
+    // Pagination spacers (M9) never take the caret or a click.
+    "& .ProseMirror .pg-spacer": { margin: 0, padding: 0, border: 0, userSelect: "none", pointerEvents: "none" },
+    "& .ProseMirror .pg-repeat": { userSelect: "none", pointerEvents: "none" },
+    ...MARGIN_FIELD_CSS,
     "@media print": {
       "& .ProseMirror .page-break": { borderTop: "none" },
+      "& .ProseMirror .section-break, & .ProseMirror .column-break": { borderTop: "none", margin: 0 },
+      "& .ProseMirror .section-break::after, & .ProseMirror .column-break::after": { content: "none" },
+      "& .ProseMirror .section-break:not([data-kind='continuous'])": { breakAfter: "page" },
       // Repeated header rows print at the top of every page (Docs M4).
       "& .ProseMirror tr[data-repeat-header]": { display: "table-header-group" },
     },
@@ -277,6 +317,43 @@ const tableEditorSx = {
     ...TABLE_SX["& .ProseMirror table"],
   },
 };
+
+/**
+ * pagedSheetSx turns the page into the paginated view (M9): the sheet is
+ * as wide as the widest page and transparent (PageLayer draws the pages),
+ * its padding puts the text where the first page's text box is, and the
+ * text blocks become block formatting contexts so their margins are
+ * exactly what the pagination measured.
+ */
+export function pagedSheetSx(base: BaseGeom, height: number, hyph?: Hyphenation | null): Record<string, unknown> {
+  return {
+    width: `${base.maxW}px`,
+    maxWidth: "none",
+    minWidth: `${base.maxW}px`,
+    height: `${height}px`,
+    minHeight: 0,
+    pt: `${base.top}px`,
+    pb: 0,
+    pl: `${base.left}px`,
+    pr: `${base.maxW - base.left - base.width}px`,
+    bgcolor: "transparent",
+    boxShadow: "none",
+    backgroundImage: "none",
+    "& .ProseMirror": {
+      outline: "none",
+      lineHeight: 1.6,
+      display: "flow-root",
+      position: "relative",
+      zIndex: 1,
+      minHeight: `${Math.max(0, height - base.top - 1)}px`,
+      ...(hyph?.auto
+        ? { hyphens: "auto", WebkitHyphens: "auto", hyphenateLimitChars: "6 3 2", hyphenateLimitZone: `${hyph.zone}pt`, ...(hyph.limit ? { hyphenateLimitLines: hyph.limit } : {}) }
+        : {}),
+    },
+    "& .ProseMirror > *": { display: "flow-root" },
+    "& .ProseMirror > .pg-spacer": { display: "block" },
+  };
+}
 
 /** workspaceSx is the gray canvas the page sits on. */
 export const workspaceSx: SxProps = {
