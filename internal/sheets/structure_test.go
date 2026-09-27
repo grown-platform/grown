@@ -156,3 +156,25 @@ func TestApplyStructureOpUnknownSheetAndRecompute(t *testing.T) {
 		}
 	}
 }
+
+// Cell comment threads move with their cells; a deleted cell drops its thread.
+func TestStructureShiftsCommentThreads(t *testing.T) {
+	data := `[{"name":"S","id":"1","celldata":[],"grownComments":[{"id":"a","r":2,"c":1,"comments":[{"id":"x","body":"hi"}]},{"id":"b","r":4,"c":0,"comments":[]}]}]`
+	out, err := ApplyStructureOpJSON(data, StructureOp{Kind: "insert", Axis: "row", Sheet: "S", Index: 0, Count: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"id":"a","r":4`) && !strings.Contains(out, `"r":4`) {
+		t.Fatalf("thread a not moved: %s", out)
+	}
+	out, err = ApplyStructureOpJSON(out, StructureOp{Kind: "delete", Axis: "row", Sheet: "S", Index: 6, Count: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wb []map[string]interface{}
+	_ = json.Unmarshal([]byte(out), &wb)
+	threads, _ := wb[0]["grownComments"].([]interface{})
+	if len(threads) != 1 || threads[0].(map[string]interface{})["id"] != "a" || threads[0].(map[string]interface{})["r"] != float64(4) {
+		t.Fatalf("threads after delete = %v", threads)
+	}
+}
