@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Sheets
 
-Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done. Wave 4: M7 (autofill, series, sort, paste special, sheet structure; §13) is done. Wave 5: M9 (pivot tables; §15) is done. Wave 6: M10 (charts; §16) is done. Wave 7: M5 (dynamic arrays, tracing, goal seek; §17) and M12 (shortcuts, function wizard, comments; §18) are done.
+Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done. Wave 4: M7 (autofill, series, sort, paste special, sheet structure; §13) is done. Wave 5: M9 (pivot tables; §15) is done. Wave 6: M10 (charts; §16) is done. Wave 7: M5 (dynamic arrays, tracing, goal seek; §17) and M12 (shortcuts, function wizard, comments; §18) are done. Wave 11: Excel tables (ListObjects, structured references; §20) are done, which closes the last portable gaps §19.4 listed.
 Companion: `sheets-tests.csv` (one row per OnlyOffice test file).
 Inventory baseline: **`origin/main` @ `c90064e`**. (The worktree used for reading was `96ca7c0`,
 55 commits behind; for Sheets the only difference is `internal/sheets/formula_more{,2,3}.go`
@@ -1493,4 +1493,77 @@ structured references), which Grown only round-trips through xlsx
 SheetStructureTests "Table selection for formula", "Table values/values
 for edit tests", "Table special characters tests", "Table column names
 changes tests"; FormulaTrace "Tables tests"; shortcuts "Change format table
-info". That is a feature of its own, not a sweep item.
+info". That is a feature of its own, not a sweep item. *Done in Wave 11 (§20).*
+
+
+## 20. Excel tables (Wave 11, 2026-09-27)
+
+Tables (ListObjects) are a model, an engine feature and an editor feature
+now. All six table-blocked tags of §19.4 are ported and pass, and so is the
+copy-paste "tables" case M7 had skipped.
+
+### 20.1 What landed
+
+| Piece | Where |
+|---|---|
+| Model: per sheet `grownTables` (the TableModel the xlsx reader/writer already used): name, range, header row, totals row, columns with names, a totals function (or label, or custom formula) and a calculated-column formula, style name plus banded rows/columns and first/last column, filter button. Operations: create (current region from one cell, "My table has headers" guessed; without headers a header row of Column1… is inserted above, shifting the range down), unique names (TableN) and Excel's name rules, total row on/off (Total label, SUBTOTAL 109 in the last column, a count for text; the row below is shifted down when occupied), per-column totals functions (SUBTOTAL 101–110), header edits rename columns (unique, blank → ColumnN), resize (header row fixed), auto-expand when typing directly below (no totals row) or right, calculated columns (a formula in one data cell fills an empty column, or replaces the column's formula; typing a value ends it), convert to range (references become A1, the style stays as formatting), delete, paste copies of whole tables. The style palette for the 60 built-in TableStyle names is derived from the Office theme colours. | `tables.ts` |
+| Structured-reference text: tokenizer (quote escapes), parser with Excel's specifier rules (one of #All/#Data/#Headers/#Totals/#This Row, or #Headers+#Data, #Data+#Totals), the edit form (`[@Col]`, `[@]`) and the saved form (`Table1[[#This Row],[Col]]`), table/column renames, #REF! for removed columns/tables, the reference a selection inside a table stands for, and conversion to A1 | `structuredRefs.ts` |
+| Go engine: tables load from `grownTables`; `Table1[Col]`, `Table1[[#Headers],[Col]]`, `[@Col]`, `Table1[#All]/[#Data]/[#Totals]/[#This Row]`, `Table1[[C1]:[C3]]`, the bare table name, `Sheet1!Table1[..]` and the unqualified forms inside a table resolve to ordinary areas, so every reference-aware function, the dependency graph (with the formula's own row for `@`) and trace arrows see them. Unknown table/column or a bad specifier is `#NAME?`, #This Row outside the data rows `#VALUE!`, a missing header/totals row `#REF!`. | `internal/sheets/formula_tables.go`, `formula.go`, `formula_deps.go`, `formula_trace.go` |
+| SUBTOTAL skips rows a filter hid (1–11 and 101–111), rows hidden by hand (101–111) and nested SUBTOTAL/AGGREGATE cells, so a filtered table's total row follows the filter | `formula_aggregate.go`, `formula_refs.go` (`loadHiddenRows`) |
+| Structure ops (M7), client and server: a table's range moves with its cells; a column inserted inside becomes ColumnN (written into the header), a deleted column goes and references to it become #REF!, a moved column keeps its name; a table whose header row or every data row is deleted goes (references → #REF!). Shared fixture cases in `testdata/structure/shift.json`. | `formulaShift.ts` (`shiftTableList`), `internal/sheets/structure_tables.go`, `editActions.ts` |
+| xlsx: cell, calculated-column and custom totals formulas are written in the saved form and read back in the edit form (own table name dropped inside a table, as Excel shows it); styles, totals, calculatedColumnFormula round-trip | `xlsx/xlsxTables.ts`, `xlsxRead.ts`, `xlsxWrite.ts` |
+| Editor: Insert ▸ Table (Ctrl+L; Ctrl+T where the browser lets it through) and Format ▸ Format as table with the style gallery; Data ▸ Table properties (rename, resize, total row and per-column totals, banded rows/columns, first/last column, filter button, style, convert to range, delete); Ctrl+Shift+R toggles the total row; edits follow the table (afterUpdateCell); typed references take the edit form. The style is painted from the M8 render hooks, under conditional formatting (cell fills win). The header filter buttons are the M8 filter model (`grownFilter.table`) and open Grown's filter dialog for their column. The name box shows the table's name when its data (or all of it) is selected and lists tables and named ranges; the name manager lists tables. | `tableTools.ts`, `TableDialogs.tsx`, `TableNameBox.tsx`, `SheetEditor.tsx`, `SheetMenuBar.tsx`, `NamedRangesDialog.tsx`, `sheetShortcuts.ts` |
+
+### 20.2 Ports
+
+| OnlyOffice file | Tags | Where |
+|---|---|---|
+| `SheetStructureTests.js` | +4: Table selection for formula, Table values/values for edit tests, Table special characters tests, Table column names changes tests (text side in vitest, values in Go, same tags) | `__parity__/tables.parity.test.ts`, `internal/sheets/formula_tables_test.go` |
+| `FormulaTrace.js` | +1: Tables tests | `formula_tables_test.go` |
+| `shortcuts/shortcuts.js` | +1: Change format table info (Ctrl+Shift+R) | `web/e2e/sheets-tables.spec.ts` |
+| `copy-paste-tests.js` | tables (was skipped) | `__parity__/paste.parity.test.ts` |
+
+OnlyOffice labels its total row "Summary"; Grown writes Excel's "Total"
+(the Go port sets OnlyOffice's label as a fact). OnlyOffice's plain
+`=Table1` in a single cell is a pre-dynamic-array formula read by implicit
+intersection; the trace port writes it `=@Table1`, since `=Table1` spills
+in Grown (Excel 365).
+
+The formula suites' 711 `Table1[…]` checks, skipped since M0, now run: the
+fixtures record the Table1 range each check ran against (`"tables"`) and
+the table cells the suite typed (a local extraction step, not committed).
+690 pass; 21 carry existing oo-diff keys (`date-1900`,
+`direct-text-args`, `single-cell-pairs`, `num-vs-value-error`,
+`range-as-scalar`, `dynarray-validation`, `ref-text`, `validation`,
+`suite-state`).
+
+Scoreboard: `sheets/editing` 88 → 92 (of 92 portable), `sheets/formulas`
+634 → 635, `sheets/shortcuts` 23 → 24 (of 24).
+
+Tests: Go `formula_tables_test.go` (parser, tokenizer, evaluation, calculated
+columns in dependency order, SUBTOTAL and hidden rows, the ports), the
+structure fixture; vitest `tables.test.ts`, `tables.parity.test.ts`, the xlsx
+round trip. E2e `web/e2e/sheets-tables.spec.ts` (4): the full editor flow
+(insert with the gallery, grow right and down, calculated column, total
+row, server values of structured references, Ctrl+A → name box, column and
+table renames followed by formulas, banded columns, name manager), the
+OnlyOffice shortcut case, a header filter button, and the engine and a
+column delete through the JSON API.
+
+### 20.3 Not done / follow-ups
+
+- Pointing at cells while typing a formula still inserts A1 text;
+  `tableSelectionString` (ported and tested) is not yet wired into
+  FortuneSheet's range picking. FortuneSheet's function autocomplete also
+  reacts inside brackets (typing `[@Price` offers PRICE).
+- One filter per sheet (FortuneSheet has one `filter_select`): the first
+  table with a filter button owns the header buttons; a plain sheet filter
+  keeps them.
+- Pasting a copied table into the grid does not yet create the copy
+  (`pasteTables` is the model side); FortuneSheet owns the clipboard paste.
+- Table styles are approximations of Office's built-in ones; custom table
+  styles (`tableStyles` in styles.xml) are not read. A dark style's body text
+  colour is painted by Grown, other data cells keep FortuneSheet's text.
+- The client-side CF formula evaluator (`sheetFormula.ts`) does not know
+  structured references (they never match in a CF formula rule).
+- Pivot sources are ranges; a table name as a pivot source is not offered.
