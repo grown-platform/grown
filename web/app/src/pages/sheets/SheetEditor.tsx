@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -37,7 +37,29 @@ import {
   sheetRenameEdits,
   workbookHasFormulas,
 } from "./formulaRefs";
-import { SheetMenuBar, type SheetActions } from "./SheetMenuBar";
+import { SheetMenuBar, type SheetActions, type ViewState } from "./SheetMenuBar";
+import { ImportDialog } from "./ImportDialog";
+import { PrintDialog } from "./PrintDialog";
+import { ProtectDialog } from "./ProtectDialog";
+import { applyImport, type ImportMode, type ImportedWorkbook } from "./sheetImport";
+import {
+  insertPageBreak,
+  removePageBreak,
+  resetAllPageBreaks,
+  sheetPrintSettings,
+  type PrintSettings,
+} from "./printSettings";
+import { canChangeStructure, sheetProtection, type ProtectionModel } from "./protection";
+import { sheetViewOptions, viewFields } from "./sheetView";
+import {
+  bindViewTools,
+  blockedCellOps,
+  editContext,
+  invalidateView,
+  protectedNotice,
+  setEditContext,
+  viewHooks,
+} from "./viewTools";
 import { FindReplaceDialog } from "./FindReplaceDialog";
 import { ShareDialog } from "./ShareDialog";
 import { ConditionalFormatDialog } from "./ConditionalFormatDialog";
@@ -66,6 +88,7 @@ import {
   currentSheet,
   dataToolHooks,
   migrateWorkbook,
+  patchSheet,
   setCircleInvalid,
   setSheetCF,
   sheetCF,
@@ -163,6 +186,21 @@ export function SheetEditor({ user }: SheetEditorProps) {
   const [seriesRange, setSeriesRange] = useState<CellRect | null>(null);
   const [sortRangeSel, setSortRangeSel] = useState<CellRect | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  // Print / Protect dialogs work on the sheet and selection taken when they opened.
+  const [printFor, setPrintFor] = useState<{ sheet: any; selection: CellRect | null } | null>(null);
+  const [protectFor, setProtectFor] = useState<{ sheet: any; selection: CellRect | null } | null>(null);
+  const [ownerId, setOwnerId] = useState("");
+  // Bumped to remount the grid after an import replaced the workbook.
+  const [wbKey, setWbKey] = useState(0);
+  const [view, setView] = useState<ViewState>(() => sheetViewOptions({}));
+  // A new generateSheetId identity makes FortuneSheet re-read gridlines/zoom from the sheet.
+  const [viewGen, setViewGen] = useState(0);
+  const generateSheetId = useMemo(() => {
+    void viewGen;
+    return () => (globalThis.crypto?.randomUUID?.() ?? `s${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`);
+  }, [viewGen]);
+  const refreshViewRef = useRef<() => void>(() => {});
   const [chartOpen, setChartOpen] = useState(false);
   const [chartsOpen, setChartsOpen] = useState(false);
   const [charts, setCharts] = useState<ChartConfig[]>([]);
@@ -182,9 +220,24 @@ export function SheetEditor({ user }: SheetEditorProps) {
       ...WORKBOOK_HOOKS,
       ...typed,
       ...dataToolHooks,
-      // Validation runs first; a rejected value never reaches typed-input parsing.
+      // Protection first, then validation; a rejected value never reaches typed-input parsing.
       beforeUpdateCell: (r: number, c: number, v: any) =>
-        dataToolHooks.beforeUpdateCell(r, c, v) !== false && typed.beforeUpdateCell(r, c, v),
+        viewHooks.beforeUpdateCell(r, c) !== false &&
+        dataToolHooks.beforeUpdateCell(r, c, v) !== false &&
+        typed.beforeUpdateCell(r, c, v),
+      beforePaste: (selection: any) => viewHooks.beforePaste(selection),
+      beforeRenderCellArea: (cells: any, ctx: CanvasRenderingContext2D) => {
+        viewHooks.beforeRenderCellArea();
+        return dataToolHooks.beforeRenderCellArea(cells, ctx);
+      },
+      // Formulas shown (View ▸ Show ▸ Formulas) are painted by viewTools.
+      beforeRenderCell: (cell: any, info: any, ctx: CanvasRenderingContext2D) =>
+        viewHooks.beforeRenderCell(cell, info, ctx) !== false && dataToolHooks.beforeRenderCell(cell, info, ctx),
+      afterRenderCell: (cell: any, info: any, ctx: CanvasRenderingContext2D) => {
+        dataToolHooks.afterRenderCell(cell, info, ctx);
+        viewHooks.afterRenderCell(cell, info, ctx);
+      },
+      afterActivateSheet: () => setTimeout(() => refreshViewRef.current(), 0),
     };
   }
   const getWbRef = useRef(() => ref.current);
@@ -205,46 +258,45 @@ export function SheetEditor({ user }: SheetEditorProps) {
     color: colorFor(user.id),
   };
 
+  // Loads a stored workbook into the grid (also after an import replaced it).
+  function loadWorkbook(raw: any[] | null, remount = false) {
+    // Fill display text the API/imports may have left out, so the
+    // canvas paints every value, and seed a complete A1 selection
+    // (see normalize.ts).
+    // Older FortuneSheet-native CF/validation rules become Grown rules
+    // (see sheetDataTools.ts).
+    const parsed = migrateWorkbook(normalizeWorkbook(raw ?? structuredClone(DEFAULT_DATA)));
+    const loaded: ChartConfig[] = Array.isArray(parsed?.[0]?.grownCharts) ? parsed[0].grownCharts : [];
+    chartsRef.current = loaded;
+    setCharts(loaded);
+    const loadedPivots: PivotConfig[] = Array.isArray(parsed?.[0]?.grownPivots) ? parsed[0].grownPivots : [];
+    pivotsRef.current = loadedPivots;
+    setPivots(loadedPivots);
+    iconSetsRef.current = Array.isArray(parsed?.[0]?.grownIconSets) ? parsed[0].grownIconSets : [];
+    dataRef.current = parsed;
+    sheetNamesRef.current = new Map(
+      (Array.isArray(parsed) ? parsed : []).filter((sh: any) => sh?.id).map((sh: any) => [sh.id, sh.name]),
+    );
+    const first = (Array.isArray(parsed) ? parsed : []).find((sh: any) => !sh?.hide) ?? parsed?.[0];
+    setView(sheetViewOptions(first));
+    invalidateView();
+    setData(parsed);
+    if (remount) setWbKey((k) => k + 1);
+    if (iconSetsRef.current.length) {
+      setTimeout(() => applyIconSets(ref.current, iconSetsRef.current), 300);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     getSheet(id)
       .then((s) => {
         if (cancelled) return;
         setTitle(s.title);
+        setOwnerId(s.owner_id);
+        setEditContext({ user: user.id, owner: s.owner_id });
         try {
-          // Fill display text the API/imports may have left out, so the
-          // canvas paints every value, and seed a complete A1 selection
-          // (see normalize.ts).
-          // Older FortuneSheet-native CF/validation rules become Grown rules
-          // (see sheetDataTools.ts).
-          const parsed = migrateWorkbook(
-            normalizeWorkbook(s.data ? JSON.parse(s.data) : structuredClone(DEFAULT_DATA)),
-          );
-          // Charts persist on the first sheet under `grownCharts`.
-          const loaded: ChartConfig[] = Array.isArray(parsed?.[0]?.grownCharts)
-            ? parsed[0].grownCharts
-            : [];
-          chartsRef.current = loaded;
-          setCharts(loaded);
-          const loadedPivots: PivotConfig[] = Array.isArray(parsed?.[0]?.grownPivots)
-            ? parsed[0].grownPivots
-            : [];
-          pivotsRef.current = loadedPivots;
-          setPivots(loadedPivots);
-          iconSetsRef.current = Array.isArray(parsed?.[0]?.grownIconSets)
-            ? parsed[0].grownIconSets
-            : [];
-          dataRef.current = parsed;
-          sheetNamesRef.current = new Map(
-            (Array.isArray(parsed) ? parsed : [])
-              .filter((sh: any) => sh?.id)
-              .map((sh: any) => [sh.id, sh.name]),
-          );
-          setData(parsed);
-          // Re-apply icon overlays once the grid has mounted.
-          if (iconSetsRef.current.length) {
-            setTimeout(() => applyIconSets(ref.current, iconSetsRef.current), 300);
-          }
+          loadWorkbook(s.data ? JSON.parse(s.data) : null);
         } catch {
           setData(DEFAULT_DATA);
         }
@@ -253,7 +305,12 @@ export function SheetEditor({ user }: SheetEditorProps) {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // View options and protection checks read the grid through viewTools.
+  useEffect(() => {
+    bindViewTools(() => ref.current, { user: user.id, owner: ownerId || undefined });
+  }, [user.id, ownerId]);
 
   // Filters, conditional formats and validation write their models with
   // applyOp; the same ops go to collaborators over the socket.
@@ -387,6 +444,15 @@ export function SheetEditor({ user }: SheetEditorProps) {
         e.preventDefault();
         setFindOpen(true);
       }
+      // Ctrl+` shows formulas; Ctrl+P opens print settings (Google Sheets).
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "`" || e.code === "Backquote")) {
+        e.preventDefault();
+        viewActionRef.current({ showFormulas: !sheetViewOptions(currentSheet(ref.current)).showFormulas });
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        printActionRef.current();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -439,12 +505,39 @@ export function SheetEditor({ user }: SheetEditorProps) {
     };
   }, []);
 
-  function onOp(ops: any[]) {
+  function onOp(opsIn: any[]) {
     if (applyingRemote.current) return;
+    let ops = opsIn;
     // Row/column inserts and deletes from FortuneSheet's own header menus:
     // fix formulas, named ranges and rule models from the pre-op workbook.
     const before = dataRef.current;
     const structOp = before ? structureOpFromOps(ops, before) : null;
+    // Protected sheets/ranges: undo edits the user may not make (the server
+    // would revert them on save and drop them from the relay anyway).
+    if (before) {
+      const ctx = editContext();
+      if (structOp) {
+        const target = before.find((sh: any) => sh?.id === structOp.sheet || sh?.name === structOp.sheet);
+        if (target && !canChangeStructure(sheetProtection(target), structOp, ctx)) {
+          protectedNotice("range");
+          setTimeout(() => {
+            try {
+              ref.current?.handleUndo?.();
+            } catch {
+              /* ignore */
+            }
+          }, 0);
+          return;
+        }
+      }
+      const blocked = blockedCellOps(ops, before, ctx);
+      if (blocked.length) {
+        const keys = new Set(blocked.map((b) => `${b.sheetId}:${b.r}:${b.c}`));
+        ops = ops.filter((op) => !(Array.isArray(op?.path) && op.path[0] === "data" && keys.has(`${op.id}:${op.path[1]}:${op.path[2]}`)));
+        protectedNotice();
+        setTimeout(() => restoreCells(before, blocked), 0);
+      }
+    }
     if (structOp && before) {
       setTimeout(() => {
         try {
@@ -463,6 +556,101 @@ export function SheetEditor({ user }: SheetEditorProps) {
     )
       ws.send(JSON.stringify(ops));
   }
+  // restoreCells puts protected cells back to their pre-edit content.
+  function restoreCells(before: any[], cells: { sheetId: string; r: number; c: number }[]) {
+    const wb = ref.current;
+    if (!wb) return;
+    applyingRemote.current = true;
+    try {
+      for (const { sheetId, r, c } of cells) {
+        const sheet = before.find((sh: any) => String(sh?.id) === sheetId);
+        const old = Array.isArray(sheet?.data)
+          ? sheet.data[r]?.[c]
+          : sheet?.celldata?.find((cd: any) => cd.r === r && cd.c === c)?.v;
+        try {
+          if (old) wb.setCellValue(r, c, JSON.parse(JSON.stringify(old)), { id: sheetId });
+          else wb.clearCell(r, c, { id: sheetId });
+        } catch {
+          /* ignore */
+        }
+      }
+    } finally {
+      applyingRemote.current = false;
+    }
+  }
+
+  // View ▸ Show / Zoom / Page breaks for the active sheet.
+  function applyView(patch: Partial<ViewState>) {
+    const wb = ref.current;
+    const sheet = currentSheet(wb);
+    if (!wb || !sheet?.id) return;
+    const next = { ...sheetViewOptions(sheet), ...patch };
+    patchSheet(wb, sheet.id, viewFields(next));
+    setView(next);
+    invalidateView();
+    // Gridlines and zoom are read from the sheet when FortuneSheet re-initialises it.
+    if (patch.showGridLines !== undefined || patch.zoom !== undefined) setViewGen((g) => g + 1);
+  }
+  const viewActionRef = useRef(applyView);
+  viewActionRef.current = applyView;
+  refreshViewRef.current = () => setView(sheetViewOptions(currentSheet(ref.current)));
+
+  function openPrint() {
+    const sheet = currentSheet(ref.current);
+    if (!sheet) return;
+    const sel = selectionRect(ref.current);
+    setPrintFor({ sheet: JSON.parse(JSON.stringify(sheet)), selection: sel });
+  }
+  const printActionRef = useRef(openPrint);
+  printActionRef.current = openPrint;
+
+  function savePrint(ps: PrintSettings) {
+    const sheet = currentSheet(ref.current);
+    if (!sheet?.id) return;
+    patchSheet(ref.current, sheet.id, { grownPrint: ps });
+    invalidateView();
+  }
+
+  function pageBreak(action: "insert" | "remove" | "reset") {
+    const wb = ref.current;
+    const sheet = currentSheet(wb);
+    const sel = selectionRect(wb);
+    if (!sheet?.id) return;
+    const ps = sheetPrintSettings(sheet);
+    const r = sel?.r1 ?? 0;
+    const c = sel?.c1 ?? 0;
+    const next = action === "insert" ? insertPageBreak(ps, r, c) : action === "remove" ? removePageBreak(ps, r, c) : resetAllPageBreaks(ps);
+    patchSheet(wb, sheet.id, { grownPrint: next });
+    invalidateView();
+    // Show where the pages now break.
+    if (!sheetViewOptions(sheet).pageBreakPreview) applyView({ pageBreakPreview: true });
+  }
+
+  function saveProtection(model: ProtectionModel) {
+    const sheet = currentSheet(ref.current);
+    if (!sheet?.id) return;
+    patchSheet(ref.current, sheet.id, { grownProtection: model });
+  }
+
+  // File ▸ Import: merge the file into this workbook (or a new spreadsheet).
+  async function runImport(imp: ImportedWorkbook, mode: ImportMode, fileName: string) {
+    if (mode === "newSpreadsheet") {
+      const created = await createSheet(fileName.replace(/\.[^.]+$/, "") || "Imported spreadsheet");
+      await saveSheet(created.id, JSON.stringify(applyImport([], imp, mode)));
+      navigate(`/sheets/d/${created.id}`);
+      return;
+    }
+    const wb = ref.current;
+    const current = storableWorkbook(wb?.getAllSheets?.() ?? dataRef.current ?? []);
+    const sel = selectionRect(wb);
+    const active = currentSheet(wb);
+    const next = applyImport(withExtras(current), imp, mode, { sheetId: active?.id, r: sel?.r1 ?? 0, c: sel?.c1 ?? 0 });
+    const json = JSON.stringify(next);
+    await saveSheet(id, json);
+    window.clearTimeout(saveTimer.current);
+    loadWorkbook(JSON.parse(json), true);
+  }
+
   // withCharts attaches the current chart definitions onto the first sheet so
   // they round-trip through the saved workbook JSON (FortuneSheet ignores the
   // extra field; we read it back on load).
@@ -649,6 +837,8 @@ export function SheetEditor({ user }: SheetEditorProps) {
       navigate("/sheets");
     },
     share: () => setShareOpen(true),
+    importFile: () => setImportOpen(true),
+    print: () => openPrint(),
     download: async (fmt) => {
       try {
         await downloadSheet(ref.current, title, fmt);
@@ -720,6 +910,13 @@ export function SheetEditor({ user }: SheetEditorProps) {
               onFillSeries={() => setSeriesRange(selectionRect(ref.current))}
               onSortDialog={() => setSortRangeSel(selectionRect(ref.current))}
               onPasteSpecial={() => setPasteOpen(true)}
+              view={view}
+              onView={applyView}
+              onPageBreak={pageBreak}
+              onProtect={() => {
+                const sheet = currentSheet(ref.current);
+                if (sheet) setProtectFor({ sheet: JSON.parse(JSON.stringify(sheet)), selection: selectionRect(ref.current) });
+              }}
               onCustomNumberFormat={() => {
                 setNumFmtRanges(selectionRanges(ref.current));
                 setNumFmtOpen(true);
@@ -782,11 +979,15 @@ export function SheetEditor({ user }: SheetEditorProps) {
       >
         <Box sx={{ minWidth: { xs: 600, md: "100%" }, height: "100%" }}>
           <Workbook
+            key={wbKey}
             ref={ref}
             data={data}
             onChange={stableOnChange}
             onOp={stableOnOp}
             hooks={hooks.current}
+            rowHeaderWidth={view.showHeadings ? 46 : 0}
+            columnHeaderHeight={view.showHeadings ? 20 : 0}
+            generateSheetId={generateSheetId}
           />
         </Box>
       </Box>
@@ -827,6 +1028,28 @@ export function SheetEditor({ user }: SheetEditorProps) {
         getWb={() => ref.current}
       />
       <SheetNotice />
+      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} userId={user.id} onImport={runImport} />
+      {printFor && (
+        <PrintDialog
+          open
+          onClose={() => setPrintFor(null)}
+          sheet={printFor.sheet}
+          selection={printFor.selection}
+          title={title}
+          showFormulas={view.showFormulas}
+          onSave={savePrint}
+        />
+      )}
+      {protectFor && (
+        <ProtectDialog
+          open
+          onClose={() => setProtectFor(null)}
+          sheet={protectFor.sheet}
+          selection={protectFor.selection}
+          ctx={{ user: user.id, owner: ownerId || undefined }}
+          onSave={saveProtection}
+        />
+      )}
       <FillSeriesDialog
         open={seriesRange !== null}
         onClose={() => setSeriesRange(null)}

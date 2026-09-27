@@ -44,6 +44,19 @@ export interface SheetActions {
   trash: () => void;
   share: () => void;
   download: (fmt: SheetFormat) => void | Promise<void>;
+  /** File ▸ Import. */
+  importFile?: () => void;
+  /** File ▸ Print (page setup + preview). */
+  print?: () => void;
+}
+
+/** What View ▸ Show / Zoom / Page break preview reflect for the active sheet. */
+export interface ViewState {
+  showFormulas: boolean;
+  showGridLines: boolean;
+  showHeadings: boolean;
+  zoom: number;
+  pageBreakPreview: boolean;
 }
 
 interface SheetMenuBarProps {
@@ -77,6 +90,14 @@ interface SheetMenuBarProps {
   onSortDialog?: () => void;
   /** Opens the Paste special dialog. */
   onPasteSpecial?: () => void;
+  /** Current view options of the active sheet. */
+  view?: ViewState;
+  /** Changes view options (show formulas, gridlines, headings, zoom, page-break preview). */
+  onView?: (patch: Partial<ViewState>) => void;
+  /** Insert ▸ Page break actions at the selection. */
+  onPageBreak?: (action: "insert" | "remove" | "reset") => void;
+  /** Opens Data ▸ Protect sheets and ranges. */
+  onProtect?: () => void;
 }
 
 const TEXT_CASES: [TextCase, string][] = [
@@ -156,7 +177,16 @@ export function SheetMenuBar({
   onFillSeries,
   onSortDialog,
   onPasteSpecial,
+  view,
+  onView,
+  onPageBreak,
+  onProtect,
 }: SheetMenuBarProps) {
+  const check = (on: boolean | undefined) => (
+    <Typography component="span" sx={{ width: 18, display: "inline-block", opacity: on ? 1 : 0 }} aria-hidden>
+      ✓
+    </Typography>
+  );
   const wb = () => {
     try {
       return getWb();
@@ -326,7 +356,19 @@ export function SheetMenuBar({
       {top(
         "View",
         <>
-          <MenuItem disabled>Show{arrow}</MenuItem>
+          {section("Show")}
+          <MenuItem sx={sub} role="menuitemcheckbox" aria-checked={!!view?.showGridLines} onClick={() => onView?.({ showGridLines: !view?.showGridLines })}>
+            {check(view?.showGridLines)}Gridlines
+          </MenuItem>
+          <MenuItem sx={sub} role="menuitemcheckbox" aria-checked={!!view?.showFormulas} onClick={() => onView?.({ showFormulas: !view?.showFormulas })}>
+            {check(view?.showFormulas)}Formulas{kbd("Ctrl+`")}
+          </MenuItem>
+          <MenuItem sx={sub} role="menuitemcheckbox" aria-checked={!!view?.showHeadings} onClick={() => onView?.({ showHeadings: !view?.showHeadings })}>
+            {check(view?.showHeadings)}Row and column headings
+          </MenuItem>
+          <MenuItem sx={sub} role="menuitemcheckbox" aria-checked={!!view?.pageBreakPreview} onClick={() => onView?.({ pageBreakPreview: !view?.pageBreakPreview })}>
+            {check(view?.pageBreakPreview)}Page breaks
+          </MenuItem>
           {section("Freeze")}
           <MenuItem
             sx={sub}
@@ -374,7 +416,13 @@ export function SheetMenuBar({
           <MenuItem disabled>Group{arrow}</MenuItem>
           <MenuItem disabled>Comments{arrow}</MenuItem>
           <MenuItem disabled>Hidden sheets{arrow}</MenuItem>
-          <MenuItem disabled>Zoom{arrow}</MenuItem>
+          {section("Zoom")}
+          {[0.5, 0.75, 0.9, 1, 1.25, 1.5, 2].map((z) => (
+            <MenuItem key={z} sx={sub} role="menuitemradio" aria-checked={Math.abs((view?.zoom ?? 1) - z) < 0.001} onClick={() => onView?.({ zoom: z })}>
+              {check(Math.abs((view?.zoom ?? 1) - z) < 0.001)}
+              {Math.round(z * 100)}%
+            </MenuItem>
+          ))}
           <ListDivider />
           <MenuItem
             onClick={() => document.documentElement.requestFullscreen?.()}
@@ -418,6 +466,16 @@ export function SheetMenuBar({
           <MenuItem disabled>Timeline</MenuItem>
           <MenuItem onClick={onInsertChart}>Chart</MenuItem>
           <MenuItem onClick={onInsertPivot}>Pivot table</MenuItem>
+          {section("Page break")}
+          <MenuItem sx={sub} onClick={() => onPageBreak?.("insert")}>
+            Insert page break
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => onPageBreak?.("remove")}>
+            Remove page break
+          </MenuItem>
+          <MenuItem sx={sub} onClick={() => onPageBreak?.("reset")}>
+            Reset all page breaks
+          </MenuItem>
           <MenuItem disabled>Image{arrow}</MenuItem>
           <MenuItem disabled>Drawing</MenuItem>
           <MenuItem disabled>Function{arrow}</MenuItem>
@@ -573,7 +631,9 @@ export function SheetMenuBar({
           <MenuItem disabled>Create filter view</MenuItem>
           <MenuItem disabled>Add a slicer</MenuItem>
           <ListDivider />
-          <MenuItem disabled>Protect sheets and ranges</MenuItem>
+          <MenuItem disabled={!onProtect} onClick={onProtect}>
+            Protect sheets and ranges
+          </MenuItem>
           <MenuItem onClick={onNamedRanges}>Named ranges</MenuItem>
           <MenuItem disabled>Named functions</MenuItem>
           <MenuItem onClick={dataOp((w) => randomizeRange(w))}>
@@ -726,7 +786,15 @@ function FileMenu({ actions }: { actions: SheetActions }) {
           </>
         )}
         <MenuItem onClick={actions.open}>Open{kbd("Ctrl+O")}</MenuItem>
-        <MenuItem disabled>Import</MenuItem>
+        <MenuItem
+          disabled={!actions.importFile}
+          onClick={() => {
+            close();
+            actions.importFile?.();
+          }}
+        >
+          Import
+        </MenuItem>
         <MenuItem onClick={actions.makeCopy}>Make a copy</MenuItem>
         <ListDivider />
         <MenuItem onClick={actions.share}>Share</MenuItem>
@@ -770,7 +838,15 @@ function FileMenu({ actions }: { actions: SheetActions }) {
         <MenuItem disabled>Security limitations</MenuItem>
         <MenuItem disabled>Settings</MenuItem>
         <ListDivider />
-        <MenuItem onClick={() => window.print()}>Print{kbd("Ctrl+P")}</MenuItem>
+        <MenuItem
+          onClick={() => {
+            close();
+            if (actions.print) actions.print();
+            else window.print();
+          }}
+        >
+          Print{kbd("Ctrl+P")}
+        </MenuItem>
       </Menu>
     </Dropdown>
   );
