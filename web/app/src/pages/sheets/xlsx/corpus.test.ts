@@ -23,8 +23,6 @@ const CASES: [string, string][] = [
   ["oo:core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles#Auto_color_as_index.xls", `${EWS}/Auto_color_as_index.xls`],
   ["oo:core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles#chart_7_full_1.xlsx", `${EWS}/chart_7_full_1.xlsx`],
   ["oo:core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles#ChartsSheets.xlsx", `${EWS}/ChartsSheets.xlsx`],
-  ["oo:core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles#CSV_confuser_saved.csv", `${EWS}/CSV_confuser_saved.csv`],
-  ["oo:core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles#CSV_confuser.csv", `${EWS}/CSV_confuser.csv`],
   ["oo:core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles#CSV_confuser.xlsx", `${EWS}/CSV_confuser.xlsx`],
   ["oo:core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles#DataOfVarTypes.xlsx", `${EWS}/DataOfVarTypes.xlsx`],
   ["oo:core/Test/Applications/AVSOfficeEWSEditorTest/AVSOfficeEWSEditorTest/TestFiles#DeleteRowsComplex.xlsx", `${EWS}/DeleteRowsComplex.xlsx`],
@@ -55,6 +53,10 @@ const CASES: [string, string][] = [
   ["oo:core/OOXML/test/xlsb2xlsx/conversion.cpp#simple1.xlsx", "OOXML/test/ExampleFiles/xlsb2xlsx/simple1.xlsx"],
   ["oo:core/OOXML/test/xlsb2xlsx/conversion.cpp#simple2.xlsx", "OOXML/test/ExampleFiles/xlsb2xlsx/simple2.xlsx"],
   ["oo:core/OOXML/test/xlsb2xlsx/conversion.cpp#fmla.xlsx", "OOXML/test/ExampleFiles/xlsb2xlsx/fmla.xlsx"],
+  // The manifest counts this directory's 28 spreadsheet documents; the two
+  // CSV exports next to them are checked too, without a tag.
+  ["corpus csv: CSV_confuser_saved.csv", `${EWS}/CSV_confuser_saved.csv`],
+  ["corpus csv: CSV_confuser.csv", `${EWS}/CSV_confuser.csv`],
 ];
 
 /** A comparable signature of a workbook's content. */
