@@ -30,6 +30,10 @@ var ErrTooManyNamed = errors.New("too many named versions")
 // ErrTooLarge is returned when a document is bigger than Policy.MaxBytes.
 var ErrTooLarge = errors.New("document too large to version")
 
+// ErrForbidden is returned by a Kind's Save when the caller may not write the
+// restored content (e.g. it changes cells protected against them).
+var ErrForbidden = errors.New("the version changes content you cannot edit")
+
 // Version is one grown.object_versions row. Data is only filled by Get.
 type Version struct {
 	ID           string

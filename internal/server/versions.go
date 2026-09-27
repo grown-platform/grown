@@ -75,7 +75,18 @@ func newVersionsWiring(cfg Config) *versionsWiring {
 				}
 				return versions.Doc{}, false, nil
 			},
-			Save: repo.Save,
+			Save: func(ctx context.Context, orgID, id, data string) error {
+				// A restore is a write like SaveSheet: a version may not undo
+				// protected ranges/sheets (or the protection itself) that the
+				// caller could not edit.
+				if cur, err := repo.GetByID(ctx, id); err == nil {
+					u, _ := auth.UserFromContext(ctx)
+					if _, reverted := sheets.EnforceProtection(cur.Data, data, sheets.Editor{User: u.ID, Owner: cur.OwnerID}); reverted > 0 {
+						return versions.ErrForbidden
+					}
+				}
+				return repo.Save(ctx, orgID, id, data)
+			},
 		}
 		w.load[versionsSheets] = func(ctx context.Context, id string) (string, error) {
 			sh, err := repo.GetByID(ctx, id)
