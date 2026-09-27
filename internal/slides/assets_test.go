@@ -188,3 +188,98 @@ func TestAssetsTooLarge(t *testing.T) {
 		t.Fatalf("want 413, got %d", rec.Code)
 	}
 }
+
+func upload(t *testing.T, h http.Handler, data []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/slides/d/d1/assets", bytes.NewReader(data))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// Slides M11: video/audio clips are accepted (sniffed), up to MaxMediaBytes.
+func TestAssetsMediaTypes(t *testing.T) {
+	h := slides.NewAssets(newMemBlobs(), access(map[string]bool{"d1": true}, map[string]bool{"d1": true}))
+	pad := func(b []byte) []byte { return append(b, make([]byte, 64)...) }
+	cases := []struct {
+		name string
+		data []byte
+		mime string
+	}{
+		{"mp4", pad([]byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2")), "video/mp4"},
+		{"m4a", pad([]byte("\x00\x00\x00\x18ftypM4A \x00\x00\x02\x00isomiso2")), "audio/mp4"},
+		{"webm", pad([]byte("\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01\x42\xf2\x81\x04\x42\xf3\x81\x08\x42\x82\x84webm")), "video/webm"},
+		{"mp3 id3", pad([]byte("ID3\x03\x00\x00\x00\x00\x00\x00")), "audio/mpeg"},
+		{"mp3 frame", pad([]byte("\xff\xfb\x90\x64")), "audio/mpeg"},
+		{"aac", pad([]byte("\xff\xf1\x50\x80")), "audio/aac"},
+		{"ogg audio", pad([]byte("OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x01vorbis")), "audio/ogg"},
+		{"ogg video", pad([]byte("OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x80theora")), "video/ogg"},
+		{"wav", pad([]byte("RIFF\x24\x00\x00\x00WAVEfmt ")), "audio/wav"},
+		{"jpeg", pad([]byte("\xff\xd8\xff\xe0\x00\x10JFIF\x00")), "image/jpeg"},
+	}
+	for _, c := range cases {
+		rec := upload(t, h, c.data)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%s: want 201, got %d %s", c.name, rec.Code, rec.Body.String())
+		}
+		var out struct {
+			URL  string `json:"url"`
+			Mime string `json:"mime"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		if out.Mime != c.mime {
+			t.Fatalf("%s: mime %q, want %q", c.name, out.Mime, c.mime)
+		}
+	}
+	for _, bad := range [][]byte{[]byte("MZ\x90\x00\x03\x00\x00\x00"), []byte("%PDF-1.4\n")} {
+		if rec := upload(t, h, bad); rec.Code != http.StatusUnsupportedMediaType {
+			t.Fatalf("%q: want 415, got %d", bad, rec.Code)
+		}
+	}
+}
+
+func TestAssetsMediaSizeLimits(t *testing.T) {
+	h := slides.NewAssets(newMemBlobs(), access(map[string]bool{"d1": true}, map[string]bool{"d1": true}))
+	mp4 := []byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2")
+	// A clip over the picture limit is fine…
+	big := append(append([]byte{}, mp4...), make([]byte, slides.MaxAssetBytes+10)...)
+	if rec := upload(t, h, big); rec.Code != http.StatusCreated {
+		t.Fatalf("25 MB clip: want 201, got %d", rec.Code)
+	}
+	// …one over the media limit is not.
+	huge := append(append([]byte{}, mp4...), make([]byte, slides.MaxMediaBytes)...)
+	if rec := upload(t, h, huge); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("over MaxMediaBytes: want 413, got %d", rec.Code)
+	}
+}
+
+func TestAssetsMediaRanges(t *testing.T) {
+	h := slides.NewAssets(newMemBlobs(), access(map[string]bool{"d1": true}, map[string]bool{"d1": true}))
+	clip := append([]byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2"), bytes.Repeat([]byte("0123456789"), 100)...)
+	rec := upload(t, h, clip)
+	var out struct {
+		URL string `json:"url"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	req := httptest.NewRequest(http.MethodGet, out.URL, nil)
+	req.Header.Set("Range", "bytes=24-33")
+	got := httptest.NewRecorder()
+	h.ServeHTTP(got, req)
+	if got.Code != http.StatusPartialContent {
+		t.Fatalf("range: want 206, got %d", got.Code)
+	}
+	if got.Body.String() != "0123456789" {
+		t.Fatalf("range body %q", got.Body.String())
+	}
+	if ct := got.Header().Get("Content-Type"); ct != "video/mp4" {
+		t.Fatalf("content type %q", ct)
+	}
+	if got.Header().Get("Accept-Ranges") != "bytes" || got.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("headers %v", got.Header())
+	}
+	full := httptest.NewRecorder()
+	h.ServeHTTP(full, httptest.NewRequest(http.MethodGet, out.URL, nil))
+	if full.Code != http.StatusOK || full.Body.Len() != len(clip) {
+		t.Fatalf("full: %d %d", full.Code, full.Body.Len())
+	}
+}

@@ -15,6 +15,8 @@ import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
 import { insetsOf } from "./textOps";
 import { isRich, layoutParagraphs, markerCss, paraCss, runCss } from "./textLayout";
 import { parseSlideLink } from "./links";
+import { ChartBody, MediaBody, WarpedText } from "./ObjectViews";
+import { wordArtCss } from "./wordArt";
 import { backgroundCss } from "./slideProps";
 import {
   CELL_PAD,
@@ -126,7 +128,8 @@ export function elementStyle(el: SlideElement): React.CSSProperties {
       lineHeight: el.lineSpacing || 1.2,
       padding: `${ins.t}px ${ins.r}px ${ins.b}px ${ins.l}px`,
       boxSizing: "border-box",
-      overflow: "hidden",
+      // Warped word art may reach past its box (like PowerPoint's).
+      overflow: el.wordArt?.warp ? ("visible" as const) : ("hidden" as const),
       ...(el.rtl ? { direction: "rtl" as const } : {}),
       ...(el.vert ? { writingMode: "vertical-rl" as const } : {}),
     };
@@ -325,6 +328,18 @@ function renderElementBody(
         <ShapeSvg el={el} />
       </div>
     );
+  if (el.type === "chart")
+    return (
+      <div style={merged} data-view-el={el.id}>
+        <ChartBody el={el} />
+      </div>
+    );
+  if (el.type === "media")
+    return (
+      <div style={merged} data-view-el={el.id}>
+        <MediaBody el={el} live={!!links} />
+      </div>
+    );
   return <div style={merged} data-view-el={el.id} />;
 }
 
@@ -422,6 +437,25 @@ export interface TextLinkOpts {
  *  is one block per paragraph with styled runs and list markers. With
  *  `links`, run links are clickable (present mode). */
 export function renderSlideText(
+  el: SlideElement,
+  links?: TextLinkOpts,
+  fx?: ReadonlyMap<string, SlideFx>,
+): React.ReactNode {
+  // Word art (M11): a warp draws the text along a path; other effects wrap
+  // the body so they don't reach the element's handles or outline.
+  if (el.wordArt?.warp) return <WarpedText el={el} />;
+  if (el.wordArt) {
+    const body = renderTextBody(el, links, fx);
+    return (
+      <div data-wordart="" style={{ width: "100%", ...(wordArtCss(el.wordArt) as React.CSSProperties) }}>
+        {body}
+      </div>
+    );
+  }
+  return renderTextBody(el, links, fx);
+}
+
+function renderTextBody(
   el: SlideElement,
   links?: TextLinkOpts,
   fx?: ReadonlyMap<string, SlideFx>,

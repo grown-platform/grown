@@ -10,6 +10,7 @@
 import { INDENT_STEP, type SlideElement, type TextRun } from "../model";
 import { effective, insetsOf, paragraphs } from "../textOps";
 import { parseRef } from "../theme";
+import { warpXml, wordArtRunXml } from "./objectsXml";
 
 /** EMU per logical px (960 px = 10 in = 9 144 000 EMU). */
 export const EMU_PER_PX = 9525;
@@ -67,10 +68,15 @@ function rPrXml(el: SlideElement, r: TextRun, tag: "rPr" | "endParaRPr", link: L
   attrs.push(`dirty="0"`);
   const kids: string[] = [];
   const color = effective(el, r, "color") as string | undefined;
+  // Word art (M11): outline first, a gradient instead of the solid fill,
+  // then the effects (CT_TextCharacterProperties order).
+  const art = wordArtRunXml(el.wordArt);
+  if (art.ln) kids.push(art.ln);
   // A theme colour/font (M7) is written as a scheme reference when the run
   // doesn't override it.
   const scheme = r.color === undefined && el.themeRefs?.color ? schemeClrXml(el.themeRefs.color) : null;
-  kids.push(`<a:solidFill>${scheme ?? `<a:srgbClr val="${hex(color)}"/>`}</a:solidFill>`);
+  kids.push(art.fill ?? `<a:solidFill>${scheme ?? `<a:srgbClr val="${hex(color)}"/>`}</a:solidFill>`);
+  if (art.effects) kids.push(art.effects);
   const face = (effective(el, r, "fontFamily") as string | undefined) || "Arial";
   const role = r.fontFamily === undefined ? el.themeRefs?.font : undefined;
   if (role) {
@@ -127,7 +133,7 @@ export function textBodyXml(el: SlideElement, link: LinkResolver): string {
     `anchor="${anchor}"`,
   ];
   if (el.vert) bodyAttrs.push(`vert="${el.vert}"`);
-  const body = `<a:bodyPr ${bodyAttrs.join(" ")}>${el.autofit === "shrink" ? "<a:normAutofit/>" : "<a:noAutofit/>"}</a:bodyPr>`;
+  const body = `<a:bodyPr ${bodyAttrs.join(" ")}>${warpXml(el.wordArt)}${el.autofit === "shrink" ? "<a:normAutofit/>" : "<a:noAutofit/>"}</a:bodyPr>`;
   return `<p:txBody>${body}<a:lstStyle/>${parasXml(el, link)}</p:txBody>`;
 }
 

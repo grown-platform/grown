@@ -2,7 +2,7 @@
 // referenced by URL. Exports that leave the browser (pptx, HTML, SVG/PNG)
 // need the bytes, so inlineImages turns those URLs back into data: URLs.
 
-import type { DeckDoc, SlideElement, SlideFill } from "./model";
+import type { DeckDoc, SlideElement, SlideFill, SlideMedia } from "./model";
 
 /** Is `src` a server-side asset (or any same-origin URL) to inline? */
 export function isAssetUrl(src: string | undefined): boolean {
@@ -35,6 +35,11 @@ export async function inlineImages(
   const collect = (els: readonly SlideElement[]) => {
     for (const e of els) {
       if (e.type === "image" && isAssetUrl(e.src)) urls.add(e.src!);
+      // Clips (M11): the file and its poster travel inside a pptx too.
+      if (e.type === "media" && e.media) {
+        if (isAssetUrl(e.media.src)) urls.add(e.media.src);
+        if (isAssetUrl(e.media.poster)) urls.add(e.media.poster!);
+      }
       if (e.children) collect(e.children);
     }
   };
@@ -54,6 +59,7 @@ export async function inlineImages(
     els.map((e) => ({
       ...e,
       ...(e.type === "image" && e.src && map.has(e.src) ? { src: map.get(e.src)! } : {}),
+      ...(e.type === "media" && e.media ? { media: swapMedia(e.media, map) } : {}),
       ...(e.children ? { children: swap(e.children) } : {}),
     }));
   return {
@@ -64,6 +70,13 @@ export async function inlineImages(
       ...(s.bgFill?.kind === "image" && map.has(s.bgFill.src) ? { bgFill: { kind: "image" as const, src: map.get(s.bgFill.src)! } } : {}),
     })),
   };
+}
+
+function swapMedia(m: SlideMedia, map: Map<string, string>): SlideMedia {
+  const out = { ...m };
+  if (map.has(m.src)) out.src = map.get(m.src)!;
+  if (m.poster && map.has(m.poster)) out.poster = map.get(m.poster)!;
+  return out;
 }
 
 /** A data: URL as a Blob (null if it isn't a base64 data URL). */
@@ -91,6 +104,10 @@ export async function externalizeImages<S extends { elements: SlideElement[]; bg
   const collect = (els: readonly SlideElement[]) => {
     for (const e of els) {
       if (e.type === "image" && e.src?.startsWith("data:") && !e.src.startsWith("data:image/svg")) urls.add(e.src);
+      if (e.type === "media" && e.media) {
+        if (e.media.src.startsWith("data:")) urls.add(e.media.src);
+        if (e.media.poster?.startsWith("data:") && !e.media.poster.startsWith("data:image/svg")) urls.add(e.media.poster);
+      }
       if (e.children) collect(e.children);
     }
   };
@@ -116,6 +133,7 @@ export async function externalizeImages<S extends { elements: SlideElement[]; bg
     els.map((e) => ({
       ...e,
       ...(e.type === "image" && e.src && map.has(e.src) ? { src: map.get(e.src)! } : {}),
+      ...(e.type === "media" && e.media ? { media: swapMedia(e.media, map) } : {}),
       ...(e.children ? { children: swap(e.children) } : {}),
     }));
   return slides.map((s) => {

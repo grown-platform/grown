@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Slides
 
-Status: plan (2026-09-26); M0–M6 landed — see the status notes in §6.4–6.10.
+Status: plan (2026-09-26); M0–M9 and M11 landed — see the status notes in §6.4–6.15.
 
 Scope: the OnlyOffice **presentation editor** (`sdkjs/slide`, the shared drawing
 engine in `sdkjs/common`, and the `web-apps/apps/presentationeditor` UI) versus
@@ -285,8 +285,8 @@ error bars, axes/gridlines/legend/data labels context menus.
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| Insert chart (bar/column/line/pie) | Missing | menu disabled; Sheets has `pages/sheets/chartData.ts` reusable |
-| Edit chart data | Missing | — |
+| Insert chart (bar/column/line/pie) | Have (M11) | `chartElement.ts` on the Sheets chart code; all 10 Sheets types |
+| Edit chart data | Have (M11, small grid, F9) | `ObjectDialogs.ChartDialog` |
 | Chart from Sheets (linked) | Missing | — |
 
 ### 2.7 SmartArt / diagrams
@@ -296,7 +296,7 @@ files under `SmartArtData/`; 159 named layouts in the UI).
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| Diagram insert (grid/hierarchy/timeline/process/relationship/cycle) | Missing | menu disabled — see M11 (template-based, additive) |
+| Diagram insert (grid/hierarchy/timeline/process/relationship/cycle) | Partial (M11: list, process, cycle, hierarchy, pyramid, Venn) | `diagrams.ts` (groups of presets from an outline) |
 | Full SmartArt layout engine | Missing | — see F6 |
 
 ### 2.8 Grouping, align, distribute, z-order
@@ -424,7 +424,7 @@ chat, version history, "show others' changes".
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| Video / audio embed | Missing | menu disabled; OO `capInsertVideo/Audio` |
+| Video / audio embed | Have (M11) | `media.ts`, `ObjectViews.MediaBody`; upload or YouTube/Vimeo/direct URL |
 
 ### 2.17 Import / export
 
@@ -1888,4 +1888,165 @@ per-colour pens, ink is not kept, and the presenter window has no
 thumbnails strip or zoom. The presenter window shows the next *slide*,
 not the next animation step. BroadcastChannel needs both windows on the
 same origin and browser profile.
+
+### 6.15 M11 status (Wave 7): charts, diagrams, media, word art
+
+**Charts.** `type: "chart"` elements carry `chart: SlideChart` — the
+Sheets `ChartConfig` options (type, title, stacking, legend, data labels,
+series in rows, per-series options, axes, waterfall totals, hole size)
+minus the workbook range/anchor, plus the chart's own data sheet
+(`data[0]` = series names, column 0 = categories, strings as typed). No
+chart code is duplicated: `chartElement.chartConfigOf` builds a Sheets
+`ChartConfig` over the whole grid and `chartInputOf` reads it through the
+new `chartData.buildChartInputFromGrid` (the workbook reader's grid core,
+split out), `ChartRenderer` draws it, and the pptx writer/reader use
+`xlsx/xlsxCharts`. The Sheets chart modules stay in `pages/sheets/`
+(`ChartRenderer` depends on the Sheets number formats), so a move to a
+common module was not cleanly separable; Slides imports them. Series (pie:
+slice) colours without an explicit colour take the deck theme's accent
+cycle at render time (`themeSeriesColor` over the M7 theme), so a theme
+change recolours charts. All ten Sheets chart types are offered.
+`ChartDialog` (Insert ▸ Chart…, and Bar/Column/Line/Pie; double-click,
+toolbar "Edit chart", Format ▸ Chart data…) edits type, title, legend,
+stacking, data labels, series in rows and the data grid (add/remove
+rows and series, paste a tab/comma block into any cell; ≤ 200 × 30) with
+a live preview. Embedded spreadsheet editing stays out (F9).
+
+**pptx charts.** A chart is laid down as a marker shape and swapped for a
+`p:graphicFrame` (rotation/flips kept) pointing at `ppt/charts/chartN.xml`.
+The part is `xlsxCharts.chartSpaceXml` over "Sheet1" with two additive
+options: `c:strCache`/`c:numCache` for every series, category and name
+(blank points left out) and `c:externalData` pointing at
+`ppt/embeddings/Microsoft_Excel_WorksheetN.xlsx`, the data sheet written
+by the Sheets xlsx writer (numbers as numbers). The Grown extension entry
+carries the `SlideChart` itself (not the theme-resolved config), so Grown
+reads back exactly what it wrote and theme colours are not pinned. A
+foreign chart is rebuilt by `readChartSpace` (type, grouping, legend,
+axes, colours…) plus the new `readChartCache` (series names, categories,
+values, scatter x). chartEx (waterfall/funnel/treemap as `cx:chart`) is
+not read: its `mc:Fallback` shape imports as usual.
+
+**SmartArt-lite (F6's additive alternative).** `diagrams.ts` parses an
+outline (one item per line; tabs or two-space indents give the level; a
+leading `-`/`*`/`•` is dropped; a level jumps at most one) and builds a
+group of M3 presets + text boxes + connectors: basic list (rounded blocks
+in a grid), process (boxes and arrows), cycle (circles with tangent
+arrows), hierarchy (org chart: leaf-count layout, elbow lines from
+connectors), pyramid (triangle + trapezoids whose adjust matches the tier
+above) and Venn (50 % translucent circles). Sub-items are listed in their
+node ("• item") except in the hierarchy, where they are child boxes. All
+labels share one fitted size. Colours are theme refs (`accent1…6`, tints
+via lumMod/lumOff, `lt1` text, a grey `tx1` tint for lines), so
+`applyTheme` recolours diagrams. The group stores `diagram {layout,
+outline}`; the outline panel (`DiagramDialog`: layout buttons, outline
+textarea where Tab/Shift+Tab indent, live preview; Insert ▸ Diagram…,
+double-click, "Edit outline", Format ▸ Diagram outline…) rebuilds the
+group's members inside its current box, and resizing a diagram rebuilds
+it at the new size (`refitDiagram`, on every local upsert) so its text
+refits. Diagrams are ordinary groups in every renderer and export, and
+are written to pptx as `p:grpSp`. **Import:** a SmartArt graphic frame
+is read from its cached drawing (`dsp:drawing`, found through the data
+part's `dsp:dataModelExt@relId`, else the slide's only `diagramDrawing`
+relationship) as a shape tree in the frame's coordinates, and becomes a
+group; the diagram data itself is not kept.
+
+**Media.** `type: "media"` elements carry `media: SlideMedia` (`kind`
+video/audio, `src`, `embed {provider, id}` for YouTube/Vimeo, `poster`,
+`mime`, `autoplay`, `loop`, `muted`). Insert ▸ Video…/Audio… uploads a
+file (client allowlist MP4/WebM/Ogg/MOV/MP3/M4A/AAC/WAV, ≤ 100 MB) to the
+M6 asset endpoint, or takes a link (`media.parseMediaUrl`: YouTube
+watch/short/embed/shorts URLs, Vimeo, or a direct http(s) media file;
+other pages and schemes are refused). A video's poster frame is captured
+in the browser (a frame ~10 % in, drawn to a canvas, uploaded as a JPEG
+asset) and its box takes the clip's aspect; YouTube clips use the
+provider's thumbnail. **Server:** `internal/slides/assets.go` now sniffs
+clips too (`sniffAsset`: ISO-BMFF brands for MP4 vs M4A, WebM, Ogg with
+or without Theora, WAVE, MP3 with or without ID3, ADTS AAC), caps clips
+at `MaxMediaBytes` (100 MiB; pictures stay at 20 MiB) and serves them
+with byte ranges (`http.ServeContent`) so players can seek. In the
+editor and thumbnails a clip is its poster with a play badge (audio: a
+speaker); in the slideshow it plays: a native `<video>`/`<audio>` with
+controls (autoplay/loop/mute as set), or the YouTube (nocookie)/Vimeo
+player in a frame — framed at once when autoplaying, else after a click
+on the poster. Clicks on a clip don't advance the show. Playback options:
+Format ▸ Playback…, the "Playback" toolbar button, double-click.
+**pptx:** pptxgenjs `addMedia` embeds uploaded clips (inlined like
+pictures by `assets.inlineImages`, which now also inlines clip files and
+posters) with the poster as the cover, and links online/direct clips;
+the patch writes `a:audioFile` for audio (pptxgenjs writes `a:videoFile`
+for both; linked audio gets an `audio` relationship) and the playback
+options in a Grown `p:nvPr` extension. The reader turns a `p:pic` with
+`a:videoFile`/`a:audioFile` into a clip: the embedded file (`p14:media`,
+≤ 100 MB, browser-playable types) as a data: URL — uploaded to the asset
+store on import by `externalizeImages`, which now handles clips — or the
+linked URL (YouTube/Vimeo recognised), the poster from the blip, and the
+Grown options.
+
+**Word art (F5's cheap subset).** Text boxes gain `wordArt` (outline,
+two-stop gradient fill with a DrawingML angle, shadow, glow, warp).
+Effects are CSS on a wrapper of the text body (`-webkit-text-stroke`,
+`background-clip: text`, and `filter: drop-shadow` for shadow and glow,
+which sits behind a clipped gradient where `text-shadow` would not).
+Warps are the presets an SVG `textPath` can draw with the text as one
+line: arch up/down (elliptical arcs with the ends leaning in 25°),
+circle, wave, slant up/down; text shorter than the path is centred at its
+width, longer text is squeezed (`textLength`), a circle is filled.
+`wordArt.warpSvgMarkup` is the single SVG used by the editor, slideshow
+and exports. Insert ▸ Word art adds a styled box; Format ▸ Word art… (and
+the "Word art" toolbar button on a text box) has five styles plus each
+effect and the warp. **pptx:** every run gets `a:ln`, `a:gradFill`
+(instead of the solid fill) and `a:effectLst` (`a:glow`, `a:outerShdw`,
+alpha from 8-digit hex) in schema order, and the body `a:prstTxWarp`;
+the reader maps the first run's effects and a supported warp back.
+
+**Exports.** HTML/PDF and SVG/PNG/JPEG draw charts, clips and warps as
+pictures (`exportObjects.objectsToPictures`: the chart rendered to SVG by
+`ChartRenderer` via `react-dom/server`, the poster or a placeholder, the
+warp SVG); unwarped word art keeps its CSS in HTML and becomes SVG text
+attributes (gradient defs, stroke, filter) in the SVG export.
+
+**Tests.** `chartElement.test.ts` (11), `diagrams.test.ts` (18),
+`media.test.ts` (9), `wordArt.test.ts` (10), `pptx/objects.test.ts`
+(13: chart frame/part/caches/workbook/content types, exact round trip,
+theme colours not pinned, a foreign chart from XML + caches, pie/line/
+scatter double round trip with rotation; embedded video with poster and
+options, linked YouTube, embedded + linked audio as `a:audioFile`; word
+art XML order and round trip; a diagram group; a hand-built SmartArt
+frame read from its `dsp:drawing`); `pptx/read.test.ts` expects the new
+chart warning; Go `assets_test.go` (clip sniffing for 9 formats, refused
+types, size limits per kind, byte ranges). e2e
+`web/e2e/slides-objects.spec.ts`: insert a chart and edit its grid,
+switch type through the editor, a process diagram edited through the
+outline panel (Tab indents), word art retyped and warped, reload and
+check the model, canvas and thumbnail
+(`GROWN_SLIDES_M11_SHOT=<file.png>` saves the slide); a WebM recorded in
+the page uploaded as a video (refused non-media file first, poster frame,
+16:9 box), playback options, a YouTube link, byte ranges, and the
+slideshow (looping muted autoplay player, a click doesn't advance, the
+YouTube player starts on click). `slides-show.spec.ts` now waits for the
+pen (`data-tool` on the slideshow) before drawing ink.
+
+**Ported (now passing):** `shortcuts.js#Check select all in chart title`
+(#11, grown-variant: the title is edited in the chart dialog, where
+Ctrl+A selects all of it) in `slides-objects.spec.ts`; the chart step of
+`shortcuts.js#Check remove graphic objects` in `arrange.test.ts`.
+`common/charts/chartEx-serialize.js` stays n/a (it compares
+Altova-generated XML for OnlyOffice's own serializer; Grown writes
+`c:chart`, not `cx:chart`), as in Sheets.
+
+**Gaps.** No chart editing on the canvas (select a series, click a title
+to type, drag the plot) and no linked "chart from Sheets"; chartEx and
+3-D charts import only as their fallback. Diagrams: six layouts, no
+per-node styling that survives an outline edit (a rebuild restyles), no
+SmartArt data model (imported SmartArt is a plain group), no text-pane
+editing on the canvas. Media: autoplay/loop/mute round-trip only through
+Grown's extension (PowerPoint's `p:timing` media nodes are neither
+written nor read), no trimming, fades, volume or bookmarks, no "play
+across slides", and uploads of big clips are buffered in memory (≤ 100
+MiB) on the server; imported embedded clips larger than the upload limit
+stay inline in the deck. Word art: six warps of PowerPoint's 40, one text
+line per warp, effects apply to the whole box (runs can't differ), the
+glow/shadow of a gradient text in the SVG export uses a CSS filter that
+some SVG viewers ignore, and the in-place text editor shows plain text
+while editing.
 

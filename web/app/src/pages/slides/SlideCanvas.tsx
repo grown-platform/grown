@@ -10,6 +10,7 @@ import {
   SlideTable,
   renderSlideText,
 } from "./SlideView";
+import { ChartBody, MediaBody } from "./ObjectViews";
 import { EDITOR_CSS, TextEditor, type TextEditorHandle } from "./TextEditor";
 import { rangeInRendered } from "./textDom";
 import type { TextKeyAction } from "./keymap";
@@ -95,6 +96,8 @@ interface SlideCanvasProps {
   onTextKey?: (a: TextKeyAction, h: TextEditorHandle) => boolean;
   /** Text editing ended on element `id` with this selection. */
   onEditExit?: (id: string, sel: [number, number]) => void;
+  /** Double-click on a chart (edit data), a diagram (outline) or a clip (M11). */
+  onOpenObject?: (el: SlideElement) => void;
   /** Mouse up inside the text editor (paint format applies here). */
   onEditorMouseUp?: (h: TextEditorHandle) => void;
   /** Start editing a text box with a selection (bump `nonce` to re-request). */
@@ -163,6 +166,7 @@ export function SlideCanvas({
   textEditorRef,
   onTextKey,
   onEditExit,
+  onOpenObject,
   onEditorMouseUp,
   editRequest,
   painting,
@@ -669,6 +673,9 @@ export function SlideCanvas({
                 if (el.type === "text") {
                   e.stopPropagation();
                   beginEdit(el.id);
+                } else if (onOpenObject && (el.type === "chart" || el.type === "media" || el.diagram)) {
+                  e.stopPropagation();
+                  onOpenObject(el);
                 }
               }}
             >
@@ -731,6 +738,14 @@ export function SlideCanvas({
                 )
               ) : el.type === "shape" || isConnector ? (
                 <ShapeSvg el={el} hit />
+              ) : el.type === "chart" ? (
+                <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+                  <ChartBody el={el} />
+                </div>
+              ) : el.type === "media" ? (
+                <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+                  <MediaBody el={el} />
+                </div>
               ) : el.type === "table" ? (
                 <SlideTable
                   el={el}

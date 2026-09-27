@@ -233,7 +233,25 @@ export function getSelectionRange(wb: any): ChartRange | null {
  * rows the first column names the series and the first row the categories).
  */
 export function buildChartInput(wb: any, cfg: ChartConfig): ChartInput {
-  const map = cellMap(sheetFor(wb, cfg.sheetId));
+  return inputFromCells(cellMap(sheetFor(wb, cfg.sheetId)), cfg);
+}
+
+/**
+ * buildChartInputFromGrid is buildChartInput over a plain grid of cell values
+ * (row-major, strings or numbers) instead of a workbook — the data sheet of a
+ * chart embedded in a slide (Slides M11). cfg.range addresses the grid.
+ */
+export function buildChartInputFromGrid(grid: readonly (readonly (string | number | null | undefined)[])[], cfg: ChartConfig): ChartInput {
+  const map = new Map<string, any>();
+  grid.forEach((row, r) =>
+    (row ?? []).forEach((v, c) => {
+      if (v != null && v !== "") map.set(`${r}_${c}`, v);
+    }),
+  );
+  return inputFromCells(map, cfg);
+}
+
+function inputFromCells(map: Map<string, any>, cfg: ChartConfig): ChartInput {
   const { r0, r1, c0, c1 } = cfg.range;
   // Names/labels: "outer" runs along series, "inner" along categories.
   const rows = cfg.seriesInRows;

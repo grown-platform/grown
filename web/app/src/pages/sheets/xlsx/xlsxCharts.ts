@@ -116,10 +116,35 @@ function trendlineXml(t: TrendlineSpec | null | undefined): string {
 
 type Kind = "bar" | "line" | "area" | "scatter" | "pie" | "doughnut";
 
-function serXml(kind: Kind, idx: number, ref: SeriesRef, cfg: ChartConfig, sc: SeriesConfig): string {
+/** Cached values of one series (c:strCache / c:numCache), for charts whose
+ *  data a reader can't recompute — a chart embedded in a slide (Slides M11). */
+export interface SeriesCache {
+  name?: string;
+  cat?: string[];
+  x?: number[];
+  val: number[];
+}
+
+/** Values cached in the chart part, from a ChartInput (the series in order). */
+export interface ChartCache {
+  categories: string[];
+  series: { name: string; values: number[] }[];
+  xValues?: number[];
+}
+
+function strCache(vals: string[]): string {
+  return `<c:strCache>${val("ptCount", vals.length)}${vals.map((v, i) => `<c:pt idx="${i}"><c:v>${esc(v)}</c:v></c:pt>`).join("")}</c:strCache>`;
+}
+
+function numCache(vals: number[]): string {
+  const pts = vals.map((v, i) => (Number.isFinite(v) ? `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>` : "")).join("");
+  return `<c:numCache><c:formatCode>General</c:formatCode>${val("ptCount", vals.length)}${pts}</c:numCache>`;
+}
+
+function serXml(kind: Kind, idx: number, ref: SeriesRef, cfg: ChartConfig, sc: SeriesConfig, cache?: SeriesCache): string {
   const color = sc.color || themeSeriesColor(idx);
   let x = `<c:ser>${val("idx", idx)}${val("order", idx)}`;
-  if (ref.name) x += `<c:tx><c:strRef><c:f>${esc(ref.name)}</c:f></c:strRef></c:tx>`;
+  if (ref.name) x += `<c:tx><c:strRef><c:f>${esc(ref.name)}</c:f>${cache?.name !== undefined ? strCache([cache.name]) : ""}</c:strRef></c:tx>`;
   if (kind === "line" || (kind === "scatter" && cfg.scatterLines)) x += `<c:spPr><a:ln w="28575" cap="rnd">${solid(color)}<a:round/></a:ln></c:spPr>`;
   else if (kind === "scatter") x += '<c:spPr><a:ln w="19050"><a:noFill/></a:ln></c:spPr>';
   else if (kind !== "pie" && kind !== "doughnut") x += `<c:spPr>${solid(color)}</c:spPr>`;
@@ -136,11 +161,11 @@ function serXml(kind: Kind, idx: number, ref: SeriesRef, cfg: ChartConfig, sc: S
   x += dLbls(!!(cfg.dataLabels || sc.dataLabels), kind === "pie" || kind === "doughnut");
   if (kind !== "pie" && kind !== "doughnut") x += trendlineXml(sc.trendline);
   if (kind === "scatter") {
-    if (ref.cat) x += `<c:xVal><c:numRef><c:f>${esc(ref.cat)}</c:f></c:numRef></c:xVal>`;
-    x += `<c:yVal><c:numRef><c:f>${esc(ref.val)}</c:f></c:numRef></c:yVal>` + val("smooth", 0);
+    if (ref.cat) x += `<c:xVal><c:numRef><c:f>${esc(ref.cat)}</c:f>${cache?.x ? numCache(cache.x) : ""}</c:numRef></c:xVal>`;
+    x += `<c:yVal><c:numRef><c:f>${esc(ref.val)}</c:f>${cache ? numCache(cache.val) : ""}</c:numRef></c:yVal>` + val("smooth", 0);
   } else {
-    if (ref.cat) x += `<c:cat><c:strRef><c:f>${esc(ref.cat)}</c:f></c:strRef></c:cat>`;
-    x += `<c:val><c:numRef><c:f>${esc(ref.val)}</c:f></c:numRef></c:val>`;
+    if (ref.cat) x += `<c:cat><c:strRef><c:f>${esc(ref.cat)}</c:f>${cache?.cat ? strCache(cache.cat) : ""}</c:strRef></c:cat>`;
+    x += `<c:val><c:numRef><c:f>${esc(ref.val)}</c:f>${cache ? numCache(cache.val) : ""}</c:numRef></c:val>`;
     if (kind === "line") x += val("smooth", 0);
   }
   return x + "</c:ser>";
@@ -211,18 +236,33 @@ function groupXml(kind: Kind, cfg: ChartConfig, sers: string, axIds: [number, nu
 
 const LEGEND_POS: Record<Exclude<LegendPosition, "none">, string> = { bottom: "b", top: "t", right: "r", left: "l" };
 
-/** One c:chartSpace part for a chart whose data lives on sheetName. */
-export function chartSpaceXml(cfg: ChartConfig, sheetName: string): string {
+/**
+ * One c:chartSpace part for a chart whose data lives on sheetName. With
+ * `opts.cache` the series values are cached in the part too, and
+ * `opts.externalData` names the relationship of an embedded workbook
+ * (c:externalData) — both for charts outside a workbook (Slides M11).
+ */
+export function chartSpaceXml(cfg: ChartConfig, sheetName: string, opts: { cache?: ChartCache; externalData?: string } = {}): string {
   const refs = seriesRefs(cfg, sheetName);
   const sc = (k: number) => cfg.series?.[k] ?? {};
+  const cache = opts.cache;
+  const cacheOf = (k: number): SeriesCache | undefined =>
+    cache
+      ? {
+          name: refs[k]?.name ? (cache.series[k]?.name ?? "") : undefined,
+          cat: refs[k]?.cat ? cache.categories : undefined,
+          x: refs[k]?.cat ? cache.xValues : undefined,
+          val: cache.series[k]?.values ?? [],
+        }
+      : undefined;
   const percent = cfg.stacking === "percent";
   let plot = "";
   let axes = "";
   const type = cfg.type;
   if (type === "pie" || type === "doughnut") {
-    plot = groupXml(type, cfg, refs.slice(0, 1).map((r, k) => serXml(type, k, r, cfg, sc(k))).join(""), [0, 0]);
+    plot = groupXml(type, cfg, refs.slice(0, 1).map((r, k) => serXml(type, k, r, cfg, sc(k), cacheOf(k))).join(""), [0, 0]);
   } else if (type === "scatter") {
-    plot = groupXml("scatter", cfg, refs.map((r, k) => serXml("scatter", k, r, cfg, sc(k))).join(""), [1, 2]);
+    plot = groupXml("scatter", cfg, refs.map((r, k) => serXml("scatter", k, r, cfg, sc(k), cacheOf(k))).join(""), [1, 2]);
     axes = axisXml("valAx", 1, 2, "b", cfg.xAxis, {}) + axisXml("valAx", 2, 1, "l", cfg.yAxis, { grid: true });
   } else if (type === "combo") {
     const kindOf = (k: number): Kind => {
@@ -233,7 +273,7 @@ export function chartSpaceXml(cfg: ChartConfig, sheetName: string): string {
     refs.forEach((r, k) => {
       const key = `${kindOf(k)}|${sc(k).secondary ? 2 : 1}`;
       const list = groups.get(key) ?? [];
-      list.push(serXml(kindOf(k), k, r, cfg, sc(k)));
+      list.push(serXml(kindOf(k), k, r, cfg, sc(k), cacheOf(k)));
       groups.set(key, list);
     });
     let hasSecondary = false;
@@ -250,7 +290,7 @@ export function chartSpaceXml(cfg: ChartConfig, sheetName: string): string {
     const barDir = type === "bar" ? "bar" : "col";
     const g = type === "histogram" || type === "waterfall" ? (kind === "bar" ? "clustered" : "standard") : undefined;
     const list = type === "histogram" || type === "waterfall" ? refs.slice(0, 1) : refs;
-    plot = groupXml(kind, cfg, list.map((r, k) => serXml(kind, k, r, cfg, sc(k))).join(""), [1, 2], barDir, g);
+    plot = groupXml(kind, cfg, list.map((r, k) => serXml(kind, k, r, cfg, sc(k), cacheOf(k))).join(""), [1, 2], barDir, g);
     const horizontal = type === "bar";
     axes =
       axisXml("catAx", 1, 2, horizontal ? "l" : "b", cfg.xAxis) +
@@ -272,6 +312,7 @@ export function chartSpaceXml(cfg: ChartConfig, sheetName: string): string {
     val("dispBlanksAs", "gap") +
     "</c:chart>" +
     `<c:spPr>${solid("#FFFFFF")}<a:ln w="9525"><a:solidFill><a:srgbClr val="D9D9D9"/></a:solidFill></a:ln></c:spPr>` +
+    (opts.externalData ? `<c:externalData r:id="${esc(opts.externalData)}"><c:autoUpdate val="0"/></c:externalData>` : "") +
     `<c:extLst><c:ext uri="${GROWN_CHART_URI}" xmlns:g="${GROWN_CHART_NS}"><g:chart>${esc(grown)}</g:chart></c:ext></c:extLst>` +
     "</c:chartSpace>"
   );
@@ -476,6 +517,64 @@ export function readChartSpace(doc: Document): { cfg: Omit<ChartConfig, "id">; s
     if (y2) cfg.y2Axis = y2;
   }
   return { cfg, sheet };
+}
+
+/** Points of a c:strCache / c:numCache / c:strLit / c:numLit, by idx. */
+function cachePoints(ref: Element | null): string[] | null {
+  if (!ref) return null;
+  const cache = ["strCache", "numCache", "strLit", "numLit"].map((n) => all(ref, n)[0]).find(Boolean);
+  if (!cache) return null;
+  const n = numAttr(kid(cache, "ptCount"), "val") ?? 0;
+  const out: string[] = new Array(Math.max(0, Math.min(n, 100000))).fill("");
+  for (const pt of kids(cache, "pt")) {
+    const i = numAttr(pt, "idx");
+    if (i === null || i < 0 || i > 100000) continue;
+    out[i] = text(kid(pt, "v"));
+  }
+  return out;
+}
+
+/**
+ * The values cached in a chart part, series in document order across chart
+ * groups (the same order readChartSpace uses). Null when no series carries
+ * cached values. Lets a chart be drawn without its workbook (Slides M11).
+ */
+export function readChartCache(doc: Document): ChartCache | null {
+  const plot = kid(kid(doc.documentElement, "chart"), "plotArea");
+  if (!plot) return null;
+  const series: ChartCache["series"] = [];
+  let categories: string[] | null = null;
+  let xValues: number[] | undefined;
+  let any = false;
+  for (const g of Array.from(plot.children)) {
+    if (!/Chart$/.test(g.localName)) continue;
+    for (const ser of kids(g, "ser")) {
+      const vals = cachePoints(kid(ser, "val") ?? kid(ser, "yVal"));
+      const name = cachePoints(kid(ser, "tx"))?.[0] ?? text(kid(kid(ser, "tx"), "v"));
+      const catEl = kid(ser, "cat") ?? kid(ser, "xVal");
+      const cats = cachePoints(catEl);
+      if (vals) any = true;
+      if (cats && !categories) {
+        categories = cats;
+        if (catEl?.localName === "xVal") {
+          const xs = cats.map(Number);
+          if (xs.every(Number.isFinite)) xValues = xs;
+        }
+      }
+      series.push({
+        name: name || `Series ${series.length + 1}`,
+        values: (vals ?? []).map((v) => (v === "" ? NaN : Number(v))),
+      });
+    }
+  }
+  if (!any) return null;
+  const n = Math.max(categories?.length ?? 0, ...series.map((s) => s.values.length));
+  const cats = categories ?? [];
+  return {
+    categories: Array.from({ length: n }, (_, i) => cats[i] ?? String(i + 1)),
+    series: series.map((s) => ({ ...s, values: Array.from({ length: n }, (_, i) => s.values[i] ?? NaN) })),
+    ...(xValues ? { xValues } : {}),
+  };
 }
 
 /** Anchors of a drawing part: chart relationship id + Grown anchor. */

@@ -171,10 +171,14 @@ test("transitions, animations, slideshow keys and presenter window", async ({ pa
 
     // Pen ink (Ctrl+P), erased with E; the laser pointer (Ctrl+L).
     await page.keyboard.press("ControlOrMeta+p");
+    // Draw only once the pen is armed (the key press re-renders the show
+    // asynchronously; under load a drag could land before it).
+    await expect(show).toHaveAttribute("data-tool", "pen");
     const stage = await show.getByTestId("show-slide").boundingBox();
     await page.mouse.move(stage!.x + 200, stage!.y + 200);
     await page.mouse.down();
-    await page.mouse.move(stage!.x + 400, stage!.y + 260, { steps: 6 });
+    await page.mouse.move(stage!.x + 300, stage!.y + 230, { steps: 8 });
+    await page.mouse.move(stage!.x + 400, stage!.y + 260, { steps: 8 });
     await page.mouse.up();
     await expect(show.locator("polyline")).toHaveCount(1);
     await expect(show).toHaveAttribute("data-slide", "0"); // drawing does not advance
@@ -182,6 +186,7 @@ test("transitions, animations, slideshow keys and presenter window", async ({ pa
     await page.keyboard.press("e");
     await expect(show.locator("polyline")).toHaveCount(0);
     await page.keyboard.press("ControlOrMeta+l");
+    await expect(show).toHaveAttribute("data-tool", "laser");
     await page.mouse.move(stage!.x + 300, stage!.y + 300);
     await expect(page.getByTestId("laser")).toBeVisible();
     await page.keyboard.press("ControlOrMeta+l");
