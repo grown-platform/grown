@@ -239,6 +239,19 @@ var blankVal = value{kind: kindNum, blank: true}
 type spillArray struct {
 	rows, cols int
 	cells      [][]value // row-major, cells[r][c]
+	// edge is set when the array stands for a reference that runs to the
+	// sheet's last row or column (A:A, 2:2, A5:A1048576), of which only the
+	// populated part was read; see spillEdge.
+	edge *spillEdge
+}
+
+// spillEdge records how far a whole-row/column array really reaches: it
+// ends on the sheet's last row (rows) or column (cols), having started at
+// row fromRow / column fromCol. Spilling it anywhere lower (or further
+// right) than where it started would run off the sheet, which is #SPILL!.
+type spillEdge struct {
+	rows, cols       bool
+	fromRow, fromCol int
 }
 
 // arrayValue wraps a 2D result. A 1×1 array collapses to its scalar; an empty
@@ -493,6 +506,13 @@ func (ev *Evaluator) cellValue(addr cellAddr) value {
 	if v, ok := ev.results[addr]; ok {
 		v.ref = nil
 		return v
+	}
+	// A cell a dynamic array spilled into reads as the array's element (the
+	// grid copy is only its JSON form: booleans as numbers, errors as text).
+	if wb := ev.wb; wb != nil && ev.cur >= 0 && ev.cur < len(wb.sheets) {
+		if v, ok := wb.sheets[ev.cur].spillCells[addr]; ok {
+			return v
+		}
 	}
 	cell := ev.grid.get(addr)
 	if cell == nil {
@@ -1576,6 +1596,11 @@ func (p *parser) callFunc(name string, args []interface{}) value {
 	// Inside ARRAYFORMULA, scalar functions map element-wise over array args.
 	if p.arrayMode && arrayBroadcastFuncs[name] {
 		return p.broadcastCall(name, args)
+	}
+	// An array reaching a value parameter evaluates the function per element
+	// (formula_lift.go).
+	if v, ok := p.liftCall(name, args); ok {
+		return v
 	}
 	return p.dispatch(name, args)
 }

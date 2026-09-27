@@ -67,7 +67,39 @@ func broadcast2(left, right value, f func(a, b value) value) value {
 		}
 		out[r] = row
 	}
-	return arrayValue(out)
+	return withEdges(arrayValue(out), left, right)
+}
+
+// withEdges carries a whole-row/column operand's edge (see spillEdge) onto a
+// result computed element by element from it.
+func withEdges(out value, operands ...value) value {
+	if !isArrayLike(out) {
+		return out
+	}
+	var e *spillEdge
+	for _, o := range operands {
+		if !isArrayLike(o) || o.arr.edge == nil {
+			continue
+		}
+		oe := o.arr.edge
+		if e == nil {
+			e = &spillEdge{fromRow: oe.fromRow, fromCol: oe.fromCol}
+		}
+		if oe.rows && o.arr.rows == out.arr.rows {
+			e.rows = true
+			e.fromRow = oe.fromRow
+		}
+		if oe.cols && o.arr.cols == out.arr.cols {
+			e.cols = true
+			e.fromCol = oe.fromCol
+		}
+	}
+	if e != nil && (e.rows || e.cols) {
+		arr := *out.arr
+		arr.edge = e
+		out.arr = &arr
+	}
+	return out
 }
 
 // broadcast1 maps f over a single operand element-wise.
@@ -84,7 +116,7 @@ func broadcast1(v value, f func(a value) value) value {
 		}
 		out[r] = row
 	}
-	return arrayValue(out)
+	return withEdges(arrayValue(out), v)
 }
 
 // scalarArith applies one arithmetic operator to two scalar values. It carries

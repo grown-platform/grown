@@ -214,6 +214,18 @@ func lgN(c *callCtx) value {
 
 // lgType implements TYPE(value): 1 number, 2 text, 4 logical, 16 error.
 func lgType(c *callCtx) value {
+	// An array is type 64. A multi-cell range is not a value OnlyOffice can
+	// type: 16, as for an error.
+	switch a := c.raw(0).(type) {
+	case value:
+		if isArrayLike(a) {
+			return numVal(64)
+		}
+	case rangeVal:
+		if a.rows*a.cols > 1 {
+			return numVal(16)
+		}
+	}
 	switch c.scalar(0).kind {
 	case kindNum:
 		return numVal(1)
