@@ -109,6 +109,8 @@ export const COMPUTED_FIELDS = new Set([
 /** Field types the DOCX reader keeps as field nodes (with a cached result). */
 export const KEPT_FIELDS = new Set([
   ...COMPUTED_FIELDS, "CREATEDATE", "SAVEDATE", "PRINTDATE", "AUTHOR", "TITLE", "SUBJECT", "FILENAME", "NUMWORDS", "NUMCHARS",
+  // Mail merge fields (M12, mailmerge.ts).
+  "MERGEFIELD",
 ]);
 
 // --- number and text formats ------------------------------------------------------------
