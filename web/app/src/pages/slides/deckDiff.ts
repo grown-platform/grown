@@ -202,9 +202,9 @@ function carryProps<T extends object>(a: T, b: T, target: T, skip: Set<string>, 
     const vb = rec(b)[k];
     if (deepEqual(va, vb)) continue;
     if (strict && !deepEqual(rec(target)[k], va)) continue;
-    out ??= { ...target };
-    if (vb === undefined) delete out[k];
-    else out[k] = vb;
+    const o: Record<string, unknown> = (out ??= { ...rec(target) });
+    if (vb === undefined) delete o[k];
+    else o[k] = vb;
   }
   return (out as T | null) ?? target;
 }
