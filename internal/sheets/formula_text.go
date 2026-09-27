@@ -15,7 +15,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -578,6 +577,9 @@ func txtValue(c *callCtx) value {
 	s = strings.ReplaceAll(s, ",", "")
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
+		if n, ok := parseTypedNumber(strings.TrimSpace(v.toStr())); ok {
+			return numVal(n) // fractions, other currencies ("1 1/2", "€5")
+		}
 		return errValue
 	}
 	if pct > 0 {
@@ -669,7 +671,13 @@ func txtFixed(c *callCtx) value {
 	}
 	noCommas := false
 	if c.nargs() >= 3 {
-		noCommas = c.scalar(2).isTruthy()
+		nc := c.scalar(2)
+		if nc.kind == kindStr && !strings.EqualFold(nc.str, "TRUE") && !strings.EqualFold(nc.str, "FALSE") {
+			if _, ok := nc.toNum(); !ok {
+				return errValue // FIXED(1,2,"abc")
+			}
+		}
+		noCommas = nc.isTruthy()
 	}
 	return strVal(txtFormatNumber(n, decimals, !noCommas))
 }
@@ -717,12 +725,18 @@ func txtFormatNumber(n float64, decimals int, commas bool) string {
 		}
 		return s
 	}
-	s := strconv.FormatFloat(a, 'f', decimals, 64)
-	intPart := s
+	// Round on the 15-digit decimal value, like Excel (1E+187 prints its zeros,
+	// -1E-307 rounds to 0.00 without a sign).
+	intPart, frac := nfRoundDec(nfToDec(a), decimals)
+	if intPart == "" {
+		intPart = "0"
+	}
 	fracPart := ""
-	if dot := strings.IndexByte(s, '.'); dot >= 0 {
-		intPart = s[:dot]
-		fracPart = s[dot:]
+	if decimals > 0 {
+		fracPart = "." + frac
+	}
+	if !nfHasNonZero(intPart + frac) {
+		neg = false
 	}
 	if commas {
 		intPart = txtAddCommas(intPart)
@@ -866,9 +880,7 @@ func txtNthDelimPos(text, delim string, n int) int {
 
 // ---- TEXT -------------------------------------------------------------------
 
-// txtText formats a value with an Excel-style format code. A pragmatic subset
-// of numeric and date/time codes is supported (see txtApplyFormat); unknown
-// codes fall back to the value's default string representation.
+// txtText formats a value with a spreadsheet format code (numfmt.go).
 func txtText(c *callCtx) value {
 	if e, ok := txtFirstErr(c, 2); ok {
 		return e
@@ -876,213 +888,5 @@ func txtText(c *callCtx) value {
 	if c.nargs() < 2 {
 		return errValue
 	}
-	v := c.scalar(0)
-	format := c.text(1)
-	return strVal(txtApplyFormat(v, format))
-}
-
-// txtApplyFormat applies a (subset of) Excel format codes to a value.
-func txtApplyFormat(v value, format string) string {
-	num, isNum := v.toNum()
-	lower := strings.ToLower(strings.TrimSpace(format))
-
-	// Date/time formats require a numeric serial.
-	if isNum && txtIsDateFormat(lower) {
-		return txtFormatDate(serialToTime(num), format)
-	}
-
-	if !isNum {
-		// Non-numeric text: format codes generally pass the text through.
-		return v.toStr()
-	}
-
-	switch strings.TrimSpace(format) {
-	case "0":
-		return txtFormatNumber(math.Round(num), 0, false)
-	case "0.0":
-		return txtFormatNumber(num, 1, false)
-	case "0.00":
-		return txtFormatNumber(num, 2, false)
-	case "0.000":
-		return txtFormatNumber(num, 3, false)
-	case "#,##0":
-		return txtFormatNumber(num, 0, true)
-	case "#,##0.0":
-		return txtFormatNumber(num, 1, true)
-	case "#,##0.00":
-		return txtFormatNumber(num, 2, true)
-	case "0%":
-		return txtFormatNumber(num*100, 0, false) + "%"
-	case "0.0%":
-		return txtFormatNumber(num*100, 1, false) + "%"
-	case "0.00%":
-		return txtFormatNumber(num*100, 2, false) + "%"
-	case "$#,##0":
-		return txtCurrency(num, 0, true)
-	case "$#,##0.00":
-		return txtCurrency(num, 2, true)
-	case "$0":
-		return txtCurrency(num, 0, false)
-	case "$0.00":
-		return txtCurrency(num, 2, false)
-	}
-
-	// Generic numeric patterns: a run of 0/#/, and an optional fractional part
-	// of trailing zeros (e.g. "000", "0.0000", "#,###.##").
-	if dec, commas, pct, ok := txtParseNumericPattern(format); ok {
-		val := num
-		if pct {
-			val *= 100
-		}
-		out := txtFormatNumber(val, dec, commas)
-		if pct {
-			out += "%"
-		}
-		return out
-	}
-
-	// Unknown format → default string.
-	return v.toStr()
-}
-
-// txtCurrency formats a (possibly negative) currency value with a leading "$".
-func txtCurrency(n float64, decimals int, commas bool) string {
-	if n < 0 {
-		return "-$" + txtFormatNumber(math.Abs(n), decimals, commas)
-	}
-	return "$" + txtFormatNumber(n, decimals, commas)
-}
-
-// txtParseNumericPattern recognises generic numeric format codes consisting of
-// '0', '#', ',', '.', and a trailing '%'. It returns the number of decimal
-// places (count of digit placeholders after '.'), whether thousands commas are
-// requested, and whether the pattern is a percentage.
-func txtParseNumericPattern(format string) (decimals int, commas, pct bool, ok bool) {
-	f := strings.TrimSpace(format)
-	if f == "" {
-		return 0, false, false, false
-	}
-	if strings.HasSuffix(f, "%") {
-		pct = true
-		f = f[:len(f)-1]
-	}
-	// Only digit placeholders, separators and a single dot are allowed.
-	for _, r := range f {
-		switch r {
-		case '0', '#', ',', '.':
-		default:
-			return 0, false, false, false
-		}
-	}
-	if strings.Count(f, ".") > 1 {
-		return 0, false, false, false
-	}
-	if strings.Contains(f, ",") {
-		commas = true
-	}
-	if dot := strings.IndexByte(f, '.'); dot >= 0 {
-		frac := f[dot+1:]
-		for _, r := range frac {
-			if r == '0' || r == '#' {
-				decimals++
-			}
-		}
-	}
-	// Require at least one digit placeholder to consider this a numeric pattern.
-	if !strings.ContainsAny(f, "0#") {
-		return 0, false, false, false
-	}
-	return decimals, commas, pct, true
-}
-
-// ---- Date/time formatting ---------------------------------------------------
-
-// txtIsDateFormat reports whether a (lower-cased) format code looks like a
-// supported date/time pattern.
-func txtIsDateFormat(lower string) bool {
-	switch lower {
-	case "yyyy-mm-dd", "mm/dd/yyyy", "m/d/yyyy", "yyyy", "mmm", "mmmm",
-		"hh:mm", "hh:mm:ss", "h:mm am/pm":
-		return true
-	}
-	// Heuristic: contains date/time letters and no numeric placeholders.
-	if strings.ContainsAny(lower, "ymdhs") && !strings.ContainsAny(lower, "0#%") {
-		// Avoid treating bare words; require a separator typical of dates/times.
-		if strings.ContainsAny(lower, "-/: ") || lower == "yyyy" || lower == "mmm" || lower == "mmmm" {
-			return true
-		}
-	}
-	return false
-}
-
-// txtFormatDate renders t according to a supported date/time format code.
-func txtFormatDate(t time.Time, format string) string {
-	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "yyyy-mm-dd":
-		return t.Format("2006-01-02")
-	case "mm/dd/yyyy":
-		return t.Format("01/02/2006")
-	case "m/d/yyyy":
-		return t.Format("1/2/2006")
-	case "yyyy":
-		return t.Format("2006")
-	case "mmm":
-		return t.Format("Jan")
-	case "mmmm":
-		return t.Format("January")
-	case "hh:mm":
-		return t.Format("15:04")
-	case "hh:mm:ss":
-		return t.Format("15:04:05")
-	case "h:mm am/pm":
-		return t.Format("3:04 PM")
-	}
-	// Token-based fallback for compound codes.
-	return txtFormatDateTokens(t, format)
-}
-
-// txtFormatDateTokens performs a best-effort token replacement for date/time
-// format codes not matched exactly above (e.g. "yyyy/mm/dd hh:mm").
-func txtFormatDateTokens(t time.Time, format string) string {
-	// Replace longest tokens first to avoid partial collisions.
-	replacements := []struct{ from, to string }{
-		{"yyyy", t.Format("2006")},
-		{"yy", t.Format("06")},
-		{"mmmm", t.Format("January")},
-		{"mmm", t.Format("Jan")},
-		{"mm", t.Format("01")},
-		{"dd", t.Format("02")},
-		{"hh", t.Format("15")},
-		{"ss", t.Format("05")},
-		{"m", t.Format("1")},
-		{"d", t.Format("2")},
-		{"h", t.Format("3")},
-		{"s", t.Format("5")},
-	}
-	// Process case-insensitively but only on date letters; build by scanning.
-	lower := strings.ToLower(format)
-	var b strings.Builder
-	i := 0
-	for i < len(lower) {
-		matched := false
-		// "am/pm" token.
-		if strings.HasPrefix(lower[i:], "am/pm") {
-			b.WriteString(t.Format("PM"))
-			i += len("am/pm")
-			continue
-		}
-		for _, rp := range replacements {
-			if strings.HasPrefix(lower[i:], rp.from) {
-				b.WriteString(rp.to)
-				i += len(rp.from)
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			b.WriteByte(format[i])
-			i++
-		}
-	}
-	return b.String()
+	return textFormat(c.scalar(0), c.text(1))
 }
