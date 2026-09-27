@@ -64,5 +64,5 @@ research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/styles/displayStyle.js,5,style
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/styles/paraPr.js,1,styles,vitest,web/app/src/pages/docs/__tests__/oo/style-compile.test.ts,M3
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/styles/styleApplicator.js,1,styles,vitest,web/app/src/pages/docs/__tests__/oo/style-apply.test.ts,M3
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/text-autocorrection/as-you-type.js,2,autocorrect,vitest,web/app/src/pages/docs/__tests__/oo/autocorrect-as-you-type.test.ts,M2
-research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/unit-tests/deleted-text-recovery.js,17,history-internals,mixed (10 vitest as version diff in M12 / 7 n/a history navigation),web/app/src/pages/docs/__tests__/oo/version-diff.test.ts,M12
+research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/unit-tests/deleted-text-recovery.js,17,history-internals,mixed (10 vitest as version diff in M12 / 7 vitest as Yjs undo history points),web/app/src/pages/docs/__tests__/oo/version-diff.test.ts,M12
 research/onlyoffice/sdkjs-tests-v9.3.1/tests/word/unit-tests/paragraphContentPos.js,1,engine-internals,n/a (sdkjs-internal),,none

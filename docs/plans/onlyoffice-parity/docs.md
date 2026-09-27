@@ -527,7 +527,7 @@ Grown equivalent and would not be built additively.
 | styles/paraPr.js | 1 | 12 | style indents compiled; numbering overrides indent | vitest | `oo/style-compile.test.ts` | M3 |
 | styles/styleApplicator.js | 1 | 8 | direct props + numPr + "update style from selection" propagate | vitest | `oo/style-apply.test.ts` | M3 |
 | text-autocorrection/as-you-type.js | 2 | 2 | capitalize first letter of sentence (multi-script, after `! `), of table cells, with both flags in all combinations | vitest | `oo/autocorrect-as-you-type.test.ts` | M2 |
-| unit-tests/deleted-text-recovery.js | 17 | 116 | reconstruct deleted text from history as review runs | mixed: 5 vitest re-expressed as version-diff, 12 n/a | `oo/version-diff.test.ts` | M12 |
+| unit-tests/deleted-text-recovery.js | 17 | 116 | reconstruct deleted text from history as review runs | mixed: 10 vitest re-expressed as version diffs, 7 vitest as Yjs undo history points (Prev = Undo, Next = Redo) | `oo/version-diff.test.ts` | M12 |
 | unit-tests/paragraphContentPos.js | 1 | 18 | CParagraphContentPos internals | n/a | — | none |
 
 Totals by portability (runtime tests): **vitest 1,131** (of which 936 are
@@ -1830,8 +1830,13 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   paragraph, Complex 1 and 2 (with "undo recovered text" as accepting the
   recovered deletions), Split run (the bold run split around the recovered
   text) and "not shown within one revision". The five "Going back and
-  forth through history" cases and Complex 3 / 4 step through
-  per-keystroke history points, which snapshot versions don't have: n/a.
+  forth through history" cases and Complex 3 / 4 (stepping back and forth
+  through history points) run against the editor's Yjs undo manager, the
+  history every live doc has: one history point is one capture group
+  (edits without a pause over its 500 ms timeout), "Prev" is Undo and
+  "Next" is Redo, and the tests end a capture group
+  (`undoManager.stopCapturing()`) wherever the upstream case starts a new
+  point.
   Grown-native: `diff.test.ts` (19: Myers and clean-ups, word replace with
   author/date and change grouping, paragraph add / remove / split / merge
   with accept and reject round trips, formatting and paragraph-property
@@ -1870,7 +1875,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 | mergeDocuments: symbol-level "hello" → "hellok k" | Word-shaped: "hellok k" added, "hello" removed | "k k" added (character diff after the shared word) | grown-variant |
 | mergeDocuments: bookmarks and comments | Merged into the result | Not carried (comment threads live on the server) | Not yet |
 | deleted-text recovery: Split run | " how" (what was selected) | "how " — a snapshot diff can't tell the two apart; like diff-match-patch the later one | grown-variant |
-| deleted-text recovery: history navigation | Per-keystroke history points | Saved versions only | n/a |
+| deleted-text recovery: history navigation | History points of the document model | Yjs undo capture groups (500 ms) | grown-variant |
 | Compare with tracked changes in the inputs | Word warns and treats them as accepted | Accepted first (combine keeps them) | Note only |
 
 ### 6.16 M13 status (spell check, language, plugins, misc)
