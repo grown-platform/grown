@@ -512,6 +512,32 @@ export function SheetEditor({ user }: SheetEditorProps) {
     [],
   );
 
+  // Remote ops that arrive while this user has a cell editor open are queued
+  // and applied once the editor closes. FortuneSheet's state updaters have
+  // side effects (a cell commit reads the editor's DOM and emits the op); a
+  // remote update in flight when the user presses Enter makes React replay
+  // that commit after the editor has been emptied, which cleared the cell
+  // for everyone.
+  const remoteQueue = useRef<any[][]>([]);
+  function applyRemote(ops: any[]) {
+    applyingRemote.current = true;
+    try {
+      ref.current?.applyOp(ops);
+    } catch {
+      /* ignore */
+    }
+    applyingRemote.current = false;
+  }
+  function drainRemote() {
+    if (isEditingCell()) {
+      window.setTimeout(drainRemote, 50);
+      return;
+    }
+    const queued = remoteQueue.current;
+    remoteQueue.current = [];
+    for (const ops of queued) applyRemote(ops);
+  }
+
   // Live collaboration: relay ops + presence over the WebSocket.
   useEffect(() => {
     const ws = new WebSocket(collabURL(id));
@@ -534,18 +560,19 @@ export function SheetEditor({ user }: SheetEditorProps) {
         return;
       }
       if (Array.isArray(msg)) {
-        applyingRemote.current = true;
-        try {
-          ref.current?.applyOp(msg);
-        } catch {
-          /* ignore */
-        }
-        applyingRemote.current = false;
+        // Held back while this user is typing into a cell (see drainRemote).
+        if (remoteQueue.current.length || isEditingCell()) {
+          if (!remoteQueue.current.length) window.setTimeout(drainRemote, 50);
+          remoteQueue.current.push(msg);
+        } else applyRemote(msg);
       } else if (msg && msg.type === "presence") {
-        try {
-          ref.current?.addPresences?.([msg.presence]);
-        } catch {
-          /* ignore */
+        // Skipped while typing, like ops; the next presence tick catches up.
+        if (!isEditingCell()) {
+          try {
+            ref.current?.addPresences?.([msg.presence]);
+          } catch {
+            /* ignore */
+          }
         }
         const p = msg.presence;
         setPeers((cur) => ({
