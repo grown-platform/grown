@@ -176,7 +176,7 @@ func structRefEndOK(s []rune, end int) bool {
 		return true
 	}
 	ch := s[end]
-	return !(structIdent(ch) || ch == '(' || ch == '!' || ch == '$')
+	return !(structIdent(ch) || ch == '(' || ch == '!' || ch == '$' || ch == '[')
 }
 
 // matchStructRef parses a reference starting exactly at `at`.
@@ -288,7 +288,9 @@ func rewriteStructRefs(formula string, visit refVisit) string {
 		if ch == '[' {
 			depth, j := 0, i
 			for ; j < n; j++ {
-				if s[j] == '[' {
+				if s[j] == '\'' {
+					j++ // a quote escapes the next character in a column name
+				} else if s[j] == '[' {
 					depth++
 				} else if s[j] == ']' {
 					depth--
@@ -1277,6 +1279,11 @@ func ApplyStructureOp(wb FsWorkbook, op StructureOp) error {
 		return ErrSheetNotFound
 	}
 	op.Sheet = wb[target].Name
+	// Tables on the target sheet: what the op removes, for every sheet's formulas.
+	var tshift tableShiftResult
+	if v, ok := extraValue(&wb[target], "grownTables"); ok {
+		tshift = shiftTableModels(v, wb[target].Name, op)
+	}
 	// Named ranges resolve their host against the pre-op workbook (names do
 	// not change, so reading them after the loop is equivalent).
 	for i := range wb {
@@ -1311,6 +1318,7 @@ func ApplyStructureOp(wb FsWorkbook, op StructureOp) error {
 					}
 				}
 			}
+			dropTableRefsOnSheet(sh, tshift.removed)
 			continue
 		}
 		if v, ok := extraValue(sh, "grownFilter"); ok {
@@ -1327,6 +1335,11 @@ func ApplyStructureOp(wb FsWorkbook, op StructureOp) error {
 		}
 		denseToCellData(sh)
 		moveSheetCells(sh, op, merges)
+		if _, ok := extraValue(sh, "grownTables"); ok {
+			setExtra(sh, "grownTables", tshift.tables)
+			writeTableHeaders(sh, tshift.headers)
+		}
+		dropTableRefsOnSheet(sh, tshift.removed)
 		if op.Kind == "insert" || op.Kind == "delete" {
 			d := op.Count
 			if op.Kind == "delete" {

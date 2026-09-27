@@ -10,6 +10,8 @@ export interface TableColumn {
   name: string;
   totalsRowFunction?: string;
   totalsRowLabel?: string;
+  /** The totals cell's formula when totalsRowFunction is "custom". */
+  totalsRowFormula?: string;
   calculatedColumnFormula?: string;
 }
 
@@ -59,6 +61,8 @@ export function readTable(doc: Document): TableModel | null {
       if (label) col.totalsRowLabel = label;
       const calc = all(c, "calculatedColumnFormula")[0];
       if (calc) col.calculatedColumnFormula = text(calc);
+      const tf = all(c, "totalsRowFormula")[0];
+      if (tf) col.totalsRowFormula = text(tf);
       return col;
     }),
     style: si
@@ -77,7 +81,9 @@ export function writeTable(t: TableModel): string {
   const ref = rectRef(t.ref);
   const cols = t.columns
     .map((c) => {
-      const inner = c.calculatedColumnFormula ? `<calculatedColumnFormula>${esc(c.calculatedColumnFormula)}</calculatedColumnFormula>` : "";
+      const inner =
+        (c.calculatedColumnFormula ? `<calculatedColumnFormula>${esc(c.calculatedColumnFormula)}</calculatedColumnFormula>` : "") +
+        (c.totalsRowFormula && c.totalsRowFunction === "custom" ? `<totalsRowFormula>${esc(c.totalsRowFormula)}</totalsRowFormula>` : "");
       const a = attrs({ id: c.id, name: c.name, totalsRowFunction: c.totalsRowFunction, totalsRowLabel: c.totalsRowLabel });
       return inner ? `<tableColumn${a}>${inner}</tableColumn>` : `<tableColumn${a}/>`;
     })
