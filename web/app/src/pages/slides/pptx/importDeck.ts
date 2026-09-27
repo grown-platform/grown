@@ -7,6 +7,7 @@ import { externalizeImages } from "../assets";
 import type { DeckDoc, Slide } from "../model";
 import { deckSize, resizeDeck } from "../slideProps";
 import { layoutsOf } from "../layouts";
+import { convertOnServer, needsServerConversion, officeConvertCaps } from "../../../lib/officeConvert";
 
 export const PPTX_ACCEPT =
   ".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation," +
@@ -16,7 +17,7 @@ export const PPTX_ACCEPT =
 export function importTitle(fileName: string, docTitle?: string): string {
   const t = (docTitle || "").trim();
   if (t && !/^PowerPoint Presentation$/i.test(t)) return t;
-  return fileName.replace(/\.(pptx|odp)$/i, "").trim() || "Imported presentation";
+  return fileName.replace(/\.(pptx|odp|ppt|pps|pot)$/i, "").trim() || "Imported presentation";
 }
 
 function blobBytes(b: Blob): Promise<Uint8Array> {
@@ -29,11 +30,31 @@ function blobBytes(b: Blob): Promise<Uint8Array> {
   });
 }
 
+/** Extensions the optional LibreOffice converter (CC8) may take for Slides. */
+const SERVER_CONVERTIBLE = /\.(ppt|pps|pot|odp)$/i;
+
 /** Read slides (and the whole deck: theme, layouts, size) from a .pptx or
- *  .odp blob (told apart by the ODF package's mimetype entry). */
+ *  .odp blob (told apart by the ODF package's mimetype entry). With
+ *  LibreOffice enabled on the server, legacy .ppt/.pps/.pot (and .odp when
+ *  the server prefers it) are converted to .pptx there first; `fileName`
+ *  (or the File's own name) tells which. */
 export async function readPptxSlides(
   data: Blob | ArrayBuffer,
+  fileName?: string,
 ): Promise<{ slides: Slide[]; deck: DeckDoc; title?: string; warnings: string[] }> {
+  const name = fileName ?? (data instanceof File ? data.name : "");
+  if (name && SERVER_CONVERTIBLE.test(name)) {
+    const caps = await officeConvertCaps();
+    if (needsServerConversion(caps, name, "pptx")) {
+      const blob = data instanceof Blob ? data : new Blob([data]);
+      try {
+        data = await convertOnServer(blob, name);
+      } catch (e) {
+        if (!/\.odp$/i.test(name)) throw e; // .ppt has no in-browser reader
+        console.warn(`LibreOffice conversion of ${name} failed; using the ODP reader`, e);
+      }
+    }
+  }
   const bytes = data instanceof Blob ? await blobBytes(data) : new Uint8Array(data);
   const odp = await import("../odp/read");
   if (odp.isOdp(bytes)) {
@@ -68,7 +89,7 @@ export async function importPptxAsNewDeck(
   data: Blob | ArrayBuffer,
   fileName: string,
 ): Promise<{ id: string; warnings: string[] }> {
-  const r = await readPptxSlides(data);
+  const r = await readPptxSlides(data, fileName);
   const d = await createDeck(importTitle(fileName, r.title));
   // Pictures go to the deck's asset store (inline when that isn't available).
   const up = (b: Blob) => uploadDeckAsset(d.id, b);

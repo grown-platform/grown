@@ -16,6 +16,7 @@ import { getFile, downloadURL } from "./drive/api";
 import type { DriveFile } from "./drive/types";
 import { FilePreview } from "./drive/FilePreview";
 import { apps } from "../catalog/apps";
+import { needsServerConversion, useOfficeConvertCaps } from "../lib/officeConvert";
 
 interface EditorPlaceholderProps {
   user: User;
@@ -38,6 +39,8 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
   const [convertError, setConvertError] = useState<string | null>(null);
 
   const app = apps.find((a) => a.id === appId);
+  // Optional server-side LibreOffice (CC8): legacy .doc/.xls/.ppt open too.
+  const officeCaps = useOfficeConvertCaps();
 
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +90,7 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
   const canOpenInSlides =
     appId === "slides" &&
     (/\.(pptx|odp)$/i.test(file.name) ||
+      needsServerConversion(officeCaps, file.name, "pptx") ||
       file.mime_type ===
         "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
       file.mime_type === "application/vnd.oasis.opendocument.presentation");
@@ -94,7 +98,39 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
   // A spreadsheet opened from Drive can be imported into a Grown Sheets
   // workbook (a copy; the Drive file is left as is).
   const canOpenInSheets =
-    appId === "sheets" && /\.(xlsx|xlsm|xls|ods|csv|tsv)$/i.test(file.name);
+    appId === "sheets" &&
+    (/\.(xlsx|xlsm|xls|ods|csv|tsv)$/i.test(file.name) ||
+      needsServerConversion(officeCaps, file.name, "xlsx"));
+
+  // A word-processing file can be imported into a new Grown Docs document
+  // (a copy): .docx/.odt/.rtf always, legacy .doc/.wpd when the server has
+  // LibreOffice.
+  const canOpenInDocs =
+    appId === "docs" &&
+    (/\.(docx|odt|rtf)$/i.test(file.name) ||
+      needsServerConversion(officeCaps, file.name, "docx"));
+  const openTarget = canOpenInDocs ? "Docs" : canOpenInSheets ? "Sheets" : canOpenInSlides ? "Slides" : null;
+
+  async function openInDocs() {
+    if (!file) return;
+    setConverting(true);
+    setConvertError(null);
+    try {
+      const resp = await fetch(url, { credentials: "same-origin" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const { importFile, createDoc } = await import("./docs/api");
+      const { stashDocxSeed } = await import("./docs/docx/seed");
+      const imported = await importFile(new File([blob], file.name, { type: file.mime_type }));
+      const doc = await createDoc(file.name.replace(/\.[^.]+$/, "") || "Imported document");
+      if (imported.kind === "docx") stashDocxSeed(doc.id, imported.model);
+      else sessionStorage.setItem(`docseed:${doc.id}`, imported.html);
+      navigate(`/docs/d/${doc.id}`);
+    } catch (e) {
+      setConvertError((e as Error).message);
+      setConverting(false);
+    }
+  }
 
   async function openInSheets() {
     if (!file) return;
@@ -181,6 +217,18 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
             {file.name}
           </Typography>
         </Box>
+        {canOpenInDocs && (
+          <Button
+            onClick={openInDocs}
+            loading={converting}
+            variant="solid"
+            color="neutral"
+            startDecorator={<Icons.Description />}
+            data-testid="open-in-docs"
+          >
+            Open in Docs
+          </Button>
+        )}
         {canOpenInSheets && (
           <Button
             onClick={openInSheets}
@@ -232,23 +280,25 @@ export function EditorPlaceholder({ user, appId }: EditorPlaceholderProps) {
       <Container maxWidth="lg" sx={{ py: 3 }}>
         {convertError && (
           <Alert variant="soft" color="danger" sx={{ mb: 2 }}>
-            Couldn’t open this file in {canOpenInSheets ? "Sheets" : "Slides"}: {convertError}
+            Couldn’t open this file in {openTarget ?? app.name}: {convertError}
           </Alert>
         )}
-        {canOpenInSlides ? (
+        {openTarget ? (
           <Alert
             variant="soft"
             color="primary"
-            startDecorator={<Icons.Slideshow />}
+            startDecorator={canOpenInSlides ? <Icons.Slideshow /> : canOpenInSheets ? <Icons.TableChart /> : <Icons.Description />}
             sx={{ mb: 2 }}
           >
             <Box>
               <Typography level="title-sm">
-                Edit this {/\.odp$/i.test(file.name) ? "presentation" : "PowerPoint file"} in Slides
+                {canOpenInSlides
+                  ? `Edit this ${/\.odp$/i.test(file.name) ? "presentation" : "PowerPoint file"} in Slides`
+                  : `Edit this file in ${openTarget}`}
               </Typography>
               <Typography level="body-sm" sx={{ opacity: 0.85 }}>
-                “Open in Slides” makes an editable Slides copy. The original
-                file stays in Drive unchanged.
+                “Open in {openTarget}” makes an editable {openTarget} copy. The
+                original file stays in Drive unchanged.
               </Typography>
             </Box>
           </Alert>

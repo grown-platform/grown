@@ -1,6 +1,7 @@
 import type { Doc, ListDocsResponse } from "./types";
 import type { ObjectGrant } from "../../api/directory";
 import type { DocxImport } from "./docx/model";
+import { convertOnServer, needsServerConversion, officeConvertCaps } from "../../lib/officeConvert";
 
 const API_BASE = "/api/v1";
 
@@ -81,12 +82,32 @@ export type ImportResult =
   | { kind: "html"; html: string }
   | { kind: "docx"; model: DocxImport };
 
+/** Extensions the optional LibreOffice converter may take for Docs; the
+ *  capabilities endpoint is only asked about these. */
+const SERVER_CONVERTIBLE = new Set(["doc", "dot", "wpd", "rtf", "odt"]);
+
 /** importFile converts an uploaded file for a new document. .docx files are
  *  read directly in the browser (docx/read.ts), keeping styles, list
  *  definitions, headers/footers and comments; if that fails the server's
- *  pandoc importer is used, as for every other format. */
+ *  pandoc importer is used, as for every other format. When the server has
+ *  LibreOffice enabled (CC8), legacy .doc/.wpd are first converted to .docx
+ *  there (and .odt/.rtf too when the server prefers it), then take the .docx
+ *  path. */
 export async function importFile(file: File): Promise<ImportResult> {
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  let ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (SERVER_CONVERTIBLE.has(ext)) {
+    const caps = await officeConvertCaps();
+    if (needsServerConversion(caps, file.name, "docx")) {
+      try {
+        file = await convertOnServer(file, file.name);
+        ext = "docx";
+      } catch (e) {
+        // Formats pandoc also reads fall back to it; legacy ones can't.
+        if (!IMPORT_FORMATS[ext]) throw e;
+        console.warn(`LibreOffice conversion of .${ext} failed; using pandoc`, e);
+      }
+    }
+  }
   if (ext === "docx") {
     try {
       const { readDocx } = await import("./docx/read");

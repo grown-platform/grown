@@ -122,6 +122,7 @@ import { deleteSlides, moveSlides, railAt, railClamp, railClick, railGo, railSel
 import { ShareDialog } from "./ShareDialog";
 import { DeckVersionHistory } from "../../components/versions/DeckVersionPreview";
 import { VERSION_RESTORED_MSG } from "../../components/versions/api";
+import { joinAccept, legacyAccept, useOfficeConvertCaps } from "../../lib/officeConvert";
 import { PPTX_ACCEPT, readPptxSlides, slidesForDeck } from "./pptx/importDeck";
 import {
   addNextSlide,
@@ -342,6 +343,7 @@ export function DeckEditor({ user }: { user: User }) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const pptxInput = useRef<HTMLInputElement | null>(null);
+  const officeCaps = useOfficeConvertCaps();
   const [importMsg, setImportMsg] = useState<string | null>(null);
   // Shape gallery (toolbar dropdown) and the armed draw-to-insert tool.
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -1935,7 +1937,7 @@ export function DeckEditor({ user }: { user: User }) {
       <input
         ref={pptxInput}
         type="file"
-        accept={PPTX_ACCEPT}
+        accept={joinAccept(PPTX_ACCEPT, legacyAccept(officeCaps, "pptx"))}
         hidden
         data-testid="pptx-import-input"
         onChange={onPptxPicked}
