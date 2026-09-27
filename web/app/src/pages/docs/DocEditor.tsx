@@ -28,7 +28,12 @@ import {
   trashDoc,
   updatePreview,
   snapshotNow,
+  addComment,
+  replyToComment,
+  resolveComment,
 } from "./api";
+import { takeDocxSeed } from "./docx/seed";
+import { setExportDocId } from "./export";
 import { createCollab, colorFor } from "./collab";
 import { buildExtensions } from "./extensions";
 import {
@@ -245,9 +250,35 @@ export function DocEditor({ user }: DocEditorProps) {
     };
   }, [editor, id]);
 
-  // Seed content when arriving from "Make a copy".
+  // Downloads include this document's comment threads.
+  useEffect(() => {
+    if (editor) setExportDocId(editor, id);
+  }, [editor, id]);
+
+  // Seed content when arriving from "Make a copy", a template or an import.
+  // A directly imported .docx carries the whole model (styles, lists,
+  // header/footer, comments), not just HTML.
   useEffect(() => {
     if (!editor) return;
+    const docx = takeDocxSeed(id);
+    if (docx && editor.getText().trim() === "") {
+      void import("./docx/apply").then(async ({ applyDocxImport, importComments }) => {
+        if (editor.isDestroyed) return;
+        applyDocxImport(editor, docx);
+        if (!docx.comments.length) return;
+        await importComments(
+          editor,
+          docx.comments,
+          {
+            add: (body, quote, from, to) => addComment(id, body, quote, from, to),
+            reply: (parent, body) => replyToComment(id, parent, body),
+            resolve: (cid) => resolveComment(id, cid),
+          },
+          user.display_name || user.email,
+        );
+      });
+      return;
+    }
     const seed = sessionStorage.getItem(`docseed:${id}`);
     if (seed && editor.getText().trim() === "") {
       editor.commands.setContent(seed);

@@ -1,5 +1,6 @@
 import type { Doc, ListDocsResponse } from "./types";
 import type { ObjectGrant } from "../../api/directory";
+import type { DocxImport } from "./docx/model";
 
 const API_BASE = "/api/v1";
 
@@ -74,6 +75,27 @@ export async function importDoc(file: File): Promise<string> {
     throw new Error(msg || `HTTP ${resp.status}`);
   }
   return resp.text();
+}
+
+export type ImportResult =
+  | { kind: "html"; html: string }
+  | { kind: "docx"; model: DocxImport };
+
+/** importFile converts an uploaded file for a new document. .docx files are
+ *  read directly in the browser (docx/read.ts), keeping styles, list
+ *  definitions, headers/footers and comments; if that fails the server's
+ *  pandoc importer is used, as for every other format. */
+export async function importFile(file: File): Promise<ImportResult> {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "docx") {
+    try {
+      const { readDocx } = await import("./docx/read");
+      return { kind: "docx", model: await readDocx(file) };
+    } catch (e) {
+      console.warn("direct .docx import failed; falling back to pandoc", e);
+    }
+  }
+  return { kind: "html", html: await importDoc(file) };
 }
 
 /** renameDoc changes a document's title. */

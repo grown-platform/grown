@@ -1,13 +1,15 @@
 // Direct DOCX import / export (Docs M6). Fixtures are built in code
 // (docx-fixture.ts); no third-party files are committed.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import JSZip from "jszip";
 import type { Editor } from "@tiptap/core";
 import { makeEditor, numberingText, paragraphTexts } from "./harness";
 import { buildDocx, richParts, PNG_1PX, STYLES, NUMBERING } from "./docx-fixture";
 import { readDocx } from "../docx/read";
 import { writeDocx } from "../docx/write";
-import { applyDocxImport, collectDocxInput } from "../docx/apply";
+import { applyDocxImport, collectDocxInput, importComments } from "../docx/apply";
+import { stashDocxSeed, takeDocxSeed } from "../docx/seed";
+import { importFile } from "../api";
 import { getDocModel } from "../docModel";
 import { parseXml } from "../docx/xml";
 import type { DocxImport } from "../docx/model";
@@ -312,5 +314,72 @@ describe("docx writer", () => {
     const numbering = await zip.file("word/numbering.xml")!.async("string");
     expect(numbering).toMatch(/<w:lvlText w:val="Step %1\)"\/>/);
     expect(numbering).toMatch(/<w:num w:numId="4"><w:abstractNumId w:val="2"\/><\/w:num>/);
+  });
+});
+
+describe("docx import/export wiring", () => {
+  it("creates imported comment threads on the server and re-points the marks", async () => {
+    const { editor, imp } = await importInto(await buildDocx(richParts()));
+    const calls: string[] = [];
+    let seq = 0;
+    const n = await importComments(
+      editor,
+      imp.comments,
+      {
+        add: async (body, quote, from, to) => {
+          calls.push(`add ${JSON.stringify(body)} ${quote} ${to > from}`);
+          return { id: `srv${++seq}` };
+        },
+        reply: async (parent, body) => calls.push(`reply ${parent} ${JSON.stringify(body)}`),
+        resolve: async (id) => calls.push(`resolve ${id}`),
+      },
+      "Dan",
+    );
+    expect(n).toBe(2);
+    expect(calls).toEqual(['add "Please check.\\n\\n— Carol" commented text true', 'reply srv1 "Checked."']);
+    const marked = findNode(editor.getJSON(), (x) => x.type === "text" && x.text === "commented text")!;
+    expect(marked.marks).toEqual([{ type: "commentMark", attrs: { commentId: "srv1" } }]);
+  });
+
+  it("anchors server comments without marks from their stored range on export", async () => {
+    const editor = makeEditor("<p>Hello brave new world</p>");
+    const input = collectDocxInput(editor, {
+      comments: [
+        { id: "c1", author_name: "Eve", body: "Nice", created_at: "2026-03-01T00:00:00Z", resolved: true, anchor_from: 7, anchor_to: 12, replies: [] },
+      ],
+    });
+    const { imp, editor: back } = await importInto(await writeDocx(input));
+    expect(imp.comments).toEqual([{ id: "docx-c0", author: "Eve", date: "2026-03-01T00:00:00Z", text: "Nice", resolved: true }]);
+    const marked = findNode(back.getJSON(), (x) => x.type === "text" && x.text === "brave")!;
+    expect(marked.marks).toEqual([{ type: "commentMark", attrs: { commentId: "docx-c0" } }]);
+    // The live document is untouched.
+    expect(JSON.stringify(editor.getJSON())).not.toMatch(/commentMark/);
+  });
+
+  it("falls back to the pandoc importer when the direct reader fails", async () => {
+    const fetchMock = vi.fn(async () => new Response("<p>from pandoc</p>", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const bad = new File([new TextEncoder().encode("not a zip")], "broken.docx");
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const res = await importFile(bad);
+      warn.mockRestore();
+      expect(res).toEqual({ kind: "html", html: "<p>from pandoc</p>" });
+      expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/import\?from=docx/);
+
+      const good = new File([await buildDocx({ body: "<w:p><w:r><w:t>direct</w:t></w:r></w:p>" })], "good.docx");
+      const ok = await importFile(good);
+      expect(ok.kind).toBe("docx");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("hands a docx import to the editor through the seed channel", () => {
+    const imp = { doc: { type: "doc", content: [] }, styles: {}, numbering: {}, header: null, footer: null, comments: [], page: null, warnings: [] };
+    stashDocxSeed("d1", imp);
+    expect(takeDocxSeed("d1")).toEqual(imp);
+    expect(takeDocxSeed("d1")).toBeNull();
   });
 });
