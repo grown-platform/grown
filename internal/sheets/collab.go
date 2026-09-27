@@ -98,6 +98,13 @@ func isPresence(msg []byte) bool {
 // must verify access first. When canWrite is false (a viewer/commenter grant),
 // inbound document-mutating ops are dropped server-side; presence still relays.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, sheetID string, canWrite bool) {
+	h.ServeGuarded(w, r, sheetID, canWrite, nil)
+}
+
+// ServeGuarded is Serve with a protection guard: ops touching cells or
+// protections the user may not change are dropped before they are relayed
+// (see OpGuard). A nil guard relays everything a writer sends.
+func (h *Hub) ServeGuarded(w http.ResponseWriter, r *http.Request, sheetID string, canWrite bool, guard *OpGuard) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return
@@ -139,6 +146,13 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, sheetID string, canW
 		// Read-only viewers may not mutate the sheet; relay only presence.
 		if !canWrite && !isPresence(data) {
 			continue
+		}
+		if guard != nil && !isPresence(data) {
+			filtered, ok := guard.Filter(data)
+			if !ok {
+				continue
+			}
+			data = filtered
 		}
 		room.broadcast(self, data)
 	}
