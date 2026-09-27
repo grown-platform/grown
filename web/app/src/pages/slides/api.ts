@@ -54,6 +54,14 @@ export function collabURL(id: string): string {
   return `${proto}//${location.host}/api/v1/slides/d/${id}/connect`;
 }
 
+/** notifyMentions notifies users @-mentioned in a comment (M10). */
+export async function notifyMentions(deckId: string, userIds: string[], commentId: string, text: string): Promise<void> {
+  await jsonFetch<unknown>(`/slides/d/${deckId}/mentions`, {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds, comment_id: commentId, text }),
+  });
+}
+
 // ---- Per-user ACL grants (object_grants) ----
 
 /** listDeckGrants returns the per-user grants on a deck. */
