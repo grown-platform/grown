@@ -6,6 +6,8 @@ import { promptLink } from "./links";
 import { isInTable } from "@tiptap/pm/tables";
 import { distributeColumns, distributeRows } from "./tables";
 import { openTableSettings } from "./TableUI";
+import { openObjectSettings } from "./ObjectsUI";
+import { arrangeObject, selectedObject } from "./objectNodes";
 import { EquationMenuItems, mathAt } from "./math/EquationMenu";
 import { NodeSelection } from "@tiptap/pm/state";
 import { followAt, updateFields, updateTocAt } from "./references";
@@ -268,6 +270,25 @@ export function EditorContextMenu({
         >
           Italic{kbd("Ctrl+I")}
         </ListItemButton>
+        {(() => {
+          // A selected picture, shape or chart (M7).
+          const obj = selectedObject(editor.state);
+          if (!obj) return null;
+          return (
+            <>
+              <ListDivider />
+              <ListItemButton onClick={run(() => openObjectSettings())} role="menuitem" data-testid="ctx-object-settings">
+                {obj.node.type.name === "chart" ? "Chart settings…" : obj.node.type.name === "shape" || obj.node.type.name === "textBox" ? "Shape settings…" : "Image settings…"}
+              </ListItemButton>
+              <ListItemButton onClick={run(() => arrangeObject(editor.view, obj.pos, "front"))} role="menuitem">
+                Bring to front
+              </ListItemButton>
+              <ListItemButton onClick={run(() => arrangeObject(editor.view, obj.pos, "back"))} role="menuitem">
+                Send to back
+              </ListItemButton>
+            </>
+          );
+        })()}
         {inTable && (
           <>
             <ListDivider />

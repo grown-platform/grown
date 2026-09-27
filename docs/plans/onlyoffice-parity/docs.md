@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Docs (word processing)
 
-Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12. M8 (references and fields) has landed; see §6.13. M9 (page layout, sections, pagination) has landed; see §6.14. M13 (spell check, language, plugins, misc) has landed; see §6.16. M10 (content controls, forms, protection) has landed; see §6.17.
+Status: plan written 2026-09-26. M0 (test harness) has landed; see §6.4. M2 (clipboard, find/replace, autocorrect) has landed; see §6.7. M4 (tables) has landed; see §6.10. M5 (track changes v2) has landed; see §6.11. M11 (equations) has landed; see §6.12. M8 (references and fields) has landed; see §6.13. M9 (page layout, sections, pagination) has landed; see §6.14. M13 (spell check, language, plugins, misc) has landed; see §6.16. M10 (content controls, forms, protection) has landed; see §6.17. M7 (images, shapes, charts) has landed; see §6.18.
 
 Scope rule (from the user): this plan is **additive**. Grown's editor stays
 TipTap 2 on ProseMirror with Yjs collaboration; every milestone adds
@@ -240,16 +240,16 @@ Grown paths are relative to the repo root; `docs/` below means
 
 | Feature | OnlyOffice ref | Grown | Where / note |
 |---|---|---|---|
-| Image from file / URL / storage | Toolbar `mniFrom*`, ImageSettings | Partial | URL prompt + paste/drop (data URL, `docs/extensions.ts:240`); no file picker, no Drive storage |
-| Resize / crop / rotate / flip / actual size / fit margins | ImageSettings | Missing | — |
-| Wrapping style (inline, square, tight, through, top-bottom, behind, in front) | ImageSettings `txt*` | Missing | inline only |
-| Alignment, arrange (bring forward/back), group | Toolbar `capImg*` | Missing | — |
-| Alt text | ImageSettingsAdvanced `textAlt` | Missing | — |
-| Replace image / save as picture | DocumentHolder | Missing | — |
-| Shapes (gallery, fill, line, shadow, edit points, merge shapes) | ShapeSettings, Toolbar `capShapesMerge` | Partial | freeform via Excalidraw `docs/DrawingDialog.tsx` only |
-| Text box (horizontal/vertical) | Toolbar `tipInsertText` | Missing | — |
+| Image from file / URL / storage | Toolbar `mniFrom*`, ImageSettings | Done (M7) | File picker, URL, paste/drop; stored in the document's asset store (`internal/docs/assets.go`), data URL fallback |
+| Resize / crop / rotate / flip / actual size / fit margins | ImageSettings | Done (M7) | Handles (aspect lock), crop %, rotate / flip, actual size; fit margins via the column-width default |
+| Wrapping style (inline, square, tight, through, top-bottom, behind, in front) | ImageSettings `txt*` | Done (M7) | `wrap` attr → CSS float / shape-outside / absolute (§6.18) |
+| Alignment, arrange (bring forward/back), group | Toolbar `capImg*` | Partial (M7) | Alignment and arrange done; no grouping |
+| Alt text | ImageSettingsAdvanced `textAlt` | Done (M7) | |
+| Replace image / save as picture | DocumentHolder | Done (M7) | |
+| Shapes (gallery, fill, line, shadow, edit points, merge shapes) | ShapeSettings, Toolbar `capShapesMerge` | Partial (M7) | Preset gallery (Slides ECMA-376 presets) with text, fill, line, dash; no shadow / edit points / merge; Excalidraw drawings stay |
+| Text box (horizontal/vertical) | Toolbar `tipInsertText` | Partial (M7) | Horizontal text boxes |
 | SmartArt | Toolbar `capBtnInsSmartArt` | Missing | — |
-| Charts (insert, edit data, type, axes, legend, trendlines) | ChartSettings, ExternalDiagramEditor | Missing | menu item disabled |
+| Charts (insert, edit data, type, axes, legend, trendlines) | ChartSettings, ExternalDiagramEditor | Done (M7) | Sheets chart renderer + the Slides chart dialog (embedded data grid) |
 | Text Art | TextArtSettings | Missing | — |
 | Insert spreadsheet (OLE) | Toolbar `mniInsertSSE` | Missing | — |
 
@@ -1085,7 +1085,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   table styles (mapped since M4, §6.10), per-section page setup, first/even headers and
   section-level header variants (M9; the final section's page size is read
   into `DocxImport.page` but not applied), floating image position and
-  wrap (M7), WMF/EMF/TIFF images, direct "not bold/italic" over a style,
+  wrap (mapped since M7, §6.18), WMF/EMF/TIFF images, direct "not bold/italic" over a style,
   caps / small caps as direct formatting, formatting-change revisions and
   revision dates (both mapped since M5, §6.11), rich footnote bodies (F1),
   equations as math (M11).
@@ -1099,7 +1099,7 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
 |---|---|---|---|
 | Comment authors | Kept per comment | Server comments belong to the importing user; the original author is appended to the text ("— Carol") when it differs | grown-variant |
 | Numbering start when `w:start` is absent | 0 (ECMA-376) | 0, per the spec | Note only |
-| Image in a paragraph | Inline in the run | Image is a block node, so the paragraph splits around it; paragraph alignment of an image-only paragraph is lost | Until M7 |
+| Image in a paragraph | Inline in the run | Since M7 an inline picture node in its paragraph (pre-M7 block images remain for old documents) | Done (M7) |
 | Header/footer content | Any block content | Margin editor schema: paragraphs/headings with alignment and basic marks; tables flatten to paragraphs, images dropped; PAGE / NUMPAGES / SECTIONPAGES are field nodes since M9 (other fields keep their result text) | Partly done (M9) |
 | Headings 7-9 | Built-in | Custom paragraph styles with an outline level (TipTap has h1-h6) | grown-variant |
 | Direct `jc=left` over a centred style | Left | Not stored (M3 limitation) | Known gap |
@@ -2185,6 +2185,141 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   in headers / footers (unwrapped on import), the formatting-only
   protection option, and server-side enforcement of the comments / tracked
   / forms modes.
+
+### 6.18 M7 status (images, shapes, charts)
+
+* **Model** (additive; `objects.ts` pure, `objectNodes.ts` the nodes and
+  views). Objects are **inline nodes anchored in a paragraph**, as in
+  Word: `inlineImage` (atom), `shape` and `textBox` (content
+  `(text | hardBreak)*`, so their text is editable, carries marks and
+  rides Yjs like any text) and `chart` (atom, the chart as JSON with its
+  own data grid). The pre-M7 block `image` stays (old documents, pasted
+  `<img>`) and gains the same attributes. Every object has flat scalar
+  attributes (strings / numbers / booleans, kept in HTML as `data-o-*`):
+  `wrap` (inline, square, tight, through, topBottom, behind, inFront),
+  `wrapSide`, `dist`, position `hRel`/`hAlign`/`hOffset`/`hPct` and
+  `vRel`/`vAlign`/`vOffset`/`vPct` (Word's relativeFrom values),
+  relative size `relW`/`relWFrom`/`relH`/`relHFrom`, `z` (stacking),
+  `rotate`, `flipH`/`flipV`, `crop{L,T,R,B}` (fractions of the source),
+  `lockAspect`, `name`, plus `width`/`height`/`alt`/`src`. Shapes add
+  `prst` / `adj` (ECMA-376 presets), fill, outline colour / width / dash /
+  arrow ends, text anchor and text colour.
+* **Rendering**: one node view for every object. In line → inline-block
+  in the text; square → CSS float (left, right from the alignment,
+  centred by margin, offsets as margins; page-relative offsets use the
+  page's left margin from the `--doc-ml` property the page sets); tight /
+  through → the float plus `shape-outside: url(src)` so text follows the
+  picture's alpha outline; top and bottom → a block on its own line;
+  behind / in front → absolutely positioned against the anchor paragraph
+  (`position: relative` via `:has()`), behind at z-index −1 under the
+  text, in front above it by `z`. Crop is a clipping frame with the full
+  picture offset inside; rotation / flips are a transform. Shapes draw
+  with the Slides preset geometry (`slides/presetGeometry.ts` +
+  `shapeRender.ts`, used directly — lifting them to a shared module would
+  have moved ~2,200 lines for no behaviour change) with the text in the
+  preset's text rectangle. Charts draw with the Sheets renderer to static
+  SVG (`chartMarkup.ts`, lazy: react-dom/server + ChartRenderer).
+  Selection shows eight resize handles (corners keep the aspect ratio
+  when locked, Shift inverts) and a rotate handle (Shift snaps to 15°).
+* **Pagination (M9)**: paged view makes every top-level block a block
+  formatting context, so a float stays inside its anchor paragraph and the
+  DOM measurer reads the paragraph's real height (float included); lines
+  beside a float merge into one line cluster, so a float and the text next
+  to it move to the next page together, and lines below it split
+  normally. Behind / in-front objects are left out of line measurement
+  (`paginationPlugin.ts lineClusters`), as in Word they don't affect
+  layout. In the pageless view (no BFC) a float taller than its paragraph
+  flows on into the next paragraphs, as in Word.
+* **Storage**: `POST/GET /api/v1/docs/d/{id}/assets[/{sha256}]`
+  (`internal/docs/assets.go`, wired in `server.go` with `DocsBlobs`):
+  the Slides M6 pattern — content-addressed blobs under
+  `docs/<id>/<sha>`, type sniffed from the bytes and limited to PNG /
+  JPEG / GIF / WebP / BMP (SVG refused), 20 MB, served with nosniff and
+  `default-src 'none'; sandbox`, immutable caching, and access that
+  follows the document (org member / grantee / share token; only writers
+  upload; unknown and denied are the same 404). The client
+  (`docAssets.ts`) uploads inserted, pasted, dropped and replaced
+  pictures and picture content-control images (M10); when the store
+  refuses (no blob store, offline, read-only link) it keeps the data URL.
+  **Migrate on edit**: editing a data-URL picture (any settings change)
+  uploads it and repoints every node using it; nothing is migrated in
+  bulk. .docx export embeds the stored bytes (fetched, not re-encoded).
+* **DOCX** both ways (`docx/drawings.ts`): wp:inline and wp:anchor
+  (behindDoc, relativeHeight → z ranks, distances, wrapNone /
+  wrapSquare / wrapTight / wrapThrough (with a rectangle polygon) /
+  wrapTopAndBottom and wrapText side, positionH/V with align, posOffset
+  or wp14:pctPosH/VOffset in mc:AlternateContent, wp14:sizeRelH/V,
+  docPr name / descr) in CT_Anchor order; pictures with a:srcRect crop
+  and a:xfrm rot / flipH / flipV; wps:wsp shapes and text boxes (txBox,
+  prstGeom + avLst, solid / no fill, a:ln width / colour / prstDash /
+  head & tail ends, bodyPr anchor, text colour through wps:style fontRef,
+  theme scheme colours read with Office defaults) inside
+  mc:AlternateContent Requires="wps"; charts as word/charts/chartN.xml
+  written by the Sheets chart writer with every value cached, the data as
+  an embedded workbook, and the Grown chart in the part's extension
+  (foreign charts are rebuilt from the chart XML and cached values, as in
+  Slides M11). VML text boxes (the pre-2010 fallback) are read as text
+  boxes, never written. Groups, canvases and SmartArt keep the M6
+  handling. The M6 "floating image position" warning is gone for
+  pictures, shapes and charts; a picture now stays in its paragraph (the
+  M6 "image in a paragraph" difference is resolved).
+* **UI** (`ObjectsUI.tsx`): Insert ▸ Image from computer / by URL,
+  Shape… (the Slides preset gallery), Text box, Chart… (the Slides chart
+  dialog: type, title, legend, stacking, labels and the data grid with
+  paste from a spreadsheet); the toolbar picture button opens the file
+  picker; Format ▸ Image settings… and the context menu open the settings
+  sidebar: size (W/H, lock aspect ratio, actual size), wrapping style,
+  alignment, position (relative to + X / Y), arrange (front / back /
+  forward / backward), rotate (angle, ±90°) and flip, crop (L/T/R/B %,
+  reset), replace and save picture, shape fill / line / width / dash /
+  text position / change shape, edit chart and data, alt text and name.
+  Double-clicking a picture opens the panel, a chart its data dialog.
+* **Tests**: ported (all passing): `oo/drawing-attrs.test.ts` —
+  api-drawing.js 11/11 (flips, CreateStroke, relative width / height,
+  horizontal / vertical position, name get / set with duplicate
+  hand-over, select / unselect), checked on the model and in the written
+  XML. The docs-tests.csv M7 row is 11/11. Grown-native:
+  `objects.test.ts` (resize with / without lock, crop and recrop, fit /
+  actual size, rotation angle, CSS per wrap, arrange, names, HTML round
+  trip, a block picture anchoring into the next paragraph, shapes with
+  editable text, charts), `docx-drawings.test.ts` (a Word-shaped document
+  with an inline picture, a cropped / rotated / flipped square-wrapped
+  picture, a page-positioned picture behind text with a percentage offset
+  and relative width, a wps shape with text and a style, a text box, a
+  VML text box and a chart part; Word → Grown → docx → Grown equality and
+  a stable second trip; CT_Anchor order, AlternateContent, chart part /
+  content type / embedded workbook, every r:id resolving; an editor-built
+  document round trip), Go `internal/docs/assets_test.go` (paths,
+  upload / dedupe / serve headers / conditional GET, access, SVG / HTML /
+  video / PDF refused, size limit). Playwright `web/e2e/docs-images.spec.ts`:
+  a picture uploaded to the asset store (headers checked), square wrap
+  with the paragraph's text measured beside and below it, a corner resize
+  with the aspect ratio locked, a crop, alt text, a shape with typed text,
+  a chart, reload, .docx download and re-import; a second test puts a
+  picture behind the text (the text moves up) and in front, flips and
+  rotates it.
+* **Semantic differences**:
+
+| Case | OnlyOffice / Word | Grown | Status |
+|---|---|---|---|
+| api-drawing CreateStroke dash | `prstDash` enum value 0 | The ST_PresetLineDashVal name ("dash") | grown-variant |
+| api-drawing ToJSON | Full drawing JSON | `drawingJson` reports positions, relative sizes, flips, wrap and name | grown-variant |
+| Float taller than its paragraph (paged view) | Text of the following paragraphs wraps too | The anchor paragraph grows to contain it (each block is a BFC for pagination); pageless view wraps on like Word | grown-variant |
+| Vertical position relative to page / margin | Measured from the page | Offset from the anchor paragraph (floats: only paragraph / line offsets apply) | Known gap |
+| Square wrap centred / both sides | Text on both sides | CSS floats put text on one side (a centred float has text on its right) | Known gap |
+| Tight / through wrap polygon | Edited wrap polygon | The picture's alpha outline (`shape-outside`); written as a rectangle polygon | grown-variant |
+| Shape text | Any block content (lists, tables) | Runs and line breaks (paragraphs join with a break); text boxes with tables keep the M6 path | Known gap |
+| Relative size (wp14:sizeRelH/V) | Size follows the page / margin | Kept and written back; the object renders at its stored size | Known gap |
+| Picture in a shared (token) view | — | Asset GET accepts `?token=`, but the page's `<img>` doesn't send it, so token views show stored pictures only to signed-in readers | Known gap |
+| HTML-based exports (pandoc: odt, pdf, epub…) | — | Stored pictures are relative URLs the converter can't fetch; charts export empty | Known gap |
+
+* **Not yet**: grouping, shape effects (shadow, 3-D, gradients),
+  edit points / merge shapes, vertical text boxes, SmartArt, text art,
+  linked text boxes, "move with text" / lock anchor switches, dragging a
+  floating object to a new position (it can be dragged to a new anchor;
+  offsets are set in the panel), wrap polygons, headers / footers with
+  pictures (M9 gap), OLE spreadsheets, and the image-smartart-placeholder
+  and floating-position layout suites (n/a per docs-tests.csv).
 
 ### Known flaky e2e (as of 2026-09-27)
 

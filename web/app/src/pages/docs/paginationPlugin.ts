@@ -260,8 +260,13 @@ function natural(y: number, top: number, spacers: { top: number; h: number }[], 
 function lineClusters(el: HTMLElement, exclude: { top: number; h: number }[]): { top: number; bottom: number }[] {
   const range = document.createRange();
   range.selectNodeContents(el);
+  // Behind / in-front objects (M7) are positioned out of the flow: their
+  // boxes (and anything inside them) are not lines. Floats stay: a float
+  // and the lines beside it move between pages together.
+  const abs = Array.from(el.querySelectorAll(".doc-obj-abs")).map((e) => e.getBoundingClientRect());
+  const inAbs = (r: DOMRect) => abs.some((a) => r.left >= a.left - 0.5 && r.right <= a.right + 0.5 && r.top >= a.top - 0.5 && r.bottom <= a.bottom + 0.5);
   const rects = Array.from(range.getClientRects()).filter(
-    (r) => r.height > 0 && !exclude.some((s) => Math.abs(r.top - s.top) < 0.5 && Math.abs(r.height - s.h) < 0.5),
+    (r) => r.height > 0 && !exclude.some((s) => Math.abs(r.top - s.top) < 0.5 && Math.abs(r.height - s.h) < 0.5) && !(abs.length && inAbs(r)),
   );
   rects.sort((a, b) => a.top - b.top);
   const out: { top: number; bottom: number }[] = [];

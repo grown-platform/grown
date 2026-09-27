@@ -10,7 +10,7 @@
       "passing": null
     },
     "common/common-charts": {
-      "ported": 6,
+      "ported": 0,
       "passing": null
     },
     "common/common-color": {
@@ -26,11 +26,11 @@
       "passing": null
     },
     "common/conversion": {
-      "ported": 65,
+      "ported": 59,
       "passing": null
     },
     "common/forms": {
-      "ported": 19,
+      "ported": 18,
       "passing": null
     },
     "common/pdf": {
@@ -94,7 +94,7 @@
       "passing": null
     },
     "docs/history-internals": {
-      "ported": 17,
+      "ported": 10,
       "passing": null
     },
     "docs/hyphenation": {
@@ -102,7 +102,7 @@
       "passing": null
     },
     "docs/images": {
-      "ported": 0,
+      "ported": 11,
       "passing": null
     },
     "docs/layout": {
@@ -170,7 +170,7 @@
       "passing": null
     },
     "sheets/charts": {
-      "ported": 22,
+      "ported": 16,
       "passing": null
     },
     "sheets/conditional formatting": {
@@ -186,7 +186,7 @@
       "passing": null
     },
     "sheets/editing": {
-      "ported": 88,
+      "ported": 85,
       "passing": null
     },
     "sheets/engine-internal": {
@@ -198,7 +198,7 @@
       "passing": null
     },
     "sheets/formulas": {
-      "ported": 634,
+      "ported": 633,
       "passing": null
     },
     "sheets/harness": {
@@ -226,7 +226,7 @@
       "passing": null
     },
     "sheets/sort-filter": {
-      "ported": 86,
+      "ported": 55,
       "passing": null
     },
     "sheets/utils": {
@@ -238,7 +238,7 @@
       "passing": null
     },
     "slides/chartex": {
-      "ported": 6,
+      "ported": 0,
       "passing": null
     },
     "slides/clipboard paste callback for plain text": {
@@ -294,7 +294,7 @@
       "passing": null
     },
     "slides/shapes": {
-      "ported": 10,
+      "ported": 9,
       "passing": null
     },
     "slides/shortcuts": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2309,
+    "ported": 2264,
     "passing": null
   }
 }

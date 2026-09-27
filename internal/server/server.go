@@ -210,6 +210,9 @@ type Config struct {
 	// SlidesBlobs stores deck image assets (shared with Drive). Nil keeps
 	// Slides on inline data: URLs.
 	SlidesBlobs *drive.Blobs
+	// DocsBlobs stores document image assets (Docs M7, shared with Drive).
+	// Nil keeps Docs on inline data: URLs.
+	DocsBlobs *drive.Blobs
 	// AvatarRepo / AvatarBlobs back per-user avatar upload + serving.
 	AvatarRepo  *useravatar.Repository
 	AvatarBlobs *drive.Blobs
@@ -418,6 +421,7 @@ func New(cfg Config) *Server {
 
 	var docsSvc *docs.Service
 	var docsHub *docs.Hub
+	var docsAssets *docs.Assets
 	if cfg.DocsRepo != nil {
 		docsSvc = docs.NewService(cfg.DocsRepo)
 		if cfg.SharingRepo != nil {
@@ -426,6 +430,13 @@ func New(cfg Config) *Server {
 		}
 		docsHub = docs.NewHub(cfg.DocsRepo)
 		grownv1.RegisterDocsServiceServer(grpcSrv, docsSvc)
+		if cfg.DocsBlobs != nil {
+			repo, grants := cfg.DocsRepo, cfg.SharingRepo
+			docsAssets = docs.NewAssets(cfg.DocsBlobs, func(r *http.Request, id string) (bool, bool) {
+				acc := docsAccessFor(r, id, repo, docsGrantLookup(grants))
+				return acc.Read, acc.Write
+			})
+		}
 	}
 
 	// Version history for Sheets/Slides/Whiteboards (nil without a pool).
@@ -896,6 +907,10 @@ func New(cfg Config) *Server {
 			if docsHub != nil {
 				if id, ok := docsConnectID(r.URL.Path); ok {
 					serveDocsWS(w, r, id, cfg.DocsRepo, cfg.SharingRepo, docsHub)
+					return
+				}
+				if _, _, ok := docs.AssetPath(r.URL.Path); ok && docsAssets != nil {
+					docsAssets.ServeHTTP(w, r)
 					return
 				}
 				if id, ok := docsProtectionID(r.URL.Path); ok && cfg.DocsRepo != nil {

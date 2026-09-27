@@ -40,6 +40,17 @@ export function setExportDocId(editor: Editor, docId: string): void {
 
 /** rasterize draws an image the .docx can't embed (Excalidraw SVG) as PNG. */
 async function rasterize(src: string) {
+  // Stored pictures (M7): embed the original bytes when they are a type
+  // the .docx can hold.
+  if (/^\/api\/v1\/docs\/d\//.test(src)) {
+    const r = await fetch(src, { credentials: "same-origin" }).catch(() => null);
+    const type = r?.ok ? (r.headers.get("Content-Type") ?? "").split(";")[0] : "";
+    if (r && /^image\/(png|jpeg|gif|bmp)$/.test(type)) {
+      const data = new Uint8Array(await r.arrayBuffer());
+      const size = (await import("./docx/write")).imageSize(data);
+      if (size) return { data, mime: type, width: size.width, height: size.height };
+    }
+  }
   const img = new Image();
   img.src = src;
   await img.decode();

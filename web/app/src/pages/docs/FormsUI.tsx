@@ -3,6 +3,7 @@
 // the picture chooser, the fill-in-form bar (navigation, roles, required
 // fields, export and submit) and the Protect document dialog. Mounted once
 // by DocEditor (<FormsUI/>); the menu sits in MenuBar (<FormsMenu/>).
+import { storePicture } from "./docAssets";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -574,9 +575,8 @@ function PictureChooser({ editor }: { editor: Editor }) {
         e.target.value = "";
         const pos = target.current;
         if (!f || pos == null) return;
-        const reader = new FileReader();
-        reader.onload = () => setSdtPicture(editor, pos, String(reader.result), { width: 160 });
-        reader.readAsDataURL(f);
+        // M7: the document's asset store, else a data: URL.
+        void storePicture(editor.view, f).then((src) => setSdtPicture(editor, pos, src, { width: 160 }));
       }}
     />
   );
