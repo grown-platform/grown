@@ -25,7 +25,7 @@ import {
   type Grid,
   type Scalar,
 } from "./cellValue";
-import { compareScalars, evaluateFormula, evaluateToValues, formulaIsTrue, toText, type EvalContext } from "./sheetFormula";
+import { evaluateFormula, evaluateToValues, formulaIsTrue, toText, type EvalContext } from "./sheetFormula";
 
 export type DvType = "any" | "whole" | "decimal" | "list" | "date" | "time" | "textLength" | "custom" | "checkbox";
 export type DvOperator =
@@ -274,9 +274,9 @@ export function checkValue(rule: DvRule, value: Scalar, r: number, c: number, ct
     case "decimal":
     case "date":
     case "time": {
-      let v = value;
-      if (typeof v === "string") v = inputValue(v);
-      if (typeof v !== "number") return false;
+      const raw = typeof value === "string" ? inputValue(value) : value;
+      if (typeof raw !== "number") return false;
+      let v = raw;
       if (rule.type === "whole" && !Number.isInteger(v)) return false;
       if (rule.type === "time" && (v < 0 || v >= 1)) v = v - Math.floor(v);
       const bd = bounds();
