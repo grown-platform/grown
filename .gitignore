@@ -12,9 +12,10 @@ deploy/process-compose/data/*
 # Zitadel bootstrap artifacts (PAT written by `zitadel setup` on first boot)
 deploy/zitadel/data/
 
-# Frontend
-node_modules/
-web/*/node_modules/
+# Frontend. No trailing slash: worktrees symlink node_modules (and gen) from
+# the main checkout, and "node_modules/" would only match real directories.
+node_modules
+web/*/node_modules
 web/app/dist/
 web/*/test-results/
 
@@ -27,6 +28,7 @@ web/app/vite.config.d.ts
 # Generated proto code -- regenerated via `nix run .#gen`. We commit it later
 # once the gen pipeline is stable; for now keep it out of git churn.
 gen/
+/gen
 
 # Go build outputs
 /server
