@@ -13,6 +13,7 @@ import {
 } from "./textDom";
 import { indentParas, paraIndices, withRuns } from "./textOps";
 import { textKeyAction, type TextKeyAction } from "./keymap";
+import { spellService } from "../../lib/spell/service";
 
 export type EditResult = SlideElement | { el: SlideElement; sel?: [number, number] };
 
@@ -199,7 +200,10 @@ export function TextEditor({
       data-text-editor=""
       contentEditable
       suppressContentEditableWarning
-      spellCheck
+      // The user's shared spell-check switch (lib/spell, CC7); text boxes
+      // use the browser's checker in the user's language.
+      spellCheck={spellService().enabled}
+      lang={typeof navigator !== "undefined" ? navigator.language : undefined}
       style={{ width: "100%", outline: "none", cursor: "text", minHeight: "1em" }}
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={onKeyDown}

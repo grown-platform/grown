@@ -8,28 +8,34 @@ import { dictionaryFor } from "./languages";
 import { loadSpellPrefs, saveSpellPrefs, syncSpellPrefs, type SpellPrefs } from "./prefs";
 import type { SpellRequest, SpellResponse } from "./spell.worker";
 
-/** WorkerBackend forwards requests to spell.worker.ts. */
+/** WorkerBackend forwards requests to spell.worker.ts. The worker (and
+ *  its dictionaries) start on the first check, not on page load. */
 class WorkerBackend implements SpellBackend {
-  private worker: Worker;
+  private w: Worker | null = null;
   private next = 1;
+  private personal: string[] | null = null;
   private pending = new Map<number, { resolve: (v: string[]) => void; reject: (e: Error) => void }>();
 
-  constructor() {
-    this.worker = new Worker(new URL("./spell.worker.ts", import.meta.url), { type: "module" });
-    this.worker.onmessage = (ev: MessageEvent<SpellResponse>) => {
+  private worker(): Worker {
+    if (this.w) return this.w;
+    const w = new Worker(new URL("./spell.worker.ts", import.meta.url), { type: "module" });
+    w.onmessage = (ev: MessageEvent<SpellResponse>) => {
       const p = this.pending.get(ev.data.id);
       if (!p) return;
       this.pending.delete(ev.data.id);
       if (ev.data.ok) p.resolve(ev.data.result);
       else p.reject(new Error(ev.data.error));
     };
+    this.w = w;
+    if (this.personal) void this.call({ op: "personal", words: this.personal } as SpellRequest);
+    return w;
   }
 
   private call(req: Omit<SpellRequest, "id"> & { op: SpellRequest["op"] }): Promise<string[]> {
     const id = this.next++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      this.worker.postMessage({ ...req, id });
+      this.worker().postMessage({ ...req, id });
     });
   }
 
@@ -40,7 +46,8 @@ class WorkerBackend implements SpellBackend {
     return this.call({ op: "suggest", lang, word, max } as SpellRequest);
   }
   async setPersonal(words: string[]) {
-    await this.call({ op: "personal", words } as SpellRequest);
+    this.personal = words;
+    if (this.w) await this.call({ op: "personal", words } as SpellRequest);
   }
 }
 
