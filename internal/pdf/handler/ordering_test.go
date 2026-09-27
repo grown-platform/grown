@@ -3,7 +3,10 @@ package handler_test
 // Tests for sequential signing-order enforcement logic.
 //
 // Pure-unit tests verify the ordering business rules without a DB.
-// DB integration tests are skip-guarded on GROWN_TEST_DSN.
+// DB integration tests are skip-guarded on PDF_TEST_DSN. The PDF app has its
+// own database (PDF_DATABASE_URL in production), migrated by the pdf backend's
+// embedded goose migrations; the tests apply those same migrations to the
+// DSN before running. Point PDF_TEST_DSN at a dedicated, disposable database.
 
 import (
 	"context"
@@ -11,14 +14,24 @@ import (
 	"strings"
 	"testing"
 
+	"code.pick.haus/grown/grown/internal/pdf/database"
 	"code.pick.haus/grown/grown/internal/pdf/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// testDSN returns PDF_TEST_DSN after migrating it with the pdf backend's own
+// migrations (database.Migrate, as app.New does at startup), or skips.
 func testDSN(t *testing.T) string {
 	t.Helper()
-	return os.Getenv("GROWN_TEST_DSN")
+	dsn := os.Getenv("PDF_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PDF_TEST_DSN not set; skipping PDF DB integration test")
+	}
+	if err := database.Migrate(dsn); err != nil {
+		t.Fatalf("migrate pdf test database: %v", err)
+	}
+	return dsn
 }
 
 func openTestDB(ctx context.Context, dsn string) (*pgx.Conn, error) {
@@ -228,13 +241,10 @@ func TestTemplatePathExtraction(t *testing.T) {
 	}
 }
 
-// --- DB-backed tests (skipped unless GROWN_TEST_DSN is set) ---
+// --- DB-backed tests (skipped unless PDF_TEST_DSN is set) ---
 
 func TestOrderingEnforcement_DBIntegration(t *testing.T) {
 	dsn := testDSN(t)
-	if dsn == "" {
-		t.Skip("GROWN_TEST_DSN not set; skipping DB integration test")
-	}
 	ctx := context.Background()
 
 	// Minimal smoke test: open the DB and verify the signer_status enum
@@ -262,9 +272,6 @@ func TestOrderingEnforcement_DBIntegration(t *testing.T) {
 
 func TestTemplates_DBIntegration(t *testing.T) {
 	dsn := testDSN(t)
-	if dsn == "" {
-		t.Skip("GROWN_TEST_DSN not set; skipping DB integration test")
-	}
 	ctx := context.Background()
 
 	db, err := openTestDB(ctx, dsn)
