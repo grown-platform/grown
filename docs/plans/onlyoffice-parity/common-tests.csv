@@ -8,7 +8,7 @@ sdkjs-tests-v9.3.1/tests/pdf/common/common.js,0,pdf,none,,CC3
 sdkjs-tests-v9.3.1/tests/pdf/forms/actions.js,1,pdf,high,pdf/frontend/e2e/editor-forms-calc.spec.ts,CC3
 sdkjs/pdf/test/base.js,0,pdf,none,pdf/frontend/e2e/editor-smoke.spec.ts,CC3
 sdkjs/pdf/test/bookmarks.js,0,pdf,low,pdf/frontend/e2e/editor-pages.spec.ts,CC3
-sdkjs-tests-v9.3.1/tests/oform/xml/oformXml.js,2,forms,medium,internal/forms/proto_shaping_test.go,CC4
+sdkjs-tests-v9.3.1/tests/oform/xml/oformXml.js,2,forms,medium (UserMaster as the docx form role name + colour round trip / 1 n/a FieldGroup: oform field-group weight and fill order have no Grown model; PDF signer order covers the idea),internal/forms/proto_shaping_test.go; web/app/src/pages/docs/__tests__/oo/oform-roles.test.ts,CC4
 sdkjs-tests-v9.3.1/tests/oform/xml/xmlCommon.js,0,forms,none,,CC4
 sdkjs-tests-v9.3.1/tests/word/forms/forms.js,7,forms,medium,web/app/src/pages/forms/validate.test.ts; internal/forms/logic_and_guards_test.go,CC4
 sdkjs-tests-v9.3.1/tests/word/forms/complexForm.js,6,forms,low,web/app/src/pages/forms/helpers.test.ts,CC4
