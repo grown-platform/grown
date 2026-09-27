@@ -71,6 +71,11 @@ func normCDF(z float64) float64 { return 0.5 * math.Erfc(-z/math.Sqrt2) }
 // invNormCDF returns the inverse standard normal CDF for p in (0,1) using
 // Acklam's rational approximation refined by one Halley step (~1e-15 accuracy).
 func invNormCDF(p float64) float64 {
+	if p > 0.5 {
+		// Work in the lower tail, where Φ is computed without cancellation
+		// (1−p is exact here), so p close to 1 keeps full precision.
+		return -invNormCDF(1 - p)
+	}
 	a := [6]float64{-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00}
 	b := [5]float64{-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01}
 	cc := [6]float64{-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00}
