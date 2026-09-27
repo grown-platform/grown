@@ -273,3 +273,50 @@ export function setSelectionOffsets(root: HTMLElement, from: number, to: number)
     /* ignore */
   }
 }
+
+/**
+ * rangeInRendered builds a DOM Range over model offsets [from, to) inside a
+ * text box rendered by renderSlideText (plain: one text node; rich:
+ * [data-para] blocks, [data-marker] list markers that are not text, <br>
+ * line breaks). Used to highlight find matches without taking focus.
+ */
+export function rangeInRendered(container: HTMLElement, from: number, to: number): Range | null {
+  const doc = container.ownerDocument;
+  const paras = Array.from(container.querySelectorAll<HTMLElement>("[data-para]"));
+  const blocks = paras.length ? paras : [container];
+  let pos = 0;
+  let start: [Node, number] | null = null;
+  let end: [Node, number] | null = null;
+  const hit = (n: Node, len: number) => {
+    if (!start && from <= pos + len) start = [n, from - pos];
+    if (!end && to <= pos + len) end = [n, to - pos];
+  };
+  blocks.forEach((b, i) => {
+    if (i > 0) pos += 1;
+    const w = doc.createTreeWalker(b, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      if (n.nodeType === 1) {
+        const e = n as HTMLElement;
+        if (e.hasAttribute("data-marker")) {
+          // skip the marker's text
+          let m: Node | null = e;
+          while (m && m.lastChild) m = m.lastChild;
+          if (m) w.currentNode = m;
+        } else if (e.tagName === "BR" && e.parentNode !== b) pos += 1;
+        continue;
+      }
+      const len = (n.nodeValue || "").length;
+      hit(n, len);
+      pos += len;
+    }
+  });
+  if (!start || !end) return null;
+  const r = doc.createRange();
+  try {
+    r.setStart(start[0], start[1]);
+    r.setEnd(end[0], end[1]);
+  } catch {
+    return null;
+  }
+  return r;
+}

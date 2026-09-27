@@ -77,12 +77,13 @@ import {
   type ElementType,
   type TransitionType,
   type AnimationType,
+  type RunStyle,
+  type TextAlign,
 } from "./model";
 import { SlideView, ELEMENT_ANIM_CSS } from "./SlideView";
 import { SlideCanvas } from "./SlideCanvas";
 import { SlideMenuBar, type SlideActions } from "./SlideMenuBar";
 import { downloadDeck } from "./export";
-import { resolveLinkInput } from "../../lib/urlType";
 import { ShareDialog } from "./ShareDialog";
 import { PPTX_ACCEPT, readPptxSlides } from "./pptx/importDeck";
 import {
@@ -134,6 +135,9 @@ import {
   isSaveKey,
   presentKeyAction,
   presentKeyPreventsDefault,
+  textKeyAction,
+  type TextKeyAction,
+  type TextToggle,
 } from "./keymap";
 import { GRID_SIZE, fitCanvasWidth, fitPresentWidth } from "./geometry";
 import {
@@ -155,6 +159,44 @@ import { ShapeGallery } from "./ShapeGallery";
 import { toolFromGalleryId, type DrawTool } from "./drawTool";
 import { withGluedConnectors } from "./connectorOps";
 import { ShapeFormatControls } from "./ShapeFormatControls";
+import { TextFormatControls, type TextCommands } from "./TextFormatControls";
+import {
+  FindReplacePanel,
+  HyperlinkDialog,
+  SpecialCharsDialog,
+  TextOptionsDialog,
+  type LinkDialogInit,
+  type TextOptions,
+} from "./TextDialogs";
+import type { EditResult, TextEditorHandle } from "./TextEditor";
+import {
+  applyFormat,
+  applyFormatWhole,
+  captureFormat,
+  changeCaseRange,
+  clearFormatRange,
+  formatRange,
+  formatWhole,
+  indentParas,
+  insertText,
+  linkAt,
+  linkRangeAt,
+  paraCount,
+  paraIndices,
+  rangeHas,
+  replaceRange,
+  setAlignWhole,
+  setInsets,
+  setLinkRange,
+  setListStyle,
+  setParaAlign,
+  stepFontRange,
+  toggleRange,
+  wordAt,
+} from "./textOps";
+import { linkLabel, parseSlideLink, resolveSlideLink } from "./links";
+import { replaceAll, replaceMatch, type FindOptions, type Match } from "./findReplace";
+import type { CaseMode } from "../../lib/textCase";
 
 interface Peer {
   userId: string;
@@ -213,6 +255,22 @@ export function DeckEditor({ user }: { user: User }) {
   // Shape gallery (toolbar dropdown) and the armed draw-to-insert tool.
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [drawTool, setDrawTool] = useState<DrawTool | null>(null);
+  // ---- text (M4) ----
+  // The live text editor while a box is being edited.
+  const textEditor = useRef<TextEditorHandle | null>(null);
+  // The text selection a box had when editing ended (a menu, dialog or
+  // colour picker took focus): formatting then applies to it.
+  const savedTextSel = useRef<{ id: string; from: number; to: number } | null>(null);
+  const [editRequest, setEditRequest] = useState<{ id: string; sel: [number, number]; nonce: number } | null>(null);
+  const [painter, setPainter] = useState<RunStyle | null>(null);
+  const [painterArmed, setPainterArmed] = useState(false);
+  type LinkTarget = { kind: "range"; id: string; from: number; to: number } | { kind: "elements"; ids: string[] };
+  const [linkDlg, setLinkDlg] = useState<{ init: LinkDialogInit; target: LinkTarget } | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findHit, setFindHit] = useState<Match | null>(null);
+  const [charsOpen, setCharsOpen] = useState(false);
+  const charsTarget = useRef<{ id: string; from: number; to: number } | null>(null);
+  const [textOptsOpen, setTextOptsOpen] = useState(false);
 
   const me = {
     userId: user.id,
@@ -230,6 +288,11 @@ export function DeckEditor({ user }: { user: User }) {
   const selIds = sel.filter((i) => live.has(i)); // click order, last = primary
   const selId = primaryId(selIds);
   const selected: SlideElement | undefined = selectedElement(slide, selId);
+
+  // A saved text selection belongs to the slide it was made on.
+  useEffect(() => {
+    savedTextSel.current = null;
+  }, [cur]);
 
   // Load deck.
   useEffect(() => {
@@ -424,6 +487,16 @@ export function DeckEditor({ user }: { user: User }) {
         saveNow();
         return;
       }
+      // Ctrl/Cmd+H opens find and replace (also from inside a text box).
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "h") {
+        e.preventDefault();
+        setFindOpen(true);
+        return;
+      }
+      if (painterArmed && e.key === "Escape") {
+        setPainterArmed(false);
+        return;
+      }
       if (drawTool && e.key === "Escape") {
         // Esc cancels an armed draw-to-insert tool (before anything else).
         const a = editorKeyAction(e, { hasSelection: selIds.length > 0, drawing: true });
@@ -441,6 +514,12 @@ export function DeckEditor({ user }: { user: User }) {
         (e.target as HTMLElement)?.isContentEditable
       )
         return;
+      // Text formatting shortcuts on the selected text boxes.
+      const ta = textKeyAction(e, { editing: false, hasFormat: !!painter });
+      if (ta && handleTextKey(ta)) {
+        e.preventDefault();
+        return;
+      }
       const act = editorKeyAction(e, { hasSelection: selIds.length > 0 });
       if (!act) return;
       if (act.type === "deleteSelected" && selIds.length) {
@@ -665,17 +744,321 @@ export function DeckEditor({ user }: { user: User }) {
     if (selectedEls.length) upsertMany(selectedEls.map(fn));
   }
   function toggle(attr: StyleToggle) {
+    if (toggleText(attr)) return;
     if (!selected) return;
     const v = !selected[attr];
     updateSelected((e) => ({ ...e, [attr]: v }));
   }
+
+  // ---- text formatting (M4) ----
+  // editText applies `fn` to: the live selection while a box is edited; else
+  // the selection saved when editing ended (then editing resumes with it);
+  // else every selected text box, whole (`whole` = true). A collapsed
+  // selection means the word at the caret ("word") or the caret's
+  // paragraph ("para"). Returns false when there was no text to act on.
+  function editText(
+    fn: (el: SlideElement, from: number, to: number, whole: boolean) => EditResult | null,
+    collapsed: "word" | "para" = "word",
+  ): boolean {
+    const widen = (el: SlideElement, a: number, b: number): [number, number] => {
+      if (a !== b || collapsed === "para") return [a, b];
+      return wordAt(el.text || "", a) ?? [a, b];
+    };
+    const unwrap = (r: EditResult) => ("type" in r ? { el: r, sel: undefined } : r);
+    const h = textEditor.current;
+    if (h && editingText) {
+      h.apply((el, a, b) => {
+        const [x, y] = widen(el, a, b);
+        if (x === y && collapsed === "word" && (el.text || "").length) return null;
+        const r = fn(el, x, y, false);
+        return r && ("type" in r ? { el: r, sel: [a, b] as [number, number] } : r);
+      });
+      return true;
+    }
+    const saved = savedTextSel.current;
+    if (saved && selected && selected.id === saved.id && selected.type === "text") {
+      const [x, y] = widen(selected, saved.from, saved.to);
+      if (x !== y || collapsed === "para") {
+        const r = fn(selected, x, y, false);
+        if (!r) return true;
+        const { el, sel: s } = unwrap(r);
+        upsertElement(el);
+        savedTextSel.current = null;
+        setEditRequest({ id: el.id, sel: s ?? [saved.from, saved.to], nonce: Date.now() });
+        return true;
+      }
+    }
+    const texts = selectedEls.filter((e) => e.type === "text");
+    if (!texts.length) return false;
+    upsertMany(
+      texts.map((e) => {
+        const r = fn(e, 0, (e.text || "").length, true);
+        return r ? unwrap(r).el : e;
+      }),
+    );
+    return true;
+  }
+  /** The text element + range formatting would act on (for captures). */
+  function textFocus(): { el: SlideElement; from: number; to: number } | null {
+    const h = textEditor.current;
+    if (h && editingText) {
+      const [from, to] = h.selection();
+      return { el: h.current(), from, to };
+    }
+    const saved = savedTextSel.current;
+    if (saved && selected?.id === saved.id && selected.type === "text")
+      return { el: selected, from: saved.from, to: saved.to };
+    if (selected?.type === "text") return { el: selected, from: 0, to: (selected.text || "").length };
+    return null;
+  }
+  function toggleText(k: TextToggle): boolean {
+    const prim = selected;
+    return editText((el, a, b, whole) => {
+      if (!whole || k === "super" || k === "sub" || !prim || prim.type !== "text")
+        return toggleRange(el, a, b, k);
+      // Several boxes: the primary decides on or off, so all end up alike.
+      const on = rangeHas(prim, 0, (prim.text || "").length, k, true);
+      return formatRange(el, 0, (el.text || "").length, { [k]: !on });
+    });
+  }
+  function styleText(patch: RunStyle): boolean {
+    return editText((el, a, b, whole) => (whole ? formatWhole(el, patch) : formatRange(el, a, b, patch)));
+  }
+  function alignText(a: TextAlign): boolean {
+    return editText(
+      (el, x, y, whole) => (whole ? setAlignWhole(el, a) : setParaAlign(el, paraIndices(el.text || "", x, y), a)),
+      "para",
+    );
+  }
+  function indentText(d: 1 | -1) {
+    editText((el, x, y, whole) => {
+      const idxs = whole ? [...Array(paraCount(el.text || "")).keys()] : paraIndices(el.text || "", x, y);
+      return indentParas(el, idxs, d);
+    }, "para");
+  }
+  function listText(kind: "bullet" | "number" | null, style?: string) {
+    editText((el) => setListStyle(el, kind, style), "para");
+  }
+  function copyFormat(): boolean {
+    const f = textFocus();
+    if (!f) return false;
+    setPainter(captureFormat(f.el, f.from, f.to));
+    return true;
+  }
+  function pasteFormat(style = painter): boolean {
+    if (!style) return false;
+    return editText((el, a, b, whole) => (whole ? applyFormatWhole(el, style) : applyFormat(el, a, b, style)));
+  }
+  function togglePainter() {
+    if (painterArmed) return setPainterArmed(false);
+    if (copyFormat()) setPainterArmed(true);
+  }
+  function openLink() {
+    const f = textFocus();
+    const h = textEditor.current;
+    const ranged = f && ((h && editingText) || savedTextSel.current);
+    if (f && ranged) {
+      let { from, to } = f;
+      // A caret inside a link edits that link.
+      if (from === to) [from, to] = linkRangeAt(f.el, from) ?? [from, to];
+      setLinkDlg({
+        init: { url: linkAt(f.el, from) ?? "", text: (f.el.text || "").slice(from, to) },
+        target: { kind: "range", id: f.el.id, from, to },
+      });
+      return;
+    }
+    if (!selectedEls.length) return;
+    setLinkDlg({
+      init: { url: selected?.url ?? "" },
+      target: { kind: "elements", ids: selectedEls.map((e) => e.id) },
+    });
+  }
+  function applyLink(url: string, text?: string) {
+    const d = linkDlg;
+    setLinkDlg(null);
+    if (!d || !slide) return;
+    if (d.target.kind === "elements") {
+      const ids = d.target.ids;
+      upsertMany(slide.elements.filter((e) => ids.includes(e.id)).map((e) => setLinkOp(e, url)));
+      return;
+    }
+    const { id: elId, from } = d.target;
+    let { to } = d.target;
+    const el = slide.elements.find((e) => e.id === elId);
+    if (!el) return;
+    let next = el;
+    if (from === to) {
+      const t = text || linkLabel(url, slides);
+      next = insertText(next, from, t);
+      to = from + t.length;
+    } else if (text && text !== (el.text || "").slice(from, to)) {
+      next = replaceRange(next, from, to, text);
+      to = from + text.length;
+    }
+    next = setLinkRange(next, from, to, url);
+    upsertElement(next);
+    savedTextSel.current = null;
+    setEditRequest({ id: elId, sel: [to, to], nonce: Date.now() });
+  }
+  function removeLink() {
+    const d = linkDlg;
+    setLinkDlg(null);
+    if (!d || !slide) return;
+    if (d.target.kind === "elements") {
+      const ids = d.target.ids;
+      upsertMany(slide.elements.filter((e) => ids.includes(e.id)).map((e) => setLinkOp(e, "")));
+      return;
+    }
+    const { id: elId, from, to } = d.target;
+    const el = slide.elements.find((e) => e.id === elId);
+    if (!el) return;
+    upsertElement(from === to ? setLinkOp(el, "") : setLinkRange(el, from, to, ""));
+    setEditRequest({ id: elId, sel: [from, to], nonce: Date.now() });
+  }
+  function followLink(url: string) {
+    const i = resolveSlideLink(url, slides, cur);
+    if (i !== null) {
+      setCur(i);
+      setSel([]);
+    } else if (!parseSlideLink(url)) window.open(url, "_blank", "noopener,noreferrer");
+  }
+  function openChars() {
+    const f = textFocus();
+    const ranged = f && ((textEditor.current && editingText) || savedTextSel.current);
+    charsTarget.current = f
+      ? ranged
+        ? { id: f.el.id, from: f.from, to: f.to }
+        : { id: f.el.id, from: (f.el.text || "").length, to: (f.el.text || "").length }
+      : null;
+    setCharsOpen(true);
+  }
+  function pickChar(ch: string) {
+    const t = charsTarget.current;
+    const el = t && slide?.elements.find((e) => e.id === t.id);
+    if (!t || !el) {
+      // Nothing to type into: a new text box holding the character.
+      const box = { ...newElement("text"), text: ch };
+      upsertElement(box);
+      setSelId(box.id);
+      charsTarget.current = { id: box.id, from: ch.length, to: ch.length };
+      return;
+    }
+    upsertElement(replaceRange(el, t.from, t.to, ch));
+    const at = t.from + ch.length;
+    charsTarget.current = { id: t.id, from: at, to: at };
+  }
+  function closeChars() {
+    setCharsOpen(false);
+    const t = charsTarget.current;
+    if (t && slide?.elements.some((e) => e.id === t.id))
+      setEditRequest({ id: t.id, sel: [t.from, t.to], nonce: Date.now() });
+  }
+  function applyTextOptions(o: TextOptions) {
+    setTextOptsOpen(false);
+    updateSelected((e) => {
+      if (e.type !== "text") return e;
+      let n: SlideElement = setInsets(e, o.insets.l, o.insets.t, o.insets.r, o.insets.b) ?? e;
+      n = { ...n };
+      if (o.spaceBefore) n.spaceBefore = o.spaceBefore;
+      else delete n.spaceBefore;
+      if (o.spaceAfter) n.spaceAfter = o.spaceAfter;
+      else delete n.spaceAfter;
+      if (o.autofit) n.autofit = "shrink";
+      else delete n.autofit;
+      return withDirection(n, o.direction);
+    });
+  }
+  function withDirection(e: SlideElement, d: TextOptions["direction"]): SlideElement {
+    const n = { ...e };
+    delete n.rtl;
+    delete n.vert;
+    if (d === "rtl") n.rtl = true;
+    if (d === "vert" || d === "vert270") n.vert = d;
+    return n;
+  }
+  function gotoMatch(m: Match) {
+    setCur(m.slideIdx);
+    setFindHit(m);
+    if (m.where === "notes") setShowNotes(true);
+    else if (m.topId) setSel([m.topId]);
+  }
+  function replaceOneMatch(m: Match, repl: string) {
+    if (!docRef.current) return;
+    setSlides(replaceMatch(docRef.current, m, repl).slides);
+  }
+  function replaceAllMatches(q: string, repl: string, opts: FindOptions): number {
+    if (!docRef.current) return 0;
+    const r = replaceAll(docRef.current, q, repl, opts);
+    if (r.count) setSlides(r.doc.slides);
+    setFindHit(null);
+    return r.count;
+  }
+  /** Formatting shortcuts (inside a text box, or on selected boxes). */
+  function handleTextKey(a: TextKeyAction): boolean {
+    const hasText = editingText || selectedEls.some((e) => e.type === "text");
+    if (a.type === "link") {
+      if (!editingText && !selectedEls.length) return false;
+      openLink();
+      return true;
+    }
+    if (!hasText) return false;
+    switch (a.type) {
+      case "toggle":
+        return toggleText(a.key);
+      case "fontStep":
+        return editText((el, x, y) => stepFontRange(el, x, y, a.dir));
+      case "align":
+        return alignText(a.align);
+      case "list": {
+        const cur = (textEditor.current && editingText ? textEditor.current.current() : selected) ?? null;
+        listText(cur?.list === a.list ? null : a.list);
+        return true;
+      }
+      case "copyFormat":
+        return copyFormat();
+      case "pasteFormat":
+        return pasteFormat();
+      case "clearFormat":
+        return editText((el, x, y) => clearFormatRange(el, x, y));
+    }
+    return false;
+  }
+  const textCmd: TextCommands = {
+    toggle: (k) => void toggleText(k),
+    fontStep: (d) => void editText((el, x, y) => stepFontRange(el, x, y, d)),
+    setFontSize: (px) => void styleText({ fontSize: px }),
+    setFontFamily: (f) => void styleText({ fontFamily: f }),
+    setColor: (c) => void styleText({ color: c }),
+    align: (a) => void alignText(a),
+    valign: (v) => void editText((el) => ({ ...el, valign: v }), "para"),
+    indent: indentText,
+    list: listText,
+    changeCase: (m: CaseMode) => void editText((el, x, y) => changeCaseRange(el, x, y, m)),
+    clearFormat: () => void editText((el, x, y) => clearFormatRange(el, x, y)),
+    paintFormat: togglePainter,
+    painting: painterArmed,
+    link: openLink,
+    findReplace: () => setFindOpen(true),
+    specialChars: openChars,
+    textOptions: () => setTextOptsOpen(true),
+    setAutofit: (on) =>
+      void editText((el) => {
+        const n = { ...el };
+        if (on) n.autofit = "shrink";
+        else delete n.autofit;
+        return n;
+      }, "para"),
+    setDirection: (d) => void editText((el) => withDirection(el, d), "para"),
+  };
   function setList(v: "bullet" | "number" | null) {
+    if (editText((el) => setListStyle(el, v), "para")) return;
     updateSelected((e) => setListOp(e, v));
   }
   function setLineSpacing(v: number) {
     updateSelected((e) => ({ ...e, lineSpacing: v }));
   }
-  function setAlign(a: "left" | "center" | "right") {
+  function setAlign(a: TextAlign) {
+    if (alignText(a)) return;
     updateSelected((e) => ({ ...e, align: a }));
   }
   function setField<K extends keyof SlideElement>(k: K, v: SlideElement[K]) {
@@ -720,10 +1103,7 @@ export function DeckEditor({ user }: { user: User }) {
     upsertMany(setLocked(selectedEls, lock));
   }
   function setLink() {
-    if (!selected) return;
-    const url = resolveLinkInput(window.prompt("Link URL (blank to remove)", selected.url || ""));
-    if (url === null) return;
-    upsertElement(setLinkOp(selected, url));
+    openLink();
   }
   function setBackground() {
     if (!slide) return;
@@ -840,6 +1220,7 @@ export function DeckEditor({ user }: { user: User }) {
     setList,
     setLineSpacing,
     setAlign,
+    text: textCmd,
     arrange,
     rotate,
     setLink,
@@ -893,6 +1274,7 @@ export function DeckEditor({ user }: { user: User }) {
         onPrev={() => setCur((c) => prevSlideIndex(c))}
         onTogglePresenter={() => setPresenter((v) => !v)}
         onExit={() => setPresent(false)}
+        onJump={setCur}
       />
     );
   }
@@ -993,8 +1375,15 @@ export function DeckEditor({ user }: { user: User }) {
             Present
           </Button>
         </Box>
-        {/* toolbar */}
+        {/* toolbar: buttons keep the text editor's focus (and selection);
+            inputs and selects take focus, and then apply to the saved
+            text selection */}
         <Box
+          data-testid="slides-toolbar"
+          onMouseDown={(e) => {
+            const t = e.target as HTMLElement;
+            if (!t.closest("input, select, textarea")) e.preventDefault();
+          }}
           sx={{
             display: "flex",
             alignItems: "center",
@@ -1117,26 +1506,7 @@ export function DeckEditor({ user }: { user: User }) {
               <FormatAlignRightIcon />
             </IconButton>
           </ToggleButtonGroup>
-          {selected?.type === "text" && (
-            <input
-              type="number"
-              min={6}
-              max={200}
-              value={selected.fontSize || 18}
-              onChange={(e) => setField("fontSize", Number(e.target.value))}
-              style={{ width: 56, marginLeft: 6 }}
-              title="Font size"
-            />
-          )}
-          {selected && selected.type === "text" && (
-            <input
-              type="color"
-              value={selected.color || "#202124"}
-              onChange={(e) => setField("color", e.target.value)}
-              title="Text color"
-              style={{ marginLeft: 4 }}
-            />
-          )}
+          <TextFormatControls el={selected} cmd={textCmd} />
           {selected && isShape(selected.type) && (
             <input
               type="color"
@@ -1340,7 +1710,11 @@ export function DeckEditor({ user }: { user: User }) {
                 slide={slide}
                 width={canvasW}
                 selectedIds={selIds}
-                onSelect={setSel}
+                onSelect={(ids) => {
+                  savedTextSel.current = null;
+                  setFindHit(null);
+                  setSel(ids);
+                }}
                 onChange={(el) => upsertElement(el)}
                 onChangeMany={(els, o) => upsertMany(els, o)}
                 snap={{ guides: snapGuides, grid: snapGrid ? GRID_SIZE : 0 }}
@@ -1349,6 +1723,32 @@ export function DeckEditor({ user }: { user: User }) {
                 onContext={(x, y, elId) => setCtxMenu({ x, y, elId })}
                 drawTool={drawTool}
                 onDrawn={onDrawn}
+                textEditorRef={textEditor}
+                onTextKey={(a) => handleTextKey(a)}
+                onEditExit={(elId, [from, to]) => {
+                  savedTextSel.current = { id: elId, from, to };
+                }}
+                onEditorMouseUp={(h) => {
+                  if (!painterArmed || !painter) return;
+                  const [a, b] = h.selection();
+                  if (a === b) return;
+                  const style = painter;
+                  h.apply((el) => applyFormat(el, a, b, style));
+                  setPainterArmed(false);
+                }}
+                editRequest={editRequest}
+                painting={painterArmed}
+                onPaint={(el) => {
+                  if (!painter) return;
+                  upsertElement(applyFormatWhole(el, painter));
+                  setPainterArmed(false);
+                }}
+                onFollowLink={followLink}
+                findHighlight={
+                  findOpen && findHit && findHit.where === "text" && findHit.slideIdx === cur && findHit.topId === findHit.elId
+                    ? { elId: findHit.elId!, start: findHit.start, end: findHit.end }
+                    : null
+                }
               />
             )}
           </Box>
@@ -1688,6 +2088,37 @@ export function DeckEditor({ user }: { user: User }) {
           </Box>
         </ModalDialog>
       </Modal>
+      <HyperlinkDialog
+        open={!!linkDlg}
+        init={linkDlg?.init ?? null}
+        slides={slides}
+        onApply={applyLink}
+        onRemove={removeLink}
+        onClose={() => {
+          const d = linkDlg;
+          setLinkDlg(null);
+          if (d?.target.kind === "range")
+            setEditRequest({ id: d.target.id, sel: [d.target.from, d.target.to], nonce: Date.now() });
+        }}
+      />
+      <FindReplacePanel
+        open={findOpen}
+        doc={doc}
+        onClose={() => {
+          setFindOpen(false);
+          setFindHit(null);
+        }}
+        onGoto={gotoMatch}
+        onReplace={replaceOneMatch}
+        onReplaceAll={replaceAllMatches}
+      />
+      <SpecialCharsDialog open={charsOpen} onPick={pickChar} onClose={closeChars} />
+      <TextOptionsDialog
+        open={textOptsOpen}
+        el={selectedEls.find((e) => e.type === "text")}
+        onApply={applyTextOptions}
+        onClose={() => setTextOptsOpen(false)}
+      />
       <ShareDialog
         open={shareOpen}
         onClose={() => setShareOpen(false)}
@@ -1725,6 +2156,8 @@ interface PresentViewProps {
   onPrev: () => void;
   onTogglePresenter: () => void;
   onExit: () => void;
+  /** Go to slide i (a slide link was clicked). */
+  onJump: (i: number) => void;
 }
 
 function PresentView({
@@ -1735,6 +2168,7 @@ function PresentView({
   onPrev,
   onTogglePresenter,
   onExit,
+  onJump,
 }: PresentViewProps) {
   const slide = slides[cur];
   const next = slides[cur + 1];
@@ -1791,6 +2225,12 @@ function PresentView({
 
   // The transition belongs to the incoming slide; keying on cur remounts it.
   const anim = transitionAnimation(slide?.transition);
+
+  // A slide link clicked in the show (#slide:next, a specific slide, …).
+  const onSlideLink = (url: string) => {
+    const i = resolveSlideLink(url, slides, cur);
+    if (i !== null) onJump(i);
+  };
 
   // Whether there are more animation steps to play before advancing.
   const hasMoreSteps = animStep < animatedSteps.length;
@@ -1862,6 +2302,7 @@ function PresentView({
                   slide={slide}
                   width={mainW}
                   linkable
+                  onSlideLink={onSlideLink}
                   revealedIds={
                     animatedSteps.length > 0 ? revealedIds : undefined
                   }
@@ -1957,6 +2398,7 @@ function PresentView({
           slide={slide}
           width={pw}
           linkable
+          onSlideLink={onSlideLink}
           revealedIds={animatedSteps.length > 0 ? revealedIds : undefined}
         />
       </Box>

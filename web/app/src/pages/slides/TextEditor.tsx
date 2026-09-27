@@ -37,7 +37,8 @@ export const EDITOR_CSS = `
   width: 42px;
   text-indent: 0;
   text-decoration: none;
-}`;
+}
+::highlight(slides-find) { background-color: #fde293; }`;
 
 function sameContent(a: SlideElement, b: SlideElement): boolean {
   return (

@@ -10,6 +10,7 @@ import {
   renderSlideText,
 } from "./SlideView";
 import { EDITOR_CSS, TextEditor, type TextEditorHandle } from "./TextEditor";
+import { rangeInRendered } from "./textDom";
 import type { TextKeyAction } from "./keymap";
 import {
   GLUE_DISTANCE,
@@ -85,6 +86,8 @@ interface SlideCanvasProps {
   onPaint?: (el: SlideElement) => void;
   /** Ctrl/Cmd+click on a text link (outside text editing). */
   onFollowLink?: (url: string) => void;
+  /** Highlight a find match in a (top-level) text box, without focus. */
+  findHighlight?: { elId: string; start: number; end: number } | null;
 }
 
 type Drag =
@@ -138,6 +141,7 @@ export function SlideCanvas({
   painting,
   onPaint,
   onFollowLink,
+  findHighlight,
 }: SlideCanvasProps) {
   const scale = canvasScale(width);
   const height = canvasHeight(width);
@@ -174,6 +178,19 @@ export function SlideCanvas({
     setEditing(null);
     onEditingText?.(false);
   }
+  // Find match highlight (CSS Custom Highlight API; skipped where missing).
+  useEffect(() => {
+    const hl = (globalThis as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights;
+    const Highlight = (globalThis as { Highlight?: new (r: Range) => unknown }).Highlight;
+    if (!hl || !Highlight) return;
+    hl.delete("slides-find");
+    if (!findHighlight || !rootRef.current) return;
+    const box = rootRef.current.querySelector<HTMLElement>(`[data-el-id="${findHighlight.elId}"]`);
+    const r = box && rangeInRendered(box, findHighlight.start, findHighlight.end);
+    if (r) hl.set("slides-find", new Highlight(r));
+    return () => void hl.delete("slides-find");
+  });
+
   // Re-enter a text box with a selection (after a menu/dialog applied a
   // format to the saved selection).
   useEffect(() => {

@@ -691,3 +691,23 @@ export function setInsets(el: SlideElement, l: number, t: number, r: number, b: 
   else out.insets = { l, t, r, b };
   return out;
 }
+
+/** The [from, to) of the link run touching `at`, or null. */
+export function linkRangeAt(el: SlideElement, at: number): [number, number] | null {
+  let pos = 0;
+  const runs = elementRuns(el);
+  for (let i = 0; i < runs.length; i++) {
+    const r = runs[i];
+    const end = pos + r.text.length;
+    if (r.url && at >= pos && at <= end) {
+      // Neighbouring runs with the same link (different formatting) join in.
+      let a = pos;
+      let b = end;
+      for (let j = i - 1, p = pos; j >= 0 && runs[j].url === r.url; j--) a = p -= runs[j].text.length;
+      for (let j = i + 1; j < runs.length && runs[j].url === r.url; j++) b += runs[j].text.length;
+      return [a, b];
+    }
+    pos = end;
+  }
+  return null;
+}
