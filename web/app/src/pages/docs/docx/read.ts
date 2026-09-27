@@ -224,6 +224,8 @@ interface FieldState {
   marks?: Mark[];
   /** Already emitted (its result ran past a paragraph end). */
   emitted?: boolean;
+  /** w:fldLock: the field is not updated. */
+  locked?: boolean;
 }
 
 interface Ctx {
@@ -1065,7 +1067,7 @@ class Reader {
   /** A field node from a kept field (instruction + collected result). */
   fieldNode(f: FieldState, ctx?: Ctx): JSONContent {
     const marks = (f.marks ?? (ctx ? this.runMarksFor({}, ctx) : [])).filter((m) => m.type !== "link");
-    const node: JSONContent = { type: "field", attrs: { instr: f.instr.trim(), result: f.result ?? "" } };
+    const node: JSONContent = { type: "field", attrs: { instr: f.instr.trim(), result: f.result ?? "", ...(f.locked ? { locked: true } : {}) } };
     if (marks.length) node.marks = marks;
     return node;
   }
@@ -1081,7 +1083,7 @@ class Reader {
         const t = attr(c, "w:fldCharType");
         const keep = (f: FieldState) =>
           !ctx.margin && !f.href && !this.fields.some((x) => x !== f && x.capture) && this.fields.every((x) => x === f || x.phase === "result") && KEPT_FIELDS.has(fieldType(f.instr));
-        if (t === "begin") this.fields.push({ phase: "instr", instr: "" });
+        if (t === "begin") this.fields.push({ phase: "instr", instr: "", locked: /^(1|true|on)$/.test(attr(c, "w:fldLock") ?? "") });
         else if (t === "separate") {
           const f = this.fields[this.fields.length - 1];
           if (f) {

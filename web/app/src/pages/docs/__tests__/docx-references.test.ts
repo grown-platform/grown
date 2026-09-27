@@ -119,6 +119,16 @@ describe("docx references: reader", () => {
     expect(nodesOf(editor.getJSON(), "field")).toEqual([]);
     expect(paragraphTexts(editor)).toEqual(["Merge: «Name»"]);
   });
+
+  it("keeps locked fields locked (w:fldLock) both ways", async () => {
+    const body = `<w:p><w:r><w:fldChar w:fldCharType="begin" w:fldLock="1"/></w:r><w:r><w:instrText> DATE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>${r("1/2/2020")}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`;
+    const { editor } = await importBody(body);
+    expect(nodesOf(editor.getJSON(), "field")[0].attrs).toEqual({ instr: "DATE", result: "1/2/2020", locked: true });
+    updateFields(editor, "all");
+    expect(paragraphTexts(editor)).toEqual(["1/2/2020"]);
+    const { doc } = await exportDoc(editor);
+    expect(q(doc, "w:fldChar")[0].getAttribute("w:fldLock")).toBe("1");
+  });
 });
 
 describe("docx references: writer and round trips", () => {
