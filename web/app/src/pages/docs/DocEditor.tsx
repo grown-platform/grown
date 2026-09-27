@@ -32,7 +32,7 @@ import {
   replyToComment,
   resolveComment,
 } from "./api";
-import { takeDocxSeed } from "./docx/seed";
+import { hasDocxSeed, takeDocxSeed } from "./docx/seed";
 import { setExportDocId } from "./export";
 import { createCollab, colorFor } from "./collab";
 import { buildExtensions } from "./extensions";
@@ -353,10 +353,15 @@ export function DocEditor({ user }: DocEditorProps) {
     if (!editor) return;
     // Only an empty editor takes the seed: after an in-app navigation this
     // effect first runs with the previous document's editor (M12 results).
-    const docx = editor.getText().trim() === "" ? takeDocxSeed(id) : null;
-    if (docx) {
+    // The seed is only taken once the apply module has loaded and this editor
+    // is still live and empty: the editor is rebuilt when the collab session
+    // is (e.g. arriving from Drive's Open in Docs), and a destroyed editor
+    // must not swallow the seed meant for its successor.
+    if (editor.getText().trim() === "" && hasDocxSeed(id)) {
       void import("./docx/apply").then(async ({ applyDocxImport, importComments }) => {
-        if (editor.isDestroyed) return;
+        if (editor.isDestroyed || editor.getText().trim() !== "") return;
+        const docx = takeDocxSeed(id);
+        if (!docx) return;
         applyDocxImport(editor, docx);
         if (!docx.comments.length) return;
         await importComments(

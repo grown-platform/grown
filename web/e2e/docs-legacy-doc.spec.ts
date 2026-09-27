@@ -121,4 +121,27 @@ test.describe("CC8 LibreOffice legacy import", () => {
       if (id) await trashDoc(page.request, id);
     }
   });
+
+  test("opens a .doc stored in Drive with Open in Docs", async ({ page }) => {
+    test.setTimeout(240_000);
+    const up = await page.request.post(`${BASE_URL}/api/v1/drive/files/upload`, {
+      multipart: { file: { name: "Drive memo.doc", mimeType: "application/msword", buffer: docBytes! } },
+    });
+    expect(up.ok()).toBeTruthy();
+    const fileId = (await up.json()).id as string;
+    let docId = "";
+    try {
+      await page.goto(`${BASE_URL}/docs/${fileId}`);
+      await page.getByTestId("open-in-docs").click();
+      await page.waitForURL(/\/docs\/d\/[^/]+$/, { timeout: 180_000 });
+      docId = page.url().split("/").pop()!;
+      await expect(page.getByTestId("collab-status")).toHaveText("connected", { timeout: 15_000 });
+      const ed = page.locator(".ProseMirror:not(.margin-editor .ProseMirror)").first();
+      await expect(ed.locator("h1")).toHaveText("Legacy memo");
+      await expect(ed.locator("table")).toContainText("Q1");
+    } finally {
+      if (docId) await trashDoc(page.request, docId);
+      await page.request.delete(`${BASE_URL}/api/v1/drive/files/${fileId}`).catch(() => {});
+    }
+  });
 });
