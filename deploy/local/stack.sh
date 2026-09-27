@@ -97,6 +97,10 @@ start_backend() {
     export GROWN_RUSTFS_ENDPOINT=http://127.0.0.1:9100 GROWN_RUSTFS_ACCESS_KEY=grown
     export GROWN_RUSTFS_SECRET_KEY='DevPassword!1' GROWN_RUSTFS_BUCKET=grown-default
     export GROWN_ZITADEL_API_URL=http://localhost:8081
+    # Optional features read the caller's environment, which this subshell
+    # inherits: e.g. GROWN_LIBREOFFICE=1 (plus GROWN_SOFFICE_PATH,
+    # GROWN_LIBREOFFICE_ODF, …) enables LibreOffice import (see README.md).
+    [ -n "${GROWN_LIBREOFFICE:-}" ] && log "GROWN_LIBREOFFICE=$GROWN_LIBREOFFICE (soffice: ${GROWN_SOFFICE_PATH:-auto-detect})"
     cd "$t"
     nohup "$DATA/bin/grown$SUF" --http-addr=":$PORT" --grpc-addr=":$GRPC_PORT" \
       --static-dir="$t/web/app/dist" >"$DATA/backend$SUF.log" 2>&1 &

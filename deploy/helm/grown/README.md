@@ -101,9 +101,33 @@ helm install grown deploy/helm/grown -n grown --create-namespace \
 | `postgres.externalDsn` | `""` | use an external Postgres, skip bundled |
 | `minio.enabled` | `true` | bundle MinIO; false => `minio.external.endpoint` |
 | `pdf.enabled` | `true` | built-in PDF signing app |
+| `grown.libreoffice.enabled` | `false` | legacy .doc/.xls/.ppt import via LibreOffice headless; needs an image with LibreOffice (below) |
 | `persistence` sizes / `*.resources` | see values | per-component sizing |
 
 See `values.yaml` for the fully-documented set.
+
+### Optional: LibreOffice import
+
+Grown's default image has no LibreOffice. To accept legacy Word/Excel/
+PowerPoint files (`.doc`, `.xls`, `.ppt`, plus `.wpd`, `.dot`, `.xlt`,
+`.pps`, `.pot`), build an image that adds it (see the note at the end of the
+`Dockerfile`), then:
+
+```yaml
+image: { repository: registry.example/grown-libreoffice, tag: v1.2.3 }
+grown:
+  libreoffice: { enabled: true }
+  resources: { limits: { memory: 1Gi } }  # soffice needs ~300 MiB per conversion
+```
+
+The server converts uploads to docx/xlsx/pptx with `soffice --headless` and
+the browser's normal importers take over. Every run gets its own temp dir
+and throwaway profile with macro execution disabled, untrusted links
+blocked and external links never updated; input is magic-checked, size-
+capped, time-limited (process group killed) and concurrency-limited.
+LibreOffice is MPL-2.0 and only exec'd, never linked. `GET
+/api/v1/convert/capabilities` reports whether it's active; the UI only
+offers legacy formats when it is.
 
 ## Zitadel & real login (the sticking point)
 

@@ -22,6 +22,22 @@ deploy/local/stack.sh nuke               # delete all local state
 - The containers restart with Docker (`restart: unless-stopped`). If Docker
   Desktop restarts, or the disk fills up, run `stack.sh up` again.
 
+### Optional LibreOffice import
+
+Legacy `.doc`/`.xls`/`.ppt` import runs LibreOffice headless on the server
+and is off by default. `stack.sh` passes your environment through to the
+backend, so enable it per deploy:
+
+```sh
+GROWN_LIBREOFFICE=1 deploy/local/stack.sh backend
+# optional: GROWN_SOFFICE_PATH=/path/to/soffice (default: PATH, then
+# /Applications/LibreOffice.app), GROWN_LIBREOFFICE_ODF=1 to also route
+# .odt/.ods/.odp/.rtf through LibreOffice
+```
+
+`web/e2e/docs-legacy-doc.spec.ts` needs a backend started this way (it skips
+otherwise).
+
 Then run the e2e suite (`cd web/e2e && npx playwright test`). For screenshots,
 run the visual tour: `GROWN_TOUR=1 npx playwright test tour.spec.ts`, which
 writes `test-results/tour/*.png`.

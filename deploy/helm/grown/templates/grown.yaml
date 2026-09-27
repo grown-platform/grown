@@ -176,6 +176,27 @@ spec:
             - name: GROWN_BOLO_MP_URL
               value: "http://127.0.0.1:{{ .Values.bolo.port }}"
             {{- end }}
+            {{- with .Values.grown.libreoffice }}
+            {{- if .enabled }}
+            # --- optional LibreOffice import (needs an image with soffice) ---
+            - name: GROWN_LIBREOFFICE
+              value: "1"
+            {{- if .sofficePath }}
+            - name: GROWN_SOFFICE_PATH
+              value: {{ .sofficePath | quote }}
+            {{- end }}
+            {{- if .preferODF }}
+            - name: GROWN_LIBREOFFICE_ODF
+              value: "1"
+            {{- end }}
+            - name: GROWN_LIBREOFFICE_CONCURRENCY
+              value: {{ .concurrency | default 2 | quote }}
+            - name: GROWN_LIBREOFFICE_TIMEOUT
+              value: {{ .timeout | default "120s" | quote }}
+            - name: GROWN_LIBREOFFICE_MAX_BYTES
+              value: {{ .maxBytes | default 33554432 | int64 | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.grown.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

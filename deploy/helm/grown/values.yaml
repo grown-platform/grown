@@ -61,6 +61,19 @@ grown:
       memory: 512Mi
   # Extra env vars to inject verbatim (list of {name,value} / {name,valueFrom}).
   extraEnv: []
+  # Optional LibreOffice-headless import of legacy .doc/.xls/.ppt (CC8). The
+  # default image does NOT contain LibreOffice: point image.repository/tag at
+  # an image that adds it (see the Dockerfile's "Optional: LibreOffice"
+  # note), then enable this. Each conversion runs soffice in a throwaway
+  # profile with macros disabled; budget ~300 MiB of memory per concurrent
+  # conversion on top of grown's own limit.
+  libreoffice:
+    enabled: false
+    sofficePath: ""       # "" = auto-detect (PATH, /usr/lib/libreoffice/program/soffice)
+    preferODF: false      # also route .odt/.ods/.odp/.rtf through LibreOffice
+    concurrency: 2        # max simultaneous soffice processes
+    timeout: 120s         # per conversion; the process group is killed after
+    maxBytes: 33554432    # 32 MiB upload cap
   service:
     type: ClusterIP
     httpPort: 8080
