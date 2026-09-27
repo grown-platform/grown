@@ -231,3 +231,16 @@ func TestSemicolonArgumentSeparator(t *testing.T) {
 	mustNum(t, eval(t, "SUM({1;2};3)"), 6) // ';' inside {…} still separates rows
 	mustNum(t, eval(t, "ROWS({1;2;3})"), 3)
 }
+
+// A rich-text cell (a multi-line one typed with Alt+Enter) keeps its runs
+// through the recompute round trip.
+func TestRichTextCellSurvivesRecompute(t *testing.T) {
+	in := `[{"name":"Sheet1","celldata":[{"r":0,"c":0,"v":{"ct":{"fa":"General","t":"inlineStr","s":[{"v":"one\ntwo","fs":10}]},"fs":10}},{"r":0,"c":1,"v":{"f":"=1+1"}}]}]`
+	out := RecomputeWorkbook(in)
+	if !strings.Contains(out, `"s":[{"fs":10,"v":"one\ntwo"}]`) && !strings.Contains(out, `"s":[{"v":"one\ntwo","fs":10}]`) {
+		t.Fatalf("rich text runs lost: %s", out)
+	}
+	if !strings.Contains(out, `"inlineStr"`) {
+		t.Fatalf("type lost: %s", out)
+	}
+}

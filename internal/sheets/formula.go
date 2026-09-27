@@ -135,6 +135,48 @@ type FsCell struct {
 type FsCellType struct {
 	FA string `json:"fa,omitempty"`
 	T  string `json:"t,omitempty"`
+	// Extra keeps the other fields, notably `s`, the runs of a rich-text
+	// (inlineStr) cell such as a multi-line one: dropping it lost the text.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// MarshalJSON writes fa/t plus the preserved extra fields.
+func (t FsCellType) MarshalJSON() ([]byte, error) {
+	m := make(map[string]interface{}, 2+len(t.Extra))
+	for k, v := range t.Extra {
+		m[k] = v
+	}
+	if t.FA != "" {
+		m["fa"] = t.FA
+	}
+	if t.T != "" {
+		m["t"] = t.T
+	}
+	return json.Marshal(m)
+}
+
+// UnmarshalJSON reads fa/t and keeps every other field.
+func (t *FsCellType) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if v, ok := raw["fa"]; ok {
+		if err := json.Unmarshal(v, &t.FA); err != nil {
+			return err
+		}
+		delete(raw, "fa")
+	}
+	if v, ok := raw["t"]; ok {
+		if err := json.Unmarshal(v, &t.T); err != nil {
+			return err
+		}
+		delete(raw, "t")
+	}
+	if len(raw) > 0 {
+		t.Extra = raw
+	}
+	return nil
 }
 
 // MarshalJSON serialises FsCell, merging Extra fields at the top level.
