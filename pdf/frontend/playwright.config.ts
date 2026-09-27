@@ -53,6 +53,12 @@ export default defineConfig({
       },
     },
 
+    // Pure unit tests (no browser) — CC3 form-action evaluator/formatters.
+    {
+      name: "unit",
+      testMatch: /\.unit\.spec\.ts/,
+    },
+
     // UI tests - require browser
     {
       name: "chromium",
