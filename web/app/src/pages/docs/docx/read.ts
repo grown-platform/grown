@@ -13,7 +13,9 @@
 // rows, cell shading; since M4 borders, table styles + look, widths,
 // fixed layout, alignment, cell margins, vertical alignment, row height,
 // repaired bad merges), images (inline/anchored DrawingML, VML), text boxes
-// (content inlined after the paragraph), headers/footers (default), foot-
+// (since M7 pictures, wps shapes / text boxes, VML text boxes and charts
+// are object nodes with their wrap and position, docx/drawings.ts; other
+// text boxes are inlined after the paragraph), headers/footers (default), foot-
 // and endnotes, comments (+ replies and resolved state from
 // commentsExtended), tracked insertions/deletions/moves, hyperlinks
 // (external and bookmark anchors, tooltips), fields (HYPERLINK fields
@@ -25,8 +27,7 @@
 // nodes since M11).
 //
 // Dropped (no Grown model yet, reported in `warnings`): conditional formatting of table styles Grown doesn't know (their
-// borders are kept), per-section page setup (M9), floating image
-// positions (M7), direct "not bold/italic" overrides, caps/small caps as
+// borders are kept), per-section page setup (M9), direct "not bold/italic" overrides, caps/small caps as
 // direct formatting, formatting-change revisions.
 import JSZip from "jszip";
 import type { JSONContent } from "@tiptap/core";
