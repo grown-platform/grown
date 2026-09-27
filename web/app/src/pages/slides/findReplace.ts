@@ -4,6 +4,7 @@
 
 import type { DeckDoc, Slide, SlideElement } from "./model";
 import { replaceRange } from "./textOps";
+import { cellTextEl, setCellText } from "./tableOps";
 import { isWordChar } from "../../lib/textCase";
 
 export interface FindOptions {
@@ -94,10 +95,9 @@ function replaceOne(slide: Slide, m: Match, repl: string): Slide {
     elements: mapDeep(slide.elements, m.elId, (el) => {
       if (m.where === "text") return replaceRange(el, m.start, m.end, repl);
       if (m.where === "cell" && el.table && m.cell) {
+        // Cells are rich text too: replace through the cell's text element.
         const [r, c] = m.cell;
-        const cells = el.table.cells.map((row) => [...row]);
-        cells[r][c] = spliceStr(cells[r][c] ?? "", m.start, m.end, repl);
-        return { ...el, table: { ...el.table, cells } };
+        return setCellText(el, r, c, replaceRange(cellTextEl(el, r, c), m.start, m.end, repl));
       }
       return el;
     }),

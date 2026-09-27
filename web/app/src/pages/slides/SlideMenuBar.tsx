@@ -13,6 +13,8 @@ import ArrowRightIcon from "@mui/icons-material/ArrowRight";
 import { DECK_DOWNLOAD_FORMATS, type DeckFormat } from "./export";
 import type { ElementType, TextAlign } from "./model";
 import type { TextCommands } from "./TextFormatControls";
+import type { TableCommands } from "./TableControls";
+import type { ImageCommands } from "./ImageControls";
 import { CASE_MODES } from "../../lib/textCase";
 
 export interface SlideActions {
@@ -73,6 +75,14 @@ export interface SlideActions {
   openTransition: () => void;
   openAnimations: () => void;
   toggleNotes: () => void;
+  /** Insert ▸ Table: open the size picker. */
+  insertTable: () => void;
+  /** Table commands (null when no table is selected). */
+  table: TableCommands | null;
+  /** Picture commands (null when no picture is selected). */
+  image: ImageCommands | null;
+  /** Alt text for the selection. */
+  altText: () => void;
 }
 
 const menuButtonSx = {
@@ -242,7 +252,7 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
           </MenuItem>
           <ListDivider />
           <MenuItem disabled>Diagram{arrow}</MenuItem>
-          <MenuItem onClick={() => actions.insert("table")}>Table (3×3)</MenuItem>
+          <MenuItem onClick={actions.insertTable}>Table…</MenuItem>
           <MenuItem disabled>Chart{arrow}</MenuItem>
           <MenuItem disabled>Word art</MenuItem>
           <MenuItem disabled>Video</MenuItem>
@@ -369,8 +379,56 @@ export function SlideMenuBar({ actions }: { actions: SlideActions }) {
             Rotate text 270°
           </MenuItem>
           <ListDivider />
-          <MenuItem disabled>Table{arrow}</MenuItem>
-          <MenuItem disabled>Image{arrow}</MenuItem>
+          {section("Table")}
+          <MenuItem sx={sub} disabled={!actions.table} onClick={() => actions.table?.insertRow("above")}>
+            Insert row above
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.table} onClick={() => actions.table?.insertRow("below")}>
+            Insert row below
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.table} onClick={() => actions.table?.insertCol("left")}>
+            Insert column left
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.table} onClick={() => actions.table?.insertCol("right")}>
+            Insert column right
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.table} onClick={() => actions.table?.deleteRow()}>
+            Delete row
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.table} onClick={() => actions.table?.deleteCol()}>
+            Delete column
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.table?.canMerge} onClick={() => actions.table?.merge()}>
+            Merge cells
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.table} onClick={() => actions.table?.split()}>
+            Split cell…
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.table} onClick={() => actions.table?.distributeRows()}>
+            Distribute rows
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.table} onClick={() => actions.table?.distributeCols()}>
+            Distribute columns
+          </MenuItem>
+          {section("Image")}
+          <MenuItem sx={sub} disabled={!actions.image} onClick={() => actions.image?.toggleCrop()}>
+            Crop image
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.image} onClick={() => actions.image?.resetCrop()}>
+            Reset crop
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.image} onClick={() => actions.image?.actualSize()}>
+            Actual size
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.image} onClick={() => actions.image?.fitToSlide()}>
+            Fit to slide
+          </MenuItem>
+          <MenuItem sx={sub} disabled={!actions.image} onClick={() => actions.image?.replace()}>
+            Replace image…
+          </MenuItem>
+          <MenuItem sx={sub} disabled={actions.selection.count === 0} onClick={actions.altText}>
+            Alt text…
+          </MenuItem>
           <MenuItem disabled>Borders &amp; lines{arrow}</MenuItem>
           <MenuItem onClick={actions.text.textOptions}>Text options…</MenuItem>
           <MenuItem onClick={actions.text.paintFormat}>Paint format{kbd("Ctrl+Shift+C")}</MenuItem>

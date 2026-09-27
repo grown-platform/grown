@@ -14,6 +14,8 @@ import {
   type TransitionType,
 } from "../model";
 import { textBodyXml, type LinkRef, type LinkResolver } from "./textXml";
+import { tableXml } from "./tableXml";
+import { inlineImages } from "../assets";
 import { toPpAction } from "../links";
 
 /** Slide size written to every pptx: 10 in × 5.625 in (16:9). */
@@ -234,6 +236,8 @@ export async function deckToPptx(
   deck: DeckDoc,
   title = "Presentation",
 ): Promise<Uint8Array> {
+  // Pictures in the deck's asset store travel inside the package.
+  deck = await inlineImages(deck);
   const mod = await import("pptxgenjs");
   const PptxGenJS = mod.default;
   const pptx = new PptxGenJS();
@@ -451,6 +455,9 @@ function needsElementPatch(els: readonly SlideElement[]): boolean {
       e.type === "shape" ||
       e.type === "connector" ||
       e.type === "text" ||
+      e.type === "table" ||
+      e.type === "image" ||
+      !!e.alt ||
       (e.children ? needsElementPatch(e.children) : false),
   );
 }
@@ -552,8 +559,18 @@ export function patchElements(slideXml: string, marks: ElementMark[], link?: Lin
         ? groupMarker(path)
         : el.name || `${TYPE_NAME[el.type] ?? "Shape"} ${cNvPr.getAttribute("id")}`,
     );
+    if (el.alt) cNvPr.setAttribute("descr", el.alt);
+    else cNvPr.removeAttribute("descr"); // pptxgenjs writes the image path/data here
+    if (el.type === "image") {
+      patchPicture(doc, node, el);
+      continue;
+    }
     if (el.type === "text") {
       replaceTxBody(doc, node, textBodyXml(el, link ?? (() => null)));
+      continue;
+    }
+    if (el.type === "table" && el.table) {
+      replaceTable(doc, node, tableXml(el, link ?? (() => null)));
       continue;
     }
     if ((el.type !== "shape" && el.type !== "connector") || !el.preset) continue;
@@ -589,6 +606,74 @@ function replaceTxBody(doc: Document, sp: Element, xml: string) {
   const old = Array.from(sp.children).find((c) => c.localName === "txBody");
   if (old) sp.replaceChild(node, old);
   else sp.appendChild(node);
+}
+
+/**
+ * Finish a `p:pic`: crop (`a:srcRect`, 1/100 000 of the picture per side),
+ * opacity (`a:alphaModFix`), crop to shape (`a:prstGeom`), border (`a:ln`)
+ * and shadow (`a:effectLst/a:outerShdw`).
+ */
+export function patchPicture(doc: Document, pic: Element, el: SlideElement) {
+  const a = (name: string, attrs: Record<string, string> = {}) => {
+    const e = doc.createElementNS(A_NS, `a:${name}`);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+  const kid = (p: Element | undefined | null, name: string) =>
+    p ? Array.from(p.children).find((c) => c.localName === name) : undefined;
+  const blipFill = kid(pic, "blipFill");
+  const blip = kid(blipFill, "blip");
+  if (blip) {
+    for (const c of Array.from(blip.children)) if (c.localName === "alphaModFix") blip.removeChild(c);
+    if (el.opacity !== undefined && el.opacity < 1)
+      blip.insertBefore(a("alphaModFix", { amt: String(Math.round(el.opacity * 100000)) }), blip.firstChild);
+  }
+  if (blipFill) {
+    for (const c of Array.from(blipFill.children)) if (c.localName === "srcRect") blipFill.removeChild(c);
+    const c = el.crop;
+    if (c && (c.l || c.t || c.r || c.b)) {
+      const v = (x: number) => String(Math.round(x * 100000));
+      const src = a("srcRect", {});
+      if (c.l) src.setAttribute("l", v(c.l));
+      if (c.t) src.setAttribute("t", v(c.t));
+      if (c.r) src.setAttribute("r", v(c.r));
+      if (c.b) src.setAttribute("b", v(c.b));
+      blipFill.insertBefore(src, blip ? blip.nextSibling : blipFill.firstChild);
+    }
+  }
+  const spPr = kid(pic, "spPr");
+  if (!spPr) return;
+  const geom = kid(spPr, "prstGeom");
+  if (geom) geom.setAttribute("prst", el.cropShape || "rect");
+  for (const c of Array.from(spPr.children)) if (c.localName === "ln" || c.localName === "effectLst") spPr.removeChild(c);
+  if (el.stroke && el.stroke !== "none" && (el.strokeWidth ?? 0) > 0) {
+    const ln = a("ln", { w: String(Math.round((el.strokeWidth || 1) * 12700)) });
+    const fill = a("solidFill");
+    fill.appendChild(a("srgbClr", { val: hex6(el.stroke) }));
+    ln.append(fill, a("prstDash", { val: el.dash ?? "solid" }));
+    spPr.appendChild(ln);
+  }
+  if (el.shadow) {
+    const eff = a("effectLst");
+    const sh = a("outerShdw", { blurRad: "50800", dist: "38100", dir: "2700000", algn: "tl", rotWithShape: "0" });
+    const clr = a("prstClr", { val: "black" });
+    clr.appendChild(a("alpha", { val: "45000" }));
+    sh.appendChild(clr);
+    eff.appendChild(sh);
+    spPr.appendChild(eff);
+  }
+}
+
+/** Swap a graphic frame's `a:tbl` for `xml` (from tableXml). */
+function replaceTable(doc: Document, frame: Element, xml: string) {
+  const parsed = new DOMParser().parseFromString(
+    `<w xmlns:a="${A_NS}" xmlns:r="${R_NS}">${xml}</w>`,
+    "application/xml",
+  );
+  const tbl = parsed.documentElement.firstElementChild;
+  if (!tbl || parsed.getElementsByTagName("parsererror").length) return;
+  const old = frame.getElementsByTagNameNS(A_NS, "tbl")[0];
+  if (old) old.parentNode?.replaceChild(doc.importNode(tbl, true), old);
 }
 
 /** Rebuild a `p:sp` as a `p:cxnSp` (no text body), with glue references. */

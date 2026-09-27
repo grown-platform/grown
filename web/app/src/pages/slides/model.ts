@@ -65,11 +65,68 @@ export interface CxnRef {
   idx: number;
 }
 
-/** Table element data: a grid of cell text (cells[row][col]). */
+/** One side of a cell border; width (pt, like strokeWidth) 0 = no line. */
+export interface CellBorder {
+  color: string;
+  width: number;
+  dash?: DashStyle;
+}
+
+export type CellSide = "t" | "r" | "b" | "l";
+
+/** Per-cell overrides (absent = the table style / element defaults). */
+export interface CellProps {
+  /** Cell fill; "none" = explicitly transparent. */
+  fill?: string;
+  /** Explicit borders per side (pptx `a:lnT/lnR/lnB/lnL`). */
+  borders?: Partial<Record<CellSide, CellBorder>>;
+  align?: TextAlign;
+  valign?: "top" | "middle" | "bottom";
+  /** Cell-wide character formatting (like a text element's own values). */
+  style?: RunStyle;
+  /** Rich text (F1) of the cell; concatenates to `cells[r][c]`. */
+  runs?: TextRun[];
+  paras?: ParaProps[];
+}
+
+/** A merged block anchored at its top-left cell (pptx gridSpan/rowSpan). */
+export interface CellMerge {
+  r: number;
+  c: number;
+  rs: number;
+  cs: number;
+}
+
+/** Table style switches (pptx `a:tblPr` firstRow/bandRow/...). */
+export interface TableLook {
+  header?: boolean;
+  banded?: boolean;
+  firstCol?: boolean;
+  lastRow?: boolean;
+  lastCol?: boolean;
+  bandedCols?: boolean;
+}
+
+/** Table element data: a grid of cell text (cells[row][col]). Everything
+ *  after `cells` is optional (M5), so tables from older clients still work;
+ *  `cells` stays the plain-text mirror of each cell. */
 export interface TableData {
   rows: number;
   cols: number;
   cells: string[][];
+  /** Relative column widths (scaled to the element width when drawn);
+   *  absent = equal columns. */
+  colW?: number[];
+  /** Relative row heights (scaled to the element height); absent = equal. */
+  rowH?: number[];
+  /** Merged blocks; covered cells keep an empty string. */
+  merges?: CellMerge[];
+  /** Per-cell overrides, [row][col] (null = none). */
+  props?: (CellProps | null)[][];
+  /** Table style template id (a pptx `a:tableStyleId` GUID). */
+  style?: string;
+  /** Which parts of the style apply. */
+  look?: TableLook;
 }
 
 /** newTable builds an r×c table with empty cells. */
@@ -194,6 +251,14 @@ export interface TextInsets {
   b: number;
 }
 
+/** Image crop: fractions (0–1) of the source cut off each side. */
+export interface ImageCrop {
+  l: number;
+  t: number;
+  r: number;
+  b: number;
+}
+
 /** Default text inset (px) on every side when `insets` is absent. */
 export const DEFAULT_INSET = 4;
 /** One list/indent level: 0.4375 in (11.1125 mm, OnlyOffice/PowerPoint). */
@@ -250,6 +315,17 @@ export interface SlideElement {
   strokeWidth?: number;
   // image
   src?: string;
+  /** Crop as fractions of the source image cut from each side (pptx
+   *  `a:srcRect`); present = the picture is stretched to fill its box. */
+  crop?: ImageCrop;
+  /** Crop to shape: the picture is clipped to this preset geometry. */
+  cropShape?: string;
+  /** Opacity 0–1 (pptx `a:alphaModFix`); absent = opaque. */
+  opacity?: number;
+  /** Drop shadow (pptx `a:outerShdw`). */
+  shadow?: boolean;
+  /** Alternative text (pptx `cNvPr@descr`). */
+  alt?: string;
   // table
   table?: TableData;
   /** Hyperlink target; clickable in present mode and exports. */

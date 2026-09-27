@@ -5,6 +5,7 @@ import {
   elementTransform,
   type DeckDoc,
   type Slide,
+  type CellBorder,
   type SlideElement,
   type TextRun,
 } from "./model";
@@ -13,6 +14,9 @@ import { shapeLayersMarkup, shapeSvgGroup } from "./shapeRender";
 import { isRich, textBodyHtml } from "./textLayout";
 import { effective, insetsOf, listMarkers, paragraphs } from "./textOps";
 import { resolveSlideLink } from "./links";
+import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
+import { inlineImages } from "./assets";
+import { CELL_PAD, cellFormat, cellTextEl, colWidths, isCovered, offsets, rowHeights, spanOf } from "./tableOps";
 
 export type DeckFormat =
   | "pptx"
@@ -99,26 +103,122 @@ function elementHTML(el: SlideElement, slideHref?: (url: string) => string | nul
   if (el.type === "shape" || el.type === "connector")
     return `<svg style="${box}overflow:visible;" width="${Math.max(el.w, 1)}" height="${Math.max(el.h, 1)}">${shapeLayersMarkup(el)}</svg>`;
   if (el.type === "image")
-    return el.src
-      ? `<img src="${el.src}" style="${box}object-fit:contain;"/>`
-      : `<div style="${box}background:#f1f3f4;"></div>`;
-  if (el.type === "table" && el.table) {
-    const bcol = el.stroke && el.stroke !== "none" ? el.stroke : "#bbb";
-    const bg = el.fill && el.fill !== "none" ? el.fill : "transparent";
-    const rows = el.table.cells
-      .map(
-        (row) =>
-          `<tr>${row
-            .map(
-              (c) =>
-                `<td style="border:1px solid ${bcol};padding:4px;vertical-align:top;background:${bg};">${esc(c)}</td>`,
-            )
-            .join("")}</tr>`,
-      )
-      .join("");
-    return `<table style="${box}border-collapse:collapse;table-layout:fixed;font-size:${el.fontSize || 16}px;font-family:${el.fontFamily || "Arial"};color:${el.color || "#202124"};"><tbody>${rows}</tbody></table>`;
-  }
+    return el.src ? imageHTML(el, box) : `<div style="${box}background:#f1f3f4;"></div>`;
+  if (el.type === "table" && el.table) return tableHTML(el, box, slideHref);
   return "";
+}
+
+/** A picture as HTML: crop, crop to shape, opacity, border and shadow. */
+function imageHTML(el: SlideElement, box: string): string {
+  const clip = cropShapePath(el);
+  const f = fullImageRect(el);
+  const img = imageStretched(el)
+    ? `position:absolute;left:${f.x}px;top:${f.y}px;width:${f.w}px;height:${f.h}px;max-width:none;`
+    : `width:100%;height:100%;object-fit:contain;display:block;`;
+  const outer =
+    box +
+    (el.opacity !== undefined ? `opacity:${el.opacity};` : "") +
+    (el.shadow ? `filter:drop-shadow(3px 3px 4px rgba(0,0,0,0.45));` : "");
+  const stroked = !!el.stroke && el.stroke !== "none" && (el.strokeWidth ?? 0) > 0;
+  const border = stroked
+    ? `<svg width="${el.w}" height="${el.h}" style="position:absolute;left:0;top:0;overflow:visible">${
+        clip
+          ? `<path d="${clip}" fill="none" stroke="${el.stroke}" stroke-width="${el.strokeWidth}"/>`
+          : `<rect x="0" y="0" width="${el.w}" height="${el.h}" fill="none" stroke="${el.stroke}" stroke-width="${el.strokeWidth}"/>`
+      }</svg>`
+    : "";
+  return `<div style="${outer}"><div style="position:absolute;inset:0;overflow:hidden;${clip ? `clip-path:path('${clip}');` : ""}"><img src="${el.src}" alt="${esc(el.alt ?? "")}" style="${img}"/></div>${border}</div>`;
+}
+
+/** A picture as SVG (nested viewport = the box; clip path = crop shape). */
+function imageSVG(el: SlideElement): string {
+  const clip = cropShapePath(el);
+  const f = fullImageRect(el);
+  const id = `clip-${el.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const image = imageStretched(el)
+    ? `<image href="${el.src}" x="${f.x}" y="${f.y}" width="${f.w}" height="${f.h}" preserveAspectRatio="none"/>`
+    : `<image href="${el.src}" x="0" y="0" width="${el.w}" height="${el.h}" preserveAspectRatio="xMidYMid meet"/>`;
+  const stroked = !!el.stroke && el.stroke !== "none" && (el.strokeWidth ?? 0) > 0;
+  const border = stroked
+    ? clip
+      ? `<path d="${clip}" fill="none" stroke="${el.stroke}" stroke-width="${el.strokeWidth}"/>`
+      : `<rect x="0" y="0" width="${el.w}" height="${el.h}" fill="none" stroke="${el.stroke}" stroke-width="${el.strokeWidth}"/>`
+    : "";
+  return (
+    `<svg x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}"${el.opacity !== undefined ? ` opacity="${el.opacity}"` : ""}>` +
+    (clip ? `<defs><clipPath id="${id}"><path d="${clip}"/></clipPath></defs><g clip-path="url(#${id})">${image}</g>` : image) +
+    border +
+    `</svg>`
+  );
+}
+
+/** A table as HTML: widths, heights, merges, fills, borders, rich cells. */
+function tableHTML(el: SlideElement, box: string, slideHref?: (url: string) => string | null): string {
+  const t = el.table!;
+  const cols = colWidths(el)
+    .map((w) => `<col style="width:${w}px"/>`)
+    .join("");
+  const hs = rowHeights(el);
+  const bcss = (b?: CellBorder) => (b ? `${b.width}px ${!b.dash || b.dash === "solid" ? "solid" : b.dash === "sysDot" ? "dotted" : "dashed"} ${b.color}` : "none");
+  const rows = t.cells
+    .map((row, r) => {
+      const tds = row
+        .map((_, c) => {
+          if (isCovered(t, r, c)) return "";
+          const { rs, cs } = spanOf(t, r, c);
+          const f = cellFormat(el, r, c);
+          const te = cellTextEl(el, r, c);
+          const span = `${rs > 1 ? ` rowspan="${rs}"` : ""}${cs > 1 ? ` colspan="${cs}"` : ""}`;
+          const va = te.valign === "middle" ? "middle" : te.valign === "bottom" ? "bottom" : "top";
+          const td =
+            `border-top:${bcss(f.borders.t)};border-right:${bcss(f.borders.r)};border-bottom:${bcss(f.borders.b)};border-left:${bcss(f.borders.l)};` +
+            `padding:${CELL_PAD}px;vertical-align:${va};overflow:hidden;` +
+            (f.fill ? `background:${f.fill};` : "") +
+            `font-size:${te.fontSize}px;font-family:${te.fontFamily};color:${te.color};font-weight:${te.bold ? 700 : 400};font-style:${te.italic ? "italic" : "normal"};text-align:${te.align || "left"};white-space:pre-wrap;word-break:break-word;line-height:${te.lineSpacing || 1.2};`;
+          const body = isRich(te) || te.underline || te.strike
+            ? textBodyHtml({ ...te, runs: te.runs ?? [{ text: te.text || "" }] }, (url) => {
+                const i = slideHref ? slideHref(url) : null;
+                return i ?? (url.startsWith("#") ? null : url);
+              })
+            : esc(te.text || "").replace(/\n/g, "<br/>");
+          return `<td${span} style="${td}">${body}</td>`;
+        })
+        .join("");
+      return `<tr style="height:${hs[r]}px">${tds}</tr>`;
+    })
+    .join("");
+  return `<table style="${box}border-collapse:collapse;table-layout:fixed;"><colgroup>${cols}</colgroup><tbody>${rows}</tbody></table>`;
+}
+
+/** A table as SVG: cell fills, border lines and cell text. */
+function tableSVG(el: SlideElement): string {
+  const t = el.table!;
+  const xs = offsets(colWidths(el));
+  const ys = offsets(rowHeights(el));
+  const fills: string[] = [];
+  const lines: string[] = [];
+  const texts: string[] = [];
+  for (let r = 0; r < t.rows; r++)
+    for (let c = 0; c < t.cols; c++) {
+      if (isCovered(t, r, c)) continue;
+      const { rs, cs } = spanOf(t, r, c);
+      const x0 = el.x + xs[c];
+      const x1 = el.x + xs[c + cs];
+      const y0 = el.y + ys[r];
+      const y1 = el.y + ys[r + rs];
+      const f = cellFormat(el, r, c);
+      if (f.fill) fills.push(`<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="${f.fill}"/>`);
+      const seg = (b: CellBorder | undefined, a: [number, number], z: [number, number]) => {
+        if (b) lines.push(`<line x1="${a[0]}" y1="${a[1]}" x2="${z[0]}" y2="${z[1]}" stroke="${b.color}" stroke-width="${b.width}"/>`);
+      };
+      seg(f.borders.t, [x0, y0], [x1, y0]);
+      seg(f.borders.b, [x0, y1], [x1, y1]);
+      seg(f.borders.l, [x0, y0], [x0, y1]);
+      seg(f.borders.r, [x1, y0], [x1, y1]);
+      const te = cellTextEl(el, r, c);
+      if (te.text) texts.push(textSVG({ ...te, x: x0 + CELL_PAD, y: y0 + CELL_PAD, w: x1 - x0 - 2 * CELL_PAD, h: y1 - y0 - 2 * CELL_PAD }));
+    }
+  return fills.join("") + lines.join("") + texts.join("");
 }
 
 function slideHTML(slide: Slide, idx: number, slides: readonly Slide[]): string {
@@ -173,6 +273,70 @@ function clipPathPoints(type: SlideElement["type"]): [number, number][] {
   }
 }
 
+/** A text element as SVG <text> (one tspan per visual line). */
+function textSVG(el: SlideElement): string {
+  const anchor =
+    el.align === "center"
+      ? "middle"
+      : el.align === "right"
+        ? "end"
+        : "start";
+  const tx =
+    el.align === "center"
+      ? el.x + el.w / 2
+      : el.align === "right"
+        ? el.x + el.w
+        : el.x + 4;
+  const size = el.fontSize || 18;
+  // Visual lines (paragraphs split at "\v"), each a list of styled runs.
+  const marks = listMarkers(el);
+  const lines: { runs: TextRun[]; marker: string }[] = [];
+  paragraphs(el).forEach((p, pi) => {
+    let cur: TextRun[] = [];
+    let first = true;
+    const flush = () => {
+      lines.push({ runs: cur, marker: first ? marks[pi] : "" });
+      first = false;
+      cur = [];
+    };
+    for (const r of p.runs)
+      r.text.split("\v").forEach((t, j) => {
+        if (j > 0) flush();
+        if (t) cur.push({ ...r, text: t });
+      });
+    flush();
+  });
+  const lineH = size * (el.lineSpacing || 1.2);
+  const blockH = lines.length * lineH;
+  const startY =
+    el.valign === "middle"
+      ? el.y + (el.h - blockH) / 2 + size
+      : el.valign === "bottom"
+        ? el.y + el.h - blockH + size
+        : el.y + size;
+  const tspans = lines
+    .map((ln, i) => {
+      const segs = ln.runs
+        .map((r) => {
+          const deco = [effective(el, r, "underline") || r.url ? "underline" : "", effective(el, r, "strike") ? "line-through" : ""]
+            .filter(Boolean)
+            .join(" ");
+          const bl = effective(el, r, "baseline");
+          const fs = (effective(el, r, "fontSize") as number) * (bl ? 0.65 : 1);
+          const fam = effective(el, r, "fontFamily") as string | undefined;
+          const fill = r.color ?? el.color ?? "#000";
+          return `<tspan font-size="${fs}"${fam ? ` font-family="${esc(fam)}"` : ""} fill="${fill}" font-weight="${effective(el, r, "bold") ? "bold" : "normal"}" font-style="${effective(el, r, "italic") ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}${bl ? ` baseline-shift="${bl}"` : ""}>${esc(r.text)}</tspan>`;
+        })
+        .join("");
+      const mark = ln.marker ? `${esc(ln.marker)} ` : "";
+      return `<tspan x="${tx}" y="${startY + i * lineH}">${mark}${segs}</tspan>`;
+    })
+    .join("");
+  return (
+    `<text font-family="${el.fontFamily || "Arial"}" font-size="${size}" fill="${el.color || "#000"}" text-anchor="${anchor}" xml:space="preserve">${tspans}</text>`
+  );
+}
+
 // Render one slide to a standalone SVG string (matches the canvas model).
 function slideToSVG(slide: Slide): string {
   const parts: string[] = [
@@ -215,70 +379,11 @@ function slideToSVG(slide: Slide): string {
     } else if (el.type === "shape" || el.type === "connector") {
       parts.push(shapeSvgGroup(el));
     } else if (el.type === "image" && el.src) {
-      parts.push(
-        `<image href="${el.src}" x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" preserveAspectRatio="xMidYMid meet"/>`,
-      );
+      parts.push(imageSVG(el));
     } else if (el.type === "text") {
-      const anchor =
-        el.align === "center"
-          ? "middle"
-          : el.align === "right"
-            ? "end"
-            : "start";
-      const tx =
-        el.align === "center"
-          ? el.x + el.w / 2
-          : el.align === "right"
-            ? el.x + el.w
-            : el.x + 4;
-      const size = el.fontSize || 18;
-      // Visual lines (paragraphs split at "\v"), each a list of styled runs.
-      const marks = listMarkers(el);
-      const lines: { runs: TextRun[]; marker: string }[] = [];
-      paragraphs(el).forEach((p, pi) => {
-        let cur: TextRun[] = [];
-        let first = true;
-        const flush = () => {
-          lines.push({ runs: cur, marker: first ? marks[pi] : "" });
-          first = false;
-          cur = [];
-        };
-        for (const r of p.runs)
-          r.text.split("\v").forEach((t, j) => {
-            if (j > 0) flush();
-            if (t) cur.push({ ...r, text: t });
-          });
-        flush();
-      });
-      const lineH = size * (el.lineSpacing || 1.2);
-      const blockH = lines.length * lineH;
-      const startY =
-        el.valign === "middle"
-          ? el.y + (el.h - blockH) / 2 + size
-          : el.valign === "bottom"
-            ? el.y + el.h - blockH + size
-            : el.y + size;
-      const tspans = lines
-        .map((ln, i) => {
-          const segs = ln.runs
-            .map((r) => {
-              const deco = [effective(el, r, "underline") || r.url ? "underline" : "", effective(el, r, "strike") ? "line-through" : ""]
-                .filter(Boolean)
-                .join(" ");
-              const bl = effective(el, r, "baseline");
-              const fs = (effective(el, r, "fontSize") as number) * (bl ? 0.65 : 1);
-              const fam = effective(el, r, "fontFamily") as string | undefined;
-              const fill = r.color ?? el.color ?? "#000";
-              return `<tspan font-size="${fs}"${fam ? ` font-family="${esc(fam)}"` : ""} fill="${fill}" font-weight="${effective(el, r, "bold") ? "bold" : "normal"}" font-style="${effective(el, r, "italic") ? "italic" : "normal"}"${deco ? ` text-decoration="${deco}"` : ""}${bl ? ` baseline-shift="${bl}"` : ""}>${esc(r.text)}</tspan>`;
-            })
-            .join("");
-          const mark = ln.marker ? `${esc(ln.marker)} ` : "";
-          return `<tspan x="${tx}" y="${startY + i * lineH}">${mark}${segs}</tspan>`;
-        })
-        .join("");
-      parts.push(
-        `<text font-family="${el.fontFamily || "Arial"}" font-size="${size}" fill="${el.color || "#000"}" text-anchor="${anchor}" xml:space="preserve">${tspans}</text>`,
-      );
+      parts.push(textSVG(el));
+    } else if (el.type === "table" && el.table) {
+      parts.push(tableSVG(el));
     }
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_W}" height="${CANVAS_H}" viewBox="0 0 ${CANVAS_W} ${CANVAS_H}">${parts.join("")}</svg>`;
@@ -330,6 +435,8 @@ export async function downloadDeck(
   slideIndex = 0,
 ): Promise<void> {
   const name = (title || "presentation").replace(/[/\\?%*:|"<>]/g, "-");
+  // Files that leave the browser carry their pictures inline.
+  if (fmt !== "pdf" && fmt !== "txt") deck = await inlineImages(deck);
 
   // Current-slide image exports (Google parity: jpg/png/svg).
   if (fmt === "svg" || fmt === "png" || fmt === "jpg") {

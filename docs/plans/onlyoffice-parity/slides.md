@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Slides
 
-Status: plan (2026-09-26); M0–M3 landed — see the status notes in §6.4–6.7.
+Status: plan (2026-09-26); M0–M6 landed — see the status notes in §6.4–6.10.
 
 Scope: the OnlyOffice **presentation editor** (`sdkjs/slide`, the shared drawing
 engine in `sdkjs/common`, and the `web-apps/apps/presentationeditor` UI) versus
@@ -1058,20 +1058,21 @@ which creates a new deck. A .pptx opened from Drive (`/slides/:id`) gets
 - ~~Per-run formatting is lost~~ (resolved in M4, see §6.8).
 - Underline on a hyperlinked run is dropped on import, because it can't be
   told apart from the hyperlink style.
-- Table merges and per-cell styles are not kept; table styles
-  (`tableStyleId`) are ignored.
+- ~~Table merges and per-cell styles are not kept; table styles
+  (`tableStyleId`) are ignored.~~ (resolved in M5, see §6.9)
 - Gradients import as their first stop, and pattern fills as their
   foreground colour.
-- Image crop (`srcRect`) is ignored.
+- ~~Image crop (`srcRect`) is ignored.~~ (resolved in M6, see §6.10)
 - Group rotation is ignored.
 - Custom geometry other than a straight segment is drawn as a rect or
   dropped.
 - Hidden slides are imported as visible.
 - Slide size is not stored in `DeckDoc`, so non-16:9 decks are letterboxed.
 - An empty image placeholder (no `src`) is not exported.
-- Imports with large images can exceed the 8 MiB collab WebSocket frame
-  limit on the broadcast after File ▸ Import slides. Autosave still
-  persists the deck.
+- ~~Imports with large images can exceed the 8 MiB collab WebSocket frame
+  limit on the broadcast after File ▸ Import slides.~~ Imported pictures
+  now go to the deck's asset store (M6, §6.10); only a server without a
+  blob store keeps them inline.
 
 ### 6.6 M2 status (Wave 3): selection, arrange, group
 
@@ -1401,4 +1402,164 @@ symbol`, `#Check select all` (e2e, browser-native caret/delete behaviour);
   its DOM; the deck-level undo still has every command.
 - Shrink-on-overflow uses CSS zoom on the rendered text and doesn't write
   a `fontScale` (PowerPoint recomputes it when the box is edited).
+
+### 6.9 M5 status (Wave 4): tables
+
+**Model (additive).** `TableData` keeps `rows`/`cols`/`cells` (the
+plain-text mirror of every cell) and gains optional `colW`/`rowH`
+(relative sizes, scaled to the element box, so resizing the table scales
+its grid), `merges` (`{r, c, rs, cs}` blocks anchored top-left; covered
+cells keep ""), `props[r][c]` (per-cell `fill`, `borders` per side with
+colour/width/dash, `align`, `valign`, a cell-wide `style` and rich
+`runs`/`paras`), `style` (a pptx table style GUID) and `look` (header,
+total row, banded rows, first/last column, banded columns). A table
+without any of these renders exactly as before.
+
+**Modules.**
+
+- `tableStyles.ts`: PowerPoint's built-in table styles by GUID ("No Style,
+  No Grid", "No Style, Table Grid", "Medium Style 2" and its six accents,
+  Office theme colours) with the documented rules: whole-table fill and
+  grid, row/column bands counted after the header/first column,
+  header/total/first/last conditional fill, text colour and bold, and the
+  thick white edge under a header / over a total row.
+- `tableOps.ts` (pure): column/row geometry; merge lookup and range growth
+  over merges; insert/delete rows and columns (new rows copy the
+  neighbour's formatting; merges spanning the point grow; deleting a
+  merge's anchor row keeps its content); merge (contents joined as
+  paragraphs, runs kept) and split (a merged cell into blocks that divide
+  its span, or a single cell by adding grid lines that the other cells
+  span); grid-line drag (inner lines trade width, the table keeps its
+  width; row lines grow the table); distribute rows/columns; fills; the
+  ten border presets (all, outer, inner, inner H/V, top/bottom/left/right,
+  none), which also set the facing side of the neighbour across a range
+  edge; style/look; effective cell format (explicit → template → legacy
+  element fill/stroke). A cell is presented as a text element
+  (`cellTextEl`, id `<table>:<r>:<c>`) and written back with `setCellText`,
+  which stores only what differs from the table/template defaults — so the
+  M4 rich editor, every textOps command and find/replace work on cells.
+  `tableKey` is the keyboard reducer for a selected table.
+
+**Editor.** Insert ▸ Table… and a toolbar button open a 8×10 size picker;
+new tables get "Medium Style 2 - Accent 1" with a header row and banded
+rows (PowerPoint's default). With the table selected, a click in a cell
+opens the rich editor there (a drag or Shift+click selects a cell range);
+Tab/Shift+Tab move to the next/previous cell (Tab on the last cell adds a
+row), and arrows cross cell edges at the ends of the text. Outside the
+editor, arrows move the active cell, Shift+arrows extend the range, Enter
+edits it (text selected), Enter over a range clears it and edits its first
+cell, Backspace/Delete clear the range, Esc drops the cell selection.
+Inner grid lines drag to resize columns/rows. The toolbar adds Rows &
+columns (insert/delete/select/distribute), Merge, Split… (rows × columns
+dialog), a Style gallery with the six style options, cell fill and a
+Borders menu (colour, width, preset). Format ▸ Table and the context
+menu carry the same commands. Text formatting with a table selected (not
+editing) applies to the selected cells, or the whole table. HTML/PDF and
+SVG/PNG exports draw widths, heights, merges, fills, borders and rich
+cells.
+
+**pptx.** pptxgenjs still lays down the graphic frame; its `a:tbl` is
+replaced by `pptx/tableXml.ts`: `a:tblPr` flags + `a:tableStyleId`,
+`a:gridCol` widths, `a:tr@h`, `gridSpan`/`rowSpan` with `hMerge`/`vMerge`
+on covered cells, per-cell `a:lnL/R/T/B` (width 0 → `a:noFill`) and fill
+in `a:tcPr` (with margins and anchor), and rich cell text through the M4
+paragraph writer. A legacy (unstyled) Grown table omits the style id and
+bakes its element fill/border into every cell, as before. The reader
+maps all of that back; cell text goes through `readText` and
+`setCellText`. An unstyled pptx table whose cells share one fill and one
+border becomes a legacy Grown table; any other unstyled table becomes
+"No Style, No Grid" with its explicit cell formatting. An unknown style
+GUID is read as "No Style, No Grid" with a warning.
+
+**Tests.** `tableOps.test.ts` (23), `pptx/tables.test.ts` (6: XML
+checks, styled round trip with merge/fills/dashed borders/sizes/rich text
+and a link, double round trip, mixed unstyled borders, table grid, unknown
+style), the updated table case in `pptx/read.test.ts`; e2e
+`web/e2e/slides-media.spec.ts` (picker, typing with Tab, Shift+click range,
+merge, style, reload) and the table-keys test.
+
+**Ported (now passing):** `shortcuts.js#Check main actions with shapes`,
+table half, as `…(table cell navigation)` (reducer: right ×3, left ×2,
+down, up, Tab ×2, Shift+Tab ×2, Enter selects the first cell's text, Enter
+over a range removes it) and `…(table keys in the editor)` (e2e).
+
+**Gaps.**
+
+- Style colours are the Office theme's, not the deck's theme (Grown has
+  no theme yet, M7); a pptx whose theme recolours accents shows Office
+  colours. Only the nine styles above are in the gallery; other built-in
+  GUIDs import as "No Style, No Grid".
+- No diagonal borders, cell margins UI, text direction in cells, or
+  "distribute" for a range that crosses merges.
+- The table is one element for collab: two people editing different cells
+  at once still last-writer-wins on the table.
+- Row heights are minimums (as in PowerPoint), but the element box
+  doesn't grow with text that overflows a row: the drawn table then runs
+  past its box and its selection outline.
+
+### 6.10 M6 status (Wave 4): pictures
+
+**Storage.** `POST /api/v1/slides/d/{id}/assets` (multipart `file` or a raw
+body, ≤ 20 MiB) sniffs the type (PNG/JPEG/GIF/WebP/BMP; SVG is refused, as
+it would run script from our origin) and stores it in the blob store shared
+with Drive (rustfs/S3) under `slides/<deck>/<sha256>`; the picture's `src`
+is `/api/v1/slides/d/<deck>/assets/<sha256>`. `GET` serves it with
+`nosniff`, a sandbox CSP, an ETag and immutable caching. Access follows the
+deck (`slidesDeckAccess`, now shared with the collab WebSocket): readers
+may fetch, writers may upload (`internal/slides/assets.go`,
+`assets_test.go`). The client uploads inserted, pasted and replacing
+pictures (`api.deckImageSrc`) and falls back to a data: URL when the
+server has no blob store or refuses the file (SVG); old decks with data:
+URLs keep working. File ▸ Import slides, Upload .pptx and Drive's "Open
+in Slides" move imported pictures to the asset store too
+(`assets.externalizeImages`). Exports that leave the browser (pptx, HTML,
+SVG/PNG/JPEG) inline the asset URLs back into data: URLs
+(`assets.inlineImages`).
+
+**Model.** `crop {l, t, r, b}` (fractions cut from each side, as pptx
+`srcRect`), `cropShape` (a preset name), `opacity`, `shadow`, `alt` (any
+element); the border reuses `stroke`/`strokeWidth`/`dash`. A picture with
+a crop or a crop shape is stretched to its box (the pptx model); one
+without keeps the legacy letterbox.
+
+**Modules.** `imageOps.ts` (pure): crop normalisation, the full-picture
+rectangle, crop-handle drag (the picture stays put; edges stop at the
+picture), pan inside the crop, reset crop (same scale), Fill/Fit,
+insert box (the picture's own proportions, ≤ 60 % of the slide), actual
+size, fit to slide, replace (keeps the box area), opacity, alt text, and
+the crop-to-shape clip path from the M3 preset engine.
+
+**Editor.** Pictures insert at their own proportions. With a picture
+selected the toolbar shows Crop (crop mode: the uncropped picture shows
+faintly, square black handles crop, a drag pans; Enter/Esc/deselect ends
+it), Crop options (remove shape, Fill, Fit, reset crop, actual size, fit
+to slide, replace image, alt text), Crop to shape (the shape gallery
+without lines), Opacity, Shadow, and the line colour/weight/dash controls
+for a border. Format ▸ Image and the context menu add crop/reset/replace;
+"Alt text…" is on the context menu and Format ▸ Image for any element.
+
+**pptx.** `patchPicture` writes `a:srcRect`, `a:alphaModFix`, the crop
+shape as `a:prstGeom@prst`, `a:ln` and an `a:outerShdw`; `cNvPr@descr`
+carries alt text for every element (pptxgenjs used to put the image data
+there). The reader maps them back (negative `srcRect` values are
+dropped).
+
+**Tests.** `imageOps.test.ts` (14), `pptx/images.test.ts` (7: XML, full
+round trip, plain picture, alt text on shapes, `inlineImages`,
+`externalizeImages`), Go `internal/slides/assets_test.go` (path parsing,
+upload + dedupe + serve + 304, access, SVG/HTML/empty refused, size
+limit); e2e `slides-media.spec.ts` uploads a picture (201, asset URL in
+the model, served as image/png after reload), crops it to an oval and on
+the left edge, adds alt text. No OnlyOffice suite covers pictures, so
+these tests carry no `oo:` tag.
+
+**Gaps.**
+
+- Insert by URL and "From storage" (Drive picker) are not done.
+- No Shift-locked aspect resize, recolour or picture effects beyond the
+  one preset shadow.
+- Crop mode ignores rotation (it crops in the unrotated frame).
+- Assets are never garbage-collected; a picture copied into another deck
+  still points at the first deck's asset (readable by whoever can read
+  that deck).
 

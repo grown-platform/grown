@@ -6,14 +6,26 @@ import {
   shapeClipPath,
   elementTransform,
   type AnimationType,
+  type CellBorder,
   type Slide,
   type SlideElement,
 } from "./model";
 import { relativeTo } from "./groupOps";
-import { connectorHitPath, shapeLayers } from "./shapeRender";
+import { connectorHitPath, dashArray, shapeLayers } from "./shapeRender";
+import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
 import { insetsOf } from "./textOps";
 import { isRich, layoutParagraphs, markerCss, paraCss, runCss } from "./textLayout";
 import { parseSlideLink } from "./links";
+import {
+  CELL_PAD,
+  cellFormat,
+  cellTextEl,
+  colWidths,
+  isCovered,
+  rowHeights,
+  spanOf,
+  type CellRange,
+} from "./tableOps";
 
 // CSS keyframes for element entrance animations (injected globally once).
 export const ELEMENT_ANIM_CSS = `
@@ -317,21 +329,9 @@ function renderElementBody(
   links?: TextLinkOpts,
 ): React.ReactElement {
   if (el.type === "image") {
-    return el.src ? (
-      <img src={el.src} alt="" style={{ ...merged, objectFit: "contain" }} />
-    ) : (
-      <div
-        style={{
-          ...merged,
-          background: "#f1f3f4",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#9aa0a6",
-          fontSize: 12,
-        }}
-      >
-        Image
+    return (
+      <div style={merged}>
+        <ImageBody el={el} />
       </div>
     );
   }
@@ -354,6 +354,78 @@ function renderElementBody(
       </div>
     );
   return <div style={merged} />;
+}
+
+/** ImageBody draws a picture inside its element box: crop (the whole
+ *  picture positioned so the box shows the cropped part), crop to shape
+ *  (clip-path from the preset), opacity, border and shadow. */
+export function ImageBody({ el }: { el: SlideElement }) {
+  if (!el.src)
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          background: "#f1f3f4",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#9aa0a6",
+          fontSize: 12,
+        }}
+      >
+        Image
+      </div>
+    );
+  const clip = cropShapePath(el);
+  const full = fullImageRect(el);
+  const stroked = !!el.stroke && el.stroke !== "none" && (el.strokeWidth ?? 0) > 0;
+  const dash = dashArray(el.dash, el.strokeWidth || 1);
+  return (
+    <div
+      data-image=""
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        opacity: el.opacity,
+        filter: el.shadow ? "drop-shadow(3px 3px 4px rgba(0,0,0,0.45))" : undefined,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          clipPath: clip ? `path("${clip}")` : undefined,
+        }}
+      >
+        <img
+          src={el.src}
+          alt={el.alt ?? ""}
+          draggable={false}
+          style={
+            imageStretched(el)
+              ? { position: "absolute", left: full.x, top: full.y, width: full.w, height: full.h, maxWidth: "none" }
+              : { width: "100%", height: "100%", objectFit: "contain", display: "block" }
+          }
+        />
+      </div>
+      {stroked && (
+        <svg
+          width={Math.max(el.w, 1)}
+          height={Math.max(el.h, 1)}
+          style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}
+        >
+          {clip ? (
+            <path d={clip} fill="none" stroke={el.stroke} strokeWidth={el.strokeWidth} strokeDasharray={dash} />
+          ) : (
+            <rect x={0} y={0} width={el.w} height={el.h} fill="none" stroke={el.stroke} strokeWidth={el.strokeWidth} strokeDasharray={dash} />
+          )}
+        </svg>
+      )}
+    </div>
+  );
 }
 
 /** GroupChildren renders a group's members inside the group's own box (the
@@ -465,69 +537,101 @@ export function ShrinkFit({ on, children }: { on: boolean; children: React.React
   );
 }
 
-/** SlideTable renders an element's table grid. When onCellChange is supplied the
- *  cells become contentEditable (editor); otherwise read-only (view/present). */
-export function SlideTable({
-  el,
-  onCellChange,
-}: {
-  el: SlideElement;
-  onCellChange?: (row: number, col: number, value: string) => void;
-}) {
+/** CSS of one cell border side. */
+export function borderCss(b: CellBorder | undefined): string {
+  if (!b) return "none";
+  const style = !b.dash || b.dash === "solid" ? "solid" : b.dash === "sysDot" ? "dotted" : "dashed";
+  return `${b.width}px ${style} ${b.color}`;
+}
+
+/** The text block of a cell (its paragraphs/runs), styled like a text box. */
+export function cellTextStyle(te: SlideElement): React.CSSProperties {
+  const s = elementStyle(te);
+  return {
+    fontSize: s.fontSize,
+    fontFamily: s.fontFamily,
+    color: s.color,
+    fontWeight: s.fontWeight,
+    fontStyle: s.fontStyle,
+    textDecoration: s.textDecoration,
+    textAlign: s.textAlign,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    lineHeight: s.lineHeight,
+    padding: CELL_PAD,
+  };
+}
+
+/** Per-cell hooks of the editor (cell selection, in-place editing). */
+export interface TableEditHooks {
+  /** Selected cell range (drawn with a tint). */
+  range?: CellRange | null;
+  /** The cell being edited and its editor. */
+  editing?: { r: number; c: number; node: React.ReactNode } | null;
+  onCellPointerDown?: (e: React.PointerEvent, r: number, c: number) => void;
+  onCellDoubleClick?: (e: React.MouseEvent, r: number, c: number) => void;
+}
+
+/** SlideTable renders an element's table: column widths, row heights,
+ *  merged cells, style/explicit fills and borders, and rich cell text. */
+export function SlideTable({ el, hooks }: { el: SlideElement; hooks?: TableEditHooks }) {
   const t = el.table;
   if (!t) return null;
-  const border = `1px solid ${el.stroke && el.stroke !== "none" ? el.stroke : "#bbb"}`;
-  const editable = !!onCellChange;
+  const widths = colWidths(el);
+  const heights = rowHeights(el);
+  const range = hooks?.range;
   return (
     <table
+      data-table=""
       style={{
         width: "100%",
         height: "100%",
         borderCollapse: "collapse",
         tableLayout: "fixed",
-        fontSize: el.fontSize || 16,
-        fontFamily: el.fontFamily || "Arial",
-        color: el.color || "#202124",
       }}
     >
+      <colgroup>
+        {widths.map((w, i) => (
+          <col key={i} style={{ width: w }} />
+        ))}
+      </colgroup>
       <tbody>
         {t.cells.map((row, ri) => (
-          <tr key={ri}>
-            {row.map((cell, ci) => (
-              <td
-                key={ci}
-                style={{
-                  border,
-                  padding: 4,
-                  verticalAlign: "top",
-                  background: el.fill && el.fill !== "none" ? el.fill : undefined,
-                  overflow: "hidden",
-                  cursor: editable ? "text" : "default",
-                }}
-                contentEditable={editable}
-                suppressContentEditableWarning
-                onPointerDown={editable ? (e) => e.stopPropagation() : undefined}
-                onBlur={
-                  editable
-                    ? (e) =>
-                        onCellChange?.(
-                          ri,
-                          ci,
-                          (e.target as HTMLElement).innerText,
-                        )
-                    : undefined
-                }
-                ref={
-                  editable
-                    ? (n) => {
-                        if (n && n.innerText !== cell) n.innerText = cell;
-                      }
-                    : undefined
-                }
-              >
-                {editable ? undefined : cell}
-              </td>
-            ))}
+          <tr key={ri} style={{ height: heights[ri] }}>
+            {row.map((_, ci) => {
+              if (isCovered(t, ri, ci)) return null;
+              const { rs, cs } = spanOf(t, ri, ci);
+              const f = cellFormat(el, ri, ci);
+              const te = cellTextEl(el, ri, ci);
+              const inRange =
+                !!range && ri >= range.r0 && ri <= range.r1 && ci >= range.c0 && ci <= range.c1;
+              const editing = hooks?.editing && hooks.editing.r === ri && hooks.editing.c === ci;
+              return (
+                <td
+                  key={ci}
+                  data-cell={`${ri},${ci}`}
+                  data-selected-cell={inRange ? "true" : undefined}
+                  rowSpan={rs > 1 ? rs : undefined}
+                  colSpan={cs > 1 ? cs : undefined}
+                  style={{
+                    borderTop: borderCss(f.borders.t),
+                    borderRight: borderCss(f.borders.r),
+                    borderBottom: borderCss(f.borders.b),
+                    borderLeft: borderCss(f.borders.l),
+                    padding: 0,
+                    verticalAlign: te.valign === "middle" ? "middle" : te.valign === "bottom" ? "bottom" : "top",
+                    background: f.fill,
+                    boxShadow: inRange && !editing ? "inset 0 0 0 999px rgba(66,133,244,0.22)" : undefined,
+                    overflow: "hidden",
+                    cursor: hooks ? "text" : undefined,
+                  }}
+                  onPointerDown={hooks?.onCellPointerDown ? (e) => hooks.onCellPointerDown!(e, ri, ci) : undefined}
+                  onDoubleClick={hooks?.onCellDoubleClick ? (e) => hooks.onCellDoubleClick!(e, ri, ci) : undefined}
+                >
+                  <div style={cellTextStyle(te)}>{editing ? hooks!.editing!.node : renderSlideText(te)}</div>
+                </td>
+              );
+            })}
           </tr>
         ))}
       </tbody>

@@ -4,6 +4,7 @@ import { CANVAS_W, CANVAS_H, type Slide, type SlideElement } from "./model";
 import {
   elementStyle,
   GroupChildren,
+  ImageBody,
   ShapeSvg,
   ShrinkFit,
   SlideTable,
@@ -48,7 +49,22 @@ import {
   type SnapOptions,
 } from "./geometry";
 import { clickSelect, marqueeMerge } from "./selection";
-import { moveElementBy, setTableCell } from "./deckOps";
+import { moveElementBy } from "./deckOps";
+import { cropPan, cropResize, fullImageRect } from "./imageOps";
+import {
+  cellTextEl,
+  colWidths,
+  insertRows,
+  moveCell,
+  offsets,
+  parseCellId,
+  resizeColumn,
+  resizeRow,
+  rowHeights,
+  setCellText,
+  type CellDir,
+  type CellSel,
+} from "./tableOps";
 
 interface SlideCanvasProps {
   slide: Slide;
@@ -88,6 +104,11 @@ interface SlideCanvasProps {
   onFollowLink?: (url: string) => void;
   /** Highlight a find match in a (top-level) text box, without focus. */
   findHighlight?: { elId: string; start: number; end: number } | null;
+  /** Cell selection inside the selected table. */
+  tableSel?: { id: string; sel: CellSel } | null;
+  onTableSel?: (v: { id: string; sel: CellSel } | null) => void;
+  /** The picture in crop mode: handles crop, a drag pans the picture. */
+  cropId?: string | null;
 }
 
 type Drag =
@@ -110,7 +131,9 @@ type Drag =
     }
   | { kind: "adjust"; el0: SlideElement; index: number; moved: boolean }
   | { kind: "endpoint"; el0: SlideElement; end: "start" | "end"; moved: boolean }
-  | { kind: "draw"; x0: number; y0: number };
+  | { kind: "draw"; x0: number; y0: number }
+  | { kind: "cells"; id: string; r: number; c: number; moved: boolean }
+  | { kind: "grid"; el0: SlideElement; axis: "col" | "row"; i: number; px: number; py: number; moved: boolean };
 
 const SELECT_BLUE = "#4285f4";
 const GUIDE_COLOR = "#e8398d";
@@ -142,6 +165,9 @@ export function SlideCanvas({
   onPaint,
   onFollowLink,
   findHighlight,
+  tableSel,
+  onTableSel,
+  cropId,
 }: SlideCanvasProps) {
   const scale = canvasScale(width);
   const height = canvasHeight(width);
@@ -150,6 +176,10 @@ export function SlideCanvas({
   // Each edit session mounts a fresh editor.
   const editSession = useRef(0);
   const editingId = editing?.id ?? null;
+  // The id being edited, updated synchronously (an editor unmounted while
+  // switching cells must not commit over the new state).
+  const curEditId = useRef<string | null>(null);
+  const editingCell = editingId ? parseCellId(editingId) : null;
   const [guides, setGuides] = useState<Guide[]>([]);
   const [marquee, setMarquee] = useState<Rect | null>(null);
   // Connection sites shown while a connector end is dragged or drawn.
@@ -173,12 +203,50 @@ export function SlideCanvas({
   }
 
   function beginEdit(id: string, sel?: [number, number] | "all") {
+    curEditId.current = id;
     setEditing({ id, sel, n: ++editSession.current });
     onEditingText?.(true);
   }
   function endEdit() {
+    curEditId.current = null;
     setEditing(null);
     onEditingText?.(false);
+  }
+  /** Edit cell (r, c) of a table; `at` places the caret. */
+  function beginCellEdit(tableEl: SlideElement, r: number, c: number, at: "all" | "start" | "end" = "end") {
+    const len = (tableEl.table?.cells[r]?.[c] ?? "").length;
+    const sel: [number, number] | "all" = at === "all" ? "all" : at === "start" ? [0, 0] : [len, len];
+    onTableSel?.({ id: tableEl.id, sel: { r, c, r2: r, c2: c } });
+    beginEdit(`${tableEl.id}:${r}:${c}`, sel);
+  }
+  /** Keys inside a cell editor: Tab/Shift+Tab to the next/previous cell
+   *  (Tab on the last cell adds a row), arrows across cell edges. */
+  function cellNavKey(e: React.KeyboardEvent, h: TextEditorHandle, tableEl: SlideElement, r: number, c: number): boolean {
+    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    const t = tableEl.table;
+    if (!t) return false;
+    const [from, to] = h.selection();
+    const text = h.current().text || "";
+    let dir: CellDir | null = null;
+    let at: "all" | "start" | "end" = "all";
+    if (e.key === "Tab") dir = e.shiftKey ? "prev" : "next";
+    else if (e.shiftKey || from !== to) return false;
+    else if (e.key === "ArrowLeft" && from === 0) [dir, at] = ["left", "end"];
+    else if (e.key === "ArrowRight" && from === text.length) [dir, at] = ["right", "start"];
+    else if (e.key === "ArrowUp" && !/[\n\v]/.test(text.slice(0, from))) [dir, at] = ["up", "end"];
+    else if (e.key === "ArrowDown" && !/[\n\v]/.test(text.slice(from))) [dir, at] = ["down", "start"];
+    if (!dir) return false;
+    let next = setCellText(tableEl, r, c, h.current());
+    let target = moveCell(t, r, c, dir);
+    if (!target && dir === "next") {
+      next = insertRows(next, t.rows);
+      target = [t.rows, 0];
+    }
+    if (next !== tableEl) onChange(next);
+    if (!target) return e.key === "Tab";
+    curEditId.current = null;
+    beginCellEdit(next, target[0], target[1], at);
+    return true;
   }
   // Find match highlight (CSS Custom Highlight API; skipped where missing).
   useEffect(() => {
@@ -196,7 +264,13 @@ export function SlideCanvas({
   // Re-enter a text box with a selection (after a menu/dialog applied a
   // format to the saved selection).
   useEffect(() => {
-    if (editRequest && slide.elements.some((e) => e.id === editRequest.id && e.type === "text"))
+    if (!editRequest) return;
+    const cell = parseCellId(editRequest.id);
+    const tableEl = cell && slide.elements.find((e) => e.id === cell.tableId && e.type === "table");
+    if (tableEl && cell) {
+      onTableSel?.({ id: tableEl.id, sel: { r: cell.r, c: cell.c, r2: cell.r, c2: cell.c } });
+      beginEdit(editRequest.id, editRequest.sel);
+    } else if (slide.elements.some((e) => e.id === editRequest.id && e.type === "text"))
       beginEdit(editRequest.id, editRequest.sel);
   }, [editRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -268,6 +342,24 @@ export function SlideCanvas({
       );
       return;
     }
+    if (d.kind === "cells") {
+      const hit = document
+        .elementFromPoint(e.clientX, e.clientY)
+        ?.closest?.(`[data-el-id="${d.id}"] [data-cell]`);
+      const rc = hit?.getAttribute("data-cell")?.split(",").map(Number);
+      if (rc && (rc[0] !== d.r || rc[1] !== d.c || d.moved)) {
+        d.moved = true;
+        onTableSel?.({ id: d.id, sel: { r: d.r, c: d.c, r2: rc[0], c2: rc[1] } });
+      }
+      return;
+    }
+    if (d.kind === "grid") {
+      const { dx, dy } = screenToLogical(e.clientX - d.px, e.clientY - d.py, scale);
+      const next = d.axis === "col" ? resizeColumn(d.el0, d.i, dx) : resizeRow(d.el0, d.i, dy);
+      onChangeMany([next], { history: !d.moved });
+      d.moved = true;
+      return;
+    }
     if (d.kind === "adjust") {
       const p = toLogical(e);
       onChangeMany([dragAdjustHandle(d.el0, d.index, p.x, p.y)], { history: !d.moved });
@@ -293,7 +385,11 @@ export function SlideCanvas({
     const snapOn = !!snap && (snap.guides || !!snap.grid) && !e.altKey;
     let els: SlideElement[];
     let g: Guide[] = [];
-    if (d.kind === "move") {
+    const cropping = d.starts.length === 1 && d.starts[0].id === cropId && d.starts[0].type === "image";
+    if (cropping) {
+      const s0 = d.starts[0];
+      els = [d.kind === "move" ? cropPan(s0, dx, dy) : cropResize(s0, d.mode as Handle, dx, dy)];
+    } else if (d.kind === "move") {
       if (snapOn) {
         const box = { ...d.box0, x: d.box0.x + dx, y: d.box0.y + dy };
         const s = snapMove(box, d.targets, snap!);
@@ -351,6 +447,13 @@ export function SlideCanvas({
       );
       return;
     }
+    if (d?.kind === "cells") {
+      if (!d.moved) {
+        const el = slide.elements.find((x) => x.id === d.id);
+        if (el) beginCellEdit(el, d.r, d.c, "end");
+      }
+      return;
+    }
     if (d?.kind === "marquee") {
       const rect = marquee;
       setMarquee(null);
@@ -397,6 +500,64 @@ export function SlideCanvas({
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     drag.current = { kind: "endpoint", el0: { ...el }, end, moved: false };
+  }
+
+  function onCellPointerDown(e: React.PointerEvent, el: SlideElement, r: number, c: number) {
+    if (e.button !== 0) return;
+    if (editingCell && editingCell.tableId === el.id && editingCell.r === r && editingCell.c === c) {
+      e.stopPropagation();
+      return;
+    }
+    e.stopPropagation();
+    if (editingId) {
+      // Leave the current cell first (its editor commits on blur).
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
+    const cur = tableSel?.id === el.id ? tableSel.sel : null;
+    if (e.shiftKey && cur) {
+      onTableSel?.({ id: el.id, sel: { ...cur, r2: r, c2: c } });
+      return;
+    }
+    onTableSel?.({ id: el.id, sel: { r, c, r2: r, c2: c } });
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    drag.current = { kind: "cells", id: el.id, r, c, moved: false };
+  }
+
+  function onGridPointerDown(e: React.PointerEvent, el: SlideElement, axis: "col" | "row", i: number) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    drag.current = { kind: "grid", el0: { ...el }, axis, i, px: e.clientX, py: e.clientY, moved: false };
+  }
+
+  /** The in-place editor of the cell being edited in `el`, if any. */
+  function cellEditor(el: SlideElement): { r: number; c: number; node: React.ReactNode } | null {
+    if (!editingCell || editingCell.tableId !== el.id || !el.table) return null;
+    const { r, c } = editingCell;
+    if (r >= el.table.rows || c >= el.table.cols) return null;
+    const cellId = `${el.id}:${r}:${c}`;
+    return {
+      r,
+      c,
+      node: (
+        <TextEditor
+          key={editing?.n}
+          el={cellTextEl(el, r, c)}
+          initialSel={editing?.sel ?? "end"}
+          handleRef={textEditorRef}
+          onCommit={(next) => onChange(setCellText(el, r, c, next))}
+          onExit={(next, s) => {
+            if (curEditId.current !== cellId) return;
+            if (next) onChange(setCellText(el, r, c, next));
+            endEdit();
+            onEditExit?.(cellId, s);
+          }}
+          onTextKey={onTextKey}
+          onMouseUp={onEditorMouseUp}
+          onNavKey={(e, h) => cellNavKey(e, h, el, r, c)}
+        />
+      ),
+    };
   }
 
   function editingSel(el: SlideElement): [number, number] | "all" | "end" {
@@ -468,7 +629,7 @@ export function SlideCanvas({
         )}
         {slide.elements.map((el) => {
           const selected = selSet.has(el.id);
-          const isEditing = el.id === editingId;
+          const isEditing = el.id === editingId || (el.type === "table" && editingCell?.tableId === el.id);
           const style = elementStyle(el);
           const single = selected && !multi && !isEditing && !el.locked;
           const isConnector = el.type === "connector";
@@ -515,33 +676,27 @@ export function SlideCanvas({
                   <GroupChildren el={el} />
                 </div>
               ) : el.type === "image" ? (
-                el.src ? (
-                  <img
-                    src={el.src}
-                    alt=""
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "contain",
-                      pointerEvents: "none",
-                    }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      background: "#f1f3f4",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#9aa0a6",
-                      fontSize: 12,
-                    }}
-                  >
-                    Image
-                  </div>
-                )
+                <>
+                  {cropId === el.id && el.src && (
+                    <img
+                      data-testid="crop-ghost"
+                      src={el.src}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        position: "absolute",
+                        ...(() => {
+                          const f = fullImageRect({ ...el, crop: el.crop ?? { l: 0, t: 0, r: 0, b: 0 } });
+                          return { left: f.x, top: f.y, width: f.w, height: f.h };
+                        })(),
+                        maxWidth: "none",
+                        opacity: 0.35,
+                        pointerEvents: "none",
+                      }}
+                    />
+                  )}
+                  <ImageBody el={cropId === el.id && !el.crop ? { ...el, crop: { l: 0, t: 0, r: 0, b: 0 } } : el} />
+                </>
               ) : el.type === "text" ? (
                 isEditing ? (
                   <TextEditor
@@ -568,13 +723,30 @@ export function SlideCanvas({
               ) : el.type === "table" ? (
                 <SlideTable
                   el={el}
-                  onCellChange={(r, c, v) => {
-                    const t = el.table;
-                    if (!t) return;
-                    onChange({ ...el, table: setTableCell(t, r, c, v) });
-                  }}
+                  hooks={
+                    selected && !multi
+                      ? {
+                          range:
+                            tableSel?.id === el.id
+                              ? {
+                                  r0: Math.min(tableSel.sel.r, tableSel.sel.r2),
+                                  c0: Math.min(tableSel.sel.c, tableSel.sel.c2),
+                                  r1: Math.max(tableSel.sel.r, tableSel.sel.r2),
+                                  c1: Math.max(tableSel.sel.c, tableSel.sel.c2),
+                                }
+                              : null,
+                          editing: cellEditor(el),
+                          onCellPointerDown: (e, r, c) => onCellPointerDown(e, el, r, c),
+                        }
+                      : undefined
+                  }
                 />
               ) : null}
+
+              {/* table grid lines: drag to resize columns / rows */}
+              {selected && !multi && !el.locked && el.type === "table" && el.table && (
+                <TableGridHandles el={el} scale={scale} onDown={(e, axis, i) => onGridPointerDown(e, el, axis, i)} />
+              )}
 
               {/* connector end handles (single selection) */}
               {single &&
@@ -638,6 +810,9 @@ export function SlideCanvas({
                     style={{
                       ...handleStyle(h),
                       ...(el.type === "line" ? { cursor: "ew-resize" } : {}),
+                      ...(cropId === el.id
+                        ? { background: "#202124", borderColor: "#fff", borderRadius: 1, width: handleSize * 1.2, height: handleSize * 1.2 }
+                        : {}),
                     }}
                   />
                 ))}
@@ -743,5 +918,41 @@ export function SlideCanvas({
         )}
       </Box>
     </Box>
+  );
+}
+
+/** Invisible strips over a selected table's inner grid lines; dragging one
+ *  resizes the columns / rows on either side. */
+function TableGridHandles({
+  el,
+  scale,
+  onDown,
+}: {
+  el: SlideElement;
+  scale: number;
+  onDown: (e: React.PointerEvent, axis: "col" | "row", i: number) => void;
+}) {
+  const xs = offsets(colWidths(el));
+  const ys = offsets(rowHeights(el));
+  const band = 6 / scale;
+  return (
+    <>
+      {xs.slice(1, -1).map((x, k) => (
+        <div
+          key={`c${k}`}
+          data-handle={`col-${k + 1}`}
+          onPointerDown={(e) => onDown(e, "col", k + 1)}
+          style={{ position: "absolute", left: x - band / 2, top: 0, width: band, height: el.h, cursor: "col-resize", zIndex: 1 }}
+        />
+      ))}
+      {ys.slice(1, -1).map((y, k) => (
+        <div
+          key={`r${k}`}
+          data-handle={`row-${k + 1}`}
+          onPointerDown={(e) => onDown(e, "row", k + 1)}
+          style={{ position: "absolute", top: y - band / 2, left: 0, height: band, width: el.w, cursor: "row-resize", zIndex: 1 }}
+        />
+      ))}
+    </>
   );
 }

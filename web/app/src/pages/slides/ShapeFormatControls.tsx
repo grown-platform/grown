@@ -13,7 +13,7 @@ export const LINE_WEIGHTS = [0.5, 0.75, 1, 1.5, 2, 3, 4.5, 6, 8];
 const selStyle: React.CSSProperties = { marginLeft: 4, maxWidth: 110, fontSize: 12 };
 
 /** Outline colour / weight / dash and arrowheads for the selected shape,
- *  connector or line (toolbar). `onChange` applies a patch to the selection. */
+ *  connector, line or picture border (toolbar). `onChange` applies a patch to the selection. */
 export function ShapeFormatControls({
   el,
   onChange,
@@ -22,9 +22,9 @@ export function ShapeFormatControls({
   onChange: (patch: Partial<SlideElement>) => void;
 }) {
   if (!el) return null;
-  const outline = isShape(el.type) || el.type === "connector" || el.type === "line";
+  const outline = isShape(el.type) || el.type === "connector" || el.type === "line" || el.type === "image";
   if (!outline) return null;
-  const preset = el.type === "shape" || el.type === "connector";
+  const preset = el.type === "shape" || el.type === "connector" || el.type === "image";
   const hasLine = !!el.stroke && el.stroke !== "none" && (el.strokeWidth ?? 1) > 0;
   return (
     <>

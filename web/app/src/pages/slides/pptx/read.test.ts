@@ -698,6 +698,10 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
     const r = await readPptx(
       await pkg({ slides: [{ xml: SLIDE(gf + chart) }] }),
     );
+    // The cells don't share one border, so the table keeps them per cell
+    // (with PowerPoint's plain "No Style, No Grid" underneath).
+    const line = { color: "#999999", width: 1.5 };
+    const own = { borders: { l: line }, fill: "#70ad47" };
     expect(r.deck.slides[0].elements).toEqual([
       {
         id: expect.any(String),
@@ -711,12 +715,18 @@ describe("pictures, tables, notes, backgrounds, transitions", () => {
           cols: 2,
           cells: [
             ["a", "b"],
-            ["c", "x\ny"],
+            ["c", "x\vy"],
+          ],
+          style: "{2D5ABB26-0587-4C30-8999-92F81FD0307C}",
+          props: [
+            [own, own],
+            // the last cell has no run properties: 18 pt black
+            [own, { style: { color: "#000000", fontSize: 24 } }],
           ],
         },
-        fill: "#70ad47",
-        stroke: "#999999",
-        strokeWidth: 1.5,
+        fill: "none",
+        stroke: "none",
+        strokeWidth: 0,
         fontSize: 20,
         fontFamily: "Verdana",
         color: "#222222",

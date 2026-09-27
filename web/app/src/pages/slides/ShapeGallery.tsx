@@ -40,13 +40,13 @@ function thumb(id: string): string {
 
 /** The shape gallery: preset thumbnails grouped like OnlyOffice/PowerPoint.
  *  `onPick` receives the gallery id ("star5", "bentConnector3:arrow"). */
-export function ShapeGallery({ onPick }: { onPick: (id: string) => void }) {
+export function ShapeGallery({ onPick, shapesOnly }: { onPick: (id: string) => void; shapesOnly?: boolean }) {
   return (
     <Box
       data-testid="shape-gallery"
       sx={{ p: 1, width: 300, maxHeight: "70vh", overflowY: "auto" }}
     >
-      {PRESET_GALLERY.map((g) => (
+      {PRESET_GALLERY.filter((g) => !shapesOnly || !g.items.every((it) => toolFromGalleryId(it.prst).kind === "connector")).map((g) => (
         <Box key={g.group} sx={{ mb: 1 }}>
           <Typography level="body-xs" sx={{ fontWeight: 600, mb: 0.5 }}>
             {g.group}

@@ -23,7 +23,7 @@ export interface LinkRef {
  *  adding the relationship it needs; null drops the link. */
 export type LinkResolver = (url: string) => LinkRef | null;
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -111,6 +111,11 @@ export function textBodyXml(el: SlideElement, link: LinkResolver): string {
   ];
   if (el.vert) bodyAttrs.push(`vert="${el.vert}"`);
   const body = `<a:bodyPr ${bodyAttrs.join(" ")}>${el.autofit === "shrink" ? "<a:normAutofit/>" : "<a:noAutofit/>"}</a:bodyPr>`;
+  return `<p:txBody>${body}<a:lstStyle/>${parasXml(el, link)}</p:txBody>`;
+}
+
+/** The `a:p` paragraphs of a text element (text boxes and table cells). */
+export function parasXml(el: SlideElement, link: LinkResolver): string {
   const paras = paragraphs(el).map((p) => {
     const level = p.props.level ?? 0;
     const align = p.props.align ?? el.align ?? "left";
@@ -125,5 +130,5 @@ export function textBodyXml(el: SlideElement, link: LinkResolver): string {
     parts.push(rPrXml(el, last, "endParaRPr", link));
     return `<a:p>${parts.join("")}</a:p>`;
   });
-  return `<p:txBody>${body}<a:lstStyle/>${paras.join("")}</p:txBody>`;
+  return paras.join("");
 }
