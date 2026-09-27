@@ -6,13 +6,20 @@
 // colours (with their transforms) through lib/colorMods. Everything else is
 // skipped and reported in `warnings`.
 //
-// Geometry: EMUs are scaled uniformly so the source slide fits the 960×540
-// canvas (a 4:3 deck is pillar-boxed and centred horizontally).
+// Geometry: EMUs are scaled so the slide is 960 logical px wide; the deck
+// keeps the source's aspect ratio as `DeckDoc.size` (M7; earlier versions
+// pillar-boxed a 4:3 deck into 16:9).
+//
+// Design (M7): the theme becomes `DeckDoc.theme`, slide layouts become
+// `DeckDoc.layouts` (placeholders with their text styles, plus decorations),
+// slides remember their layout and placeholders, scheme colours and theme
+// fonts are kept as `themeRefs`, hidden slides stay hidden, and the
+// date/footer/slide-number placeholders become header & footer settings.
 
 import JSZip from "jszip";
 import {
-  CANVAS_H,
   CANVAS_W,
+  DEFAULT_CANVAS_H,
   uid,
   type ArrowHead,
   type CellBorder,
@@ -32,8 +39,18 @@ import {
   type TextAlign,
   type TextInsets,
   type TextRun,
+  type DeckHF,
+  type DeckTheme,
+  type Placeholder,
+  type PlaceholderType,
+  type SlideFill,
+  type SlideHF,
+  type SlideLayout,
+  type ThemeColors,
+  type ThemeRefs,
   DEFAULT_INSET,
 } from "../model";
+import { BUILTIN_THEMES, formatRef, OFFICE_THEME } from "../theme";
 import {
   readColorMods,
   resolveColor,
@@ -199,6 +216,7 @@ interface Theme {
   scheme: Record<string, string>;
   majorFont?: string;
   minorFont?: string;
+  name?: string;
 }
 
 function readTheme(doc: Document | null): Theme {
@@ -216,7 +234,39 @@ function readTheme(doc: Document | null): Theme {
   const fs = desc(doc, "fontScheme")[0];
   const font = (n: string) =>
     path(fs, n, "latin")?.getAttribute("typeface") || undefined;
-  return { scheme, majorFont: font("majorFont"), minorFont: font("minorFont") };
+  const name = doc?.documentElement?.getAttribute("name") || undefined;
+  return { scheme, majorFont: font("majorFont"), minorFont: font("minorFont"), name };
+}
+
+/** The deck theme for a pptx theme part and master colour map: a built-in
+ *  one when the name and colours match (a Grown export), else "imported". */
+export function deckThemeOf(t: Theme, clrMap: Record<string, string>): DeckTheme {
+  const colors = { ...OFFICE_THEME.colors };
+  for (const k of Object.keys(colors) as (keyof ThemeColors)[])
+    if (t.scheme[k]) colors[k] = `#${t.scheme[k].toLowerCase()}`;
+  const dark = clrMap.bg1 === "dk1";
+  const fonts = { major: t.majorFont || "Arial", minor: t.minorFont || "Arial" };
+  const same = BUILTIN_THEMES.find(
+    (b) =>
+      b.name === t.name &&
+      !!b.dark === dark &&
+      b.fonts.major === fonts.major &&
+      b.fonts.minor === fonts.minor &&
+      (Object.keys(colors) as (keyof ThemeColors)[]).every((k) => b.colors[k] === colors[k]),
+  );
+  if (same) return same;
+  return { id: "imported", name: t.name || "Imported theme", colors, fonts, ...(dark ? { dark: true } : {}) };
+}
+
+/** The theme ref of a scheme colour (the first colour child of `el`), or
+ *  undefined for literal colours and `phClr`. */
+function schemeRefOf(el: Element | null | undefined): string | undefined {
+  if (!el) return undefined;
+  const c = Array.from(el.children).find((k) => COLOR_NODES.includes(k.localName));
+  if (!c || c.localName !== "schemeClr") return undefined;
+  const val = c.getAttribute("val") || "";
+  if (!val || val === "phClr") return undefined;
+  return formatRef(val, readColorMods(c));
 }
 
 /** Preset colour names (ECMA-376 ST_PresetColorVal) that realistic decks use. */
@@ -309,6 +359,22 @@ function readColor(
     }
   }
   return spec ? toHex(resolveColor(spec, lookupFor(ctx))) : undefined;
+}
+
+/** A gradient fill as a Grown gradient (backgrounds). */
+function readGradient(grad: Element, ctx: ColorCtx): Extract<SlideFill, { kind: "gradient" }> | null {
+  const stops = desc(grad, "gs")
+    .map((g) => ({ pos: r2((num(g, "pos") ?? 0) / 100000), color: readColor(g, ctx) }))
+    .filter((g): g is { pos: number; color: string } => !!g.color)
+    .sort((a, b) => a.pos - b.pos);
+  if (stops.length < 2) return null;
+  const lin = kid(grad, "lin");
+  const pathEl = kid(grad, "path");
+  return {
+    kind: "gradient",
+    stops,
+    ...(pathEl ? { radial: true } : { angle: r2((num(lin, "ang") ?? 0) / 60000) }),
+  };
 }
 
 /** Fill of a shape/background properties element: hex, "none", or undefined (not specified). */
@@ -623,6 +689,9 @@ interface TextProps {
   list?: "bullet" | "number";
   lineSpacing?: number;
   url?: string;
+  /** Theme colour / font the element-wide style came from. */
+  colorRef?: string;
+  fontRef?: "major" | "minor";
 }
 
 const ALGN: Record<string, TextAlign> = { ctr: "center", r: "right", just: "justify", dist: "justify" };
@@ -632,10 +701,12 @@ async function readText(
   chain: TextChain,
   pc: PartCtx,
   scale: number,
+  allowEmpty = false,
 ): Promise<TextProps | null> {
   const paras = kids(txBody, "p");
   const text = paras.map((q) => paraText(q, "\v")).join("\n");
-  if (!text.replace(/\v/g, "").trim()) return null;
+  const empty = !text.replace(/\v/g, "").trim();
+  if (empty && !allowEmpty) return null;
   const shapeList = kid(txBody, "lstStyle");
   const fontScale =
     (num(path(txBody, "bodyPr", "normAutofit"), "fontScale") ?? 100000) /
@@ -685,19 +756,50 @@ async function readText(
     return st;
   };
 
-  // Element-wide style comes from the first paragraph with text, and its first run.
-  const p0 = paras.find((q) => paraText(q).trim()) ?? paras[0];
-  const lvlPPrs = pPrChain(p0);
+  // Element-wide style comes from the first paragraph with text, and its
+  // first run (an empty placeholder: its end-of-paragraph properties).
+  const p0 = paras.find((q) => paraText(q).trim()) ?? paras[0] ?? null;
+  const lvlPPrs = p0 ? pPrChain(p0) : [null, ...[shapeList, ...chain.lists].map((l) => lvlPPr(l, 1))];
   const run0 =
-    Array.from(p0.children).find(
-      (c) =>
-        (c.localName === "r" || c.localName === "fld") &&
-        (kid(c, "t")?.textContent ?? "") !== "",
-    ) ?? null;
+    (p0 &&
+      Array.from(p0.children).find(
+        (c) =>
+          (c.localName === "r" || c.localName === "fld") &&
+          (kid(c, "t")?.textContent ?? "") !== "",
+      )) ??
+    (empty ? kid(p0, "endParaRPr") : null);
   const base = await runStyle(run0, lvlPPrs);
+  // Theme refs of the element-wide colour and font (same precedence as runStyle).
+  const refs = (() => {
+    const rPr = kid(run0, "rPr") ?? (run0?.localName === "endParaRPr" ? run0 : null);
+    const rPrs = [rPr, ...lvlPPrs.map((e) => kid(e, "defRPr"))];
+    const colorEl = firstKid(rPrs.slice(0, 5), "solidFill") ?? chain.fontRef ?? firstKid(rPrs.slice(5), "solidFill");
+    const face = firstKid(rPrs, "latin")?.getAttribute("typeface");
+    return {
+      colorRef: schemeRefOf(colorEl),
+      fontRef: face === "+mj-lt" ? ("major" as const) : face === "+mn-lt" ? ("minor" as const) : undefined,
+    };
+  })();
   const algn = firstAttr(lvlPPrs, "algn");
   const align: TextAlign = ALGN[algn ?? ""] ?? "left";
   const anchor = firstAttr(chain.bodyPrs, "anchor");
+  if (empty) {
+    const bodyPr0 = chain.bodyPrs;
+    const ins0 = (a: string, def: number) => r2((num(bodyPr0.find((b) => b?.hasAttribute(a)) ?? null, a) ?? def) * scale);
+    const insets0: TextInsets = { l: ins0("lIns", 91440), t: ins0("tIns", 45720), r: ins0("rIns", 91440), b: ins0("bIns", 45720) };
+    return {
+      text: "",
+      fontSize: base.fontSize!,
+      fontFamily: base.fontFamily,
+      bold: base.bold,
+      italic: base.italic,
+      color: base.color,
+      align,
+      valign: anchor === "ctr" ? "middle" : anchor === "b" ? "bottom" : "top",
+      insets: Object.values(insets0).every((v) => Math.abs(v - DEFAULT_INSET) < 0.01) ? undefined : insets0,
+      ...refs,
+    };
+  }
   const lnSpcPct = num(path(firstKid(lvlPPrs, "lnSpc"), "spcPct"), "val");
   const spc = (name: string) => {
     const pts = num(path(firstKid(lvlPPrs, name), "spcPts"), "val");
@@ -816,6 +918,9 @@ async function readText(
     autofit,
     rtl: firstAttr(lvlPPrs, "rtl") === "1" || undefined,
     vert,
+    // The refs hold only while the element-wide value is the base run's.
+    ...(refs.colorRef && shaped.color === base.color ? { colorRef: refs.colorRef } : {}),
+    ...(refs.fontRef && shaped.fontFamily === base.fontFamily ? { fontRef: refs.fontRef } : {}),
   };
   return out;
 }
@@ -894,6 +999,26 @@ interface SlideCtx {
   /** Per shape tree: `cNvPr@id` → Grown element id, and connectors whose
    *  `stCxn`/`endCxn` still name a cNvPr id (resolved by resolveGlue). */
   glue?: GlueCtx;
+  /** Reading a layout: placeholders are kept empty (their text is a prompt). */
+  layoutMode?: boolean;
+  /** The slide's date/footer/number placeholders (header & footer). */
+  hf?: SlideHFRead;
+}
+
+interface SlideHFRead {
+  dt?: { text: string; auto: boolean };
+  ftr?: string;
+  sldNum?: boolean;
+}
+
+const PH_TYPES = new Set<PlaceholderType>(["title", "ctrTitle", "subTitle", "body", "obj", "pic", "dt", "ftr", "sldNum"]);
+const HF_PH = new Set(["dt", "ftr", "sldNum"]);
+
+/** A Grown placeholder tag for a pptx `p:ph` (unknown types → obj). */
+function placeholderOf(ph: PhInfo): Placeholder {
+  const type = (PH_TYPES.has(ph.type as PlaceholderType) ? ph.type : "obj") as PlaceholderType;
+  const idx = ph.idx !== undefined && /^\d+$/.test(ph.idx) ? Number(ph.idx) : undefined;
+  return { type, ...(idx !== undefined && idx < 2 ** 31 ? { idx } : {}) };
 }
 
 interface GlueCtx {
@@ -1017,6 +1142,20 @@ async function readSp(
 ) {
   const { pc } = sc;
   const ph = spPh(sp);
+  // Slide date/footer/number placeholders become header & footer settings.
+  if (ph && HF_PH.has(ph.type) && !sc.layoutMode) {
+    if (sc.hf) {
+      const body = kid(sp, "txBody");
+      const t = txBodyText(body).trim();
+      if (ph.type === "sldNum") sc.hf.sldNum = true;
+      else if (ph.type === "ftr") sc.hf.ftr = t;
+      else {
+        const auto = desc(body, "fld").some((f) => (f.getAttribute("type") || "").startsWith("datetime"));
+        sc.hf.dt = { text: t, auto };
+      }
+    }
+    return;
+  }
   const layoutPh = ph ? findPh(sc.layoutTree, ph, true) : null;
   const masterPh = ph ? findPh(sc.masterTree, ph, false) : null;
   const spPr = kid(sp, "spPr");
@@ -1052,6 +1191,20 @@ async function readSp(
             })()
           : undefined));
 
+  // Theme refs of the fill and outline (M7).
+  const fillRef =
+    readFill(spPr, pc.color) !== undefined
+      ? schemeRefOf(kid(spPr, "solidFill"))
+      : num(kid(style, "fillRef"), "idx")
+        ? schemeRefOf(kid(style, "fillRef"))
+        : undefined;
+  const lnEl = kid(spPr, "ln");
+  const strokeRef =
+    lineSpec && lineSpec !== "none"
+      ? schemeRefOf(kid(lnEl, "solidFill"))
+      : lineSpec === undefined && num(kid(style, "lnRef"), "idx")
+        ? schemeRefOf(kid(style, "lnRef"))
+        : undefined;
   const seg = prst === "custom" ? straightSegment(kid(spPr, "custGeom")) : null;
   const adj = readAdjust(prstEl);
   const lineStyle = readLineStyle(spPr);
@@ -1133,6 +1286,10 @@ async function readSp(
       ...(preset && lineStyle.dash ? { dash: lineStyle.dash } : {}),
       ...(shapeUrl ? { url: shapeUrl } : {}),
     };
+    const refs: ThemeRefs = {};
+    if (hasFill && fillRef) refs.fill = fillRef;
+    if (line && strokeRef) refs.stroke = strokeRef;
+    if (Object.keys(refs).length) el.themeRefs = refs;
     out.push(el);
     if (cNvPrId) sc.glue?.ids.set(cNvPrId, el.id);
   }
@@ -1160,8 +1317,15 @@ async function readSp(
     ],
     fontRef: kid(style, "fontRef"),
   };
-  const t = await readText(txBody, chain, pc, sc.scale);
+  const t = await readText(txBody, chain, pc, sc.scale, !!ph);
   if (!t) return;
+  if (sc.layoutMode && ph) {
+    // A layout's placeholder text is its prompt.
+    t.text = "";
+    t.runs = undefined;
+    t.paras = undefined;
+    t.url = undefined;
+  }
   const el: SlideElement = {
     id: uid(),
     type: "text",
@@ -1192,7 +1356,10 @@ async function readSp(
     ...((t.url ?? (visible ? undefined : shapeUrl))
       ? { url: t.url ?? shapeUrl }
       : {}),
+    ...(ph ? { placeholder: placeholderOf(ph) } : {}),
   };
+  if (t.colorRef || t.fontRef)
+    el.themeRefs = { ...(t.colorRef ? { color: t.colorRef } : {}), ...(t.fontRef ? { font: t.fontRef } : {}) };
   out.push(el);
   if (!visible && cNvPrId) sc.glue?.ids.set(cNvPrId, el.id);
 }
@@ -1586,7 +1753,7 @@ async function readBackground(
   cSlds: (Element | null)[],
   sc: SlideCtx,
   pcs: PartCtx[],
-): Promise<{ color?: string; image?: SlideElement }> {
+): Promise<{ color?: string; ref?: string; fill?: SlideFill }> {
   for (let i = 0; i < cSlds.length; i++) {
     const bg = kid(cSlds[i], "bg");
     if (!bg) continue;
@@ -1595,33 +1762,27 @@ async function readBackground(
       const blip = path(bgPr, "blipFill", "blip");
       if (blip) {
         const src = await mediaDataUrl(pcs[i], rid(blip, "embed"), sc);
-        if (src)
-          return {
-            color: "#ffffff",
-            image: {
-              id: uid(),
-              type: "image",
-              x: 0,
-              y: 0,
-              w: CANVAS_W,
-              h: CANVAS_H,
-              src,
-            },
-          };
+        if (src) return { color: "#ffffff", fill: { kind: "image", src } };
       }
+      const grad = kid(bgPr, "gradFill");
+      const g = grad ? readGradient(grad, sc.pc.color) : null;
+      if (g) return { color: g.stops[0].color, fill: g };
       const f = readFill(bgPr, sc.pc.color);
-      if (f && f !== "none") return { color: f };
+      if (f && f !== "none") return { color: f, ref: schemeRefOf(kid(bgPr, "solidFill")) };
     }
     const ref = kid(bg, "bgRef");
     if (ref) {
       const c = readColor(ref, sc.pc.color);
-      if (c) return { color: c };
+      if (c) return { color: c, ref: schemeRefOf(ref) };
     }
   }
   return {};
 }
 
 // ------------------------------------------------------------ entry point
+
+/** Built-in layout ids a pptx layout type maps to (Grown's ids are the types). */
+const LAYOUT_IDS = new Set(["title", "obj", "secHead", "twoObj", "twoTxTwoObj", "titleOnly", "objTx", "blank"]);
 
 /** Read a .pptx (bytes or Blob) into a Grown deck. */
 export async function readPptx(
@@ -1641,11 +1802,11 @@ export async function readPptx(
   const sldSz = kid(presEl, "sldSz");
   const cx = num(sldSz, "cx") || 9144000;
   const cy = num(sldSz, "cy") || 5143500;
-  const scale = Math.min(CANVAS_W / cx, CANVAS_H / cy);
-  const ox = r2((CANVAS_W - cx * scale) / 2);
-  const oy = r2((CANVAS_H - cy * scale) / 2);
-  if (Math.abs(cx / cy - CANVAS_W / CANVAS_H) > 0.01)
-    warnings.add("The slide size isn't 16:9; slides were scaled to fit");
+  // The slide is 960 logical px wide; its height follows the aspect ratio.
+  const scale = CANVAS_W / cx;
+  const H = Math.round(cy * scale);
+  const ox = 0;
+  const oy = 0;
   const defaultTextStyle = kid(presEl, "defaultTextStyle");
 
   const presRels = await pkg.relsOf(presPath);
@@ -1655,25 +1816,96 @@ export async function readPptx(
 
   // Ids up front, so slide-jump links can name slides not yet read.
   const slideIds = new Map(slidePaths.map((p) => [p, uid()]));
+
+  /** Master/theme context of a layout part. */
+  const partsOf = async (layoutPath: string | undefined) => {
+    const masterPath = layoutPath ? await pkg.relOfType(layoutPath, "slideMaster") : undefined;
+    const themePath = masterPath ? await pkg.relOfType(masterPath, "theme") : undefined;
+    const layout = layoutPath ? await pkg.xml(layoutPath) : null;
+    const master = masterPath ? await pkg.xml(masterPath) : null;
+    const theme = readTheme(themePath ? await pkg.xml(themePath) : null);
+    const clrMap: Record<string, string> = {};
+    const mapEl = master ? kid(master.documentElement, "clrMap") : null;
+    for (const a of Array.from(mapEl?.attributes ?? [])) clrMap[a.name] = a.value;
+    return { masterPath, layout, master, theme, clrMap };
+  };
+
+  // Layouts (M7): each layout a slide uses becomes a Grown layout.
+  let deckTheme: DeckTheme | undefined;
+  const layouts: SlideLayout[] = [];
+  const layoutIdOf = new Map<string, string | null>();
+  const readLayout = async (layoutPath: string): Promise<string | null> => {
+    if (layoutIdOf.has(layoutPath)) return layoutIdOf.get(layoutPath)!;
+    const { masterPath, layout, master, theme, clrMap } = await partsOf(layoutPath);
+    deckTheme ??= deckThemeOf(theme, clrMap);
+    const root = layout?.documentElement;
+    const cSld = root ? kid(root, "cSld") : null;
+    const tree = kid(cSld, "spTree");
+    const type = root?.getAttribute("type") || undefined;
+    // An empty, untyped layout (pptxgenjs's default) carries nothing.
+    if (!root || (!type && !contentKids(tree ?? root).some((c) => c.localName !== "nvGrpSpPr" && c.localName !== "grpSpPr"))) {
+      layoutIdOf.set(layoutPath, null);
+      return null;
+    }
+    const color: ColorCtx = { theme, clrMap };
+    const pcLayout: PartCtx = { pkg, part: layoutPath, color, slideIds };
+    const pcMaster: PartCtx = { pkg, part: masterPath || "", color, slideIds };
+    const masterCSld = master ? kid(master.documentElement, "cSld") : null;
+    const sc: SlideCtx = {
+      pc: pcLayout,
+      scale,
+      ox,
+      oy,
+      layoutTree: tree,
+      masterTree: kid(masterCSld, "spTree"),
+      masterTxStyles: master ? kid(master.documentElement, "txStyles") : null,
+      defaultTextStyle,
+      warnings,
+      unsupported,
+      layoutMode: true,
+    };
+    const elements: SlideElement[] = [];
+    if (root.getAttribute("showMasterSp") !== "0" && sc.masterTree)
+      await readTreeGlued(sc.masterTree, { ...sc, pc: pcMaster }, elements, true);
+    if (tree) await readTreeGlued(tree, sc, elements, false);
+    const bg = await readBackground([cSld, masterCSld], sc, [pcLayout, pcMaster]);
+    let id = type && LAYOUT_IDS.has(type) && !layouts.some((l) => l.id === type) ? type : `layout${layouts.length + 1}`;
+    while (layouts.some((l) => l.id === id)) id += "x";
+    layouts.push({
+      id,
+      name: cSld?.getAttribute("name") || type || "Layout",
+      ...(type ? { type } : {}),
+      elements,
+      background: bg.color ?? "#ffffff",
+      ...(bg.ref ? { bgRef: bg.ref } : {}),
+      ...(bg.fill ? { bgFill: bg.fill } : {}),
+    });
+    layoutIdOf.set(layoutPath, id);
+    return id;
+  };
+
+  // Every layout of every master, in the masters' order.
+  for (const m of kids(kid(presEl, "sldMasterIdLst"), "sldMasterId")) {
+    const masterPath = presRels.get(rid(m, "id") || "")?.target;
+    const master = masterPath ? await pkg.xml(masterPath) : null;
+    if (!masterPath || !master) continue;
+    const rels = await pkg.relsOf(masterPath);
+    for (const l of kids(kid(master.documentElement, "sldLayoutIdLst"), "sldLayoutId")) {
+      const lp = rels.get(rid(l, "id") || "")?.target;
+      if (lp) await readLayout(lp);
+    }
+  }
+
   const slides: Slide[] = [];
+  const hfs: SlideHFRead[] = [];
   for (const slidePath of slidePaths) {
     const sld = await pkg.xml(slidePath);
     if (!sld) continue;
     const layoutPath = await pkg.relOfType(slidePath, "slideLayout");
-    const masterPath = layoutPath
-      ? await pkg.relOfType(layoutPath, "slideMaster")
-      : undefined;
-    const themePath = masterPath
-      ? await pkg.relOfType(masterPath, "theme")
-      : undefined;
-    const layout = layoutPath ? await pkg.xml(layoutPath) : null;
-    const master = masterPath ? await pkg.xml(masterPath) : null;
-    const theme = readTheme(themePath ? await pkg.xml(themePath) : null);
+    const { masterPath, layout, master, theme, clrMap } = await partsOf(layoutPath);
+    deckTheme ??= deckThemeOf(theme, clrMap);
+    const layoutId = layoutPath ? await readLayout(layoutPath) : null;
 
-    const clrMap: Record<string, string> = {};
-    const mapEl = master ? kid(master.documentElement, "clrMap") : null;
-    for (const a of Array.from(mapEl?.attributes ?? []))
-      clrMap[a.name] = a.value;
     const ovr = path(sld.documentElement, "clrMapOvr", "overrideClrMapping");
     for (const a of Array.from(ovr?.attributes ?? [])) clrMap[a.name] = a.value;
     const color: ColorCtx = { theme, clrMap };
@@ -1684,6 +1916,7 @@ export async function readPptx(
     const pcSlide: PartCtx = { pkg, part: slidePath, color, slideIds };
     const pcLayout: PartCtx = { pkg, part: layoutPath || "", color, slideIds };
     const pcMaster: PartCtx = { pkg, part: masterPath || "", color, slideIds };
+    const hf: SlideHFRead = {};
     const sc: SlideCtx = {
       pc: pcSlide,
       scale,
@@ -1695,6 +1928,7 @@ export async function readPptx(
       defaultTextStyle,
       warnings,
       unsupported,
+      hf,
     };
 
     const elements: SlideElement[] = [];
@@ -1703,7 +1937,6 @@ export async function readPptx(
       pcLayout,
       pcMaster,
     ]);
-    if (bg.image) elements.push(bg.image);
 
     // Master and layout decorations (non-placeholder shapes) sit under the slide's own.
     const showMaster = sld.documentElement.getAttribute("showMasterSp") !== "0";
@@ -1729,13 +1962,18 @@ export async function readPptx(
     const slide: Slide = {
       id: slideIds.get(slidePath) ?? uid(),
       background: bg.color ?? "#ffffff",
+      ...(bg.ref ? { bgRef: bg.ref } : {}),
+      ...(bg.fill ? { bgFill: bg.fill } : {}),
       elements,
       ...(notes ? { notes } : {}),
       ...(transition ? { transition } : {}),
+      ...(layoutId ? { layout: layoutId } : {}),
+      ...(sld.documentElement.getAttribute("show") === "0" ? { hidden: true } : {}),
     };
     if (desc(sld, "timing").length && desc(sld, "timing")[0].children.length)
       warnings.add("Animations were not imported");
     slides.push(slide);
+    hfs.push(hf);
   }
 
   if (!slides.length) throw new Error("The presentation has no slides");
@@ -1747,5 +1985,38 @@ export async function readPptx(
   const core = await pkg.xml("docProps/core.xml");
   const title = desc(core, "title")[0]?.textContent?.trim() || undefined;
 
-  return { deck: { slides }, title, warnings: [...warnings] };
+  const deck: DeckDoc = { slides };
+  if (deckTheme) deck.theme = deckTheme;
+  if (layouts.length) deck.layouts = layouts;
+  if (H !== DEFAULT_CANVAS_H) deck.size = { w: CANVAS_W, h: H };
+  const hf = headerFooterOf(slides, hfs, layouts);
+  if (hf) deck.hf = hf;
+  return { deck, title, warnings: [...warnings] };
+}
+
+/** Deck header & footer settings from the slides' dt/ftr/sldNum
+ *  placeholders: a part is on for the deck when any slide shows it, and
+ *  slides that differ get a per-slide override (title slides that all
+ *  lack them give "don't show on title slide"). */
+function headerFooterOf(slides: Slide[], hfs: SlideHFRead[], layouts: SlideLayout[]): DeckHF | null {
+  const keys = ["dt", "ftr", "sldNum"] as const;
+  const on = (h: SlideHFRead, k: (typeof keys)[number]) => (k === "sldNum" ? !!h.sldNum : h[k] !== undefined);
+  const any = keys.filter((k) => hfs.some((h) => on(h, k)));
+  if (!any.length) return null;
+  const hf: DeckHF = {};
+  for (const k of any) hf[k] = true;
+  const ftr = hfs.find((h) => h.ftr !== undefined)?.ftr;
+  if (ftr !== undefined) hf.footerText = ftr;
+  const dt = hfs.find((h) => h.dt)?.dt;
+  if (dt && !dt.auto) hf.dateText = dt.text;
+  const isTitle = (s: Slide) => layouts.find((l) => l.id === s.layout)?.type === "title";
+  const titles = slides.filter(isTitle);
+  if (titles.length && titles.every((s) => keys.every((k) => !on(hfs[slides.indexOf(s)], k)))) hf.notOnTitle = true;
+  slides.forEach((s, i) => {
+    if (hf.notOnTitle && isTitle(s)) return;
+    const o: SlideHF = {};
+    for (const k of any) if (!on(hfs[i], k)) o[k] = false;
+    if (Object.keys(o).length) s.hf = o;
+  });
+  return hf;
 }

@@ -106,7 +106,7 @@ function replaceOne(slide: Slide, m: Match, repl: string): Slide {
 
 /** replaceMatch replaces one match (from findMatches on the same doc). */
 export function replaceMatch(doc: DeckDoc, m: Match, repl: string): DeckDoc {
-  return { slides: doc.slides.map((s) => (s.id === m.slideId ? replaceOne(s, m, repl) : s)) };
+  return { ...doc, slides: doc.slides.map((s) => (s.id === m.slideId ? replaceOne(s, m, repl) : s)) };
 }
 
 /** replaceAll replaces every match; returns the new doc and the count. */

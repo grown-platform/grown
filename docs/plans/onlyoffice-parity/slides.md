@@ -157,15 +157,15 @@ insert placeholder ×9 kinds), theme picker + colour schemes
 
 | Feature | Grown | Where |
 | --- | --- | --- |
-| Theme (fonts + colour scheme) | Missing | menu stubs `SlideMenuBar.tsx` "Edit theme", "Change theme", "Theme builder" |
-| Slide layouts / Apply layout | Missing | `SlideMenuBar.tsx` "Apply layout" disabled; only `titleSlide()` in `model.ts` |
-| Slide master editing / placeholders | Missing | — |
+| Theme (fonts + colour scheme) | Have (M7) | `theme.ts`, `DesignDialogs.tsx` ThemeDialog (8 built-ins + imported; Edit theme) |
+| Slide layouts / Apply layout | Have (M7) | `layouts.ts` (8 standard layouts), Slide ▸ Apply layout, Layout ▾, Reset slide |
+| Slide master editing / placeholders | Partial (placeholders; no master editor, F3) | `SlideElement.placeholder`, Ctrl+Enter |
 | Deck templates (whole decks) | Have | `templates.ts`, `DeckList.tsx` |
-| Slide size / page setup | Missing (fixed 960×540) | `model.ts` `CANVAS_W/H`; "Page setup" disabled |
-| Slide numbers / footer / date | Missing | "Slide numbers" disabled |
-| Background colour | Have (hex prompt) | `DeckEditor.tsx setBackground` |
-| Background image / gradient / pattern | Missing | OO `SlideSettings` (47 strings) |
-| Skip (hide) slide | Missing | OO `Slide.show`; Grown "Skip slide" disabled |
+| Slide size / page setup | Have (M7) | `slideProps.ts` `resizeDeck`, File ▸ Page setup |
+| Slide numbers / footer / date | Have (M7) | `layouts.ts` header & footer, Insert ▸ Header & footer |
+| Background colour | Have (dialog, theme colours) | `DesignDialogs.tsx` BackgroundDialog |
+| Background image / gradient / pattern | Partial (image, 2-stop gradient; no pattern) | `Slide.bgFill` |
+| Skip (hide) slide | Have (M7) | `Slide.hidden`, Slide ▸ Skip slide |
 | Sections | Missing | OO `CPrSection` |
 | Notes master / handouts | Missing | — |
 
@@ -1061,13 +1061,14 @@ which creates a new deck. A .pptx opened from Drive (`/slides/:id`) gets
 - ~~Table merges and per-cell styles are not kept; table styles
   (`tableStyleId`) are ignored.~~ (resolved in M5, see §6.9)
 - Gradients import as their first stop, and pattern fills as their
-  foreground colour.
+  foreground colour (slide backgrounds keep their gradient since M7).
 - ~~Image crop (`srcRect`) is ignored.~~ (resolved in M6, see §6.10)
 - Group rotation is ignored.
 - Custom geometry other than a straight segment is drawn as a rect or
   dropped.
-- Hidden slides are imported as visible.
-- Slide size is not stored in `DeckDoc`, so non-16:9 decks are letterboxed.
+- ~~Hidden slides are imported as visible.~~ (resolved in M7, see §6.11)
+- ~~Slide size is not stored in `DeckDoc`, so non-16:9 decks are
+  letterboxed.~~ (resolved in M7, see §6.11)
 - An empty image placeholder (no `src`) is not exported.
 - ~~Imports with large images can exceed the 8 MiB collab WebSocket frame
   limit on the broadcast after File ▸ Import slides.~~ Imported pictures
@@ -1390,8 +1391,9 @@ symbol`, `#Check select all` (e2e, browser-native caret/delete behaviour);
   the word/line keys are Alt/Cmd+arrows and Alt+Delete keeps the space
   after the word. The e2e asserts the OnlyOffice selections, not caret
   indices.
-- Enter in a title placeholder makes a paragraph (Grown has no
-  placeholders); equation line breaks are out of scope.
+- Enter in a title placeholder makes a paragraph (placeholders exist
+  since M7, but the title's Enter-as-line-break is not wired); equation
+  line breaks are out of scope.
 - Link "visited" state is not tracked; tooltips (ScreenTips) aren't stored.
 - Ctrl+5 is reserved by some browsers (tab switching); Alt+Shift+5 works.
 - A collapsed caret with Ctrl+B formats the word at the caret; there is no
@@ -1485,9 +1487,9 @@ over a range removes it) and `…(table keys in the editor)` (e2e).
 
 **Gaps.**
 
-- Style colours are the Office theme's, not the deck's theme (Grown has
+- ~~Style colours are the Office theme's, not the deck's theme (Grown has
   no theme yet, M7); a pptx whose theme recolours accents shows Office
-  colours. Only the nine styles above are in the gallery; other built-in
+  colours.~~ (resolved in M7: styles take the deck theme's colours.) Only the nine styles above are in the gallery; other built-in
   GUIDs import as "No Style, No Grid".
 - No diagonal borders, cell margins UI, text direction in cells, or
   "distribute" for a range that crosses merges.
@@ -1563,3 +1565,151 @@ these tests carry no `oo:` tag.
   still points at the first deck's asset (readable by whoever can read
   that deck).
 
+### 6.11 M7 status (Wave 5): layouts, theme, slide properties
+
+**Model (additive, §4.5 / F3).** `DeckDoc` gains `theme` (colour scheme
+`dk1…folHlink`, fonts `major`/`minor`, `dark` for the bg↔dk colour map),
+`layouts` (template slides whose elements carry `placeholder {type, idx}`:
+title/ctrTitle/subTitle/body/obj/pic/dt/ftr/sldNum), `size` (`{w: 960, h}`;
+absent = 16:9) and `hf` (header & footer: date auto/fixed, footer text,
+slide number, start number, not on title slides). `Slide` gains `layout`,
+`bgFill` (gradient stops + angle/radial, or a picture), `bgRef`, `hidden`
+and `hf` (per-slide switches). Elements gain `placeholder` and
+`themeRefs` (`fill`/`stroke`/`color` → a scheme slot with optional
+DrawingML modifiers, e.g. `tx1/lumMod:65000/lumOff:35000`; `font` →
+`major`/`minor`). **Deviation from §4.5:** colours stay literal hex on
+the element and the ref sits beside them, instead of `fill:
+"theme:accent1"` tokens resolved at render time. Every renderer and
+export keeps reading hex, older clients still draw the deck, and a theme
+change re-resolves only ref'd properties (`theme.applyTheme`), so
+explicit colours are kept by construction. An edit that sets an explicit
+value drops that ref (`reconcileRefs`, applied on every local upsert).
+Layouts are applied by copying (no inheritance); only the date/footer/
+number boxes are drawn from the layout at render time (`withFooters`).
+
+The slide height is a live binding: `model.setCanvasSize` sets
+`CANVAS_H` for the open deck (540 for 16:9, 720 for 4:3), so the geometry,
+snapping, align-to-slide and export helpers keep their signatures; the
+pptx reader and writer take the size from the deck. The table styles
+(`tableStyles.tableTemplates/findTableTemplate`) are built per theme and
+default to the open deck's (`theme.setActiveTheme`), which closes the M5
+gap: styled tables follow the deck theme.
+
+**Modules.**
+
+- `theme.ts`: 8 built-in themes (Office — the implicit default, with
+  Arial — Simple Light, Simple Dark, Streamline, Focus, Coral, Forest,
+  Slate; three are dark), ref parse/format/resolve through
+  `lib/colorMods` and the colour map, palette tints/shades,
+  `applyTheme`, `reconcileRefs`, `withColorRef`/`withFontRef`.
+- `layouts.ts`: PowerPoint's standard layouts (Title slide, Title and
+  content, Section header, Two content, Comparison, Title only, Content
+  with caption, Blank; ids = the pptx layout types) generated from the
+  theme and slide height; `slideFromLayout`, `applyLayout` (placeholders
+  paired by family then idx/order move to the layout boxes and keep
+  content; missing ones added empty; empty unmatched ones removed;
+  filled ones kept), `resetSlide`, `nextPlaceholder` (Ctrl+Enter),
+  `nextLayoutFor` (Ctrl+M: current layout; a title slide → title and
+  content), header & footer (`hfFlags`, `footerElements`, `withFooters`),
+  `newLayoutDeck`.
+- `slideProps.ts`: size presets (16:9, 16:10, 4:3, A4) and custom inches,
+  `resizeDeck` with Ensure fit / Maximize (boxes, fonts, runs and insets
+  scale; content centred), background CSS, set/apply-to-all backgrounds,
+  `toggleHidden`, `showSlides` (the slideshow's visible slides with
+  footers, and where to start).
+- `DesignDialogs.tsx`: theme gallery + Edit theme (12 colour slots,
+  heading/body fonts, dark), layout grid (thumbnails with placeholder
+  boxes and prompts), Page setup, Background (colour or theme colour,
+  two-stop gradient with direction or radial, picture upload; Reset to
+  theme; Apply to all), Header & footer (Apply / Apply to all), theme
+  colour palette.
+
+**Editor.** New decks start from the Title slide layout; empty
+placeholders show their prompt (dashed box, editor only) and nothing in
+thumbnails, the slideshow or exports. With nothing selected the toolbar
+shows Background, Layout ▾ and Theme (Google Slides); the rail's New
+slide has a layout ▾. Slide menu: New slide with layout, Skip slide
+(checked; the rail marks the thumbnail "Skipped"), Apply layout (the
+current one checked), Reset slide, Edit theme, Change theme; View ▸
+Theme builder; Insert ▸ Slide numbers… / Header & footer…; File ▸ Page
+setup. Shapes get a theme-colour ▾ next to Fill. Ctrl/Cmd+Enter selects
+the next placeholder (also from inside a text box) and after the last
+one adds a slide and selects its first placeholder. The slideshow plays
+the visible slides only, with the header/footer boxes. A new `deck` collab
+op carries whole-deck changes (theme, size, header & footer, undo/redo);
+the `slides` op now keeps deck props, and so do `mapSlide` and
+find/replace (they used to rebuild `{slides}` only).
+
+**pptx.** Writer: the theme's colour scheme and name go into
+`theme1.xml`, its fonts through pptxgenjs `theme`, and a dark theme swaps
+the master `p:clrMap`. When any slide uses a layout, every deck layout
+becomes a pptx slide layout (pptxgenjs `defineSlideMaster`, then
+`patchLayoutXml` writes `@type`, the background and typed placeholders
+with their text styles; decorations are not written because slides carry
+copies). Slides link to their layout, placeholders are tagged `p:ph`,
+theme refs are written as `a:schemeClr` (+ modifiers) and `+mj-lt`/
+`+mn-lt`, the slide size follows `DeckDoc.size`, hidden slides get
+`show="0"`, gradient and theme-colour backgrounds are patched into
+`p:bg` (pictures via pptxgenjs), and the header/footer boxes are written
+as `dt`/`ftr`/`sldNum` placeholders (`a:fld type="slidenum"`, and
+`datetime1` for an automatic date). Reader: `DeckDoc.theme` (a built-in
+theme when name, colours, fonts and colour map match, else "imported"),
+every layout of every master (ids = layout types where they are
+Grown's; placeholders read with their resolved styles and empty text;
+decorations and background included; an empty untyped layout — pptxgenjs's
+default — is skipped), slide `layout`, empty placeholders kept (they were
+dropped), `placeholder` and `themeRefs` on elements (scheme fill/outline
+colours from `spPr` or the shape style, text colour and theme fonts from
+the element-wide run), `size` instead of pillar-boxing, `hidden`,
+gradient/picture backgrounds as `bgFill` (a picture background used to
+become a full-slide image element), background `bgRef`, and header &
+footer from the slides' `dt`/`ftr`/`sldNum` placeholders (deck switch =
+any slide shows it, per-slide overrides for the rest, "not on title
+slide" when every title slide lacks them). Upload .pptx / Open in Slides
+save the whole deck; File ▸ Import slides scales the imported slides to
+the open deck's size and keeps only layout ids the deck has.
+
+**Tests.** `theme.test.ts` (7), `layouts.test.ts` (10),
+`slideProps.test.ts` (7), `pptx/design.test.ts` (10: XML for scheme
+colours, theme part, colour map and backgrounds; a themed 4:3 deck with
+every M7 feature through deckToPptx → readPptx; a double round trip; a
+dark theme; `show="0"`, fields and 9 layout parts; a legacy deck stays
+layout-free; resize then export), additions to `deckOps.test.ts`,
+`pptx/read.test.ts` (4:3 size, empty placeholder kept, picture
+background) and `pptx/importDeck.test.ts`; e2e `web/e2e/slides-theme.spec.ts`
+(prompts on a new deck, Ctrl+Enter across placeholders into a new slide,
+Coral theme, Two content layout, Skip slide, slide numbers, reload, the
+slideshow skips the hidden slide; and a Focus-themed deck across five
+layouts with a theme-coloured shape, screenshot via
+`GROWN_SLIDES_M7_SHOT`). `slides.spec.ts` now expects the Title and
+content placeholders on a new slide.
+
+**Ported (now passing):** `shortcuts.js#Check actions for objects with
+placeholder` (#12), in `layouts.test.ts` (reducer) and
+`slides-theme.spec.ts` (e2e).
+
+**Not done / gaps.**
+
+- #1 `Check actions with slides` (multi-slide selection, Move slide
+  submenu) and sections (`DeckDoc.sections`) are not done; Slide ▸ Move
+  slide is still a stub.
+- Enter in a title placeholder still makes a paragraph (#13's title
+  case).
+- No master editor (F3): editing a layout means editing
+  `DeckDoc.layouts` data; there is no UI to change a layout's
+  placeholders. Edit theme edits colours and fonts only (no effects or
+  background styles).
+- Runs don't carry theme refs: a run coloured differently from its box
+  keeps its hex on a theme change. Table cell colours and table/cell
+  borders are literal (the table *styles* follow the theme).
+- Theme colour picking is on shape fill and backgrounds only; the text
+  colour and outline pickers still set hex (an imported or layout ref is
+  kept until one of them sets an explicit value).
+- Layout decorations are not written to pptx layouts (slides carry
+  copies), so a Grown export's layouts have placeholders only.
+- The slide width is always 10 in in pptx (only the aspect ratio round
+  trips); A4 is 10 × 6.92 in rather than 10.83 × 7.5 in.
+- Pattern fills and multi-stop gradient editing in the Background dialog
+  (two stops only; imported multi-stop gradients are kept).
+- Hidden slides are still exported to HTML/PDF and numbered (as in
+  PowerPoint).

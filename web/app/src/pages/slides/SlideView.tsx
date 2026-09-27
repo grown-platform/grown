@@ -16,6 +16,7 @@ import { cropShapePath, fullImageRect, imageStretched } from "./imageOps";
 import { insetsOf } from "./textOps";
 import { isRich, layoutParagraphs, markerCss, paraCss, runCss } from "./textLayout";
 import { parseSlideLink } from "./links";
+import { backgroundCss } from "./slideProps";
 import {
   CELL_PAD,
   cellFormat,
@@ -64,7 +65,8 @@ interface SlideViewProps {
   onSlideLink?: (url: string) => void;
 }
 
-/** SlideView renders a slide read-only, scaled to fit `width` px (16:9).
+/** SlideView renders a slide read-only, scaled to fit `width` px (at the
+ *  open deck's aspect ratio, CANVAS_W × CANVAS_H).
  *  Used for the thumbnail rail and present mode. */
 export function SlideView({ slide, width, revealedIds, linkable, onSlideLink }: SlideViewProps) {
   const scale = width / CANVAS_W;
@@ -76,7 +78,7 @@ export function SlideView({ slide, width, revealedIds, linkable, onSlideLink }: 
         width,
         height,
         overflow: "hidden",
-        bgcolor: slide.background,
+        background: backgroundCss(slide),
       }}
     >
       <Box

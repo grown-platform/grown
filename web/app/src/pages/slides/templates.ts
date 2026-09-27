@@ -1,6 +1,6 @@
+import { newLayoutDeck } from "./layouts";
 import {
   uid,
-  titleSlide,
   type DeckDoc,
   type Slide,
   type SlideElement,
@@ -82,7 +82,7 @@ export const DECK_TEMPLATES: DeckTemplate[] = [
     name: "Blank",
     subtitle: "",
     accent: "#4285f4",
-    build: () => ({ slides: [titleSlide()] }),
+    build: newLayoutDeck,
   },
   {
     id: "simple-light",

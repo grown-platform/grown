@@ -1,11 +1,13 @@
 // Table style templates (M5). Ids are PowerPoint's built-in table style
 // GUIDs (`a:tableStyleId`), so a pptx round trip keeps the style and
 // PowerPoint/LibreOffice draw it without a definition in tableStyles.xml.
-// Colours follow the default Office theme; the rules (whole table, banded
+// Colours follow the deck's theme (M7: the open deck's, via
+// theme.activeTheme; the Office theme by default); the rules (whole table, banded
 // rows/columns, header/total rows, first/last columns) are the documented
 // behaviour of each style, written from the style descriptions.
 
-import type { CellBorder, TableLook } from "./model";
+import type { CellBorder, DeckTheme, TableLook } from "./model";
+import { activeTheme, OFFICE_THEME } from "./theme";
 
 /** Conditional formatting of one part of a table. */
 export interface CondFormat {
@@ -76,40 +78,63 @@ export const NO_STYLE_NO_GRID = "{2D5ABB26-0587-4C30-8999-92F81FD0307C}";
 export const NO_STYLE_TABLE_GRID = "{5940675A-B579-460E-94D1-54222C63F5DA}";
 export const MEDIUM_STYLE_2_ACCENT_1 = "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}";
 
-export const TABLE_TEMPLATES: TableTemplate[] = [
-  {
-    id: NO_STYLE_NO_GRID,
-    name: "No Style, No Grid",
-    group: "No style",
-    header: { bold: true },
-    lastRow: { bold: true },
-    firstCol: { bold: true },
-    lastCol: { bold: true },
-  },
-  {
-    id: NO_STYLE_TABLE_GRID,
-    name: "No Style, Table Grid",
-    group: "No style",
-    border: { color: "#000000", width: 1 },
-    header: { bold: true },
-    lastRow: { bold: true },
-    firstCol: { bold: true },
-    lastCol: { bold: true },
-  },
-  medium2("{073A0DAA-6AF3-43AB-8588-CEC1D06C72B9}", "Medium Style 2", "#000000"),
-  medium2(MEDIUM_STYLE_2_ACCENT_1, "Medium Style 2 - Accent 1", ACCENTS[0]),
-  medium2("{21E4AEA4-8DFA-4A89-87EB-49C32662AFE8}", "Medium Style 2 - Accent 2", ACCENTS[1]),
-  medium2("{F5AB1C69-6EDB-4FF4-983F-18BD219EF322}", "Medium Style 2 - Accent 3", ACCENTS[2]),
-  medium2("{00A15C55-8517-42AA-B614-E9B94910E393}", "Medium Style 2 - Accent 4", ACCENTS[3]),
-  medium2("{7DF18680-E054-41AD-8BC1-D1AEF772440D}", "Medium Style 2 - Accent 5", ACCENTS[4]),
-  medium2("{93296810-A885-4BE3-A3E7-6D5BEEA58F35}", "Medium Style 2 - Accent 6", ACCENTS[5]),
-];
+/** The templates with a theme's colours. */
+function buildTemplates(theme: DeckTheme): TableTemplate[] {
+  const c = theme.colors;
+  const acc = [c.accent1, c.accent2, c.accent3, c.accent4, c.accent5, c.accent6].map((x) => x.toLowerCase());
+  return [
+    {
+      id: NO_STYLE_NO_GRID,
+      name: "No Style, No Grid",
+      group: "No style",
+      header: { bold: true },
+      lastRow: { bold: true },
+      firstCol: { bold: true },
+      lastCol: { bold: true },
+    },
+    {
+      id: NO_STYLE_TABLE_GRID,
+      name: "No Style, Table Grid",
+      group: "No style",
+      border: { color: c.dk1.toLowerCase(), width: 1 },
+      header: { bold: true },
+      lastRow: { bold: true },
+      firstCol: { bold: true },
+      lastCol: { bold: true },
+    },
+    medium2("{073A0DAA-6AF3-43AB-8588-CEC1D06C72B9}", "Medium Style 2", c.dk1.toLowerCase()),
+    medium2(MEDIUM_STYLE_2_ACCENT_1, "Medium Style 2 - Accent 1", acc[0]),
+    medium2("{21E4AEA4-8DFA-4A89-87EB-49C32662AFE8}", "Medium Style 2 - Accent 2", acc[1]),
+    medium2("{F5AB1C69-6EDB-4FF4-983F-18BD219EF322}", "Medium Style 2 - Accent 3", acc[2]),
+    medium2("{00A15C55-8517-42AA-B614-E9B94910E393}", "Medium Style 2 - Accent 4", acc[3]),
+    medium2("{7DF18680-E054-41AD-8BC1-D1AEF772440D}", "Medium Style 2 - Accent 5", acc[4]),
+    medium2("{93296810-A885-4BE3-A3E7-6D5BEEA58F35}", "Medium Style 2 - Accent 6", acc[5]),
+  ];
+}
 
-const BY_ID = new Map(TABLE_TEMPLATES.map((t) => [t.id.toUpperCase(), t]));
+/** The templates with the default Office theme's colours. */
+export const TABLE_TEMPLATES: TableTemplate[] = buildTemplates(OFFICE_THEME);
 
-/** findTableTemplate looks a template up by GUID (any case, braces kept). */
-export function findTableTemplate(id: string | undefined): TableTemplate | undefined {
-  return id ? BY_ID.get(id.toUpperCase()) : undefined;
+const cache = new WeakMap<DeckTheme, { list: TableTemplate[]; byId: Map<string, TableTemplate> }>();
+function forTheme(theme: DeckTheme) {
+  let e = cache.get(theme);
+  if (!e) {
+    const list = theme === OFFICE_THEME ? TABLE_TEMPLATES : buildTemplates(theme);
+    e = { list, byId: new Map(list.map((t) => [t.id.toUpperCase(), t])) };
+    cache.set(theme, e);
+  }
+  return e;
+}
+
+/** The gallery templates for a theme (default: the open deck's). */
+export function tableTemplates(theme: DeckTheme = activeTheme()): TableTemplate[] {
+  return forTheme(theme).list;
+}
+
+/** findTableTemplate looks a template up by GUID (any case, braces kept),
+ *  coloured by `theme` (default: the open deck's). */
+export function findTableTemplate(id: string | undefined, theme: DeckTheme = activeTheme()): TableTemplate | undefined {
+  return id ? forTheme(theme).byId.get(id.toUpperCase()) : undefined;
 }
 
 /** The look a new styled table gets (PowerPoint: header row + banded rows). */

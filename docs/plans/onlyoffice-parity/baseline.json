@@ -74,7 +74,7 @@
       "passing": null
     },
     "docs/equations": {
-      "ported": 924,
+      "ported": 0,
       "passing": null
     },
     "docs/find-replace": {
@@ -298,7 +298,7 @@
       "passing": null
     },
     "slides/shortcuts": {
-      "ported": 21,
+      "ported": 22,
       "passing": null
     },
     "slides/shortcuts fixture": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 1936,
+    "ported": 1013,
     "passing": null
   }
 }
