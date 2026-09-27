@@ -23,7 +23,7 @@ tests/cell/spreadsheet-calculation/DependencyGraph.js,11,formulas/dependency gra
 tests/cell/spreadsheet-calculation/ExternalReference.js,8,formulas/external refs + IMPORTRANGE,n/a (flagged optional),-,-
 tests/cell/spreadsheet-calculation/copy-paste-tests.js,9,editing/paste values-formulas-comments-tables; CSV parseText,vitest (1 CSV) + playwright (8),web/app/src/pages/sheets/__parity__/csv.parity.test.ts; web/e2e/parity/sheets-structure.spec.ts,M7
 tests/cell/spreadsheet-calculation/PivotTests.js,23,pivot/layout-subtotals-filters-showas,vitest,web/app/src/pages/sheets/__parity__/pivot.parity.test.ts,M9
-tests/cell/spreadsheet-calculation/PivotTests2.js,18,pivot/refresh-formats-calculated items-GETPIVOTDATA,vitest (16) + go (2 GETPIVOTDATA),web/app/src/pages/sheets/__parity__/pivot.parity.test.ts; internal/sheets/testdata/parity/formula-lookup.json,M9
+tests/cell/spreadsheet-calculation/PivotTests2.js,18,pivot/refresh-formats-calculated items-GETPIVOTDATA,vitest (16) + go (2 GETPIVOTDATA),web/app/src/pages/sheets/__parity__/pivot2.parity.test.ts; internal/sheets/formula_pivot_test.go,M9
 tests/cell/spreadsheet-calculation/PivotTests2Files.js,0,pivot/fixture data (base64),helper,-,-
 tests/cell/spreadsheet-calculation/conditionalFormattingTests.js,5,conditional formatting/apply-to + text rules,vitest,web/app/src/pages/sheets/__parity__/condFormat.parity.test.ts,M8
 tests/cell/spreadsheet-calculation/DataValidationTests.js,1,data validation/custom formula range shifts,vitest,web/app/src/pages/sheets/__parity__/validation.parity.test.ts,M8

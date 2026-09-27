@@ -1,6 +1,6 @@
 # OnlyOffice parity plan — Sheets
 
-Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done. Wave 4: M7 (autofill, series, sort, paste special, sheet structure; §13) is done.
+Status: plan written 2026-09-26. M0 (the parity harness and the first 91 ported tests) has landed; see §7. Wave 1: M1 (reference semantics and the recalc round-trip) is done; see §9. Wave 3: M3, M6 and M8 (filters, conditional formatting, data validation; §12) are done. Wave 4: M7 (autofill, series, sort, paste special, sheet structure; §13) is done. Wave 5: M9 (pivot tables; §15) is done.
 Companion: `sheets-tests.csv` (one row per OnlyOffice test file).
 Inventory baseline: **`origin/main` @ `c90064e`**. (The worktree used for reading was `96ca7c0`,
 55 commits behind; for Sheets the only difference is `internal/sheets/formula_more{,2,3}.go`
@@ -33,7 +33,7 @@ justification, not planned.
 | Sharing | Per-user object grants (viewer/editor), cross-org; list "mine" / "shared with me". | `ShareDialog.tsx`, `SheetList.tsx`, `internal/sheets/service.go:211-316` |
 | Export | xlsx/ods via SheetJS (`xlsx` 0.18.5, **values only** — formulas/formats dropped), csv/tsv/html in-browser, pdf via `/api/v1/docs/convert` (HTML table → pandoc/tectonic). Import: **disabled menu item**. | `web/app/src/pages/sheets/export.ts` |
 | Charts | Dependency-free SVG renderer: column, bar, line, area, pie; series from a range, header row / label column options. Stored in `grownCharts`, shown in a side panel (not anchored on the grid). | `ChartDialog.tsx`, `ChartRenderer.tsx`, `chartData.ts`, `ChartsPanel.tsx` |
-| Pivot | Pure TS pivot: one row field, optional column field, one value field, aggs sum/count/average/min/max, row+col totals. Rendered as an HTML table in a panel. | `PivotDialog.tsx`, `pivotData.ts`, `PivotTableView.tsx`, `PivotPanel.tsx` |
+| Pivot | Pure TS pivot: one row field, optional column field, one value field, aggs sum/count/average/min/max, row+col totals. Rendered as an HTML table in a panel. (M9, §15: Excel-layout engine written onto the grid.) | `PivotDialog.tsx`, `pivotData.ts`, `PivotTableView.tsx`, `PivotPanel.tsx` |
 | Conditional formatting | Dialog over fortune-sheet's `luckysheet_conditionformat_save`: single-colour "default" rules (greaterThan/lessThan/between/equal…), `colorGradation` (colour scale), `dataBar`. Plus Grown icon sets (arrows/traffic/signs) as a display overlay on `m`. | `ConditionalFormatDialog.tsx`, `iconSets.ts` |
 | Data validation | Dialog over fortune-sheet `dataVerification`: dropdown, checkbox, number_decimal, text_length, text_content, date; operators (between, equal, …); prohibit input / hint. | `DataValidationDialog.tsx` |
 | Data menu ops | Sort range / sort sheet (single key, header heuristic), randomize, toggle filter (fortune-sheet `filter_select`), split text to columns (delimiter autodetect), find & replace (case / whole-cell / regex, scope all/sheet/range). | `dataActions.ts`, `sheetOps.ts`, `FindReplaceDialog.tsx` |
@@ -177,18 +177,18 @@ Legend: **Have** = works end-to-end in Grown · **Partial** = exists but materia
 
 | Feature | Grown |
 |---|---|
-| Create pivot from range; row/column/value fields | Partial — exactly 1 row, ≤1 column, 1 value — `pivotData.ts` |
-| Multiple row/col fields with subtotals, compact/outline/tabular layout, blank rows, grand totals on/off | Missing |
-| Page (report) filters, value filters, label filters, Top 10 | Missing |
-| Aggregations: sum/count/average/min/max | Have (dialog); product, countNums, stdDev(p), var(p) Missing in the dialog — though formula-level `GROUPBY`/`PIVOTBY` on origin/main already support more aggregations and could back the dialog |
-| Show values as (% of total/row/column, difference from, running total, rank…) | Missing |
-| Number format per value field, header rename | Missing |
-| Grouping (dates by month/quarter/year, numeric bins) | Missing |
-| Calculated fields / items | Missing |
-| Refresh on source change, change data source | Partial (recomputed on render from stored range) |
-| Show details (drill-through) | Missing |
-| GETPIVOTDATA | Missing |
-| Pivot placed on the grid (not a side panel), pivot styles | Missing |
+| Create pivot from range; row/column/value fields | Have (M9) — any number of each — `pivotEngine.ts` |
+| Multiple row/col fields with subtotals, compact/outline/tabular layout, blank rows, grand totals on/off | Have (M9) |
+| Page (report) filters, value filters, label filters, Top 10 | Have (M9) |
+| Aggregations: sum/count/average/min/max | Have (M9): all eleven Excel functions |
+| Show values as (% of total/row/column, difference from, running total, rank…) | Have (M9): all fifteen |
+| Number format per value field, header rename | Have (M9) |
+| Grouping (dates by month/quarter/year, numeric bins) | Have (M9), plus item groups |
+| Calculated fields / items | Have (M9) |
+| Refresh on source change, change data source | Have (M9) |
+| Show details (drill-through) | Have (M9) |
+| GETPIVOTDATA | Have (M9, Go) |
+| Pivot placed on the grid (not a side panel), pivot styles | On the grid: Have (M9); pivot styles: Missing |
 
 ### 2.7 Charts & sparklines (OO `ChartsDrawTest`, `common/charts`, `ChartWizardDialog`, `ChartTypeDialog`, `ChartDataDialog`, `ChartSettings*`, `CreateSparklineDialog`, `SparklineTab`)
 
@@ -1143,3 +1143,74 @@ preview), Insert ▸ Page break and a protected range.
 - Print uses the browser's print dialog; PDF export still goes through the
   HTML-table convert endpoint rather than the print renderer.
 
+
+## 15. M9 results (Wave 5, 2026-09-26)
+
+M9 is done: pivot tables are computed the way Excel lays them out and are
+written onto the grid, like Excel and Google Sheets; GETPIVOTDATA reads them
+in the Go engine. All 41 OnlyOffice cases listed for M9 are ported and pass.
+
+### 15.1 What landed
+
+| Piece | Where |
+|---|---|
+| Model: several row, column and page fields; data fields with all eleven summary functions (sum, count, average, max, min, product, count numbers, stdev/stdevp, var/varp), fifteen show-values-as kinds with base field/item, a number format (M6 codes) and a caption; per-field caption, subtotals (automatic, none or a list of functions), subtotals at top/bottom, compact/outline/tabular form, blank row after items, show items with no data, sort (by label or by a data field), item order kept across refreshes, item captions; label, value and top-10 filters applied in order (value filters per parent item, as Excel does); date (years…days), number (interval) and item grouping as extra fields; calculated fields (formulas over field sums) and calculated items (formulas over items, solved in order, per-cell formulas); layout, grand totals, headers, Values position, page wrap/order; captions for Row Labels, Column Labels, Values and Grand Total. `remapFields` follows columns by name when the source changes. | `pivotModel.ts`, `pivotCalc.ts` |
+| Engine: page and field filters, item trees, lines per axis (headers, subtotals top/bottom, blank rows, grand totals, the Values pseudo-field anywhere in either axis), aggregation with Excel's blank/error rules, show-values-as, the report grid (page block, caption rows, row label columns per field form, classic drop-zone layout), GETPIVOTDATA entries, drill-down records, and per-cell field/rename metadata. | `pivotEngine.ts` |
+| On the grid: a pivot has an anchor (a new sheet or a chosen cell); its report is written there and rewritten after every edit where cells differ (source edits refresh it; stray changes are put back). Typing into a pivot is refused, except over a caption or item label, which renames it. It never overwrites other data or protected cells (the M11 protection model): the write is refused with a notice. On the server the written cells are ordinary edits: `EnforceProtection` keeps them for the owner and the users a protected range lists, and the stored `output` (a first-sheet key) is never reverted (`TestPivotOutputUnderProtection`). Columns are widened to fit. The written report (`output`) is stored with the pivot. | `pivotGrid.ts`, `usePivotTools.tsx`, `SheetEditor.tsx` (hook + guard + refresh call) |
+| UI: Insert ▸ Pivot table opens the editor (data range, insert to a new/existing sheet, rows, columns, values with function/show-as/format/name, filters, per-field order/sort-by/totals/group/filter, calculated fields and items, layout options, live preview). Pivots (n) lists them with edit, delete, refresh all, show details (click a value, or for the selected grid cell) and copy the GETPIVOTDATA formula for the selected cell. | `PivotDialog.tsx`, `PivotPanel.tsx`, `PivotTableView.tsx` |
+| GETPIVOTDATA(data_field, pivot_table, [field, item]…): over `grownPivots[].output`; data field by caption or source field; pairs in any order; items by value, caption, date serial, group number, or `<`/`>` for a group's outer buckets; page fields; `#REF!` for a cell the report does not show, 0 for an empty one; and the older two-argument form `GETPIVOTDATA(pivot_table, "East Sum of Price")`. | `internal/sheets/formula_pivot.go` |
+
+### 15.2 Ports
+
+| OnlyOffice file | Tags ported / passing | Where |
+|---|---|---|
+| `PivotTests.js` | 23 / 23 | `__parity__/pivot.parity.test.ts` (291 recorded reports in `pivot.fixtures.json`) |
+| `PivotTests2.js` | 18 / 18 | `__parity__/pivot2.parity.test.ts` (16), `internal/sheets/formula_pivot_test.go` (GETPIVOTDATA, TWO ARGS; also in vitest for the generated formula) |
+
+Notes on the ports:
+
+- PivotTests builds pivots through OnlyOffice's API; the ports describe the
+  same pivots as Grown configs and compare the report text cell by cell. The
+  undo/redo/XML round trips and style checks the suite runs around each step
+  are OnlyOffice history plumbing and are not ported. The top-10 case runs
+  disabled in OnlyOffice; its recorded report passes here.
+- PivotTests2 opens xlsx workbooks. A local recording script (not committed)
+  read their pivot definitions, caches and rendered cells into facts: each
+  pivot as a Grown config, its source cells and Excel's report
+  (`pivot2.fixtures.json`), and for GETPIVOTDATA each sheet's cells,
+  formulas with Excel's results and the pivots' stored reports
+  (`internal/sheets/testdata/pivot/getpivotdata.json`). All 38 pivots in
+  those workbooks render as Excel rendered them. The fill/number-format flags
+  the refresh cases compare come from OnlyOffice pivot styles, which Grown
+  lacks; value-field formats are checked instead.
+- Semantics taken from the recorded reports: value filters are evaluated per
+  parent item and each axis is built from the records that pass that axis's
+  filters (so a row item can show with blank values when a column filter
+  removed its data); % running total's whole is the base field's total at its
+  own level and the running end below it; `% of` shows `#NULL!` for an empty
+  cell; a lone numeric item shows in its field's number format only when every
+  value of the field is a number in that one format.
+- GETPIVOTDATA formula generation: one pair (an item row whose subtotal is
+  shown below it) is left out; Grown writes no entry for the empty cells of
+  such rows.
+
+E2e: `web/e2e/sheets-pivot.spec.ts` builds a pivot in the dialog (two row
+fields, a column field, % of grand total) at Sheet1!H1, checks the written
+cells, edits a source cell and checks the refreshed percentages, refreshes
+from the panel, checks that typing into the pivot is refused, and evaluates
+`GETPIVOTDATA` on the server.
+
+### 15.3 Not done / follow-ups
+
+- Pivot styles (banding, style gallery) and per-area pivot formats are not
+  modelled; header rows get a light fill.
+- Pivots are not written to or read from xlsx yet (M11 follow-up; the
+  recording script's reader could become the importer).
+- Collapsing items (+/- buttons) and the per-field "repeat item labels"
+  option are not modelled.
+- Pivot configs live on the first sheet (`grownPivots`) and reach other open
+  editors on reload; the written cells reach them live as ops. Every editor
+  refreshes pivots after edits, so two editors may write the same cells.
+- Pivot source ranges are not shifted by row/column inserts (like charts, §13.3).
+- A refresh that grows into other data is refused with a notice rather than
+  asking to overwrite.

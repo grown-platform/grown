@@ -210,7 +210,7 @@
       "passing": null
     },
     "sheets/pivot": {
-      "ported": 0,
+      "ported": 41,
       "passing": null
     },
     "sheets/print": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 1982,
+    "ported": 2023,
     "passing": null
   }
 }
