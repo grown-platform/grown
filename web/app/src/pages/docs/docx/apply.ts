@@ -10,6 +10,8 @@ import { getDocModel } from "../docModel";
 import { marginSchema } from "../margin";
 import type { DocxComment, DocxImport } from "./model";
 import type { DocxWriteInput } from "./write";
+import type { JSONContent } from "@tiptap/core";
+import { settingsStore } from "../pageLayout";
 
 /** The Yjs document behind the editor's styles/numbering maps. */
 export function modelDoc(editor: Editor): Y.Doc | null {
@@ -28,12 +30,15 @@ export function applyDocxImport(editor: Editor, imp: DocxImport): void {
     for (const def of Object.values(imp.styles)) sheet.put(def);
     for (const [key, v] of Object.entries(imp.numbering)) numbering.map.set(key, JSON.parse(JSON.stringify(v)));
     if (ydoc) {
-      for (const kind of ["header", "footer"] as const) {
-        const json = imp[kind];
-        const frag = ydoc.getXmlFragment(kind);
+      const margins: Record<string, JSONContent> = { ...(imp.margins ?? {}) };
+      if (imp.header && !margins.header) margins.header = imp.header;
+      if (imp.footer && !margins.footer) margins.footer = imp.footer;
+      for (const [name, json] of Object.entries(margins)) {
+        const frag = ydoc.getXmlFragment(name);
         if (json && frag.length === 0) prosemirrorJSONToYXmlFragment(marginSchema(), json, frag);
       }
     }
+    if (imp.section || imp.settings) settingsStore(editor).set({ ...(imp.settings ?? {}), ...(imp.section ? { section: imp.section } : {}) });
   };
   if (ydoc) ydoc.transact(write);
   else write();
@@ -169,7 +174,7 @@ export function collectDocxInput(
     doc = tr.doc;
   }
   const ydoc = modelDoc(editor);
-  const margin = (kind: "header" | "footer") => {
+  const margin = (kind: string) => {
     if (!ydoc) return null;
     const frag = ydoc.getXmlFragment(kind);
     if (!frag.length) return null;
@@ -179,12 +184,23 @@ export function collectDocxInput(
       return null;
     }
   };
+  // Every header/footer fragment (M9): "header", "footer", "hf:…".
+  const margins: Record<string, PMNode> = {};
+  if (ydoc)
+    for (const name of ydoc.share.keys()) {
+      if (name !== "header" && name !== "footer" && !name.startsWith("hf:")) continue;
+      const n = margin(name);
+      if (n) margins[name] = n;
+    }
+  const settings = settingsStore(editor).get();
   return {
     doc,
     sheet,
     numbering,
     header: margin("header"),
     footer: margin("footer"),
+    margins,
+    settings,
     comments: serverComments(threads),
     title: opts.title,
   };

@@ -114,7 +114,7 @@
       "passing": null
     },
     "docs/pagination": {
-      "ported": 0,
+      "ported": 6,
       "passing": null
     },
     "docs/paragraph": {
@@ -134,7 +134,7 @@
       "passing": null
     },
     "docs/sections": {
-      "ported": 0,
+      "ported": 1,
       "passing": null
     },
     "docs/shortcuts": {
@@ -186,7 +186,7 @@
       "passing": null
     },
     "sheets/editing": {
-      "ported": 85,
+      "ported": 68,
       "passing": null
     },
     "sheets/engine-internal": {
@@ -198,7 +198,7 @@
       "passing": null
     },
     "sheets/formulas": {
-      "ported": 633,
+      "ported": 533,
       "passing": null
     },
     "sheets/harness": {
@@ -222,7 +222,7 @@
       "passing": null
     },
     "sheets/shortcuts": {
-      "ported": 23,
+      "ported": 0,
       "passing": null
     },
     "sheets/sort-filter": {
@@ -298,7 +298,7 @@
       "passing": null
     },
     "slides/shortcuts": {
-      "ported": 26,
+      "ported": 24,
       "passing": null
     },
     "slides/shortcuts fixture": {
@@ -315,7 +315,7 @@
     }
   },
   "total": {
-    "ported": 2184,
+    "ported": 2049,
     "passing": null
   }
 }

@@ -14,7 +14,11 @@ import { Suggesting, type SuggestUser } from "./suggesting";
 
 interface MarginEditorProps {
   ydoc: Y.Doc;
-  field: "header" | "footer";
+  /** The Yjs fragment: "header" / "footer", or a section's own part
+   *  (sections.ts hfFragment, M9). */
+  field: string;
+  /** Header or footer (defaults from `field`). */
+  kind?: "header" | "footer";
   editable: boolean;
   placeholder: string;
   suggesting?: boolean;
@@ -27,6 +31,7 @@ interface MarginEditorProps {
 export function MarginEditor({
   ydoc,
   field,
+  kind: kindProp,
   editable,
   placeholder,
   suggesting = false,
@@ -45,6 +50,8 @@ export function MarginEditor({
     [ydoc, field],
   );
 
+  const kind = kindProp ?? (field.endsWith("footer") ? "footer" : "header");
+
   useEffect(() => {
     editor?.setEditable(editable);
   }, [editor, editable]);
@@ -62,9 +69,10 @@ export function MarginEditor({
   return (
     <EditorContent
       editor={editor}
-      aria-label={field === "header" ? "Document header" : "Document footer"}
+      aria-label={kind === "header" ? "Document header" : "Document footer"}
       data-placeholder={placeholder}
-      className={`margin-editor margin-editor--${field}`}
+      data-fragment={field}
+      className={`margin-editor margin-editor--${kind}`}
     />
   );
 }

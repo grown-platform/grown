@@ -25,6 +25,9 @@ import { insertTableOfContents, toggleFieldCodes, updateFields } from "./referen
 import { setTocLevel, tocLevelAtSelection } from "./toc";
 import { getDocModel } from "./docModel";
 import { autofitTable, distributeColumns, distributeRows, setCellProps, splitTable, tableToText, toggleRepeatHeader } from "./tables";
+import { LayoutMenu } from "./LayoutMenu";
+import { openLayoutDialog } from "./LayoutDialogs";
+import { setDocSettings } from "./pageLayout";
 
 const menuButtonSx = {
   fontWeight: 400,
@@ -126,8 +129,10 @@ function FileMenu({
           Move to trash
         </MenuItem>
         <ListDivider />
-        <MenuItem onClick={actions.pageSetup}>Page setup</MenuItem>
-        <MenuItem onClick={() => window.print()}>Print{kbd("Ctrl+P")}</MenuItem>
+        <MenuItem onClick={actions.pageSetup}>Page setup…</MenuItem>
+        <MenuItem onClick={actions.printPreview ?? (() => window.print())} data-testid="file-print">
+          Print…{kbd("Ctrl+P")}
+        </MenuItem>
       </Menu>
     </Dropdown>
   );
@@ -173,6 +178,8 @@ export interface DocActions {
   insertDrawing: () => void;
   insertEquation?: () => void;
   customSpacing: () => void;
+  printPreview?: () => void;
+  togglePageThumbnails?: () => void;
 }
 
 interface MenuBarProps {
@@ -281,6 +288,17 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem onClick={actions.togglePageNumbers}>
             Show page numbers
           </MenuItem>
+          <MenuItem onClick={run((e) => setDocSettings(e, { pageless: false }))} data-testid="view-print-layout">
+            Print layout
+          </MenuItem>
+          <MenuItem onClick={run((e) => setDocSettings(e, { pageless: true }))} data-testid="view-pageless">
+            Pageless
+          </MenuItem>
+          {actions.togglePageThumbnails && (
+            <MenuItem onClick={actions.togglePageThumbnails} data-testid="view-thumbnails">
+              Page thumbnails
+            </MenuItem>
+          )}
           <MenuItem disabled>Show ruler</MenuItem>
           <MenuItem disabled>Show non-printing characters</MenuItem>
           {actions.setDisplayMode && (
@@ -361,6 +379,14 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             )}
           >
             Page break
+          </MenuItem>
+          <MenuItem onClick={run((e) => void e.chain().focus().insertColumnBreak().run())}>
+            Column break{kbd("Ctrl+Shift+Enter")}
+          </MenuItem>
+          <MenuItem onClick={run((e) => void e.chain().focus().insertSectionBreak("nextPage").run())}>Section break (next page)</MenuItem>
+          <MenuItem onClick={run((e) => void e.chain().focus().insertSectionBreak("continuous").run())}>Section break (continuous)</MenuItem>
+          <MenuItem onClick={() => openLayoutDialog("pagenumbers")} data-testid="insert-page-numbers">
+            Page numbers…
           </MenuItem>
           <MenuItem onClick={actions.insertFootnote}>Footnote</MenuItem>
           <MenuItem onClick={actions.insertEndnote}>Endnote</MenuItem>
@@ -603,7 +629,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem onClick={() => openParagraphDialog("listSettings")}>
             List settings…
           </MenuItem>
-          <MenuItem onClick={actions.pageSetup}>Page orientation…</MenuItem>
+          <MenuItem onClick={actions.pageSetup}>Page setup…</MenuItem>
           <ListDivider />
           <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
             Table
@@ -685,6 +711,8 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           </MenuItem>
         </>,
       )}
+
+      <LayoutMenu editor={editor} actions={actions} />
 
       {top(
         "References",
@@ -775,7 +803,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Word count{kbd("Ctrl+Shift+C")}
           </MenuItem>
           <MenuItem disabled>Citations</MenuItem>
-          <MenuItem disabled>Line numbers</MenuItem>
+          <MenuItem onClick={() => openLayoutDialog("linenumbers")}>Line numbers…</MenuItem>
           <ListDivider />
           <Typography level="body-xs" sx={{ px: 1.5, py: 0.5, opacity: 0.6 }}>
             Review

@@ -30,6 +30,8 @@ import { BookmarkMark, BookmarkPoint, LinkWithTitle } from "./bookmarks";
 import { Field, References } from "./references";
 import { TableOfContents, TocEntry } from "./toc";
 import type * as Y from "yjs";
+import { ColumnBreak, SectionBreak } from "./pageLayout";
+import { Pagination } from "./paginationPlugin";
 import type { WebsocketProvider } from "y-websocket";
 
 // TipTap has no official font-size extension, so add a textStyle attribute that
@@ -617,6 +619,10 @@ export function buildExtensions(opts: BuildOpts) {
     // Yjs maps (a private Y.Doc when there is none).
     DocModel.configure({ ydoc: opts.ydoc }),
     CharStyle,
+    // Sections, columns and pagination (M9).
+    SectionBreak,
+    ColumnBreak,
+    Pagination,
     ...collabExts,
   ];
 }

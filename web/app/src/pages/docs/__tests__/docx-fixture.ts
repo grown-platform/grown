@@ -26,6 +26,10 @@ export interface FixtureParts {
   media?: Record<string, string>;
   /** The body's final sectPr (header/footer references are added). */
   sectPr?: string;
+  /** word/settings.xml (M9). */
+  settings?: string;
+  /** More parts under word/ (e.g. "header2.xml"); relate them with `rels`. */
+  extraParts?: Record<string, string>;
 }
 
 /** buildDocx packages parts into a .docx (Uint8Array). */
@@ -53,6 +57,8 @@ export async function buildDocx(p: FixtureParts): Promise<Uint8Array> {
   part("header1.xml", "wordprocessingml.header+xml", p.header, "header");
   part("footer1.xml", "wordprocessingml.footer+xml", p.footer, "footer");
   part("theme/theme1.xml", "theme+xml", p.theme, "theme");
+  part("settings.xml", "wordprocessingml.settings+xml", p.settings, "settings");
+  for (const [name, xml] of Object.entries(p.extraParts ?? {})) zip.file(`word/${name}`, DECL + xml);
   for (const [id, type, target, external] of p.rels ?? [])
     rels.push(`<Relationship Id="${id}" Type="${RELNS}/${type}" Target="${target}"${external ? ' TargetMode="External"' : ""}/>`);
   for (const [name, b64] of Object.entries(p.media ?? {})) zip.file(`word/media/${name}`, b64, { base64: true });

@@ -25,15 +25,18 @@ interface RulerProps {
    *  inner edges drag to set the margins. */
   paragraph?: ParagraphIndents | null;
   onParagraphChange?: (next: ParagraphIndents) => void;
+  /** Page width in inches (the section's; Letter by default). */
+  pageInches?: number;
 }
 
 // US Letter content width at the editor's max width. The ruler maps inches to
 // pixels across the page; markers drag to set page margins.
-const PAGE_INCHES = 8.5;
+const LETTER_INCHES = 8.5;
 
 /** Ruler renders a Google-Docs-style horizontal ruler with inch ticks and
  *  draggable first-line, left-indent, and right-indent markers. */
-export function Ruler({ indents, onChange, paragraph, onParagraphChange }: RulerProps) {
+export function Ruler({ indents, onChange, paragraph, onParagraphChange, pageInches }: RulerProps) {
+  const PAGE_INCHES = pageInches && pageInches > 1 ? pageInches : LETTER_INCHES;
   const trackRef = useRef<HTMLDivElement>(null);
   const para = paragraph && onParagraphChange ? paragraph : null;
 
@@ -156,7 +159,7 @@ export function Ruler({ indents, onChange, paragraph, onParagraphChange }: Ruler
         sx={{
           position: "relative",
           width: "100%",
-          maxWidth: 816,
+          maxWidth: PAGE_INCHES * 96,
           height: 22,
           bgcolor: "background.level1",
           borderRadius: "4px",

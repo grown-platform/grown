@@ -2,6 +2,7 @@
 import type { JSONContent } from "@tiptap/core";
 import type { AbstractNum, NumInstance } from "../numbering";
 import type { StyleDef } from "../styles";
+import type { DocSettings, SectionProps } from "../sections";
 
 /** A comment thread entry, as read from comments.xml or written to it. */
 export interface DocxComment {
@@ -38,6 +39,12 @@ export interface DocxImport {
   /** TipTap JSON for the header / footer fragments (margin schema). */
   header: JSONContent | null;
   footer: JSONContent | null;
+  /** Every header/footer fragment by name (sections.ts hfFragment names;
+   *  "header" / "footer" are the first section's defaults). */
+  margins?: Record<string, JSONContent>;
+  /** The final section's setup and the document settings (M9). */
+  section?: SectionProps;
+  settings?: Partial<DocSettings>;
   comments: DocxComment[];
   page: PageSetup | null;
   /** Things the reader dropped because Grown has no model for them yet. */

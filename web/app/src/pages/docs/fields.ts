@@ -283,6 +283,8 @@ export const STYLE_ERROR = "Error! No text of specified style in document.";
 export interface PageResolver {
   pageAt(pos: number): number;
   pageCount(): number;
+  /** Pages in the section holding `pos` (M9); defaults to pageCount. */
+  sectionPageCount?(pos: number): number;
 }
 
 /** explicitPages counts pages from explicit breaks (page-break nodes and
@@ -464,8 +466,10 @@ export function computeFieldResults(env: FieldEnv): Map<number, string> {
         out.set(f.pos, formatFieldNumber(env.pages.pageAt(f.pos), instr.formats));
         break;
       case "NUMPAGES":
-      case "SECTIONPAGES":
         out.set(f.pos, formatFieldNumber(env.pages.pageCount(), instr.formats));
+        break;
+      case "SECTIONPAGES":
+        out.set(f.pos, formatFieldNumber(env.pages.sectionPageCount?.(f.pos) ?? env.pages.pageCount(), instr.formats));
         break;
       case "DATE":
       case "TIME": {

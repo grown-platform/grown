@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { Editor } from "@tiptap/core";
 import { SYMBOLS } from "../../shortcuts";
 import { insertTableOfContents } from "../../references";
+import { layoutOf, pagedEditor } from "../pagination-harness";
 import {
   blockPaths,
   makeEditor,
@@ -76,8 +77,25 @@ describe("OnlyOffice shortcuts: breaks and characters", () => {
     expect(paragraphTexts(e)).toHaveLength(1);
   });
 
-  it.skip("oo:word/shortcuts/shortcuts.js#Check column break shortcut", () => {
-    // TODO(M9): needs section columns and a column-break node.
+  it("oo:word/shortcuts/shortcuts.js#Check column break shortcut", () => {
+    // Three columns; Ctrl+Shift+Enter splits the paragraph with a column
+    // break node (Grown's breaks are blocks, OnlyOffice's are runs), so the
+    // text "paragraph" spans one more column each time, on one page.
+    const e = pagedEditor("<p>Hello</p>", { section: { cols: { num: 3, space: 36, sep: false, equal: true } } });
+    const columns = () => {
+      const l = layoutOf(e);
+      const out: number[] = [];
+      e.state.doc.forEach((n, _p, i) => {
+        if (n.type.name === "paragraph") out.push(...l.blocks[i].map((p) => p.col));
+      });
+      expect(l.pages).toHaveLength(1);
+      return out;
+    };
+    expect(columns()).toEqual([0]);
+    expect(pressKey(e, "Mod-Shift-Enter")).toBe(true);
+    expect(columns()).toEqual([0, 1]);
+    expect(pressKey(e, "Mod-Shift-Enter")).toBe(true);
+    expect(columns()).toEqual([0, 1, 2]);
   });
 
   it("oo:word/shortcuts/shortcuts.js#Check reset char shortcut", () => {
@@ -387,7 +405,9 @@ describe("OnlyOffice shortcuts: later milestones", () => {
     // TODO(M7): arrow-key nudging, Tab between objects, Enter into a shape.
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check actions with headers/footers", () => {
-    // TODO(M9): per-page headers/footers and moving between them.
+    // TODO(M13): per-page headers/footers exist since M9 (double-click one
+    // to edit it); OnlyOffice's previous/next header-footer hotkeys are not
+    // bound yet.
   });
   it.skip("oo:word/shortcuts/shortcuts.js#Check reset actions shortcut", () => {
     // TODO(M7): Escape cancels shape insertion / sticky format painter.
