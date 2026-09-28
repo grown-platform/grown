@@ -134,8 +134,12 @@ const EXTERNAL_URL_EXAMPLES: Record<string, string> = {
   sheets: "https://sheets.yourdomain.com",
   assemble: "https://assemble.yourdomain.com",
 };
-function externalUrlExample(appId: string): string {
-  return EXTERNAL_URL_EXAMPLES[appId] ?? "https://app.yourdomain.com";
+function externalUrlExample(app: AppTile): string {
+  return (
+    app.urlPlaceholder ??
+    EXTERNAL_URL_EXAMPLES[app.id] ??
+    "https://app.yourdomain.com"
+  );
 }
 
 // Left-nav sections, modeled on the Google Admin console. Each section maps to a
@@ -598,6 +602,16 @@ function AppsSection() {
                   <Typography level="body-xs" sx={{ opacity: 0.7 }} noWrap>
                     {a.blurb}
                   </Typography>
+                  {a.requiresExternalUrl && !savedUrl && (
+                    <Typography
+                      level="body-xs"
+                      color="warning"
+                      data-testid={`admin-service-needs-url-${a.id}`}
+                    >
+                      Not set up: add your instance&rsquo;s URL to show this
+                      app on the dashboard.
+                    </Typography>
+                  )}
                   {/* External URL override field */}
                   <Box
                     sx={{
@@ -617,7 +631,7 @@ function AppsSection() {
                       level="body-xs"
                       sx={{ opacity: 0.7, whiteSpace: "nowrap" }}
                     >
-                      use external service instead
+                      {a.urlFieldLabel ?? "use external service instead"}
                     </Typography>
                     <Input
                       size="sm"
@@ -628,7 +642,7 @@ function AppsSection() {
                           [a.id]: e.target.value,
                         }))
                       }
-                      placeholder={externalUrlExample(a.id)}
+                      placeholder={externalUrlExample(a)}
                       type="url"
                       disabled={busy}
                       sx={{

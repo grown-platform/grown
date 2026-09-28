@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Sheet,
@@ -25,7 +25,11 @@ import {
   activateAccount,
   removeAccount,
 } from "../api/client";
-import { apps } from "../catalog/apps";
+import { apps, type AppTile } from "../catalog/apps";
+import {
+  applyServiceSettings,
+  useServiceSettings,
+} from "../catalog/serviceSettings";
 import { NotificationBell } from "./NotificationBell";
 import { SecurityDialog } from "./SecurityDialog";
 import { SearchOverlay } from "./SearchOverlay";
@@ -41,6 +45,18 @@ interface HeaderProps {
 export function Header({ user }: HeaderProps) {
   const brand = useBrand();
   const location = useLocation();
+  // The launchers (hamburger + 9-dot) list every catalog app, with the org's
+  // external-URL overrides applied and bring-your-own tiles (Home Assistant)
+  // dropped until they have a URL. Disabled services are intentionally still
+  // listed here (unchanged launcher behavior); the dashboard hides them.
+  const serviceSettings = useServiceSettings(!!user);
+  const launcherApps = useMemo(
+    () =>
+      applyServiceSettings(apps, serviceSettings ?? null, {
+        hideDisabled: false,
+      }),
+    [serviceSettings],
+  );
   const navigate = useNavigate();
   const [securityOpen, setSecurityOpen] = useState(false);
   const [org, setOrg] = useState<Org | null>(null);
@@ -149,7 +165,7 @@ export function Header({ user }: HeaderProps) {
       }}
     >
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-        {user && <ServicesMenu currentId={current?.id} />}
+        {user && <ServicesMenu currentId={current?.id} items={launcherApps} />}
         {current ? (
           <RouterLink
             to={`/${current.id}`}
@@ -225,7 +241,7 @@ export function Header({ user }: HeaderProps) {
       {user && (
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <NotificationBell />
-          <AppsSwitcher />
+          <AppsSwitcher items={launcherApps} />
           <Dropdown
             onOpenChange={(_, isOpen) => {
               if (isOpen) onMenuOpen();
@@ -473,7 +489,13 @@ function ThemeModeItem() {
  *  pinned at the top — so users can switch apps from the left as well as via
  *  the right-side 9-dot AppsSwitcher. `currentId` marks the active row.
  *  External apps open in a new tab; coming-soon apps route to their teaser. */
-function ServicesMenu({ currentId }: { currentId?: string }) {
+function ServicesMenu({
+  currentId,
+  items,
+}: {
+  currentId?: string;
+  items: AppTile[];
+}) {
   const brand = useBrand();
   return (
     <Dropdown>
@@ -506,7 +528,7 @@ function ServicesMenu({ currentId }: { currentId?: string }) {
           Workspace
         </MenuItem>
         <Divider />
-        {apps.map((app) => (
+        {items.map((app) => (
           <ServiceMenuItem
             key={app.id}
             app={app}
@@ -560,7 +582,7 @@ function ServiceMenuItem({
 
 /** AppsSwitcher renders the 9-dot grid icon. On click, opens a popover with
  *  a mini grid of every app from the catalog, each linking to its route. */
-function AppsSwitcher() {
+function AppsSwitcher({ items }: { items: AppTile[] }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
 
@@ -613,7 +635,7 @@ function AppsSwitcher() {
           }}
         >
           <WorkspaceTile onNavigate={close} />
-          {apps.map((app) => (
+          {items.map((app) => (
             <MiniTile key={app.id} app={app} onNavigate={close} />
           ))}
         </Box>

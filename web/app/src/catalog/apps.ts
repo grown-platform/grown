@@ -26,6 +26,17 @@ export interface AppTile {
   /** If set, the tile links out to this URL in a new tab (e.g. an external
    *  git service) instead of an internal route. */
   externalUrl?: string;
+  /** Bring-your-own app with no built-in grown route (e.g. Home Assistant):
+   *  the tile only exists once a URL is configured, either the org's own
+   *  Admin > Services external URL or a deployment default reported by the
+   *  service-settings API. Unconfigured, it is hidden from the dashboard and
+   *  app launchers and only shows up in Admin > Services, where it's set up. */
+  requiresExternalUrl?: boolean;
+  /** Admin > Services label for the URL field (defaults to "use external
+   *  service instead", which suits overrides of built-in apps). */
+  urlFieldLabel?: string;
+  /** Admin > Services placeholder for the URL field. */
+  urlPlaceholder?: string;
   /** Optional richer "what it will do" bullets shown on the coming-soon page. */
   details?: string[];
   /** Optional small sub-label under the name (rendered like "(coming soon)"),
@@ -285,6 +296,21 @@ export const apps: AppTile[] = [
     comingSoon: false,
     iconName: "Cottage",
     externalUrl: SPACELIGHT_URL,
+  },
+  {
+    // Bring-your-own Home Assistant: each org points this tile at its own
+    // instance in Admin > Services (or the Helm chart's homeAssistant component
+    // supplies a deployment default). Hidden until a URL is configured.
+    id: "homeassistant",
+    name: "Home Assistant",
+    blurb: "Smart home dashboards & automations.",
+    accentColor: "#18BCF2",
+    phase: 4,
+    comingSoon: false,
+    iconName: "SensorsRounded",
+    requiresExternalUrl: true,
+    urlFieldLabel: "Home Assistant URL",
+    urlPlaceholder: "https://homeassistant.yourdomain.com",
   },
   {
     id: "projects",
