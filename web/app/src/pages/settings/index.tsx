@@ -19,6 +19,7 @@ import type { User } from "../../api/types";
 import { AvatarUploader } from "./AvatarUploader";
 import { ProfileSection } from "./ProfileSection";
 import { ApiTokensSection } from "./ApiTokensSection";
+import { HomeAssistantSection } from "./HomeAssistantSection";
 import { getPreferences, updatePreferences } from "./api";
 import type { UserPreferences } from "./api";
 
@@ -171,6 +172,9 @@ export default function SettingsPage({ user }: SettingsPageProps) {
 
         {/* ── API tokens ─────────────────────────── */}
         <ApiTokensSection />
+
+        {/* ── Home Assistant (personal-org admins; team orgs use Admin) ── */}
+        <HomeAssistantSection />
 
         {loading && (
           <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>

@@ -10,12 +10,14 @@ reimplement HA; it's a **bring-your-own** app, configured **per org**.
    a container on a NAS, Nabu Casa remote URL, ...).
 2. In Grown, an org admin opens **Admin > Services > Home Assistant**, enters
    the URL (e.g. `https://ha.example.com` or `http://homeassistant.local:8123`)
-   and clicks **Save URL**.
+   and clicks **Save URL**. In a personal (single-user) org, which has no
+   Admin app, the same field is under **Settings > Home Assistant**.
 3. The **Home Assistant** tile appears on the dashboard and in the header app
    launchers (hamburger + 9-dot), linking to that URL.
 
 Until a URL is configured the tile is **hidden** everywhere except
-Admin > Services, where it shows "Not set up". The on/off switch there hides
+Admin > Services (where it shows "Not set up") and, for personal orgs,
+Settings. The on/off switch there hides
 it again without losing the URL. Only `http(s)` URLs are accepted.
 
 How it works: the URL is the org's `external_url` for service id

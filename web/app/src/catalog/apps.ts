@@ -30,7 +30,8 @@ export interface AppTile {
    *  the tile only exists once a URL is configured, either the org's own
    *  Admin > Services external URL or a deployment default reported by the
    *  service-settings API. Unconfigured, it is hidden from the dashboard and
-   *  app launchers and only shows up in Admin > Services, where it's set up. */
+   *  app launchers; it's set up in Admin > Services (team orgs) or Settings
+   *  (personal orgs, which have no Admin app). */
   requiresExternalUrl?: boolean;
   /** Admin > Services label for the URL field (defaults to "use external
    *  service instead", which suits overrides of built-in apps). */
