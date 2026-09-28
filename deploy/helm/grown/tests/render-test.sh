@@ -251,6 +251,9 @@ has "$sts" "secretKeyRef: \\{ name: $REL-homeassistant-owner, key: password \\}"
 has "$sts" 'runAsUser: 65534' "sidecar runs as nobody"
 has "$sts" 'readOnlyRootFilesystem: true' "sidecar read-only rootfs"
 has "$sts" 'checksum/seed: [0-9a-f]{64}' "pod rolls when scripts change"
+has "$sts" 'value: "10\.0\.0\.0/8,172\.16\.0\.0/12,192\.168\.0\.0/16,fd00::/8"' "sidecar gets trustedProxies (HTTP_TRUSTED_PROXIES)"
+has "$sts" 'name: HTTP_USE_X_FRAME_OPTIONS' "sidecar gets the frame option"
+has "$(grep -A1 'name: HTTP_MANAGE' <<<"$sts")" 'value: "true"' "sidecar manages HA's http config by default"
 side=$(sed -n '/- name: onboard$/,/limits:/p' <<<"$sts")
 hasnt "$side" 'mountPath: /config' "sidecar has no access to /config"
 out=$(render --set homeAssistant.owner.existingSecret=my-ha-owner) || out=""
@@ -275,6 +278,8 @@ has "$sts" 'value: "http://g\.example/grown\.zip"' "grownIntegration.url overrid
 has "$sts" 'value: "30"' "fetchTimeoutSeconds override"
 out=$(render --set homeAssistant.grownIntegration.enabled=false) || out=""
 hasnt "$(doc StatefulSet "$REL-homeassistant" <<<"$out")" 'grown-integration' "grownIntegration.enabled=false: no fetch"
+out=$(render --set homeAssistant.http.manage=false) || out=""
+has "$(grep -A1 'name: HTTP_MANAGE' <<<"$(doc StatefulSet "$REL-homeassistant" <<<"$out")")" 'value: "false"' "http.manage=false reaches the sidecar"
 out=$(render --set homeAssistant.http.useXFrameOptions=true) || out=""
 hasnt "$(cmkey configuration.yaml <<<"$(doc ConfigMap "$REL-homeassistant-seed" <<<"$out")")" 'use_x_frame_options' "useXFrameOptions=true keeps HA's framing protection"
 
@@ -299,6 +304,46 @@ if command -v python3 >/dev/null; then
   for f in onboard.py fetch_integration.py; do
     python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$CHART/files/homeassistant/$f" && ok || bad "$f parses"
   done
+  # HA 2026.9 http config trial: what the sidecar does for each state.
+  (cd "$CHART/files/homeassistant" && HTTP_TRUSTED_PROXIES="10.0.0.0/8, 172.16.0.0/12" HTTP_USE_X_FRAME_OPTIONS=false \
+    python3 -B - <<'PY'
+import sys
+from onboard import desired_http_config, plan_http
+d = desired_http_config()
+assert d == {"use_x_forwarded_for": True, "trusted_proxies": ["10.0.0.0/8", "172.16.0.0/12"],
+             "use_x_frame_options": False}, d
+default = {"server_port": 8123, "use_x_frame_options": True, "ip_ban_enabled": True,
+           "created_at": "t", "error": None, "error_message": None}
+good = {**default, "use_x_forwarded_for": True, "trusted_proxies": ["172.16.0.0/12", "10.0.0.0/8"],
+        "use_x_frame_options": False}
+cases = [
+    # first boot: migrated YAML running as a pending trial -> promote
+    ({"stable": default, "pending": good, "active_config_type": "pending"}, "promote"),
+    # already promoted (order of proxies irrelevant) -> nothing
+    ({"stable": good, "pending": None, "active_config_type": "stable"}, "ok"),
+    # trial timed out and reverted -> configure again (clears the error, restarts)
+    ({"stable": default, "pending": {**good, "error": "not_promoted"}, "active_config_type": "stable"}, "configure"),
+    # nothing stored for us at all (migration done, YAML ignored) -> configure
+    ({"stable": default, "pending": None, "active_config_type": "stable"}, "configure"),
+    # configure sent, restart not happened yet -> wait (don't promote untried)
+    ({"stable": default, "pending": good, "active_config_type": "stable"}, "wait"),
+    # our config failed to apply -> stop, no restart loop
+    ({"stable": default, "pending": {**good, "error": "apply_failed"}, "active_config_type": "stable"}, "stuck"),
+    # someone else's pending config -> replace with ours
+    ({"stable": default, "pending": {**default, "use_x_forwarded_for": True, "trusted_proxies": ["1.2.3.4/32"]},
+      "active_config_type": "pending"}, "configure"),
+]
+for state, want in cases:
+    got, conf = plan_http(state, d)
+    assert got == want, (state, got, want)
+    if got == "configure":
+        assert conf["use_x_forwarded_for"] and conf["use_x_frame_options"] is False
+        assert "created_at" not in conf and "error" not in conf and conf["server_port"] == 8123
+print("ok")
+PY
+  ) >/dev/null && ok || bad "http config trial decisions (plan_http)"
+  HTTP_MANAGE=false HTTP_TRUSTED_PROXIES=10.0.0.0/8 python3 -B -c 'import sys; sys.path.insert(0, sys.argv[1]); from onboard import desired_http_config as d; assert d() is None' \
+    "$CHART/files/homeassistant" && ok || bad "http.manage=false disables the reconcile"
   # Readiness must fail closed when HA is not answering.
   HA_URL=http://127.0.0.1:9 python3 -B "$CHART/files/homeassistant/onboard.py" --check 2>/dev/null && bad "--check passes with HA down" || ok
   # fetch: unreachable grown -> gives up within the timeout and exits 0.
@@ -336,6 +381,7 @@ printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: notes-preview\ndata:
 notes=$(helm template "$REL" "$tmpc/grown" -n "$NS" --show-only templates/notes-preview.yaml) || bad "render NOTES"
 has "$notes" "get secret $REL-homeassistant-owner -o jsonpath='\\{.data.password\\}' \\| base64 -d" "NOTES: how to read the owner password"
 has "$notes" 'Add integration' "NOTES: how to add the Grown integration"
+has "$notes" 'reverts http: config not confirmed within 5 minutes' "NOTES: explains HA's HTTP config trial"
 notes=$(helm template "$REL" "$tmpc/grown" -n "$NS" --show-only templates/notes-preview.yaml --set homeAssistant.enabled=false) || notes=""
 hasnt "$notes" 'homeassistant-owner' "NOTES: no HA section when disabled"
 rm -rf "$tmpc"

@@ -75,8 +75,10 @@ NEXT STEPS
    Owner login:
      user:  kubectl -n {{ .Release.Namespace }} get secret {{ $secret }} -o jsonpath='{.data.username}' | base64 -d
      pass:  kubectl -n {{ .Release.Namespace }} get secret {{ $secret }} -o jsonpath='{.data.password}' | base64 -d
-   (Changing the password in HA is fine; the Secret is only used to create
-   the owner on a fresh /config.)
+   The sidecar also keeps HA's HTTP (reverse-proxy) settings promoted: HA
+   2026.9+ reverts http: config not confirmed within 5 minutes, which would
+   make HA answer 400 behind the ingress. It logs in with the Secret, so if
+   you change the owner's password in HA, update the Secret too.
 {{- else }}
    homeAssistant.onboarding.enabled=false: open HA and create the owner
    BEFORE exposing it; the first visitor otherwise becomes the owner.

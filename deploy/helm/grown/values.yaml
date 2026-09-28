@@ -163,8 +163,18 @@ homeAssistant:
     - 172.16.0.0/12
     - 192.168.0.0/16
     - fd00::/8
-  # Seeded into configuration.yaml's `http:` on FIRST start only.
+  # HTTP settings. Seeded into configuration.yaml's `http:` on first start,
+  # AND (HA 2026.9+) enforced by the onboard sidecar: HA migrates `http:` YAML
+  # into .storage/http as a 5-minute trial and reverts it unless promoted over
+  # the websocket API, after which the YAML is ignored. The sidecar promotes
+  # it, or re-applies use_x_forwarded_for + trustedProxies + the frame option
+  # below when HA holds anything else.
   http:
+    # true => the sidecar owns HA's reverse-proxy settings (changes made in
+    # HA's UI to them are put back). false => seed the YAML only; you must
+    # promote HA's pending HTTP config yourself within 5 minutes of first
+    # start, or HA answers 400 to proxied requests.
+    manage: true
     # false => seed `use_x_frame_options: false` so Grown's /homeassistant page
     # can show HA in an iframe. Trade-off: any site may then frame HA
     # (clickjacking). true => keep HA's default X-Frame-Options: SAMEORIGIN

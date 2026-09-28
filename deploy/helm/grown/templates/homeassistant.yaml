@@ -18,7 +18,9 @@
 #                                 un-owned HA
 #   side  onboard                 creates the owner from the
 #                                 <release>-homeassistant-owner Secret over
-#                                 localhost and finishes onboarding (idempotent)
+#                                 localhost and finishes onboarding, then keeps
+#                                 HA's HTTP (reverse-proxy) config promoted
+#                                 (idempotent)
 {{- if and $ha.onboarding.enabled (not $ha.owner.existingSecret) }}
 {{- $existing := (lookup "v1" "Secret" .Release.Namespace $ownerSecret) | default dict }}
 {{- $data := (get $existing "data") | default dict }}
@@ -206,6 +208,15 @@ spec:
               value: {{ $ha.owner.language | quote }}
             - name: RECHECK_SECONDS
               value: {{ $ha.onboarding.recheckSeconds | quote }}
+            # HA 2026.9+ puts http: settings on a 5-minute trial and reverts
+            # them unless promoted; the sidecar promotes (or re-applies) the
+            # reverse-proxy settings below over the websocket API.
+            - name: HTTP_MANAGE
+              value: {{ $ha.http.manage | quote }}
+            - name: HTTP_TRUSTED_PROXIES
+              value: {{ join "," $ha.trustedProxies | quote }}
+            - name: HTTP_USE_X_FRAME_OPTIONS
+              value: {{ $ha.http.useXFrameOptions | quote }}
             - { name: PYTHONDONTWRITEBYTECODE, value: "1" }
           securityContext:
             runAsNonRoot: true
