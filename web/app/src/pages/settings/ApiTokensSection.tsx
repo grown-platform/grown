@@ -15,10 +15,18 @@ import {
   FormControl,
   FormLabel,
   Chip,
+  Link,
 } from "@mui/joy";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import KeyIcon from "@mui/icons-material/VpnKey";
+import SensorsRoundedIcon from "@mui/icons-material/SensorsRounded";
+import {
+  HOME_ASSISTANT_DOCS,
+  HOME_ASSISTANT_INTEGRATION_ZIP,
+  HOME_ASSISTANT_SCOPES,
+  homeAssistantTokenRequest,
+} from "./homeAssistantToken";
 
 interface ApiToken {
   id: string;
@@ -41,6 +49,7 @@ const SERVICES = [
   "music",
   "video",
   "tasks",
+  "notifications",
 ];
 
 const BASE = "/api/v1/me/tokens";
@@ -62,6 +71,8 @@ export function ApiTokensSection() {
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [haToken, setHaToken] = useState<string | null>(null);
+  const [haBusy, setHaBusy] = useState(false);
 
   const reload = () => jget().then(setTokens).catch(() => {});
   useEffect(() => {
@@ -113,6 +124,30 @@ export function ApiTokensSection() {
     }
   }
 
+  // "Connect Home Assistant" preset: a no-expiry token scoped to exactly what
+  // the HA `grown` integration uses, shown once with setup instructions.
+  async function connectHomeAssistant() {
+    setHaBusy(true);
+    setError(null);
+    setCreated(null);
+    setHaToken(null);
+    try {
+      const r = await fetch(BASE, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(homeAssistantTokenRequest()),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setHaToken(((await r.json()) as { token: string }).token);
+      await reload();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setHaBusy(false);
+    }
+  }
+
   async function revoke(id: string) {
     if (!confirm("Revoke this token? Anything using it will stop working.")) return;
     await fetch(`${BASE}/${id}`, { method: "DELETE", credentials: "same-origin" });
@@ -132,6 +167,72 @@ export function ApiTokensSection() {
         the HTTP API. Send <code>Authorization: Bearer &lt;token&gt;</code>. A
         token is shown once — copy it now.
       </Typography>
+
+      <Button
+        variant="soft"
+        color="primary"
+        startDecorator={<SensorsRoundedIcon />}
+        onClick={connectHomeAssistant}
+        loading={haBusy}
+        data-testid="connect-homeassistant"
+        sx={{ mb: 2 }}
+      >
+        Connect Home Assistant
+      </Button>
+
+      {haToken && (
+        <Sheet
+          color="primary"
+          variant="soft"
+          data-testid="homeassistant-token-panel"
+          sx={{ p: 2, mb: 2, borderRadius: "md" }}
+        >
+          <Typography level="title-sm" sx={{ mb: 1 }}>
+            Home Assistant token created (shown once, copy it now)
+          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.5 }}>
+            <Typography
+              level="body-sm"
+              data-testid="homeassistant-token"
+              sx={{ fontFamily: "monospace", wordBreak: "break-all", flex: 1 }}
+            >
+              {haToken}
+            </Typography>
+            <IconButton size="sm" onClick={() => navigator.clipboard?.writeText(haToken)} title="Copy token">
+              <ContentCopyIcon fontSize="small" />
+            </IconButton>
+          </Box>
+          <Typography level="body-sm" component="div">
+            <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>
+              <li>
+                Install the <b>Grown</b> integration in Home Assistant (
+                <Link href={HOME_ASSISTANT_INTEGRATION_ZIP} download>
+                  download grown.zip
+                </Link>
+                , unzip into <code>config/custom_components/</code>, restart). The
+                Helm chart's Home Assistant already has it.
+              </li>
+              <li>
+                In Home Assistant go to <b>Settings → Devices &amp; services → Add
+                integration</b> and pick <b>Grown</b>.
+              </li>
+              <li>
+                Enter this Grown URL{" "}
+                <code data-testid="homeassistant-grown-url">{window.location.origin}</code>{" "}
+                and the token above.
+              </li>
+            </ol>
+          </Typography>
+          <Typography level="body-xs" sx={{ mt: 1, opacity: 0.75 }}>
+            Scopes: {HOME_ASSISTANT_SCOPES.join(", ")}. Running your own Home
+            Assistant?{" "}
+            <Link href={HOME_ASSISTANT_DOCS} target="_blank" rel="noopener noreferrer">
+              Read the setup guide
+            </Link>
+            .
+          </Typography>
+        </Sheet>
+      )}
 
       {created && (
         <Sheet
