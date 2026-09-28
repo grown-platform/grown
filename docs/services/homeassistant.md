@@ -169,10 +169,17 @@ What the chart adds around HA:
   readiness is gated on that, so the Ingress never routes to an un-owned HA.
   Password: `kubectl -n <ns> get secret <release>-homeassistant-owner -o
   jsonpath='{.data.password}' | base64 -d`.
-- **Seeded config** on first start only (never overwritten):
-  `use_x_forwarded_for` + `trusted_proxies` so HA works behind the ingress,
-  and `use_x_frame_options: false` so Grown can show HA in an iframe. That
-  last one is a clickjacking trade-off (any site may frame HA); set
+- **Reverse-proxy settings that stick:** `use_x_forwarded_for` +
+  `trusted_proxies` so HA works behind the ingress, and
+  `use_x_frame_options: false` so Grown can show HA in an iframe. HA 2026.9+
+  puts `http:` settings on a 5-minute trial after migrating them from
+  `configuration.yaml` into `.storage/http`, and reverts them (then ignores
+  the YAML) unless an admin promotes them; unpromoted, HA answers 400 to
+  every proxied request. The chart seeds the YAML on first start and the
+  `onboard` sidecar, logged in as the owner, promotes it over HA's websocket
+  API, or re-applies and promotes the settings from the chart values when HA
+  holds anything else (including installs that already reverted). The frame
+  option is a clickjacking trade-off (any site may frame HA); set
   `homeAssistant.http.useXFrameOptions: true` to keep HA's
   `X-Frame-Options: SAMEORIGIN`, and Grown then only links out.
 - **The Grown integration pre-installed** (below), downloaded from grown on

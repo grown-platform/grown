@@ -14,6 +14,10 @@ bucket-init hook Job) · **Zitadel** OIDC (Deployment + auto-provisioning Job) �
 Gateway HTTPRoute · **Home Assistant** (StatefulSet, on by default since 0.4.0,
 auto-onboarded, with the Grown integration pre-installed).
 
+> **Chart 0.4.1 fixes Home Assistant answering 400 behind the ingress** five
+> minutes after its first start (HA 2026.9's HTTP config trial); see
+> [Upgrading from 0.4.0](#upgrading-from-040-to-041-ha-http-config-fix).
+>
 > **Chart 0.4.0 adds Home Assistant to the default install.** Upgrading from
 > 0.3.x? See [Upgrading from 0.3.x](#upgrading-from-03x-to-040-home-assistant).
 >
@@ -123,7 +127,8 @@ helm install grown deploy/helm/grown -n grown --create-namespace \
 | `homeAssistant.owner.existingSecret` | `""` => generated `<release>-homeassistant-owner` | HA owner `username`/`password` the chart onboards HA with |
 | `homeAssistant.onboarding.enabled` | `true` | onboard HA automatically (no open "create owner" page) |
 | `homeAssistant.grownIntegration.enabled` | `true` | install the Grown HA integration from grown on every HA start |
-| `homeAssistant.http.useXFrameOptions` | `false` | `false` seeds `use_x_frame_options: false` so Grown can iframe HA |
+| `homeAssistant.http.useXFrameOptions` | `false` | `false` => `use_x_frame_options: false` so Grown can iframe HA |
+| `homeAssistant.http.manage` | `true` | the onboard sidecar keeps HA's reverse-proxy HTTP config promoted (HA 2026.9 trial) |
 | `grown.libreoffice.enabled` | `false` | legacy .doc/.xls/.ppt import via LibreOffice headless; needs an image with LibreOffice (below) |
 | `persistence` sizes / `*.resources` | see values | per-component sizing |
 
@@ -185,7 +190,7 @@ The pod:
 | `seed-config` | init | copy `configuration.yaml` & co. into `/config` **only if missing** |
 | `grown-integration` | init | install `grown.zip` from the grown Service into `/config/custom_components/grown` (every start) |
 | `homeassistant` | main | HA; **Ready only once onboarding's owner step is done** |
-| `onboard` | sidecar | create the owner over localhost and finish onboarding (idempotent) |
+| `onboard` | sidecar | create the owner over localhost, finish onboarding, keep HA's HTTP (reverse-proxy) config promoted (idempotent) |
 
 #### No open onboarding window
 
@@ -222,10 +227,47 @@ Read the password:
 kubectl -n <ns> get secret <release>-homeassistant-owner -o jsonpath='{.data.password}' | base64 -d
 ```
 
-Changing the password in HA afterwards is fine: the Secret is only used to
-create the owner on a fresh `/config`, or to finish a half-done onboarding.
-Set `homeAssistant.onboarding.enabled: false` only if you onboard HA yourself
-**before** exposing it.
+The sidecar keeps using these credentials after onboarding (to manage HA's
+HTTP config, below), so if you change the owner's password in HA, put the new
+one in the Secret too (`kubectl edit secret`, then restart the pod);
+otherwise the sidecar logs "owner login failed" and stops managing the HTTP
+config. Set `homeAssistant.onboarding.enabled: false` only if you onboard HA
+yourself **before** exposing it (and then handle the HTTP config trial below
+yourself too).
+
+#### HA's HTTP config trial (why the sidecar keeps running)
+
+Since 2026.9, Home Assistant no longer applies `configuration.yaml`'s `http:`
+block directly. On the first start it **migrates** it into `.storage/http` as
+a **pending** config on a **5-minute trial**; unless an admin confirms it
+(websocket `http/config/promote`), HA reverts to the **stable** (default)
+config, restarts, and ignores the YAML for good (only a repair issue says
+so). Behind the ingress that means `use_x_forwarded_for` is off and every
+proxied request gets **HTTP 400** ("A request from a reverse proxy was
+received ... not set-up for reverse proxies").
+
+So the chart's seeded YAML only starts the trial; the `onboard` sidecar is
+what guarantees the proxy settings. On every pass it logs in as the owner,
+reads `http/config` over `ws://127.0.0.1:8123/api/websocket`, and compares it
+with the desired settings (`use_x_forwarded_for: true`,
+`trusted_proxies: homeAssistant.trustedProxies`,
+`use_x_frame_options: homeAssistant.http.useXFrameOptions`):
+
+| HA's state | Sidecar |
+|---|---|
+| stable matches | nothing |
+| pending matches and is running (first boot) | `http/config/promote` (seconds after start) |
+| anything else, e.g. reverted to default, or changed in HA's UI | `http/config/configure` with stable + the desired settings (HA restarts into it), then promotes on the next pass |
+| our pending config failed to apply (`apply_failed`) | logs it, does nothing (no restart loop) |
+
+Configuring (= restarting HA) happens at most once per 10 minutes. This also
+**repairs installs that already reverted** (e.g. chart 0.4.0 before this fix):
+the first pass after upgrading to 0.4.1 re-applies and promotes the settings.
+Because the sidecar owns these three settings, change them through the chart
+values (`homeAssistant.trustedProxies`, `homeAssistant.http.useXFrameOptions`),
+not in HA's UI or YAML; everything else in HA's HTTP config (port, SSL, CORS,
+IP bans) is left as HA has it. `homeAssistant.http.manage: false` turns this
+off (then promote within 5 minutes yourself, in HA's HTTP settings).
 
 #### The Grown integration
 
@@ -247,15 +289,16 @@ API tokens > "Connect Home Assistant"**. Entities: see
   (`default_config:`, `http.use_x_forwarded_for: true` + `trusted_proxies`,
   `http.use_x_frame_options: false`, and the `automations/scripts/scenes`
   includes). Each file is copied only if missing, so the chart **never
-  overwrites** your config; changing `trustedProxies` (or the frame option)
-  later means editing `/config/configuration.yaml`. HA answers 400 to
-  proxied requests from an IP outside `trusted_proxies`.
+  overwrites** your config. The `http:` part only seeds HA's first-boot
+  migration; the sidecar then enforces `trustedProxies` and the frame option
+  from the chart values (see the HTTP config trial above), so change those in
+  values. HA answers 400 to proxied requests from an IP outside
+  `trusted_proxies`.
 - **Embedding trade-off:** `use_x_frame_options: false` lets Grown's
   `/homeassistant` page show HA in an iframe, but it also lets **any** site
   frame your HA (clickjacking: a hostile page overlays HA's UI and tricks a
   logged-in user into clicking). Set `homeAssistant.http.useXFrameOptions:
-  true` before the first start (or set `use_x_frame_options: true` / remove
-  the line in `configuration.yaml` and restart HA) to restore HA's default
+  true` (any time; the sidecar applies it) to restore HA's default
   `X-Frame-Options: SAMEORIGIN`; Grown then only links out to HA.
 
 #### Security and limits
@@ -304,6 +347,15 @@ can't. To get real login working you have two options:
 `/healthz` and the whole app stand up regardless; only the login redirect needs
 the issuer to be browser-reachable.
 
+## Upgrading from 0.4.0 to 0.4.1 (HA HTTP config fix)
+
+0.4.0's Home Assistant answered **400** behind the ingress five minutes after
+its first start: HA 2026.9 reverted the seeded `http:` settings because
+nothing promoted them. 0.4.1's `onboard` sidecar promotes them, and on an
+already-reverted install it re-applies them (HA restarts once) and promotes.
+Just upgrade; the owner Secret it needs is already there. If you changed the
+owner's password in HA, put it in `<release>-homeassistant-owner` first.
+
 ## Upgrading from 0.3.x to 0.4.0 (Home Assistant)
 
 0.4.0 turns `homeAssistant.enabled` on by default, so a plain `helm upgrade`
@@ -319,9 +371,11 @@ HA is onboarded automatically; see NOTES for the owner password.
 - **Already ran it with `homeAssistant.enabled: true` on 0.3.x?** Your
   `/config` PVC is reused. If you already onboarded HA, the sidecar sees
   that and does nothing (the generated owner Secret is then unused). Your
-  existing `configuration.yaml` is **not** changed, so Grown's HA page can't
-  embed HA until you add `use_x_frame_options: false` under `http:`
-  yourself (see the trade-off above).
+  existing `configuration.yaml` is **not** changed; from 0.4.1 the sidecar
+  applies the proxy and frame settings from values through HA's HTTP config
+  API instead (it needs the owner's credentials in the owner Secret: put
+  your existing owner's username/password there, or use
+  `homeAssistant.owner.existingSecret`).
 - Make sure DNS/TLS cover `ha.<domain>` (or set `homeAssistant.host`), and
   that the node pool has ~400 MiB of memory to spare.
 - The integration download needs grown 0.4+ (`/integrations/homeassistant/grown.zip`);
