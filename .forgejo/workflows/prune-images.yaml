@@ -1,0 +1,25 @@
+name: Prune images
+# Daily retention for code.pick.haus/grown/grown so the registry can't fill the
+# Forgejo volume again. Policy and details: scripts/prune-images.sh.
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+jobs:
+  prune:
+    runs-on: docker
+    container:
+      image: alpine:3.20
+    steps:
+      - name: Tools
+        run: apk add --no-cache curl jq git
+      - name: Checkout
+        run: |
+          git config --global --add safe.directory '*'
+          host="${GITHUB_SERVER_URL#*://}"; scheme="${GITHUB_SERVER_URL%%://*}"
+          git clone --depth 1 "${scheme}://token:${{ github.token }}@${host}/${GITHUB_REPOSITORY}.git" src
+      - name: Prune
+        env:
+          # Same org credentials publish.yaml pushes with (write:package).
+          TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: sh src/scripts/prune-images.sh
