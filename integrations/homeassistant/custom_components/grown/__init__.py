@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
-from .api import GrownAuthError, GrownClient, GrownError, GrownNotFoundError
+from .api import GrownAuthError, GrownClient, GrownError
 from .coordinator import GrownConfigEntry, GrownCoordinator, GrownRuntimeData
 
 PLATFORMS: list[Platform] = [
@@ -34,11 +34,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrownConfigEntry) -> boo
     session = async_create_clientsession(hass, cookie_jar=aiohttp.DummyCookieJar())
     client = GrownClient(session, entry.data[CONF_URL], entry.data[CONF_TOKEN])
     try:
-        account = await client.async_get_account()
-    except GrownNotFoundError:
-        # Grown older than the Home Assistant endpoints: everything but the
-        # identity lookup (and notify) still works.
-        account = None
+        # None on Grown older than 0.4 (no info/push endpoints): everything but
+        # the identity lookup and notify still works.
+        account = await client.async_get_account_or_none()
     except GrownAuthError as err:
         raise ConfigEntryAuthFailed(f"Grown rejected the API token: {err}") from err
     except GrownError as err:

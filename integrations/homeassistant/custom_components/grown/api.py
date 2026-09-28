@@ -37,6 +37,10 @@ class GrownConnectionError(GrownError):
 class GrownAuthError(GrownError):
     """The token was rejected (HTTP 401) or lacks a scope (HTTP 403)."""
 
+    def __init__(self, message: str, status: int = 401) -> None:
+        super().__init__(message)
+        self.status = status
+
 
 class GrownNotFoundError(GrownError):
     """The endpoint or object does not exist (HTTP 404)."""
@@ -146,7 +150,7 @@ class GrownClient:
                 if resp.status >= 300:
                     detail = _error_detail(body)
                     if resp.status in (401, 403):
-                        raise GrownAuthError(f"HTTP {resp.status}: {detail}")
+                        raise GrownAuthError(f"HTTP {resp.status}: {detail}", resp.status)
                     if resp.status == 404:
                         raise GrownNotFoundError(f"{method} {path}: not found")
                     if resp.status == 429:
@@ -172,6 +176,24 @@ class GrownClient:
         if not account.user_id:
             raise GrownApiError(200, "info response has no user_id")
         return account
+
+    async def async_get_account_or_none(self) -> GrownAccount | None:
+        """The token's account, or None on a Grown without the info endpoint.
+
+        Grown 0.4+ answers info for any valid token (401 for a bad one). Older
+        servers 404 it, or 403 it because scope checks run before routing and
+        no token scope covers "integrations"; for those, prove the token on
+        unread-count instead (raising GrownAuthError if that fails too).
+        """
+        try:
+            return await self.async_get_account()
+        except GrownNotFoundError:
+            pass
+        except GrownAuthError as err:
+            if err.status != 403:
+                raise
+        await self.async_unread_count()
+        return None
 
     # ----- notifications --------------------------------------------------
 

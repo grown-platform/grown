@@ -61,6 +61,9 @@ async def test_user_flow_errors_then_recovers(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_kwargs: dict, error: str
 ) -> None:
     aioclient_mock.get(f"{API}/integrations/homeassistant/info", **mock_kwargs)
+    # A 403 from info falls back to unread-count (pre-0.4 Grown); make that
+    # fail the same way.
+    aioclient_mock.get(f"{API}/notifications/unread-count", **mock_kwargs)
     result = await _start(hass)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_URL: URL, CONF_TOKEN: TOKEN}
@@ -84,11 +87,13 @@ async def test_user_flow_invalid_url(hass: HomeAssistant) -> None:
     assert result["errors"] == {CONF_URL: "invalid_url"}
 
 
+@pytest.mark.parametrize("info_status", [404, 403])
 async def test_user_flow_legacy_grown_without_info(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, info_status: int
 ) -> None:
-    """Pre-0.4 Grown (no info endpoint): validate via unread-count, key by URL."""
-    aioclient_mock.get(f"{API}/integrations/homeassistant/info", status=404)
+    """Pre-0.4 Grown: info is 404, or 403 (scope check before routing).
+    Validate via unread-count and key the entry by URL."""
+    aioclient_mock.get(f"{API}/integrations/homeassistant/info", status=info_status)
     aioclient_mock.get(f"{API}/notifications/unread-count", json={"count": "0"})
     result = await _start(hass)
     result = await hass.config_entries.flow.async_configure(

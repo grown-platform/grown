@@ -25,7 +25,6 @@ from .api import (
     GrownClient,
     GrownConnectionError,
     GrownError,
-    GrownNotFoundError,
     normalize_url,
 )
 from .const import DOMAIN
@@ -80,13 +79,11 @@ class GrownConfigFlow(ConfigFlow, domain=DOMAIN):
             return None
         client = GrownClient(_flow_session(self.hass), url, token)
         try:
-            try:
-                account = await client.async_get_account()
-            except GrownNotFoundError:
-                # Pre-0.4 Grown without the Home Assistant endpoints: prove the
-                # token works on an endpoint the recommended scopes cover, and
-                # key the entry by server URL instead of the Grown user.
-                await client.async_unread_count()
+            account = await client.async_get_account_or_none()
+            if account is None:
+                # Pre-0.4 Grown without the Home Assistant endpoints (the token
+                # was proven on unread-count): key the entry by server URL
+                # instead of the Grown user.
                 host = urlsplit(url).netloc
                 return _ValidationResult(url, f"Grown ({host})", f"url:{url}")
         except GrownAuthError:

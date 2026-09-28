@@ -237,6 +237,7 @@ async def test_setup_auth_failure_starts_reauth(
     config_entry: MockConfigEntry, status: int,
 ) -> None:
     aioclient_mock.get(f"{API}/integrations/homeassistant/info", status=status)
+    aioclient_mock.get(f"{API}/notifications/unread-count", status=status)
     config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()

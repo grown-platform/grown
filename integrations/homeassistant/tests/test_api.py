@@ -151,3 +151,16 @@ async def test_rate_limit_retry_after(hass: HomeAssistant, aioclient_mock: Aioht
         await client(hass).async_push_notification("t", "m")
     assert info.value.retry_after == 60
     assert "rate limit exceeded" in str(info.value)
+
+
+async def test_account_or_none(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    aioclient_mock.get(f"{API}/integrations/homeassistant/info", status=403)
+    aioclient_mock.get(f"{API}/notifications/unread-count", json={"count": "0"})
+    assert await client(hass).async_get_account_or_none() is None
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API}/integrations/homeassistant/info", status=401)
+    with pytest.raises(GrownAuthError):
+        await client(hass).async_get_account_or_none()
+    # A 401 on info is final: no fallback request.
+    assert len(aioclient_mock.mock_calls) == 1
