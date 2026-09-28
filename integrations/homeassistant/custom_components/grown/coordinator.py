@@ -101,7 +101,12 @@ def format_task_due(value: date | datetime | None) -> str:
 
 
 class GrownCoordinator(DataUpdateCoordinator[GrownData]):
-    """Fetches task lists + tasks, unread count and the upcoming events."""
+    """Fetches task lists + tasks, unread count and the upcoming events.
+
+    Entities refresh with ``async_refresh()`` (not the debounced
+    ``async_request_refresh()``) after every write, so an automation that
+    adds a to-do item and then reads the list sees its own change.
+    """
 
     config_entry: GrownConfigEntry
 

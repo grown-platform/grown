@@ -152,7 +152,7 @@ class GrownCalendarEntity(GrownEntity, CalendarEntity):
             await self.coordinator.client.async_create_event(body)
         except GrownError as err:
             raise HomeAssistantError(f"Could not create the Grown event: {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()
 
     async def async_update_event(
         self,
@@ -200,7 +200,7 @@ class GrownCalendarEntity(GrownEntity, CalendarEntity):
             await client.async_update_event(uid, body)
         except GrownError as err:
             raise HomeAssistantError(f"Could not update the Grown event: {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()
 
     async def async_delete_event(
         self,
@@ -225,4 +225,4 @@ class GrownCalendarEntity(GrownEntity, CalendarEntity):
             )
         except GrownError as err:
             raise HomeAssistantError(f"Could not delete the Grown event: {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()

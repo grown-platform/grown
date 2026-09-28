@@ -114,7 +114,7 @@ class GrownTodoListEntity(GrownEntity, TodoListEntity):
                 await client.async_toggle_task(self._list_id, created["id"])
         except GrownError as err:
             raise HomeAssistantError(f"Could not create the Grown task: {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()
 
     async def async_update_todo_item(self, item: TodoItem) -> None:
         if item.uid is None:
@@ -135,7 +135,7 @@ class GrownTodoListEntity(GrownEntity, TodoListEntity):
                 await client.async_toggle_task(self._list_id, item.uid)
         except GrownError as err:
             raise HomeAssistantError(f"Could not update the Grown task: {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()
 
     async def async_delete_todo_items(self, uids: list[str]) -> None:
         try:
@@ -143,7 +143,7 @@ class GrownTodoListEntity(GrownEntity, TodoListEntity):
                 await self.coordinator.client.async_delete_task(self._list_id, uid)
         except GrownError as err:
             raise HomeAssistantError(f"Could not delete the Grown task: {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()
 
     async def async_move_todo_item(self, uid: str, previous_uid: str | None = None) -> None:
         """Move ``uid`` right after ``previous_uid`` (or to the top)."""
@@ -160,4 +160,4 @@ class GrownTodoListEntity(GrownEntity, TodoListEntity):
             await self.coordinator.client.async_reorder_task(self._list_id, uid, position)
         except GrownError as err:
             raise HomeAssistantError(f"Could not move the Grown task: {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh()
