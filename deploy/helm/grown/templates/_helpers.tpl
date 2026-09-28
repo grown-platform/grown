@@ -177,3 +177,16 @@ http://{{ .Release.Name }}-zitadel.{{ .Release.Namespace }}.svc.cluster.local:80
 {{- define "grown.haURL" -}}
 {{- .Values.homeAssistant.url | default (printf "%s://%s" .Values.scheme (include "grown.haHost" .)) -}}
 {{- end -}}
+
+{{/* Secret holding the HA owner's username/password (onboarding sidecar):
+     homeAssistant.owner.existingSecret, else {release}-homeassistant-owner
+     (generated once, lookup-preserved). */}}
+{{- define "grown.haOwnerSecret" -}}
+{{- .Values.homeAssistant.owner.existingSecret | default (printf "%s-owner" (include "grown.haName" .)) -}}
+{{- end -}}
+
+{{/* In-cluster URL of the grown HA integration bundle (the HA pod fetches it
+     on every start). */}}
+{{- define "grown.haIntegrationURL" -}}
+{{- .Values.homeAssistant.grownIntegration.url | default (printf "http://%s-grown.%s.svc.cluster.local:%v/integrations/homeassistant/grown.zip" .Release.Name .Release.Namespace .Values.grown.service.httpPort) -}}
+{{- end -}}

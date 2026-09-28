@@ -51,6 +51,7 @@ import (
 	"code.pick.haus/grown/grown/internal/games"
 	"code.pick.haus/grown/grown/internal/geoaccess"
 	"code.pick.haus/grown/grown/internal/groups"
+	"code.pick.haus/grown/grown/internal/hacomponent"
 	"code.pick.haus/grown/grown/internal/health"
 	"code.pick.haus/grown/grown/internal/honeypot"
 	"code.pick.haus/grown/grown/internal/integrationinfo"
@@ -1505,6 +1506,7 @@ func New(cfg Config) *Server {
 	// On-demand container desktops (Guacamole Phase 2). Constructed in main.go
 	// (in-cluster kube + guac clients); here we mount the HTTP handler and start
 	// the idle reaper. Disabled/nil ⇒ routes 404, no reaper.
+	haComponent := hacomponent.Embedded()
 	var desktopsHandler *desktops.Handler
 	if cfg.DesktopsService != nil && cfg.DesktopsService.Enabled() {
 		desktopsHandler = desktops.NewHandler(cfg.DesktopsService).
@@ -2283,6 +2285,12 @@ func New(cfg Config) *Server {
 		// submission for projects that opted into a public intake link.
 		if ticketsPublicHTTP != nil && ticketsPublicHTTP.Match(r.URL.Path) {
 			ticketsPublicHTTP.ServeHTTP(w, r)
+			return
+		}
+		// Home Assistant custom integration bundle (public; the chart's HA pod
+		// and bring-your-own HA installs download it). See internal/hacomponent.
+		if r.URL.Path == hacomponent.Path {
+			haComponent.ServeHTTP(w, r)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/healthz" {

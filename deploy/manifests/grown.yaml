@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: zitadel-provision
 ---
 # Source: grown/templates/oidc-secret.yaml
@@ -28,7 +28,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: oidc
   annotations:
     "helm.sh/resource-policy": keep
@@ -48,7 +48,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: postgres
 type: Opaque
 stringData:
@@ -66,7 +66,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: rustfs
   annotations:
     # Survive `helm uninstall` so a reinstall on the retained PVC keeps working.
@@ -90,7 +90,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: s3
 type: Opaque
 stringData:
@@ -112,7 +112,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: zitadel
 type: Opaque
 stringData:
@@ -146,6 +146,428 @@ stringData:
   ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: "Bootstrap SA"
   ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
 ---
+# Source: grown/templates/homeassistant-seed.yaml
+# Home Assistant pod files (see homeassistant.yaml): the first-start config seed
+# (copied into /config only when missing, never overwritten, so editing
+# homeAssistant.trustedProxies later does not touch an existing install) plus
+# the onboarding and integration-fetch scripts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grown-homeassistant-seed
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.4.0
+    app.kubernetes.io/component: homeassistant
+data:
+  configuration.yaml: |
+    # Seeded by the grown Helm chart on first start. The chart never overwrites
+    # this file: edit it freely (or through the HA UI).
+    default_config:
+
+    # HA sits behind the cluster's ingress / gateway, so trust X-Forwarded-For
+    # from these proxies (anything else sending the header is rejected).
+    http:
+      use_x_forwarded_for: true
+      trusted_proxies:
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+        - "fd00::/8"
+      # Let Grown show HA inside its /homeassistant page (an iframe). Trade-off:
+      # without X-Frame-Options any site can frame this HA (clickjacking). Set
+      # this to true (or remove the line) to forbid framing again.
+      use_x_frame_options: false
+
+    automation: !include automations.yaml
+    script: !include scripts.yaml
+    scene: !include scenes.yaml
+  automations.yaml: |
+    []
+  scripts.yaml: ""
+  scenes.yaml: ""
+  seed.sh: |
+    #!/bin/sh
+    # Copy each seed file into $CONFIG_DIR only if it doesn't exist yet.
+    set -eu
+    CONFIG_DIR="${CONFIG_DIR:-/config}"
+    SEED_DIR="${SEED_DIR:-/seed}"
+    mkdir -p "$CONFIG_DIR"
+    for f in configuration.yaml automations.yaml scripts.yaml scenes.yaml; do
+      if [ -e "$CONFIG_DIR/$f" ]; then
+        echo "keep existing $f"
+      else
+        cp "$SEED_DIR/$f" "$CONFIG_DIR/$f"
+        echo "seeded $f"
+      fi
+    done
+  onboard.py: |
+    #!/usr/bin/env python3
+    """Close Home Assistant's first-run onboarding window (grown Helm chart).
+    
+    A fresh Home Assistant serves an onboarding page where the FIRST visitor
+    creates the owner account. On a public install that is a takeover risk, so the
+    chart runs this script as a sidecar in the HA pod, against HA on localhost:
+    
+      1. wait for HA's HTTP server;
+      2. if onboarding's "user" step is open, create the owner from the
+         <release>-homeassistant-owner Secret (POST /api/onboarding/users);
+      3. finish the remaining steps (core_config, analytics, integration) with the
+         owner's token - obtained from the user step's auth code, or by logging in
+         with the Secret's credentials if an earlier run stopped half-way;
+      4. keep re-checking, so a wiped /config/.storage is re-onboarded too.
+    
+    Idempotent: once onboarding is done every pass is a single GET.
+    
+    ``onboard.py --check`` is the HA container's readiness probe: it exits 0 only
+    when the "user" step is done. Until then the pod is NotReady, so the Service
+    (and therefore the Ingress/HTTPRoute) sends it no traffic - nobody outside
+    the pod can reach the onboarding page in the moment before this script
+    creates the owner.
+    
+    Standard library only (runs on the Home Assistant image's python3).
+    
+    Environment:
+      HA_URL            default http://127.0.0.1:8123
+      OWNER_USERNAME    owner login          (required unless --check)
+      OWNER_PASSWORD    owner password       (required unless --check)
+      OWNER_NAME        display name         default "Administrator"
+      OWNER_LANGUAGE    UI language          default "en"
+      RECHECK_SECONDS   pause between passes default 60
+    """
+    
+    from __future__ import annotations
+    
+    import json
+    import os
+    import sys
+    import time
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    
+    HA_URL = os.environ.get("HA_URL", "http://127.0.0.1:8123").rstrip("/")
+    CLIENT_ID = f"{HA_URL}/"
+    REDIRECT_URI = f"{HA_URL}/?auth_callback=1"
+    TIMEOUT = 10
+    
+    # Steps after "user", in the order HA's frontend completes them.
+    LATER_STEPS = ("core_config", "analytics", "integration")
+    
+    
+    def log(msg: str) -> None:
+        print(f"[ha-onboard] {msg}", flush=True)
+    
+    
+    class HTTPError(Exception):
+        def __init__(self, status: int, body: str) -> None:
+            super().__init__(f"HTTP {status}: {body[:300]}")
+            self.status = status
+    
+    
+    def request(method: str, path: str, *, json_body=None, form=None, token: str | None = None):
+        headers = {"Accept": "application/json"}
+        data = None
+        if json_body is not None:
+            data = json.dumps(json_body).encode()
+            headers["Content-Type"] = "application/json"
+        elif form is not None:
+            data = urllib.parse.urlencode(form).encode()
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(f"{HA_URL}{path}", data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                raw = resp.read().decode() or "null"
+        except urllib.error.HTTPError as err:
+            raise HTTPError(err.code, err.read().decode(errors="replace")) from None
+        return json.loads(raw)
+    
+    
+    def onboarding_status() -> dict[str, bool] | None:
+        """{step: done}; None when HA has no onboarding API (nothing to do)."""
+        try:
+            steps = request("GET", "/api/onboarding")
+        except HTTPError as err:
+            if err.status == 404:
+                return None
+            raise
+        return {s["step"]: bool(s["done"]) for s in steps}
+    
+    
+    def exchange_code(code: str) -> str:
+        tokens = request(
+            "POST",
+            "/auth/token",
+            form={"grant_type": "authorization_code", "code": code, "client_id": CLIENT_ID},
+        )
+        return tokens["access_token"]
+    
+    
+    def login(username: str, password: str) -> str:
+        """Owner access token via the username/password login flow."""
+        flow = request(
+            "POST",
+            "/auth/login_flow",
+            json_body={
+                "client_id": CLIENT_ID,
+                "handler": ["homeassistant", None],
+                "redirect_uri": REDIRECT_URI,
+            },
+        )
+        result = request(
+            "POST",
+            f"/auth/login_flow/{flow['flow_id']}",
+            json_body={"client_id": CLIENT_ID, "username": username, "password": password},
+        )
+        if result.get("type") != "create_entry":
+            raise RuntimeError(
+                "owner login failed (was the password changed in HA? the remaining "
+                "onboarding steps need the owner's credentials)"
+            )
+        return exchange_code(result["result"])
+    
+    
+    def onboard_once(owner: dict[str, str]) -> bool:
+        """One pass. True when the user step is done afterwards."""
+        status = onboarding_status()
+        if status is None:
+            log("onboarding API not present; nothing to do")
+            return True
+        if all(status.values()):
+            return True
+    
+        token = None
+        if not status.get("user", True):
+            log(f"onboarding open: creating owner {owner['username']!r}")
+            try:
+                result = request(
+                    "POST",
+                    "/api/onboarding/users",
+                    json_body={
+                        "client_id": CLIENT_ID,
+                        "name": owner["name"],
+                        "username": owner["username"],
+                        "password": owner["password"],
+                        "language": owner["language"],
+                    },
+                )
+            except HTTPError as err:
+                if err.status != 403:  # 403 = someone/something finished it first
+                    raise
+                log("user step already done (HTTP 403)")
+            else:
+                token = exchange_code(result["auth_code"])
+                log("owner created")
+    
+        remaining = [s for s in LATER_STEPS if status.get(s) is False]
+        if remaining:
+            if token is None:
+                token = login(owner["username"], owner["password"])
+            for step in remaining:
+                body = {"client_id": CLIENT_ID, "redirect_uri": REDIRECT_URI} if step == "integration" else {}
+                try:
+                    request("POST", f"/api/onboarding/{step}", json_body=body, token=token)
+                    log(f"completed step {step}")
+                except HTTPError as err:
+                    if err.status != 403:
+                        raise
+                    log(f"step {step} already done")
+    
+        after = onboarding_status()
+        done = after is None or after.get("user", True)
+        if after is not None and all(after.values()):
+            log("onboarding complete")
+        return done
+    
+    
+    def check() -> int:
+        """Readiness: 0 only if HA answers and its onboarding user step is done."""
+        try:
+            status = onboarding_status()
+        except Exception as err:  # noqa: BLE001 - any failure means not ready
+            print(f"not ready: {err}", file=sys.stderr)
+            return 1
+        if status is not None and not status.get("user", True):
+            print("not ready: onboarding user step still open", file=sys.stderr)
+            return 1
+        return 0
+    
+    
+    def main(argv: list[str]) -> int:
+        if "--check" in argv:
+            return check()
+        once = "--once" in argv
+        owner = {
+            "username": os.environ.get("OWNER_USERNAME", ""),
+            "password": os.environ.get("OWNER_PASSWORD", ""),
+            "name": os.environ.get("OWNER_NAME") or "Administrator",
+            "language": os.environ.get("OWNER_LANGUAGE") or "en",
+        }
+        if not owner["username"] or not owner["password"]:
+            log("OWNER_USERNAME and OWNER_PASSWORD are required")
+            return 2
+        recheck = max(5, int(os.environ.get("RECHECK_SECONDS", "60")))
+        log(f"watching {HA_URL} onboarding")
+        announced = False
+        while True:
+            try:
+                done = onboard_once(owner)
+                if done and not announced:
+                    log("owner account in place; onboarding page closed")
+                    announced = True
+                if once:
+                    return 0 if done else 1
+                time.sleep(recheck if done else 2)
+            except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as err:
+                # HA not listening yet (first boot installs deps) or restarting.
+                if once:
+                    log(f"HA not reachable: {err}")
+                    return 1
+                time.sleep(1)
+            except Exception as err:  # noqa: BLE001 - keep the sidecar alive
+                log(f"error: {err}")
+                if once:
+                    return 1
+                time.sleep(10)
+    
+    
+    if __name__ == "__main__":
+        sys.exit(main(sys.argv[1:]))
+    
+  fetch_integration.py: |
+    #!/usr/bin/env python3
+    """Install the grown HA custom integration from the Grown server (grown chart).
+    
+    Runs as an initContainer on every Home Assistant pod start: downloads
+    GROWN_ZIP_URL (Grown's /integrations/homeassistant/grown.zip) and replaces
+    /config/custom_components/grown with it, so HA always runs the integration
+    that matches the deployed Grown version.
+    
+    Grown may still be starting (first install waits for Zitadel/OIDC), so it
+    retries until FETCH_TIMEOUT_SECONDS, then gives up WITHOUT failing: HA starts
+    anyway, keeping any previously installed copy (or none). The next pod start
+    tries again.
+    
+    Standard library only (runs on the Home Assistant image's python3).
+    
+    Environment:
+      GROWN_ZIP_URL          required
+      CONFIG_DIR             default /config
+      FETCH_TIMEOUT_SECONDS  default 180
+    """
+    
+    from __future__ import annotations
+    
+    import io
+    import json
+    import os
+    import shutil
+    import sys
+    import time
+    import urllib.error
+    import urllib.request
+    import zipfile
+    
+    PREFIX = "custom_components/grown/"
+    MAX_BYTES = 20 * 1024 * 1024
+    
+    
+    def log(msg: str) -> None:
+        print(f"[grown-integration] {msg}", flush=True)
+    
+    
+    def download(url: str) -> bytes:
+        req = urllib.request.Request(url, headers={"Accept": "application/zip"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read(MAX_BYTES + 1)
+        if len(data) > MAX_BYTES:
+            raise ValueError("bundle larger than 20 MiB")
+        return data
+    
+    
+    def install(data: bytes, config_dir: str) -> str:
+        """Validate the zip and atomically swap it into custom_components/grown."""
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        names = [n for n in zf.namelist() if not n.endswith("/")]
+        if PREFIX + "manifest.json" not in names:
+            raise ValueError("bundle has no custom_components/grown/manifest.json")
+        for name in names:
+            # Only plain relative paths inside custom_components/grown/.
+            if not name.startswith(PREFIX) or ".." in name.split("/") or name.startswith("/"):
+                raise ValueError(f"unexpected path in bundle: {name!r}")
+        manifest = json.loads(zf.read(PREFIX + "manifest.json"))
+        if manifest.get("domain") != "grown":
+            raise ValueError("bundle manifest is not the grown integration")
+    
+        target_parent = os.path.join(config_dir, "custom_components")
+        os.makedirs(target_parent, exist_ok=True)
+        staging = os.path.join(target_parent, ".grown.new")
+        old = os.path.join(target_parent, ".grown.old")
+        target = os.path.join(target_parent, "grown")
+        for path in (staging, old):
+            shutil.rmtree(path, ignore_errors=True)
+        os.makedirs(staging)
+        for name in names:
+            dest = os.path.join(staging, name[len(PREFIX) :])
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as fh:
+                fh.write(zf.read(name))
+        if os.path.exists(target):
+            os.rename(target, old)
+        os.rename(staging, target)
+        shutil.rmtree(old, ignore_errors=True)
+        return str(manifest.get("version", "?"))
+    
+    
+    def main() -> int:
+        url = os.environ.get("GROWN_ZIP_URL", "")
+        if not url:
+            log("GROWN_ZIP_URL not set; skipping")
+            return 0
+        config_dir = os.environ.get("CONFIG_DIR", "/config")
+        timeout = int(os.environ.get("FETCH_TIMEOUT_SECONDS", "180"))
+        deadline = time.monotonic() + timeout
+        delay = 2.0
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                version = install(download(url), config_dir)
+                log(f"installed grown integration {version} from {url}")
+                return 0
+            except urllib.error.HTTPError as err:
+                if err.code == 404:
+                    log(f"{url} returned 404 (Grown older than 0.4?); starting HA without updating it")
+                    return 0
+                reason = err
+            except (urllib.error.URLError, OSError, TimeoutError) as err:
+                reason = err
+            except (ValueError, zipfile.BadZipFile) as err:
+                # A bad bundle won't fix itself by retrying.
+                log(f"invalid bundle from {url}: {err}; starting HA without updating it")
+                return 0
+            if time.monotonic() + delay > deadline:
+                existing = os.path.exists(os.path.join(config_dir, "custom_components", "grown"))
+                log(
+                    f"Grown not reachable at {url} after {attempt} attempts / {timeout}s ({reason}); "
+                    + ("starting HA with the previously installed integration"
+                       if existing else "starting HA WITHOUT the grown integration")
+                    + " - it is fetched again on the next pod start"
+                )
+                return 0
+            if attempt == 1 or attempt % 10 == 0:
+                log(f"waiting for Grown ({reason})")
+            time.sleep(delay)
+            delay = min(delay * 1.5, 10.0)
+    
+    
+    if __name__ == "__main__":
+        sys.exit(main())
+---
 # Source: grown/templates/postgres.yaml
 # Init script: creates extra databases owned by the grown user.
 apiVersion: v1
@@ -156,7 +578,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: postgres
 data:
   init-extra-dbs.sh: |
@@ -180,7 +602,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: zitadel
 spec:
   accessModes: ["ReadWriteOnce"]
@@ -197,7 +619,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: zitadel-provision
 rules:
   - apiGroups: [""]
@@ -213,7 +635,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: zitadel-provision
 subjects:
   - kind: ServiceAccount
@@ -234,7 +656,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: grown
 spec:
   type: ClusterIP
@@ -252,6 +674,44 @@ spec:
       targetPort: 9000
       protocol: TCP
 ---
+# Source: grown/templates/homeassistant.yaml
+# Home Assistant, installed with grown by default (homeAssistant.enabled).
+# Grown still treats HA as bring-your-own: this instance is the
+# deployment-default URL for the Home Assistant tile (GROWN_HOMEASSISTANT_URL);
+# any org can point the tile at its own HA in Admin > Services instead.
+#
+# Pod layout:
+#   init  seed-config             copy configuration.yaml & co. into /config
+#                                 ONLY when missing (never clobbers)
+#   init  grown-integration       download grown.zip from the grown Service
+#                                 into /config/custom_components/grown (every
+#                                 start; bounded wait, never blocks HA forever)
+#   main  homeassistant           readiness = onboarding "user" step done, so
+#                                 the Service/Ingress route nothing to a fresh,
+#                                 un-owned HA
+#   side  onboard                 creates the owner from the
+#                                 <release>-homeassistant-owner Secret over
+#                                 localhost and finishes onboarding (idempotent)
+apiVersion: v1
+kind: Service
+metadata:
+  name: grown-homeassistant
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.4.0
+    app.kubernetes.io/component: homeassistant
+spec:
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: homeassistant
+    app.kubernetes.io/instance: grown
+  ports:
+    - name: http
+      port: 8123
+      targetPort: http
+---
 # Source: grown/templates/postgres.yaml
 apiVersion: v1
 kind: Service
@@ -261,7 +721,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: postgres
 spec:
   clusterIP: None
@@ -286,7 +746,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: rustfs
 spec:
   selector:
@@ -307,7 +767,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: zitadel
 spec:
   selector:
@@ -328,7 +788,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: grown
 spec:
   replicas: 1
@@ -348,7 +808,7 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.3.0
+        helm.sh/chart: grown-0.4.0
         app.kubernetes.io/component: grown
     spec:
       containers:
@@ -435,6 +895,9 @@ spec:
               value: "5Gi"
             - name: GROWN_RADIO_CACHE_MAX_DAYS
               value: "30"
+            # --- Home Assistant tile default (orgs can override in Admin) ---
+            - name: GROWN_HOMEASSISTANT_URL
+              value: "http://ha.grown.example.com"
           resources:
             limits:
               memory: 512Mi
@@ -459,7 +922,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: zitadel
 spec:
   replicas: 1
@@ -476,7 +939,7 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.3.0
+        helm.sh/chart: grown-0.4.0
         app.kubernetes.io/component: zitadel
     spec:
       # Zitadel runs as a non-root user (uid 1000). fsGroup makes the shared RWO
@@ -545,6 +1008,188 @@ spec:
           persistentVolumeClaim:
             claimName: grown-zitadel-shared
 ---
+# Source: grown/templates/homeassistant.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: grown-homeassistant
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.4.0
+    app.kubernetes.io/component: homeassistant
+spec:
+  serviceName: grown-homeassistant
+  # HA is single-instance (SQLite recorder + in-process state): never >1.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: homeassistant
+      app.kubernetes.io/instance: grown
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: grown
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: grown-0.4.0
+        app.kubernetes.io/component: homeassistant
+      annotations:
+        # Roll the pod when the seed/onboarding/fetch scripts change.
+        checksum/seed: 7015fdd145732fd32b129bbf4629176f937b7c5ab3cde5f294b58aa9c228abf4
+    spec:
+      # Off on purpose: no mDNS/SSDP/Bluetooth discovery from the pod. Add
+      # integrations by IP/hostname instead (see README).
+      hostNetwork: false
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: seed-config
+          image: "ghcr.io/home-assistant/home-assistant:2026.9.4"
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/seed/seed.sh"]
+          env:
+            - { name: CONFIG_DIR, value: /config }
+            - { name: SEED_DIR, value: /seed }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            privileged: false
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: seed, mountPath: /seed, readOnly: true }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+        # Install the grown custom integration from the grown Service on EVERY
+        # start, so HA always runs the one matching the deployed Grown. Waits
+        # up to fetchTimeoutSeconds for grown, then starts HA regardless.
+        - name: grown-integration
+          image: "ghcr.io/home-assistant/home-assistant:2026.9.4"
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "/seed/fetch_integration.py"]
+          env:
+            - name: GROWN_ZIP_URL
+              value: "http://grown-grown.grown.svc.cluster.local:8080/integrations/homeassistant/grown.zip"
+            - { name: CONFIG_DIR, value: /config }
+            - name: FETCH_TIMEOUT_SECONDS
+              value: "180"
+            - { name: PYTHONDONTWRITEBYTECODE, value: "1" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            privileged: false
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: seed, mountPath: /seed, readOnly: true }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+      containers:
+        - name: homeassistant
+          image: "ghcr.io/home-assistant/home-assistant:2026.9.4"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            privileged: false
+          env:
+            - name: TZ
+              value: "UTC"
+          ports:
+            - { name: http, containerPort: 8123 }
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: seed, mountPath: /seed, readOnly: true }
+          # First boot installs integrations' Python deps and can take minutes.
+          startupProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            # Ready only once onboarding's "user" step is done: until the owner
+            # exists, the Service has no endpoints, so neither the Ingress /
+            # HTTPRoute nor anything else using the Service can reach the
+            # first-run "create owner" page.
+            exec:
+              command: ["python3", "-B", "/seed/onboard.py", "--check"]
+            timeoutSeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            limits:
+              memory: 1536Mi
+            requests:
+              cpu: 50m
+              memory: 384Mi
+        # Creates the owner over localhost the moment HA's HTTP server is up
+        # (polls every second), then re-checks every recheckSeconds so a wiped
+        # /config/.storage is re-onboarded too. Idempotent. Needs only the
+        # network, so it runs as nobody with a read-only root filesystem.
+        - name: onboard
+          image: "ghcr.io/home-assistant/home-assistant:2026.9.4"
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-u", "/seed/onboard.py"]
+          env:
+            - { name: HA_URL, value: "http://127.0.0.1:8123" }
+            - name: OWNER_USERNAME
+              valueFrom:
+                secretKeyRef: { name: grown-homeassistant-owner, key: username }
+            - name: OWNER_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: grown-homeassistant-owner, key: password }
+            - name: OWNER_NAME
+              value: "Administrator"
+            - name: OWNER_LANGUAGE
+              value: "en"
+            - name: RECHECK_SECONDS
+              value: "60"
+            - { name: PYTHONDONTWRITEBYTECODE, value: "1" }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - { name: seed, mountPath: /seed, readOnly: true }
+          resources:
+            requests: { cpu: 5m, memory: 24Mi }
+            limits: { memory: 64Mi }
+      volumes:
+        - name: seed
+          configMap:
+            name: grown-homeassistant-seed
+  # config-<release>-homeassistant-0 holds ALL of HA's state (config, .storage,
+  # the recorder DB). Kubernetes never deletes volumeClaimTemplate PVCs on
+  # `helm uninstall`/upgrade.
+  volumeClaimTemplates:
+    - metadata:
+        name: config
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+---
 # Source: grown/templates/postgres.yaml
 apiVersion: apps/v1
 kind: StatefulSet
@@ -554,7 +1199,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: postgres
 spec:
   serviceName: grown-postgres
@@ -570,7 +1215,7 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.3.0
+        helm.sh/chart: grown-0.4.0
         app.kubernetes.io/component: postgres
     spec:
       containers:
@@ -631,7 +1276,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: rustfs
 spec:
   serviceName: grown-rustfs
@@ -647,7 +1292,7 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.3.0
+        helm.sh/chart: grown-0.4.0
         app.kubernetes.io/component: rustfs
     spec:
       securityContext:
@@ -728,7 +1373,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: rustfs-init
   annotations:
     "helm.sh/hook": post-install,post-upgrade
@@ -742,7 +1387,7 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.3.0
+        helm.sh/chart: grown-0.4.0
         app.kubernetes.io/component: rustfs-init
     spec:
       restartPolicy: OnFailure
@@ -792,7 +1437,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.3.0
+    helm.sh/chart: grown-0.4.0
     app.kubernetes.io/component: zitadel-provision
   # Run as a Helm hook so chart upgrades RECREATE it instead of patching it (a
   # Job pod template is immutable; a plain upgrade touching the Job fails with
@@ -810,7 +1455,7 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.3.0
+        helm.sh/chart: grown-0.4.0
         app.kubernetes.io/component: zitadel-provision
     spec:
       restartPolicy: OnFailure

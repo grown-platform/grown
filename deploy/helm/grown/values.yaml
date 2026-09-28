@@ -136,7 +136,9 @@ bolo:
 # (GROWN_HOMEASSISTANT_URL). See docs/services/homeassistant.md.
 # -----------------------------------------------------------------------------
 homeAssistant:
-  enabled: false
+  # On by default since chart 0.4.0 (upgrades from 0.3.x add it; see the
+  # README's upgrade notes). Set false to skip it and bring your own HA.
+  enabled: true
   image:
     repository: ghcr.io/home-assistant/home-assistant
     tag: "2026.9.4"
@@ -161,6 +163,41 @@ homeAssistant:
     - 172.16.0.0/12
     - 192.168.0.0/16
     - fd00::/8
+  # Seeded into configuration.yaml's `http:` on FIRST start only.
+  http:
+    # false => seed `use_x_frame_options: false` so Grown's /homeassistant page
+    # can show HA in an iframe. Trade-off: any site may then frame HA
+    # (clickjacking). true => keep HA's default X-Frame-Options: SAMEORIGIN
+    # (Grown then only links out). Existing installs: edit
+    # /config/configuration.yaml instead.
+    useXFrameOptions: false
+  # The HA owner account. A fresh HA serves a first-run page where the FIRST
+  # visitor creates the owner; the chart closes that window by onboarding HA
+  # itself (below) with these credentials. Password: see NOTES / README.
+  owner:
+    # Secret with keys `username` and `password`. "" => the chart generates
+    # <release>-homeassistant-owner once (random 32-char password, kept across
+    # upgrades and on uninstall).
+    existingSecret: ""
+    username: admin      # only for the generated Secret
+    name: "Administrator"
+    language: en
+  onboarding:
+    # Sidecar that creates the owner over localhost and finishes onboarding;
+    # HA's readiness is gated on it, so the Service/Ingress never route to an
+    # un-owned HA. Turn off only if you onboard HA yourself before exposing it.
+    enabled: true
+    recheckSeconds: 60   # re-check interval once onboarded (idempotent)
+  # Install the `grown` HA custom integration (calendar, to-do lists,
+  # notification/task sensors, notify) from the grown Service on every HA pod
+  # start, so it always matches the running Grown.
+  grownIntegration:
+    enabled: true
+    # "" => http://<release>-grown.<ns>.svc.cluster.local:<grown.service.httpPort>/integrations/homeassistant/grown.zip
+    url: ""
+    # Wait this long for grown to answer, then start HA without (re)installing
+    # it; the next pod start retries.
+    fetchTimeoutSeconds: 180
   ingress:
     annotations: {}      # merged over ingress.annotations
     tlsSecretName: ""    # "" => ingress.tls.secretName (must cover the HA host)
@@ -168,12 +205,15 @@ homeAssistant:
     size: 5Gi
     storageClass: ""     # "" => the global storageClass
     existingClaim: ""    # use an existing PVC for /config instead
+  # Sized for small clusters: HA 2026.9 with default_config idles at ~300 MiB
+  # (measured). The limit leaves room for integrations' deps; raise it if you
+  # add heavy ones (camera/ML/Bluetooth stacks).
   resources:
     requests:
-      cpu: 100m
-      memory: 512Mi
+      cpu: 50m
+      memory: 384Mi
     limits:
-      memory: 2Gi
+      memory: 1536Mi
   # The official HA image runs as ROOT (s6-overlay init; HA pip-installs
   # integration deps at runtime) and doesn't support runAsNonRoot or a
   # read-only root filesystem. This is as tight as it tolerates: root with NO

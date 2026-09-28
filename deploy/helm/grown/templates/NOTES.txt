@@ -13,6 +13,7 @@ Bundled components:
   {{- if .Values.bolo.enabled }}
   - bolo-mp sidecar               enabled
   {{- end }}
+  - Home Assistant                {{ if .Values.homeAssistant.enabled }}{{ include "grown.haName" . }}{{ else }}disabled (homeAssistant.enabled=false){{ end }}
 
 Public URL:   {{ include "grown.externalURL" . }}
 
@@ -56,6 +57,38 @@ NEXT STEPS
 3) Using external OIDC issuer: {{ .Values.auth.external.issuer }}
    Ensure its redirect URI allowlist includes:
      {{ include "grown.oidcRedirectURL" . }}
+{{- end }}
+
+{{- if .Values.homeAssistant.enabled }}
+{{- $ha := .Values.homeAssistant }}
+{{- $secret := include "grown.haOwnerSecret" . }}
+
+4) Home Assistant{{ if ne .Values.ingress.type "none" }} at {{ include "grown.haURL" . }}{{ end }}
+{{- if eq .Values.ingress.type "none" }}
+   Reach it via port-forward:
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "grown.haName" . }} 8123:{{ $ha.port }}
+{{- end }}
+{{- if $ha.onboarding.enabled }}
+   The chart onboards HA itself (no open "create owner" page); HA turns Ready
+   once the owner exists:
+     kubectl -n {{ .Release.Namespace }} logs {{ include "grown.haName" . }}-0 -c onboard
+   Owner login:
+     user:  kubectl -n {{ .Release.Namespace }} get secret {{ $secret }} -o jsonpath='{.data.username}' | base64 -d
+     pass:  kubectl -n {{ .Release.Namespace }} get secret {{ $secret }} -o jsonpath='{.data.password}' | base64 -d
+   (Changing the password in HA is fine; the Secret is only used to create
+   the owner on a fresh /config.)
+{{- else }}
+   homeAssistant.onboarding.enabled=false: open HA and create the owner
+   BEFORE exposing it; the first visitor otherwise becomes the owner.
+{{- end }}
+{{- if $ha.grownIntegration.enabled }}
+   The "Grown Workspace" integration is pre-installed from grown on every HA
+   start. Add it in HA: Settings > Devices & services > Add integration >
+   Grown Workspace, with URL {{ include "grown.externalURL" . }} (or in-cluster
+   http://{{ .Release.Name }}-grown.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.grown.service.httpPort }})
+   and a Grown API token (Grown Settings > API tokens > "Connect Home
+   Assistant").
+{{- end }}
 {{- end }}
 
 Uninstall:  helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
