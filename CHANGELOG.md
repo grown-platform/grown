@@ -13,7 +13,7 @@ Grown's calendar, tasks and notifications into HA.
 ### Install
 
 - **Image:** `code.pick.haus/grown/grown:v0.4.0`
-- **Helm chart:** 0.4.0 (appVersion `v0.4.0`).
+- **Helm chart:** 0.4.1 (appVersion `v0.4.0`).
 - **Plain manifests:** `deploy/manifests/grown.yaml`. It now expects a Secret
   `grown-homeassistant-owner` (keys `username`, `password`) for the Home
   Assistant owner; see `deploy/manifests/README.md`.
@@ -44,6 +44,13 @@ Grown's calendar, tasks and notifications into HA.
   Grown serves the integration at `/integrations/homeassistant/grown.zip`, and
   the chart's HA installs it from there on every start, so it always matches
   the Grown version. Bring-your-own HA installs the same zip.
+- **Proxy settings that stick.** Home Assistant 2026.9 only keeps changes to
+  its `http:` settings (reverse-proxy trust, framing) if they are confirmed
+  within five minutes; otherwise it reverts, and requests through the ingress
+  fail with 400. The onboarding sidecar now confirms the chart's settings and
+  re-applies them if they drift (`homeAssistant.http.manage`, on by default).
+  It also repairs installs that already reverted. Chart 0.4.0 lacked this, so
+  use 0.4.1.
 - **Connect Home Assistant** in Settings > API tokens creates a token with
   exactly the scopes the integration needs and shows the setup steps.
 
