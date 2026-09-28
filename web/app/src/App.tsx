@@ -51,6 +51,8 @@ const SettingsPage = lazy(() => import("./pages/settings"));
 const CloudImportApp = lazy(() => import("./pages/cloudimport"));
 const VPNApp = lazy(() => import("./pages/vpn"));
 const AccessPage = lazy(() => import("./pages/access"));
+// Home Assistant: the org's HA framed under the header (bring-your-own URL).
+const HomeAssistantApp = lazy(() => import("./pages/homeassistant"));
 const TicketsApp = lazy(() => import("./pages/tickets"));
 // 3D model viewer (three.js) — code-split so its loaders load on demand.
 const ThreeDApp = lazy(() => import("./pages/3d"));
@@ -442,6 +444,18 @@ export default function App() {
                       <VPNApp user={auth.user} />
                     </Suspense>
                   }
+                />
+                <Route
+                  path="/homeassistant"
+                  element={
+                    <Suspense fallback={<ChunkFallback />}>
+                      <HomeAssistantApp user={auth.user} />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/home-assistant"
+                  element={<Navigate to="/homeassistant" replace />}
                 />
                 <Route
                   path="/access"

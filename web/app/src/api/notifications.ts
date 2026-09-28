@@ -97,3 +97,10 @@ export function relativeTime(isoString: string): string {
   if (diffDay < 7) return `${diffDay}d ago`;
   return new Date(isoString).toLocaleDateString();
 }
+
+/** isExternalTarget reports whether a notification's target_url leaves grown
+ *  (an absolute http(s) URL, e.g. a Home Assistant push linking back to HA)
+ *  and so must open in a new tab instead of client-side navigation. */
+export function isExternalTarget(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
+}

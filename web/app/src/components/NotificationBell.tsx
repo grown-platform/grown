@@ -23,6 +23,7 @@ import {
   markAllRead,
   relativeTime,
   type Notification,
+  isExternalTarget,
 } from "../api/notifications";
 
 // Optional VAPID public key enables real Web Push subscription; without it we
@@ -94,7 +95,11 @@ export function NotificationBell() {
     }
     if (item.target_url) {
       setOpen(false);
-      navigate(item.target_url);
+      if (isExternalTarget(item.target_url)) {
+        window.open(item.target_url, "_blank", "noopener,noreferrer");
+      } else {
+        navigate(item.target_url);
+      }
     }
   }
 

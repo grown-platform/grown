@@ -33,6 +33,9 @@ export interface AppTile {
    *  app launchers; it's set up in Admin > Services (team orgs) or Settings
    *  (personal orgs, which have no Admin app). */
   requiresExternalUrl?: boolean;
+  /** Open the resolved externalUrl inside grown (the in-app route `/${id}`,
+   *  which frames it under the header) instead of in a new tab. */
+  embedInApp?: boolean;
   /** Admin > Services label for the URL field (defaults to "use external
    *  service instead", which suits overrides of built-in apps). */
   urlFieldLabel?: string;
@@ -310,6 +313,8 @@ export const apps: AppTile[] = [
     comingSoon: false,
     iconName: "SensorsRounded",
     requiresExternalUrl: true,
+    // Opens /homeassistant, which frames the org's HA URL under the header.
+    embedInApp: true,
     urlFieldLabel: "Home Assistant URL",
     urlPlaceholder: "https://homeassistant.yourdomain.com",
   },
@@ -531,3 +536,11 @@ export const apps: AppTile[] = [
     ],
   },
 ];
+
+/** externalHref returns the URL a tile should open in a new tab, or undefined
+ *  when it navigates in-app (built-in route, or an embedInApp tile, which
+ *  frames its external URL at `/${id}`). */
+export function externalHref(app: AppTile): string | undefined {
+  if (!app.externalUrl || app.embedInApp) return undefined;
+  return app.externalUrl;
+}

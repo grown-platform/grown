@@ -25,7 +25,7 @@ import {
   activateAccount,
   removeAccount,
 } from "../api/client";
-import { apps, type AppTile } from "../catalog/apps";
+import { apps, externalHref, type AppTile } from "../catalog/apps";
 import {
   applyServiceSettings,
   useServiceSettings,
@@ -550,10 +550,11 @@ function ServiceMenuItem({
   const IconComponent = (
     Icons as Record<string, React.ComponentType<{ sx?: object }>>
   )[app.iconName];
-  const linkProps = app.externalUrl
+  const href = externalHref(app);
+  const linkProps = href
     ? {
         component: "a" as const,
-        href: app.externalUrl,
+        href,
         target: "_blank",
         rel: "noopener noreferrer",
       }
@@ -693,10 +694,11 @@ function MiniTile({ app, onNavigate }: MiniTileProps) {
   const IconComponent = (
     Icons as Record<string, React.ComponentType<{ sx?: object }>>
   )[app.iconName];
-  const linkProps = app.externalUrl
+  const href = externalHref(app);
+  const linkProps = href
     ? {
         component: "a" as const,
-        href: app.externalUrl,
+        href,
         target: "_blank",
         rel: "noopener noreferrer",
       }

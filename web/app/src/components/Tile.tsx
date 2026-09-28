@@ -1,7 +1,7 @@
 import { Box, Avatar, Typography } from "@mui/joy";
 import { Link as RouterLink } from "react-router-dom";
 import * as Icons from "@mui/icons-material";
-import type { AppTile } from "../catalog/apps";
+import { externalHref, type AppTile } from "../catalog/apps";
 
 interface TileProps {
   app: AppTile;
@@ -17,15 +17,16 @@ export function Tile({ app }: TileProps) {
     Icons as Record<string, React.ComponentType<{ sx?: object }>>
   )[app.iconName];
   const initial = app.name.charAt(0).toUpperCase();
+  const href = externalHref(app);
 
   return (
     <Box
       {...(app.comingSoon
         ? {}
-        : app.externalUrl
+        : href
           ? {
               component: "a" as const,
-              href: app.externalUrl,
+              href,
               target: "_blank",
               rel: "noopener noreferrer",
             }
