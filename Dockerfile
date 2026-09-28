@@ -65,6 +65,9 @@ RUN go mod download
 COPY proto/ ./proto/
 COPY buf.yaml buf.gen.yaml buf.lock ./
 RUN buf dep update && buf generate
+# Everything else, including integrations/homeassistant (the Home Assistant
+# custom integration is go:embed-ded and served at
+# /integrations/homeassistant/grown.zip; see internal/hacomponent).
 COPY . .
 # Stamp the build so GET /healthz reports the real version/commit instead of the
 # "0.0.0-dev"/"unknown" defaults. CI passes these via --build-arg; harmless if unset.

@@ -20,3 +20,8 @@ deploy/process-compose/data
 # Docs / specs / archives not needed at build.
 **/*.md
 !web/app/**
+# Python caches / HA integration tests (the integration itself is embedded).
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+integrations/homeassistant/tests
