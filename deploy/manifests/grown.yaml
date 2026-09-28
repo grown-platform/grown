@@ -813,7 +813,7 @@ spec:
     spec:
       containers:
         - name: grown
-          image: "code.pick.haus/grown/grown:v0.3.0"
+          image: "code.pick.haus/grown/grown:v0.4.0"
           imagePullPolicy: IfNotPresent
           ports:
             - { name: http, containerPort: 8080 }

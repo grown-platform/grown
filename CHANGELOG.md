@@ -4,6 +4,69 @@ All notable changes to Grown. Releases are tagged `vX.Y.Z`; every push to
 `main` also ships a dated image (`YYYYMMDD-HHMMSS-<sha>`) that the reference
 instances deploy automatically.
 
+## v0.4.0 (2026-09-28)
+
+Home Assistant becomes part of the platform: it ships in the default Helm
+install, opens inside Grown, and a new Home Assistant integration brings
+Grown's calendar, tasks and notifications into HA.
+
+### Install
+
+- **Image:** `code.pick.haus/grown/grown:v0.4.0`
+- **Helm chart:** 0.4.0 (appVersion `v0.4.0`).
+- **Plain manifests:** `deploy/manifests/grown.yaml`. It now expects a Secret
+  `grown-homeassistant-owner` (keys `username`, `password`) for the Home
+  Assistant owner; see `deploy/manifests/README.md`.
+
+### Highlights
+
+- **Home Assistant in every chart install.** `homeAssistant.enabled` now
+  defaults to `true`. HA runs next to Grown at `ha.<domain>`, and Grown's Home
+  Assistant tile points at it for every org that hasn't set its own URL.
+- **No open setup page.** A sidecar creates HA's owner account from the
+  `<release>-homeassistant-owner` Secret (generated once) the moment HA starts.
+  HA reports ready only after that, so the ingress never routes a visitor to
+  HA's first-run page. Read the password with
+  `kubectl get secret <release>-homeassistant-owner -o jsonpath='{.data.password}' | base64 -d`.
+- **HA inside Grown.** The tile opens `/homeassistant`, which shows HA in a
+  full-height frame under Grown's header, with reload and "Open in new tab".
+  The chart's seeded HA config allows framing (`use_x_frame_options: false`);
+  set `homeAssistant.http.useXFrameOptions: true` to turn that off.
+- **The Grown integration for Home Assistant** (`grown`), MIT-licensed, in
+  `integrations/homeassistant/`:
+  - a calendar entity for Grown Calendar (create, edit, delete);
+  - one to-do entity per Grown task list (add, complete, edit, reorder,
+    delete);
+  - sensors for unread notifications, open tasks and overdue tasks;
+  - a notify entity that sends notifications into Grown's bell from HA
+    automations.
+
+  Grown serves the integration at `/integrations/homeassistant/grown.zip`, and
+  the chart's HA installs it from there on every start, so it always matches
+  the Grown version. Bring-your-own HA installs the same zip.
+- **Connect Home Assistant** in Settings > API tokens creates a token with
+  exactly the scopes the integration needs and shows the setup steps.
+
+### Platform
+
+- `POST /api/v1/notifications/push` sends a notification to the caller's own
+  bell. It needs the `notifications:write` scope, and is limited to 60 per
+  minute per user.
+- `GET /api/v1/integrations/homeassistant/info` describes the caller: user,
+  org, token scopes and server version. It works with any valid token.
+- Notifications that link to an absolute http(s) URL open in a new tab.
+- Token scopes: `notifications` is available in the limited-token form.
+
+### Upgrading from 0.3.x
+
+- Upgrading the chart **adds Home Assistant**: a StatefulSet, a 5Gi PVC, a
+  Service and an ingress host `ha.<domain>`. Set
+  `homeAssistant.enabled: false` to keep it off.
+- Resource defaults for HA are a 50m CPU / 384Mi request and a 1536Mi memory
+  limit. Lower the limit if a LimitRange caps containers at 1Gi.
+- If your ingress or tunnel needs an explicit route, add one for the HA host.
+  Point it at `<release>-homeassistant:8123`.
+
 ## v0.3.0 (2026-09-28)
 
 The first tagged release of Grown, the self-hosted, MIT-licensed workspace
