@@ -27,7 +27,19 @@ type Service struct {
 	// org_admins grant (isOrgAdmin). There is NO open fallback.
 	adminEmails map[string]struct{}
 	isOrgAdmin  AdminChecker
+
+	// defaultURLs maps a service id to a deployment-wide default external URL
+	// (e.g. GROWN_HOMEASSISTANT_URL set by the Helm chart when it deploys Home
+	// Assistant). It is used for any org that hasn't stored its own URL for that
+	// service. See WithDefaultExternalURLs.
+	defaultURLs map[string]string
 }
+
+// ServiceHomeAssistant is the service id of the Home Assistant app tile. Home
+// Assistant is bring-your-own: each org points the tile at its own instance by
+// storing an external_url for this id; the tile is hidden until a URL exists
+// (org setting or deployment default).
+const ServiceHomeAssistant = "homeassistant"
 
 // NewService constructs a Service. adminEmails is the raw value of the
 // GROWN_ADMIN_EMAILS env var (a comma-separated list of emails); pass "" to
@@ -54,6 +66,58 @@ func NewService(repo *Repository, adminEmails string) *Service {
 func (s *Service) WithAdminChecker(c AdminChecker) *Service {
 	s.isOrgAdmin = c
 	return s
+}
+
+// WithDefaultExternalURLs installs deployment-wide default external URLs keyed
+// by service id, and returns the Service for chaining. A default is reported by
+// Get/SetServiceSettings for any org whose stored external_url for that service
+// is empty (no row, or a row with no URL); an org's own URL always wins. Blank
+// and invalid (non-http(s)) defaults are ignored and returned so the caller can
+// log them.
+func (s *Service) WithDefaultExternalURLs(defaults map[string]string) (*Service, []string) {
+	var rejected []string
+	for id, raw := range defaults {
+		u := strings.TrimSpace(raw)
+		if id == "" || u == "" {
+			continue
+		}
+		if err := validateExternalURL(id, u); err != nil {
+			rejected = append(rejected, id)
+			continue
+		}
+		if s.defaultURLs == nil {
+			s.defaultURLs = make(map[string]string)
+		}
+		s.defaultURLs[id] = u
+	}
+	sort.Strings(rejected)
+	return s, rejected
+}
+
+// withDefaults returns a copy of m with the deployment default external URLs
+// filled in for services the org hasn't pointed anywhere itself. A service with
+// no stored row gets an enabled entry (services are default-on); a stored row
+// keeps its enabled flag and only gains the URL when its own is empty.
+func (s *Service) withDefaults(m map[string]Setting) map[string]Setting {
+	if len(s.defaultURLs) == 0 {
+		return m
+	}
+	out := make(map[string]Setting, len(m)+len(s.defaultURLs))
+	for id, v := range m {
+		out[id] = v
+	}
+	for id, u := range s.defaultURLs {
+		cur, ok := out[id]
+		if !ok {
+			out[id] = Setting{ServiceID: id, Enabled: true, ExternalURL: u}
+			continue
+		}
+		if cur.ExternalURL == "" {
+			cur.ExternalURL = u
+			out[id] = cur
+		}
+	}
+	return out
 }
 
 // callerOrg validates the session and returns the caller's org id.
@@ -123,7 +187,7 @@ func (s *Service) GetServiceSettings(ctx context.Context, _ *grownv1.GetServiceS
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get service settings: %v", err)
 	}
-	return toProto(orgID, m), nil
+	return toProto(orgID, s.withDefaults(m)), nil
 }
 
 // validateExternalURL returns an error if rawURL is not a valid http(s) URL.
@@ -162,5 +226,5 @@ func (s *Service) SetServiceSettings(ctx context.Context, req *grownv1.SetServic
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "set service settings: %v", err)
 	}
-	return toProto(orgID, m), nil
+	return toProto(orgID, s.withDefaults(m)), nil
 }

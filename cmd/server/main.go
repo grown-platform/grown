@@ -340,6 +340,12 @@ func main() {
 		GuacURL:             os.Getenv("GROWN_GUAC_URL"),
 		AdminRepo:           admin.NewRepository(pool),
 		AdminEmails:         os.Getenv("GROWN_ADMIN_EMAILS"),
+		// Deployment-default external URLs for bring-your-own tiles; an org's own
+		// Admin > Services URL always wins. The Helm chart sets
+		// GROWN_HOMEASSISTANT_URL when it deploys Home Assistant itself.
+		AdminDefaultURLs:    map[string]string{
+			admin.ServiceHomeAssistant: os.Getenv("GROWN_HOMEASSISTANT_URL"),
+		},
 		OrgAdminRepo:        orgadmin.NewRepository(pool),
 		SharingRepo:         sharingRepo,
 		IssuerURL:           authCfg.IssuerURL,

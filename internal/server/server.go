@@ -174,6 +174,10 @@ type Config struct {
 	// raw GROWN_ADMIN_EMAILS allowlist of bootstrap super-admins.
 	AdminRepo   *admin.Repository
 	AdminEmails string
+	// AdminDefaultURLs holds deployment-default external URLs keyed by service
+	// id (e.g. "homeassistant" from GROWN_HOMEASSISTANT_URL). Reported for any
+	// org that hasn't set its own external_url for that service.
+	AdminDefaultURLs map[string]string
 	// OrgAdminRepo backs per-org admin roles (grown.org_admins). It powers the
 	// authorization model (allowlist OR org_admins grant), the grant/revoke API,
 	// and first-admin auto-bootstrap. nil disables role-based admin (allowlist only).
@@ -755,6 +759,11 @@ func New(cfg Config) *Server {
 	var adminSvc *admin.Service
 	if cfg.AdminRepo != nil {
 		adminSvc = admin.NewService(cfg.AdminRepo, cfg.AdminEmails)
+		var rejected []string
+		adminSvc, rejected = adminSvc.WithDefaultExternalURLs(cfg.AdminDefaultURLs)
+		for _, id := range rejected {
+			slog.Warn("ignoring invalid default external URL (must be http(s))", "service", id)
+		}
 		if cfg.OrgAdminRepo != nil {
 			adminSvc = adminSvc.WithAdminChecker(func(ctx context.Context, orgID, userID string) bool {
 				isAdmin, err := cfg.OrgAdminRepo.IsAdmin(ctx, orgID, userID)
