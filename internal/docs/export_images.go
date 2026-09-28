@@ -22,8 +22,8 @@ import (
 // pandoc runs with --sandbox, so it may not read files or fetch URLs named in
 // the posted HTML (that blocked reading /etc/passwd into an export and SSRF).
 // The sandbox also stops the pictures a document really has: Grown asset URLs
-// (/api/v1/docs/d/<id>/assets/<sha>) can't be fetched, and pandoc 3.1.13 (the
-// production image's Alpine package) refuses data: URIs as well. So the server
+// (/api/v1/docs/d/<id>/assets/<sha>) can't be fetched, and pandoc 3.1.13 (Alpine's
+// package, which production used to ship) refuses data: URIs as well. So the server
 // resolves the pictures itself, before pandoc runs:
 //
 //   - every <img src> is rewritten. data: images are decoded, and asset URLs

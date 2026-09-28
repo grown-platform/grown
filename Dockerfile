@@ -76,7 +76,22 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
 
 # ---- 3. Runtime ------------------------------------------------------------
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates pandoc tzdata && adduser -D -u 10001 grown
+# pandoc comes from the upstream static release, not apk: Alpine's pandoc
+# (3.1.13 in 3.20/3.21, 3.6.4 in 3.22) drops tables and code blocks when
+# importing ODT, and pre-3.2 builds ignore --sandbox for embedded resources.
+# internal/docs tests pin the behaviour; CI runs them against this version.
+ARG PANDOC_VERSION=3.10
+ARG TARGETARCH=amd64
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 grown \
+ && case "$TARGETARCH" in \
+      amd64) sum=e0f8af62d0f267d22baa5bcefe6d5dda3a097ccc60de794b759fe03159923244 ;; \
+      arm64) sum=55413dfb0c1aec861641fe858f1f73e84848f3db497b1c0c02e62887ea76f4a4 ;; \
+      *) echo "no pandoc checksum for $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+ && wget -qO /tmp/pandoc.tgz "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-${TARGETARCH}.tar.gz" \
+ && echo "$sum  /tmp/pandoc.tgz" | sha256sum -c - \
+ && tar -xzf /tmp/pandoc.tgz -C /usr/local/bin --strip-components 2 "pandoc-${PANDOC_VERSION}/bin/pandoc" \
+ && rm /tmp/pandoc.tgz && pandoc --version | head -1
 WORKDIR /app
 COPY --from=build  /out/server /app/server
 COPY --from=web    /web/dist   /app/web/dist

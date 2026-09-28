@@ -2493,10 +2493,13 @@ same extension object, so per-editor state (AutoCorrect settings) lives in a
   `--embed-resources`: `import_sanitize.lua` turns mediabag entries (the
   pictures packed in docx/odt/epub/rtf) into `data:` URIs itself and never
   reads anything else. `--wrap=none` keeps the HTML unwrapped as before.
-* **Seen under 3.1.13, not fixed**: the odt *reader* turns a table's header
-  row into ordinary cells and a code block into a paragraph
-  (`TestConvertFidelityRoundTrip/odt`, `TestConvertDocxToOdt` fail there);
-  the exported .odt itself is fine.
+* **Fixed by shipping pandoc 3.10**: under 3.1.13 (and Alpine 3.22's 3.6.4)
+  the odt *reader* turns a table's header row into ordinary cells and a code
+  block into a paragraph (`TestConvertFidelityRoundTrip/odt`,
+  `TestConvertDocxToOdt`). The runtime image now installs the upstream static
+  pandoc 3.10 release (pinned version + sha256 in the Dockerfile) and the CI
+  `go` job installs the same binary, so these tests run against production's
+  pandoc instead of skipping.
 * **Gaps**: RTF can only hold PNG/JPEG (pandoc skips GIF/WebP/BMP/SVG);
   charts still export empty.
 * **Tests**: `internal/docs/export_images_test.go` (data: and asset

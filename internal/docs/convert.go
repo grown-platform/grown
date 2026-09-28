@@ -256,10 +256,10 @@ var importSanitizeFilter []byte
 
 // runPandocImport runs pandoc to read inPath as `reader` and write HTML to
 // stdout. Pictures packed in the file are inlined as data URIs by the
-// sanitize filter, not by --embed-resources: pandoc 3.1.13 (Alpine, the
-// production image) applies --embed-resources outside --sandbox, so an
-// uploaded html/md file could inline arbitrary server files
-// (<img src="/etc/passwd">) or fetch internal URLs (SSRF).
+// sanitize filter, not by --embed-resources: pandoc 3.1.13 (Alpine; what
+// production shipped before pandoc was pinned) applies --embed-resources
+// outside --sandbox, so an uploaded html/md file could inline arbitrary
+// server files (<img src="/etc/passwd">) or fetch internal URLs (SSRF).
 func runPandocImport(ctx context.Context, reader, inPath, filterPath string) ([]byte, error) {
 	// --sandbox confines pandoc's own IO to inPath.
 	// --wrap=none keeps tags and long lines unbroken.

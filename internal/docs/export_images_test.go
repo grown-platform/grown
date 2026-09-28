@@ -16,8 +16,9 @@ import (
 )
 
 // Pictures in pandoc-backed exports (export_images.go). These run against
-// whatever pandoc is on PATH; the production image's is Alpine's 3.1.13,
-// which refuses data: URIs under --sandbox, so run them there too (see the
+// whatever pandoc is on PATH. Production and CI use the static release
+// pinned in the Dockerfile; older builds (Alpine's 3.1.13) refuse data: URIs
+// under --sandbox, which these tests also cover (see
 // docs/plans/onlyoffice-parity/docs.md §6.20).
 
 const tinyPNG64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
