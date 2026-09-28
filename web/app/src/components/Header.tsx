@@ -45,16 +45,13 @@ interface HeaderProps {
 export function Header({ user }: HeaderProps) {
   const brand = useBrand();
   const location = useLocation();
-  // The launchers (hamburger + 9-dot) list every catalog app, with the org's
-  // external-URL overrides applied and bring-your-own tiles (Home Assistant)
-  // dropped until they have a URL. Disabled services are intentionally still
-  // listed here (unchanged launcher behavior); the dashboard hides them.
+  // The launchers (hamburger + 9-dot) resolve the catalog exactly like the
+  // dashboard: org external-URL overrides applied, services the org disabled
+  // hidden, and bring-your-own tiles (Home Assistant) dropped until they have
+  // a URL. Fail-open for built-ins if the settings can't be fetched.
   const serviceSettings = useServiceSettings(!!user);
   const launcherApps = useMemo(
-    () =>
-      applyServiceSettings(apps, serviceSettings ?? null, {
-        hideDisabled: false,
-      }),
+    () => applyServiceSettings(apps, serviceSettings ?? null),
     [serviceSettings],
   );
   const navigate = useNavigate();

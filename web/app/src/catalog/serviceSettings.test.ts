@@ -74,7 +74,7 @@ describe("applyServiceSettings", () => {
     expect(out[2].externalUrl).toBe("https://ha.example.com");
   });
 
-  it("hides disabled services (never admin) unless hideDisabled is false", () => {
+  it("hides disabled services, never admin, even with a URL", () => {
     const settings = [
       { service_id: "drive", enabled: false },
       { service_id: "admin", enabled: false },
@@ -85,9 +85,6 @@ describe("applyServiceSettings", () => {
       },
     ];
     expect(ids(applyServiceSettings(catalog, settings))).toEqual(["admin"]);
-    expect(
-      ids(applyServiceSettings(catalog, settings, { hideDisabled: false })),
-    ).toEqual(["drive", "admin", "homeassistant"]);
   });
 
   it("overrides built-in tiles' URLs without mutating the catalog", () => {

@@ -11,33 +11,26 @@ export interface OrgServiceSetting {
   external_url?: string;
 }
 
-export interface ApplyOptions {
-  /** Drop tiles whose service the org disabled (the "admin" tile is never
-   *  dropped here; callers gate it separately). Default true. */
-  hideDisabled?: boolean;
-}
-
 /**
  * applyServiceSettings resolves the static catalog against an org's service
  * settings:
  *   - a non-empty external_url overrides the tile's catalog externalUrl;
  *   - bring-your-own tiles (requiresExternalUrl) are dropped unless they end
  *     up with a URL, since they have no built-in route to fall back to;
- *   - with hideDisabled (default), disabled services are dropped.
+ *   - services the org disabled are dropped, except "admin" (so it can be
+ *     re-enabled; callers gate the Admin tile separately).
  * `settings` of null means "not loaded / failed": built-in tiles show (fail
  * open) but bring-your-own tiles stay hidden (nothing to link to).
  */
 export function applyServiceSettings(
   catalog: readonly AppTile[],
   settings: readonly OrgServiceSetting[] | null,
-  opts: ApplyOptions = {},
 ): AppTile[] {
-  const hideDisabled = opts.hideDisabled ?? true;
   const byId = new Map((settings ?? []).map((s) => [s.service_id, s]));
   const out: AppTile[] = [];
   for (const a of catalog) {
     const s = byId.get(a.id);
-    if (hideDisabled && a.id !== "admin" && s && !s.enabled) continue;
+    if (a.id !== "admin" && s && !s.enabled) continue;
     const url = s?.external_url?.trim();
     const tile = url ? { ...a, externalUrl: url } : a;
     if (tile.requiresExternalUrl && !tile.externalUrl) continue;
