@@ -156,3 +156,24 @@ http://{{ .Release.Name }}-zitadel.{{ .Release.Namespace }}.svc.cluster.local:80
 {{ .Values.imagePullSecrets.create.name }}
 {{- end -}}
 {{- end -}}
+
+{{/* ---------------------------------------------------------------------
+     Home Assistant (optional, bring-your-own is the primary path).
+     --------------------------------------------------------------------- */}}
+
+{{/* Home Assistant resource name. */}}
+{{- define "grown.haName" -}}
+{{ .Release.Name }}-homeassistant
+{{- end -}}
+
+{{/* Public hostname Home Assistant is served on: homeAssistant.host, else
+     ha.<domain>. HA can't live under a sub-path, so it gets its own host. */}}
+{{- define "grown.haHost" -}}
+{{- .Values.homeAssistant.host | default (printf "ha.%s" .Values.domain) -}}
+{{- end -}}
+
+{{/* URL grown's Home Assistant tile defaults to (GROWN_HOMEASSISTANT_URL):
+     homeAssistant.url, else <scheme>://<haHost>. */}}
+{{- define "grown.haURL" -}}
+{{- .Values.homeAssistant.url | default (printf "%s://%s" .Values.scheme (include "grown.haHost" .)) -}}
+{{- end -}}

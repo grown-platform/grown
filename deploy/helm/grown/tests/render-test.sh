@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Render-invariant tests for the grown chart (object storage: rustfs + the
-# legacy-MinIO migration path). Needs only `helm` (+ bash/awk/grep).
+# legacy-MinIO migration path; the optional Home Assistant component). Needs only `helm` (+ bash/awk/grep).
 #
 #   deploy/helm/grown/tests/render-test.sh
 #
@@ -26,6 +26,15 @@ doc() {
     meta && /^  name: / && n == "" { n = $2 }
     /^[a-z]/ && !/^metadata:/ { meta = 0 }
     END { flush() }'
+}
+
+# cmkey KEY < configmap-doc : print a literal-block (|) data key, de-indented.
+cmkey() {
+  awk -v key="$1" '
+    $0 ~ "^  " key ": [|]" { on = 1; next }
+    on && /^  [^ ]/ { on = 0 }
+    on && /^[^ ]/ { on = 0 }
+    on { sub(/^    /, ""); print }'
 }
 
 ok() { pass=$((pass + 1)); }
@@ -135,6 +144,87 @@ out=$(render --set pdf.enabled=false --set minio.enabled=true --set migrateFromM
 hasnt "$(doc Deployment "$REL-grown" <<<"$out")" 'PDF_STORAGE' "no pdf storage env"
 hasnt "$(doc Job "$REL-rustfs-init" <<<"$out")" 'mkbucket pdf-docs' "no pdf bucket created"
 has "$(doc Job "$REL-migrate-from-minio" <<<"$out")" 'value: "grown-default:grown-default"$' "only app bucket migrated"
+
+# ---------------------------------------------------------------------------
+echo "== homeAssistant: disabled by default"
+out=$(render) || { bad "render defaults"; out=""; }
+hasnt "$out" 'homeassistant' "no Home Assistant resources by default"
+hasnt "$(doc Deployment "$REL-grown" <<<"$out")" 'GROWN_HOMEASSISTANT_URL' "no HA tile default by default"
+out=$(render --set ingress.type=ingress) || out=""
+hasnt "$out" "name: $REL-homeassistant" "no HA ingress when disabled"
+
+echo "== homeAssistant: enabled (ingress)"
+out=$(render --set homeAssistant.enabled=true --set ingress.type=ingress --set ingress.className=nginx \
+  --set ingress.tls.enabled=true --set scheme=https --set domain=grown.example.com) || { bad "render ha"; out=""; }
+sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
+has "$sts" 'image: "ghcr\.io/home-assistant/home-assistant:[0-9]{4}\.[0-9]+\.[0-9]+"' "pinned HA stable tag"
+hasnt "$sts" 'home-assistant:(latest|stable|dev|beta)' "no floating HA tag"
+has "$sts" 'replicas: 1' "single replica"
+has "$sts" 'hostNetwork: false' "host network off"
+has "$sts" 'allowPrivilegeEscalation: false' "no privilege escalation"
+has "$sts" '- ALL' "drops all capabilities"
+has "$sts" 'type: RuntimeDefault' "RuntimeDefault seccomp"
+has "$sts" 'mountPath: /config' "config volume at /config"
+has "$sts" 'containerPort: 8123' "HA port"
+has "$sts" 'memory: 2Gi' "memory limit from values"
+has "$sts" 'volumeClaimTemplates' "PVC for /config"
+has "$sts" 'storage: 5Gi' "default HA PVC size"
+has "$sts" 'name: seed-config' "seed initContainer"
+has "$sts" 'command: \["/bin/sh", "/seed/seed.sh"\]' "initContainer runs the seed script"
+svc=$(doc Service "$REL-homeassistant" <<<"$out")
+has "$svc" 'port: 8123' "Service on 8123"
+has "$svc" 'app.kubernetes.io/component: homeassistant' "Service selects HA"
+ing=$(doc Ingress "$REL-homeassistant" <<<"$out")
+has "$ing" 'host: "ha\.grown\.example\.com"' "HA host defaults to ha.<domain>"
+has "$ing" 'ingressClassName: nginx' "HA ingress uses ingress.className"
+has "$ing" 'secretName: grown-tls' "HA TLS falls back to ingress.tls.secretName"
+has "$ing" "name: $REL-homeassistant" "ingress backend = HA svc"
+app=$(doc Deployment "$REL-grown" <<<"$out")
+has "$app" 'name: GROWN_HOMEASSISTANT_URL' "grown gets the HA tile default"
+has "$app" 'value: "https://ha\.grown\.example\.com"' "tile default = <scheme>://<ha host>"
+cm=$(doc ConfigMap "$REL-homeassistant-seed" <<<"$out")
+conf=$(cmkey configuration.yaml <<<"$cm")
+has "$conf" '^default_config:' "seed has default_config"
+has "$conf" 'use_x_forwarded_for: true' "seed trusts X-Forwarded-For"
+has "$conf" '- "10\.0\.0\.0/8"' "seed has default trusted proxies"
+has "$conf" 'automation: !include automations.yaml' "seed wires UI automations"
+
+echo "== homeAssistant: seed script never clobbers existing config"
+seed=$(cmkey seed.sh <<<"$cm")
+tmp=$(mktemp -d)
+mkdir -p "$tmp/seed" "$tmp/config"
+for f in configuration.yaml automations.yaml scripts.yaml scenes.yaml; do cmkey "$f" <<<"$cm" >"$tmp/seed/$f"; done
+printf '%s\n' "$seed" >"$tmp/seed/seed.sh"
+CONFIG_DIR="$tmp/config" SEED_DIR="$tmp/seed" sh "$tmp/seed/seed.sh" >/dev/null && ok || bad "seed script runs"
+cmp -s "$tmp/seed/configuration.yaml" "$tmp/config/configuration.yaml" && ok || bad "first run seeds configuration.yaml"
+[ -f "$tmp/config/automations.yaml" ] && ok || bad "first run seeds automations.yaml"
+echo "homeassistant: {name: Mine}" >"$tmp/config/configuration.yaml"
+echo "- id: mine" >"$tmp/config/automations.yaml"
+CONFIG_DIR="$tmp/config" SEED_DIR="$tmp/seed" sh "$tmp/seed/seed.sh" >/dev/null && ok || bad "seed script re-runs"
+[ "$(cat "$tmp/config/configuration.yaml")" = "homeassistant: {name: Mine}" ] && ok || bad "existing configuration.yaml untouched"
+[ "$(cat "$tmp/config/automations.yaml")" = "- id: mine" ] && ok || bad "existing automations.yaml untouched"
+rm -rf "$tmp"
+
+echo "== homeAssistant: overrides + httproute + no ingress"
+out=$(render --set homeAssistant.enabled=true --set ingress.type=httproute --set homeAssistant.host=home.example.net \
+  --set homeAssistant.url=https://home.example.net/lovelace/0 --set 'homeAssistant.trustedProxies={10.42.0.0/16}' \
+  --set homeAssistant.persistence.size=20Gi --set homeAssistant.persistence.storageClass=fast) || { bad "render ha overrides"; out=""; }
+rt=$(doc HTTPRoute "$REL-homeassistant" <<<"$out")
+has "$rt" '- "home\.example\.net"' "HTTPRoute uses homeAssistant.host"
+has "$rt" 'name: public-gateway' "HTTPRoute parent = ingress.httproute gateway"
+has "$(doc Deployment "$REL-grown" <<<"$out")" 'value: "https://home\.example\.net/lovelace/0"' "homeAssistant.url overrides tile default"
+conf=$(cmkey configuration.yaml <<<"$(doc ConfigMap "$REL-homeassistant-seed" <<<"$out")")
+has "$conf" '- "10\.42\.0\.0/16"' "trustedProxies configurable"
+hasnt "$conf" '10\.0\.0\.0/8' "trustedProxies replaced, not merged"
+sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
+has "$sts" 'storage: 20Gi' "HA PVC size configurable"
+has "$sts" 'storageClassName: "fast"' "HA storageClass configurable"
+out=$(render --set homeAssistant.enabled=true --set homeAssistant.persistence.existingClaim=ha-config --set homeAssistant.setGrownDefault=false) || out=""
+sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
+has "$sts" 'claimName: ha-config' "existingClaim mounted"
+hasnt "$sts" 'volumeClaimTemplates' "no PVC template with existingClaim"
+hasnt "$out" "kind: (Ingress|HTTPRoute)" "ingress.type=none renders no HA route"
+hasnt "$(doc Deployment "$REL-grown" <<<"$out")" 'GROWN_HOMEASSISTANT_URL' "setGrownDefault=false skips tile default"
 
 echo
 echo "passed: $pass  failed: $fails"

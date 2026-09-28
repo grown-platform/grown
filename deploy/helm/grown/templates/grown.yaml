@@ -208,6 +208,11 @@ spec:
               value: {{ .maxDays | int | quote }}
             {{- end }}
             {{- end }}
+            {{- if and .Values.homeAssistant.enabled .Values.homeAssistant.setGrownDefault }}
+            # --- Home Assistant tile default (orgs can override in Admin) ---
+            - name: GROWN_HOMEASSISTANT_URL
+              value: {{ include "grown.haURL" . | quote }}
+            {{- end }}
             {{- with .Values.grown.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

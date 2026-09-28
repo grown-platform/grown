@@ -11,7 +11,7 @@ bundled as plain StatefulSets/Deployments so it runs the same on:
 Bundled: **Postgres** (StatefulSet) · **rustfs** S3 storage (StatefulSet +
 bucket-init hook Job) · **Zitadel** OIDC (Deployment + auto-provisioning Job) · the
 **grown** app (Deployment + optional `bolo-mp` sidecar) · optional Ingress /
-Gateway HTTPRoute.
+Gateway HTTPRoute · optional **Home Assistant** (StatefulSet, off by default).
 
 > **Chart 0.2.0 replaced MinIO with rustfs.** Upgrading an existing 0.1.x
 > install? Read [Upgrading from 0.1.x](#upgrading-from-01x-minio-to-020-rustfs)
@@ -113,6 +113,9 @@ helm install grown deploy/helm/grown -n grown --create-namespace \
 | `minio.enabled` | `false` | LEGACY: keep a 0.1.x MinIO running for the migration |
 | `migrateFromMinio.enabled` | `false` | one-shot MinIO -> rustfs copy Job |
 | `pdf.enabled` | `true` | built-in PDF signing app |
+| `homeAssistant.enabled` | `false` | also run Home Assistant; its URL becomes the HA tile default (below) |
+| `homeAssistant.host` | `""` => `ha.<domain>` | HA's own hostname (HA can't live under a sub-path) |
+| `homeAssistant.trustedProxies` | RFC1918 + `fd00::/8` | `http.trusted_proxies` seeded into HA's first `configuration.yaml` |
 | `grown.libreoffice.enabled` | `false` | legacy .doc/.xls/.ppt import via LibreOffice headless; needs an image with LibreOffice (below) |
 | `persistence` sizes / `*.resources` | see values | per-component sizing |
 
@@ -140,6 +143,52 @@ capped, time-limited (process group killed) and concurrency-limited.
 LibreOffice is MPL-2.0 and only exec'd, never linked. `GET
 /api/v1/convert/capabilities` reports whether it's active; the UI only
 offers legacy formats when it is.
+
+### Optional: Home Assistant
+
+Grown's **Home Assistant** tile is bring-your-own: an org admin sets the
+org's HA URL in **Admin > Services > Home Assistant** and the tile appears
+(hidden until then). The chart can also run an HA instance for you:
+
+```yaml
+homeAssistant:
+  enabled: true
+  # host: ha.grown.example.com            # default ha.<domain>
+  # trustedProxies: [10.42.0.0/16]        # your pod CIDR / proxy IPs
+  persistence: { size: 5Gi }
+```
+
+That renders a single-replica StatefulSet (`ghcr.io/home-assistant/home-assistant`,
+pinned tag), a PVC for `/config`, a Service on 8123 and an Ingress/HTTPRoute
+for `homeAssistant.host` using the same `ingress.*` settings as grown (make
+sure your TLS secret / DNS covers that host). grown gets
+`GROWN_HOMEASSISTANT_URL=<scheme>://<host>` (or `homeAssistant.url`), which
+the service-settings API reports as the tile URL for every org that hasn't
+set its own; org URLs always win. `homeAssistant.setGrownDefault: false`
+turns that off. Without the chart component you can still set a
+deployment-wide default via `grown.extraEnv` `GROWN_HOMEASSISTANT_URL`.
+
+- **First start only**, an initContainer seeds `configuration.yaml`
+  (`default_config:`, `http.use_x_forwarded_for: true` + `trusted_proxies`,
+  and the `automations/scripts/scenes` includes). Each file is copied only if
+  missing, so the chart **never overwrites** your config; changing
+  `trustedProxies` later means editing `/config/configuration.yaml`.
+  HA answers 400 to proxied requests from an IP outside `trusted_proxies`.
+- **Security:** the official image runs as **root** (s6-overlay; HA
+  pip-installs integration deps at runtime), so no `runAsNonRoot` or
+  read-only root filesystem. The chart runs it with **all capabilities
+  dropped**, `allowPrivilegeEscalation: false`, RuntimeDefault seccomp and
+  **host networking off** (verified on 2026.9.4). If `/config` isn't
+  root-owned, add `CHOWN`/`DAC_OVERRIDE`/`FOWNER` to
+  `homeAssistant.securityContext.capabilities.add`.
+- **No discovery:** without host networking, mDNS/SSDP/DHCP/Bluetooth
+  discovery doesn't work (a harmless `aiodhcpwatcher ... Operation not
+  permitted` log line). Add integrations by IP/hostname. If you need
+  discovery or USB radios (Zigbee/Z-Wave), run HA outside the cluster and
+  use the bring-your-own URL instead.
+- `helm uninstall` keeps the PVC (`config-<release>-homeassistant-0`).
+
+See [docs/services/homeassistant.md](../../../docs/services/homeassistant.md).
 
 ## Zitadel & real login (the sticking point)
 

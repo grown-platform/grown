@@ -129,7 +129,73 @@ bolo:
       memory: 256Mi
 
 # -----------------------------------------------------------------------------
-# Ingress: how grown is exposed.
+# Home Assistant (optional, NEW in chart 0.3.0). Disabled by default: grown's
+# Home Assistant tile is bring-your-own — each org sets its own HA URL in
+# Admin > Services. Enable this to also run an HA instance next to grown; its
+# URL then becomes the tile's default for orgs that haven't set their own
+# (GROWN_HOMEASSISTANT_URL). See docs/services/homeassistant.md.
+# -----------------------------------------------------------------------------
+homeAssistant:
+  enabled: false
+  image:
+    repository: ghcr.io/home-assistant/home-assistant
+    tag: "2026.9.4"
+    pullPolicy: IfNotPresent
+  # Public hostname. "" => ha.<domain>. HA needs its own host (it can't run
+  # under a URL sub-path). Routed with the same ingress.type/className/TLS as
+  # grown; for type none, route it yourself.
+  host: ""
+  # URL handed to grown as the tile default. "" => <scheme>://<host>.
+  url: ""
+  # Set GROWN_HOMEASSISTANT_URL on grown so the tile works out of the box.
+  setGrownDefault: true
+  port: 8123
+  timezone: "UTC"
+  # CIDRs of the reverse proxies in front of HA (ingress controller / gateway
+  # pods, cloudflared, ...). Seeded into configuration.yaml's
+  # http.trusted_proxies on FIRST start only (the seed never overwrites an
+  # existing file; edit /config/configuration.yaml afterwards). Defaults cover
+  # common pod CIDRs; narrow them to your cluster's pod CIDR in production.
+  trustedProxies:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - fd00::/8
+  ingress:
+    annotations: {}      # merged over ingress.annotations
+    tlsSecretName: ""    # "" => ingress.tls.secretName (must cover the HA host)
+  persistence:
+    size: 5Gi
+    storageClass: ""     # "" => the global storageClass
+    existingClaim: ""    # use an existing PVC for /config instead
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+  # The official HA image runs as ROOT (s6-overlay init; HA pip-installs
+  # integration deps at runtime) and doesn't support runAsNonRoot or a
+  # read-only root filesystem. This is as tight as it tolerates: root with NO
+  # capabilities (verified: 2026.9.4 boots, serves and stops cleanly with
+  # cap-drop ALL + no-new-privileges), RuntimeDefault seccomp, host network
+  # off. Two knobs you may need:
+  #   - /config volume not owned by root (e.g. some NFS exports): add
+  #     ["CHOWN", "DAC_OVERRIDE", "FOWNER"].
+  #   - DHCP discovery (aiodhcpwatcher logs "Operation not permitted"): needs
+  #     NET_RAW + hostNetwork, which this chart deliberately doesn't offer.
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    privileged: false
+    capabilities:
+      drop: ["ALL"]
+  extraEnv: []
+
+# -----------------------------------------------------------------------------
+# Ingress: how grown (and homeAssistant, when enabled) is exposed.
 #   type: ingress    -> plain networking.k8s.io/v1 Ingress (PORTABLE DEFAULT;
 #                       works on kind w/ ingress-nginx, k3s w/ traefik, Pi)
 #   type: httproute  -> Gateway API HTTPRoute (like production homelab)

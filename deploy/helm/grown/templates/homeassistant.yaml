@@ -1,0 +1,242 @@
+{{- if .Values.homeAssistant.enabled }}
+{{- $name := include "grown.haName" . }}
+{{- $ha := .Values.homeAssistant }}
+# Optional Home Assistant, deployed alongside grown as a convenience. Grown
+# treats HA as bring-your-own: this instance is just the deployment-default URL
+# for the Home Assistant tile (GROWN_HOMEASSISTANT_URL); any org can point the
+# tile at its own HA in Admin > Services instead.
+#
+# First-start seed: an initContainer copies configuration.yaml (+ the empty
+# automations/scripts/scenes files the UI editors write to) into /config ONLY
+# when each file is missing. It never overwrites user config, so editing
+# homeAssistant.trustedProxies later does not touch an existing install.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-seed
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: homeassistant
+data:
+  configuration.yaml: |
+    # Seeded by the grown Helm chart on first start. The chart never overwrites
+    # this file: edit it freely (or through the HA UI).
+    default_config:
+
+    # HA sits behind the cluster's ingress / gateway, so trust X-Forwarded-For
+    # from these proxies (anything else sending the header is rejected).
+    http:
+      use_x_forwarded_for: true
+      trusted_proxies:
+        {{- range $ha.trustedProxies }}
+        - {{ . | quote }}
+        {{- end }}
+
+    automation: !include automations.yaml
+    script: !include scripts.yaml
+    scene: !include scenes.yaml
+  automations.yaml: |
+    []
+  scripts.yaml: ""
+  scenes.yaml: ""
+  seed.sh: |
+    #!/bin/sh
+    # Copy each seed file into $CONFIG_DIR only if it doesn't exist yet.
+    set -eu
+    CONFIG_DIR="${CONFIG_DIR:-/config}"
+    SEED_DIR="${SEED_DIR:-/seed}"
+    mkdir -p "$CONFIG_DIR"
+    for f in configuration.yaml automations.yaml scripts.yaml scenes.yaml; do
+      if [ -e "$CONFIG_DIR/$f" ]; then
+        echo "keep existing $f"
+      else
+        cp "$SEED_DIR/$f" "$CONFIG_DIR/$f"
+        echo "seeded $f"
+      fi
+    done
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: homeassistant
+spec:
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: homeassistant
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ $ha.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: homeassistant
+spec:
+  serviceName: {{ $name }}
+  # HA is single-instance (SQLite recorder + in-process state): never >1.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: homeassistant
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "grown.labels" . | nindent 8 }}
+        app.kubernetes.io/component: homeassistant
+    spec:
+      # Off on purpose: no mDNS/SSDP/Bluetooth discovery from the pod. Add
+      # integrations by IP/hostname instead (see README).
+      hostNetwork: false
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      {{- with $ha.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: seed-config
+          image: "{{ $ha.image.repository }}:{{ $ha.image.tag }}"
+          imagePullPolicy: {{ $ha.image.pullPolicy }}
+          command: ["/bin/sh", "/seed/seed.sh"]
+          env:
+            - { name: CONFIG_DIR, value: /config }
+            - { name: SEED_DIR, value: /seed }
+          {{- with $ha.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: seed, mountPath: /seed, readOnly: true }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+      containers:
+        - name: homeassistant
+          image: "{{ $ha.image.repository }}:{{ $ha.image.tag }}"
+          imagePullPolicy: {{ $ha.image.pullPolicy }}
+          {{- with $ha.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: TZ
+              value: {{ $ha.timezone | quote }}
+            {{- with $ha.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - { name: http, containerPort: 8123 }
+          volumeMounts:
+            - { name: config, mountPath: /config }
+          # First boot installs integrations' Python deps and can take minutes.
+          startupProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            {{- toYaml $ha.resources | nindent 12 }}
+      volumes:
+        - name: seed
+          configMap:
+            name: {{ $name }}-seed
+        {{- if $ha.persistence.existingClaim }}
+        - name: config
+          persistentVolumeClaim:
+            claimName: {{ $ha.persistence.existingClaim }}
+        {{- end }}
+  {{- if not $ha.persistence.existingClaim }}
+  # config-<release>-homeassistant-0 holds ALL of HA's state (config, .storage,
+  # the recorder DB). Kubernetes never deletes volumeClaimTemplate PVCs on
+  # `helm uninstall`/upgrade.
+  volumeClaimTemplates:
+    - metadata:
+        name: config
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with ($ha.persistence.storageClass | default .Values.storageClass) }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $ha.persistence.size }}
+  {{- end }}
+{{- if ne .Values.ingress.type "none" }}
+---
+{{- $host := include "grown.haHost" . }}
+{{- if eq .Values.ingress.type "ingress" }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: homeassistant
+  {{- with (merge (dict) ($ha.ingress.annotations | default dict) (.Values.ingress.annotations | default dict)) }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ $ha.ingress.tlsSecretName | default .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  number: {{ $ha.port }}
+{{- else if eq .Values.ingress.type "httproute" }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: homeassistant
+spec:
+  parentRefs:
+    - name: {{ .Values.ingress.httproute.gatewayName }}
+      namespace: {{ .Values.ingress.httproute.gatewayNamespace }}
+  hostnames:
+    - {{ $host | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ $name }}
+          port: {{ $ha.port }}
+{{- end }}
+{{- end }}
+{{- end }}
