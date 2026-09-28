@@ -199,6 +199,19 @@ async def test_notify_rate_limited(
         )
 
 
+@pytest.mark.parametrize("status", [404, 501])
+async def test_notify_on_grown_without_push(
+    hass: HomeAssistant, setup_integration: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker, status: int,
+) -> None:
+    aioclient_mock.post(f"{API}/notifications/push", status=status, text='{"message":"Method Not Allowed"}')
+    with pytest.raises(HomeAssistantError, match="Grown 0.4 or later"):
+        await hass.services.async_call(
+            NOTIFY_DOMAIN, "send_message", {"message": "hi"},
+            target={"entity_id": NOTIFY}, blocking=True,
+        )
+
+
 async def test_auth_failure_during_poll_starts_reauth(
     hass: HomeAssistant, setup_integration: MockConfigEntry,
     aioclient_mock: AiohttpClientMocker,

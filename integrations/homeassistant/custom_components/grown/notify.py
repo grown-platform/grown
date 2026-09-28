@@ -12,10 +12,20 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .api import GrownAuthError, GrownError, GrownNotFoundError, GrownRateLimitError
+from .api import (
+    GrownApiError,
+    GrownAuthError,
+    GrownError,
+    GrownNotFoundError,
+    GrownRateLimitError,
+)
 from .const import DEFAULT_PUSH_TITLE, PUSH_MESSAGE_MAX, PUSH_TITLE_MAX
 from .coordinator import GrownConfigEntry, GrownCoordinator
 from .entity import GrownEntity
+
+NO_PUSH_ENDPOINT = (
+    "This Grown server has no notification push endpoint (Grown 0.4 or later is needed)"
+)
 
 # Sends are serialized: Grown rate-limits pushes per token.
 PARALLEL_UPDATES = 1
@@ -61,8 +71,11 @@ class GrownNotifyEntity(GrownEntity, NotifyEntity):
                 "Grown rejected the API token (it needs the notifications:write scope)"
             ) from err
         except GrownNotFoundError as err:
-            raise HomeAssistantError(
-                "This Grown server has no notification push endpoint (Grown 0.4 or later is needed)"
-            ) from err
+            raise HomeAssistantError(NO_PUSH_ENDPOINT) from err
+        except GrownApiError as err:
+            # Pre-0.4 grpc-gateway answers the unknown route with 405/501.
+            if err.status in (405, 501):
+                raise HomeAssistantError(NO_PUSH_ENDPOINT) from err
+            raise HomeAssistantError(f"Could not send the notification to Grown: {err}") from err
         except GrownError as err:
             raise HomeAssistantError(f"Could not send the notification to Grown: {err}") from err
