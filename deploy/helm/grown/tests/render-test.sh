@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Render-invariant tests for the grown chart (object storage: rustfs + the
-# legacy-MinIO migration path; the optional Home Assistant component). Needs only `helm` (+ bash/awk/grep).
+# legacy-MinIO migration path; the Home Assistant component, its onboarding
+# sidecar and integration fetch). Needs `helm` (+ bash/awk/grep); python3, when
+# present, also exercises the shipped HA scripts.
 #
 #   deploy/helm/grown/tests/render-test.sh
 #
@@ -146,15 +148,20 @@ hasnt "$(doc Job "$REL-rustfs-init" <<<"$out")" 'mkbucket pdf-docs' "no pdf buck
 has "$(doc Job "$REL-migrate-from-minio" <<<"$out")" 'value: "grown-default:grown-default"$' "only app bucket migrated"
 
 # ---------------------------------------------------------------------------
-echo "== homeAssistant: disabled by default"
+echo "== homeAssistant: on by default (0.4.0), switchable off"
 out=$(render) || { bad "render defaults"; out=""; }
-hasnt "$out" 'homeassistant' "no Home Assistant resources by default"
-hasnt "$(doc Deployment "$REL-grown" <<<"$out")" 'GROWN_HOMEASSISTANT_URL' "no HA tile default by default"
-out=$(render --set ingress.type=ingress) || out=""
+sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
+[ -n "$sts" ] && ok || bad "HA StatefulSet rendered by default"
+has "$(doc Deployment "$REL-grown" <<<"$out")" 'GROWN_HOMEASSISTANT_URL' "HA tile default set by default"
+hasnt "$out" "kind: (Ingress|HTTPRoute)" "default ingress.type=none renders no routes"
+out=$(render --set homeAssistant.enabled=false) || { bad "render ha off"; out=""; }
+hasnt "$out" 'homeassistant' "homeAssistant.enabled=false: no HA resources"
+hasnt "$(doc Deployment "$REL-grown" <<<"$out")" 'GROWN_HOMEASSISTANT_URL' "no HA tile default when disabled"
+out=$(render --set homeAssistant.enabled=false --set ingress.type=ingress) || out=""
 hasnt "$out" "name: $REL-homeassistant" "no HA ingress when disabled"
 
 echo "== homeAssistant: enabled (ingress)"
-out=$(render --set homeAssistant.enabled=true --set ingress.type=ingress --set ingress.className=nginx \
+out=$(render --set ingress.type=ingress --set ingress.className=nginx \
   --set ingress.tls.enabled=true --set scheme=https --set domain=grown.example.com) || { bad "render ha"; out=""; }
 sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
 has "$sts" 'image: "ghcr\.io/home-assistant/home-assistant:[0-9]{4}\.[0-9]+\.[0-9]+"' "pinned HA stable tag"
@@ -166,7 +173,8 @@ has "$sts" '- ALL' "drops all capabilities"
 has "$sts" 'type: RuntimeDefault' "RuntimeDefault seccomp"
 has "$sts" 'mountPath: /config' "config volume at /config"
 has "$sts" 'containerPort: 8123' "HA port"
-has "$sts" 'memory: 2Gi' "memory limit from values"
+has "$sts" 'memory: 1536Mi' "memory limit from values"
+has "$sts" 'memory: 384Mi' "small-cluster memory request"
 has "$sts" 'volumeClaimTemplates' "PVC for /config"
 has "$sts" 'storage: 5Gi' "default HA PVC size"
 has "$sts" 'name: seed-config' "seed initContainer"
@@ -188,6 +196,7 @@ has "$conf" '^default_config:' "seed has default_config"
 has "$conf" 'use_x_forwarded_for: true' "seed trusts X-Forwarded-For"
 has "$conf" '- "10\.0\.0\.0/8"' "seed has default trusted proxies"
 has "$conf" 'automation: !include automations.yaml' "seed wires UI automations"
+has "$conf" 'use_x_frame_options: false' "seed lets Grown frame HA (iframe)"
 
 echo "== homeAssistant: seed script never clobbers existing config"
 seed=$(cmkey seed.sh <<<"$cm")
@@ -206,7 +215,7 @@ CONFIG_DIR="$tmp/config" SEED_DIR="$tmp/seed" sh "$tmp/seed/seed.sh" >/dev/null 
 rm -rf "$tmp"
 
 echo "== homeAssistant: overrides + httproute + no ingress"
-out=$(render --set homeAssistant.enabled=true --set ingress.type=httproute --set homeAssistant.host=home.example.net \
+out=$(render --set ingress.type=httproute --set homeAssistant.host=home.example.net \
   --set homeAssistant.url=https://home.example.net/lovelace/0 --set 'homeAssistant.trustedProxies={10.42.0.0/16}' \
   --set homeAssistant.persistence.size=20Gi --set homeAssistant.persistence.storageClass=fast) || { bad "render ha overrides"; out=""; }
 rt=$(doc HTTPRoute "$REL-homeassistant" <<<"$out")
@@ -219,12 +228,117 @@ hasnt "$conf" '10\.0\.0\.0/8' "trustedProxies replaced, not merged"
 sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
 has "$sts" 'storage: 20Gi' "HA PVC size configurable"
 has "$sts" 'storageClassName: "fast"' "HA storageClass configurable"
-out=$(render --set homeAssistant.enabled=true --set homeAssistant.persistence.existingClaim=ha-config --set homeAssistant.setGrownDefault=false) || out=""
+out=$(render --set homeAssistant.persistence.existingClaim=ha-config --set homeAssistant.setGrownDefault=false) || out=""
 sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
 has "$sts" 'claimName: ha-config' "existingClaim mounted"
 hasnt "$sts" 'volumeClaimTemplates' "no PVC template with existingClaim"
 hasnt "$out" "kind: (Ingress|HTTPRoute)" "ingress.type=none renders no HA route"
 hasnt "$(doc Deployment "$REL-grown" <<<"$out")" 'GROWN_HOMEASSISTANT_URL' "setGrownDefault=false skips tile default"
+
+# ---------------------------------------------------------------------------
+echo "== homeAssistant: onboarding closes the first-run window"
+out=$(render) || { bad "render defaults"; out=""; }
+osec=$(doc Secret "$REL-homeassistant-owner" <<<"$out")
+has "$osec" 'username: "YWRtaW4="' "owner username defaults to admin"
+has "$osec" 'password: "[A-Za-z0-9+/=]{40,}"' "generated 32-char owner password"
+has "$osec" 'helm.sh/resource-policy": keep' "owner secret kept on uninstall (PVC is too)"
+sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
+has "$sts" 'command: \["python3", "-B", "/seed/onboard.py", "--check"\]' "HA readiness gated on onboarding"
+has "$sts" 'name: onboard$' "onboarding sidecar"
+has "$sts" 'command: \["python3", "-u", "/seed/onboard.py"\]' "sidecar runs the onboarding loop"
+has "$sts" 'value: "http://127.0.0.1:8123"' "sidecar talks to HA over localhost"
+has "$sts" "secretKeyRef: \\{ name: $REL-homeassistant-owner, key: password \\}" "sidecar password from owner secret"
+has "$sts" 'runAsUser: 65534' "sidecar runs as nobody"
+has "$sts" 'readOnlyRootFilesystem: true' "sidecar read-only rootfs"
+has "$sts" 'checksum/seed: [0-9a-f]{64}' "pod rolls when scripts change"
+side=$(sed -n '/- name: onboard$/,/limits:/p' <<<"$sts")
+hasnt "$side" 'mountPath: /config' "sidecar has no access to /config"
+out=$(render --set homeAssistant.owner.existingSecret=my-ha-owner) || out=""
+[ -z "$(doc Secret "$REL-homeassistant-owner" <<<"$out")" ] && ok || bad "existingSecret skips the generated owner secret"
+has "$(doc StatefulSet "$REL-homeassistant" <<<"$out")" 'secretKeyRef: \{ name: my-ha-owner, key: username \}' "existingSecret used by sidecar"
+out=$(render --set homeAssistant.onboarding.enabled=false) || out=""
+sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
+hasnt "$sts" 'name: onboard$' "onboarding.enabled=false: no sidecar"
+hasnt "$sts" 'onboard.py' "onboarding.enabled=false: plain tcp readiness"
+[ -z "$(doc Secret "$REL-homeassistant-owner" <<<"$out")" ] && ok || bad "onboarding off: no owner secret"
+
+echo "== homeAssistant: grown integration fetched from grown on every start"
+out=$(render) || out=""
+sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
+has "$sts" 'name: grown-integration' "fetch initContainer"
+has "$sts" "value: \"http://$REL-grown\\.$NS\\.svc\\.cluster\\.local:8080/integrations/homeassistant/grown\\.zip\"" "zip URL = grown Service"
+has "$sts" 'name: FETCH_TIMEOUT_SECONDS' "bounded wait for grown"
+[ "$(grep -n 'name: seed-config' <<<"$sts" | cut -d: -f1)" -lt "$(grep -n 'name: grown-integration' <<<"$sts" | cut -d: -f1)" ] && ok || bad "seed runs before the fetch"
+out=$(render --set homeAssistant.grownIntegration.url=http://g.example/grown.zip --set homeAssistant.grownIntegration.fetchTimeoutSeconds=30) || out=""
+sts=$(doc StatefulSet "$REL-homeassistant" <<<"$out")
+has "$sts" 'value: "http://g\.example/grown\.zip"' "grownIntegration.url override"
+has "$sts" 'value: "30"' "fetchTimeoutSeconds override"
+out=$(render --set homeAssistant.grownIntegration.enabled=false) || out=""
+hasnt "$(doc StatefulSet "$REL-homeassistant" <<<"$out")" 'grown-integration' "grownIntegration.enabled=false: no fetch"
+out=$(render --set homeAssistant.http.useXFrameOptions=true) || out=""
+hasnt "$(cmkey configuration.yaml <<<"$(doc ConfigMap "$REL-homeassistant-seed" <<<"$out")")" 'use_x_frame_options' "useXFrameOptions=true keeps HA's framing protection"
+
+echo "== homeAssistant: renders for every ingress.type"
+for t in none ingress httproute; do
+  out=$(render --set ingress.type=$t --set domain=grown.example.com) || { bad "render ingress.type=$t"; continue; }
+  [ -n "$(doc StatefulSet "$REL-homeassistant" <<<"$out")" ] && ok || bad "HA StatefulSet with ingress.type=$t"
+  case $t in
+    none) hasnt "$out" "kind: (Ingress|HTTPRoute)" "type none: no route" ;;
+    ingress) [ -n "$(doc Ingress "$REL-homeassistant" <<<"$out")" ] && ok || bad "type ingress: HA Ingress" ;;
+    httproute) [ -n "$(doc HTTPRoute "$REL-homeassistant" <<<"$out")" ] && ok || bad "type httproute: HA HTTPRoute" ;;
+  esac
+done
+
+echo "== homeAssistant: shipped scripts"
+cm=$(doc ConfigMap "$REL-homeassistant-seed" <<<"$(render)")
+for f in onboard.py fetch_integration.py; do
+  diff -B <(cmkey "$f" <<<"$cm") "$CHART/files/homeassistant/$f" >/dev/null && ok || bad "$f embedded verbatim in the seed ConfigMap"
+done
+if command -v python3 >/dev/null; then
+  tmp=$(mktemp -d)
+  for f in onboard.py fetch_integration.py; do
+    python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$CHART/files/homeassistant/$f" && ok || bad "$f parses"
+  done
+  # Readiness must fail closed when HA is not answering.
+  HA_URL=http://127.0.0.1:9 python3 -B "$CHART/files/homeassistant/onboard.py" --check 2>/dev/null && bad "--check passes with HA down" || ok
+  # fetch: unreachable grown -> gives up within the timeout and exits 0.
+  start=$SECONDS
+  GROWN_ZIP_URL=http://127.0.0.1:9/grown.zip CONFIG_DIR="$tmp/cfg" FETCH_TIMEOUT_SECONDS=3 \
+    python3 -B "$CHART/files/homeassistant/fetch_integration.py" >/dev/null && ok || bad "fetch exits 0 when grown is down"
+  [ $((SECONDS - start)) -le 10 ] && ok || bad "fetch honours FETCH_TIMEOUT_SECONDS"
+  # fetch: installs a bundle, replacing (not merging) the old copy.
+  src="$CHART/../../../integrations/homeassistant"
+  if [ -d "$src/custom_components/grown" ]; then
+    (cd "$src" && python3 -c 'import sys,zipfile,os
+z=zipfile.ZipFile(sys.argv[1],"w")
+for d,_,fs in os.walk("custom_components/grown"):
+    for f in fs:
+        if "__pycache__" not in d: z.write(os.path.join(d,f))
+z.close()' "$tmp/grown.zip")
+    mkdir -p "$tmp/cfg/custom_components/grown" && touch "$tmp/cfg/custom_components/grown/stale.py"
+    (cd "$tmp" && exec python3 -m http.server 18765 --bind 127.0.0.1 >/dev/null 2>&1) & srv=$!
+    sleep 1
+    GROWN_ZIP_URL=http://127.0.0.1:18765/grown.zip CONFIG_DIR="$tmp/cfg" FETCH_TIMEOUT_SECONDS=10 \
+      python3 -B "$CHART/files/homeassistant/fetch_integration.py" >/dev/null && ok || bad "fetch installs the bundle"
+    kill $srv 2>/dev/null
+    [ -f "$tmp/cfg/custom_components/grown/manifest.json" ] && ok || bad "manifest.json installed"
+    [ ! -e "$tmp/cfg/custom_components/grown/stale.py" ] && ok || bad "old integration files replaced"
+  fi
+  rm -rf "$tmp"
+else
+  echo "  (python3 not found: skipping script behaviour checks)"
+fi
+
+echo "== NOTES: HA owner password + integration hints"
+tmpc=$(mktemp -d)
+cp -R "$CHART" "$tmpc/grown"
+printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: notes-preview\ndata:\n  notes: |\n{{ include (print $.Template.BasePath "/NOTES.txt") . | indent 4 }}\n' >"$tmpc/grown/templates/notes-preview.yaml"
+notes=$(helm template "$REL" "$tmpc/grown" -n "$NS" --show-only templates/notes-preview.yaml) || bad "render NOTES"
+has "$notes" "get secret $REL-homeassistant-owner -o jsonpath='\\{.data.password\\}' \\| base64 -d" "NOTES: how to read the owner password"
+has "$notes" 'Add integration' "NOTES: how to add the Grown integration"
+notes=$(helm template "$REL" "$tmpc/grown" -n "$NS" --show-only templates/notes-preview.yaml --set homeAssistant.enabled=false) || notes=""
+hasnt "$notes" 'homeassistant-owner' "NOTES: no HA section when disabled"
+rm -rf "$tmpc"
 
 echo
 echo "passed: $pass  failed: $fails"

@@ -1,60 +1,47 @@
 {{- if .Values.homeAssistant.enabled }}
 {{- $name := include "grown.haName" . }}
 {{- $ha := .Values.homeAssistant }}
-# Optional Home Assistant, deployed alongside grown as a convenience. Grown
-# treats HA as bring-your-own: this instance is just the deployment-default URL
-# for the Home Assistant tile (GROWN_HOMEASSISTANT_URL); any org can point the
-# tile at its own HA in Admin > Services instead.
+{{- $ownerSecret := include "grown.haOwnerSecret" . }}
+# Home Assistant, installed with grown by default (homeAssistant.enabled).
+# Grown still treats HA as bring-your-own: this instance is the
+# deployment-default URL for the Home Assistant tile (GROWN_HOMEASSISTANT_URL);
+# any org can point the tile at its own HA in Admin > Services instead.
 #
-# First-start seed: an initContainer copies configuration.yaml (+ the empty
-# automations/scripts/scenes files the UI editors write to) into /config ONLY
-# when each file is missing. It never overwrites user config, so editing
-# homeAssistant.trustedProxies later does not touch an existing install.
+# Pod layout:
+#   init  seed-config             copy configuration.yaml & co. into /config
+#                                 ONLY when missing (never clobbers)
+#   init  grown-integration       download grown.zip from the grown Service
+#                                 into /config/custom_components/grown (every
+#                                 start; bounded wait, never blocks HA forever)
+#   main  homeassistant           readiness = onboarding "user" step done, so
+#                                 the Service/Ingress route nothing to a fresh,
+#                                 un-owned HA
+#   side  onboard                 creates the owner from the
+#                                 <release>-homeassistant-owner Secret over
+#                                 localhost and finishes onboarding (idempotent)
+{{- if and $ha.onboarding.enabled (not $ha.owner.existingSecret) }}
+{{- $existing := (lookup "v1" "Secret" .Release.Namespace $ownerSecret) | default dict }}
+{{- $data := (get $existing "data") | default dict }}
+{{- $user := (get $data "username") | default "" | b64dec | default $ha.owner.username }}
+{{- $pass := (get $data "password") | default "" | b64dec | default (randAlphaNum 32) }}
+# Owner credentials for the onboarding sidecar. Generated once, then reused via
+# lookup on every upgrade (`helm template`/--dry-run shows a fresh random value:
+# expected). Kept on uninstall because the HA PVC (and the owner in it) is too.
 apiVersion: v1
-kind: ConfigMap
+kind: Secret
 metadata:
-  name: {{ $name }}-seed
+  name: {{ $ownerSecret }}
   labels:
     {{- include "grown.labels" . | nindent 4 }}
     app.kubernetes.io/component: homeassistant
+  annotations:
+    "helm.sh/resource-policy": keep
+type: Opaque
 data:
-  configuration.yaml: |
-    # Seeded by the grown Helm chart on first start. The chart never overwrites
-    # this file: edit it freely (or through the HA UI).
-    default_config:
-
-    # HA sits behind the cluster's ingress / gateway, so trust X-Forwarded-For
-    # from these proxies (anything else sending the header is rejected).
-    http:
-      use_x_forwarded_for: true
-      trusted_proxies:
-        {{- range $ha.trustedProxies }}
-        - {{ . | quote }}
-        {{- end }}
-
-    automation: !include automations.yaml
-    script: !include scripts.yaml
-    scene: !include scenes.yaml
-  automations.yaml: |
-    []
-  scripts.yaml: ""
-  scenes.yaml: ""
-  seed.sh: |
-    #!/bin/sh
-    # Copy each seed file into $CONFIG_DIR only if it doesn't exist yet.
-    set -eu
-    CONFIG_DIR="${CONFIG_DIR:-/config}"
-    SEED_DIR="${SEED_DIR:-/seed}"
-    mkdir -p "$CONFIG_DIR"
-    for f in configuration.yaml automations.yaml scripts.yaml scenes.yaml; do
-      if [ -e "$CONFIG_DIR/$f" ]; then
-        echo "keep existing $f"
-      else
-        cp "$SEED_DIR/$f" "$CONFIG_DIR/$f"
-        echo "seeded $f"
-      fi
-    done
+  username: {{ $user | b64enc | quote }}
+  password: {{ $pass | b64enc | quote }}
 ---
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -93,6 +80,9 @@ spec:
       labels:
         {{- include "grown.labels" . | nindent 8 }}
         app.kubernetes.io/component: homeassistant
+      annotations:
+        # Roll the pod when the seed/onboarding/fetch scripts change.
+        checksum/seed: {{ include (print $.Template.BasePath "/homeassistant-seed.yaml") . | sha256sum }}
     spec:
       # Off on purpose: no mDNS/SSDP/Bluetooth discovery from the pod. Add
       # integrations by IP/hostname instead (see README).
@@ -122,6 +112,32 @@ spec:
           resources:
             requests: { cpu: 10m, memory: 16Mi }
             limits: { memory: 64Mi }
+        {{- if $ha.grownIntegration.enabled }}
+        # Install the grown custom integration from the grown Service on EVERY
+        # start, so HA always runs the one matching the deployed Grown. Waits
+        # up to fetchTimeoutSeconds for grown, then starts HA regardless.
+        - name: grown-integration
+          image: "{{ $ha.image.repository }}:{{ $ha.image.tag }}"
+          imagePullPolicy: {{ $ha.image.pullPolicy }}
+          command: ["python3", "/seed/fetch_integration.py"]
+          env:
+            - name: GROWN_ZIP_URL
+              value: {{ include "grown.haIntegrationURL" . | quote }}
+            - { name: CONFIG_DIR, value: /config }
+            - name: FETCH_TIMEOUT_SECONDS
+              value: {{ $ha.grownIntegration.fetchTimeoutSeconds | quote }}
+            - { name: PYTHONDONTWRITEBYTECODE, value: "1" }
+          {{- with $ha.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - { name: config, mountPath: /config }
+            - { name: seed, mountPath: /seed, readOnly: true }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+        {{- end }}
       containers:
         - name: homeassistant
           image: "{{ $ha.image.repository }}:{{ $ha.image.tag }}"
@@ -140,13 +156,26 @@ spec:
             - { name: http, containerPort: 8123 }
           volumeMounts:
             - { name: config, mountPath: /config }
+            {{- if $ha.onboarding.enabled }}
+            - { name: seed, mountPath: /seed, readOnly: true }
+            {{- end }}
           # First boot installs integrations' Python deps and can take minutes.
           startupProbe:
             tcpSocket: { port: http }
             periodSeconds: 10
             failureThreshold: 60
           readinessProbe:
+            {{- if $ha.onboarding.enabled }}
+            # Ready only once onboarding's "user" step is done: until the owner
+            # exists, the Service has no endpoints, so neither the Ingress /
+            # HTTPRoute nor anything else using the Service can reach the
+            # first-run "create owner" page.
+            exec:
+              command: ["python3", "-B", "/seed/onboard.py", "--check"]
+            timeoutSeconds: 5
+            {{- else }}
             tcpSocket: { port: http }
+            {{- end }}
             periodSeconds: 10
           livenessProbe:
             tcpSocket: { port: http }
@@ -154,6 +183,45 @@ spec:
             failureThreshold: 5
           resources:
             {{- toYaml $ha.resources | nindent 12 }}
+        {{- if $ha.onboarding.enabled }}
+        # Creates the owner over localhost the moment HA's HTTP server is up
+        # (polls every second), then re-checks every recheckSeconds so a wiped
+        # /config/.storage is re-onboarded too. Idempotent. Needs only the
+        # network, so it runs as nobody with a read-only root filesystem.
+        - name: onboard
+          image: "{{ $ha.image.repository }}:{{ $ha.image.tag }}"
+          imagePullPolicy: {{ $ha.image.pullPolicy }}
+          command: ["python3", "-u", "/seed/onboard.py"]
+          env:
+            - { name: HA_URL, value: "http://127.0.0.1:8123" }
+            - name: OWNER_USERNAME
+              valueFrom:
+                secretKeyRef: { name: {{ $ownerSecret }}, key: username }
+            - name: OWNER_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ $ownerSecret }}, key: password }
+            - name: OWNER_NAME
+              value: {{ $ha.owner.name | quote }}
+            - name: OWNER_LANGUAGE
+              value: {{ $ha.owner.language | quote }}
+            - name: RECHECK_SECONDS
+              value: {{ $ha.onboarding.recheckSeconds | quote }}
+            - { name: PYTHONDONTWRITEBYTECODE, value: "1" }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - { name: seed, mountPath: /seed, readOnly: true }
+          resources:
+            requests: { cpu: 5m, memory: 24Mi }
+            limits: { memory: 64Mi }
+        {{- end }}
       volumes:
         - name: seed
           configMap:

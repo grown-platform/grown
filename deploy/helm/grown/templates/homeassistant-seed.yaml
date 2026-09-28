@@ -1,0 +1,62 @@
+{{- if .Values.homeAssistant.enabled }}
+{{- $name := include "grown.haName" . }}
+{{- $ha := .Values.homeAssistant }}
+# Home Assistant pod files (see homeassistant.yaml): the first-start config seed
+# (copied into /config only when missing, never overwritten, so editing
+# homeAssistant.trustedProxies later does not touch an existing install) plus
+# the onboarding and integration-fetch scripts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-seed
+  labels:
+    {{- include "grown.labels" . | nindent 4 }}
+    app.kubernetes.io/component: homeassistant
+data:
+  configuration.yaml: |
+    # Seeded by the grown Helm chart on first start. The chart never overwrites
+    # this file: edit it freely (or through the HA UI).
+    default_config:
+
+    # HA sits behind the cluster's ingress / gateway, so trust X-Forwarded-For
+    # from these proxies (anything else sending the header is rejected).
+    http:
+      use_x_forwarded_for: true
+      trusted_proxies:
+        {{- range $ha.trustedProxies }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- if not $ha.http.useXFrameOptions }}
+      # Let Grown show HA inside its /homeassistant page (an iframe). Trade-off:
+      # without X-Frame-Options any site can frame this HA (clickjacking). Set
+      # this to true (or remove the line) to forbid framing again.
+      use_x_frame_options: false
+      {{- end }}
+
+    automation: !include automations.yaml
+    script: !include scripts.yaml
+    scene: !include scenes.yaml
+  automations.yaml: |
+    []
+  scripts.yaml: ""
+  scenes.yaml: ""
+  seed.sh: |
+    #!/bin/sh
+    # Copy each seed file into $CONFIG_DIR only if it doesn't exist yet.
+    set -eu
+    CONFIG_DIR="${CONFIG_DIR:-/config}"
+    SEED_DIR="${SEED_DIR:-/seed}"
+    mkdir -p "$CONFIG_DIR"
+    for f in configuration.yaml automations.yaml scripts.yaml scenes.yaml; do
+      if [ -e "$CONFIG_DIR/$f" ]; then
+        echo "keep existing $f"
+      else
+        cp "$SEED_DIR/$f" "$CONFIG_DIR/$f"
+        echo "seeded $f"
+      fi
+    done
+  onboard.py: |
+{{ .Files.Get "files/homeassistant/onboard.py" | indent 4 }}
+  fetch_integration.py: |
+{{ .Files.Get "files/homeassistant/fetch_integration.py" | indent 4 }}
+{{- end }}
