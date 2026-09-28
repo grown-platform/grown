@@ -2,7 +2,8 @@
 
 Grown's JSON API is grpc-gateway generated with ``UseProtoNames`` and
 ``EmitUnpopulated``: every field is present and snake_case. Authentication is a
-personal access token (``grw_...``) sent as ``Authorization: Bearer``.
+personal access token (``grw_...``) sent as ``Authorization: Bearer``. Pass a
+session WITHOUT a cookie jar: Grown prefers a session cookie over the token.
 
 This module deliberately has no Home Assistant imports so it can be unit-tested
 with nothing but aiohttp.
@@ -11,6 +12,7 @@ with nothing but aiohttp.
 from __future__ import annotations
 
 import asyncio
+import json as json_module
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -43,6 +45,12 @@ class GrownNotFoundError(GrownError):
 class GrownRateLimitError(GrownError):
     """Grown rate-limited the request (HTTP 429)."""
 
+    def __init__(self, message: str, retry_after: str | None = None) -> None:
+        super().__init__(message)
+        self.retry_after: int | None = None
+        if retry_after and retry_after.isdigit():
+            self.retry_after = int(retry_after)
+
 
 class GrownApiError(GrownError):
     """Any other non-2xx answer, or an unparseable body."""
@@ -50,6 +58,21 @@ class GrownApiError(GrownError):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(f"HTTP {status}: {message}")
         self.status = status
+
+
+def _error_detail(body: str) -> str:
+    """Grown errors are {"error": "..."} (REST handlers), {"message": ...}
+    (grpc-gateway) or plain text; return the human part, clipped."""
+    text = body.strip()
+    try:
+        data = json_module.loads(text)
+    except ValueError:
+        return text[:200]
+    if isinstance(data, dict):
+        for key in ("error", "message"):
+            if isinstance(data.get(key), str) and data[key]:
+                return data[key][:200]
+    return text[:200]
 
 
 def normalize_url(url: str) -> str:
@@ -120,14 +143,17 @@ class GrownClient:
                 allow_redirects=False,
             ) as resp:
                 body = await resp.text()
-                if resp.status in (401, 403):
-                    raise GrownAuthError(f"HTTP {resp.status}: {body.strip()[:200]}")
-                if resp.status == 404:
-                    raise GrownNotFoundError(f"{method} {path}: not found")
-                if resp.status == 429:
-                    raise GrownRateLimitError(body.strip()[:200] or "rate limited")
                 if resp.status >= 300:
-                    raise GrownApiError(resp.status, body.strip()[:200])
+                    detail = _error_detail(body)
+                    if resp.status in (401, 403):
+                        raise GrownAuthError(f"HTTP {resp.status}: {detail}")
+                    if resp.status == 404:
+                        raise GrownNotFoundError(f"{method} {path}: not found")
+                    if resp.status == 429:
+                        raise GrownRateLimitError(
+                            detail or "rate limited", resp.headers.get("Retry-After")
+                        )
+                    raise GrownApiError(resp.status, detail)
                 if not body:
                     return {}
                 try:

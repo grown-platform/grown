@@ -7,11 +7,13 @@ import logging
 from typing import Any
 from urllib.parse import urlsplit
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_TOKEN, CONF_URL
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.selector import (
     TextSelector,
     TextSelectorConfig,
@@ -29,6 +31,22 @@ from .api import (
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+FLOW_SESSION_KEY = f"{DOMAIN}_flow_session"
+
+
+def _flow_session(hass: HomeAssistant) -> aiohttp.ClientSession:
+    """One cookie-less session for all Grown config flows (closed at HA stop).
+
+    Never the shared HA session: a cookie Grown set there would be replayed
+    and win over the token being validated.
+    """
+    session = hass.data.get(FLOW_SESSION_KEY)
+    if session is None or session.closed:
+        session = async_create_clientsession(hass, cookie_jar=aiohttp.DummyCookieJar())
+        hass.data[FLOW_SESSION_KEY] = session
+    return session
+
 
 TOKEN_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 URL_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.URL))
@@ -60,7 +78,7 @@ class GrownConfigFlow(ConfigFlow, domain=DOMAIN):
         if not token.strip():
             errors[CONF_TOKEN] = "invalid_auth"
             return None
-        client = GrownClient(async_get_clientsession(self.hass), url, token)
+        client = GrownClient(_flow_session(self.hass), url, token)
         try:
             try:
                 account = await client.async_get_account()

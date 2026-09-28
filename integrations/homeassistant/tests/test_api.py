@@ -124,3 +124,30 @@ async def test_update_task_sends_all_fields(hass: HomeAssistant, aioclient_mock:
         "due_at": "",
         "parent_task_id": "",
     }
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ('{"error":"title must be 1-200 characters"}', "title must be 1-200 characters"),
+        ('{"code":3,"message":"start_at must be RFC3339"}', "start_at must be RFC3339"),
+        ("plain failure", "plain failure"),
+    ],
+)
+async def test_error_body_detail(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, body: str, expected: str
+) -> None:
+    aioclient_mock.post(f"{API}/notifications/push", status=400, text=body)
+    with pytest.raises(GrownApiError, match=expected):
+        await client(hass).async_push_notification("t", "m")
+
+
+async def test_rate_limit_retry_after(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    aioclient_mock.post(
+        f"{API}/notifications/push", status=429,
+        text='{"error":"rate limit exceeded"}', headers={"Retry-After": "60"},
+    )
+    with pytest.raises(GrownRateLimitError) as info:
+        await client(hass).async_push_notification("t", "m")
+    assert info.value.retry_after == 60
+    assert "rate limit exceeded" in str(info.value)

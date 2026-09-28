@@ -51,8 +51,9 @@ class GrownNotifyEntity(GrownEntity, NotifyEntity):
         try:
             await self.coordinator.client.async_push_notification(title, body)
         except GrownRateLimitError as err:
+            wait = f"; retry in {err.retry_after}s" if err.retry_after else ""
             raise HomeAssistantError(
-                "Grown is rate-limiting notifications from this token (60 per minute)"
+                f"Grown is rate-limiting notifications from this token (60 per minute{wait})"
             ) from err
         except GrownAuthError as err:
             self.coordinator.config_entry.async_start_reauth(self.hass)

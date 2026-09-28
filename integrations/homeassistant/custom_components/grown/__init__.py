@@ -8,10 +8,12 @@ automations push notifications into Grown.
 
 from __future__ import annotations
 
+import aiohttp
+
 from homeassistant.const import CONF_TOKEN, CONF_URL, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import GrownAuthError, GrownClient, GrownError, GrownNotFoundError
 from .coordinator import GrownConfigEntry, GrownCoordinator, GrownRuntimeData
@@ -26,9 +28,11 @@ PLATFORMS: list[Platform] = [
 
 async def async_setup_entry(hass: HomeAssistant, entry: GrownConfigEntry) -> bool:
     """Set up Grown from a config entry."""
-    client = GrownClient(
-        async_get_clientsession(hass), entry.data[CONF_URL], entry.data[CONF_TOKEN]
-    )
+    # Own session with no cookie jar: Grown authenticates a session cookie in
+    # preference to the bearer token, so cookies must never be replayed. HA
+    # detaches it when the entry unloads.
+    session = async_create_clientsession(hass, cookie_jar=aiohttp.DummyCookieJar())
+    client = GrownClient(session, entry.data[CONF_URL], entry.data[CONF_TOKEN])
     try:
         account = await client.async_get_account()
     except GrownNotFoundError:

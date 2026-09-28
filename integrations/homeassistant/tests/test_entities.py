@@ -258,6 +258,43 @@ async def test_unload(hass: HomeAssistant, setup_integration: MockConfigEntry) -
     assert setup_integration.state is ConfigEntryState.NOT_LOADED
 
 
+async def test_user_without_task_lists(
+    hass: HomeAssistant, fake_grown: FakeGrown, config_entry: MockConfigEntry
+) -> None:
+    fake_grown.lists = []
+    fake_grown.tasks = {}
+    fake_grown.register()
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert config_entry.state is ConfigEntryState.LOADED
+    assert hass.states.async_entity_ids(TODO_DOMAIN) == []
+    assert hass.states.get("sensor.acme_household_open_tasks").state == "0"
+
+
+async def test_entry_uses_cookieless_session(
+    hass: HomeAssistant, fake_grown: FakeGrown, config_entry: MockConfigEntry
+) -> None:
+    """Grown prefers a session cookie over the token: never keep cookies."""
+    import aiohttp
+    from unittest.mock import patch
+
+    from homeassistant.helpers import aiohttp_client
+
+    seen: list[dict] = []
+    real = aiohttp_client.async_create_clientsession
+
+    def spy(hass_, *args, **kwargs):
+        seen.append(kwargs)
+        return real(hass_, *args, **kwargs)
+
+    fake_grown.register()
+    config_entry.add_to_hass(hass)
+    with patch("custom_components.grown.async_create_clientsession", side_effect=spy):
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+    assert seen and isinstance(seen[0]["cookie_jar"], aiohttp.DummyCookieJar)
+
+
 def test_due_roundtrip() -> None:
     assert parse_task_due("") is None
     assert parse_task_due("2026-10-01T00:00:00Z") == date(2026, 10, 1)
