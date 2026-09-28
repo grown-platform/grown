@@ -71,7 +71,7 @@ Brought up the whole stack with `process-compose` (postgres, Zitadel, RustFS, we
 | **games** | 109 static browser games (arcade/puzzle/card/board/word/casino/kids + 3 native ports) | [games.md](games.md) |
 | **pdf** | PDF editor & e-sign (reverse-proxied) | _blocked — backend dir missing_ |
 | **crm** | Twenty CRM (Host-proxied subdomain) | _blocked — port 3000 collision_ |
-| **homeassistant** | Bring-your-own Home Assistant tile (per-org URL; optional Helm-deployed instance) | [homeassistant.md](homeassistant.md) |
+| **homeassistant** | Home Assistant in Grown (in-app view of the per-org URL; optional Helm-deployed instance) and Grown in HA (`grown` integration, token preset, notify push) | [homeassistant.md](homeassistant.md) |
 
 ---
 
