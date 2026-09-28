@@ -60,6 +60,7 @@ self-host](https://grown.haus/docs/install.html)** · chart in
 
 ## Documentation
 
+- **[Changelog](CHANGELOG.md)** — what's in each release (latest: v0.3.0).
 - **[Visual tour of every service](docs/services/README.md)** — live screenshots
   of each app, desktop + mobile.
 - Architecture, design notes, and roadmaps live under [`docs/`](docs/).
