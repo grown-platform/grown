@@ -11,8 +11,12 @@ bundled as plain StatefulSets/Deployments so it runs the same on:
 Bundled: **Postgres** (StatefulSet) · **rustfs** S3 storage (StatefulSet +
 bucket-init hook Job) · **Zitadel** OIDC (Deployment + auto-provisioning Job) · the
 **grown** app (Deployment + optional `bolo-mp` sidecar) · optional Ingress /
-Gateway HTTPRoute · optional **Home Assistant** (StatefulSet, off by default).
+Gateway HTTPRoute · **Home Assistant** (StatefulSet, on by default since 0.4.0,
+auto-onboarded, with the Grown integration pre-installed).
 
+> **Chart 0.4.0 adds Home Assistant to the default install.** Upgrading from
+> 0.3.x? See [Upgrading from 0.3.x](#upgrading-from-03x-to-040-home-assistant).
+>
 > **Chart 0.2.0 replaced MinIO with rustfs.** Upgrading an existing 0.1.x
 > install? Read [Upgrading from 0.1.x](#upgrading-from-01x-minio-to-020-rustfs)
 > first: a plain chart bump is refused while the old MinIO is still running.
@@ -113,9 +117,13 @@ helm install grown deploy/helm/grown -n grown --create-namespace \
 | `minio.enabled` | `false` | LEGACY: keep a 0.1.x MinIO running for the migration |
 | `migrateFromMinio.enabled` | `false` | one-shot MinIO -> rustfs copy Job |
 | `pdf.enabled` | `true` | built-in PDF signing app |
-| `homeAssistant.enabled` | `false` | also run Home Assistant; its URL becomes the HA tile default (below) |
+| `homeAssistant.enabled` | `true` | run Home Assistant; its URL becomes the HA tile default (below) |
 | `homeAssistant.host` | `""` => `ha.<domain>` | HA's own hostname (HA can't live under a sub-path) |
 | `homeAssistant.trustedProxies` | RFC1918 + `fd00::/8` | `http.trusted_proxies` seeded into HA's first `configuration.yaml` |
+| `homeAssistant.owner.existingSecret` | `""` => generated `<release>-homeassistant-owner` | HA owner `username`/`password` the chart onboards HA with |
+| `homeAssistant.onboarding.enabled` | `true` | onboard HA automatically (no open "create owner" page) |
+| `homeAssistant.grownIntegration.enabled` | `true` | install the Grown HA integration from grown on every HA start |
+| `homeAssistant.http.useXFrameOptions` | `false` | `false` seeds `use_x_frame_options: false` so Grown can iframe HA |
 | `grown.libreoffice.enabled` | `false` | legacy .doc/.xls/.ppt import via LibreOffice headless; needs an image with LibreOffice (below) |
 | `persistence` sizes / `*.resources` | see values | per-component sizing |
 
@@ -144,17 +152,19 @@ LibreOffice is MPL-2.0 and only exec'd, never linked. `GET
 /api/v1/convert/capabilities` reports whether it's active; the UI only
 offers legacy formats when it is.
 
-### Optional: Home Assistant
+### Home Assistant (default on)
 
 Grown's **Home Assistant** tile is bring-your-own: an org admin sets the
 org's HA URL in **Admin > Services > Home Assistant** and the tile appears
-(hidden until then). The chart can also run an HA instance for you:
+(hidden until then). Since 0.4.0 the chart also runs an HA instance by
+default; turn it off with `homeAssistant.enabled: false`.
 
 ```yaml
 homeAssistant:
-  enabled: true
+  enabled: true                           # default
   # host: ha.grown.example.com            # default ha.<domain>
   # trustedProxies: [10.42.0.0/16]        # your pod CIDR / proxy IPs
+  # owner: { existingSecret: my-ha-owner } # keys: username, password
   persistence: { size: 5Gi }
 ```
 
@@ -168,25 +178,105 @@ set its own; org URLs always win. `homeAssistant.setGrownDefault: false`
 turns that off. Without the chart component you can still set a
 deployment-wide default via `grown.extraEnv` `GROWN_HOMEASSISTANT_URL`.
 
-- **First start only**, an initContainer seeds `configuration.yaml`
+The pod:
+
+| Container | Kind | Job |
+|---|---|---|
+| `seed-config` | init | copy `configuration.yaml` & co. into `/config` **only if missing** |
+| `grown-integration` | init | install `grown.zip` from the grown Service into `/config/custom_components/grown` (every start) |
+| `homeassistant` | main | HA; **Ready only once onboarding's owner step is done** |
+| `onboard` | sidecar | create the owner over localhost and finish onboarding (idempotent) |
+
+#### No open onboarding window
+
+A fresh HA serves a first-run page where the **first visitor creates the
+owner** account; on a public install whoever gets there first owns your HA.
+The chart closes that window itself:
+
+- The `onboard` sidecar polls `http://127.0.0.1:8123` every second and, as
+  soon as HA's HTTP server is up, runs HA's onboarding API: `POST
+  /api/onboarding/users` with the owner from the Secret, exchanges the auth
+  code at `/auth/token`, then completes `core_config`, `analytics` and
+  `integration`. If an earlier run stopped half-way it logs in with the
+  Secret's credentials (login flow) and finishes the remaining steps. When
+  onboarding is already done, a pass is a single `GET /api/onboarding`; it
+  re-checks every `onboarding.recheckSeconds`, so a wiped
+  `/config/.storage` is re-onboarded too.
+- The `homeassistant` container's **readiness probe** is `onboard.py --check`,
+  which passes only when the `user` step is done. Until then the pod is
+  NotReady, the Service has no endpoints, and neither the Ingress/HTTPRoute
+  nor anything else going through the Service can reach the owner page. The
+  only thing that could, for the second or so before the sidecar posts, is
+  another pod dialling the pod IP directly; add a NetworkPolicy if your
+  cluster has untrusted workloads.
+- The sidecar runs as `nobody` (65534) with a read-only root filesystem and
+  no access to `/config`; it only needs the network.
+
+The owner Secret (`<release>-homeassistant-owner`, keys `username` /
+`password`) is generated once with a random 32-character password, reused via
+`lookup` on upgrades, and kept on `helm uninstall` (like the PVC holding the
+owner it created). Bring your own with `homeAssistant.owner.existingSecret`.
+Read the password:
+
+```sh
+kubectl -n <ns> get secret <release>-homeassistant-owner -o jsonpath='{.data.password}' | base64 -d
+```
+
+Changing the password in HA afterwards is fine: the Secret is only used to
+create the owner on a fresh `/config`, or to finish a half-done onboarding.
+Set `homeAssistant.onboarding.enabled: false` only if you onboard HA yourself
+**before** exposing it.
+
+#### The Grown integration
+
+On every start the `grown-integration` initContainer downloads
+`http://<release>-grown.<ns>.svc.cluster.local:8080/integrations/homeassistant/grown.zip`
+(served by grown itself, public) into `/config/custom_components/grown`, so
+HA always runs the integration version matching the deployed Grown. It retries
+for `grownIntegration.fetchTimeoutSeconds` (180) while grown starts, then
+**starts HA anyway** (keeping any previously installed copy) and logs it; the
+next pod start tries again (on a first install, restart the HA pod once grown
+is up). Then, in HA: **Settings > Devices & services > Add integration >
+Grown Workspace**, with the Grown URL and a token from Grown's **Settings >
+API tokens > "Connect Home Assistant"**. Entities: see
+[docs/services/homeassistant.md](../../../docs/services/homeassistant.md#the-grown-integration-for-home-assistant).
+
+#### Config seed and embedding
+
+- **First start only**, `seed-config` copies `configuration.yaml`
   (`default_config:`, `http.use_x_forwarded_for: true` + `trusted_proxies`,
-  and the `automations/scripts/scenes` includes). Each file is copied only if
-  missing, so the chart **never overwrites** your config; changing
-  `trustedProxies` later means editing `/config/configuration.yaml`.
-  HA answers 400 to proxied requests from an IP outside `trusted_proxies`.
-- **Security:** the official image runs as **root** (s6-overlay; HA
-  pip-installs integration deps at runtime), so no `runAsNonRoot` or
-  read-only root filesystem. The chart runs it with **all capabilities
+  `http.use_x_frame_options: false`, and the `automations/scripts/scenes`
+  includes). Each file is copied only if missing, so the chart **never
+  overwrites** your config; changing `trustedProxies` (or the frame option)
+  later means editing `/config/configuration.yaml`. HA answers 400 to
+  proxied requests from an IP outside `trusted_proxies`.
+- **Embedding trade-off:** `use_x_frame_options: false` lets Grown's
+  `/homeassistant` page show HA in an iframe, but it also lets **any** site
+  frame your HA (clickjacking: a hostile page overlays HA's UI and tricks a
+  logged-in user into clicking). Set `homeAssistant.http.useXFrameOptions:
+  true` before the first start (or set `use_x_frame_options: true` / remove
+  the line in `configuration.yaml` and restart HA) to restore HA's default
+  `X-Frame-Options: SAMEORIGIN`; Grown then only links out to HA.
+
+#### Security and limits
+
+- The official image runs as **root** (s6-overlay; HA pip-installs
+  integration deps at runtime), so no `runAsNonRoot` or read-only root
+  filesystem for HA itself. The chart runs it with **all capabilities
   dropped**, `allowPrivilegeEscalation: false`, RuntimeDefault seccomp and
   **host networking off** (verified on 2026.9.4). If `/config` isn't
   root-owned, add `CHOWN`/`DAC_OVERRIDE`/`FOWNER` to
   `homeAssistant.securityContext.capabilities.add`.
+- **Resources:** HA 2026.9 with `default_config` idles at ~300 MiB, so the
+  defaults request 50m CPU / 384Mi and cap memory at 1536Mi (the sidecar adds
+  ~12 MiB). Raise the limit for heavy integrations.
 - **No discovery:** without host networking, mDNS/SSDP/DHCP/Bluetooth
   discovery doesn't work (a harmless `aiodhcpwatcher ... Operation not
   permitted` log line). Add integrations by IP/hostname. If you need
-  discovery or USB radios (Zigbee/Z-Wave), run HA outside the cluster and
-  use the bring-your-own URL instead.
-- `helm uninstall` keeps the PVC (`config-<release>-homeassistant-0`).
+  discovery or USB radios (Zigbee/Z-Wave), run HA outside the cluster, set
+  `homeAssistant.enabled: false`, and use the bring-your-own URL instead.
+- `helm uninstall` keeps the PVC (`config-<release>-homeassistant-0`) and the
+  owner Secret.
 
 See [docs/services/homeassistant.md](../../../docs/services/homeassistant.md).
 
@@ -213,6 +303,30 @@ can't. To get real login working you have two options:
 
 `/healthz` and the whole app stand up regardless; only the login redirect needs
 the issuer to be browser-reachable.
+
+## Upgrading from 0.3.x to 0.4.0 (Home Assistant)
+
+0.4.0 turns `homeAssistant.enabled` on by default, so a plain `helm upgrade`
+of a 0.3.x release that never set it **adds** Home Assistant: a StatefulSet,
+a 5Gi PVC (`config-<release>-homeassistant-0`), a Service, an
+Ingress/HTTPRoute for `ha.<domain>` (when `ingress.type` isn't `none`), the
+kept `<release>-homeassistant-owner` Secret, and `GROWN_HOMEASSISTANT_URL` on
+grown (so the Home Assistant tile appears for orgs without their own HA URL).
+HA is onboarded automatically; see NOTES for the owner password.
+
+- **Don't want it?** Set `homeAssistant.enabled: false` in your values before
+  upgrading. Nothing else changes.
+- **Already ran it with `homeAssistant.enabled: true` on 0.3.x?** Your
+  `/config` PVC is reused. If you already onboarded HA, the sidecar sees
+  that and does nothing (the generated owner Secret is then unused). Your
+  existing `configuration.yaml` is **not** changed, so Grown's HA page can't
+  embed HA until you add `use_x_frame_options: false` under `http:`
+  yourself (see the trade-off above).
+- Make sure DNS/TLS cover `ha.<domain>` (or set `homeAssistant.host`), and
+  that the node pool has ~400 MiB of memory to spare.
+- The integration download needs grown 0.4+ (`/integrations/homeassistant/grown.zip`);
+  against an older grown image the initContainer logs a 404 and HA starts
+  without it.
 
 ## Upgrading from 0.1.x (MinIO) to 0.2.0 (rustfs)
 

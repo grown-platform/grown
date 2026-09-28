@@ -1,8 +1,9 @@
 # Grown Workspace — rendered raw manifests
 
 `grown.yaml` is the **all-in-one** Kubernetes manifest for the Grown Workspace
-platform: bundled Postgres + rustfs (S3) + Zitadel (OIDC) + the grown app, with
-no external operators required.
+platform: bundled Postgres + rustfs (S3) + Zitadel (OIDC) + the grown app +
+Home Assistant (auto-onboarded, with the Grown integration), with no external
+operators required.
 
 ## This file is generated — do not edit by hand
 
@@ -12,6 +13,7 @@ It is rendered from the Helm chart at `../helm/grown`:
 helm template grown ../helm/grown -n grown \
   --set domain=grown.example.com \
   --set rustfs.accessKey=grown --set 'rustfs.secretKey=DevPassword!1' \
+  --set homeAssistant.owner.existingSecret=grown-homeassistant-owner \
   > grown.yaml
 ```
 
@@ -26,8 +28,17 @@ The manifest does **not** create the namespace (kept portable). Create it first:
 
 ```sh
 kubectl create namespace grown
+# Home Assistant's owner account (the manifest references this Secret instead
+# of shipping a password that everyone applying this file would share).
+kubectl -n grown create secret generic grown-homeassistant-owner \
+  --from-literal=username=admin \
+  --from-literal=password="$(openssl rand -base64 24)"
 kubectl apply -n grown -f grown.yaml
 ```
+
+Without that Secret the Home Assistant pod waits (`CreateContainerConfigError`)
+and HA is never reachable un-owned. Read the password back with
+`kubectl -n grown get secret grown-homeassistant-owner -o jsonpath='{.data.password}' | base64 -d`.
 
 Then watch it come up:
 
