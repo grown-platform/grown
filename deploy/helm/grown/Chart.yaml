@@ -15,8 +15,8 @@ keywords:
   - collaboration
   - oidc
   - zitadel
-home: https://github.com/yieldllc/grown
+home: https://github.com/grown-platform/grown
 maintainers:
   - name: Grown Workspace
 sources:
-  - https://github.com/yieldllc/grown
+  - https://github.com/grown-platform/grown
