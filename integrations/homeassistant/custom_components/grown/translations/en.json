@@ -1,0 +1,71 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Grown Workspace",
+        "description": "Create a token in Grown under Settings > API tokens with the \"Connect Home Assistant\" preset, then paste it here.",
+        "data": {
+          "url": "Grown URL",
+          "token": "API token"
+        },
+        "data_description": {
+          "url": "The address you open Grown at, for example https://grown.example.com.",
+          "token": "A personal access token starting with grw_."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Grown token rejected",
+        "description": "Grown at {url} no longer accepts the token for {name}. Create a new token with the \"Connect Home Assistant\" preset and paste it here.",
+        "data": {
+          "token": "API token"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Grown Workspace",
+        "description": "Change the Grown URL. Leave the token empty to keep the current one.",
+        "data": {
+          "url": "Grown URL",
+          "token": "API token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Grown. Check the URL and that Home Assistant can reach it.",
+      "invalid_auth": "Grown rejected the token. Make sure it is valid and has the Home Assistant scopes.",
+      "invalid_url": "Enter a full http:// or https:// URL.",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This Grown account is already configured.",
+      "reauth_successful": "Re-authentication was successful.",
+      "reconfigure_successful": "Re-configuration was successful.",
+      "wrong_account": "That token belongs to a different Grown account."
+    }
+  },
+  "entity": {
+    "calendar": {
+      "calendar": {
+        "name": "Calendar"
+      }
+    },
+    "notify": {
+      "notifications": {
+        "name": "Notifications"
+      }
+    },
+    "sensor": {
+      "unread_notifications": {
+        "name": "Unread notifications",
+        "unit_of_measurement": "notifications"
+      },
+      "open_tasks": {
+        "name": "Open tasks",
+        "unit_of_measurement": "tasks"
+      },
+      "overdue_tasks": {
+        "name": "Overdue tasks",
+        "unit_of_measurement": "tasks"
+      }
+    }
+  }
+}

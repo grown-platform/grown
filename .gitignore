@@ -44,3 +44,8 @@ research/
 
 # stray go build artifact from cmd/ls-sandbox
 /ls-sandbox
+
+# Python (Home Assistant integration tests)
+__pycache__/
+*.pyc
+.pytest_cache/

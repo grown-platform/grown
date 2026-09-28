@@ -1,0 +1,2 @@
+# Pinned to the chart's Home Assistant (homeAssistant.image.tag = 2026.9.4).
+pytest-homeassistant-custom-component==0.13.367

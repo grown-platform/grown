@@ -1,0 +1,14 @@
+{
+  "domain": "grown",
+  "name": "Grown Workspace",
+  "codeowners": ["@yieldllc"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/yieldllc/grown/blob/main/docs/services/homeassistant.md",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/yieldllc/grown/issues",
+  "loggers": ["custom_components.grown"],
+  "requirements": [],
+  "version": "0.4.0"
+}
