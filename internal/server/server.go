@@ -53,6 +53,7 @@ import (
 	"code.pick.haus/grown/grown/internal/groups"
 	"code.pick.haus/grown/grown/internal/health"
 	"code.pick.haus/grown/grown/internal/honeypot"
+	"code.pick.haus/grown/grown/internal/integrationinfo"
 	"code.pick.haus/grown/grown/internal/keep"
 	"code.pick.haus/grown/grown/internal/live"
 	"code.pick.haus/grown/grown/internal/mail"
@@ -1144,6 +1145,16 @@ func New(cfg Config) *Server {
 	officeConvertHandler := convert.Handler(officeConverter)
 	driveAuthWrap := auth.HTTPMiddleware(cfg.AuthConfig, cfg.Sessions, cfg.UsersRepo, cfg.OrgsRepo, cfg.DefaultOrg, apiTokensRepo)
 
+	// Integration surface (Home Assistant `grown` custom integration):
+	// POST /api/v1/notifications/push drops a notification into the caller's
+	// own feed (token scope notifications:write, 60/min/user); GET
+	// /api/v1/integrations/homeassistant/info validates a URL+token pair.
+	var notifPushHTTP *notifications.PushHandler
+	if cfg.NotificationsRepo != nil {
+		notifPushHTTP = notifications.NewPushHandler(cfg.NotificationsRepo)
+	}
+	haInfoHTTP := integrationinfo.Handler{Version: cfg.Version}
+
 	// Zitadel User API v2 proxy for the in-app account-security panel. Runs
 	// inside the auth middleware so the caller's oidc_subject is resolvable; the
 	// proxy enforces that the path userId equals the caller's own subject.
@@ -2118,6 +2129,16 @@ func New(cfg Config) *Server {
 				driveAuthWrap(apiTokensHTTP).ServeHTTP(w, r)
 				return
 			}
+		}
+		// Integration self-notify + identity (matched before the grpc-gateway,
+		// which would otherwise read "push" as a notification id).
+		if notifPushHTTP != nil && r.URL.Path == notifications.PushPath {
+			driveAuthWrap(notifPushHTTP).ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == integrationinfo.HomeAssistantInfoPath {
+			driveAuthWrap(haInfoHTTP).ServeHTTP(w, r)
+			return
 		}
 		// Org Sync transfer (/api/v1/orgsync/transfer) — auth-wrapped.
 		if orgSyncHTTP != nil && orgSyncHTTP.Match(r.URL.Path) {

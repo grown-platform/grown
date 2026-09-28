@@ -154,6 +154,12 @@ func normalizeScopes(scopes []string) []string {
 	return out
 }
 
+// ScopeFreePaths are read-only API paths every valid token may GET regardless
+// of its scopes: they only describe the caller and its own token.
+var ScopeFreePaths = map[string]bool{
+	"/api/v1/integrations/homeassistant/info": true,
+}
+
 // ScopesAllow reports whether a token's scopes permit an API request.
 //
 // Scope grammar:
@@ -165,6 +171,11 @@ func normalizeScopes(scopes []string) []string {
 // gating is for the JSON API surface).
 func ScopesAllow(scopes []string, path, method string) bool {
 	if !strings.HasPrefix(path, "/api/") {
+		return true
+	}
+	// Identity endpoints any valid token may read, whatever its scopes (an
+	// integration validates its URL+token pair here before using any service).
+	if (method == "GET" || method == "HEAD") && ScopeFreePaths[path] {
 		return true
 	}
 	svc := serviceFromPath(path)
