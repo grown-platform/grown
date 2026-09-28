@@ -4,8 +4,9 @@ import { BASE_URL } from "./helpers";
 
 // Home Assistant is a bring-your-own tile: hidden until an org admin sets the
 // org's HA URL (Admin > Services, or Settings in a personal org), then it
-// links out to that URL (dashboard tile + header launchers). The signed-in e2e
-// user is its org's admin.
+// opens the in-app /homeassistant view that frames that URL (dashboard tile +
+// header launchers; see homeassistant-embed.spec.ts). The signed-in e2e user
+// is its org's admin.
 
 const HA_URL = "http://homeassistant.e2e.test:8123/";
 const SETTINGS = `${BASE_URL}/api/v1/admin/service-settings`;
@@ -64,12 +65,12 @@ test.describe.serial("home assistant tile", () => {
       ).toHaveCount(0);
     }
 
-    // Dashboard: the tile appears and opens the org URL in a new tab.
+    // Dashboard: the tile appears and opens the in-app embedded view.
     await page.goto(`${BASE_URL}/`);
     const tile = page.getByTestId("tile-homeassistant");
     await expect(tile).toBeVisible();
-    await expect(tile).toHaveAttribute("href", HA_URL);
-    await expect(tile).toHaveAttribute("target", "_blank");
+    await expect(tile).toHaveAttribute("href", "/homeassistant");
+    await expect(tile).not.toHaveAttribute("target", "_blank");
     await expect(tile).toContainText("Home Assistant");
     await page.screenshot({
       path: path.join("test-results", "homeassistant-dashboard.png"),
@@ -80,14 +81,14 @@ test.describe.serial("home assistant tile", () => {
     await page.getByRole("button", { name: "apps" }).click();
     const mini = page.getByTestId("switcher-homeassistant");
     await expect(mini).toBeVisible();
-    await expect(mini).toHaveAttribute("href", HA_URL);
+    await expect(mini).toHaveAttribute("href", "/homeassistant");
     await page.keyboard.press("Escape");
 
     // Hamburger services menu too.
     await page.getByTestId("services-menu").click();
     await expect(page.getByTestId("services-menu-homeassistant")).toHaveAttribute(
       "href",
-      HA_URL,
+      "/homeassistant",
     );
   });
 
