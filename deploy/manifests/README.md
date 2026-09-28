@@ -1,7 +1,7 @@
 # Grown Workspace — rendered raw manifests
 
 `grown.yaml` is the **all-in-one** Kubernetes manifest for the Grown Workspace
-platform: bundled Postgres + MinIO (S3) + Zitadel (OIDC) + the grown app, with
+platform: bundled Postgres + rustfs (S3) + Zitadel (OIDC) + the grown app, with
 no external operators required.
 
 ## This file is generated — do not edit by hand
@@ -11,6 +11,7 @@ It is rendered from the Helm chart at `../helm/grown`:
 ```sh
 helm template grown ../helm/grown -n grown \
   --set domain=grown.example.com \
+  --set rustfs.accessKey=grown --set 'rustfs.secretKey=DevPassword!1' \
   > grown.yaml
 ```
 

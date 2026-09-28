@@ -72,7 +72,7 @@ helm install grown deploy/helm/grown -n grown --create-namespace \
   --set session.cookieSecure=true \
   --set storageClass=ceph-block \
   --set ingress.type=httproute \
-  --set image.tag=20260613-150615-2d752d1c \
+  --set image.tag=v0.3.0 \
   --set imagePullSecrets.existingSecret=forgejo-registry \
   # swap bundled deps for production-grade ones:
   --set postgres.externalDsn='postgres://grown:...@grown-db-rw:5432/grown' \

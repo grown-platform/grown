@@ -9,26 +9,8 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: zitadel-provision
----
-# Source: grown/templates/minio.yaml
-# Bundled MinIO (S3-compatible object storage). grown's GROWN_RUSTFS_* point at
-# the MinIO Service. A bucket-init Job (post-install hook) creates the buckets.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: grown-minio
-  labels:
-    app.kubernetes.io/name: grown
-    app.kubernetes.io/instance: grown
-    app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
-    app.kubernetes.io/component: minio
-type: Opaque
-stringData:
-  MINIO_ROOT_USER: "grown"
-  MINIO_ROOT_PASSWORD: "DevPassword!1"
 ---
 # Source: grown/templates/oidc-secret.yaml
 # Bundled OIDC: seed a placeholder secret so grown's secretKeyRef resolves on
@@ -46,7 +28,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: oidc
   annotations:
     "helm.sh/resource-policy": keep
@@ -66,7 +48,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: postgres
 type: Opaque
 stringData:
@@ -74,8 +56,32 @@ stringData:
   POSTGRES_PASSWORD: "DevPassword!1"
   POSTGRES_DB: "grown"
 ---
+# Source: grown/templates/rustfs.yaml
+# rustfs root credentials (also what grown + the pdf app authenticate with).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grown-rustfs
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.3.0
+    app.kubernetes.io/component: rustfs
+  annotations:
+    # Survive `helm uninstall` so a reinstall on the retained PVC keeps working.
+    "helm.sh/resource-policy": keep
+type: Opaque
+data:
+  access_key: "Z3Jvd24="
+  secret_key: "RGV2UGFzc3dvcmQhMQ=="
+---
 # Source: grown/templates/s3-secret.yaml
 # S3 connection secret grown reads (mirrors the homelab grown-s3 secret shape).
+# endpoint/bucket always live here. The credentials live in the secret named by
+# grown.s3CredsSecret: {release}-rustfs for the bundled rustfs (generated once),
+# rustfs.existingSecret, or — for an external S3 endpoint — this secret, from
+# rustfs.external.accessKey/secretKey (falling back to the 0.1.x minio keys).
 apiVersion: v1
 kind: Secret
 metadata:
@@ -84,13 +90,11 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: s3
 type: Opaque
 stringData:
-  endpoint: "http://grown-minio.grown.svc.cluster.local:9000"
-  access_key: "grown"
-  secret_key: "DevPassword!1"
+  endpoint: "http://grown-rustfs.grown.svc.cluster.local:9100"
   bucket: "grown-default"
 ---
 # Source: grown/templates/zitadel.yaml
@@ -108,7 +112,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: zitadel
 type: Opaque
 stringData:
@@ -152,7 +156,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: postgres
 data:
   init-extra-dbs.sh: |
@@ -176,7 +180,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: zitadel
 spec:
   accessModes: ["ReadWriteOnce"]
@@ -193,7 +197,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: zitadel-provision
 rules:
   - apiGroups: [""]
@@ -209,7 +213,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: zitadel-provision
 subjects:
   - kind: ServiceAccount
@@ -230,7 +234,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: grown
 spec:
   type: ClusterIP
@@ -248,30 +252,6 @@ spec:
       targetPort: 9000
       protocol: TCP
 ---
-# Source: grown/templates/minio.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: grown-minio
-  labels:
-    app.kubernetes.io/name: grown
-    app.kubernetes.io/instance: grown
-    app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
-    app.kubernetes.io/component: minio
-spec:
-  selector:
-    app.kubernetes.io/name: grown
-    app.kubernetes.io/component: minio
-    app.kubernetes.io/instance: grown
-  ports:
-    - name: s3
-      port: 9000
-      targetPort: 9000
-    - name: console
-      port: 9001
-      targetPort: 9001
----
 # Source: grown/templates/postgres.yaml
 apiVersion: v1
 kind: Service
@@ -281,7 +261,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: postgres
 spec:
   clusterIP: None
@@ -294,6 +274,30 @@ spec:
       port: 5432
       targetPort: 5432
 ---
+# Source: grown/templates/rustfs.yaml
+# Bundled rustfs (S3-compatible object storage; replaces MinIO in chart 0.2.0).
+# Mirrors the proven pick.haus manifest: RUSTFS_VOLUMES=/data, S3 API on :9100,
+# console disabled, logs to stdout.
+apiVersion: v1
+kind: Service
+metadata:
+  name: grown-rustfs
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.3.0
+    app.kubernetes.io/component: rustfs
+spec:
+  selector:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/component: rustfs
+    app.kubernetes.io/instance: grown
+  ports:
+    - name: s3
+      port: 9100
+      targetPort: s3
+---
 # Source: grown/templates/zitadel.yaml
 apiVersion: v1
 kind: Service
@@ -303,7 +307,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: zitadel
 spec:
   selector:
@@ -324,7 +328,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: grown
 spec:
   replicas: 1
@@ -344,12 +348,12 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.1.0
+        helm.sh/chart: grown-0.3.0
         app.kubernetes.io/component: grown
     spec:
       containers:
         - name: grown
-          image: "code.pick.haus/grown/grown:20260613-150615-2d752d1c"
+          image: "code.pick.haus/grown/grown:v0.3.0"
           imagePullPolicy: IfNotPresent
           ports:
             - { name: http, containerPort: 8080 }
@@ -385,19 +389,24 @@ spec:
               value: "default"
             - name: GROWN_ADMIN_EMAILS
               value: "admin@grown.localtest.me"
-            # In-app user management via the Zitadel User API (in-cluster).
+            # --- one-click demo login ---
+            # In-app user management via the Zitadel User API. When Zitadel
+            # advertises an external domain it routes by Host header, so the
+            # in-cluster Service URL would be rejected ("Instance not found");
+            # use the external issuer URL (browser-reachable) in that case,
+            # otherwise the in-cluster Service URL (kind/local).
             - name: GROWN_ZITADEL_API_URL
               value: "http://grown-zitadel.grown.svc.cluster.local:8080"
-            # --- object storage (S3 / rustfs-compatible) ---
+            # --- object storage (S3: bundled rustfs, or external) ---
             - name: GROWN_RUSTFS_ENDPOINT
               valueFrom:
                 secretKeyRef: { name: grown-s3, key: endpoint }
             - name: GROWN_RUSTFS_ACCESS_KEY
               valueFrom:
-                secretKeyRef: { name: grown-s3, key: access_key }
+                secretKeyRef: { name: grown-rustfs, key: access_key }
             - name: GROWN_RUSTFS_SECRET_KEY
               valueFrom:
-                secretKeyRef: { name: grown-s3, key: secret_key }
+                secretKeyRef: { name: grown-rustfs, key: secret_key }
             - name: GROWN_RUSTFS_BUCKET
               valueFrom:
                 secretKeyRef: { name: grown-s3, key: bucket }
@@ -415,12 +424,17 @@ spec:
               value: "us-east-1"
             - name: PDF_STORAGE_ACCESS_KEY
               valueFrom:
-                secretKeyRef: { name: grown-s3, key: access_key }
+                secretKeyRef: { name: grown-rustfs, key: access_key }
             - name: PDF_STORAGE_SECRET_KEY
               valueFrom:
-                secretKeyRef: { name: grown-s3, key: secret_key }
+                secretKeyRef: { name: grown-rustfs, key: secret_key }
             - name: PDF_CRYPTO_KEY_ENCRYPTION_KEY
               value: "wWwDxAaMbc6w7gpizZI+mFi7vhL/U+HYhxjDyQyl598="
+            # --- Music radio cache: instance-wide cap (0 = unlimited) ---
+            - name: GROWN_RADIO_CACHE_MAX_BYTES
+              value: "5Gi"
+            - name: GROWN_RADIO_CACHE_MAX_DAYS
+              value: "30"
           resources:
             limits:
               memory: 512Mi
@@ -445,7 +459,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: zitadel
 spec:
   replicas: 1
@@ -462,9 +476,14 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.1.0
+        helm.sh/chart: grown-0.3.0
         app.kubernetes.io/component: zitadel
     spec:
+      # Zitadel runs as a non-root user (uid 1000). fsGroup makes the shared RWO
+      # PVC group-owned and group-writable so start-from-init can write the
+      # bootstrap PAT to /shared (otherwise: "open /shared/...: permission denied").
+      securityContext:
+        fsGroup: 1000
       initContainers:
         # Wait for Postgres to accept connections before init.
         - name: wait-for-postgres
@@ -494,6 +513,16 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: /shared
+          # start-from-init runs init + setup (migrations, projections, first
+          # instance) and only THEN starts the server. That one-shot sequence is
+          # NOT idempotent — if it is killed part-way (e.g. a premature liveness
+          # failure) the next boot fails on a duplicate default-instance domain.
+          # A startupProbe gates liveness until the server is actually up, giving
+          # setup up to ~10 min (failureThreshold * periodSeconds) on a fresh DB.
+          startupProbe:
+            httpGet: { path: /debug/healthz, port: 8080 }
+            periodSeconds: 5
+            failureThreshold: 120
           readinessProbe:
             httpGet: { path: /debug/ready, port: 8080 }
             initialDelaySeconds: 10
@@ -501,8 +530,8 @@ spec:
             failureThreshold: 60
           livenessProbe:
             httpGet: { path: /debug/healthz, port: 8080 }
-            initialDelaySeconds: 30
             periodSeconds: 20
+            failureThreshold: 6
           resources:
             limits:
               memory: 1Gi
@@ -516,74 +545,6 @@ spec:
           persistentVolumeClaim:
             claimName: grown-zitadel-shared
 ---
-# Source: grown/templates/minio.yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: grown-minio
-  labels:
-    app.kubernetes.io/name: grown
-    app.kubernetes.io/instance: grown
-    app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
-    app.kubernetes.io/component: minio
-spec:
-  serviceName: grown-minio
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: grown
-      app.kubernetes.io/component: minio
-      app.kubernetes.io/instance: grown
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: grown
-        app.kubernetes.io/instance: grown
-        app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.1.0
-        app.kubernetes.io/component: minio
-    spec:
-      securityContext:
-        fsGroup: 1000
-      containers:
-        - name: minio
-          image: "minio/minio:RELEASE.2025-04-08T15-41-24Z"
-          imagePullPolicy: IfNotPresent
-          args: ["server", "/data", "--console-address", ":9001"]
-          envFrom:
-            - secretRef:
-                name: grown-minio
-          ports:
-            - { name: s3, containerPort: 9000 }
-            - { name: console, containerPort: 9001 }
-          volumeMounts:
-            - name: data
-              mountPath: /data
-          readinessProbe:
-            httpGet: { path: /minio/health/ready, port: 9000 }
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 30
-          livenessProbe:
-            httpGet: { path: /minio/health/live, port: 9000 }
-            initialDelaySeconds: 20
-            periodSeconds: 20
-          resources:
-            limits:
-              memory: 1Gi
-            requests:
-              cpu: 100m
-              memory: 256Mi
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 20Gi
----
 # Source: grown/templates/postgres.yaml
 apiVersion: apps/v1
 kind: StatefulSet
@@ -593,7 +554,7 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: postgres
 spec:
   serviceName: grown-postgres
@@ -609,7 +570,7 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.1.0
+        helm.sh/chart: grown-0.3.0
         app.kubernetes.io/component: postgres
     spec:
       containers:
@@ -661,18 +622,118 @@ spec:
           requests:
             storage: 10Gi
 ---
-# Source: grown/templates/minio.yaml
-# Bucket-init Job: waits for MinIO, then creates the grown bucket (+ pdf bucket).
-apiVersion: batch/v1
-kind: Job
+# Source: grown/templates/rustfs.yaml
+apiVersion: apps/v1
+kind: StatefulSet
 metadata:
-  name: grown-minio-init
+  name: grown-rustfs
   labels:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
-    app.kubernetes.io/component: minio-init
+    helm.sh/chart: grown-0.3.0
+    app.kubernetes.io/component: rustfs
+spec:
+  serviceName: grown-rustfs
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grown
+      app.kubernetes.io/component: rustfs
+      app.kubernetes.io/instance: grown
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grown
+        app.kubernetes.io/instance: grown
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: grown-0.3.0
+        app.kubernetes.io/component: rustfs
+    spec:
+      securityContext:
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: rustfs
+          image: "rustfs/rustfs:1.0.0-beta.7"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          env:
+            - name: RUSTFS_VOLUMES
+              value: /data
+            - name: RUSTFS_ADDRESS
+              value: ":9100"
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "false"
+            # "" => logs to stdout (the image default /logs is not a volume).
+            - name: RUSTFS_OBS_LOG_DIRECTORY
+              value: ""
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: grown-rustfs, key: access_key }
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: grown-rustfs, key: secret_key }
+          ports:
+            - { name: s3, containerPort: 9100 }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet: { path: /health, port: s3 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health, port: s3 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+  # volumeClaimTemplates PVCs (data-<release>-rustfs-0) are never deleted by
+  # `helm uninstall`/upgrade — Kubernetes leaves them in place by design.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+# Source: grown/templates/rustfs.yaml
+# Bucket-init: waits for rustfs to accept S3 auth, then creates the grown bucket
+# (+ the pdf bucket). A post-install/post-upgrade hook so upgrades RECREATE it
+# (a Job's pod template is immutable) and it runs after rustfs is up. Idempotent
+# (head-bucket || create-bucket), so re-running on every upgrade is safe.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grown-rustfs-init
+  labels:
+    app.kubernetes.io/name: grown
+    app.kubernetes.io/instance: grown
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: grown-0.3.0
+    app.kubernetes.io/component: rustfs-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 10
   template:
@@ -681,30 +742,38 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.1.0
-        app.kubernetes.io/component: minio-init
+        helm.sh/chart: grown-0.3.0
+        app.kubernetes.io/component: rustfs-init
     spec:
       restartPolicy: OnFailure
       containers:
-        - name: mc
-          image: minio/mc:latest
+        - name: s3init
+          image: public.ecr.aws/aws-cli/aws-cli:2.22.35
           command:
             - sh
             - -c
             - |
-              echo "waiting for minio S3 auth..."
-              until mc alias set m http://grown-minio:9000 "$ACCESS" "$SECRET" 2>/dev/null; do sleep 3; done
-              mc mb --ignore-existing m/grown-default
-              echo "bucket grown-default ready"
-              mc mb --ignore-existing m/pdf-docs
-              echo "bucket pdf-docs ready"
+              export AWS_ACCESS_KEY_ID="$ACCESS" AWS_SECRET_ACCESS_KEY="$SECRET" AWS_DEFAULT_REGION=us-east-1
+              ep=http://grown-rustfs.grown.svc.cluster.local:9100
+              echo "waiting for rustfs S3 auth at $ep..."
+              until aws --endpoint-url "$ep" s3api list-buckets >/dev/null 2>&1; do sleep 3; done
+              mkbucket() {
+                aws --endpoint-url "$ep" s3api head-bucket --bucket "$1" 2>/dev/null ||
+                  aws --endpoint-url "$ep" s3api create-bucket --bucket "$1" >/dev/null
+                echo "bucket $1 ready"
+              }
+              mkbucket grown-default
+              mkbucket pdf-docs
           env:
             - name: ACCESS
               valueFrom:
-                secretKeyRef: { name: grown-minio, key: MINIO_ROOT_USER }
+                secretKeyRef: { name: grown-rustfs, key: access_key }
             - name: SECRET
               valueFrom:
-                secretKeyRef: { name: grown-minio, key: MINIO_ROOT_PASSWORD }
+                secretKeyRef: { name: grown-rustfs, key: secret_key }
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { memory: 256Mi }
 ---
 # Source: grown/templates/zitadel-provision.yaml
 # Provisioning Job: waits for Zitadel + the bootstrap PAT (written by
@@ -723,8 +792,16 @@ metadata:
     app.kubernetes.io/name: grown
     app.kubernetes.io/instance: grown
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grown-0.1.0
+    helm.sh/chart: grown-0.3.0
     app.kubernetes.io/component: zitadel-provision
+  # Run as a Helm hook so chart upgrades RECREATE it instead of patching it (a
+  # Job pod template is immutable; a plain upgrade touching the Job fails with
+  # "field is immutable"). It is idempotent: it exits 0 immediately when the
+  # OIDC client secret is already populated (client-id != CHANGE_ME).
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 20
   template:
@@ -733,11 +810,27 @@ spec:
         app.kubernetes.io/name: grown
         app.kubernetes.io/instance: grown
         app.kubernetes.io/managed-by: Helm
-        helm.sh/chart: grown-0.1.0
+        helm.sh/chart: grown-0.3.0
         app.kubernetes.io/component: zitadel-provision
     spec:
       restartPolicy: OnFailure
       serviceAccountName: grown-zitadel-provision
+      # Match the Zitadel pod's fsGroup so the shared PVC's PAT file is readable.
+      securityContext:
+        fsGroup: 1000
+      # The provision Job and the Zitadel pod share the SAME ReadWriteOnce PVC
+      # (to read the bootstrap PAT), so on a multi-node cluster they MUST land on
+      # the same node — otherwise the PVC Multi-Attach blocks one of them. Pin the
+      # Job to the Zitadel pod's node via required podAffinity.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: grown
+                  app.kubernetes.io/component: zitadel
+                  app.kubernetes.io/instance: grown
+              topologyKey: kubernetes.io/hostname
       volumes:
         - name: shared
           persistentVolumeClaim:
@@ -748,6 +841,11 @@ spec:
           env:
             - name: ZITADEL_URL
               value: "http://grown-zitadel.grown.svc.cluster.local:8080"
+            # When Zitadel advertises an external domain, it routes API requests
+            # by Host header. Calls to the in-cluster Service URL must therefore
+            # send Host: <externalDomain> or Zitadel returns "Instance not found".
+            - name: ZITADEL_HOST_HEADER
+              value: ""
             - name: REDIRECT_URL
               value: "http://grown.example.com/api/v1/auth/callback"
             - name: POST_LOGOUT_URL
@@ -781,8 +879,13 @@ spec:
                 exit 0
               fi
 
+              # Host header sent on every API call so Zitadel resolves the
+              # instance when it advertises an external domain (empty => none).
+              HOSTHDR=""
+              [ -n "$ZITADEL_HOST_HEADER" ] && HOSTHDR="-H Host:$ZITADEL_HOST_HEADER"
+
               echo "Waiting for Zitadel /debug/ready..."
-              until curl -sf "$ZITADEL_URL/debug/ready" >/dev/null; do
+              until curl -sf $HOSTHDR "$ZITADEL_URL/debug/ready" >/dev/null; do
                 echo "  zitadel not ready..."; sleep 5
               done
 
@@ -794,7 +897,7 @@ spec:
               [ -s "$PAT_FILE" ] || { echo "PAT file not found"; exit 1; }
               TOKEN=$(tr -d '[:space:]' < "$PAT_FILE")
 
-              api() { curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" "$@"; }
+              api() { curl -s $HOSTHDR -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" "$@"; }
 
               # Find or create project.
               PID=$(api -X POST "$ZITADEL_URL/management/v1/projects/_search" \
@@ -832,9 +935,35 @@ spec:
               CID=$(echo "$RESP" | grep -o '"clientId":"[^"]*"' | head -1 | cut -d'"' -f4)
               CSECRET=$(echo "$RESP" | grep -o '"clientSecret":"[^"]*"' | head -1 | cut -d'"' -f4)
               if [ -z "$CID" ] || [ -z "$CSECRET" ]; then
-                echo "Failed to create OIDC app: $RESP"; exit 1
+                # This Job is a post-install/upgrade hook, so it re-runs on EVERY
+                # chart upgrade. We only reach here when $SECRET_NAME was still
+                # CHANGE_ME/empty (the guard near the top of this script exits
+                # early once it holds a real client-id) — i.e. the OIDC app exists
+                # but its secret was never persisted. The client secret is only
+                # returned at creation, so SELF-HEAL: look the app up by name and
+                # REGENERATE its secret, then fall through to write it. Because the
+                # early guard skips once the secret is valid, this never needlessly
+                # rotates an already-working secret. Only a genuine error is fatal.
+                if echo "$RESP" | grep -qi "already exists"; then
+                  echo "OIDC app '$APP_NAME' exists but $SECRET_NAME is unset — re-issuing its client secret."
+                  APP_ID=$(api -X POST "$ZITADEL_URL/management/v1/projects/$PID/apps/_search" \
+                    -d "{\"queries\":[{\"nameQuery\":{\"name\":\"$APP_NAME\",\"method\":\"TEXT_QUERY_METHOD_EQUALS\"}}]}" \
+                    | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                  if [ -z "$APP_ID" ]; then echo "could not find existing app $APP_NAME"; exit 1; fi
+                  CID=$(api "$ZITADEL_URL/management/v1/projects/$PID/apps/$APP_ID" \
+                    | grep -o '"clientId":"[^"]*"' | head -1 | cut -d'"' -f4)
+                  CSECRET=$(api -X POST "$ZITADEL_URL/management/v1/projects/$PID/apps/$APP_ID/oidc_config/_generate_client_secret" \
+                    | grep -o '"clientSecret":"[^"]*"' | head -1 | cut -d'"' -f4)
+                  if [ -z "$CID" ] || [ -z "$CSECRET" ]; then
+                    echo "failed to re-issue client secret (app=$APP_ID)"; exit 1
+                  fi
+                  echo "Re-issued client secret for existing app $APP_ID (client_id=$CID)"
+                else
+                  echo "Failed to create OIDC app: $RESP"; exit 1
+                fi
+              else
+                echo "Created OIDC app client_id=$CID"
               fi
-              echo "Created OIDC app client_id=$CID"
 
               kubectl create secret generic "$SECRET_NAME" -n "$SECRET_NAMESPACE" \
                 --from-literal=client-id="$CID" \

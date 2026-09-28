@@ -4,11 +4,16 @@ name: Build and Deploy
 # ImagePolicy "grown:grown" (in the gitops repo) then detects the newest
 # YYYYMMDD-HHMMSS-<sha> tag and rolls it out — so push-to-main auto-deploys.
 #
+# Pushing a release tag (vX.Y.Z) builds that commit as $IMAGE:vX.Y.Z only. The
+# ImagePolicy only matches date tags, so releases never change what's deployed;
+# the Helm chart's appVersion names the release image for fresh installs.
+#
 # Runs on the in-cluster Forgejo runner (label `docker`, which has a dind
 # sidecar). Auth uses the automatic per-job token — no pre-created secrets.
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 jobs:
   build:
@@ -85,14 +90,18 @@ jobs:
       - name: Build and push
         run: |
           cd src
-          VERSION="$(date -u +%Y%m%d-%H%M%S)-$(echo "$GITHUB_SHA" | cut -c1-8)"
           export DOCKER_BUILDKIT=1
-          docker build \
-            --build-arg VERSION="$VERSION" \
-            --build-arg COMMIT="$GITHUB_SHA" \
-            -t "$IMAGE:$VERSION" \
-            -t "$IMAGE:latest" \
-            .
-          docker push "$IMAGE:$VERSION"
-          docker push "$IMAGE:latest"
+          if [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
+            # Release: version = the tag; don't move :latest or add a date tag.
+            VERSION="$GITHUB_REF_NAME"
+            docker build --build-arg VERSION="$VERSION" --build-arg COMMIT="$GITHUB_SHA" \
+              -t "$IMAGE:$VERSION" .
+            docker push "$IMAGE:$VERSION"
+          else
+            VERSION="$(date -u +%Y%m%d-%H%M%S)-$(echo "$GITHUB_SHA" | cut -c1-8)"
+            docker build --build-arg VERSION="$VERSION" --build-arg COMMIT="$GITHUB_SHA" \
+              -t "$IMAGE:$VERSION" -t "$IMAGE:latest" .
+            docker push "$IMAGE:$VERSION"
+            docker push "$IMAGE:latest"
+          fi
           echo "Pushed $IMAGE:$VERSION"
