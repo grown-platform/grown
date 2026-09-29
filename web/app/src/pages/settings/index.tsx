@@ -22,6 +22,14 @@ import { ApiTokensSection } from "./ApiTokensSection";
 import { HomeAssistantSection } from "./HomeAssistantSection";
 import { getPreferences, updatePreferences } from "./api";
 import type { UserPreferences } from "./api";
+import {
+  SCHEME_LABELS,
+  applyServerExtra,
+  schemesFromExtra,
+  withScheme,
+  type ShortcutApp,
+  type ShortcutScheme,
+} from "../../lib/shortcutScheme";
 
 interface SettingsPageProps {
   user: User;
@@ -72,6 +80,19 @@ const WEEK_STARTS = [
   { value: "monday", label: "Monday" },
 ];
 
+const SHORTCUT_APPS: { app: ShortcutApp; label: string; help: string }[] = [
+  {
+    app: "docs",
+    label: "Docs",
+    help: "Microsoft Word: Ctrl+E centre, Ctrl+= subscript, F7 spelling. Google Docs: Ctrl+Shift+E centre, Alt+Shift+5 strikethrough, Ctrl+Alt+X spelling.",
+  },
+  {
+    app: "sheets",
+    label: "Sheets",
+    help: "Microsoft Excel: Ctrl+5 strikethrough, Ctrl+1 format cells, Ctrl+9 hide rows. Google Sheets: Alt+Shift+5 strikethrough, Ctrl+Shift+E centre, Ctrl+Alt+9 hide rows.",
+  },
+];
+
 /** applyDensity writes a data attribute on <html> so CSS/components can react. */
 function applyDensity(density: string) {
   document.documentElement.dataset.density = density;
@@ -91,6 +112,7 @@ export default function SettingsPage({ user }: SettingsPageProps) {
         setPrefs(p);
         setDraft(p);
         applyDensity(p.density);
+        applyServerExtra(p.extra);
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
@@ -125,6 +147,7 @@ export default function SettingsPage({ user }: SettingsPageProps) {
       setPrefs(updated);
       setDraft(updated);
       applyDensity(updated.density);
+      applyServerExtra(updated.extra);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
@@ -142,7 +165,9 @@ export default function SettingsPage({ user }: SettingsPageProps) {
       draft.date_format !== prefs.date_format ||
       draft.time_format !== prefs.time_format ||
       draft.week_start !== prefs.week_start ||
-      draft.email_notifications !== prefs.email_notifications);
+      draft.email_notifications !== prefs.email_notifications ||
+      (draft.extra ?? "") !== (prefs.extra ?? ""));
+  const schemes = schemesFromExtra(draft.extra);
 
   return (
     <>
@@ -295,6 +320,27 @@ export default function SettingsPage({ user }: SettingsPageProps) {
                   The page you land on after signing in.
                 </FormHelperText>
               </FormControl>
+            </Sheet>
+
+            {/* ── Keyboard shortcuts ───────────────────────── */}
+            <Sheet variant="outlined" sx={{ borderRadius: "lg", p: 3 }} data-testid="settings-shortcuts">
+              <Typography level="title-md" sx={{ mb: 2 }}>
+                Keyboard shortcuts
+              </Typography>
+              {SHORTCUT_APPS.map(({ app, label, help }, i) => (
+                <FormControl key={app} sx={{ mb: i < SHORTCUT_APPS.length - 1 ? 2 : 0 }}>
+                  <FormLabel>{label} shortcuts</FormLabel>
+                  <Select
+                    value={schemes[app]}
+                    onChange={(_, v) => v && set("extra", withScheme(draft.extra, app, v as ShortcutScheme))}
+                    slotProps={{ button: { "aria-label": `${label} shortcuts`, id: `shortcut-scheme-${app}` } }}
+                  >
+                    <Option value="office">{SCHEME_LABELS[app].office} style (default)</Option>
+                    <Option value="google">{SCHEME_LABELS[app].google} style</Option>
+                  </Select>
+                  <FormHelperText>{help}</FormHelperText>
+                </FormControl>
+              ))}
             </Sheet>
 
             {/* ── Notifications ────────────────────────────── */}
