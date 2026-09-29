@@ -14,7 +14,8 @@ import type { Editor } from "@tiptap/react";
 import { copySelection, cutSelection, paste } from "./editorActions";
 import { CASE_MODES, changeCase } from "./textCase";
 import { hasSpaceAfter, hasSpaceBefore } from "./paragraphFormat";
-import { indent, outdent, stepFontSize } from "./shortcuts";
+import { indent, outdent, shortcutHint, stepFontSize, type SchemeAction } from "./shortcuts";
+import { useShortcutScheme } from "../../lib/shortcutScheme";
 import { downloadDoc, DOWNLOAD_FORMATS } from "./export";
 import { applyStyle, continueNumbering, currentStyle, restartNumbering } from "./docModel";
 import { openParagraphDialog } from "./ParagraphDialogs";
@@ -209,6 +210,9 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
 
   // Insert is controlled so the table size picker (not a MenuItem) can
   // close it after a pick.
+  // Menu hints for the chords that depend on the user's shortcut scheme.
+  const scheme = useShortcutScheme("docs");
+  const hint = (a: SchemeAction) => kbd(shortcutHint(scheme, a));
   const [insertOpen, setInsertOpen] = useState(false);
   // References is controlled so the Add text level row can close it.
   const [refOpen, setRefOpen] = useState(false);
@@ -468,17 +472,17 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem
             onClick={run((e) => e.chain().focus().toggleStrike().run())}
           >
-            Strikethrough
+            Strikethrough{hint("strikethrough")}
           </MenuItem>
           <MenuItem
             onClick={run((e) => e.chain().focus().toggleSuperscript().run())}
           >
-            Superscript
+            Superscript{hint("superscript")}
           </MenuItem>
           <MenuItem
             onClick={run((e) => e.chain().focus().toggleSubscript().run())}
           >
-            Subscript
+            Subscript{hint("subscript")}
           </MenuItem>
           <MenuItem
             onClick={run((e) => {
@@ -545,24 +549,24 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem
             onClick={run((e) => e.chain().focus().setTextAlign("left").run())}
           >
-            Left{kbd("Ctrl+Shift+L")}
+            Left{hint("alignLeft")}
           </MenuItem>
           <MenuItem
             onClick={run((e) => e.chain().focus().setTextAlign("center").run())}
           >
-            Center{kbd("Ctrl+Shift+E")}
+            Center{hint("alignCenter")}
           </MenuItem>
           <MenuItem
             onClick={run((e) => e.chain().focus().setTextAlign("right").run())}
           >
-            Right{kbd("Ctrl+Shift+R")}
+            Right{hint("alignRight")}
           </MenuItem>
           <MenuItem
             onClick={run((e) =>
               e.chain().focus().setTextAlign("justify").run(),
             )}
           >
-            Justified{kbd("Ctrl+Shift+J")}
+            Justified{hint("alignJustify")}
           </MenuItem>
           <MenuItem
             onClick={run((e) => {
@@ -833,7 +837,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
         "Tools",
         <>
           <MenuItem onClick={() => openProofingDialog("spelling")} data-testid="tools-spelling">
-            Spelling and grammar{kbd("F7")}
+            Spelling and grammar{hint("spelling")}
           </MenuItem>
           <MenuItem onClick={run((e) => e.commands.setSpellcheck(!spellService().enabled))} data-testid="tools-spellcheck-toggle">
             {spellService().enabled ? "✓ " : ""}Check spelling as you type
@@ -842,7 +846,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
             Language…
           </MenuItem>
           <MenuItem onClick={actions.wordCount}>
-            Word count{kbd("Ctrl+Shift+C")}
+            Word count{hint("wordCount")}
           </MenuItem>
           <MenuItem onClick={() => openInsertDialog("stats")} data-testid="tools-stats">
             Document statistics…
@@ -873,7 +877,7 @@ export function MenuBar({ editor, actions, title }: MenuBarProps) {
           <MenuItem onClick={() => openMailMerge()} data-testid="tools-mail-merge">Mail merge…</MenuItem>
           <ListDivider />
           <MenuItem disabled>Translate document</MenuItem>
-          <MenuItem disabled>Voice typing (soon){kbd("Ctrl+Shift+S")}</MenuItem>
+          <MenuItem disabled>Voice typing (soon){scheme === "google" && kbd("Ctrl+Shift+S")}</MenuItem>
           <ListDivider />
           {scriptingEnabled() && (
             <MenuItem onClick={() => openApiConsole()} data-testid="tools-macros">

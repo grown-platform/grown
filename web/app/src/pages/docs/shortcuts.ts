@@ -2,21 +2,29 @@
 // (bold/italic/underline, Ctrl+Alt+0-6 styles, Ctrl+Shift+7/8 lists,
 // Ctrl+Shift+L/E/R/J alignment, Shift+Enter line break, ...).
 //
-// Most bindings follow Word / OnlyOffice. Where one of those chords is
-// already taken by a Grown (Google Docs-style) binding, Grown's binding wins
-// and the table below marks the action as a "grown-variant":
-//   * Ctrl+Shift+L stays "align left"; bullets remain Ctrl+Shift+8.
-//   * Ctrl+] / Ctrl+[ indent (Google Docs); Word uses them for font size,
-//     which here is Ctrl+Shift+. / Ctrl+Shift+, (both editors agree).
-//   * Headings are Ctrl+Alt+1-6 (Google Docs), not Alt+1-3.
+// Two schemes, chosen per user (lib/shortcutScheme.ts):
+//   * "office" (default): Microsoft Word conventions. Where a Word chord is
+//     already taken by a long-standing Grown binding, Grown's binding wins
+//     and the row carries a note:
+//       - Ctrl+Shift+L stays "align left" (Word: List Bullet style); bullets
+//         remain Ctrl+Shift+8.
+//       - Ctrl+] / Ctrl+[ indent; Word's Ctrl+] / Ctrl+[ font size is
+//         Ctrl+Shift+. / Ctrl+Shift+, here (Word's other font-size chords).
+//       - Headings are Ctrl+Alt+1-6 (Word: Ctrl+Alt+1-3).
+//   * "google": Google Docs conventions (strikethrough Alt+Shift+5, spelling
+//     Ctrl+Alt+X, no Word-only chords such as Ctrl+L/E/R/J or Ctrl+=).
 //
-// SHORTCUT_GROUPS is the single source for the Help > Keyboard shortcuts
-// dialog, so what it lists is what is bound.
+// SCHEME_BINDINGS holds the chords that differ between the schemes and
+// SHORTCUT_ROWS every documented chord; shortcutGroups(scheme) is the single
+// source for the Help > Keyboard shortcuts dialog and the menu hints, and the
+// DocShortcuts keymap below dispatches from SCHEME_BINDINGS, so what the
+// dialog lists is what is bound.
 import { Extension, type Editor } from "@tiptap/core";
 import type { Mark } from "@tiptap/pm/model";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { selectedBlocks, toPt } from "./paragraphFormat";
 import { unicodeToChar } from "./textOps";
+import { DEFAULT_SHORTCUT_SCHEME, getShortcutScheme, type ShortcutScheme } from "../../lib/shortcutScheme";
 
 // --- font size steps ----------------------------------------------------------------
 
@@ -150,6 +158,92 @@ export function toggleAlign(editor: Editor, align: "center" | "right" | "justify
   return editor.commands.setTextAlign(align);
 }
 
+// --- scheme bindings -------------------------------------------------------------------
+
+/** Actions whose chords differ between the Office and Google schemes. */
+export type SchemeAction =
+  | "alignLeft"
+  | "alignCenter"
+  | "alignRight"
+  | "alignJustify"
+  | "strikethrough"
+  | "superscript"
+  | "subscript"
+  | "wordCount"
+  | "spelling"
+  | "unicodeToChar";
+
+/** SCHEME_BINDINGS: per scheme, the chords (display notation, "Ctrl" = Ctrl
+ *  or Cmd, "Alt" = Alt or Option) of every action that differs between the
+ *  schemes. The first chord is the one menus show. */
+export const SCHEME_BINDINGS: Record<ShortcutScheme, Record<SchemeAction, string[]>> = {
+  office: {
+    alignLeft: ["Ctrl+L", "Ctrl+Shift+L"],
+    alignCenter: ["Ctrl+E", "Ctrl+Shift+E"],
+    alignRight: ["Ctrl+R", "Ctrl+Shift+R"],
+    alignJustify: ["Ctrl+J", "Ctrl+Shift+J"],
+    strikethrough: ["Ctrl+Shift+S"],
+    superscript: ["Ctrl+Shift+=", "Ctrl+."],
+    subscript: ["Ctrl+=", "Ctrl+,"],
+    wordCount: ["Ctrl+Shift+G", "Ctrl+Shift+C"],
+    spelling: ["F7"],
+    unicodeToChar: ["Alt+X", "Ctrl+Alt+X"],
+  },
+  google: {
+    alignLeft: ["Ctrl+Shift+L"],
+    alignCenter: ["Ctrl+Shift+E"],
+    alignRight: ["Ctrl+Shift+R"],
+    alignJustify: ["Ctrl+Shift+J"],
+    strikethrough: ["Alt+Shift+5"],
+    superscript: ["Ctrl+."],
+    subscript: ["Ctrl+,"],
+    wordCount: ["Ctrl+Shift+C"],
+    spelling: ["Ctrl+Alt+X"],
+    unicodeToChar: ["Alt+X"],
+  },
+};
+
+/** Scheme actions handled by DocEditor's window listener (they work with the
+ *  editor unfocused); the rest run in the editor keymap. */
+export const APP_LEVEL_ACTIONS: ReadonlySet<SchemeAction> = new Set(["wordCount", "spelling"]);
+
+/** toPmChord turns "Ctrl+Shift+=" into ProseMirror's "Mod-Shift-=". */
+export function toPmChord(keys: string): string {
+  const parts = keys.split("+");
+  const key = parts.pop() || "+";
+  const mods = parts.map((m) => (m === "Ctrl" ? "Mod" : m));
+  return [...mods, key.length === 1 ? key.toLowerCase() : key].join("-");
+}
+
+/** Does a keyboard event press `keys` (display notation)? Letters and digits
+ *  match on the physical key, so Alt/Option and Shift don't change them. */
+export function eventMatchesChord(keys: string, e: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): boolean {
+  const parts = keys.split("+");
+  const key = parts.pop() || "+";
+  const mods = new Set(parts);
+  if (mods.has("Ctrl") !== (e.ctrlKey || e.metaKey)) return false;
+  if (mods.has("Alt") !== e.altKey || mods.has("Shift") !== e.shiftKey) return false;
+  if (/^[A-Z]$/i.test(key)) return e.code === `Key${key.toUpperCase()}`;
+  if (/^[0-9]$/.test(key)) return e.code === `Digit${key}`;
+  return e.key === key;
+}
+
+/** schemeActionFor returns the app-level scheme action a key event triggers. */
+export function schemeActionFor(
+  scheme: ShortcutScheme,
+  e: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+): SchemeAction | null {
+  for (const a of APP_LEVEL_ACTIONS) {
+    if (SCHEME_BINDINGS[scheme][a].some((k) => eventMatchesChord(k, e))) return a;
+  }
+  return null;
+}
+
+/** shortcutHint is the chord a menu shows for a scheme action. */
+export function shortcutHint(scheme: ShortcutScheme, action: SchemeAction): string {
+  return SCHEME_BINDINGS[scheme][action][0] ?? "";
+}
+
 // --- storage / hooks -------------------------------------------------------------------
 
 export interface DocShortcutsStorage {
@@ -158,6 +252,10 @@ export interface DocShortcutsStorage {
   /** Called on Ctrl+S (the document saves continuously; the app may show a
    *  "saved" hint). */
   onSave: (() => void) | null;
+  /** Pins the shortcut scheme (tests); null follows the user's preference
+   *  (lib/shortcutScheme.ts). TipTap v2 extension storage is shared by every
+   *  editor on the page. */
+  scheme: ShortcutScheme | null;
 }
 
 declare module "@tiptap/core" {
@@ -166,18 +264,71 @@ declare module "@tiptap/core" {
   }
 }
 
+/** The editor commands behind the in-editor scheme actions. */
+function runSchemeAction(editor: Editor, action: SchemeAction): boolean {
+  switch (action) {
+    case "alignLeft":
+      return editor.commands.setTextAlign("left");
+    case "alignCenter":
+      return toggleAlign(editor, "center");
+    case "alignRight":
+      return toggleAlign(editor, "right");
+    case "alignJustify":
+      return toggleAlign(editor, "justify");
+    case "strikethrough":
+      return editor.commands.toggleStrike();
+    case "superscript":
+      return editor.commands.toggleSuperscript();
+    case "subscript":
+      return editor.commands.toggleSubscript();
+    case "unicodeToChar":
+      return unicodeToChar(editor);
+    default:
+      return false;
+  }
+}
+
+/** schemeKeymap builds the ProseMirror bindings for SCHEME_BINDINGS: each
+ *  chord runs the action the active scheme gives it, and falls through
+ *  (false) when the active scheme doesn't bind it, so the browser or a
+ *  lower-priority extension gets the key. Alt+X without Ctrl is handled by
+ *  the numpad plugin below (macOS types a character with Option+X). */
+function schemeKeymap(editor: () => Editor, scheme: () => ShortcutScheme): Record<string, () => boolean> {
+  const chords = new Set<string>();
+  for (const map of Object.values(SCHEME_BINDINGS)) {
+    for (const [action, keys] of Object.entries(map)) {
+      if (APP_LEVEL_ACTIONS.has(action as SchemeAction)) continue;
+      for (const k of keys) if (k !== "Alt+X") chords.add(k);
+    }
+  }
+  const out: Record<string, () => boolean> = {};
+  for (const k of chords) {
+    out[toPmChord(k)] = () => {
+      const map = SCHEME_BINDINGS[scheme()];
+      const action = (Object.keys(map) as SchemeAction[]).find(
+        (a) => !APP_LEVEL_ACTIONS.has(a) && map[a].includes(k),
+      );
+      return action ? runSchemeAction(editor(), action) : false;
+    };
+  }
+  return out;
+}
+
 export const DocShortcuts = Extension.create<object, DocShortcutsStorage>({
   name: "docShortcuts",
   // Above StarterKit/TextAlign (100) so Ctrl+Enter and the align toggles win
   // over HardBreak's Ctrl+Enter and TextAlign's plain setters.
   priority: 110,
   addStorage() {
-    return { copiedFormat: null, onSave: null };
+    return { copiedFormat: null, onSave: null, scheme: null };
   },
   addKeyboardShortcuts() {
     const e = () => this.editor;
     const inCode = () => e().isActive("codeBlock");
     return {
+      // Alignment, strikethrough, sub/superscript and the other chords that
+      // differ between the Office and Google schemes.
+      ...schemeKeymap(e, () => this.storage.scheme ?? getShortcutScheme("docs")),
       // Breaks
       "Mod-Enter": () => (inCode() ? false : e().commands.insertPageBreak()),
       // Font size
@@ -188,10 +339,6 @@ export const DocShortcuts = Extension.create<object, DocShortcutsStorage>({
       "Mod-Shift-m": () => outdent(e()),
       "Mod-]": () => indent(e()),
       "Mod-[": () => outdent(e()),
-      // Alignment toggles (left stays TextAlign's Mod-Shift-l)
-      "Mod-Shift-e": () => toggleAlign(e(), "center"),
-      "Mod-Shift-r": () => toggleAlign(e(), "right"),
-      "Mod-Shift-j": () => toggleAlign(e(), "justify"),
       // Character formatting
       "Mod-Space": () => resetCharFormatting(e()),
       "Mod-\\": () => e().chain().clearNodes().unsetAllMarks().run(),
@@ -211,7 +358,6 @@ export const DocShortcuts = Extension.create<object, DocShortcutsStorage>({
       "Mod-Alt-t": () => insertSymbol(e(), SYMBOLS.trademark),
       "Mod-Alt-e": () => insertSymbol(e(), SYMBOLS.euro),
       "Mod-Alt-.": () => insertSymbol(e(), SYMBOLS.ellipsis),
-      "Mod-Alt-x": () => unicodeToChar(e()),
       // Notes
       "Mod-Alt-f": () => e().commands.insertFootnote(),
       "Mod-Alt-d": () => e().commands.insertEndnote(),
@@ -293,11 +439,15 @@ export const TabCharacter = Extension.create({
 export interface ShortcutRow {
   label: string;
   keys: string;
-  /** Set when Grown's binding differs from Word/OnlyOffice's. */
+  /** Set when Grown's binding differs from Word/OnlyOffice's (Office scheme). */
   note?: string;
 }
 
-export const SHORTCUT_GROUPS: { title: string; items: ShortcutRow[] }[] = [
+/** A row template: fixed keys, or a scheme action whose keys depend on the
+ *  scheme. */
+type RowTemplate = { label: string; note?: string } & ({ keys: string } | { action: SchemeAction });
+
+const ROWS: { title: string; items: RowTemplate[] }[] = [
   {
     title: "Common actions",
     items: [
@@ -320,9 +470,9 @@ export const SHORTCUT_GROUPS: { title: string; items: ShortcutRow[] }[] = [
       { label: "Bold", keys: "Ctrl+B" },
       { label: "Italic", keys: "Ctrl+I" },
       { label: "Underline", keys: "Ctrl+U" },
-      { label: "Strikethrough", keys: "Ctrl+Shift+S" },
-      { label: "Superscript", keys: "Ctrl+." },
-      { label: "Subscript", keys: "Ctrl+," },
+      { label: "Strikethrough", action: "strikethrough" },
+      { label: "Superscript", action: "superscript" },
+      { label: "Subscript", action: "subscript" },
       { label: "Increase font size", keys: "Ctrl+Shift+." },
       { label: "Decrease font size", keys: "Ctrl+Shift+," },
       { label: "Reset character formatting", keys: "Ctrl+Space" },
@@ -335,12 +485,12 @@ export const SHORTCUT_GROUPS: { title: string; items: ShortcutRow[] }[] = [
     title: "Paragraph formatting",
     items: [
       { label: "Normal text", keys: "Ctrl+Alt+0" },
-      { label: "Heading 1–6", keys: "Ctrl+Alt+1…6", note: "Word: Alt+1…3" },
-      { label: "Align left", keys: "Ctrl+Shift+L", note: "Word: Ctrl+L" },
-      { label: "Center (again: left)", keys: "Ctrl+Shift+E" },
-      { label: "Align right (again: left)", keys: "Ctrl+Shift+R" },
-      { label: "Justify (again: left)", keys: "Ctrl+Shift+J" },
-      { label: "Increase indent", keys: "Ctrl+M / Ctrl+]" },
+      { label: "Heading 1–6", keys: "Ctrl+Alt+1…6", note: "Word: Ctrl+Alt+1…3" },
+      { label: "Align left", action: "alignLeft" },
+      { label: "Center (again: left)", action: "alignCenter" },
+      { label: "Align right (again: left)", action: "alignRight" },
+      { label: "Justify (again: left)", action: "alignJustify" },
+      { label: "Increase indent", keys: "Ctrl+M / Ctrl+]", note: "Word: Ctrl+] is font size" },
       { label: "Decrease indent", keys: "Ctrl+Shift+M / Ctrl+[" },
       { label: "Numbered list", keys: "Ctrl+Shift+7" },
       { label: "Bulleted list", keys: "Ctrl+Shift+8", note: "Word: Ctrl+Shift+L" },
@@ -365,7 +515,7 @@ export const SHORTCUT_GROUPS: { title: string; items: ShortcutRow[] }[] = [
       { label: "Registered ®", keys: "Ctrl+Alt+R" },
       { label: "Trademark ™", keys: "Ctrl+Alt+T" },
       { label: "Euro €", keys: "Ctrl+Alt+E" },
-      { label: "Hex code to character", keys: "Alt+X" },
+      { label: "Hex code to character", action: "unicodeToChar" },
     ],
   },
   {
@@ -387,8 +537,25 @@ export const SHORTCUT_GROUPS: { title: string; items: ShortcutRow[] }[] = [
       { label: "Search the menus", keys: "Alt+/" },
       { label: "Keyboard shortcuts", keys: "Ctrl+/" },
       { label: "Insert comment", keys: "Ctrl+Alt+M" },
-      { label: "Word count", keys: "Ctrl+Shift+C" },
+      { label: "Spelling and grammar", action: "spelling" },
+      { label: "Word count", action: "wordCount" },
       { label: "Version history", keys: "Ctrl+Alt+Shift+H" },
     ],
   },
 ];
+
+/** shortcutGroups is the Help > Keyboard shortcuts list for a scheme. */
+export function shortcutGroups(scheme: ShortcutScheme): { title: string; items: ShortcutRow[] }[] {
+  return ROWS.map((g) => ({
+    title: g.title,
+    items: g.items.flatMap((r): ShortcutRow[] => {
+      const keys = "action" in r ? SCHEME_BINDINGS[scheme][r.action].join(" / ") : r.keys;
+      if (!keys) return [];
+      const note = scheme === "office" ? r.note : undefined;
+      return [note ? { label: r.label, keys, note } : { label: r.label, keys }];
+    }),
+  }));
+}
+
+/** The default (Office) scheme's list. */
+export const SHORTCUT_GROUPS = shortcutGroups(DEFAULT_SHORTCUT_SCHEME);

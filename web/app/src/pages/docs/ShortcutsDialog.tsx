@@ -7,15 +7,19 @@ import {
   Sheet,
   Divider,
 } from "@mui/joy";
-import { SHORTCUT_GROUPS } from "./shortcuts";
+import { shortcutGroups } from "./shortcuts";
+import { useShortcutScheme } from "../../lib/shortcutScheme";
+import { ShortcutSchemeSwitch } from "../../components/ShortcutSchemeSwitch";
 
 interface ShortcutsDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-/** ShortcutsDialog is the Help → Keyboard shortcuts overlay (Ctrl+/). */
+/** ShortcutsDialog is the Help → Keyboard shortcuts overlay (Ctrl+/). It
+ *  lists the active scheme's chords and switches the scheme. */
 export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
+  const scheme = useShortcutScheme("docs");
   return (
     <Modal open={open} onClose={onClose}>
       <ModalDialog
@@ -30,15 +34,18 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
         <Typography level="title-lg" sx={{ mb: 1 }}>
           Keyboard shortcuts
         </Typography>
-        <Divider sx={{ mb: 2 }} />
+        <ShortcutSchemeSwitch app="docs" />
+        <Divider sx={{ my: 2 }} />
         <Box
+          data-testid="docs-shortcuts"
+          data-scheme={scheme}
           sx={{
             display: "grid",
             gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
             gap: 2,
           }}
         >
-          {SHORTCUT_GROUPS.map((g) => (
+          {shortcutGroups(scheme).map((g) => (
             <Box key={g.title}>
               <Typography level="title-sm" sx={{ mb: 0.5 }}>
                 {g.title}

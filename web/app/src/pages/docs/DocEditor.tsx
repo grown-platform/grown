@@ -104,6 +104,8 @@ import { MailMerge, openMailMerge } from "./MailMergePanel";
 import { FillFormBar, FormsUI, useProtectionMode } from "./FormsUI";
 import { insertTableOfContents, toggleFieldCodes, updateFields } from "./references";
 import { ShortcutsDialog } from "./ShortcutsDialog";
+import { schemeActionFor } from "./shortcuts";
+import { getShortcutScheme } from "../../lib/shortcutScheme";
 import { FindBar, type FindMode } from "./FindBar";
 import { AutoCorrectDialog } from "./AutoCorrectDialog";
 import { getAutoCorrect, loadAutoCorrect, saveAutoCorrect } from "./autocorrect";
@@ -567,8 +569,9 @@ export function DocEditor({ user }: DocEditorProps) {
 
   // Global editor shortcuts not handled by TipTap: command palette (Alt+/),
   // keyboard-shortcuts overlay (Ctrl+/), comment (Ctrl+Alt+M), version
-  // history (Ctrl+Alt+Shift+H), find & replace (Ctrl+H), link (Ctrl+K) and
-  // word count (Ctrl+Shift+C). Editing shortcuts live in shortcuts.ts.
+  // history (Ctrl+Alt+Shift+H), find & replace (Ctrl+H), link (Ctrl+K),
+  // spelling and word count (their chords depend on the shortcut scheme).
+  // Editing shortcuts live in shortcuts.ts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === "p" || e.key === "P")) {
@@ -587,8 +590,8 @@ export function DocEditor({ user }: DocEditorProps) {
       ) {
         e.preventDefault();
         actions.commentOnSelection();
-      } else if (e.key === "F7" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-        // Spelling (M13).
+      } else if (schemeActionFor(getShortcutScheme("docs"), e) === "spelling") {
+        // Spelling (M13): F7 (Office) or Ctrl+Alt+X (Google).
         e.preventDefault();
         openProofingDialog("spelling");
       } else if (
@@ -624,12 +627,8 @@ export function DocEditor({ user }: DocEditorProps) {
       ) {
         e.preventDefault();
         promptLink(editor);
-      } else if (
-        (e.ctrlKey || e.metaKey) &&
-        e.shiftKey &&
-        !e.altKey &&
-        e.code === "KeyC"
-      ) {
+      } else if (schemeActionFor(getShortcutScheme("docs"), e) === "wordCount") {
+        // Ctrl+Shift+C (both schemes), Ctrl+Shift+G (Office).
         e.preventDefault();
         actions.wordCount();
       }

@@ -3,6 +3,7 @@ import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { GrownTable, GrownTableView, GrownTableCell, GrownTableHeader, GrownTableRow, TableTools } from "./tables";
 import StarterKit from "@tiptap/starter-kit";
+import Strike from "@tiptap/extension-strike";
 import Underline from "@tiptap/extension-underline";
 import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
@@ -562,6 +563,13 @@ export interface LocalBuildOpts {
 
 export type BuildOpts = CollabBuildOpts | LocalBuildOpts;
 
+/** Strike without its own keyboard shortcut (see DocShortcuts). */
+const SchemeStrike = Strike.extend({
+  addKeyboardShortcuts() {
+    return {};
+  },
+});
+
 /** buildExtensions assembles the full editor extension set. With collab (the
  *  default) Yjs owns history, so StarterKit's undo/redo is disabled
  *  (Collaboration provides it). With `collab: false` the Yjs extensions are
@@ -584,8 +592,13 @@ export function buildExtensions(opts: BuildOpts) {
         ];
   return [
     opts.collab === false && !localYdoc
-      ? StarterKit
-      : StarterKit.configure({ history: false }),
+      ? StarterKit.configure({ strike: false })
+      : StarterKit.configure({ history: false, strike: false }),
+    // Strikethrough's chord depends on the shortcut scheme (Ctrl+Shift+S in
+    // Office, Alt+Shift+5 in Google), so DocShortcuts binds it. Right after
+    // StarterKit, where StarterKit's own Strike sat, so the mark order (and
+    // with it HTML/DOCX output) is unchanged.
+    SchemeStrike,
     Underline,
     TextStyle,
     Color,
