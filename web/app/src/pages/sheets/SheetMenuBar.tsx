@@ -32,6 +32,8 @@ import {
   shiftCells,
 } from "./editActions";
 import type { TextCase } from "./textCase";
+import { shortcutHint } from "./sheetShortcuts";
+import { useShortcutScheme } from "../../lib/shortcutScheme";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- FortuneSheet API is loosely typed here. */
 type Wb = () => any;
@@ -217,6 +219,12 @@ export function SheetMenuBar({
   onFormatAsTable,
   onTableProperties,
 }: SheetMenuBarProps) {
+  // Menu hints for chords that depend on the user's shortcut scheme.
+  const scheme = useShortcutScheme("sheets");
+  const hint = (id: string) => {
+    const k = shortcutHint(id, scheme);
+    return k ? kbd(k) : null;
+  };
   const check = (on: boolean | undefined) => (
     <Typography component="span" sx={{ width: 18, display: "inline-block", opacity: on ? 1 : 0 }} aria-hidden>
       ✓
@@ -332,7 +340,7 @@ export function SheetMenuBar({
           </MenuItem>
           {onPasteSpecial && (
             <MenuItem sx={sub} onClick={onPasteSpecial}>
-              Paste special…
+              Paste special…{hint("pasteSpecial")}
             </MenuItem>
           )}
           {section("Fill")}
@@ -369,7 +377,7 @@ export function SheetMenuBar({
           <ListDivider />
           {section("Delete")}
           <MenuItem sx={sub} onClick={call((w) => deleteRowsCols(w, "row", rowIdx(), rowEnd()))}>
-            Delete row
+            Delete row{hint("deleteRowsCols")}
           </MenuItem>
           <MenuItem sx={sub} onClick={call((w) => deleteRowsCols(w, "col", colIdx(), colEnd()))}>
             Delete column
@@ -482,7 +490,7 @@ export function SheetMenuBar({
           </MenuItem>
           {section("Rows")}
           <MenuItem sx={sub} onClick={call((w) => insertRowsCols(w, "row", rowIdx(), rowEnd() - rowIdx() + 1, "before"))}>
-            Row above
+            Row above{hint("insertRowsCols")}
           </MenuItem>
           <MenuItem sx={sub} onClick={call((w) => insertRowsCols(w, "row", rowEnd(), rowEnd() - rowIdx() + 1, "after"))}>
             Row below
@@ -499,7 +507,7 @@ export function SheetMenuBar({
             Sheet{kbd("Shift+F11")}
           </MenuItem>
           <MenuItem disabled={!onInsertTable} onClick={onInsertTable}>
-            Table{kbd("Ctrl+L")}
+            Table{hint("insertTable")}
           </MenuItem>
           <MenuItem disabled>Generate a table</MenuItem>
           <MenuItem disabled>Pre-built tables</MenuItem>
@@ -532,7 +540,7 @@ export function SheetMenuBar({
           <MenuItem disabled={!onInsertComment} onClick={onInsertComment}>
             Comment{kbd("Ctrl+Alt+M")}
           </MenuItem>
-          <MenuItem disabled>Note{kbd("Shift+F2")}</MenuItem>
+          <MenuItem disabled>Note</MenuItem>
         </>,
       )}
 
@@ -569,7 +577,7 @@ export function SheetMenuBar({
             Underline{kbd("Ctrl+U")}
           </MenuItem>
           <MenuItem sx={sub} onClick={fmt("cl", 1)}>
-            Strikethrough{kbd("Alt+Shift+5")}
+            Strikethrough{hint("strikethrough")}
           </MenuItem>
           <MenuItem sx={sub} onClick={fmt("va", 1)}>
             Superscript{kbd("Ctrl+.")}
@@ -585,13 +593,13 @@ export function SheetMenuBar({
           ))}
           {section("Alignment")}
           <MenuItem sx={sub} onClick={fmt("ht", "1")}>
-            Left
+            Left{hint("alignLeft")}
           </MenuItem>
           <MenuItem sx={sub} onClick={fmt("ht", "0")}>
-            Center
+            Center{hint("alignCenter")}
           </MenuItem>
           <MenuItem sx={sub} onClick={fmt("ht", "2")}>
-            Right
+            Right{hint("alignRight")}
           </MenuItem>
           <MenuItem sx={sub} onClick={fmt("vt", "0")}>
             Top

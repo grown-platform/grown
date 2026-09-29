@@ -120,6 +120,9 @@ import type { CellRect } from "./cellRange";
 import { FillSeriesDialog } from "./FillSeriesDialog";
 import { SortDialog } from "./SortDialog";
 import { PasteSpecialDialog } from "./PasteSpecialDialog";
+import { getShortcutScheme } from "../../lib/shortcutScheme";
+import { deleteAtSelection, insertAtSelection, selectWhole, setHidden } from "./sheetKeyActions";
+import { toggleFilter } from "./dataActions";
 import { findShortcut, addsReferenceOnCtrlClick, arrayFormulaText, a1, serialOf, stepFontSize, toggleReference, SHORTCUT_NUMBER_FORMATS, DATE_SHORTCUT_FORMAT, TIME_SHORTCUT_FORMAT } from "./sheetShortcuts";
 import { SheetShortcutsDialog } from "./SheetShortcutsDialog";
 import { FunctionWizard } from "./FunctionWizard";
@@ -682,7 +685,7 @@ export function SheetEditor({ user }: SheetEditorProps) {
         return;
       }
       if (!editing && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.code === "KeyC" || e.code === "KeyX")) rememberCopy(wb);
-      const def = findShortcut(e, editing ? "editor" : "grid");
+      const def = findShortcut(e, editing ? "editor" : "grid", getShortcutScheme("sheets"));
       if (!def) return;
       if (!t?.closest?.('[data-testid="sheet-editor"]') && !["shortcuts", "print", "find", "showFormulas"].includes(def.id)) return;
       e.preventDefault();
@@ -1199,6 +1202,40 @@ export function SheetEditor({ user }: SheetEditorProps) {
         return stepFont(-1);
       case "clearFormat":
         return clearFormatting();
+      case "formatCells":
+        setNumFmtRanges(selectionRanges(wb));
+        return setNumFmtOpen(true);
+      case "alignLeft":
+      case "alignCenter":
+      case "alignRight": {
+        // FortuneSheet's ht: 0 center, 1 left, 2 right.
+        const ht = action === "alignLeft" ? "1" : action === "alignCenter" ? "0" : "2";
+        for (const range of selectionRanges(wb)) wb.setCellFormatByRange("ht", ht, range);
+        return;
+      }
+      case "pasteSpecial":
+        return setPasteOpen(true);
+      case "insertRowsCols":
+        return insertAtSelection(wb);
+      case "deleteRowsCols":
+        return deleteAtSelection(wb);
+      case "hideRows":
+        return setHidden(wb, "row", true);
+      case "hideCols":
+        return setHidden(wb, "col", true);
+      case "unhideRows":
+        return setHidden(wb, "row", false);
+      case "unhideCols":
+        return setHidden(wb, "col", false);
+      case "selectCol":
+        return selectWhole(wb, "col");
+      case "selectRow":
+        return selectWhole(wb, "row");
+      case "filter": {
+        const err = toggleFilter(wb);
+        if (err) window.alert(err === "no-selection" ? "Select a range first." : "Select a range of two or more cells first.");
+        return;
+      }
       case "insertDate":
         return insertNow("date", editing);
       case "insertTime":

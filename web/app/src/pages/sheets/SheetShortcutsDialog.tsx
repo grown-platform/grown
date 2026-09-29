@@ -1,23 +1,28 @@
 import { useMemo, useState } from "react";
 import { Box, Divider, Input, Modal, ModalClose, ModalDialog, Sheet, Typography } from "@mui/joy";
-import { SHEET_SHORTCUTS, SHORTCUT_GROUPS, displayCombo } from "./sheetShortcuts";
+import { SHORTCUT_GROUPS, displayCombo, sheetShortcuts } from "./sheetShortcuts";
+import { useShortcutScheme } from "../../lib/shortcutScheme";
+import { ShortcutSchemeSwitch } from "../../components/ShortcutSchemeSwitch";
 
 // Help ▸ Keyboard shortcuts (Ctrl+/): generated from the binding table the
-// editor's key handler uses, so the list can't drift from what the keys do.
+// editor's key handler uses (for the user's shortcut scheme, which the
+// dialog can switch), so the list can't drift from what the keys do.
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 export function SheetShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [q, setQ] = useState("");
+  const scheme = useShortcutScheme("sheets");
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    const table = sheetShortcuts(scheme);
     return SHORTCUT_GROUPS.map((g) => ({
       title: g,
-      items: SHEET_SHORTCUTS.filter(
+      items: table.filter(
         (s) => s.group === g && (!needle || s.label.toLowerCase().includes(needle) || s.keys.some((k) => k.toLowerCase().includes(needle))),
       ),
     })).filter((g) => g.items.length);
-  }, [q]);
+  }, [q, scheme]);
   return (
     <Modal open={open} onClose={onClose}>
       <ModalDialog aria-labelledby="sheet-shortcuts-title" sx={{ width: 760, maxWidth: "95vw", maxHeight: "85vh", overflow: "auto" }}>
@@ -25,6 +30,7 @@ export function SheetShortcutsDialog({ open, onClose }: { open: boolean; onClose
         <Typography id="sheet-shortcuts-title" level="title-lg">
           Keyboard shortcuts
         </Typography>
+        <ShortcutSchemeSwitch app="sheets" />
         <Input
           size="sm"
           placeholder="Search shortcuts"
@@ -37,6 +43,7 @@ export function SheetShortcutsDialog({ open, onClose }: { open: boolean; onClose
         <Box
           sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2, mt: 1 }}
           data-testid="sheet-shortcuts"
+          data-scheme={scheme}
         >
           {groups.map((g) => (
             <Box key={g.title}>

@@ -3,10 +3,17 @@
 // `native` are handled by FortuneSheet (or the browser's cell editor) and are
 // listed for reference only.
 //
+// Two schemes, chosen per user (lib/shortcutScheme.ts): `keys` are the Office
+// (Excel) scheme, the default; `google` overrides them for the Google Sheets
+// scheme ([] = not bound there). Entries without `google` are the same in
+// both. sheetShortcuts(scheme) is the resolved table.
+//
 // A combo is written the way it is shown: "Ctrl+Shift+1", "Alt+=", "F4",
 // "Ctrl+PageDown". "Ctrl" matches Ctrl or ⌘. Keys match on the physical key
 // (KeyboardEvent.code) for letters, digits and punctuation, so Shift+1 still
 // matches "1" although the character typed is "!".
+
+import { DEFAULT_SHORTCUT_SCHEME, type ShortcutScheme } from "../../lib/shortcutScheme";
 
 export type ShortcutContext = "grid" | "editor" | "any";
 
@@ -14,8 +21,10 @@ export interface ShortcutDef {
   id: string;
   group: string;
   label: string;
-  /** Combos, the first one is the main binding. */
+  /** Combos in the Office (Excel) scheme; the first one is the main binding. */
   keys: string[];
+  /** Combos in the Google Sheets scheme when they differ ([] = not bound). */
+  google?: string[];
   /** Where the binding applies: the grid (no cell being edited), the cell editor, or both. */
   ctx: ShortcutContext;
   /** Handled by FortuneSheet or the browser; listed only. */
@@ -26,6 +35,7 @@ export const SHORTCUT_GROUPS = [
   "Formatting",
   "Number formats",
   "Cells and editing",
+  "Rows and columns",
   "Formulas",
   "Navigation",
   "Insert",
@@ -38,12 +48,16 @@ export const SHEET_SHORTCUTS: ShortcutDef[] = [
   { id: "bold", group: "Formatting", label: "Bold", keys: ["Ctrl+B"], ctx: "any" },
   { id: "italic", group: "Formatting", label: "Italic", keys: ["Ctrl+I"], ctx: "any" },
   { id: "underline", group: "Formatting", label: "Underline", keys: ["Ctrl+U"], ctx: "any" },
-  { id: "strikethrough", group: "Formatting", label: "Strikethrough", keys: ["Alt+Shift+5", "Ctrl+5"], ctx: "any" },
+  { id: "strikethrough", group: "Formatting", label: "Strikethrough", keys: ["Ctrl+5", "Alt+Shift+5"], google: ["Alt+Shift+5"], ctx: "any" },
   { id: "superscript", group: "Formatting", label: "Superscript", keys: ["Ctrl+."], ctx: "any" },
   { id: "subscript", group: "Formatting", label: "Subscript", keys: ["Ctrl+,"], ctx: "any" },
   { id: "fontBigger", group: "Formatting", label: "Increase font size", keys: ["Ctrl+]"], ctx: "grid" },
   { id: "fontSmaller", group: "Formatting", label: "Decrease font size", keys: ["Ctrl+["], ctx: "grid" },
   { id: "clearFormat", group: "Formatting", label: "Clear formatting", keys: ["Ctrl+\\"], ctx: "grid" },
+  { id: "formatCells", group: "Formatting", label: "Format cells (number format)", keys: ["Ctrl+1"], google: [], ctx: "grid" },
+  { id: "alignLeft", group: "Formatting", label: "Align left", keys: [], google: ["Ctrl+Shift+L"], ctx: "grid" },
+  { id: "alignCenter", group: "Formatting", label: "Align center", keys: [], google: ["Ctrl+Shift+E"], ctx: "grid" },
+  { id: "alignRight", group: "Formatting", label: "Align right", keys: [], google: ["Ctrl+Shift+R"], ctx: "grid" },
   // Number formats
   { id: "fmtNumber", group: "Number formats", label: "Number (1,234.56)", keys: ["Ctrl+Shift+1"], ctx: "grid" },
   { id: "fmtTime", group: "Number formats", label: "Time (1:30:00 PM)", keys: ["Ctrl+Shift+2"], ctx: "grid" },
@@ -72,10 +86,20 @@ export const SHEET_SHORTCUTS: ShortcutDef[] = [
   { id: "fillRight", group: "Cells and editing", label: "Fill right", keys: ["Ctrl+R"], ctx: "grid" },
   { id: "copy", group: "Cells and editing", label: "Copy / cut / paste", keys: ["Ctrl+C", "Ctrl+X", "Ctrl+V"], ctx: "grid", native: true },
   { id: "pasteValues", group: "Cells and editing", label: "Paste values only", keys: ["Ctrl+Shift+V"], ctx: "grid" },
+  { id: "pasteSpecial", group: "Cells and editing", label: "Paste special…", keys: ["Ctrl+Alt+V"], google: [], ctx: "grid" },
   { id: "undo", group: "Cells and editing", label: "Undo / redo", keys: ["Ctrl+Z", "Ctrl+Y"], ctx: "any", native: true },
   { id: "selectAll", group: "Cells and editing", label: "Select the data around the cell, then the sheet", keys: ["Ctrl+A"], ctx: "grid" },
   { id: "selectAllText", group: "Cells and editing", label: "Select all text (while editing)", keys: ["Ctrl+A"], ctx: "editor", native: true },
   { id: "find", group: "Cells and editing", label: "Find and replace", keys: ["Ctrl+H"], ctx: "any" },
+  // Rows and columns
+  { id: "insertRowsCols", group: "Rows and columns", label: "Insert rows (columns when whole columns are selected)", keys: ["Ctrl+Shift+="], google: ["Ctrl+Alt+="], ctx: "grid" },
+  { id: "deleteRowsCols", group: "Rows and columns", label: "Delete rows (columns when whole columns are selected)", keys: ["Ctrl+-"], google: ["Ctrl+Alt+-"], ctx: "grid" },
+  { id: "hideRows", group: "Rows and columns", label: "Hide rows", keys: ["Ctrl+9"], google: ["Ctrl+Alt+9"], ctx: "grid" },
+  { id: "hideCols", group: "Rows and columns", label: "Hide columns", keys: ["Ctrl+0"], google: ["Ctrl+Alt+0"], ctx: "grid" },
+  { id: "unhideRows", group: "Rows and columns", label: "Unhide rows", keys: ["Ctrl+Shift+9"], ctx: "grid" },
+  { id: "unhideCols", group: "Rows and columns", label: "Unhide columns", keys: ["Ctrl+Shift+0"], ctx: "grid" },
+  { id: "selectCol", group: "Rows and columns", label: "Select the column", keys: ["Ctrl+Space"], ctx: "grid" },
+  { id: "selectRow", group: "Rows and columns", label: "Select the row", keys: ["Shift+Space"], ctx: "grid" },
   // Formulas
   { id: "autoSum", group: "Formulas", label: "AutoSum", keys: ["Alt+="], ctx: "grid" },
   { id: "toggleRef", group: "Formulas", label: "Toggle absolute / relative reference", keys: ["F4"], ctx: "editor" },
@@ -90,12 +114,13 @@ export const SHEET_SHORTCUTS: ShortcutDef[] = [
   { id: "selectEdge", group: "Navigation", label: "Extend the selection to the edge", keys: ["Ctrl+Shift+Arrow"], ctx: "grid", native: true },
   // Insert
   { id: "link", group: "Insert", label: "Insert link", keys: ["Ctrl+K"], ctx: "grid" },
-  { id: "comment", group: "Insert", label: "Insert comment", keys: ["Ctrl+Alt+M"], ctx: "grid" },
+  { id: "comment", group: "Insert", label: "Insert comment (Grown has no separate notes)", keys: ["Ctrl+Alt+M", "Shift+F2"], ctx: "grid" },
   { id: "newSheet", group: "Insert", label: "Insert sheet", keys: ["Shift+F11"], ctx: "grid" },
-  { id: "insertTable", group: "Insert", label: "Insert table", keys: ["Ctrl+L", "Ctrl+T"], ctx: "grid" },
+  { id: "insertTable", group: "Insert", label: "Insert table", keys: ["Ctrl+L", "Ctrl+T"], google: ["Ctrl+Alt+T"], ctx: "grid" },
   // Data
   { id: "refreshPivot", group: "Data", label: "Refresh pivot tables", keys: ["Alt+F5", "Ctrl+Alt+F5"], ctx: "grid" },
-  { id: "tableTotals", group: "Data", label: "Table total row on/off", keys: ["Ctrl+Shift+R"], ctx: "grid" },
+  { id: "filter", group: "Data", label: "Turn the filter on or off", keys: ["Ctrl+Shift+L"], google: [], ctx: "grid" },
+  { id: "tableTotals", group: "Data", label: "Table total row on/off", keys: ["Ctrl+Shift+R"], google: [], ctx: "grid" },
   // Application
   { id: "print", group: "Application", label: "Print", keys: ["Ctrl+P"], ctx: "any" },
   { id: "shortcuts", group: "Application", label: "Keyboard shortcuts", keys: ["Ctrl+/"], ctx: "any" },
@@ -140,14 +165,43 @@ export function matchCombo(combo: string, e: KeyLike): boolean {
     const code = CODE_FOR[key];
     return (code !== undefined && e.code === code) || e.key === key;
   }
+  if (key === "Space") return e.code === "Space" || e.key === " ";
   return e.key === key;
 }
 
+/** The combos of a binding in a scheme. */
+export function keysFor(def: ShortcutDef, scheme: ShortcutScheme): string[] {
+  return scheme === "google" && def.google ? def.google : def.keys;
+}
+
+/** The binding table of a scheme: keys resolved, bindings the scheme lacks left out. */
+export function sheetShortcuts(scheme: ShortcutScheme): ShortcutDef[] {
+  return SHEET_SHORTCUTS.flatMap((s) => {
+    const keys = keysFor(s, scheme);
+    return keys.length ? [{ ...s, keys }] : [];
+  });
+}
+
+const RESOLVED: Record<ShortcutScheme, ShortcutDef[]> = {
+  office: sheetShortcuts("office"),
+  google: sheetShortcuts("google"),
+};
+
 /** The binding a key event triggers in a context, if any (native bindings excluded). */
-export function findShortcut(e: KeyLike, ctx: "grid" | "editor"): ShortcutDef | undefined {
-  return SHEET_SHORTCUTS.find(
+export function findShortcut(
+  e: KeyLike,
+  ctx: "grid" | "editor",
+  scheme: ShortcutScheme = DEFAULT_SHORTCUT_SCHEME,
+): ShortcutDef | undefined {
+  return RESOLVED[scheme].find(
     (s) => !s.native && (s.ctx === "any" || s.ctx === ctx) && s.keys.some((k) => matchCombo(k, e)),
   );
+}
+
+/** The main combo a menu shows for a binding in a scheme ("" when unbound). */
+export function shortcutHint(id: string, scheme: ShortcutScheme): string {
+  const def = SHEET_SHORTCUTS.find((s) => s.id === id);
+  return def ? (keysFor(def, scheme)[0] ?? "") : "";
 }
 
 /** Shows ⌘ instead of Ctrl on a Mac. */
