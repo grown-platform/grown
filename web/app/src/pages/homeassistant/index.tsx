@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -15,13 +15,16 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import SensorsRoundedIcon from "@mui/icons-material/SensorsRounded";
+import LoginRoundedIcon from "@mui/icons-material/LoginRounded";
 import { Header } from "../../components/Header";
 import type { User } from "../../api/types";
 import { useServiceSettings } from "../../catalog/serviceSettings";
 import {
   HA_FRAME_CONFIG,
+  HA_SIGNIN_WINDOW,
   embedBlockReason,
   resolveHomeAssistantUrl,
+  signInPopupFeatures,
 } from "./embed";
 
 // How long to wait for the frame's load event before offering the fallback.
@@ -40,6 +43,41 @@ export default function HomeAssistantApp({ user }: { user: User }) {
   const [timedOut, setTimedOut] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const popupRef = useRef<Window | null>(null);
+
+  // Single sign-on pages refuse to be framed, so HA's SSO login runs in a
+  // popup. It's cross-origin (we can't see when login finishes), so reload the
+  // frame when the popup closes, or when the user comes back to this tab.
+  const signIn = useCallback(() => {
+    if (!haUrl) return;
+    const w = window.open(haUrl, HA_SIGNIN_WINDOW, signInPopupFeatures(window.screen));
+    if (!w) {
+      // Popup blocked: fall back to a normal tab.
+      window.open(haUrl, "_blank", "noopener");
+      return;
+    }
+    popupRef.current = w;
+    w.focus();
+  }, [haUrl]);
+
+  useEffect(() => {
+    const reloadIfDone = () => {
+      const w = popupRef.current;
+      if (w && w.closed) {
+        popupRef.current = null;
+        setReloadKey((k) => k + 1);
+      }
+    };
+    const onFocus = () => {
+      if (popupRef.current) setReloadKey((k) => k + 1);
+    };
+    const t = window.setInterval(reloadIfDone, 700);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(t);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
   useEffect(() => {
     document.title = "Home Assistant";
@@ -134,6 +172,17 @@ export default function HomeAssistantApp({ user }: { user: User }) {
           </Typography>
           {!block && (
             <>
+              <Tooltip title="Sign in (single sign-on can't open inside Grown, so it opens in a popup; this view reloads when you're done)">
+                <Button
+                  size="sm"
+                  variant="plain"
+                  startDecorator={<LoginRoundedIcon />}
+                  onClick={signIn}
+                  data-testid="homeassistant-sign-in"
+                >
+                  Sign in
+                </Button>
+              </Tooltip>
               <Tooltip title="Not loading? How to allow embedding">
                 <IconButton size="sm" variant="plain" aria-label="Embedding help" onClick={() => setShowHelp((v) => !v)}>
                   <HelpOutlineIcon />
@@ -210,7 +259,10 @@ function FrameHelp({ haUrl, timedOut, onClose }: { haUrl: string; timedOut: bool
           {HA_FRAME_CONFIG}
         </Box>
         <Typography level="body-sm">
-          Also check the URL is reachable from this browser, or{" "}
+          Stuck on a spinner at sign-in? Single sign-on pages can't be shown
+          inside other sites; use <strong>Sign in</strong> in the bar above,
+          which signs you in through a popup. Also check the URL is reachable
+          from this browser, or{" "}
           <Link href={haUrl} target="_blank" rel="noopener noreferrer">
             open Home Assistant in a new tab
           </Link>

@@ -57,7 +57,12 @@ message instead of a frame when:
 - Grown is on HTTPS and HA is plain HTTP. Browsers block mixed content, so give
   HA an HTTPS URL (a reverse proxy, Nabu Casa, or the chart's ingress).
 
-Sign-in happens inside the frame with HA's own login. Browsers that block
+Sign-in happens inside the frame with HA's own login. If HA signs in through
+single sign-on (for example Zitadel via an OIDC integration), use **Sign in**
+in the view's bar: identity providers refuse to be framed, so the SSO login
+opens in a popup, and the view reloads when the popup closes. HA keeps the
+session in its own origin's storage, which the frame then shares (same site),
+so later visits need no popup. Browsers that block
 third-party cookies/storage may ask you to sign in to HA again, or refuse to
 keep you signed in, when HA is on a different site than Grown. Putting HA on a
 subdomain of Grown's domain (e.g. `ha.grown.example.com`) avoids this.

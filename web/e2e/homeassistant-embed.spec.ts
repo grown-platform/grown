@@ -19,10 +19,12 @@ async function setHA(request: APIRequestContext, url: string) {
 
 let stub: http.Server;
 let stubURL = "";
+let stubHits = 0;
 
 test.describe.serial("home assistant embedded view", () => {
   test.beforeAll(async ({ request }) => {
     stub = http.createServer((req, res) => {
+      if (req.url === "/" || req.url?.startsWith("/?")) stubHits++;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end(
         `<!doctype html><html><head><title>Stub HA</title></head>` +
@@ -71,6 +73,29 @@ test.describe.serial("home assistant embedded view", () => {
       path: path.join("test-results", "homeassistant-embed.png"),
       fullPage: false,
     });
+  });
+
+  test("sign in opens SSO in a popup and reloads the frame when it closes", async ({ page }) => {
+    await page.goto("/homeassistant");
+    await expect(
+      page.frameLocator('[data-testid="homeassistant-frame"]').locator("#ha-stub"),
+    ).toBeVisible();
+    const hits = () => stubHits;
+    const before = hits();
+    const [popup] = await Promise.all([
+      page.waitForEvent("popup"),
+      page.getByTestId("homeassistant-sign-in").click(),
+    ]);
+    await popup.waitForLoadState();
+    expect(popup.url()).toBe(stubURL);
+    const opened = hits();
+    expect(opened).toBeGreaterThan(before); // the popup loaded HA
+    await popup.close();
+    // The frame reloads once the popup is gone (the SSO session is now shared).
+    await expect.poll(hits, { timeout: 5000 }).toBeGreaterThan(opened);
+    await expect(
+      page.frameLocator('[data-testid="homeassistant-frame"]').locator("#ha-stub"),
+    ).toBeVisible();
   });
 
   test("help explains how to allow framing", async ({ page }) => {
