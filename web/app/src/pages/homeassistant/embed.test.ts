@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { embedBlockReason, resolveHomeAssistantUrl } from "./embed";
+import { embedBlockReason, resolveHomeAssistantUrl, signInPopupFeatures } from "./embed";
 import { apps, externalHref } from "../../catalog/apps";
 import { applyServiceSettings } from "../../catalog/serviceSettings";
 import { isExternalTarget } from "../../api/notifications";
@@ -61,5 +61,23 @@ describe("isExternalTarget", () => {
     expect(isExternalTarget("HTTP://ha.lan")).toBe(true);
     expect(isExternalTarget("/calendar")).toBe(false);
     expect(isExternalTarget("")).toBe(false);
+  });
+});
+
+describe("signInPopupFeatures", () => {
+  it("centres the popup on the available screen", () => {
+    expect(signInPopupFeatures({ availWidth: 1920, availHeight: 1080 })).toBe(
+      "popup=yes,width=520,height=720,left=700,top=180",
+    );
+  });
+  it("respects a screen offset (second monitor)", () => {
+    expect(
+      signInPopupFeatures({ availWidth: 1440, availHeight: 900, availLeft: 1920, availTop: 25 }),
+    ).toBe("popup=yes,width=520,height=720,left=2380,top=115");
+  });
+  it("shrinks to fit small screens", () => {
+    expect(signInPopupFeatures({ availWidth: 400, availHeight: 600 })).toBe(
+      "popup=yes,width=400,height=600,left=0,top=0",
+    );
   });
 });

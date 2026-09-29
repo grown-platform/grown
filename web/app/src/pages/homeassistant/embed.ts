@@ -47,3 +47,21 @@ export function embedBlockReason(
 
 /** The chart seeds this; bring-your-own users add it to configuration.yaml. */
 export const HA_FRAME_CONFIG = `http:\n  use_x_frame_options: false`;
+
+/** Window name for the sign-in popup, so repeated clicks reuse one window. */
+export const HA_SIGNIN_WINDOW = "grown-homeassistant-signin";
+
+/** signInPopupFeatures centres a sign-in-sized popup on the current screen.
+ *  Single sign-on pages (e.g. Zitadel) refuse to be framed, so Home
+ *  Assistant's SSO login has to run in a top-level window; HA keeps the
+ *  session in its own origin's storage, which the frame shares afterwards. */
+export function signInPopupFeatures(
+  screen: { availWidth: number; availHeight: number; availLeft?: number; availTop?: number },
+  size: { width: number; height: number } = { width: 520, height: 720 },
+): string {
+  const width = Math.min(size.width, screen.availWidth);
+  const height = Math.min(size.height, screen.availHeight);
+  const left = Math.round((screen.availLeft ?? 0) + (screen.availWidth - width) / 2);
+  const top = Math.round((screen.availTop ?? 0) + (screen.availHeight - height) / 2);
+  return `popup=yes,width=${width},height=${height},left=${left},top=${top}`;
+}
