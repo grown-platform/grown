@@ -409,6 +409,12 @@ OnlyOffice defines 107 shortcut actions (`sdkjs/word/apiDefines.js:223`,
 | Reset char (Ctrl+Space) | 92 | Have (M1) | keeps links, comments and suggestions |
 | Search menus (Alt+/), shortcuts (Ctrl+/), comment (Ctrl+Alt+M), history | Google style | Have | `docs/DocEditor.tsx:395` |
 
+*Update (shortcut styles):* the chords that differ between Word and Google Docs
+now follow a per-user shortcut style (`SCHEME_BINDINGS` in `docs/shortcuts.ts`,
+preference in `lib/shortcutScheme.ts`). The Office style, the default, keeps
+every binding above and adds Ctrl+L/E/R/J alignment, Ctrl+= / Ctrl+Shift+=
+sub/superscript and Ctrl+Shift+G word count; see `docs/services/docs.md`.
+
 ### 2.19 Import / export / print
 
 OnlyOffice word formats (`sdkjs/common/commonDefines.js:468`): DOCX, DOC, ODT,

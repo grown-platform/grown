@@ -277,6 +277,8 @@ Missing: Ctrl+Shift+1…6 number formats, Ctrl+; / Ctrl+Shift+; date/time, Alt+=
 
 *Update (M12, §18):* all of the above except Ctrl+Shift+F/P are bound, from one table (`sheetShortcuts.ts`) that Help ▸ Keyboard shortcuts also lists.
 
+*Update (shortcut styles):* the table now carries per-binding Google Sheets overrides; each user picks the Excel style (the default, every binding above plus Ctrl+1, Ctrl+Alt+V, Ctrl+Shift+= / Ctrl+-, Ctrl+9 / Ctrl+0, Ctrl+Shift+L filter) or the Google style (see `docs/services/sheets.md`).
+
 ---
 
 ## 3. OnlyOffice test inventory

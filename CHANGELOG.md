@@ -4,6 +4,25 @@ All notable changes to Grown. Releases are tagged `vX.Y.Z`; every push to
 `main` also ships a dated image (`YYYYMMDD-HHMMSS-<sha>`) that the reference
 instances deploy automatically.
 
+## Unreleased
+
+### Added
+
+- **Keyboard shortcut styles for Docs and Sheets.** Each user picks, per app,
+  Microsoft Office style (Word / Excel, the default) or Google style (Google
+  Docs / Google Sheets), in Settings ▸ Keyboard shortcuts or from the editor's
+  Help ▸ Keyboard shortcuts dialog. The choice is saved with the user's
+  preferences and follows them across devices. The Office style keeps every
+  existing shortcut and adds Word's Ctrl+L/E/R/J alignment, Ctrl+= /
+  Ctrl+Shift+= sub/superscript and Ctrl+Shift+G word count, and Excel's Ctrl+1
+  Format cells, Ctrl+Alt+V Paste special, Ctrl+Shift+= / Ctrl+- insert/delete,
+  Ctrl+9 / Ctrl+0 hide and Ctrl+Shift+L filter. The Google style uses
+  Alt+Shift+5 strikethrough and Ctrl+Alt+X spelling in Docs, and Ctrl+Alt+= /
+  Ctrl+Alt+- insert/delete, Ctrl+Alt+9 / 0 hide and Ctrl+Shift+L/E/R alignment
+  in Sheets. Both Sheets styles gain Ctrl+Shift+9 / 0 unhide, Ctrl+Space /
+  Shift+Space select column / row and Shift+F2 comment. See
+  `docs/services/docs.md` and `docs/services/sheets.md`.
+
 ## v0.4.0 (2026-09-28)
 
 Home Assistant becomes part of the platform: it ships in the default Helm
