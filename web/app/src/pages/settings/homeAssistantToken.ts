@@ -18,7 +18,7 @@ export const HOME_ASSISTANT_INTEGRATION_ZIP = "/integrations/homeassistant/grown
 
 /** Docs for running your own Home Assistant alongside grown. */
 export const HOME_ASSISTANT_DOCS =
-  "https://code.pick.haus/grown/grown/src/branch/main/docs/services/homeassistant.md";
+  "https://code.pick.haus/grown/grown-workspace/src/branch/main/docs/services/homeassistant.md";
 
 /** homeAssistantTokenRequest is the POST /api/v1/me/tokens body for the
  *  preset: no expiry, like the default "Never" option. */

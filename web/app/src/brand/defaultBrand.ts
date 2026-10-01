@@ -26,5 +26,5 @@ export const defaultBrand: Brand = {
   surfaceColor: "#FAFAF7", // warm white
   onSurfaceColor: "#1B2620", // dark green-black
   logoSVG: workspaceLogoSVG,
-  supportURL: "https://code.pick.haus/grown/grown",
+  supportURL: "https://code.pick.haus/grown/grown-workspace",
 };
