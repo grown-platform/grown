@@ -58,7 +58,8 @@ export interface AppTile {
 }
 
 /** GIT_URL points the Git tile at the org's git service. Override at build time
- *  with VITE_GIT_URL; defaults to Codeberg's public explore page. */
+ *  with VITE_GIT_URL (the Dockerfile/Nix builds default it to the Grown repo on
+ *  code.pick.haus); falls back to Codeberg's public explore page. */
 const GIT_URL =
   (import.meta.env.VITE_GIT_URL as string | undefined) ||
   "https://codeberg.org/explore/repos";

@@ -12,7 +12,7 @@
   vitePdfUrl ? "/pdf/",
   # CRM host is deployment-specific; inject per-environment (not baked here).
   viteCrmUrl ? "",
-  viteGitUrl ? "https://code.pick.haus",
+  viteGitUrl ? "https://code.pick.haus/grown/grown-workspace",
   viteAssembleUrl ? "",
 }:
 buildNpmPackage {

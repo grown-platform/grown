@@ -19,7 +19,7 @@ ARG VITE_PDF_URL=/pdf/
 # baking an instance hostname into the public image. Empty => the app's built-in
 # localtest fallback (see web/app/src/catalog/apps.ts).
 ARG VITE_CRM_URL=
-ARG VITE_GIT_URL=https://code.pick.haus
+ARG VITE_GIT_URL=https://code.pick.haus/grown/grown-workspace
 # Assemble host is deployment-specific too — inject VITE_ASSEMBLE_URL per-deploy.
 ARG VITE_ASSEMBLE_URL=
 ENV VITE_PDF_URL=$VITE_PDF_URL \
