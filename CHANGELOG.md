@@ -23,6 +23,18 @@ instances deploy automatically.
   Shift+Space select column / row and Shift+F2 comment. See
   `docs/services/docs.md` and `docs/services/sheets.md`.
 
+### Changed
+
+- **Helm chart 0.5.0: bundled images updated.** Postgres goes from 17.2 to 18.6,
+  Zitadel from v2.71.0 to v4.20.1 and rustfs from 1.0.0-beta.7 to 1.0.4 (GA).
+  The provision, bucket-init and MinIO-migration hook images are bumped too.
+  Postgres now uses the PG18 data layout (`postgres.dataMountPath`,
+  `postgres.pgdata`). Fresh Zitadel instances stay on Login V1. **Existing
+  0.4.x releases need a staged upgrade:** Zitadel one major at a time, then a
+  Postgres dump/restore. See "Upgrading from 0.4.x to 0.5.0" in
+  `deploy/helm/grown/README.md`. `deploy/manifests/grown.yaml` is not
+  re-rendered yet.
+
 ## v0.4.0 (2026-09-28)
 
 Home Assistant becomes part of the platform: it ships in the default Helm

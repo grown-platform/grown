@@ -81,13 +81,13 @@ spec:
                 name: {{ .Release.Name }}-postgres
           env:
             - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
+              value: {{ .Values.postgres.pgdata | quote }}
           ports:
             - name: postgres
               containerPort: 5432
           volumeMounts:
             - name: data
-              mountPath: /var/lib/postgresql/data
+              mountPath: {{ .Values.postgres.dataMountPath }}
             - name: init
               mountPath: /docker-entrypoint-initdb.d
           readinessProbe:

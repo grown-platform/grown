@@ -53,7 +53,15 @@ out=$(render) || { bad "render defaults"; out=""; }
 hasnt "$out" 'image: "?minio/' "no minio image by default"
 hasnt "$out" "name: $REL-minio" "no minio resources by default"
 hasnt "$out" 'migrate-from-minio' "no migration job by default"
-has "$out" 'image: "rustfs/rustfs:1\.0\.0-beta\.7"' "rustfs image"
+has "$out" 'image: "rustfs/rustfs:1\.0\.4"' "rustfs image"
+
+# 0.5.0: bundled Postgres 18 with the PG18 docker data layout; Zitadel v4 keeps
+# Login V1 on fresh installs.
+pg=$(doc StatefulSet "$REL-postgres" <<<"$out")
+has "$pg" 'image: "postgres:18\.6-alpine"' "postgres 18.6 image"
+has "$pg" 'value: "/var/lib/postgresql/18/docker"' "PGDATA uses the PG18 layout"
+has "$pg" 'mountPath: /var/lib/postgresql$' "data volume mounted at /var/lib/postgresql"
+has "$out" 'ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "false"' "zitadel keeps Login V1"
 sts=$(doc StatefulSet "$REL-rustfs" <<<"$out")
 has "$sts" 'value: /data' "RUSTFS_VOLUMES=/data"
 has "$sts" 'value: ":9100"' "RUSTFS_ADDRESS=:9100"
@@ -79,7 +87,7 @@ has "$app" 'PDF_STORAGE_ENDPOINT' "pdf app wired to S3"
 init=$(doc Job "$REL-rustfs-init" <<<"$out")
 has "$init" '"helm.sh/hook": post-install,post-upgrade' "bucket-init is a post-install/upgrade hook"
 has "$init" '"helm.sh/hook-delete-policy": before-hook-creation' "bucket-init hook delete policy"
-has "$init" 'aws-cli:2\.22\.35' "bucket-init uses AWS CLI image"
+has "$init" 'aws-cli:2\.39\.6' "bucket-init uses AWS CLI image"
 has "$init" 'head-bucket --bucket "\$1" 2>/dev/null \|\|' "idempotent head-bucket || create-bucket"
 has "$init" 'mkbucket grown-default' "init creates app bucket"
 has "$init" 'mkbucket pdf-docs' "init creates pdf bucket"

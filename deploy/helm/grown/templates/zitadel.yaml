@@ -43,6 +43,14 @@ stringData:
   ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: "bootstrap"
   ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: "Bootstrap SA"
   ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+  # Zitadel v4 defaults NEW instances to "Login V2 required", which needs the
+  # separate zitadel-login container. This chart doesn't ship it: demo login,
+  # the provisioning Job and the headless curl flows all drive the built-in
+  # Login V1 pages (/ui/login). Keep V1 on fresh installs. DefaultInstance
+  # settings only apply when an instance is created, so this is a no-op for an
+  # instance upgraded from v2/v3 (those keep Login V1 anyway).
+  # Key verified against v4.20.1 cmd/defaults.yaml.
+  ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "false"
 ---
 apiVersion: v1
 kind: Service
