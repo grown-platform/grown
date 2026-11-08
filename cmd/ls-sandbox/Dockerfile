@@ -6,7 +6,7 @@
 #
 # Build context is the repo root:
 #   docker build -f cmd/ls-sandbox/Dockerfile -t code.pick.haus/grown/ls-sandbox:latest .
-FROM golang:1.25-alpine AS build
+FROM golang:1.26.10-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

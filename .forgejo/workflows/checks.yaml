@@ -5,7 +5,7 @@ name: Checks
 # e2e specs BEFORE/independently of the image build.
 #
 # Runs on the in-cluster Forgejo runner (label `docker`). Each job uses a pinned
-# toolchain container matching the Dockerfile (golang:1.25-alpine, node:22-alpine).
+# toolchain container matching the Dockerfile (golang:1.26.10-alpine, node:22-alpine).
 on:
   push:
     branches: [main]
@@ -15,12 +15,12 @@ on:
 jobs:
   go:
     runs-on: docker
-    # Pin the exact patch so the image's Go matches go.mod's `go 1.25.7`, and
+    # Pin the exact patch so the image's Go matches go.mod's `go 1.26.10`, and
     # force GOTOOLCHAIN=local so the job never tries to download a toolchain at
-    # runtime (a stale cached `golang:1.25-alpine` < 1.25.7 would otherwise
+    # runtime (a stale cached `golang:1.26-alpine` older than 1.26.10 would otherwise
     # attempt that and fail).
     container:
-      image: golang:1.25.7-alpine
+      image: golang:1.26.10-alpine
     env:
       GOTOOLCHAIN: local
     steps:
@@ -72,7 +72,7 @@ jobs:
     # -p 1, because the packages share one schema.
     runs-on: docker
     container:
-      image: golang:1.25.7-alpine
+      image: golang:1.26.10-alpine
     services:
       postgres:
         image: postgres:17.2-alpine

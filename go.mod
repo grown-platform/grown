@@ -1,6 +1,6 @@
 module code.pick.haus/grown/grown
 
-go 1.25.7
+go 1.26.10
 
 require (
 	github.com/ThalesIgnite/crypto11 v1.2.5
