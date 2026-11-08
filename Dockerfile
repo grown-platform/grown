@@ -51,7 +51,7 @@ COPY pdf/frontend/ ./
 RUN npm run build   # -> /pdf/dist
 
 # ---- 2. Generate protos + build the Go binary ------------------------------
-FROM golang:1.25-alpine AS build
+FROM golang:1.26.10-alpine AS build
 RUN apk add --no-cache git
 # buf generates the gRPC + grpc-gateway code (gen/ is gitignored) using public
 # BSR remote plugins, so the build needs network but no extra local toolchain.
@@ -78,7 +78,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
       -o /out/server ./cmd/server
 
 # ---- 3. Runtime ------------------------------------------------------------
-FROM alpine:3.20
+FROM alpine:3.24
 # pandoc comes from the upstream static release, not apk: Alpine's pandoc
 # (3.1.13 in 3.20/3.21, 3.6.4 in 3.22) drops tables and code blocks when
 # importing ODT, and pre-3.2 builds ignore --sandbox for embedded resources.
