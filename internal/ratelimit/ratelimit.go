@@ -142,9 +142,15 @@ func isAuthPath(p string) bool {
 	return strings.HasPrefix(p, "/api/v1/auth/login") || p == "/api/v1/auth/demo-login"
 }
 
-// clientIP extracts the caller's IP, honoring the first hop of
-// X-Forwarded-For (we sit behind the cluster gateway/ingress).
+// clientIP extracts the caller's IP. CF-Connecting-IP wins: Cloudflare always
+// overwrites it, whereas the leftmost X-Forwarded-For hop is whatever the
+// client sent (Cloudflare appends to an existing XFF), so keying buckets on XFF
+// alone let anyone dodge the limiter by rotating a fake header per request.
+// The first XFF hop is only a fallback for traffic that bypassed Cloudflare.
 func clientIP(r *http.Request) string {
+	if v := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); v != "" {
+		return v
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if i := strings.IndexByte(xff, ','); i >= 0 {
 			return strings.TrimSpace(xff[:i])
