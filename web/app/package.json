@@ -60,7 +60,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "three": "^0.169.0",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "y-prosemirror": "^1.2.15",
     "y-websocket": "^2.0.4",
     "yjs": "^13.6.20"
