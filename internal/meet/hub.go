@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"code.pick.haus/grown/grown/internal/wsorigin"
 )
 
 // SignalType enumerates the WebRTC signaling message types relayed by the hub.
@@ -119,7 +121,7 @@ func (h *Hub) cleanup(roomID string, cr *callRoom) {
 
 // Serve runs the signaling loop for one client. Caller must verify access first.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, roomID, peerID, displayName string) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, wsorigin.AcceptOptions())
 	if err != nil {
 		return
 	}

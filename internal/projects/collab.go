@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"code.pick.haus/grown/grown/internal/wsorigin"
 )
 
 // The projects WebSocket hub broadcasts issue create/update/delete events to
@@ -142,7 +144,7 @@ func (r *room) broadcastPresence(teamID string) {
 
 // Serve handles one WebSocket connection. Caller must verify userID may view teamID.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, teamID, userID string) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, wsorigin.AcceptOptions())
 	if err != nil {
 		return
 	}

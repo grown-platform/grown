@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"code.pick.haus/grown/grown/internal/wsorigin"
 )
 
 // The chat WebSocket hub broadcasts new messages to all connected clients in
@@ -151,7 +153,7 @@ func (r *room) broadcastPresence(channelID string) {
 // Serve handles one WebSocket connection. Caller must verify that userID is a
 // member of channelID before calling.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, channelID, userID string) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, wsorigin.AcceptOptions())
 	if err != nil {
 		return
 	}
