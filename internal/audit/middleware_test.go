@@ -205,3 +205,13 @@ func TestRecorder_Log_WrapsAndRecords(t *testing.T) {
 		})
 	}
 }
+
+func TestClientIP_PrefersCloudflare(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "10.0.0.1:1234"
+	r.Header.Set("X-Forwarded-For", "6.6.6.6, 203.0.113.7")
+	r.Header.Set("CF-Connecting-IP", "203.0.113.7")
+	if got := ClientIP(r); got != "203.0.113.7" {
+		t.Errorf("ClientIP() = %q, want CF-Connecting-IP 203.0.113.7", got)
+	}
+}

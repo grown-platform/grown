@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"code.pick.haus/grown/grown/internal/wsorigin"
 )
 
 // Collaboration for whiteboards is a simple broadcast: the editor relays scene
@@ -104,7 +106,7 @@ func isPresence(msg []byte) bool {
 // only presence is relayed: scene updates and restore notices are dropped, so
 // a read-only peer cannot change the board through its editors' autosave.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, boardID string, canWrite bool) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, wsorigin.AcceptOptions())
 	if err != nil {
 		return
 	}

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"code.pick.haus/grown/grown/internal/wsorigin"
 )
 
 // Collaboration for slides is an op relay: the editor emits change operations
@@ -465,7 +467,7 @@ func (h *Hub) route(r *room, self *peer, data []byte, canWrite bool) {
 // must verify access first. When canWrite is false (a viewer/commenter grant),
 // inbound deck-mutating ops are dropped server-side; presence still relays.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, deckID string, canWrite bool) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, wsorigin.AcceptOptions())
 	if err != nil {
 		return
 	}

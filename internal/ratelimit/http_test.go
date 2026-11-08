@@ -263,3 +263,19 @@ func TestAdminHandlerOK(t *testing.T) {
 		t.Errorf("blocks = %v (type %T), want a JSON array", body["blocks"], body["blocks"])
 	}
 }
+
+// TestClientIPPrefersCloudflare: CF-Connecting-IP is authoritative behind the
+// tunnel; a client-forged leftmost XFF hop must not change the bucket key.
+func TestClientIPPrefersCloudflare(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "10.0.0.1:5"
+	r.Header.Set("X-Forwarded-For", "6.6.6.6, 198.51.100.4")
+	r.Header.Set("CF-Connecting-IP", "198.51.100.4")
+	if got := clientIP(r); got != "198.51.100.4" {
+		t.Fatalf("clientIP = %q, want CF-Connecting-IP 198.51.100.4", got)
+	}
+	r.Header.Set("CF-Connecting-IP", "  ")
+	if got := clientIP(r); got != "6.6.6.6" {
+		t.Fatalf("blank CF-Connecting-IP should fall back to XFF, got %q", got)
+	}
+}

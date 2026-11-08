@@ -43,7 +43,7 @@ func (s *statusRecorder) Flush() {
 
 // Log wraps an http.Handler so that, AFTER it serves, an audit event for the
 // given service/action is recorded (best-effort). It captures the client IP
-// (X-Forwarded-For first hop, else RemoteAddr), the user agent, and a resource
+// (see ClientIP), the user agent, and a resource
 // id sniffed from the path when present (e.g. the {id} in
 // /api/v1/videos/{id}/content). Records via the Recorder closed over by the
 // caller — pass the same recorder used by the gRPC interceptor.
@@ -75,10 +75,17 @@ func (rec *Recorder) Log(service, action string, h http.Handler) http.Handler {
 	})
 }
 
-// clientIP returns the best-guess client IP: the first hop of X-Forwarded-For
-// when present (the original client behind grown's tunnel/proxy), else the
-// connection's RemoteAddr with the port stripped.
+// ClientIP returns the best-guess client IP for audit rows: CF-Connecting-IP
+// (set/overwritten by Cloudflare, so not client-spoofable) when present, else
+// the first hop of X-Forwarded-For, else the connection's RemoteAddr with the
+// port stripped. The leftmost XFF hop alone is attacker-controlled behind
+// Cloudflare (it appends to a client-supplied header), so it is only a fallback.
+func ClientIP(r *http.Request) string { return clientIP(r) }
+
 func clientIP(r *http.Request) string {
+	if v := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); v != "" {
+		return v
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if i := strings.IndexByte(xff, ','); i >= 0 {
 			return strings.TrimSpace(xff[:i])

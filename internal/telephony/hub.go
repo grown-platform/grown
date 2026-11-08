@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"code.pick.haus/grown/grown/internal/wsorigin"
 )
 
 // SignalType enumerates the WebRTC signaling message types relayed by the hub.
@@ -50,8 +52,8 @@ type peer struct {
 // user connections of a 1:1 call. Presence (online membership) is scoped per
 // org so the directory can show who is reachable.
 type Hub struct {
-	mu    sync.Mutex
-	orgs  map[string]map[string]*peer // orgID → userID → peer
+	mu   sync.Mutex
+	orgs map[string]map[string]*peer // orgID → userID → peer
 }
 
 // NewHub constructs a signaling Hub.
@@ -116,7 +118,7 @@ func (h *Hub) remove(orgID string, p *peer) {
 
 // Serve runs the signaling loop for one client. Caller must verify access first.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, orgID, userID, displayName string) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, wsorigin.AcceptOptions())
 	if err != nil {
 		return
 	}

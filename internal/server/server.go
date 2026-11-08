@@ -1702,7 +1702,7 @@ func New(cfg Config) *Server {
 			ResourceType: "session",
 			Method:       r.Method + " " + r.URL.Path,
 			Status:       "ok",
-			IP:           r.Header.Get("X-Forwarded-For"),
+			IP:           audit.ClientIP(r),
 			UserAgent:    r.UserAgent(),
 		})
 	})
@@ -2331,7 +2331,13 @@ func New(cfg Config) *Server {
 	// it never shadows a real route, the geo middleware, or auth.
 	honeypotMiddleware := honeypotStore.Middleware(geoMiddleware)
 
-	return &Server{grpc: grpcSrv, httpHandler: honeypotMiddleware}
+	// Baseline security headers + per-request access log (real client IP via
+	// CF-Connecting-IP) wrap everything, honeypot decoys included. HSTS follows
+	// the secure-cookie setting (true only when served over HTTPS).
+	edge := edgeOptionsFromEnv(cfg.AuthConfig.CookieSecure)
+	outer := accessLog(securityHeaders(honeypotMiddleware, edge), edge)
+
+	return &Server{grpc: grpcSrv, httpHandler: outer}
 }
 
 // orgAdminRoster adapts the org_admins + users repositories to the
@@ -2921,7 +2927,9 @@ func serveDocsConvert(w http.ResponseWriter, r *http.Request, assets *docs.Asset
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	case err != nil:
-		http.Error(w, "conversion failed: "+err.Error(), http.StatusInternalServerError)
+		// Don't echo converter internals (temp paths, pandoc/engine stderr).
+		slog.Error("docs convert", "to", to, "err", err)
+		http.Error(w, "conversion failed", http.StatusInternalServerError)
 		return
 	}
 	name := r.URL.Query().Get("name")

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"code.pick.haus/grown/grown/internal/wsorigin"
 )
 
 // Collaboration for sheets is a simple op broadcast: FortuneSheet emits change
@@ -118,7 +120,7 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, sheetID string, canW
 // protections the user may not change are dropped before they are relayed
 // (see OpGuard). A nil guard relays everything a writer sends.
 func (h *Hub) ServeGuarded(w http.ResponseWriter, r *http.Request, sheetID string, canWrite bool, guard *OpGuard) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, wsorigin.AcceptOptions())
 	if err != nil {
 		return
 	}
