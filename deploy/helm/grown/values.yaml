@@ -290,7 +290,7 @@ auth:
 zitadel:
   image:
     repository: ghcr.io/zitadel/zitadel
-    tag: "v2.71.0"
+    tag: "v4.20.1"
     pullPolicy: IfNotPresent
   # 32-char master key that encrypts Zitadel secrets at rest. CHANGE for prod;
   # MUST stay stable across restarts (random per-boot => stored secrets break).
@@ -331,7 +331,7 @@ zitadel:
       memory: 1Gi
   # provisioning Job that creates the grown OIDC app + writes clientSecretName.
   provision:
-    image: alpine/k8s:1.32.2
+    image: alpine/k8s:1.37.2
 
 # -----------------------------------------------------------------------------
 # Bundled Postgres (plain StatefulSet — NOT CNPG, so no operator needed).
@@ -342,8 +342,17 @@ postgres:
   externalDsn: ""
   image:
     repository: postgres
-    tag: "17.2-alpine"
+    tag: "18.6-alpine"
     pullPolicy: IfNotPresent
+  # PG18 images use PGDATA=/var/lib/postgresql/<major>/docker with the volume
+  # mounted at /var/lib/postgresql (the pg_ctlcluster layout, which lets a
+  # future pg_upgrade --link keep old and new majors on one volume). Charts
+  # <= 0.4.x mounted the volume at /var/lib/postgresql/data with
+  # PGDATA=<mount>/pgdata. That PG17 data stays on the same PVC, visible at
+  # /var/lib/postgresql/pgdata. A major bump is NOT automatic: it needs a
+  # dump/restore (README: "Upgrading from 0.4.x to 0.5.0").
+  dataMountPath: /var/lib/postgresql
+  pgdata: /var/lib/postgresql/18/docker
   auth:
     username: grown
     password: DevPassword!1
@@ -374,10 +383,10 @@ rustfs:
   enabled: true
   image:
     repository: rustfs/rustfs
-    tag: "1.0.0-beta.7"
+    tag: "1.0.4"
     pullPolicy: IfNotPresent
   # Bucket-init hook image (AWS CLI; multi-arch, public).
-  initImage: public.ecr.aws/aws-cli/aws-cli:2.22.35
+  initImage: public.ecr.aws/aws-cli/aws-cli:2.39.6
   # Service port for the S3 API (the container always listens on :9100).
   port: 9100
   # grown's app bucket. "" => minio.bucket (so a 0.1.x install keeps its bucket
@@ -468,7 +477,7 @@ minio:
 # -----------------------------------------------------------------------------
 migrateFromMinio:
   enabled: false
-  image: rclone/rclone:1.75.1
+  image: rclone/rclone:1.76.0
   # Source. Default: the bundled legacy MinIO (needs minio.enabled=true) with
   # its {release}-minio root credentials. For an external MinIO set endpoint
   # and an existingSecret holding the keys named below.

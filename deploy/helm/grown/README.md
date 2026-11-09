@@ -347,6 +347,123 @@ can't. To get real login working you have two options:
 `/healthz` and the whole app stand up regardless; only the login redirect needs
 the issuer to be browser-reachable.
 
+## Upgrading from 0.4.x to 0.5.0 (Postgres 18, Zitadel v4, rustfs 1.0.4)
+
+0.5.0 bumps the bundled images:
+
+| | 0.4.x | 0.5.0 |
+|---|---|---|
+| Postgres | `postgres:17.2-alpine` | `postgres:18.6-alpine` (PG18 data layout, see below) |
+| Zitadel | `v2.71.0` | `v4.20.1` |
+| rustfs | `1.0.0-beta.7` | `1.0.4` (GA) |
+| Zitadel provision hook | `alpine/k8s:1.32.2` | `alpine/k8s:1.37.2` |
+| rustfs bucket-init hook | `aws-cli:2.22.35` | `aws-cli:2.39.6` |
+| `migrateFromMinio` | `rclone:1.75.1` | `rclone:1.76.0` |
+
+Fresh installs need nothing special. Zitadel gets
+`ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED=false`, so a new instance
+keeps the built-in Login V1 pages (`/ui/login`). Demo login, the provision Job
+and the headless flows depend on them, and this chart doesn't ship the separate
+v4 login container. Instances upgraded from v2/v3 keep Login V1 anyway.
+
+**An existing 0.4.x release must not be upgraded in a single step.** A plain
+`helm upgrade` would do two unsafe things:
+
+1. **Jump Zitadel two majors.** Zitadel runs forward-only migrations on boot,
+   so take the majors one at a time: v2 -> v3.4.x -> v4.
+2. **Start an empty Postgres 18.** PG18 images use
+   `PGDATA=/var/lib/postgresql/18/docker` with the volume mounted at
+   `/var/lib/postgresql` (`postgres.dataMountPath` / `postgres.pgdata`).
+   0.4.x mounted the volume at `/var/lib/postgresql/data` with
+   `PGDATA=<mount>/pgdata`. Your PG17 data stays untouched on the same PVC
+   (it shows up at `/var/lib/postgresql/pgdata`), but PG18 initialises a
+   new, empty cluster next to it. grown and Zitadel would then race to
+   initialise it (Zitadel would create a brand-new instance).
+
+Skip step 3 if you use `postgres.externalDsn`. Throughout, `<rel>` is the
+release name and `<ns>` its namespace.
+
+### 1. Back up
+
+```sh
+for db in grown zitadel pdf; do
+  kubectl -n <ns> exec <rel>-postgres-0 -- pg_dump -U grown -Fc -d "$db" > "$db-pg17.dump"
+done
+```
+
+### 2. Zitadel v3, then the rest of 0.5.0 on the old Postgres layout
+
+Still on chart 0.4.x (e.g. a checkout of the release you installed), step
+Zitadel to v3:
+
+```sh
+helm upgrade <rel> <path-to-0.4.x-chart> -n <ns> --reuse-values \
+  --set zitadel.image.tag=v3.4.15
+```
+
+Let it soak for **at least 12h** before going on. v3.4.1+ activates OIDC web
+keys, and the old id_tokens must expire first. Then move to 0.5.0, pinning
+Postgres to the 0.4.x image and layout so nothing changes there yet:
+
+```sh
+helm upgrade <rel> deploy/helm/grown -n <ns> --reuse-values \
+  --set zitadel.image.tag=v4.20.1 \
+  --set postgres.image.tag=17.2-alpine \
+  --set postgres.dataMountPath=/var/lib/postgresql/data \
+  --set postgres.pgdata=/var/lib/postgresql/data/pgdata
+```
+
+### 3. Postgres 17 -> 18 (dump/restore)
+
+1. Stop everything that talks to Postgres, then take fresh dumps as in step 1:
+
+   ```sh
+   kubectl -n <ns> scale deploy/<rel>-grown deploy/<rel>-zitadel --replicas=0
+   ```
+
+2. Switch the StatefulSet to PG18 **before** Helm brings the apps back. Patch it
+   by hand so the apps stay at 0:
+
+   ```sh
+   kubectl -n <ns> patch sts <rel>-postgres --type=json -p '[
+     {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"postgres:18.6-alpine"},
+     {"op":"replace","path":"/spec/template/spec/containers/0/env/0/value","value":"/var/lib/postgresql/18/docker"},
+     {"op":"replace","path":"/spec/template/spec/containers/0/volumeMounts/0/mountPath","value":"/var/lib/postgresql"}]'
+   kubectl -n <ns> delete pod <rel>-postgres-0
+   kubectl -n <ns> wait --for=condition=Ready pod/<rel>-postgres-0 --timeout=5m
+   ```
+
+   The new cluster's init script recreates the empty `grown`, `zitadel` and
+   `pdf` databases.
+
+3. Restore each database into the empty PG18 one:
+
+   ```sh
+   for db in grown zitadel pdf; do
+     kubectl -n <ns> exec -i <rel>-postgres-0 -- \
+       pg_restore -U grown -d "$db" --no-owner --exit-on-error < "$db-pg17.dump"
+   done
+   ```
+
+4. Drop the Postgres pins. This leaves the StatefulSet as you patched it and
+   scales grown and Zitadel back up:
+
+   ```sh
+   helm upgrade <rel> deploy/helm/grown -n <ns> --reuse-values \
+     --set postgres.image.tag=18.6-alpine \
+     --set postgres.dataMountPath=/var/lib/postgresql \
+     --set postgres.pgdata=/var/lib/postgresql/18/docker
+   ```
+
+**Rollback:** the PG17 data directory is untouched. Re-run the step 2 upgrade
+(the 17.2 image and the old mount/PGDATA) and you are back on it. Anything
+written to PG18 in the meantime is only in PG18. Once you're happy, the
+leftover `/var/lib/postgresql/pgdata` can be removed from the PVC.
+
+rustfs 1.0.4 uses the same env vars and runtime user (uid 10001) as
+1.0.0-beta.7. Its release notes have no upgrade section, so back up the
+`data-<rel>-rustfs-0` volume first.
+
 ## Upgrading from 0.4.0 to 0.4.1 (HA HTTP config fix)
 
 0.4.0's Home Assistant answered **400** behind the ingress five minutes after
@@ -387,7 +504,7 @@ HA is onboarded automatically; see NOTES for the owner password.
 MinIO stopped publishing pullable images (`minio/minio`, `minio/mc`: "pull
 access denied"), so 0.1.x's bundled object store can't be installed fresh or
 rescheduled onto a node that doesn't already have the image cached. 0.2.0
-serves S3 from **rustfs** (`rustfs/rustfs:1.0.0-beta.7`, the same build
+serves S3 from **rustfs** (`rustfs/rustfs:1.0.4`, the same build
 pick.haus runs) and points grown (`GROWN_RUSTFS_*`) and the PDF app
 (`PDF_STORAGE_*`) at it.
 
