@@ -241,7 +241,6 @@ var player;      // shooter
 var powerups;    // falling power-up pickups dropped by destroyed mushrooms
 var crossers;    // things that skitter across the bottom: spiders (hurt) + powerups (help)
 var crosserTimer = 0;
-var waveTimer = 0;
 var deadTimer = 0;
 var floatTexts = [];
 var flash = 0;   // white screen flash timer (bomb pickup)
@@ -257,18 +256,21 @@ var CROSSER_START_WAVE = 5;      // bottom-crossers begin at "medium" difficulty
 
 // ---------- Power-ups ----------
 // Destroyed mushrooms have a chance to drop one of these. It falls; the player
-// catches it by moving onto it. Timed effects live on the player object.
+// catches it by moving onto it. Shield / rapid / triple last for the rest of
+// the wave (surviving a lost life) and clear when the next wave starts.
 // weight = relative drop frequency (higher = more common).
 var POWERUPS = {
-  shield: { label: 'S', name: 'SHIELD',      color: '#5fb8ff', weight: 30, dur: 8 },
-  rapid:  { label: 'R', name: 'RAPID FIRE',  color: '#ffd24a', weight: 28, dur: 8 },
-  triple: { label: '3', name: 'TRIPLE SHOT', color: '#b46cff', weight: 22, dur: 10 },
-  life:   { label: '+', name: 'EXTRA LIFE',  color: '#ff6c9c', weight: 7,  dur: 0 },
-  bomb:   { label: '*', name: 'BOMB',        color: '#ff8a3c', weight: 13, dur: 0 }
+  shield: { label: 'S', name: 'SHIELD',      color: '#5fb8ff', weight: 30 },
+  rapid:  { label: 'R', name: 'RAPID FIRE',  color: '#ffd24a', weight: 28 },
+  triple: { label: '3', name: 'TRIPLE SHOT', color: '#b46cff', weight: 22 },
+  life:   { label: '+', name: 'EXTRA LIFE',  color: '#ff6c9c', weight: 7  },
+  bomb:   { label: '*', name: 'BOMB',        color: '#ff8a3c', weight: 13 }
 };
 var POWERUP_KEYS = ['shield','rapid','triple','life','bomb'];
 var DROP_CHANCE = 0.14;   // chance a fully-destroyed mushroom drops a power-up
 var MAX_LIVES = 6;        // cap so the lives HUD stays readable
+var effects;              // active wave-long power-ups: { shield, rapid, triple }
+function clearEffects(){ effects = { shield: false, rapid: false, triple: false }; }
 
 // ---------- Sizing ----------
 function resize(){
@@ -332,6 +334,10 @@ function sDie(){ beep(120, 0.5, 'sawtooth', 0.1); beep(80,0.5,'sawtooth',0.08); 
 function sWave(){ beep(523,0.1,'triangle',0.08); beep(659,0.12,'triangle',0.08); beep(784,0.16,'triangle',0.08); }
 function sPower(){ beep(784,0.08,'square',0.07); setTimeout(function(){ beep(1047,0.12,'square',0.07); }, 70); }
 function sBomb(){ beep(140,0.35,'sawtooth',0.12); beep(90,0.4,'sawtooth',0.1); }
+// Wave-clear tally: a short blip that climbs in pitch as a bonus counts up,
+// then a two-note "ding" when that line finishes.
+function sTallyTick(progress){ beep(520 + 900 * progress, 0.035, 'square', 0.035); }
+function sTallyDone(){ beep(1047,0.08,'triangle',0.08); setTimeout(function(){ beep(1568,0.22,'triangle',0.08); }, 80); }
 
 // ---------- Mushroom helpers ----------
 function newMushrooms(){
@@ -499,22 +505,19 @@ function newPlayer(){
     y: H - cell * 1.2,
     w: cell * 0.8,
     speed: 6 * cell,   // px per second (desktop keys)
-    cooldown: 0,
-    shieldT: 0,        // seconds of shield bubble remaining
-    rapidT: 0,         // seconds of rapid fire remaining
-    tripleT: 0         // seconds of triple shot remaining
+    cooldown: 0
   };
 }
-function shielded(){ return player && player.shieldT > 0; }
+function shielded(){ return effects.shield; }
 
 // ---------- Bullets ----------
 function fire(){
   if (state !== STATE_PLAY) return;
   if (player.cooldown > 0) return;
-  var rapid = player.rapidT > 0;
+  var rapid = effects.rapid;
   var speed = (rapid ? 20 : 14) * cell;
   var by = player.y - cell*0.5;
-  if (player.tripleT > 0){
+  if (effects.triple){
     // center + two angled side bullets
     bullets.push({ x: player.x, y: by, speed: speed, vx: 0 });
     bullets.push({ x: player.x, y: by, speed: speed, vx: -4.5 * cell });
@@ -638,9 +641,7 @@ function stepPowerups(dt){
 function applyPowerup(type){
   var def = POWERUPS[type];
   floatTexts.push({ x: player.x, y: player.y - cell*0.8, t: 1.0, v: def.name, color: def.color });
-  if (type === 'shield')      player.shieldT = def.dur;
-  else if (type === 'rapid')  player.rapidT  = def.dur;
-  else if (type === 'triple') player.tripleT = def.dur;
+  if (type === 'shield' || type === 'rapid' || type === 'triple') effects[type] = true;
   else if (type === 'life'){ if (lives < MAX_LIVES){ lives++; setLivesHud(); } }
   else if (type === 'bomb')   doBomb();
   if (type === 'bomb') sBomb(); else sPower();
@@ -741,11 +742,64 @@ function reviveAfterDeath(){
   state = STATE_PLAY;
 }
 
+// ---------- Wave-clear bonus tally ----------
+// Between waves the bonuses count up one line at a time into the score, with
+// rising blips and a ding per line. Tap / click / Space / Enter skips ahead.
+var TALLY_INTRO = 0.9;     // seconds of "WAVE N CLEARED!" before counting
+var TALLY_LINE_TIME = 1.0; // seconds to count up each line
+var TALLY_GAP = 0.35;      // pause after each line's ding
+var TALLY_HOLD = 1.4;      // pause on the finished tally before the next wave
+var tally = null;
+
 function winWave(){
   state = STATE_WAVECLEAR;
-  waveTimer = 1.4;
+  bullets = [];
   sWave();
-  addScore(50);
+  var lifeIcons = '';
+  for (var i = 0; i < lives; i++) lifeIcons += '▲';
+  tally = {
+    lines: [
+      { label: 'WAVE ' + wave + ' BONUS', amount: 100 * wave, shown: 0 },
+      { label: 'LIVES ' + lifeIcons,      amount: 50 * lives,  shown: 0 }
+    ],
+    idx: 0,          // line currently counting
+    wait: TALLY_INTRO,
+    tickT: 0,
+    done: false
+  };
+}
+
+function stepTally(dt){
+  if (tally.wait > 0){ tally.wait -= dt; return; }
+  if (tally.done){ nextWave(); return; }
+  var line = tally.lines[tally.idx];
+  var rate = Math.max(1, line.amount / TALLY_LINE_TIME);
+  var inc = Math.min(line.amount - line.shown, Math.max(1, Math.round(rate * dt)));
+  if (inc > 0){ line.shown += inc; addScore(inc); }
+  tally.tickT -= dt;
+  if (tally.tickT <= 0){ sTallyTick(line.shown / line.amount); tally.tickT = 0.045; }
+  if (line.shown >= line.amount) finishTallyLine();
+}
+
+function finishTallyLine(){
+  sTallyDone();
+  tally.idx++;
+  if (tally.idx >= tally.lines.length){ tally.done = true; tally.wait = TALLY_HOLD; }
+  else { tally.wait = TALLY_GAP; tally.tickT = 0; }
+}
+
+// Skip: bank everything still counting and jump to the short end hold.
+function skipTally(){
+  if (state !== STATE_WAVECLEAR || !tally || tally.done) return;
+  for (var i = tally.idx; i < tally.lines.length; i++){
+    var line = tally.lines[i];
+    addScore(line.amount - line.shown);
+    line.shown = line.amount;
+  }
+  tally.idx = tally.lines.length;
+  tally.done = true;
+  tally.wait = 0.6;
+  sTallyDone();
 }
 
 function nextWave(){
@@ -764,6 +818,8 @@ function nextWave(){
   }
   spawnCentipede();
   player = newPlayer();
+  clearEffects();          // power-ups only last for the wave they were caught in
+  tally = null;
   bullets = [];
   powerups = [];
   crossers = [];
@@ -782,6 +838,8 @@ function startGame(){
   bullets = [];
   powerups = [];
   crossers = [];
+  clearEffects();
+  tally = null;
   crosserTimer = 4;          // first spider/power-up runner a few seconds in
   flash = 0;
   announceT = 0;
@@ -806,6 +864,7 @@ var keys = {};
 window.addEventListener('keydown', function(e){
   if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Spacebar'].indexOf(e.key) >= 0) e.preventDefault();
   keys[e.key] = true;
+  if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter') skipTally();
   if (e.key === ' ' || e.key === 'Spacebar') fire();
   if ((e.key === 'Enter') && (state === STATE_MENU || state === STATE_OVER)) startGame();
 });
@@ -829,6 +888,7 @@ canvas.addEventListener('touchstart', function(e){
   e.preventDefault();
   dragging = true;
   audio();
+  skipTally();
   if (e.touches.length){ pointerMove(e.touches[0].clientX, e.touches[0].clientY); }
 }, { passive:false });
 canvas.addEventListener('touchmove', function(e){
@@ -839,7 +899,7 @@ canvas.addEventListener('touchend', function(e){ e.preventDefault(); dragging = 
 canvas.addEventListener('touchcancel', function(e){ e.preventDefault(); dragging = false; }, { passive:false });
 
 // Mouse drag (desktop optional)
-canvas.addEventListener('mousedown', function(e){ dragging = true; audio(); pointerMove(e.clientX, e.clientY); });
+canvas.addEventListener('mousedown', function(e){ dragging = true; audio(); skipTally(); pointerMove(e.clientX, e.clientY); });
 window.addEventListener('mousemove', function(e){ if (dragging) pointerMove(e.clientX, e.clientY); });
 window.addEventListener('mouseup', function(){ dragging = false; });
 
@@ -889,10 +949,6 @@ function update(dt){
     player.y = clamp(player.y, H - PLAYER_ROWS*cell + cell*0.5, H - cell*0.5);
 
     if (player.cooldown > 0) player.cooldown -= dt;
-    // tick down timed power-up effects
-    if (player.shieldT > 0) player.shieldT = Math.max(0, player.shieldT - dt);
-    if (player.rapidT  > 0) player.rapidT  = Math.max(0, player.rapidT  - dt);
-    if (player.tripleT > 0) player.tripleT = Math.max(0, player.tripleT - dt);
 
     // Auto-fire continuously during play (fire() self-throttles via cooldown).
     // dragging / fireHeld are still honored but auto-fire keeps it always firing.
@@ -916,8 +972,7 @@ function update(dt){
     deadTimer -= dt;
     if (deadTimer <= 0) reviveAfterDeath();
   } else if (state === STATE_WAVECLEAR){
-    waveTimer -= dt;
-    if (waveTimer <= 0) nextWave();
+    stepTally(dt);
   }
 
   // float texts
@@ -957,7 +1012,7 @@ function render(){
   }
 
   if (state === STATE_WAVECLEAR){
-    bannerText('WAVE ' + wave + ' CLEARED!', '#7cff7c');
+    drawTally();
   } else if (state === STATE_DEAD){
     bannerText('LIFE LOST', '#ff7c9c');
   } else if (announceT > 0 && state === STATE_PLAY){
@@ -1027,29 +1082,28 @@ function drawSpider(cr){
   ctx.beginPath(); ctx.arc(x + rad*0.32, y - rad*0.18, rad*0.16, 0, Math.PI*2); ctx.fill();
 }
 
-// Small badges (bottom-left) showing active timed effects + remaining time bar.
+// Small badges (bottom-left) showing the power-ups active for this wave.
 function drawEffectHud(){
   if (state !== STATE_PLAY && state !== STATE_DEAD) return;
   var actives = [];
-  if (player.shieldT > 0) actives.push({ d: POWERUPS.shield, t: player.shieldT });
-  if (player.rapidT  > 0) actives.push({ d: POWERUPS.rapid,  t: player.rapidT });
-  if (player.tripleT > 0) actives.push({ d: POWERUPS.triple, t: player.tripleT });
+  if (effects.shield) actives.push(POWERUPS.shield);
+  if (effects.rapid)  actives.push(POWERUPS.rapid);
+  if (effects.triple) actives.push(POWERUPS.triple);
   var bw = cell * 1.9, bh = cell * 0.5, gap = cell * 0.16;
   var x0 = cell * 0.25, y0 = H - cell * 0.25 - bh;
   for (var i = 0; i < actives.length; i++){
-    var a = actives[i];
+    var d = actives[i];
     var y = y0 - i * (bh + gap);
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(x0, y, bw, bh);
-    // time bar
-    ctx.fillStyle = a.d.color;
+    ctx.fillStyle = d.color;
     ctx.globalAlpha = 0.35;
-    ctx.fillRect(x0, y, bw * Math.min(1, a.t / a.d.dur), bh);
+    ctx.fillRect(x0, y, bw, bh);
     ctx.globalAlpha = 1;
-    ctx.fillStyle = a.d.color;
+    ctx.fillStyle = d.color;
     ctx.font = 'bold ' + Math.round(cell*0.34) + 'px monospace';
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(a.d.label + ' ' + a.d.name + ' ' + Math.ceil(a.t), x0 + cell*0.18, y + bh*0.5);
+    ctx.fillText(d.label + ' ' + d.name, x0 + cell*0.18, y + bh*0.5);
     ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'start';
   }
 }
@@ -1153,10 +1207,10 @@ function drawPlayer(){
   ctx.lineWidth = Math.max(1, cell*0.05);
   ctx.stroke();
 
-  // Shield bubble — pulses, and blinks during its final 2 seconds.
-  if (player.shieldT > 0){
-    var t = player.shieldT;
-    var blink = t > 2 ? 1 : (Math.sin(t * 18) > -0.2 ? 1 : 0.25);
+  // Shield bubble — gently pulses for as long as it lasts (rest of the wave).
+  if (effects.shield){
+    var t = performance.now() / 1000;
+    var blink = 1;
     var pulse = 0.5 + 0.25 * Math.sin(t * 6);
     ctx.save();
     ctx.globalAlpha = blink * pulse;
@@ -1188,6 +1242,37 @@ function drawFloatTexts(){
   ctx.textAlign = 'start';
 }
 
+// Wave-clear panel: title, then each bonus line as it's reached, counting up.
+function drawTally(){
+  var rowH = cell * 0.9;
+  var n = tally ? tally.lines.length : 0;
+  var top = H * 0.5 - cell * 1.6;
+  var panelH = cell * 1.7 + n * rowH + cell * 0.5;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, top, W, panelH);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold ' + Math.round(cell*0.9) + 'px sans-serif';
+  ctx.fillStyle = '#7cff7c';
+  ctx.fillText('WAVE ' + wave + ' CLEARED!', W*0.5, top + cell*1.2);
+  var left = Math.max(cell*0.6, W*0.5 - cell*5), right = Math.min(W - cell*0.6, W*0.5 + cell*5);
+  ctx.font = 'bold ' + Math.round(cell*0.5) + 'px monospace';
+  for (var i = 0; i < n; i++){
+    var line = tally.lines[i];
+    var reached = i < tally.idx || (i === tally.idx && tally.wait <= 0) || line.shown > 0;
+    if (!reached) break;
+    var y = top + cell*1.7 + rowH * (i + 0.6);
+    var counting = i === tally.idx && !tally.done;
+    ctx.fillStyle = counting ? '#ffffff' : '#cfd8ee';
+    ctx.textAlign = 'left';
+    ctx.fillText(line.label, left, y);
+    ctx.fillStyle = counting ? '#ffe07c' : '#e8c45a';
+    ctx.textAlign = 'right';
+    ctx.fillText('+' + line.shown, right, y);
+  }
+  ctx.restore();
+}
+
 function bannerText(txt, color){
   ctx.save();
   ctx.font = 'bold ' + Math.round(cell*0.9) + 'px sans-serif';
@@ -1208,10 +1293,11 @@ function boot(){
   bullets = [];
   powerups = [];
   crossers = [];
+  clearEffects();
   player = newPlayer();
   state = STATE_MENU;
   showOverlay('CENTIPEDE',
-    'Drag your finger near the bottom to move &mdash; it auto-fires.<br>Desktop: Arrow keys / WASD + Space.<br>Shoot segments to clear the wave. Blasted mushrooms sometimes drop <b>power-ups</b> &mdash; move under them to grab a <b style="color:#5fb8ff">shield</b>, <b style="color:#ffd24a">rapid fire</b>, <b style="color:#b46cff">triple shot</b>, a life, or a bomb!',
+    'Drag your finger near the bottom to move &mdash; it auto-fires.<br>Desktop: Arrow keys / WASD + Space.<br>Shoot segments to clear the wave. Blasted mushrooms sometimes drop <b>power-ups</b> &mdash; move under them to grab a <b style="color:#5fb8ff">shield</b>, <b style="color:#ffd24a">rapid fire</b>, <b style="color:#b46cff">triple shot</b>, a life, or a bomb! Power-ups last the rest of the wave.',
     'START');
   rafId = requestAnimationFrame(loop);
 }
