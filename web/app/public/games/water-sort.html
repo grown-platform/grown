@@ -66,6 +66,8 @@
   button:active { background: #3a4570; transform: scale(0.97); }
   button.primary { background: #3563d6; border-color: #4a78f0; }
   button.primary:active { background: #2a52b8; }
+  button.hint { border-color: #ffd76a; box-shadow: 0 0 0 2px #ffd76a; animation: hintPulse 1.2s ease-in-out infinite; }
+  @keyframes hintPulse { 50% { box-shadow: 0 0 0 5px rgba(255, 215, 106, 0.35); } }
   select {
     font-size: 15px; font-weight: 600; color: #e8ecf5;
     background: #2a3358; border: 1px solid #46527a; border-radius: 10px;
@@ -280,14 +282,15 @@
     return true;
   }
 
-  // DFS solver with memoization. Returns true if `start` is solvable.
-  function solvable(start) {
+  // DFS solver with memoization. Returns true if `start` is solvable, false
+  // if it provably isn't, and null if it gave up after `limit` states.
+  function solvable(start, limit) {
     var seen = {};
-    var STACK_LIMIT = 200000;
+    var STACK_LIMIT = limit || 200000;
     var stack = [clone(start)];
     var visits = 0;
     while (stack.length) {
-      if (++visits > STACK_LIMIT) return false; // give up -> treat as unsolvable, regenerate
+      if (++visits > STACK_LIMIT) return null;
       var st = stack.pop();
       if (isSolvedState(st)) return true;
       var key = stateKey(st);
@@ -322,8 +325,8 @@
     return false;
   }
 
-  function dealRandom(numColors) {
-    emptyCount = 2;
+  function dealRandom(numColors, empties) {
+    emptyCount = empties || 2;
     // Build a pool: 4 of each color.
     var pool = [];
     for (var c = 0; c < numColors; c++) {
@@ -344,14 +347,33 @@
   function generate(numColors) {
     // Deal randomly, then verify solvability with a real solver. Reject
     // already-solved deals and unsolvable deals; retry until we get a good one.
-    for (var attempt = 0; attempt < 400; attempt++) {
-      var st = dealRandom(numColors);
+    // Never hand out a deal the solver hasn't proven solvable; if two empty
+    // tubes keep failing, deal with three until one passes.
+    for (var attempt = 0; ; attempt++) {
+      var st = dealRandom(numColors, attempt < 400 ? 2 : 3);
       if (isSolvedState(st)) continue;
-      if (solvable(st)) return st;
+      if (solvable(st) === true) return st;
     }
-    // Fallback (should essentially never happen): solved-then-one-pour state.
-    var fb = dealRandom(numColors);
-    return fb;
+  }
+
+  // After each pour, check whether the position can still be won. Every
+  // deal starts solvable, but with many colours a couple of wrong pours can
+  // leave no way out; say so instead of letting it look impossible.
+  var deadEndToken = 0;
+  function clearDeadEnd() {
+    deadEndToken++;
+    undoBtn.classList.remove("hint");
+  }
+  function checkDeadEnd() {
+    var token = ++deadEndToken;
+    var snap = clone(tubes);
+    setTimeout(function () {
+      if (token !== deadEndToken) return;
+      if (solvable(snap, 60000) === false) {
+        setStatus("No way to win from here \u2014 tap Undo");
+        undoBtn.classList.add("hint");
+      }
+    }, 30);
   }
 
   function colorOf(idx) { return PALETTE[idx % PALETTE.length]; }
@@ -466,10 +488,12 @@
       src.style.transform = "";
       animating = false;
       render();
+      clearDeadEnd();
       if (isWin()) {
         win(moveCount);
       } else {
         setStatus("Moves: " + moveCount);
+        checkDeadEnd();
       }
     }, 180);
   }
@@ -484,16 +508,19 @@
   function undo() {
     if (animating || !history.length) return;
     var prev = history.pop();
+    clearDeadEnd();
     tubes = prev.state;
     moveCount = prev.moves;
     selected = -1;
     winBanner.classList.remove("show");
     render();
     setStatus(moveCount ? "Moves: " + moveCount : "Tap a tube to pour");
+    if (moveCount) checkDeadEnd();
   }
 
   function newPuzzle() {
     var n = parseInt(difficultyEl.value, 10) || 6;
+    clearDeadEnd();
     tubes = generate(n);
     tubeEls = []; // force rebuild (count changes)
     selected = -1;
