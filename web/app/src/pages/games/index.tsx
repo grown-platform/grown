@@ -62,6 +62,19 @@ const GAMES: AppTile[] = [
     externalUrl: "https://coffetable.pick.haus",
   },
   {
+    id: "notus",
+    name: "Notus",
+    blurb: "Find the impostor — online social deduction for 4-10 players.",
+    accentColor: "#B91C1C",
+    phase: 4,
+    comingSoon: false,
+    iconName: "PersonSearch",
+    isBeta: true,
+    // Standalone Node/Socket.IO game hosted on its own subdomain (gitops
+    // clusters/pi-cluster/websites/notus.pick.haus); rooms live on that server.
+    externalUrl: "https://notus.pick.haus",
+  },
+  {
     id: "mightymike",
     name: "Mighty Mike",
     blurb: "Run-and-gun arcade — a native game port (Pangea's Power Pete).",
@@ -252,6 +265,7 @@ const EXTRA_CATS: Record<string, string[]> = {
   winbolo: ["Port", "Arcade", "Board"],
   maelstrom: ["Port", "Arcade", "Speed"],
   "reading-flash-cards": ["Kids", "Word"],
+  notus: ["Arcade"],
 };
 
 const CATEGORY_IDS: Record<string, string[]> = {
@@ -283,7 +297,7 @@ const GROUP_IDS = new Set<string>([
   "reversi", "gomoku", "dots-and-boxes", "mancala", "nine-mens-morris",
   "dominoes", "battleship", "snakes-and-ladders", "ludo", "chinese-checkers",
   "air-hockey", "pong", "war", "snap", "go-fish", "old-maid", "crazy-eights",
-  "pig", "monopoly-deal",
+  "pig", "monopoly-deal", "notus",
 ]);
 
 // "2-Player" surfaces games that actually support two humans on ONE device
@@ -312,6 +326,8 @@ const ONLINE_IDS = new Set<string>([
   "monopoly-deal",
   // additional online games (2-player) + dots-and-boxes now 2–4 (in the set above)
   "war", "nine-mens-morris", "rock-paper-scissors",
+  // Own realtime server (Socket.IO at notus.pick.haus), not GameMP.
+  "notus",
 ]);
 
 // Per-device play counts, persisted in localStorage under grown.games.plays as
